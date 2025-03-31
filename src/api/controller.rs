@@ -41,7 +41,7 @@ impl ApiController {
     }
 
     async fn test(&self) -> Result<Response<Full<Bytes>>, Infallible> {
-        let json_body = json!({ "result": self.service.get_table_names().await.unwrap() });
+        let json_body = json!({ "result": self.service.get_table_names().await });
 
         utils::json_response(json_body, StatusCode::OK).await
     }

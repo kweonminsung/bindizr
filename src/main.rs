@@ -7,8 +7,5 @@ fn main() {
     env::initialize();
 
     // Initialize API server
-    if let Err(e) = api::initialize() {
-        eprintln!("Error starting server: {}", e);
-        return;
-    }
+    api::initialize();
 }

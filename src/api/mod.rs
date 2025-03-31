@@ -12,9 +12,9 @@ mod service;
 mod utils;
 
 #[tokio::main]
-pub async fn initialize() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr = SocketAddr::from(([127, 0, 0, 1], get_env("API_PORT").parse::<u16>()?));
-    let listener = TcpListener::bind(addr).await?;
+pub async fn initialize() {
+    let addr = SocketAddr::from(([127, 0, 0, 1], get_env("API_PORT").parse::<u16>().unwrap()));
+    let listener = TcpListener::bind(addr).await.unwrap();
 
     println!("Listening on http://{}", addr);
 
@@ -22,7 +22,7 @@ pub async fn initialize() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     let controller = Arc::new(Mutex::new(controller::ApiController::new().await));
 
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, _) = listener.accept().await.unwrap();
         let io = TokioIo::new(stream);
         let controller = controller.clone(); // Clone the shared controller
 
