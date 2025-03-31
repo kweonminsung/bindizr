@@ -7,9 +7,9 @@ pub struct ApiService {
 }
 
 impl ApiService {
-    pub async fn new() -> Result<Self, String> {
-        let session = Session::new().await?;
-        Ok(Self { session })
+    pub async fn new() -> Self {
+        let session = Session::new().await;
+        Self { session }
     }
 
     pub async fn get_table_names(&self) -> Vec<String> {

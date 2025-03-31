@@ -12,7 +12,7 @@ pub struct ApiController {
 impl ApiController {
     pub async fn new() -> Self {
         Self {
-            service: ApiService::new().await.unwrap(),
+            service: ApiService::new().await,
         }
     }
 

@@ -23,7 +23,7 @@ pub struct Session {
 }
 
 impl Session {
-    pub async fn new() -> Result<Self, String> {
+    pub async fn new() -> Self {
         let database_driver = get_env("DATABASE_DRIVER");
 
         match DatabaseDriver::from_str(&database_driver) {
@@ -47,24 +47,18 @@ impl Session {
                             // .max_lifetime(Duration::from_secs(8))
                             .sqlx_logging(true);
 
-                        let connection = match Database::connect(opt).await {
-                            Ok(conn) => conn,
-                            Err(err) => {
-                                return Err(format!(
-                                    "Failed to connect to SQLite database: {}",
-                                    err
-                                ))
-                            }
-                        };
+                        let connection = Database::connect(opt).await.unwrap();
 
-                        Ok(Session {
+                        Session {
                             driver: DatabaseDriver::Sqlite,
                             connection,
-                        })
+                        }
                     }
                 }
             }
-            Err(err) => Err(err),
+            Err(err) => {
+                panic!("{}", err);
+            }
         }
     }
 }
