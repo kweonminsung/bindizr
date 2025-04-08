@@ -11,7 +11,6 @@ mod controller;
 mod service;
 mod utils;
 
-#[tokio::main]
 pub async fn initialize() {
     let addr = SocketAddr::from(([127, 0, 0, 1], get_env("API_PORT").parse::<u16>().unwrap()));
     let listener = TcpListener::bind(addr).await.unwrap();

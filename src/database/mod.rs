@@ -1,8 +1,8 @@
 use crate::env::get_env;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
-enum DatabaseDriver {
+pub enum DatabaseDriver {
     // Mysql,
     Sqlite,
 }
@@ -18,7 +18,7 @@ impl DatabaseDriver {
 }
 
 pub struct Session {
-    driver: DatabaseDriver,
+    pub driver: DatabaseDriver,
     pub connection: DatabaseConnection,
 }
 
@@ -49,16 +49,25 @@ impl Session {
 
                         let connection = Database::connect(opt).await.unwrap();
 
-                        Session {
-                            driver: DatabaseDriver::Sqlite,
-                            connection,
-                        }
+                        Session { driver, connection }
                     }
                 }
             }
             Err(err) => {
                 panic!("{}", err);
             }
+        }
+    }
+}
+
+pub static SESSION: OnceLock<Session> = OnceLock::new();
+
+pub async fn initialize() {
+    let session = Session::new().await;
+    match SESSION.set(session) {
+        Ok(_) => (),
+        Err(_) => {
+            panic!("Failed to initialize database session.");
         }
     }
 }

@@ -2,10 +2,14 @@ mod api;
 mod database;
 mod env;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Load environment variables
     env::initialize();
 
+    // Initialize database session
+    database::initialize().await;
+
     // Initialize API server
-    api::initialize();
+    api::initialize().await;
 }

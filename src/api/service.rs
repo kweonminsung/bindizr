@@ -1,26 +1,21 @@
-use crate::database::Session;
-use crate::env::get_env;
+use crate::database::{DatabaseDriver, Session, SESSION};
 use sea_orm::{DbBackend, FromQueryResult, JsonValue, Statement};
 
-pub struct ApiService {
-    pub session: Session,
+pub struct ApiService<'a> {
+    pub session: &'a Session,
 }
 
-impl ApiService {
+impl<'a> ApiService<'a> {
     pub async fn new() -> Self {
-        let session = Session::new().await;
-        Self { session }
+        Self {
+            session: SESSION.get().unwrap(),
+        }
     }
 
     pub async fn get_table_names(&self) -> Vec<String> {
-        let database_driver = get_env("DATABASE_DRIVER");
-
-        match database_driver.to_lowercase().as_str() {
-            // "mysql" => self.get_table_names_mysql().await,
-            "sqlite" => self.get_table_names_sqlite().await,
-            _ => {
-                panic!("Unsupported database driver: {}", database_driver);
-            }
+        match self.session.driver {
+            // DatabaseDriver::Mysql => self.get_table_names_mysql().await,
+            DatabaseDriver::Sqlite => self.get_table_names_sqlite().await,
         }
     }
 

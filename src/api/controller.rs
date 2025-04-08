@@ -5,11 +5,11 @@ use hyper::{body::Bytes, Request, Response, StatusCode};
 use serde_json::json;
 use std::convert::Infallible;
 
-pub struct ApiController {
-    pub service: ApiService,
+pub struct ApiController<'a> {
+    pub service: ApiService<'a>,
 }
 
-impl ApiController {
+impl<'a> ApiController<'a> {
     pub async fn new() -> Self {
         Self {
             service: ApiService::new().await,
