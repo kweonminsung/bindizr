@@ -17,6 +17,8 @@ pub struct Record {
     pub created_at: DateTime<Utc>,
 
     pub updated_at: DateTime<Utc>,
+
+    pub zone_id: i32,
 }
 
 #[derive(Debug, PartialEq, Eq)]

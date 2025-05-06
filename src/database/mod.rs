@@ -31,7 +31,9 @@ impl DatabasePool {
                 ttl INT NOT NULL,
                 priority INT,
                 created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL
+                updated_at DATETIME NOT NULL,
+                zone_id INT NOT NULL,
+                FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
             );
         "#,
         )
