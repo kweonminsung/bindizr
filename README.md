@@ -9,9 +9,4 @@ Synchronizing bind9(DNS) records with DB
 ### Dependencies
 
 - [hyper](https://hyper.rs/)
-- [sqlx](https://github.com/launchbadge/sqlx)
-- MySQL or SQLite
-
-```bash
-sea-orm-cli generate entity -u sqlite://bindizr.db -o src/database/model
-```
+- [mysql](https://crates.io/crates/mysql/)
