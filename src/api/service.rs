@@ -1,6 +1,5 @@
 use crate::database::DatabasePool;
 use mysql::prelude::*;
-use mysql::*;
 
 #[derive(Clone)]
 pub struct ApiService {
@@ -16,16 +15,12 @@ impl ApiService {
         let mut table_names = Vec::new();
 
         let query = "SHOW TABLES";
-        let result = self
-            .pool
-            .get_connection()
-            .query_map(query, |row: Row| row.get::<String, usize>(0))
-            .unwrap();
+        let result: Vec<String> = self.pool.get_connection().query(query).unwrap();
 
-        for table_name in result {
-            if let Some(name) = table_name {
-                table_names.push(name);
-            }
+        dbg!(&result);
+
+        for row in result {
+            table_names.push(row);
         }
 
         table_names

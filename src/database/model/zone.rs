@@ -1,3 +1,5 @@
+use chrono::{DateTime, Utc};
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Zone {
     pub id: i32, // 고유 ID (기본 키)
@@ -8,7 +10,7 @@ pub struct Zone {
 
     pub ttl: i32, // 기본 TTL 값 (초 단위)
 
-    pub created_at: DateTimeUtc, // 생성 시간
+    pub created_at: DateTime<Utc>,
 
-    pub updated_at: DateTimeUtc, // 수정 시간
+    pub updated_at: DateTime<Utc>,
 }

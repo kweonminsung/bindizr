@@ -1,3 +1,5 @@
+use chrono::{DateTime, Utc};
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Record {
     pub id: i32, // 고유 ID (기본 키)
@@ -12,11 +14,12 @@ pub struct Record {
 
     pub priority: Option<i32>, // 우선순위 (MX 레코드 등에서 사용, 다른 레코드에서는 None)
 
-    pub created_at: DateTimeUtc,
+    pub created_at: DateTime<Utc>,
 
-    pub updated_at: DateTimeUtc,
+    pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum RecordType {
     A,
     AAAA,
