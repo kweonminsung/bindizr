@@ -4,7 +4,7 @@ use http_body_util::Full;
 use hyper::{body::Bytes, Response, StatusCode};
 use serde_json::Value;
 
-pub async fn json_response(
+pub fn json_response(
     json_body: Value,
     status: StatusCode,
 ) -> Result<Response<Full<Bytes>>, Infallible> {

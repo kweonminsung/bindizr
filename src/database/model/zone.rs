@@ -1,9 +1,5 @@
-use sea_orm::entity::prelude::*;
-
-#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-#[sea_orm(table_name = "zone")]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Zone {
-    #[sea_orm(primary_key)]
     pub id: i32, // 고유 ID (기본 키)
 
     pub name: String, // 존 이름 (예: "example.com")

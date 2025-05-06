@@ -1,42 +1,30 @@
-use crate::database::{DatabaseDriver, Session, SESSION};
-use sea_orm::{DbBackend, FromQueryResult, JsonValue, Statement};
+use crate::database::DatabasePool;
+use mysql::prelude::*;
+use mysql::*;
 
-pub struct ApiService<'a> {
-    pub session: &'a Session,
+#[derive(Clone)]
+pub struct ApiService {
+    pub pool: DatabasePool,
 }
 
-impl<'a> ApiService<'a> {
-    pub async fn new() -> Self {
-        Self {
-            session: SESSION.get().unwrap(),
-        }
+impl ApiService {
+    pub fn new(pool: DatabasePool) -> Self {
+        Self { pool }
     }
 
-    pub async fn get_table_names(&self) -> Vec<String> {
-        match self.session.driver {
-            // DatabaseDriver::Mysql => self.get_table_names_mysql().await,
-            DatabaseDriver::Sqlite => self.get_table_names_sqlite().await,
-        }
-    }
-
-    // async fn get_table_names_mysql(&self) -> Vec<String> {}
-
-    async fn get_table_names_sqlite(&self) -> Vec<String> {
-        let tables = JsonValue::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            r#"SELECT name FROM sqlite_master;"#,
-            [],
-        ))
-        .all(&self.session.connection)
-        .await
-        .unwrap();
-
-        dbg!(&tables);
-
+    pub fn get_table_names(&self) -> Vec<String> {
         let mut table_names = Vec::new();
-        for table in &tables {
-            if let Some(name) = table.get("name").and_then(|v| v.as_str()) {
-                table_names.push(name.to_string());
+
+        let query = "SHOW TABLES";
+        let result = self
+            .pool
+            .get_connection()
+            .query_map(query, |row: Row| row.get::<String, usize>(0))
+            .unwrap();
+
+        for table_name in result {
+            if let Some(name) = table_name {
+                table_names.push(name);
             }
         }
 

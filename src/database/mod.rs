@@ -1,73 +1,36 @@
-use crate::env::get_env;
-use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use std::{sync::OnceLock, time::Duration};
+use mysql::*;
+// use std::sync::OnceLock;
 
-pub enum DatabaseDriver {
-    // Mysql,
-    Sqlite,
+#[derive(Clone)]
+pub struct DatabasePool {
+    pub pool: Pool,
 }
 
-impl DatabaseDriver {
-    fn from_str(driver: &str) -> Result<Self, String> {
-        match driver.to_lowercase().as_str() {
-            // "mysql" => Ok(DatabaseDriver::Mysql),
-            "sqlite" => Ok(DatabaseDriver::Sqlite),
-            _ => Err(format!("Unsupported database driver: {}", driver)),
-        }
+impl DatabasePool {
+    pub fn new(url: &String) -> Self {
+        let opts = Opts::from_url(&url).expect("Invalid database URL");
+
+        let pool = Pool::new(opts).expect("Failed to create database pool");
+
+        DatabasePool { pool }
+    }
+
+    pub fn get_connection(&self) -> PooledConn {
+        self.pool
+            .get_conn()
+            .expect("Failed to get connection from pool")
     }
 }
 
-pub struct Session {
-    pub driver: DatabaseDriver,
-    pub connection: DatabaseConnection,
-}
+// pub static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
 
-impl Session {
-    pub async fn new() -> Self {
-        let database_driver = get_env("DATABASE_DRIVER");
+// pub fn initialize() {
+//     let database_pool = DatabasePool::new();
 
-        match DatabaseDriver::from_str(&database_driver) {
-            Ok(driver) => {
-                match driver {
-                    // DatabaseDriver::Mysql => {
-                    //     println!("Initializing MySQL connection...");
-                    //     // Add your MySQL initialization code here
-                    // }
-                    DatabaseDriver::Sqlite => {
-                        let sqlite_path = get_env("SQLITE_PATH");
-
-                        println!("Initializing SQLite connection...");
-
-                        let mut opt = ConnectOptions::new(format!("sqlite://{}", sqlite_path));
-                        opt.max_connections(100)
-                            // .min_connections(5)
-                            .connect_timeout(Duration::from_secs(8))
-                            .acquire_timeout(Duration::from_secs(8))
-                            .idle_timeout(Duration::from_secs(8))
-                            // .max_lifetime(Duration::from_secs(8))
-                            .sqlx_logging(true);
-
-                        let connection = Database::connect(opt).await.unwrap();
-
-                        Session { driver, connection }
-                    }
-                }
-            }
-            Err(err) => {
-                panic!("{}", err);
-            }
-        }
-    }
-}
-
-pub static SESSION: OnceLock<Session> = OnceLock::new();
-
-pub async fn initialize() {
-    let session = Session::new().await;
-    match SESSION.set(session) {
-        Ok(_) => (),
-        Err(_) => {
-            panic!("Failed to initialize database session.");
-        }
-    }
-}
+//     match DATABASE_POOL.set(database_pool) {
+//         Ok(_) => (),
+//         Err(_) => {
+//             panic!("Failed to initialize database pool.");
+//         }
+//     }
+// }

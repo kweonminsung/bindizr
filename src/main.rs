@@ -7,9 +7,6 @@ async fn main() {
     // Load environment variables
     env::initialize();
 
-    // Initialize database session
-    database::initialize().await;
-
     // Initialize API server
     api::initialize().await;
 }

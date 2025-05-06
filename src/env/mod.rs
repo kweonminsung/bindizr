@@ -18,5 +18,8 @@ pub fn initialize() {
 }
 
 pub fn get_env(key: &str) -> String {
-    env::var(key).unwrap_or_else(|_| panic!("Env: {} not set", key))
+    match env::var(key) {
+        Ok(value) => value,
+        Err(_) => panic!("Environment variable {} not found", key),
+    }
 }

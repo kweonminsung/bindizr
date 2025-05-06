@@ -5,44 +5,42 @@ use hyper::{body::Bytes, Request, Response, StatusCode};
 use serde_json::json;
 use std::convert::Infallible;
 
-pub struct ApiController<'a> {
-    pub service: ApiService<'a>,
+pub struct ApiController {
+    pub service: ApiService,
 }
 
-impl<'a> ApiController<'a> {
-    pub async fn new() -> Self {
-        Self {
-            service: ApiService::new().await,
-        }
+impl ApiController {
+    pub fn new(service: ApiService) -> Self {
+        Self { service }
     }
 
-    pub async fn route(
+    pub fn route(
         &mut self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
         match (request.method(), request.uri().path()) {
             // (&hyper::Method::GET, "/") => self.get_home(request).await,
-            (&hyper::Method::GET, "/test") => self.test().await,
-            _ => self.not_found().await,
+            (&hyper::Method::GET, "/test") => self.test(),
+            _ => self.not_found(),
         }
     }
 
-    async fn get_home(
-        &self,
-        request: Request<hyper::body::Incoming>,
-    ) -> Result<Response<Full<Bytes>>, Infallible> {
-        dbg!(request);
+    // fn get_home(
+    //     &self,
+    //     request: Request<hyper::body::Incoming>,
+    // ) -> Result<Response<Full<Bytes>>, Infallible> {
+    //     dbg!(request);
 
-        utils::json_response(json!({ "msg": "hello world!" }), StatusCode::OK).await
+    //     utils::json_response(json!({ "msg": "hello world!" }), StatusCode::OK).await
+    // }
+
+    fn not_found(&self) -> Result<Response<Full<Bytes>>, Infallible> {
+        utils::json_response(json!({ "msg": "404 not found" }), StatusCode::NOT_FOUND)
     }
 
-    async fn not_found(&self) -> Result<Response<Full<Bytes>>, Infallible> {
-        utils::json_response(json!({ "msg": "404 not found" }), StatusCode::NOT_FOUND).await
-    }
+    fn test(&self) -> Result<Response<Full<Bytes>>, Infallible> {
+        let json_body = json!({ "result": self.service.get_table_names() });
 
-    async fn test(&self) -> Result<Response<Full<Bytes>>, Infallible> {
-        let json_body = json!({ "result": self.service.get_table_names().await });
-
-        utils::json_response(json_body, StatusCode::OK).await
+        utils::json_response(json_body, StatusCode::OK)
     }
 }
