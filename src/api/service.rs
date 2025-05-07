@@ -18,7 +18,7 @@ impl ApiService {
         let query = "SHOW TABLES";
         let result: Vec<String> = self.pool.get_connection().query(query).unwrap();
 
-        dbg!(&result);
+        // dbg!(&result);
 
         for row in result {
             table_names.push(row);
@@ -34,13 +34,10 @@ impl ApiService {
         let result: Vec<Zone> = self
             .pool
             .get_connection()
-            .query_map(query, |row: mysql::Row| {
-                dbg!(&row);
-                Zone::from_row(row)
-            })
+            .query_map(query, |row: mysql::Row| Zone::from_row(row))
             .unwrap();
 
-        dbg!(&result);
+        // dbg!(&result);
 
         for row in result {
             zones.push(row);
