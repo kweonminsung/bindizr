@@ -1,4 +1,4 @@
-mod model;
+pub mod model;
 
 use mysql::{prelude::Queryable, *};
 

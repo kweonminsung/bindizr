@@ -1,6 +1,7 @@
 mod api;
 mod database;
 mod env;
+mod parser;
 
 #[tokio::main]
 async fn main() {
