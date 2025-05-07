@@ -16,3 +16,18 @@ pub fn json_response(
         .body(Full::new(body))
         .unwrap())
 }
+
+pub fn get_query_param(
+    request: &hyper::Request<hyper::body::Incoming>,
+    key: &str,
+) -> Option<String> {
+    let query = request.uri().query()?;
+    let params: Vec<&str> = query.split('&').collect();
+    for param in params {
+        let pair: Vec<&str> = param.split('=').collect();
+        if pair.len() == 2 && pair[0] == key {
+            return Some(pair[1].to_string());
+        }
+    }
+    None
+}

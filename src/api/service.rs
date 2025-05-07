@@ -1,3 +1,4 @@
+use crate::database::model::zone::Zone;
 use crate::database::DatabasePool;
 use mysql::prelude::*;
 
@@ -24,5 +25,27 @@ impl ApiService {
         }
 
         table_names
+    }
+
+    pub fn get_zones(&self) -> Vec<Zone> {
+        let mut zones = Vec::new();
+
+        let query = "SELECT * FROM zones";
+        let result: Vec<Zone> = self
+            .pool
+            .get_connection()
+            .query_map(query, |row: mysql::Row| {
+                dbg!(&row);
+                Zone::from_row(row)
+            })
+            .unwrap();
+
+        dbg!(&result);
+
+        for row in result {
+            zones.push(row);
+        }
+
+        zones
     }
 }

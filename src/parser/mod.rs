@@ -2,7 +2,7 @@ use crate::database::model::{record::Record, record::RecordType, zone::Zone};
 use chrono::{DateTime, Utc};
 use std::fmt::Write;
 
-fn generate_zone_file(zone: &Zone, records: &[Record]) -> String {
+pub fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
     let mut output = String::new();
 
     // SOA 레코드

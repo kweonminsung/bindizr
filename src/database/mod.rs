@@ -1,4 +1,5 @@
 pub mod model;
+mod utils;
 
 use mysql::{prelude::Queryable, *};
 
@@ -23,17 +24,19 @@ impl DatabasePool {
 
         conn.query_drop(
             r#"
-            CREATE TABLE IF NOT EXISTS records (
+            CREATE TABLE IF NOT EXISTS zones (
                 id INT PRIMARY KEY AUTO_INCREMENT,
                 name VARCHAR(255) NOT NULL,
-                record_type VARCHAR(50) NOT NULL,
-                value TEXT NOT NULL,
+                primary_ns VARCHAR(255) NOT NULL,
+                admin_email VARCHAR(255) NOT NULL,
                 ttl INT NOT NULL,
-                priority INT,
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL,
-                zone_id INT NOT NULL,
-                FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+                serial INT NOT NULL,
+                refresh INT NOT NULL DEFAULT 86400,
+                retry INT NOT NULL DEFAULT 7200,
+                expire INT NOT NULL DEFAULT 3600000,
+                minimum_ttl INT NOT NULL DEFAULT 86400,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             );
         "#,
         )
@@ -41,13 +44,17 @@ impl DatabasePool {
 
         conn.query_drop(
             r#"
-            CREATE TABLE IF NOT EXISTS zones (
+            CREATE TABLE IF NOT EXISTS records (
                 id INT PRIMARY KEY AUTO_INCREMENT,
                 name VARCHAR(255) NOT NULL,
-                admin_email VARCHAR(255) NOT NULL,
+                record_type VARCHAR(50) NOT NULL,
+                value TEXT NOT NULL,
                 ttl INT NOT NULL,
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL
+                priority INT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                zone_id INT NOT NULL,
+                FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
             );
         "#,
         )

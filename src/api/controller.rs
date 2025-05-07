@@ -1,5 +1,6 @@
 use crate::api::service::ApiService;
 use crate::api::utils;
+use crate::parser::serialize_zone;
 use http_body_util::Full;
 use hyper::{body::Bytes, Request, Response, StatusCode};
 use serde_json::json;
@@ -21,6 +22,7 @@ impl ApiController {
         match (request.method(), request.uri().path()) {
             // (&hyper::Method::GET, "/") => self.get_home(request).await,
             (&hyper::Method::GET, "/test") => self.test(),
+            (&hyper::Method::GET, "/zones") => self.get_zones(request),
             _ => self.not_found(),
         }
     }
@@ -40,7 +42,29 @@ impl ApiController {
 
     fn test(&self) -> Result<Response<Full<Bytes>>, Infallible> {
         let json_body = json!({ "result": self.service.get_table_names() });
+        utils::json_response(json_body, StatusCode::OK)
+    }
 
+    fn get_zones(
+        &self,
+        request: Request<hyper::body::Incoming>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let zones = self.service.get_zones();
+
+        let render_query = utils::get_query_param(&request, "render");
+        if let Some(render) = render_query {
+            if render == "true" {
+                let zones_json = zones
+                    .iter()
+                    .map(|zone| serialize_zone(zone, &[]))
+                    .collect::<Vec<_>>();
+                let json_body = json!({ "result": zones_json });
+
+                return utils::json_response(json_body, StatusCode::OK);
+            }
+        }
+
+        let json_body = json!({ "result": zones });
         utils::json_response(json_body, StatusCode::OK)
     }
 }

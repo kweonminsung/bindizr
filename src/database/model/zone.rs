@@ -1,7 +1,9 @@
+use crate::database::utils;
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 
 // SOA 레코드의 기본 생성 및 NS 레코드의 기본 생성을 위한 구조체
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct Zone {
     pub id: i32,
 
@@ -26,4 +28,23 @@ pub struct Zone {
     pub created_at: DateTime<Utc>,
 
     pub updated_at: DateTime<Utc>,
+}
+
+impl Zone {
+    pub fn from_row(row: mysql::Row) -> Self {
+        Zone {
+            id: row.get("id").unwrap(),
+            name: row.get("name").unwrap(),
+            primary_ns: row.get("primary_ns").unwrap(),
+            admin_email: row.get("admin_email").unwrap(),
+            ttl: row.get("ttl").unwrap(),
+            serial: row.get("serial").unwrap(),
+            refresh: row.get("refresh").unwrap(),
+            retry: row.get("retry").unwrap(),
+            expire: row.get("expire").unwrap(),
+            minimum_ttl: row.get("minimum_ttl").unwrap(),
+            created_at: utils::parse_mysql_timestamp(&row.get::<String, _>("created_at").unwrap()),
+            updated_at: utils::parse_mysql_timestamp(&row.get::<String, _>("updated_at").unwrap()),
+        }
+    }
 }
