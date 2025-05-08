@@ -23,9 +23,14 @@ impl ApiController {
         let routes = vec![
             Route {
                 method: Method::GET,
-                path: "/test",
-                handler: Box::new(ApiController::test),
+                path: "/",
+                handler: Box::new(ApiController::get_home),
             },
+            // Route {
+            //     method: Method::GET,
+            //     path: "/test",
+            //     handler: Box::new(ApiController::test),
+            // },
             Route {
                 method: Method::GET,
                 path: "/zones",
@@ -35,6 +40,16 @@ impl ApiController {
                 method: Method::GET,
                 path: "/zones/:id",
                 handler: Box::new(ApiController::get_zone),
+            },
+            Route {
+                method: Method::GET,
+                path: "/records",
+                handler: Box::new(ApiController::get_records),
+            },
+            Route {
+                method: Method::GET,
+                path: "/records/:id",
+                handler: Box::new(ApiController::get_record),
             },
         ];
 
@@ -53,22 +68,22 @@ impl ApiController {
         utils::json_response(json_body, StatusCode::NOT_FOUND)
     }
 
-    // fn get_home(
-    //     &self,
-    //     request: Request<hyper::body::Incoming>,
-    // ) -> Result<Response<Full<Bytes>>, Infallible> {
-    //     dbg!(request);
-
-    //     utils::json_response(json!({ "msg": "hello world!" }), StatusCode::OK).await
-    // }
-
-    fn test(
+    fn get_home(
         &self,
-        _request: Request<hyper::body::Incoming>,
+        request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
-        let json_body = json!({ "result": self.service.get_table_names() });
-        utils::json_response(json_body, StatusCode::OK)
+        dbg!(request);
+
+        utils::json_response(json!({ "msg": "hello world!" }), StatusCode::OK)
     }
+
+    // fn test(
+    //     &self,
+    //     _request: Request<hyper::body::Incoming>,
+    // ) -> Result<Response<Full<Bytes>>, Infallible> {
+    //     let json_body = json!({ "result": self.service.get_table_names() });
+    //     utils::json_response(json_body, StatusCode::OK)
+    // }
 
     fn get_zones(
         &self,
@@ -102,6 +117,33 @@ impl ApiController {
         let zone = self.service.get_zone(zone_id.parse::<i32>().unwrap());
 
         let json_body = json!({ "result": zone });
+        utils::json_response(json_body, StatusCode::OK)
+    }
+
+    fn get_records(
+        &self,
+        request: Request<hyper::body::Incoming>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let zone_id = utils::get_query(&request, "zone_id");
+
+        let records = match zone_id {
+            Some(id) => self.service.get_records(Some(id.parse::<i32>().unwrap())),
+            _ => self.service.get_records(None),
+        };
+
+        let json_body = json!({ "result": records });
+        utils::json_response(json_body, StatusCode::OK)
+    }
+
+    fn get_record(
+        &self,
+        request: Request<hyper::body::Incoming>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let record_id = utils::get_param(&request, "/records/:id", "id").unwrap();
+
+        let record = self.service.get_record(record_id.parse::<i32>().unwrap());
+
+        let json_body = json!({ "result": record });
         utils::json_response(json_body, StatusCode::OK)
     }
 }

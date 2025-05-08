@@ -28,7 +28,7 @@ impl Record {
         Record {
             id: row.get("id").unwrap(),
             name: row.get("name").unwrap(),
-            record_type: RecordType::from_str(&row.get::<String, _>("type").unwrap()),
+            record_type: RecordType::from_str(&row.get::<String, _>("record_type").unwrap()),
             value: row.get("value").unwrap(),
             ttl: row.get("ttl").unwrap(),
             priority: row.get("priority").unwrap(),
