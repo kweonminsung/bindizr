@@ -2,7 +2,7 @@ use crate::database::utils;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub struct Record {
     pub id: i32,
 
@@ -39,7 +39,7 @@ impl Record {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub enum RecordType {
     A,
     AAAA,

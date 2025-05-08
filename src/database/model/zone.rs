@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 // SOA 레코드의 기본 생성 및 NS 레코드의 기본 생성을 위한 구조체
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub struct Zone {
     pub id: i32,
 

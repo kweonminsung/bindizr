@@ -45,4 +45,17 @@ impl ApiService {
 
         zones
     }
+
+    pub fn get_zone(&self, zone_id: i32) -> Zone {
+        let query = format!("SELECT * FROM zones WHERE id = {}", zone_id);
+        let result: Vec<Zone> = self
+            .pool
+            .get_connection()
+            .query_map(query, |row: mysql::Row| Zone::from_row(row))
+            .unwrap();
+
+        // dbg!(&result);
+
+        result[0].clone()
+    }
 }

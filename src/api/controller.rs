@@ -99,7 +99,9 @@ impl ApiController {
     ) -> Result<Response<Full<Bytes>>, Infallible> {
         let zone_id = utils::get_param(&request, "/zones/:id", "id").unwrap();
 
-        let json_body = json!({ "result": zone_id });
+        let zone = self.service.get_zone(zone_id.parse::<i32>().unwrap());
+
+        let json_body = json!({ "result": zone });
         utils::json_response(json_body, StatusCode::OK)
     }
 }
