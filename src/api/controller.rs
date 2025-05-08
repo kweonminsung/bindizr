@@ -1,8 +1,9 @@
 use crate::api::service::ApiService;
 use crate::api::utils;
 use crate::parser::serialize_zone;
+
 use http_body_util::Full;
-use hyper::{body::Bytes, Request, Response, StatusCode};
+use hyper::{body::Bytes, Method, Request, Response, StatusCode};
 use serde_json::json;
 use std::convert::Infallible;
 
@@ -19,12 +20,37 @@ impl ApiController {
         &mut self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
-        match (request.method(), request.uri().path()) {
-            // (&hyper::Method::GET, "/") => self.get_home(request).await,
-            (&hyper::Method::GET, "/test") => self.test(),
-            (&hyper::Method::GET, "/zones") => self.get_zones(request),
-            _ => self.not_found(),
+        let routes = vec![
+            Route {
+                method: Method::GET,
+                path: "/test",
+                handler: Box::new(ApiController::test),
+            },
+            Route {
+                method: Method::GET,
+                path: "/zones",
+                handler: Box::new(ApiController::get_zones),
+            },
+            Route {
+                method: Method::GET,
+                path: "/zones/:id",
+                handler: Box::new(ApiController::get_zone),
+            },
+        ];
+
+        for route in routes {
+            if request.method() == route.method
+                && utils::match_path(request.uri().path(), route.path)
+            {
+                return (route.handler)(self, request);
+            }
         }
+        self.not_found()
+    }
+
+    fn not_found(&self) -> Result<Response<Full<Bytes>>, Infallible> {
+        let json_body = json!({ "error": "Not Found" });
+        utils::json_response(json_body, StatusCode::NOT_FOUND)
     }
 
     // fn get_home(
@@ -36,11 +62,10 @@ impl ApiController {
     //     utils::json_response(json!({ "msg": "hello world!" }), StatusCode::OK).await
     // }
 
-    fn not_found(&self) -> Result<Response<Full<Bytes>>, Infallible> {
-        utils::json_response(json!({ "msg": "404 not found" }), StatusCode::NOT_FOUND)
-    }
-
-    fn test(&self) -> Result<Response<Full<Bytes>>, Infallible> {
+    fn test(
+        &self,
+        _request: Request<hyper::body::Incoming>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
         let json_body = json!({ "result": self.service.get_table_names() });
         utils::json_response(json_body, StatusCode::OK)
     }
@@ -51,7 +76,7 @@ impl ApiController {
     ) -> Result<Response<Full<Bytes>>, Infallible> {
         let zones = self.service.get_zones();
 
-        let render_query = utils::get_query_param(&request, "render");
+        let render_query = utils::get_query(&request, "render");
         if let Some(render) = render_query {
             if render == "true" {
                 let zones_json = zones
@@ -67,4 +92,27 @@ impl ApiController {
         let json_body = json!({ "result": zones });
         utils::json_response(json_body, StatusCode::OK)
     }
+
+    fn get_zone(
+        &self,
+        request: Request<hyper::body::Incoming>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let zone_id = utils::get_param(&request, "/zones/:id", "id").unwrap();
+
+        let json_body = json!({ "result": zone_id });
+        utils::json_response(json_body, StatusCode::OK)
+    }
+}
+
+pub struct Route {
+    pub method: Method,
+    pub path: &'static str,
+    pub handler: Box<
+        dyn Fn(
+                &ApiController,
+                Request<hyper::body::Incoming>,
+            ) -> Result<Response<Full<Bytes>>, Infallible>
+            + Send
+            + Sync,
+    >,
 }
