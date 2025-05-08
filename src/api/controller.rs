@@ -87,24 +87,11 @@ impl ApiController {
 
     fn get_zones(
         &self,
-        request: Request<hyper::body::Incoming>,
+        _request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
         let zones = self.service.get_zones();
 
-        let render_query = utils::get_query(&request, "render");
-        if let Some(render) = render_query {
-            if render == "true" {
-                let zones_json = zones
-                    .iter()
-                    .map(|zone| serialize_zone(zone, &[]))
-                    .collect::<Vec<_>>();
-                let json_body = json!({ "result": zones_json });
-
-                return utils::json_response(json_body, StatusCode::OK);
-            }
-        }
-
-        let json_body = json!({ "result": zones });
+        let json_body = json!({ "zones": zones });
         utils::json_response(json_body, StatusCode::OK)
     }
 
@@ -112,11 +99,28 @@ impl ApiController {
         &self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
-        let zone_id = utils::get_param(&request, "/zones/:id", "id").unwrap();
+        let zone_id = match utils::get_param::<i32>(&request, "/zones/:id", "id") {
+            Some(id) => id,
+            None => {
+                let json_body = json!({ "error": "Invalid or missing zone_id" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+        let records_query = utils::get_query::<bool>(&request, "records");
+        let render_query = utils::get_query::<bool>(&request, "render");
 
-        let zone = self.service.get_zone(zone_id.parse::<i32>().unwrap());
+        let zone = self.service.get_zone(zone_id);
 
-        let json_body = json!({ "result": zone });
+        let records = match records_query {
+            Some(true) => self.service.get_records(Some(zone_id)),
+            _ => vec![],
+        };
+
+        if let Some(true) = render_query {
+            let zone_str = serialize_zone(&zone, &records);
+            return utils::json_response(json!({ "result": zone_str }), StatusCode::OK);
+        }
+        let json_body = json!({ "zone": zone, "records": records });
         utils::json_response(json_body, StatusCode::OK)
     }
 
@@ -124,14 +128,14 @@ impl ApiController {
         &self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
-        let zone_id = utils::get_query(&request, "zone_id");
+        let zone_id = utils::get_query::<i32>(&request, "zone_id");
 
         let records = match zone_id {
-            Some(id) => self.service.get_records(Some(id.parse::<i32>().unwrap())),
-            _ => self.service.get_records(None),
+            Some(id) => self.service.get_records(Some(id)),
+            None => self.service.get_records(None),
         };
 
-        let json_body = json!({ "result": records });
+        let json_body = json!({ "records": records });
         utils::json_response(json_body, StatusCode::OK)
     }
 
@@ -139,11 +143,17 @@ impl ApiController {
         &self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
-        let record_id = utils::get_param(&request, "/records/:id", "id").unwrap();
+        let record_id = match utils::get_param::<i32>(&request, "/records/:id", "id") {
+            Some(id) => id,
+            None => {
+                let json_body = json!({ "error": "Invalid or missing record_id" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
 
-        let record = self.service.get_record(record_id.parse::<i32>().unwrap());
+        let record = self.service.get_record(record_id);
 
-        let json_body = json!({ "result": record });
+        let json_body = json!({ "record": record });
         utils::json_response(json_body, StatusCode::OK)
     }
 }
