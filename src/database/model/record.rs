@@ -23,6 +23,22 @@ pub struct Record {
     pub zone_id: i32,
 }
 
+impl Record {
+    pub fn from_row(row: mysql::Row) -> Self {
+        Record {
+            id: row.get("id").unwrap(),
+            name: row.get("name").unwrap(),
+            record_type: RecordType::from_str(&row.get::<String, _>("type").unwrap()),
+            value: row.get("value").unwrap(),
+            ttl: row.get("ttl").unwrap(),
+            priority: row.get("priority").unwrap(),
+            created_at: utils::parse_mysql_timestamp(&row.get::<String, _>("created_at").unwrap()),
+            updated_at: utils::parse_mysql_timestamp(&row.get::<String, _>("updated_at").unwrap()),
+            zone_id: row.get("zone_id").unwrap(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Serialize)]
 pub enum RecordType {
     A,
@@ -34,4 +50,21 @@ pub enum RecordType {
     SOA,
     SRV,
     PTR,
+}
+
+impl RecordType {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "A" => RecordType::A,
+            "AAAA" => RecordType::AAAA,
+            "CNAME" => RecordType::CNAME,
+            "MX" => RecordType::MX,
+            "TXT" => RecordType::TXT,
+            "NS" => RecordType::NS,
+            "SOA" => RecordType::SOA,
+            "SRV" => RecordType::SRV,
+            "PTR" => RecordType::PTR,
+            _ => panic!("Unknown record type: {}", s),
+        }
+    }
 }

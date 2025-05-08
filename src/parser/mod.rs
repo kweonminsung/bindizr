@@ -1,5 +1,4 @@
 use crate::database::model::{record::Record, record::RecordType, zone::Zone};
-use chrono::{DateTime, Utc};
 use std::fmt::Write;
 
 pub fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
