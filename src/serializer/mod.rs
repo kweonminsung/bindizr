@@ -5,7 +5,6 @@ use lazy_static::lazy_static;
 use mysql::prelude::*;
 use std::fmt::Write;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
 use std::thread;
 
 pub fn initialize() {

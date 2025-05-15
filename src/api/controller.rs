@@ -1,55 +1,50 @@
-use crate::api::service::ApiService;
 use crate::api::utils;
 use crate::serializer::Serializer;
 
+use crate::api::service::ApiService;
 use http_body_util::Full;
 use hyper::{body::Bytes, Method, Request, Response, StatusCode};
 use serde_json::json;
 use std::convert::Infallible;
 
-pub struct ApiController {
-    pub service: ApiService,
-}
+use super::service::DATABASE_POOL;
+
+pub struct ApiController;
 
 impl ApiController {
-    pub fn new(service: ApiService) -> Self {
-        Self { service }
-    }
-
     pub fn route(
-        &mut self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
         let routes = vec![
             Route {
                 method: Method::GET,
                 path: "/",
-                handler: Box::new(ApiController::get_home),
+                handler: ApiController::get_home,
             },
             // Route {
             //     method: Method::GET,
             //     path: "/test",
-            //     handler: Box::new(ApiController::test),
+            //     handler: ApiController::test,
             // },
             Route {
                 method: Method::GET,
                 path: "/zones",
-                handler: Box::new(ApiController::get_zones),
+                handler: ApiController::get_zones,
             },
             Route {
                 method: Method::GET,
                 path: "/zones/:id",
-                handler: Box::new(ApiController::get_zone),
+                handler: ApiController::get_zone,
             },
             Route {
                 method: Method::GET,
                 path: "/records",
-                handler: Box::new(ApiController::get_records),
+                handler: ApiController::get_records,
             },
             Route {
                 method: Method::GET,
                 path: "/records/:id",
-                handler: Box::new(ApiController::get_record),
+                handler: ApiController::get_record,
             },
         ];
 
@@ -57,19 +52,18 @@ impl ApiController {
             if request.method() == route.method
                 && utils::match_path(request.uri().path(), route.path)
             {
-                return (route.handler)(self, request);
+                return (route.handler)(request);
             }
         }
-        self.not_found()
+        ApiController::not_found()
     }
 
-    fn not_found(&self) -> Result<Response<Full<Bytes>>, Infallible> {
+    fn not_found() -> Result<Response<Full<Bytes>>, Infallible> {
         let json_body = json!({ "error": "Not Found" });
         utils::json_response(json_body, StatusCode::NOT_FOUND)
     }
 
     fn get_home(
-        &self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
         dbg!(request);
@@ -81,22 +75,20 @@ impl ApiController {
     //     &self,
     //     _request: Request<hyper::body::Incoming>,
     // ) -> Result<Response<Full<Bytes>>, Infallible> {
-    //     let json_body = json!({ "result": self.service.get_table_names() });
+    //     let json_body = json!({ "result": API_SERVICE.get_table_names() });
     //     utils::json_response(json_body, StatusCode::OK)
     // }
 
     fn get_zones(
-        &self,
         _request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
-        let zones = self.service.get_zones();
+        let zones = ApiService::get_zones(&DATABASE_POOL);
 
         let json_body = json!({ "zones": zones });
         utils::json_response(json_body, StatusCode::OK)
     }
 
     fn get_zone(
-        &self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
         let zone_id = match utils::get_param::<i32>(&request, "/zones/:id", "id") {
@@ -109,10 +101,10 @@ impl ApiController {
         let records_query = utils::get_query::<bool>(&request, "records");
         let render_query = utils::get_query::<bool>(&request, "render");
 
-        let zone = self.service.get_zone(zone_id);
+        let zone = ApiService::get_zone(&DATABASE_POOL, zone_id);
 
         let records = match records_query {
-            Some(true) => self.service.get_records(Some(zone_id)),
+            Some(true) => ApiService::get_records(&DATABASE_POOL, Some(zone_id)),
             _ => vec![],
         };
 
@@ -125,14 +117,13 @@ impl ApiController {
     }
 
     fn get_records(
-        &self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
         let zone_id = utils::get_query::<i32>(&request, "zone_id");
 
         let records = match zone_id {
-            Some(id) => self.service.get_records(Some(id)),
-            None => self.service.get_records(None),
+            Some(id) => ApiService::get_records(&DATABASE_POOL, Some(id)),
+            None => ApiService::get_records(&DATABASE_POOL, None),
         };
 
         let json_body = json!({ "records": records });
@@ -140,7 +131,6 @@ impl ApiController {
     }
 
     fn get_record(
-        &self,
         request: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
         let record_id = match utils::get_param::<i32>(&request, "/records/:id", "id") {
@@ -151,7 +141,7 @@ impl ApiController {
             }
         };
 
-        let record = self.service.get_record(record_id);
+        let record = ApiService::get_record(&DATABASE_POOL, record_id);
 
         let json_body = json!({ "record": record });
         utils::json_response(json_body, StatusCode::OK)
@@ -161,12 +151,5 @@ impl ApiController {
 pub struct Route {
     pub method: Method,
     pub path: &'static str,
-    pub handler: Box<
-        dyn Fn(
-                &ApiController,
-                Request<hyper::body::Incoming>,
-            ) -> Result<Response<Full<Bytes>>, Infallible>
-            + Send
-            + Sync,
-    >,
+    pub handler: fn(Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>, Infallible>,
 }
