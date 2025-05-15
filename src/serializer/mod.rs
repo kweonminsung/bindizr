@@ -1,8 +1,11 @@
 use crate::database::model::{record::Record, record::RecordType, zone::Zone};
-// use crate::env::get_env;
+use crate::database::DatabasePool;
+use crate::env::get_env;
 use lazy_static::lazy_static;
+use mysql::prelude::*;
 use std::fmt::Write;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 
 pub fn initialize() {
@@ -18,23 +21,42 @@ impl Serializer {
         let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
 
         // 데몬 스레드 시작
-        thread::spawn(move || loop {
-            match rx.recv() {
-                Ok(message) => {
-                    match message.as_str() {
-                        "initialize" => {
-                            println!("Serializer initialized");
-                        }
-                        "overwrite" => {}
-                        "exit" => {
-                            break; // 스레드 종료
-                        }
-                        _ => {
-                            println!("Received unexpected message: {}", message);
+        thread::spawn(move || {
+            let database_url = get_env("DATABASE_URL");
+            let database_pool = DatabasePool::new(&database_url);
+
+            loop {
+                match rx.recv() {
+                    Ok(message) => {
+                        match message.as_str() {
+                            "initialize" => {
+                                println!("Serializer initialized");
+                            }
+                            "overwrite" => {
+                                let zones = Serializer::get_zones(&database_pool);
+
+                                for zone in zones {
+                                    let records =
+                                        Serializer::get_records(&database_pool, Some(zone.id));
+                                    let serialized_data =
+                                        Serializer::serialize_zone(&zone, &records);
+
+                                    // println!(
+                                    //     "Serialized data for zone {}: {}",
+                                    //     zone.name, serialized_data
+                                    // );
+                                }
+                            }
+                            "exit" => {
+                                break; // 스레드 종료
+                            }
+                            _ => {
+                                println!("Received unexpected message: {}", message);
+                            }
                         }
                     }
+                    Err(_) => {}
                 }
-                Err(_) => {}
             }
         });
 
@@ -45,6 +67,24 @@ impl Serializer {
         if let Err(e) = self.tx.send(message) {
             eprintln!("error sending message: {}", e);
         }
+    }
+
+    fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
+        let query = "SELECT * FROM zones";
+        pool.get_connection()
+            .query_map(query, |row: mysql::Row| Zone::from_row(row))
+            .unwrap_or_else(|_| Vec::new())
+    }
+
+    fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Vec<Record> {
+        let query = match zone_id {
+            Some(id) => format!("SELECT * FROM records WHERE zone_id = {}", id),
+            None => "SELECT * FROM records".to_string(),
+        };
+
+        pool.get_connection()
+            .query_map(query, |row: mysql::Row| Record::from_row(row))
+            .unwrap_or_else(|_| Vec::new())
     }
 
     pub fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
