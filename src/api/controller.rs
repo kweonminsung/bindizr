@@ -1,6 +1,6 @@
 use crate::api::service::ApiService;
 use crate::api::utils;
-use crate::parser::serialize_zone;
+use crate::serializer::Serializer;
 
 use http_body_util::Full;
 use hyper::{body::Bytes, Method, Request, Response, StatusCode};
@@ -117,7 +117,7 @@ impl ApiController {
         };
 
         if let Some(true) = render_query {
-            let zone_str = serialize_zone(&zone, &records);
+            let zone_str = Serializer::serialize_zone(&zone, &records);
             return utils::json_response(json!({ "result": zone_str }), StatusCode::OK);
         }
         let json_body = json!({ "zone": zone, "records": records });
