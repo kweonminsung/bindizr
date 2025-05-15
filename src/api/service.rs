@@ -1,6 +1,5 @@
 use crate::database::model::{record::Record, zone::Zone};
 use crate::database::DatabasePool;
-use lazy_static::lazy_static;
 use mysql::prelude::*;
 
 #[derive(Clone)]
@@ -51,11 +50,4 @@ impl ApiService {
             .next()
             .expect("Record not found")
     }
-}
-
-lazy_static! {
-    pub static ref DATABASE_POOL: DatabasePool = {
-        let database_url = crate::env::get_env("DATABASE_URL");
-        DatabasePool::new(&database_url)
-    };
 }

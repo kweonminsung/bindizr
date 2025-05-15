@@ -1,13 +1,11 @@
-use crate::api::utils;
 use crate::serializer::Serializer;
+use crate::{api::utils, database::DATABASE_POOL};
 
 use crate::api::service::ApiService;
 use http_body_util::Full;
 use hyper::{body::Bytes, Method, Request, Response, StatusCode};
 use serde_json::json;
 use std::convert::Infallible;
-
-use super::service::DATABASE_POOL;
 
 pub struct ApiController;
 

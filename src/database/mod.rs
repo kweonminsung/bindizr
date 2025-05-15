@@ -1,6 +1,7 @@
 pub mod model;
 mod utils;
 
+use lazy_static::lazy_static;
 use mysql::{prelude::Queryable, *};
 
 #[derive(Clone)]
@@ -66,4 +67,11 @@ impl DatabasePool {
             .get_conn()
             .expect("Failed to get connection from pool")
     }
+}
+
+lazy_static! {
+    pub static ref DATABASE_POOL: DatabasePool = {
+        let database_url = crate::env::get_env("DATABASE_URL");
+        DatabasePool::new(&database_url)
+    };
 }

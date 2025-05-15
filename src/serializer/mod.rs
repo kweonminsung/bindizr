@@ -1,6 +1,5 @@
 use crate::database::model::{record::Record, record::RecordType, zone::Zone};
-use crate::database::DatabasePool;
-use crate::env::get_env;
+use crate::database::{DatabasePool, DATABASE_POOL};
 use lazy_static::lazy_static;
 use mysql::prelude::*;
 use std::fmt::Write;
@@ -21,9 +20,6 @@ impl Serializer {
 
         // 데몬 스레드 시작
         thread::spawn(move || {
-            let database_url = get_env("DATABASE_URL");
-            let database_pool = DatabasePool::new(&database_url);
-
             loop {
                 match rx.recv() {
                     Ok(message) => {
@@ -32,11 +28,11 @@ impl Serializer {
                                 println!("Serializer initialized");
                             }
                             "overwrite" => {
-                                let zones = Serializer::get_zones(&database_pool);
+                                let zones = Serializer::get_zones(&DATABASE_POOL);
 
                                 for zone in zones {
                                     let records =
-                                        Serializer::get_records(&database_pool, Some(zone.id));
+                                        Serializer::get_records(&DATABASE_POOL, Some(zone.id));
                                     let serialized_data =
                                         Serializer::serialize_zone(&zone, &records);
 
