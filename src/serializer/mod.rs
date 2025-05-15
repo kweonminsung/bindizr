@@ -1,13 +1,16 @@
 use crate::database::model::{record::Record, record::RecordType, zone::Zone};
 use crate::database::{DatabasePool, DATABASE_POOL};
+use crate::env::get_env;
 use lazy_static::lazy_static;
 use mysql::prelude::*;
 use std::fmt::Write;
+use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
 pub fn initialize() {
     SERIALIZER.mpsc_send("initialize".to_string());
+    // SERIALIZER.mpsc_send("write_config".to_string());
 }
 
 pub struct Serializer {
@@ -18,40 +21,22 @@ impl Serializer {
     pub fn new() -> Self {
         let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
 
-        // 데몬 스레드 시작
-        thread::spawn(move || {
-            loop {
-                match rx.recv() {
-                    Ok(message) => {
-                        match message.as_str() {
-                            "initialize" => {
-                                println!("Serializer initialized");
-                            }
-                            "overwrite" => {
-                                let zones = Serializer::get_zones(&DATABASE_POOL);
-
-                                for zone in zones {
-                                    let records =
-                                        Serializer::get_records(&DATABASE_POOL, Some(zone.id));
-                                    let serialized_data =
-                                        Serializer::serialize_zone(&zone, &records);
-
-                                    // println!(
-                                    //     "Serialized data for zone {}: {}",
-                                    //     zone.name, serialized_data
-                                    // );
-                                }
-                            }
-                            "exit" => {
-                                break; // 스레드 종료
-                            }
-                            _ => {
-                                println!("Received unexpected message: {}", message);
-                            }
-                        }
+        thread::spawn(move || loop {
+            match rx.recv() {
+                Ok(message) => match message.as_str() {
+                    "initialize" => {
+                        println!("Serializer initialized");
                     }
-                    Err(_) => {}
-                }
+                    "write_config" => Serializer::write_config(),
+                    "exit" => {
+                        println!("Exiting serializer thread");
+                        break;
+                    }
+                    _ => {
+                        println!("Received unsupported message: {}", message);
+                    }
+                },
+                Err(_) => {}
             }
         });
 
@@ -61,6 +46,42 @@ impl Serializer {
     pub fn mpsc_send(&self, message: String) {
         if let Err(e) = self.tx.send(message) {
             eprintln!("error sending message: {}", e);
+        }
+    }
+
+    fn write_config() {
+        let zones = Serializer::get_zones(&DATABASE_POOL);
+
+        let bind_config_path_env = get_env("BIND_CONFIG_PATH");
+        let bind_config_path = Path::new(&bind_config_path_env);
+        if !bind_config_path.is_dir() {
+            eprintln!(
+                "Bind config path is not a directory: {}",
+                bind_config_path_env
+            );
+            return;
+        }
+        if !bind_config_path.exists() {
+            eprintln!("Bind config path does not exist: {}", bind_config_path_env);
+            return;
+        }
+
+        std::fs::remove_dir_all(&bind_config_path).unwrap_or_else(|_| {
+            eprintln!("Failed to remove directory: {}", bind_config_path.display());
+        });
+
+        std::fs::create_dir_all(&bind_config_path).unwrap_or_else(|_| {
+            eprintln!("Failed to create directory: {}", bind_config_path.display());
+        });
+
+        for zone in zones {
+            let records = Serializer::get_records(&DATABASE_POOL, Some(zone.id));
+            let serialized_data = Serializer::serialize_zone(&zone, &records);
+
+            let file_path = format!("{}/{}.zone", bind_config_path.display(), zone.name);
+            std::fs::write(file_path, serialized_data).unwrap_or_else(|_| {
+                eprintln!("Failed to write to file: {}", zone.name);
+            });
         }
     }
 
@@ -89,8 +110,9 @@ impl Serializer {
         writeln!(
             &mut output,
             r#"
+; Automatically generated zone file
 $TTL {}
-{}   IN  SOA {} {} (
+{}.   IN  SOA {} {} (
         {} ; serial
         {} ; refresh
         {} ; retry
