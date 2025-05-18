@@ -24,4 +24,5 @@ Run apt-get update && apt-get install -y \
     sudo
 
 rndc-confgen > /etc/rndc.conf
+rndc-confgen -A hmac-sha224
 ```
