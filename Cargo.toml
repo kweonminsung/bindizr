@@ -14,4 +14,4 @@ dotenvy = "0.15"
 lazy_static = "1.4"
 chrono = { version = "0.4", features = ["serde"] }
 mysql = "26.0.0"
-rndc = "=0.1.0"
+rndc = "0.1.1"

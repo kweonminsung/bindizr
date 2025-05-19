@@ -1,5 +1,6 @@
 use crate::database::model::{record::Record, zone::Zone};
 use crate::database::DatabasePool;
+use crate::rndc::RNDC_CLIENT;
 use mysql::prelude::*;
 
 #[derive(Clone)]
@@ -49,5 +50,17 @@ impl ApiService {
             .into_iter()
             .next()
             .expect("Record not found")
+    }
+
+    pub fn get_dns_status() -> String {
+        let rndc_client = &RNDC_CLIENT;
+
+        let res = rndc_client.rndc_command("status").unwrap();
+
+        if !res.result {
+            println!("Error: {}", res.err.unwrap_or_default());
+        }
+
+        res.text.unwrap()
     }
 }

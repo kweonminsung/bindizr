@@ -44,6 +44,11 @@ impl ApiController {
                 path: "/records/:id",
                 handler: ApiController::get_record,
             },
+            Route {
+                method: Method::GET,
+                path: "/dns/status",
+                handler: ApiController::get_dns_status,
+            },
         ];
 
         for route in routes {
@@ -142,6 +147,15 @@ impl ApiController {
         let record = ApiService::get_record(&DATABASE_POOL, record_id);
 
         let json_body = json!({ "record": record });
+        utils::json_response(json_body, StatusCode::OK)
+    }
+
+    fn get_dns_status(
+        _request: Request<hyper::body::Incoming>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let status = ApiService::get_dns_status();
+
+        let json_body = json!({ "status": status  });
         utils::json_response(json_body, StatusCode::OK)
     }
 }

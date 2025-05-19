@@ -6,6 +6,7 @@ lazy_static! {
         let server_url = crate::env::get_env("RNDC_SERVER_URL");
         let algorithm = crate::env::get_env("RNDC_ALGORITHM");
         let secret_key = crate::env::get_env("RNDC_SECRET_KEY");
+
         RndcClient::new(&server_url, &algorithm, &secret_key)
     };
 }
