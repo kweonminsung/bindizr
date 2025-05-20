@@ -1,7 +1,11 @@
 use std::convert::Infallible;
 
-use http_body_util::Full;
-use hyper::{body::Bytes, Response, StatusCode};
+use http_body_util::{BodyExt, Full};
+use hyper::{
+    body::{Buf, Bytes},
+    Response, StatusCode,
+};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 pub fn match_path(request_path: &str, route_path: &str) -> bool {
@@ -77,4 +81,20 @@ where
         }
     }
     None
+}
+
+pub async fn get_body<T>(request: hyper::Request<hyper::body::Incoming>) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    let whole_body = request
+        .collect()
+        .await
+        .map_err(|e| format!("Failed to collect body: {}", e))?
+        .aggregate();
+
+    let data = serde_json::from_reader(whole_body.reader())
+        .map_err(|e| format!("Failed to parse JSON: {}", e));
+
+    data
 }

@@ -1,4 +1,5 @@
 mod controller;
+mod dto;
 mod service;
 mod utils;
 
@@ -24,10 +25,7 @@ pub async fn initialize() {
 
         tokio::task::spawn(async move {
             if let Err(err) = http1::Builder::new()
-                .serve_connection(
-                    io,
-                    service_fn(|req| async move { ApiController::route(req) }),
-                )
+                .serve_connection(io, service_fn(ApiController::route))
                 .await
             {
                 eprintln!("Error serving connection: {:?}", err);

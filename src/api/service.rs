@@ -7,12 +7,12 @@ use mysql::prelude::*;
 pub struct ApiService;
 
 impl ApiService {
-    pub fn get_table_names(pool: &DatabasePool) -> Vec<String> {
-        let query = "SHOW TABLES";
-        pool.get_connection()
-            .query(query)
-            .unwrap_or_else(|_| Vec::new())
-    }
+    // pub fn get_table_names(pool: &DatabasePool) -> Vec<String> {
+    //     let query = "SHOW TABLES";
+    //     pool.get_connection()
+    //         .query(query)
+    //         .unwrap_or_else(|_| Vec::new())
+    // }
 
     pub fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
         let query = "SELECT * FROM zones";
@@ -50,6 +50,19 @@ impl ApiService {
             .into_iter()
             .next()
             .expect("Record not found")
+    }
+
+    pub fn create_record(pool: &DatabasePool, record: Record) -> Result<(), String> {
+        // let query = format!(
+        //     "INSERT INTO records (zone_id, name, type, content, ttl) VALUES ({}, '{}', '{}', '{}', {})",
+        //     record.zone_id, record.name, record.type_, record.content, record.ttl
+        // );
+
+        // pool.get_connection()
+        //     .query_drop(query)
+        //     .map_err(|e| format!("Failed to create record: {}", e))
+
+        Ok(())
     }
 
     pub fn get_dns_status() -> String {
