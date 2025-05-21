@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CreateRecordRequest {
-    name: String,
-    record_type: String,
-    value: String,
-    ttl: i32,
-    priority: Option<i32>,
-    zone_id: i32,
+    pub name: String,
+    pub record_type: String,
+    pub value: String,
+    pub ttl: i32,
+    pub priority: Option<i32>,
+    pub zone_id: i32,
 }

@@ -1,14 +1,11 @@
+use super::dto::CreateRecordRequest;
+use crate::api::service::ApiService;
 use crate::serializer::Serializer;
 use crate::{api::utils, database::DATABASE_POOL};
-
-use crate::api::service::ApiService;
 use http_body_util::Full;
 use hyper::{body::Bytes, Method, Request, Response, StatusCode};
-
 use serde_json::json;
 use std::convert::Infallible;
-
-use super::dto::CreateRecordRequest;
 
 type RequestBody = hyper::body::Incoming;
 
@@ -169,6 +166,8 @@ impl ApiController {
         let body = utils::get_body::<CreateRecordRequest>(request)
             .await
             .unwrap();
+
+        let record = ApiService::create_record(&DATABASE_POOL, &body);
 
         let json_body = json!({ "body": body });
 

@@ -1,7 +1,10 @@
+use crate::database::model::record::{self, RecordType};
 use crate::database::model::{record::Record, zone::Zone};
 use crate::database::DatabasePool;
 use crate::rndc::RNDC_CLIENT;
 use mysql::prelude::*;
+
+use super::dto::CreateRecordRequest;
 
 #[derive(Clone)]
 pub struct ApiService;
@@ -15,55 +18,82 @@ impl ApiService {
     // }
 
     pub fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
-        let query = "SELECT * FROM zones";
-        pool.get_connection()
-            .query_map(query, |row: mysql::Row| Zone::from_row(row))
+        let mut conn = pool.get_connection();
+
+        conn.exec_map("SELECT * FROM zones", (), |row| Zone::from_row(row))
             .unwrap_or_else(|_| Vec::new())
     }
 
     pub fn get_zone(pool: &DatabasePool, zone_id: i32) -> Zone {
-        let query = format!("SELECT * FROM zones WHERE id = {}", zone_id);
-        pool.get_connection()
-            .query_map(query, |row: mysql::Row| Zone::from_row(row))
-            .unwrap_or_else(|_| Vec::new())
-            .into_iter()
-            .next()
-            .expect("Zone not found")
+        let mut conn = pool.get_connection();
+
+        conn.exec_map(
+            "SELECT * FROM zones WHERE id = ?",
+            (zone_id,),
+            |row: mysql::Row| Zone::from_row(row),
+        )
+        .unwrap_or_else(|_| Vec::new())
+        .into_iter()
+        .next()
+        .expect("Zone not found")
     }
 
     pub fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Vec<Record> {
-        let query = match zone_id {
-            Some(id) => format!("SELECT * FROM records WHERE zone_id = {}", id),
-            None => "SELECT * FROM records".to_string(),
-        };
+        let mut conn = pool.get_connection();
 
-        pool.get_connection()
-            .query_map(query, |row: mysql::Row| Record::from_row(row))
-            .unwrap_or_else(|_| Vec::new())
+        match zone_id {
+            Some(id) => conn
+                .exec_map(
+                    "SELECT * FROM records WHERE zone_id = ?",
+                    (id,),
+                    |row: mysql::Row| Record::from_row(row),
+                )
+                .unwrap_or_else(|_| Vec::new()),
+            None => conn
+                .exec_map("SELECT * FROM records", (), |row: mysql::Row| {
+                    Record::from_row(row)
+                })
+                .unwrap_or_else(|_| Vec::new()),
+        }
     }
 
     pub fn get_record(pool: &DatabasePool, record_id: i32) -> Record {
-        let query = format!("SELECT * FROM records WHERE id = {}", record_id);
-        pool.get_connection()
-            .query_map(query, |row: mysql::Row| Record::from_row(row))
-            .unwrap_or_else(|_| Vec::new())
-            .into_iter()
-            .next()
-            .expect("Record not found")
+        let mut conn = pool.get_connection();
+
+        conn.exec_map(
+            "SELECT * FROM records WHERE id = ?",
+            (record_id,),
+            |row: mysql::Row| Record::from_row(row),
+        )
+        .unwrap_or_else(|_| Vec::new())
+        .into_iter()
+        .next()
+        .expect("Record not found")
     }
 
-    pub fn create_record(pool: &DatabasePool, record: Record) -> Result<(), String> {
-        // let query = format!(
-        //     "INSERT INTO records (zone_id, name, type, content, ttl) VALUES ({}, '{}', '{}', '{}', {})",
-        //     record.zone_id, record.name, record.type_, record.content, record.ttl
-        // );
+    // pub fn create_record(
+    //     pool: &DatabasePool,
+    //     create_record_request: &CreateRecordRequest,
+    // ) -> Result<(), String> {
+    //     let record_type = RecordType::from_str(&create_record_request.record_type)
+    //         .map_err(|_| format!("Invalid record type: {}", create_record_request.record_type))?;
 
-        // pool.get_connection()
-        //     .query_drop(query)
-        //     .map_err(|e| format!("Failed to create record: {}", e))
+    //     let query = format!(
+    //         "INSERT INTO records (zone_id, name, type, content, ttl) VALUES ({}, '{}', '{}', '{}', {})",
+    //         create_record_request.zone_id,
+    //         create_record_request.name,
+    //         record_type.to_str(),
+    //         create_record_request.value,
+    //         create_record_request.ttl
+    //     );
 
-        Ok(())
-    }
+    //     let mut tx = pool.get_connection().start_transaction(TxOpts::default())?;
+
+    //     tx.exec_drop(query)?;
+    //     tx.commit()?;
+
+    //     Ok(())
+    // }
 
     pub fn get_dns_status() -> String {
         let rndc_client = &RNDC_CLIENT;
