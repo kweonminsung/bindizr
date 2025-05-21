@@ -6,11 +6,11 @@ mod serializer;
 
 #[tokio::main]
 async fn main() {
-    // Load environment variables
+    // load environment variables
     env::initialize();
 
     serializer::initialize();
 
-    // Initialize API server
+    // initialize API server
     api::initialize().await;
 }

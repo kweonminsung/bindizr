@@ -7,15 +7,15 @@ use serde::Serialize;
 pub struct Record {
     pub id: i32,
 
-    pub name: String, // 도메인 이름 (예: "example.com")
+    pub name: String, // domain name (ex: "www.example.com")
 
-    pub record_type: RecordType, // 레코드 유형
+    pub record_type: RecordType, // record type
 
-    pub value: String, // 레코드 값 (예: IP 주소, 도메인 이름 등)
+    pub value: String, // record value (ex: IP address, CNAME, etc.)
 
-    pub ttl: i32, // TTL 값 (초 단위)
+    pub ttl: i32, // TTL (seconds)
 
-    pub priority: Option<i32>, // 우선순위 (MX 레코드 등에서 사용, 다른 레코드에서는 None)
+    pub priority: Option<i32>, // priority (for MX and SRV records)
 
     pub created_at: DateTime<Utc>,
 

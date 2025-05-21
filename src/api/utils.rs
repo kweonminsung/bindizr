@@ -51,14 +51,14 @@ where
     let req_parts: Vec<&str> = request_path.trim_matches('/').split('/').collect();
     let route_parts: Vec<&str> = route_path.trim_matches('/').split('/').collect();
 
-    // Return None if the length of the request path and the router path are different
+    // return None if the length of the request path and the router path are different
     if req_parts.len() != route_parts.len() {
         return None;
     }
 
     for (req_part, route_part) in req_parts.iter().zip(route_parts.iter()) {
         if route_part.starts_with(':') {
-            let param_name = &route_part[1..]; // Extract the part after ':'
+            let param_name = &route_part[1..]; // extract the part after ':'
             if param_name == key {
                 return req_part.parse::<T>().ok();
             }

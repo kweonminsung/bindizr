@@ -107,7 +107,7 @@ impl Serializer {
     pub fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
         let mut output = String::new();
 
-        // SOA 레코드
+        // SOA record
         writeln!(
             &mut output,
             r#"
@@ -132,7 +132,7 @@ $TTL {}
         )
         .unwrap();
 
-        // NS 레코드
+        // NS record
         writeln!(&mut output, "@   IN  NS  ns1.{}.", zone.name).unwrap();
 
         for record in records {
@@ -166,8 +166,8 @@ $TTL {}
                     .unwrap();
                 }
                 RecordType::SRV => {
-                    // SRV는 priority, weight, port, target 순
-                    // 예: _sip._tcp 3600 IN SRV 10 60 5060 sipserver.example.com.
+                    // SRV is in the order of priority, weight, port, and target.
+                    // ex: _sip._tcp 3600 IN SRV 10 60 5060 sipserver.example.com.
                     let parts: Vec<&str> = record.value.split_whitespace().collect();
                     if parts.len() == 3 {
                         writeln!(
@@ -184,7 +184,7 @@ $TTL {}
                     }
                 }
                 RecordType::SOA => {
-                    // 보통 SOA는 자동 생성되므로 무시하거나 따로 처리
+                    // mostly SOA is automatically generated, so ignore it or process it separately.
                     writeln!(
                         &mut output,
                         "{} {} IN SOA {}",
