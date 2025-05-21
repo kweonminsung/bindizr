@@ -10,6 +10,7 @@ Synchronizing bind9(DNS) records with DB
 
 - [hyper](https://hyper.rs/)
 - [mysql](https://crates.io/crates/mysql/)
+- [rndc](https://crates.io/crates/rndc)
 
 ```bash
 Run apt-get update && apt-get install -y \
