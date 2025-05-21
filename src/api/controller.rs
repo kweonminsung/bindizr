@@ -1,4 +1,4 @@
-use super::dto::{CreateRecordRequest, GetZoneResponse};
+use super::dto::{CreateRecordRequest, CreateZoneRequest, GetZoneResponse};
 use crate::api::dto::GetRecordResponse;
 use crate::api::service::ApiService;
 use crate::serializer::Serializer;
@@ -23,6 +23,12 @@ impl ApiController {
             Method::GET,
             "/zones/:id",
             ApiController::get_zone,
+        );
+        Self::push_route(
+            &mut routes,
+            Method::POST,
+            "/zones",
+            ApiController::create_zone,
         );
         Self::push_route(
             &mut routes,
@@ -143,6 +149,32 @@ impl ApiController {
         utils::json_response(json_body, StatusCode::OK)
     }
 
+    async fn create_zone(
+        request: Request<RequestBody>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let body = match utils::get_body::<CreateZoneRequest>(request).await {
+            Ok(b) => b,
+            Err(_) => {
+                let json_body = json!({ "error": "Invalid request body" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let raw_zone = match ApiService::create_zone(&DATABASE_POOL, &body) {
+            Ok(zone) => zone,
+            Err(err) => {
+                // let json_body = json!({ "error": "Failed to create zone" });
+                let json_body = json!({ "error": format!("Failed to create zone: {}", err) });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let zone = GetZoneResponse::from_zone(&raw_zone);
+        let json_body = json!({ "zone": zone });
+
+        utils::json_response(json_body, StatusCode::OK)
+    }
+
     async fn get_records(
         request: Request<RequestBody>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
@@ -170,7 +202,13 @@ impl ApiController {
             }
         };
 
-        let raw_record = ApiService::get_record(&DATABASE_POOL, record_id);
+        let raw_record = match ApiService::get_record(&DATABASE_POOL, record_id) {
+            Ok(record) => record,
+            Err(_) => {
+                let json_body = json!({ "error": "Record not found" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
 
         let record = GetRecordResponse::from_record(&raw_record);
 
@@ -191,9 +229,8 @@ impl ApiController {
 
         let raw_record = match ApiService::create_record(&DATABASE_POOL, &body) {
             Ok(record) => record,
-            Err(err) => {
-                // let json_body = json!({ "error": "Failed to create record" });
-                let json_body = json!({ "error": err });
+            Err(_) => {
+                let json_body = json!({ "error": "Failed to create record" });
                 return utils::json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };

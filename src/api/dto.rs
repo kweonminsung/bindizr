@@ -56,6 +56,19 @@ impl GetRecordResponse {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct CreateZoneRequest {
+    pub name: String,
+    pub primary_ns: String,
+    pub admin_email: String,
+    pub ttl: i32,
+    pub serial: i32,
+    pub refresh: Option<i32>,
+    pub retry: Option<i32>,
+    pub expire: Option<i32>,
+    pub minimum_ttl: Option<i32>,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct CreateRecordRequest {
     pub name: String,
     pub record_type: String,
