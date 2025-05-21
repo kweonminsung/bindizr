@@ -49,6 +49,7 @@ impl Serializer {
         }
     }
 
+    // TODO: fix this function
     fn write_config() {
         let zones = Serializer::get_zones(&DATABASE_POOL);
 

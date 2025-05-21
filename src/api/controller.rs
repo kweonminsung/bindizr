@@ -244,7 +244,13 @@ impl ApiController {
     async fn get_dns_status(
         _request: Request<RequestBody>,
     ) -> Result<Response<Full<Bytes>>, Infallible> {
-        let status = ApiService::get_dns_status();
+        let status = match ApiService::get_dns_status() {
+            Ok(status) => status,
+            Err(err) => {
+                let json_body = json!({ "error": format!("Failed to get DNS status: {}", err) });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
 
         let json_body = json!({ "status": status  });
         utils::json_response(json_body, StatusCode::OK)

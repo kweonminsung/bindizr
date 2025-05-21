@@ -157,15 +157,18 @@ impl ApiService {
         ApiService::get_record_by_id(&pool, last_insert_id as i32)
     }
 
-    pub fn get_dns_status() -> String {
+    pub fn get_dns_status() -> Result<String, String> {
         let rndc_client = &RNDC_CLIENT;
 
-        let res = rndc_client.rndc_command("status").unwrap();
+        let res = rndc_client.rndc_command("status")?;
 
         if !res.result {
-            println!("Error: {}", res.err.unwrap_or_default());
+            return Err("Failed to get DNS status".to_string());
         }
 
-        res.text.unwrap()
+        match res.text {
+            Some(text) => Ok(text),
+            None => Ok("".to_string()),
+        }
     }
 }
