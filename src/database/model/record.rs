@@ -1,5 +1,6 @@
 use crate::database::utils;
 use chrono::{DateTime, Utc};
+use mysql::Value;
 use serde::Serialize;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
@@ -33,8 +34,8 @@ impl Record {
             value: row.get("value").unwrap(),
             ttl: row.get("ttl").unwrap(),
             priority: row.get("priority").unwrap(),
-            created_at: utils::parse_mysql_timestamp(&row.get::<String, _>("created_at").unwrap()),
-            updated_at: utils::parse_mysql_timestamp(&row.get::<String, _>("updated_at").unwrap()),
+            created_at: utils::parse_mysql_datetime(&row.get::<Value, _>("created_at").unwrap()),
+            updated_at: utils::parse_mysql_datetime(&row.get::<Value, _>("updated_at").unwrap()),
             zone_id: row.get("zone_id").unwrap(),
         }
     }

@@ -1,9 +1,9 @@
 use crate::database::utils;
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use mysql::Value;
 
 // SOA 레코드의 기본 생성 및 NS 레코드의 기본 생성을 위한 구조체
-#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Zone {
     pub id: i32,
 
@@ -43,8 +43,8 @@ impl Zone {
             retry: row.get("retry").unwrap(),
             expire: row.get("expire").unwrap(),
             minimum_ttl: row.get("minimum_ttl").unwrap(),
-            created_at: utils::parse_mysql_timestamp(&row.get::<String, _>("created_at").unwrap()),
-            updated_at: utils::parse_mysql_timestamp(&row.get::<String, _>("updated_at").unwrap()),
+            created_at: utils::parse_mysql_datetime(&row.get::<Value, _>("created_at").unwrap()),
+            updated_at: utils::parse_mysql_datetime(&row.get::<Value, _>("updated_at").unwrap()),
         }
     }
 }

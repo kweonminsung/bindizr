@@ -27,7 +27,7 @@ impl DatabasePool {
             r#"
             CREATE TABLE IF NOT EXISTS zones (
                 id INT PRIMARY KEY AUTO_INCREMENT,
-                name VARCHAR(255) NOT NULL,
+                name VARCHAR(255) UNIQUE NOT NULL,
                 primary_ns VARCHAR(255) NOT NULL,
                 admin_email VARCHAR(255) NOT NULL,
                 ttl INT NOT NULL,
@@ -47,7 +47,7 @@ impl DatabasePool {
             r#"
             CREATE TABLE IF NOT EXISTS records (
                 id INT PRIMARY KEY AUTO_INCREMENT,
-                name VARCHAR(255) NOT NULL,
+                name VARCHAR(255) UNIQUE NOT NULL,
                 record_type VARCHAR(50) NOT NULL,
                 value TEXT NOT NULL,
                 ttl INT NOT NULL,
