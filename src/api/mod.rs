@@ -25,7 +25,7 @@ pub async fn initialize() {
 
         tokio::task::spawn(async move {
             if let Err(err) = http1::Builder::new()
-                .serve_connection(io, service_fn(ApiController::route))
+                .serve_connection(io, service_fn(ApiController::serve))
                 .await
             {
                 eprintln!("Error serving connection: {:?}", err);
