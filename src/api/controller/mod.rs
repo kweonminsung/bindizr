@@ -2,9 +2,7 @@ mod internal;
 mod record;
 mod zone;
 
-use crate::api::utils;
-use hyper::Method;
-use internal::{Request, Response, Router, StatusCode};
+use internal::{utils, Method, Request, Response, Router, StatusCode};
 use serde_json::json;
 
 use super::service::test::TestService;

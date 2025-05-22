@@ -1,9 +1,11 @@
-use super::internal::{Method, Request, Response, Router, StatusCode};
+use super::internal::{
+    get_body, get_param, get_query, utils::json_response, Method, Request, Response, Router,
+    StatusCode,
+};
 use crate::{
     api::{
         dto::{CreateZoneRequest, GetZoneResponse},
         service::{record::RecordService, zone::ZoneService},
-        utils,
     },
     database::DATABASE_POOL,
     serializer::Serializer,
@@ -35,25 +37,25 @@ impl ZoneController {
             .collect::<Vec<GetZoneResponse>>();
 
         let json_body = json!({ "zones": zones });
-        utils::json_response(json_body, StatusCode::OK)
+        json_response(json_body, StatusCode::OK)
     }
 
     async fn get_zone(request: Request) -> Response {
-        let zone_id = match utils::get_param::<i32>(&request, "/zones/:id", "id") {
+        let zone_id = match get_param::<i32>(&request, "/zones/:id", "id") {
             Some(id) => id,
             None => {
                 let json_body = json!({ "error": "Invalid or missing zone_id" });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
-        let records_query = utils::get_query::<bool>(&request, "records");
-        let render_query = utils::get_query::<bool>(&request, "render");
+        let records_query = get_query::<bool>(&request, "records");
+        let render_query = get_query::<bool>(&request, "render");
 
         let raw_zone = match ZoneService::get_zone(&DATABASE_POOL, zone_id) {
             Ok(zone) => zone,
             Err(_) => {
                 let json_body = json!({ "error": "Zone not found" });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
 
@@ -64,20 +66,20 @@ impl ZoneController {
 
         if let Some(true) = render_query {
             let zone_str = Serializer::serialize_zone(&raw_zone, &records);
-            return utils::json_response(json!({ "result": zone_str }), StatusCode::OK);
+            return json_response(json!({ "result": zone_str }), StatusCode::OK);
         }
 
         let zone = GetZoneResponse::from_zone(&raw_zone);
         let json_body = json!({ "zone": zone, "records": records });
-        utils::json_response(json_body, StatusCode::OK)
+        json_response(json_body, StatusCode::OK)
     }
 
     async fn create_zone(request: Request) -> Response {
-        let body = match utils::get_body::<CreateZoneRequest>(request).await {
+        let body = match get_body::<CreateZoneRequest>(request).await {
             Ok(b) => b,
             Err(_) => {
                 let json_body = json!({ "error": "Invalid request body" });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
 
@@ -86,30 +88,30 @@ impl ZoneController {
             Err(err) => {
                 // let json_body = json!({ "error": "Failed to create zone" });
                 let json_body = json!({ "error": format!("Failed to create zone: {}", err) });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
 
         let zone = GetZoneResponse::from_zone(&raw_zone);
         let json_body = json!({ "zone": zone });
 
-        utils::json_response(json_body, StatusCode::OK)
+        json_response(json_body, StatusCode::OK)
     }
 
     async fn update_zone(request: Request) -> Response {
-        let zone_id = match utils::get_param::<i32>(&request, "/zones/:id", "id") {
+        let zone_id = match get_param::<i32>(&request, "/zones/:id", "id") {
             Some(id) => id,
             None => {
                 let json_body = json!({ "error": "Invalid or missing zone_id" });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
 
-        let body = match utils::get_body::<CreateZoneRequest>(request).await {
+        let body = match get_body::<CreateZoneRequest>(request).await {
             Ok(b) => b,
             Err(_) => {
                 let json_body = json!({ "error": "Invalid request body" });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
 
@@ -118,33 +120,33 @@ impl ZoneController {
             Err(err) => {
                 // let json_body = json!({ "error": "Failed to create zone" });
                 let json_body = json!({ "error": format!("Failed to update zone: {}", err) });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
 
         let zone = GetZoneResponse::from_zone(&raw_zone);
         let json_body = json!({ "zone": zone });
 
-        utils::json_response(json_body, StatusCode::OK)
+        json_response(json_body, StatusCode::OK)
     }
 
     async fn delete_zone(request: Request) -> Response {
-        let zone_id = match utils::get_param::<i32>(&request, "/zones/:id", "id") {
+        let zone_id = match get_param::<i32>(&request, "/zones/:id", "id") {
             Some(id) => id,
             None => {
                 let json_body = json!({ "error": "Invalid or missing zone_id" });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
 
         match ZoneService::delete_zone(&DATABASE_POOL, zone_id) {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone deleted successfully" });
-                utils::json_response(json_body, StatusCode::OK)
+                json_response(json_body, StatusCode::OK)
             }
             Err(err) => {
                 let json_body = json!({ "error": format!("Failed to delete zone: {}", err) });
-                utils::json_response(json_body, StatusCode::BAD_REQUEST)
+                json_response(json_body, StatusCode::BAD_REQUEST)
             }
         }
     }

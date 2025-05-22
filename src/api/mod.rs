@@ -1,7 +1,6 @@
 mod controller;
 mod dto;
 mod service;
-mod utils;
 
 use crate::env::get_env;
 use controller::ApiController;
