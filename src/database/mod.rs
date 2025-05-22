@@ -60,6 +60,34 @@ impl DatabasePool {
         "#,
         )
         .unwrap();
+
+        conn.query_drop(
+            r#"
+            CREATE TABLE IF NOT EXISTS zone_history (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                log TEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                zone_id INT NOT NULL,
+                FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+            );
+        "#,
+        )
+        .unwrap();
+
+        conn.query_drop(
+            r#"
+            CREATE TABLE IF NOT EXISTS record_history (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                log TEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                record_id INT NOT NULL,
+                FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+            );
+        "#,
+        )
+        .unwrap();
     }
 
     pub fn get_connection(&self) -> PooledConn {

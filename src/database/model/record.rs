@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use mysql::Value;
 use serde::Serialize;
 
-#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Record {
     pub id: i32,
 

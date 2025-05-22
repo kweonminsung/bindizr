@@ -88,11 +88,7 @@ pub struct Route {
     >,
 }
 
-pub fn get_param<T>(
-    request: &hyper::Request<hyper::body::Incoming>,
-    route_path: &str,
-    key: &str,
-) -> Option<T>
+pub fn get_param<T>(request: &Request, route_path: &str, key: &str) -> Option<T>
 where
     T: std::str::FromStr,
 {

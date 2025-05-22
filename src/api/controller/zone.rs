@@ -4,7 +4,7 @@ use super::internal::{
 };
 use crate::{
     api::{
-        dto::{CreateZoneRequest, GetZoneResponse},
+        dto::{CreateZoneRequest, GetRecordResponse, GetZoneResponse},
         service::{record::RecordService, zone::ZoneService},
     },
     database::DATABASE_POOL,
@@ -59,13 +59,17 @@ impl ZoneController {
             }
         };
 
-        let records = match records_query {
+        let raw_records = match records_query {
             Some(true) => RecordService::get_records(&DATABASE_POOL, Some(zone_id)),
             _ => vec![],
         };
+        let records = raw_records
+            .iter()
+            .map(|record| GetRecordResponse::from_record(record))
+            .collect::<Vec<GetRecordResponse>>();
 
         if let Some(true) = render_query {
-            let zone_str = Serializer::serialize_zone(&raw_zone, &records);
+            let zone_str = Serializer::serialize_zone(&raw_zone, &raw_records);
             return json_response(json!({ "result": zone_str }), StatusCode::OK);
         }
 
