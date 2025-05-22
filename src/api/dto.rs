@@ -1,4 +1,6 @@
-use crate::database::model::{record::Record, zone::Zone};
+use crate::database::model::{
+    record::Record, record_history::RecordHistory, zone::Zone, zone_history::ZoneHistory,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug)]
@@ -76,4 +78,44 @@ pub struct CreateRecordRequest {
     pub ttl: i32,
     pub priority: Option<i32>,
     pub zone_id: i32,
+}
+
+#[derive(Serialize, Debug)]
+pub struct GetZoneHistoryResponse {
+    pub id: i32,
+    pub log: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub zone_id: i32,
+}
+impl GetZoneHistoryResponse {
+    pub fn from_zone_history(zone_history: &ZoneHistory) -> Self {
+        GetZoneHistoryResponse {
+            id: zone_history.id,
+            log: zone_history.log.clone(),
+            created_at: zone_history.created_at.to_string(),
+            updated_at: zone_history.updated_at.to_string(),
+            zone_id: zone_history.zone_id,
+        }
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub struct GetRecordHistoryResponse {
+    pub id: i32,
+    pub log: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub record_id: i32,
+}
+impl GetRecordHistoryResponse {
+    pub fn from_record_history(record_history: &RecordHistory) -> Self {
+        GetRecordHistoryResponse {
+            id: record_history.id,
+            log: record_history.log.clone(),
+            created_at: record_history.created_at.to_string(),
+            updated_at: record_history.updated_at.to_string(),
+            record_id: record_history.record_id,
+        }
+    }
 }

@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use mysql::Value;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct RecordHistory {
+pub struct ZoneHistory {
     pub id: i32,
 
     pub log: String,
@@ -15,9 +15,9 @@ pub struct RecordHistory {
     pub zone_id: i32,
 }
 
-impl RecordHistory {
+impl ZoneHistory {
     pub fn from_row(row: mysql::Row) -> Self {
-        RecordHistory {
+        ZoneHistory {
             id: row.get("id").unwrap(),
             log: row.get("log").unwrap(),
             created_at: utils::parse_mysql_datetime(&row.get::<Value, _>("created_at").unwrap()),
