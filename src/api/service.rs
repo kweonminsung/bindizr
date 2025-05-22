@@ -93,6 +93,64 @@ impl ApiService {
         ApiService::get_zone_by_id(&pool, last_insert_id as i32)
     }
 
+    pub fn update_zone(
+        pool: &DatabasePool,
+        zone_id: i32,
+        update_zone_request: &CreateZoneRequest,
+    ) -> Result<Zone, String> {
+        let mut conn = pool.get_connection();
+
+        if ApiService::get_zone_by_id(&pool, zone_id).is_err() {
+            return Err("Zone not found".to_string());
+        }
+
+        let mut tx = conn
+            .start_transaction(mysql::TxOpts::default())
+            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+
+        tx.exec_drop(
+            "UPDATE zones SET name = ?, primary_ns = ?, admin_email = ?, ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ? WHERE id = ?",
+            (
+                &update_zone_request.name,
+                &update_zone_request.primary_ns,
+                &update_zone_request.admin_email,
+                update_zone_request.ttl,
+                update_zone_request.serial,
+                update_zone_request.refresh.unwrap_or(86400),
+                update_zone_request.retry.unwrap_or(7200),
+                update_zone_request.expire.unwrap_or(3600000),
+                update_zone_request.minimum_ttl.unwrap_or(86400),
+                zone_id,
+            ),
+        )
+        .map_err(|e| format!("Failed to update zone: {}", e))?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+        ApiService::get_zone_by_id(&pool, zone_id)
+    }
+
+    pub fn delete_zone(pool: &DatabasePool, zone_id: i32) -> Result<(), String> {
+        let mut conn = pool.get_connection();
+
+        if ApiService::get_zone_by_id(&pool, zone_id).is_err() {
+            return Err("Zone not found".to_string());
+        }
+
+        let mut tx = conn
+            .start_transaction(mysql::TxOpts::default())
+            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+
+        tx.exec_drop("DELETE FROM zones WHERE id = ?", (zone_id,))
+            .map_err(|e| format!("Failed to delete zone: {}", e))?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+        Ok(())
+    }
+
     pub fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Vec<Record> {
         let mut conn = pool.get_connection();
 

@@ -32,6 +32,18 @@ impl ApiController {
         );
         Self::push_route(
             &mut routes,
+            Method::PUT,
+            "/zones/:id",
+            ApiController::update_zone,
+        );
+        Self::push_route(
+            &mut routes,
+            Method::DELETE,
+            "/zones/:id",
+            ApiController::delete_zone,
+        );
+        Self::push_route(
+            &mut routes,
             Method::GET,
             "/records",
             ApiController::get_records,
@@ -173,6 +185,63 @@ impl ApiController {
         let json_body = json!({ "zone": zone });
 
         utils::json_response(json_body, StatusCode::OK)
+    }
+
+    async fn update_zone(
+        request: Request<RequestBody>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let zone_id = match utils::get_param::<i32>(&request, "/zones/:id", "id") {
+            Some(id) => id,
+            None => {
+                let json_body = json!({ "error": "Invalid or missing zone_id" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let body = match utils::get_body::<CreateZoneRequest>(request).await {
+            Ok(b) => b,
+            Err(_) => {
+                let json_body = json!({ "error": "Invalid request body" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let raw_zone = match ApiService::update_zone(&DATABASE_POOL, zone_id, &body) {
+            Ok(zone) => zone,
+            Err(err) => {
+                // let json_body = json!({ "error": "Failed to create zone" });
+                let json_body = json!({ "error": format!("Failed to update zone: {}", err) });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let zone = GetZoneResponse::from_zone(&raw_zone);
+        let json_body = json!({ "zone": zone });
+
+        utils::json_response(json_body, StatusCode::OK)
+    }
+
+    async fn delete_zone(
+        request: Request<RequestBody>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let zone_id = match utils::get_param::<i32>(&request, "/zones/:id", "id") {
+            Some(id) => id,
+            None => {
+                let json_body = json!({ "error": "Invalid or missing zone_id" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        match ApiService::delete_zone(&DATABASE_POOL, zone_id) {
+            Ok(_) => {
+                let json_body = json!({ "message": "Zone deleted successfully" });
+                utils::json_response(json_body, StatusCode::OK)
+            }
+            Err(err) => {
+                let json_body = json!({ "error": format!("Failed to delete zone: {}", err) });
+                utils::json_response(json_body, StatusCode::BAD_REQUEST)
+            }
+        }
     }
 
     async fn get_records(
