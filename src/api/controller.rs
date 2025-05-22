@@ -56,6 +56,18 @@ impl ApiController {
         );
         Self::push_route(
             &mut routes,
+            Method::PUT,
+            "/records/:id",
+            ApiController::update_record,
+        );
+        Self::push_route(
+            &mut routes,
+            Method::DELETE,
+            "/records/:id",
+            ApiController::delete_record,
+        );
+        Self::push_route(
+            &mut routes,
             Method::GET,
             "/records/:id",
             ApiController::get_record,
@@ -308,6 +320,62 @@ impl ApiController {
         let json_body = json!({ "record": record });
 
         utils::json_response(json_body, StatusCode::OK)
+    }
+
+    async fn update_record(
+        request: Request<RequestBody>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let record_id = match utils::get_param::<i32>(&request, "/records/:id", "id") {
+            Some(id) => id,
+            None => {
+                let json_body = json!({ "error": "Invalid or missing record_id" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let body = match utils::get_body::<CreateRecordRequest>(request).await {
+            Ok(b) => b,
+            Err(_) => {
+                let json_body = json!({ "error": "Invalid request body" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let raw_record = match ApiService::update_record(&DATABASE_POOL, record_id, &body) {
+            Ok(record) => record,
+            Err(_) => {
+                let json_body = json!({ "error": "Failed to update record" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let record = GetRecordResponse::from_record(&raw_record);
+        let json_body = json!({ "record": record });
+
+        utils::json_response(json_body, StatusCode::OK)
+    }
+
+    async fn delete_record(
+        request: Request<RequestBody>,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let record_id = match utils::get_param::<i32>(&request, "/records/:id", "id") {
+            Some(id) => id,
+            None => {
+                let json_body = json!({ "error": "Invalid or missing record_id" });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        match ApiService::delete_record(&DATABASE_POOL, record_id) {
+            Ok(_) => {
+                let json_body = json!({ "message": "Record deleted successfully" });
+                utils::json_response(json_body, StatusCode::OK)
+            }
+            Err(err) => {
+                let json_body = json!({ "error": format!("Failed to delete record: {}", err) });
+                utils::json_response(json_body, StatusCode::BAD_REQUEST)
+            }
+        }
     }
 
     async fn get_dns_status(

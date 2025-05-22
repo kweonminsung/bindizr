@@ -215,6 +215,68 @@ impl ApiService {
         ApiService::get_record_by_id(&pool, last_insert_id as i32)
     }
 
+    pub fn update_record(
+        pool: &DatabasePool,
+        record_id: i32,
+        update_record_request: &CreateRecordRequest,
+    ) -> Result<Record, String> {
+        let mut conn = pool.get_connection();
+
+        if ApiService::get_record_by_id(&pool, record_id).is_err() {
+            return Err("Record not found".to_string());
+        }
+
+        if ApiService::get_zone_by_id(&pool, update_record_request.zone_id).is_err() {
+            return Err("Zone not found".to_string());
+        }
+
+        let record_type = RecordType::from_str(&update_record_request.record_type)
+            .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
+
+        let mut tx = conn
+            .start_transaction(mysql::TxOpts::default())
+            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+
+        tx.exec_drop(
+            "UPDATE records SET name = ?, record_type = ?, value = ?, ttl = ?, priority = ?, zone_id = ? WHERE id = ?",
+            (
+                &update_record_request.name,
+                record_type.to_str(),
+                &update_record_request.value,
+                update_record_request.ttl,
+                update_record_request.priority,
+                update_record_request.zone_id,
+                record_id,
+            ),
+        )
+        .map_err(|e| format!("Failed to update record: {}", e))?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+        ApiService::get_record_by_id(&pool, record_id)
+    }
+
+    pub fn delete_record(pool: &DatabasePool, record_id: i32) -> Result<(), String> {
+        let mut conn = pool.get_connection();
+
+        if ApiService::get_record_by_id(&pool, record_id).is_err() {
+            return Err("Record not found".to_string());
+        }
+
+        let mut tx = conn
+            .start_transaction(mysql::TxOpts::default())
+            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+
+        tx.exec_drop("DELETE FROM records WHERE id = ?", (record_id,))
+            .map_err(|e| format!("Failed to delete record: {}", e))?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+        Ok(())
+    }
+
     pub fn get_dns_status() -> Result<String, String> {
         let rndc_client = &RNDC_CLIENT;
 
