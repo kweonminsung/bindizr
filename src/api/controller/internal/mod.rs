@@ -23,11 +23,10 @@ impl Router {
     }
 
     pub async fn route(&self, request: Request) -> Response {
-        let method = request.method().clone();
-        let path = request.uri().path();
-
         for route in &self.routes {
-            if route.method == method && route.path == path {
+            if request.method() == route.method
+                && utils::match_path(request.uri().path(), route.path)
+            {
                 return (route.handler)(request).await;
             }
         }
