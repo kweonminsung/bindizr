@@ -2,7 +2,7 @@ use super::internal::{Method, Request, Response, Router, StatusCode};
 use crate::{
     api::{
         dto::{CreateRecordRequest, GetRecordResponse},
-        service::ApiService,
+        service::record::RecordService,
         utils,
     },
     database::DATABASE_POOL,
@@ -32,7 +32,7 @@ impl RecordController {
     async fn get_records(request: Request) -> Response {
         let zone_id = utils::get_query::<i32>(&request, "zone_id");
 
-        let raw_records = ApiService::get_records(&DATABASE_POOL, zone_id);
+        let raw_records = RecordService::get_records(&DATABASE_POOL, zone_id);
 
         let records = raw_records
             .iter()
@@ -52,7 +52,7 @@ impl RecordController {
             }
         };
 
-        let raw_record = match ApiService::get_record(&DATABASE_POOL, record_id) {
+        let raw_record = match RecordService::get_record(&DATABASE_POOL, record_id) {
             Ok(record) => record,
             Err(_) => {
                 let json_body = json!({ "error": "Record not found" });
@@ -75,7 +75,7 @@ impl RecordController {
             }
         };
 
-        let raw_record = match ApiService::create_record(&DATABASE_POOL, &body) {
+        let raw_record = match RecordService::create_record(&DATABASE_POOL, &body) {
             Ok(record) => record,
             Err(_) => {
                 let json_body = json!({ "error": "Failed to create record" });
@@ -106,7 +106,7 @@ impl RecordController {
             }
         };
 
-        let raw_record = match ApiService::update_record(&DATABASE_POOL, record_id, &body) {
+        let raw_record = match RecordService::update_record(&DATABASE_POOL, record_id, &body) {
             Ok(record) => record,
             Err(_) => {
                 let json_body = json!({ "error": "Failed to update record" });
@@ -129,7 +129,7 @@ impl RecordController {
             }
         };
 
-        match ApiService::delete_record(&DATABASE_POOL, record_id) {
+        match RecordService::delete_record(&DATABASE_POOL, record_id) {
             Ok(_) => {
                 let json_body = json!({ "message": "Record deleted successfully" });
                 utils::json_response(json_body, StatusCode::OK)

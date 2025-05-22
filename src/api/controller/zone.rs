@@ -2,7 +2,7 @@ use super::internal::{Method, Request, Response, Router, StatusCode};
 use crate::{
     api::{
         dto::{CreateZoneRequest, GetZoneResponse},
-        service::ApiService,
+        service::{record::RecordService, zone::ZoneService},
         utils,
     },
     database::DATABASE_POOL,
@@ -27,7 +27,7 @@ impl ZoneController {
     }
 
     async fn get_zones(_request: Request) -> Response {
-        let raw_zones = ApiService::get_zones(&DATABASE_POOL);
+        let raw_zones = ZoneService::get_zones(&DATABASE_POOL);
 
         let zones = raw_zones
             .iter()
@@ -49,7 +49,7 @@ impl ZoneController {
         let records_query = utils::get_query::<bool>(&request, "records");
         let render_query = utils::get_query::<bool>(&request, "render");
 
-        let raw_zone = match ApiService::get_zone(&DATABASE_POOL, zone_id) {
+        let raw_zone = match ZoneService::get_zone(&DATABASE_POOL, zone_id) {
             Ok(zone) => zone,
             Err(_) => {
                 let json_body = json!({ "error": "Zone not found" });
@@ -58,7 +58,7 @@ impl ZoneController {
         };
 
         let records = match records_query {
-            Some(true) => ApiService::get_records(&DATABASE_POOL, Some(zone_id)),
+            Some(true) => RecordService::get_records(&DATABASE_POOL, Some(zone_id)),
             _ => vec![],
         };
 
@@ -81,7 +81,7 @@ impl ZoneController {
             }
         };
 
-        let raw_zone = match ApiService::create_zone(&DATABASE_POOL, &body) {
+        let raw_zone = match ZoneService::create_zone(&DATABASE_POOL, &body) {
             Ok(zone) => zone,
             Err(err) => {
                 // let json_body = json!({ "error": "Failed to create zone" });
@@ -113,7 +113,7 @@ impl ZoneController {
             }
         };
 
-        let raw_zone = match ApiService::update_zone(&DATABASE_POOL, zone_id, &body) {
+        let raw_zone = match ZoneService::update_zone(&DATABASE_POOL, zone_id, &body) {
             Ok(zone) => zone,
             Err(err) => {
                 // let json_body = json!({ "error": "Failed to create zone" });
@@ -137,7 +137,7 @@ impl ZoneController {
             }
         };
 
-        match ApiService::delete_zone(&DATABASE_POOL, zone_id) {
+        match ZoneService::delete_zone(&DATABASE_POOL, zone_id) {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone deleted successfully" });
                 utils::json_response(json_body, StatusCode::OK)

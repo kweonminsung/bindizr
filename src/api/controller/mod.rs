@@ -2,11 +2,12 @@ mod internal;
 mod record;
 mod zone;
 
-use super::service::ApiService;
 use crate::api::utils;
 use hyper::Method;
 use internal::{Request, Response, Router, StatusCode};
 use serde_json::json;
+
+use super::service::test::TestService;
 
 pub struct ApiController;
 
@@ -37,7 +38,7 @@ impl ApiController {
     // }
 
     async fn get_dns_status(_request: Request) -> Response {
-        let status = match ApiService::get_dns_status() {
+        let status = match TestService::get_dns_status() {
             Ok(status) => status,
             Err(err) => {
                 let json_body = json!({ "error": format!("Failed to get DNS status: {}", err) });
