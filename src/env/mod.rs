@@ -5,7 +5,8 @@ use std::env;
 pub fn initialize() {
     lazy_static! {
         static ref _ENV_LOADED: () = {
-            from_filename("./bindizr.conf").ok();
+            from_filename("./bindizr.conf")
+                .expect("Environment file './bindizr.conf' not found or failed to load");
         };
     }
 
