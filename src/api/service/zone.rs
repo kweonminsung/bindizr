@@ -1,21 +1,45 @@
-use mysql::prelude::Queryable;
-
+use super::{common::CommonService, zone_history::ZoneHistoryService};
 use crate::{
     api::dto::CreateZoneRequest,
     database::{model::zone::Zone, DatabasePool},
 };
-
-use super::common::CommonService;
+use chrono::Utc;
+use mysql::prelude::Queryable;
 
 #[derive(Clone)]
 pub struct ZoneService;
 
 impl ZoneService {
+    fn get_zone_by_name(pool: &DatabasePool, zone_name: &str) -> Result<Zone, String> {
+        let mut conn = pool.get_connection();
+
+        let zone = conn
+            .exec_first(
+                r#"
+                SELECT *
+                FROM zones
+                WHERE name = ?
+            "#,
+                (zone_name,),
+            )
+            .map_err(|e| format!("Failed to fetch zone: {}", e))?
+            .ok_or_else(|| "Zone not found".to_string())?;
+
+        Ok(Zone::from_row(zone))
+    }
+
     pub fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
         let mut conn = pool.get_connection();
 
-        conn.exec_map("SELECT * FROM zones", (), |row| Zone::from_row(row))
-            .unwrap_or_else(|_| Vec::new())
+        conn.exec_map(
+            r#"
+            SELECT *
+            FROM zones
+        "#,
+            (),
+            |row| Zone::from_row(row),
+        )
+        .unwrap_or_else(|_| Vec::new())
     }
 
     pub fn get_zone(pool: &DatabasePool, zone_id: i32) -> Result<Zone, String> {
@@ -27,6 +51,11 @@ impl ZoneService {
         create_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, String> {
         let mut conn = pool.get_connection();
+
+        // check if zone already exists
+        if let Ok(_) = Self::get_zone_by_name(&pool, &create_zone_request.name) {
+            return Err(format!("Zone {} already exists", create_zone_request.name));
+        }
 
         let mut tx = conn
             .start_transaction(mysql::TxOpts::default())
@@ -52,6 +81,18 @@ impl ZoneService {
         let last_insert_id = tx
             .last_insert_id()
             .ok_or_else(|| "Failed to get last insert id".to_string())?;
+
+        // create zone history
+        ZoneHistoryService::create_zone_history(
+            &mut tx,
+            last_insert_id as i32,
+            &format!(
+                "[{}] Zone created: id={}, name={}",
+                Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                last_insert_id,
+                create_zone_request.name,
+            ),
+        )?;
 
         tx.commit()
             .map_err(|e| format!("Failed to commit transaction: {}", e))?;
@@ -91,6 +132,18 @@ impl ZoneService {
         )
         .map_err(|e| format!("Failed to update zone: {}", e))?;
 
+        // create zone history
+        ZoneHistoryService::create_zone_history(
+            &mut tx,
+            zone_id,
+            &format!(
+                "[{}] Zone updated: id={}, name={}",
+                Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                zone_id,
+                update_zone_request.name,
+            ),
+        )?;
+
         tx.commit()
             .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
@@ -110,6 +163,17 @@ impl ZoneService {
 
         tx.exec_drop("DELETE FROM zones WHERE id = ?", (zone_id,))
             .map_err(|e| format!("Failed to delete zone: {}", e))?;
+
+        // create zone history
+        ZoneHistoryService::create_zone_history(
+            &mut tx,
+            zone_id,
+            &format!(
+                "[{}] Zone deleted: id={}",
+                Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                zone_id,
+            ),
+        )?;
 
         tx.commit()
             .map_err(|e| format!("Failed to commit transaction: {}", e))?;

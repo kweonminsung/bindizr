@@ -1,13 +1,11 @@
-use serde_json::json;
-
+use super::internal::{
+    get_param, utils::json_response, Method, Request, Response, Router, StatusCode,
+};
 use crate::{
     api::{dto::GetRecordHistoryResponse, service::record_history::RecordHistoryService},
     database::DATABASE_POOL,
 };
-
-use super::internal::{
-    get_param, utils::json_response, Method, Request, Response, Router, StatusCode,
-};
+use serde_json::json;
 
 pub struct RecordHistoryController;
 
@@ -18,12 +16,12 @@ impl RecordHistoryController {
         // register routes
         router.register_endpoint(
             Method::GET,
-            "/records/:id/history",
+            "/records/:id/histories",
             RecordHistoryController::get_record_histories,
         );
         router.register_endpoint(
             Method::DELETE,
-            "/records/:record_id/:history/:history_id",
+            "/records/:record_id/histories/:history_id",
             RecordHistoryController::delete_record_history,
         );
 
@@ -31,7 +29,7 @@ impl RecordHistoryController {
     }
 
     async fn get_record_histories(request: Request) -> Response {
-        let record_id = match get_param::<i32>(&request, "/records/:id", "id") {
+        let record_id = match get_param::<i32>(&request, "/records/:id/histories", "id") {
             Some(id) => id,
             None => {
                 let json_body = json!({ "error": "Invalid or missing record_id" });
@@ -60,7 +58,7 @@ impl RecordHistoryController {
     async fn delete_record_history(request: Request) -> Response {
         let history_id = match get_param::<i32>(
             &request,
-            "/records/:record_id/history/:history_id",
+            "/records/:record_id/histories/:history_id",
             "history_id",
         ) {
             Some(id) => id,
@@ -70,15 +68,12 @@ impl RecordHistoryController {
             }
         };
 
-        match RecordHistoryService::delete_record_history(&DATABASE_POOL, history_id) {
-            Ok(_) => {
-                let json_body = json!({ "message": "Record history deleted successfully" });
-                json_response(json_body, StatusCode::OK)
-            }
-            Err(_) => {
-                let json_body = json!({ "error": "Failed to delete record history" });
-                json_response(json_body, StatusCode::BAD_REQUEST)
-            }
+        if RecordHistoryService::delete_record_history(&DATABASE_POOL, history_id).is_err() {
+            let json_body = json!({ "error": "Failed to delete record history" });
+            return json_response(json_body, StatusCode::BAD_REQUEST);
         }
+
+        let json_body = json!({ "message": "Record history deleted successfully" });
+        json_response(json_body, StatusCode::OK)
     }
 }

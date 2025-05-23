@@ -4,10 +4,9 @@ mod record_history;
 mod zone;
 mod zone_history;
 
+use super::service::test::TestService;
 use internal::{utils, Method, Request, Response, Router, StatusCode};
 use serde_json::json;
-
-use super::service::test::TestService;
 
 pub struct ApiController;
 
@@ -18,7 +17,7 @@ impl ApiController {
         // register routes
         router.register_router(record::RecordController::router().await);
         router.register_router(zone::ZoneController::router().await);
-        // router.register_router(zone_history::ZoneHistoryController::router().await);
+        router.register_router(zone_history::ZoneHistoryController::router().await);
         router.register_router(record_history::RecordHistoryController::router().await);
 
         // router.register_endpoint(Method::GET, "/test", test);
