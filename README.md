@@ -2,28 +2,94 @@
 
 Synchronizing bind9(DNS) records with DB
 
-### Concepts
+## Concepts
 
-<img src="public/concepts.png" width="420px" height="200x">
+&nbsp;**Bindizr** is a Rust-based daemon and HTTP API that synchronizes DNS records between bind9 and a MySQL database.
 
-### Dependencies
+- It reads and writes zone configurations from a record config directory.
+
+- Changes made via HTTP API are stored in the database and written to zone files.
+
+- After updates, bindizr sends RNDC commands to bind9 to reload zone data.
+
+<br>
+
+&nbsp;<img src="public/concepts.png" width="462px" height="200x">
+
+## Get Started
+
+### 1. Install BIND9
+
+```bash
+$ sudo apt-get update
+$ sudo apt-get install sudo ufw dnsutils bind9
+$ ufw allow 953/tcp
+```
+
+### 2. Configure RNDC and BIND
+
+```bash
+# Generate RNDC configuration and key
+$ rndc-confgen [-A KEY_ALGORITHM] > /etc/bind/rndc.conf
+
+# View the generated key (example below)
+$ cat /etc/bind/rndc.conf
+# Output:
+key "rndc-key" {
+    algorithm hmac-sha256;  # The algorithm used for RNDC authentication (must match on both sides)
+    secret "cqEa3Oo1CnCgKivL6hdUwuCzlfRH68yeAdrsGeF3Pu0=";  # Shared secret key
+};
+```
+
+Now create or update the main BIND configuration file:
+
+```bash
+# Compose the main named.conf
+$ echo '
+include "/etc/bind/named.conf.options";
+include "/etc/bind/named.conf.local";
+include "/etc/bind/named.conf.default-zones";
+
+include "/etc/bind/bindizr/named.conf.bindizr";
+include "/etc/bind/rndc.key";
+
+controls {
+    # Listens on all interfaces (0.0.0.0) using port 953 (default RNDC port)
+    # Adjust IP and port as needed for your environment.
+    inet 0.0.0.0 port 953
+        allow { any; } keys { "rndc-key"; };
+
+    # For example, to restrict RNDC to localhost only:
+    # inet 127.0.0.1 port 953
+    #     allow { 127.0.0.1; } keys { "rndc-key"; };
+
+    # Or to allow only specific internal network:
+    # inet 192.168.1.10 port 953
+    #     allow { 192.168.1.0/24; } keys { "rndc-key"; };
+};
+
+' > /etc/bind/named.conf
+```
+
+### 3. Restart Services
+
+```bash
+$ service bind restart
+
+$ echo '
+API_PORT=APP_PORT
+DATABASE_URL=mysql://DB_USER:DB_PASSWORD@DB_HOST:DB_PORT/DB_DATABASE
+BIND_CONFIG_PATH=/etc/bind/bindizr
+RNDC_SERVER_URL=RNDC_SERVER_URL
+RNDC_ALGORITHM=RNDC_ALGORITHM
+RNDC_SECRET_KEY=RNDC_SECRET_KEY
+' > bindizr.conf
+
+$ ./bindizr start
+```
+
+## Dependencies
 
 - [hyper](https://hyper.rs/)
 - [mysql](https://crates.io/crates/mysql/)
 - [rndc](https://crates.io/crates/rndc)
-
-```bash
-Run apt-get update && apt-get install -y \
-    curl \
-    wget \
-    git \
-    vim \
-    net-tools \
-    dnsutils \
-    bind9 \
-    ufw \
-    sudo
-
-rndc-confgen > /etc/rndc.conf
-rndc-confgen -A hmac-sha224
-```
