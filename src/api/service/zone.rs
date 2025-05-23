@@ -62,10 +62,11 @@ impl ZoneService {
             .map_err(|e| format!("Failed to start transaction: {}", e))?;
 
         tx.exec_drop(
-            "INSERT INTO zones (name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO zones (name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 &create_zone_request.name,
                 &create_zone_request.primary_ns,
+                &create_zone_request.primary_ns_ip,
                 &create_zone_request.admin_email,
                 create_zone_request.ttl,
                 create_zone_request.serial,
@@ -116,10 +117,11 @@ impl ZoneService {
             .map_err(|e| format!("Failed to start transaction: {}", e))?;
 
         tx.exec_drop(
-            "UPDATE zones SET name = ?, primary_ns = ?, admin_email = ?, ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ? WHERE id = ?",
+            "UPDATE zones SET name = ?, primary_ns = ?, primary_ns_ip = ?, admin_email = ?, ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ? WHERE id = ?",
             (
                 &update_zone_request.name,
                 &update_zone_request.primary_ns,
+                &update_zone_request.primary_ns_ip,
                 &update_zone_request.admin_email,
                 update_zone_request.ttl,
                 update_zone_request.serial,

@@ -11,6 +11,8 @@ pub struct Zone {
 
     pub primary_ns: String, // primary name server (ex: "ns1.example.com")
 
+    pub primary_ns_ip: String, // primary name server IP
+
     pub admin_email: String, // admin email (ex: "admin.example.com")
 
     pub ttl: i32, // default TTL (seconds)
@@ -36,6 +38,7 @@ impl Zone {
             id: row.get("id").unwrap(),
             name: row.get("name").unwrap(),
             primary_ns: row.get("primary_ns").unwrap(),
+            primary_ns_ip: row.get("primary_ns_ip").unwrap(),
             admin_email: row.get("admin_email").unwrap(),
             ttl: row.get("ttl").unwrap(),
             serial: row.get("serial").unwrap(),

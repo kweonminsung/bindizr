@@ -161,7 +161,7 @@ impl Serializer {
             r#"
 ; Automatically generated zone file
 $TTL {}
-{}.   IN  SOA {} {} (
+{}.   IN  SOA {}. {}. (
         {} ; serial
         {} ; refresh
         {} ; retry
@@ -181,7 +181,15 @@ $TTL {}
         .unwrap();
 
         // NS record
-        writeln!(&mut output, "@   IN  NS  ns1.{}.", zone.name).unwrap();
+        writeln!(
+            &mut output,
+            r#"
+@   IN  NS  {}.
+ns  IN  A   {}
+"#,
+            zone.primary_ns, zone.primary_ns_ip
+        )
+        .unwrap();
 
         for record in records {
             let name = if record.name == "@" {

@@ -29,6 +29,7 @@ impl DatabasePool {
                 id INT PRIMARY KEY AUTO_INCREMENT,
                 name VARCHAR(255) UNIQUE NOT NULL,
                 primary_ns VARCHAR(255) NOT NULL,
+                primary_ns_ip VARCHAR(255) NOT NULL,
                 admin_email VARCHAR(255) NOT NULL,
                 ttl INT NOT NULL,
                 serial INT NOT NULL,
