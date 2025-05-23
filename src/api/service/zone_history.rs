@@ -53,20 +53,10 @@ impl ZoneHistoryService {
     }
 
     pub fn create_zone_history(
-        pool: &DatabasePool,
+        tx: &mut mysql::Transaction,
         zone_id: i32,
         log: &str,
-    ) -> Result<ZoneHistory, String> {
-        let mut conn = pool.get_connection();
-
-        if CommonService::get_zone_by_id(&pool, zone_id).is_err() {
-            return Err("Zone not found".to_string());
-        }
-
-        let mut tx = conn
-            .start_transaction(mysql::TxOpts::default())
-            .map_err(|e| format!("Failed to start transaction: {}", e))?;
-
+    ) -> Result<i32, String> {
         tx.exec_drop(
             "INSERT INTO zone_history (zone_id, log) VALUES (?, ?)",
             (zone_id, log),
@@ -75,12 +65,9 @@ impl ZoneHistoryService {
 
         let last_inserted_id = tx
             .last_insert_id()
-            .ok_or_else(|| "Failed to get last insert id".to_string())?;
+            .ok_or_else(|| "Failed to get last inserted ID".to_string())?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-
-        ZoneHistoryService::get_zone_history_by_id(pool, last_inserted_id as i32)
+        Ok(last_inserted_id as i32)
     }
 
     pub fn delete_zone_history(pool: &DatabasePool, zone_history_id: i32) -> Result<(), String> {

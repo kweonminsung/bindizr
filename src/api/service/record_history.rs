@@ -53,20 +53,10 @@ impl RecordHistoryService {
     }
 
     pub fn create_record_history(
-        pool: &DatabasePool,
+        tx: &mut mysql::Transaction,
         record_id: i32,
         log: &str,
-    ) -> Result<RecordHistory, String> {
-        let mut conn = pool.get_connection();
-
-        if CommonService::get_record_by_id(&pool, record_id).is_err() {
-            return Err("Record not found".to_string());
-        }
-
-        let mut tx = conn
-            .start_transaction(mysql::TxOpts::default())
-            .map_err(|e| format!("Failed to start transaction: {}", e))?;
-
+    ) -> Result<i32, String> {
         tx.exec_drop(
             "INSERT INTO record_history (log, record_id) VALUES (?, ?)",
             (log, record_id),
@@ -77,10 +67,7 @@ impl RecordHistoryService {
             .last_insert_id()
             .ok_or_else(|| "Failed to get last insert id".to_string())?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-
-        RecordHistoryService::get_record_history_by_id(&pool, last_insert_id as i32)
+        Ok(last_insert_id as i32)
     }
 
     pub fn delete_record_history(

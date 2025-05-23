@@ -104,12 +104,9 @@ impl RecordService {
             .last_insert_id()
             .ok_or_else(|| "Failed to get last insert id".to_string())?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-
         // create record history
         RecordHistoryService::create_record_history(
-            &pool,
+            &mut tx,
             last_insert_id as i32,
             &format!(
                 "[{}] Record created: id={}, zone_id={}, name={}, type={}, value={}",
@@ -122,6 +119,9 @@ impl RecordService {
             ),
         )
         .map_err(|e| format!("Failed to create record history: {}", e))?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
         CommonService::get_record_by_id(&pool, last_insert_id as i32)
     }
@@ -162,12 +162,9 @@ impl RecordService {
         )
         .map_err(|e| format!("Failed to update record: {}", e))?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-
         // create record history
         RecordHistoryService::create_record_history(
-            &pool,
+            &mut tx,
             record_id,
             &format!(
                 "[{}] Record updated: id={}, zone_id={}, name={}, type={}, value={}",
@@ -179,6 +176,9 @@ impl RecordService {
                 update_record_request.value,
             ),
         )?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
         CommonService::get_record_by_id(&pool, record_id)
     }
@@ -197,12 +197,9 @@ impl RecordService {
         tx.exec_drop("DELETE FROM records WHERE id = ?", (record_id,))
             .map_err(|e| format!("Failed to delete record: {}", e))?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-
         // create record history
         RecordHistoryService::create_record_history(
-            &pool,
+            &mut tx,
             record_id,
             &format!(
                 "[{}] Record deleted: id={}",
@@ -210,6 +207,9 @@ impl RecordService {
                 record_id,
             ),
         )?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
         Ok(())
     }

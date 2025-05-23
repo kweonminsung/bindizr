@@ -82,12 +82,9 @@ impl ZoneService {
             .last_insert_id()
             .ok_or_else(|| "Failed to get last insert id".to_string())?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-
         // create zone history
         ZoneHistoryService::create_zone_history(
-            pool,
+            &mut tx,
             last_insert_id as i32,
             &format!(
                 "[{}] Zone created: id={}, name={}",
@@ -96,6 +93,9 @@ impl ZoneService {
                 create_zone_request.name,
             ),
         )?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
         CommonService::get_zone_by_id(&pool, last_insert_id as i32)
     }
@@ -132,12 +132,9 @@ impl ZoneService {
         )
         .map_err(|e| format!("Failed to update zone: {}", e))?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-
         // create zone history
         ZoneHistoryService::create_zone_history(
-            pool,
+            &mut tx,
             zone_id,
             &format!(
                 "[{}] Zone updated: id={}, name={}",
@@ -146,6 +143,9 @@ impl ZoneService {
                 update_zone_request.name,
             ),
         )?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
         CommonService::get_zone_by_id(&pool, zone_id)
     }
@@ -164,12 +164,9 @@ impl ZoneService {
         tx.exec_drop("DELETE FROM zones WHERE id = ?", (zone_id,))
             .map_err(|e| format!("Failed to delete zone: {}", e))?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-
         // create zone history
         ZoneHistoryService::create_zone_history(
-            pool,
+            &mut tx,
             zone_id,
             &format!(
                 "[{}] Zone deleted: id={}",
@@ -177,6 +174,9 @@ impl ZoneService {
                 zone_id,
             ),
         )?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
         Ok(())
     }
