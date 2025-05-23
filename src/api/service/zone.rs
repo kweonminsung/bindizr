@@ -1,8 +1,9 @@
-use super::common::CommonService;
+use super::{common::CommonService, zone_history::ZoneHistoryService};
 use crate::{
     api::dto::CreateZoneRequest,
     database::{model::zone::Zone, DatabasePool},
 };
+use chrono::Utc;
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
@@ -61,6 +62,18 @@ impl ZoneService {
         tx.commit()
             .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
+        // create zone history
+        ZoneHistoryService::create_zone_history(
+            pool,
+            last_insert_id as i32,
+            &format!(
+                "[{}] Zone created: id={}, name={}",
+                Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                last_insert_id,
+                create_zone_request.name,
+            ),
+        )?;
+
         CommonService::get_zone_by_id(&pool, last_insert_id as i32)
     }
 
@@ -99,6 +112,18 @@ impl ZoneService {
         tx.commit()
             .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
+        // create zone history
+        ZoneHistoryService::create_zone_history(
+            pool,
+            zone_id,
+            &format!(
+                "[{}] Zone updated: id={}, name={}",
+                Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                zone_id,
+                update_zone_request.name,
+            ),
+        )?;
+
         CommonService::get_zone_by_id(&pool, zone_id)
     }
 
@@ -118,6 +143,17 @@ impl ZoneService {
 
         tx.commit()
             .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+        // create zone history
+        ZoneHistoryService::create_zone_history(
+            pool,
+            zone_id,
+            &format!(
+                "[{}] Zone deleted: id={}",
+                Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                zone_id,
+            ),
+        )?;
 
         Ok(())
     }

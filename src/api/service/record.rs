@@ -6,6 +6,7 @@ use crate::{
         DatabasePool,
     },
 };
+use chrono::Utc;
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
@@ -85,11 +86,13 @@ impl RecordService {
             &pool,
             last_insert_id as i32,
             &format!(
-                "Record created: name={}, type={}, value={}, zone_id={}",
+                "[{}] Record created: id={}, zone_id={}, name={}, type={}, value={}",
+                Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                last_insert_id,
+                create_record_request.zone_id,
                 create_record_request.name,
                 create_record_request.record_type,
                 create_record_request.value,
-                create_record_request.zone_id
             ),
         )
         .map_err(|e| format!("Failed to create record history: {}", e))?;
@@ -136,6 +139,21 @@ impl RecordService {
         tx.commit()
             .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
+        // create record history
+        RecordHistoryService::create_record_history(
+            &pool,
+            record_id,
+            &format!(
+                "[{}] Record updated: id={}, zone_id={}, name={}, type={}, value={}",
+                Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                record_id,
+                update_record_request.zone_id,
+                update_record_request.name,
+                update_record_request.record_type,
+                update_record_request.value,
+            ),
+        )?;
+
         CommonService::get_record_by_id(&pool, record_id)
     }
 
@@ -155,6 +173,17 @@ impl RecordService {
 
         tx.commit()
             .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+        // create record history
+        RecordHistoryService::create_record_history(
+            &pool,
+            record_id,
+            &format!(
+                "[{}] Record deleted: id={}",
+                Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                record_id,
+            ),
+        )?;
 
         Ok(())
     }
