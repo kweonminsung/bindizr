@@ -187,7 +187,7 @@ $TTL {}
             let name = if record.name == "@" {
                 "@".to_string()
             } else {
-                format!("{}.", record.name)
+                format!("{}", record.name)
             };
 
             match record.record_type {
