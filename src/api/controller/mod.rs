@@ -23,6 +23,8 @@ impl ApiController {
         // router.register_endpoint(Method::GET, "/test", test);
         router.register_endpoint(Method::GET, "/", ApiController::get_home);
         router.register_endpoint(Method::GET, "/dns/status", ApiController::get_dns_status);
+        router.register_endpoint(Method::GET, "/dns/reload", ApiController::reload_dns);
+        router.register_endpoint(Method::POST, "/dns/config", ApiController::write_dns_config);
 
         router.route(request).await
     }
@@ -48,6 +50,32 @@ impl ApiController {
         };
 
         let json_body = json!({ "status": status  });
+        utils::json_response(json_body, StatusCode::OK)
+    }
+
+    async fn reload_dns(_request: Request) -> Response {
+        let msg = match TestService::reload_dns() {
+            Ok(msg) => msg,
+            Err(err) => {
+                let json_body = json!({ "error": format!("Failed to reload DNS: {}", err) });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let json_body = json!({ "msg": msg  });
+        utils::json_response(json_body, StatusCode::OK)
+    }
+
+    async fn write_dns_config(_request: Request) -> Response {
+        let msg = match TestService::write_dns_config() {
+            Ok(msg) => msg,
+            Err(err) => {
+                let json_body = json!({ "error": format!("Failed to write DNS config: {}", err) });
+                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
+
+        let json_body = json!({ "msg": msg  });
         utils::json_response(json_body, StatusCode::OK)
     }
 }

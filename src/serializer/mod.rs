@@ -9,8 +9,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
 pub fn initialize() {
-    SERIALIZER.mpsc_send("initialize".to_string());
-    // SERIALIZER.mpsc_send("write_config".to_string());
+    SERIALIZER.mpsc_send("initialize");
+    // SERIALIZER.mpsc_send("write_config");
 }
 
 pub struct Serializer {
@@ -43,13 +43,12 @@ impl Serializer {
         Serializer { tx }
     }
 
-    pub fn mpsc_send(&self, message: String) {
-        if let Err(e) = self.tx.send(message) {
+    pub fn mpsc_send(&self, message: &str) {
+        if let Err(e) = self.tx.send(message.to_string()) {
             eprintln!("error sending message: {}", e);
         }
     }
 
-    // TODO: fix this function
     fn write_config() {
         let zones = Serializer::get_zones(&DATABASE_POOL);
 
@@ -75,6 +74,16 @@ impl Serializer {
             eprintln!("Failed to create directory: {}", bind_config_path.display());
         });
 
+        let bindizr_config =
+            Serializer::serialize_bindizr_config(&bind_config_path.display().to_string(), &zones);
+        std::fs::write(
+            format!("{}/named.conf.bindizr", bind_config_path.display()),
+            bindizr_config,
+        )
+        .unwrap_or_else(|_| {
+            eprintln!("Failed to write to file: named.conf.bindizr");
+        });
+
         for zone in zones {
             let records = Serializer::get_records(&DATABASE_POOL, Some(zone.id));
             let serialized_data = Serializer::serialize_zone(&zone, &records);
@@ -87,21 +96,60 @@ impl Serializer {
     }
 
     fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
-        let query = "SELECT * FROM zones";
-        pool.get_connection()
-            .query_map(query, |row: mysql::Row| Zone::from_row(row))
-            .unwrap_or_else(|_| Vec::new())
+        let mut conn = pool.get_connection();
+
+        conn.exec_map(
+            r#"
+            SELECT *
+            FROM zones
+        "#,
+            (),
+            |row| Zone::from_row(row),
+        )
+        .unwrap_or_else(|_| Vec::new())
     }
 
     fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Vec<Record> {
-        let query = match zone_id {
-            Some(id) => format!("SELECT * FROM records WHERE zone_id = {}", id),
-            None => "SELECT * FROM records".to_string(),
-        };
+        let mut conn = pool.get_connection();
 
-        pool.get_connection()
-            .query_map(query, |row: mysql::Row| Record::from_row(row))
-            .unwrap_or_else(|_| Vec::new())
+        match zone_id {
+            Some(id) => conn
+                .exec_map(
+                    r#"
+                        SELECT *
+                        FROM records
+                        WHERE zone_id = ?
+                    "#,
+                    (id,),
+                    |row: mysql::Row| Record::from_row(row),
+                )
+                .unwrap_or_else(|_| Vec::new()),
+            None => conn
+                .exec_map(
+                    r#"
+                    SELECT *
+                    FROM records
+                "#,
+                    (),
+                    |row: mysql::Row| Record::from_row(row),
+                )
+                .unwrap_or_else(|_| Vec::new()),
+        }
+    }
+
+    fn serialize_bindizr_config(bind_config_dir: &str, zones: &[Zone]) -> String {
+        let mut output = String::new();
+
+        for zone in zones {
+            writeln!(
+                &mut output,
+                "zone \"{}\" {{ type master; file \"{}/{}.zone\"; }};",
+                zone.name, bind_config_dir, zone.name
+            )
+            .unwrap();
+        }
+
+        output
     }
 
     pub fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
@@ -113,7 +161,7 @@ impl Serializer {
             r#"
 ; Automatically generated zone file
 $TTL {}
-{}.   IN  SOA {} {} (
+{}.   IN  SOA {}. {}. (
         {} ; serial
         {} ; refresh
         {} ; retry
@@ -133,13 +181,21 @@ $TTL {}
         .unwrap();
 
         // NS record
-        writeln!(&mut output, "@   IN  NS  ns1.{}.", zone.name).unwrap();
+        writeln!(
+            &mut output,
+            r#"
+@   IN  NS  {}.
+ns  IN  A   {}
+"#,
+            zone.primary_ns, zone.primary_ns_ip
+        )
+        .unwrap();
 
         for record in records {
             let name = if record.name == "@" {
                 "@".to_string()
             } else {
-                format!("{}.", record.name)
+                format!("{}", record.name)
             };
 
             match record.record_type {
