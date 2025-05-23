@@ -49,7 +49,6 @@ impl Serializer {
         }
     }
 
-    // TODO: fix this function
     fn write_config() {
         let zones = Serializer::get_zones(&DATABASE_POOL);
 
@@ -73,6 +72,16 @@ impl Serializer {
 
         std::fs::create_dir_all(&bind_config_path).unwrap_or_else(|_| {
             eprintln!("Failed to create directory: {}", bind_config_path.display());
+        });
+
+        let bindizr_config =
+            Serializer::serialize_bindizr_config(&bind_config_path.display().to_string(), &zones);
+        std::fs::write(
+            format!("{}/named.conf.bindizr", bind_config_path.display()),
+            bindizr_config,
+        )
+        .unwrap_or_else(|_| {
+            eprintln!("Failed to write to file: named.conf.bindizr");
         });
 
         for zone in zones {
@@ -102,6 +111,21 @@ impl Serializer {
         pool.get_connection()
             .query_map(query, |row: mysql::Row| Record::from_row(row))
             .unwrap_or_else(|_| Vec::new())
+    }
+
+    fn serialize_bindizr_config(bind_config_dir: &str, zones: &[Zone]) -> String {
+        let mut output = String::new();
+
+        for zone in zones {
+            writeln!(
+                &mut output,
+                "zone \"{}\" {{ type master; file \"{}/{}.zone\"; }};",
+                zone.name, bind_config_dir, zone.name
+            )
+            .unwrap();
+        }
+
+        output
     }
 
     pub fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
