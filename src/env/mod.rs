@@ -12,7 +12,7 @@ pub fn initialize() {
 
     lazy_static::initialize(&_ENV_LOADED);
 
-    // Debugging: Print all environment variables
+    // debugging: Print all environment variables
     // for (key, value) in env::vars() {
     //     println!("{}: {}", key, value);
     // }

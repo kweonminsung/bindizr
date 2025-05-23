@@ -1,4 +1,4 @@
-use super::common::CommonService;
+use super::{common::CommonService, record_history::RecordHistoryService};
 use crate::{
     api::dto::CreateRecordRequest,
     database::{
@@ -72,13 +72,27 @@ impl RecordService {
         )
         .map_err(|e| format!("Failed to insert record: {}", e))?;
 
-        // Get last insert id
+        // get last insert id
         let last_insert_id = tx
             .last_insert_id()
             .ok_or_else(|| "Failed to get last insert id".to_string())?;
 
         tx.commit()
             .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+        // create record history
+        RecordHistoryService::create_record_history(
+            &pool,
+            last_insert_id as i32,
+            &format!(
+                "Record created: name={}, type={}, value={}, zone_id={}",
+                create_record_request.name,
+                create_record_request.record_type,
+                create_record_request.value,
+                create_record_request.zone_id
+            ),
+        )
+        .map_err(|e| format!("Failed to create record history: {}", e))?;
 
         CommonService::get_record_by_id(&pool, last_insert_id as i32)
     }
