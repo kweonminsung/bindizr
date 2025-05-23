@@ -16,7 +16,11 @@ impl RecordHistoryService {
 
         let record_history = conn
             .exec_first(
-                "SELECT * FROM record_history WHERE id = ?",
+                r#"
+                SELECT *
+                FROM record_history
+                WHERE id = ?
+            "#,
                 (record_history_id,),
             )
             .map_err(|e| format!("Failed to fetch record history: {}", e))?
@@ -37,7 +41,11 @@ impl RecordHistoryService {
 
         let record_histories = conn
             .exec_map(
-                "SELECT * FROM record_history WHERE record_id = ?",
+                r#"
+                SELECT *
+                FROM record_history
+                WHERE record_id = ?
+            "#,
                 (record_id,),
                 |row: mysql::Row| RecordHistory::from_row(row),
             )

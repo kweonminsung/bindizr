@@ -14,8 +14,15 @@ impl ZoneService {
     pub fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
         let mut conn = pool.get_connection();
 
-        conn.exec_map("SELECT * FROM zones", (), |row| Zone::from_row(row))
-            .unwrap_or_else(|_| Vec::new())
+        conn.exec_map(
+            r#"
+            SELECT *
+            FROM zones
+        "#,
+            (),
+            |row| Zone::from_row(row),
+        )
+        .unwrap_or_else(|_| Vec::new())
     }
 
     pub fn get_zone(pool: &DatabasePool, zone_id: i32) -> Result<Zone, String> {

@@ -13,7 +13,11 @@ impl CommonService {
         let mut conn = pool.get_connection();
 
         conn.exec_map(
-            "SELECT * FROM zones WHERE id = ?",
+            r#"
+            SELECT *
+            FROM zones
+            WHERE id = ?
+        "#,
             (zone_id,),
             |row: mysql::Row| Zone::from_row(row),
         )
@@ -27,7 +31,11 @@ impl CommonService {
         let mut conn = pool.get_connection();
 
         conn.exec_map(
-            "SELECT * FROM records WHERE id = ?",
+            r#"
+            SELECT *
+            FROM records
+            WHERE id = ?
+        "#,
             (record_id,),
             |row: mysql::Row| Record::from_row(row),
         )

@@ -20,13 +20,20 @@ impl RecordService {
         match zone_id {
             Some(id) => conn
                 .exec_map(
-                    "SELECT * FROM records WHERE zone_id = ?",
+                    r#"
+                        SELECT id, name, record_type, value, ttl, priority, created_at, updated_at, zone_id
+                        FROM records
+                        WHERE zone_id = ?
+                    "#,
                     (id,),
                     |row: mysql::Row| Record::from_row(row),
                 )
                 .unwrap_or_else(|_| Vec::new()),
             None => conn
-                .exec_map("SELECT * FROM records", (), |row: mysql::Row| {
+                .exec_map(r#"
+                    SELECT *
+                    FROM records
+                "#, (), |row: mysql::Row| {
                     Record::from_row(row)
                 })
                 .unwrap_or_else(|_| Vec::new()),
