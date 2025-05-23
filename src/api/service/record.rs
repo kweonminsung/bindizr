@@ -13,6 +13,24 @@ use mysql::prelude::Queryable;
 pub struct RecordService;
 
 impl RecordService {
+    fn get_record_by_name(pool: &DatabasePool, record_name: &str) -> Result<Record, String> {
+        let mut conn = pool.get_connection();
+
+        let record = conn
+            .exec_first(
+                r#"
+                SELECT *
+                FROM records
+                WHERE name = ?
+            "#,
+                (record_name,),
+            )
+            .map_err(|e| format!("Failed to fetch record: {}", e))?
+            .ok_or_else(|| "Record not found".to_string())?;
+
+        Ok(Record::from_row(record))
+    }
+
     pub fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Vec<Record> {
         let mut conn = pool.get_connection();
 
@@ -48,6 +66,14 @@ impl RecordService {
         create_record_request: &CreateRecordRequest,
     ) -> Result<Record, String> {
         let mut conn = pool.get_connection();
+
+        // check if record already exists
+        if let Ok(_) = Self::get_record_by_name(&pool, &create_record_request.name) {
+            return Err(format!(
+                "Record {} already exists",
+                create_record_request.name
+            ));
+        }
 
         if CommonService::get_zone_by_id(&pool, create_record_request.zone_id).is_err() {
             return Err("Zone not found".to_string());

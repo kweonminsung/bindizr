@@ -79,8 +79,8 @@ impl RecordController {
 
         let raw_record = match RecordService::create_record(&DATABASE_POOL, &body) {
             Ok(record) => record,
-            Err(_) => {
-                let json_body = json!({ "error": "Failed to create record" });
+            Err(err) => {
+                let json_body = json!({ "error": format!("Failed to create record: {}", err) });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };

@@ -90,7 +90,6 @@ impl ZoneController {
         let raw_zone = match ZoneService::create_zone(&DATABASE_POOL, &body) {
             Ok(zone) => zone,
             Err(err) => {
-                // let json_body = json!({ "error": "Failed to create zone" });
                 let json_body = json!({ "error": format!("Failed to create zone: {}", err) });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }

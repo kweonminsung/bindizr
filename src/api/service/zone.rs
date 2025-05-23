@@ -10,6 +10,24 @@ use mysql::prelude::Queryable;
 pub struct ZoneService;
 
 impl ZoneService {
+    fn get_zone_by_name(pool: &DatabasePool, zone_name: &str) -> Result<Zone, String> {
+        let mut conn = pool.get_connection();
+
+        let zone = conn
+            .exec_first(
+                r#"
+                SELECT *
+                FROM zones
+                WHERE name = ?
+            "#,
+                (zone_name,),
+            )
+            .map_err(|e| format!("Failed to fetch zone: {}", e))?
+            .ok_or_else(|| "Zone not found".to_string())?;
+
+        Ok(Zone::from_row(zone))
+    }
+
     pub fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
         let mut conn = pool.get_connection();
 
@@ -33,6 +51,11 @@ impl ZoneService {
         create_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, String> {
         let mut conn = pool.get_connection();
+
+        // check if zone already exists
+        if let Ok(_) = Self::get_zone_by_name(&pool, &create_zone_request.name) {
+            return Err(format!("Zone {} already exists", create_zone_request.name));
+        }
 
         let mut tx = conn
             .start_transaction(mysql::TxOpts::default())
