@@ -1,13 +1,11 @@
-use serde_json::json;
-
+use super::internal::{
+    get_param, utils::json_response, Method, Request, Response, Router, StatusCode,
+};
 use crate::{
     api::{dto::GetRecordHistoryResponse, service::record_history::RecordHistoryService},
     database::DATABASE_POOL,
 };
-
-use super::internal::{
-    get_param, utils::json_response, Method, Request, Response, Router, StatusCode,
-};
+use serde_json::json;
 
 pub struct RecordHistoryController;
 

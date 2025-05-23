@@ -1,5 +1,4 @@
-use mysql::prelude::Queryable;
-
+use super::common::CommonService;
 use crate::{
     api::dto::CreateRecordRequest,
     database::{
@@ -7,8 +6,7 @@ use crate::{
         DatabasePool,
     },
 };
-
-use super::common::CommonService;
+use mysql::prelude::Queryable;
 
 #[derive(Clone)]
 pub struct RecordService;

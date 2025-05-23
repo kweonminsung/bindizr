@@ -1,9 +1,8 @@
-use mysql::prelude::Queryable;
-
 use crate::database::{
     model::{record::Record, zone::Zone},
     DatabasePool,
 };
+use mysql::prelude::Queryable;
 
 #[derive(Clone)]
 pub struct CommonService;

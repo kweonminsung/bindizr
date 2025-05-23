@@ -1,11 +1,9 @@
-use mysql::prelude::Queryable;
-
+use super::common::CommonService;
 use crate::{
     api::dto::CreateZoneRequest,
     database::{model::zone::Zone, DatabasePool},
 };
-
-use super::common::CommonService;
+use mysql::prelude::Queryable;
 
 #[derive(Clone)]
 pub struct ZoneService;

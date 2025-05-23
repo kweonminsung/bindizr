@@ -1,8 +1,6 @@
-use mysql::prelude::Queryable;
-
-use crate::database::{model::record_history::RecordHistory, DatabasePool};
-
 use super::common::CommonService;
+use crate::database::{model::record_history::RecordHistory, DatabasePool};
+use mysql::prelude::Queryable;
 
 #[derive(Clone)]
 pub struct RecordHistoryService;

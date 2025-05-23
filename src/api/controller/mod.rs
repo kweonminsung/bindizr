@@ -4,10 +4,9 @@ mod record_history;
 mod zone;
 mod zone_history;
 
+use super::service::test::TestService;
 use internal::{utils, Method, Request, Response, Router, StatusCode};
 use serde_json::json;
-
-use super::service::test::TestService;
 
 pub struct ApiController;
 
