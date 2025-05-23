@@ -9,8 +9,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
 pub fn initialize() {
-    SERIALIZER.mpsc_send("initialize".to_string());
-    // SERIALIZER.mpsc_send("write_config".to_string());
+    SERIALIZER.mpsc_send("initialize");
+    // SERIALIZER.mpsc_send("write_config");
 }
 
 pub struct Serializer {
@@ -43,8 +43,8 @@ impl Serializer {
         Serializer { tx }
     }
 
-    pub fn mpsc_send(&self, message: String) {
-        if let Err(e) = self.tx.send(message) {
+    pub fn mpsc_send(&self, message: &str) {
+        if let Err(e) = self.tx.send(message.to_string()) {
             eprintln!("error sending message: {}", e);
         }
     }
@@ -96,21 +96,45 @@ impl Serializer {
     }
 
     fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
-        let query = "SELECT * FROM zones";
-        pool.get_connection()
-            .query_map(query, |row: mysql::Row| Zone::from_row(row))
-            .unwrap_or_else(|_| Vec::new())
+        let mut conn = pool.get_connection();
+
+        conn.exec_map(
+            r#"
+            SELECT *
+            FROM zones
+        "#,
+            (),
+            |row| Zone::from_row(row),
+        )
+        .unwrap_or_else(|_| Vec::new())
     }
 
     fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Vec<Record> {
-        let query = match zone_id {
-            Some(id) => format!("SELECT * FROM records WHERE zone_id = {}", id),
-            None => "SELECT * FROM records".to_string(),
-        };
+        let mut conn = pool.get_connection();
 
-        pool.get_connection()
-            .query_map(query, |row: mysql::Row| Record::from_row(row))
-            .unwrap_or_else(|_| Vec::new())
+        match zone_id {
+            Some(id) => conn
+                .exec_map(
+                    r#"
+                        SELECT *
+                        FROM records
+                        WHERE zone_id = ?
+                    "#,
+                    (id,),
+                    |row: mysql::Row| Record::from_row(row),
+                )
+                .unwrap_or_else(|_| Vec::new()),
+            None => conn
+                .exec_map(
+                    r#"
+                    SELECT *
+                    FROM records
+                "#,
+                    (),
+                    |row: mysql::Row| Record::from_row(row),
+                )
+                .unwrap_or_else(|_| Vec::new()),
+        }
     }
 
     fn serialize_bindizr_config(bind_config_dir: &str, zones: &[Zone]) -> String {

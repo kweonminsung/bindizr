@@ -38,7 +38,7 @@ impl RecordService {
             Some(id) => conn
                 .exec_map(
                     r#"
-                        SELECT id, name, record_type, value, ttl, priority, created_at, updated_at, zone_id
+                        SELECT *
                         FROM records
                         WHERE zone_id = ?
                     "#,
@@ -47,12 +47,14 @@ impl RecordService {
                 )
                 .unwrap_or_else(|_| Vec::new()),
             None => conn
-                .exec_map(r#"
+                .exec_map(
+                    r#"
                     SELECT *
                     FROM records
-                "#, (), |row: mysql::Row| {
-                    Record::from_row(row)
-                })
+                "#,
+                    (),
+                    |row: mysql::Row| Record::from_row(row),
+                )
                 .unwrap_or_else(|_| Vec::new()),
         }
     }
