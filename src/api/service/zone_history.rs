@@ -12,13 +12,14 @@ impl ZoneHistoryService {
     ) -> Result<ZoneHistory, String> {
         let mut conn = pool.get_connection();
 
-        let res = match conn.exec_first(
+        let res = match conn.exec_map(
             r#"
                 SELECT *
                 FROM zone_history
                 WHERE id = ?
             "#,
             (zone_history_id,),
+            |row: mysql::Row| ZoneHistory::from_row(row),
         ) {
             Ok(zone_history) => zone_history,
             Err(e) => {
@@ -27,9 +28,9 @@ impl ZoneHistoryService {
             }
         };
 
-        let zone_history = res.ok_or_else(|| "Zone history not found".to_string())?;
-
-        Ok(ZoneHistory::from_row(zone_history))
+        res.into_iter()
+            .next()
+            .ok_or_else(|| "Zone history not found".to_string())
     }
 
     pub fn get_zone_histories(

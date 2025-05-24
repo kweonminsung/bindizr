@@ -72,7 +72,7 @@ impl ZoneService {
             Ok(tx) => tx,
             Err(e) => {
                 eprintln!("Failed to start transaction: {}", e);
-                return Err("Failed to insert zone".to_string());
+                return Err("Failed to create zone".to_string());
             }
         };
 
@@ -94,7 +94,7 @@ impl ZoneService {
             Ok(_) => (),
             Err(e) => {
                 eprintln!("Failed to insert zone: {}", e);
-                return Err("Failed to insert zone".to_string());
+                return Err("Failed to create zone".to_string());
             }
         };
 
@@ -103,7 +103,7 @@ impl ZoneService {
             Some(id) => id,
             None => {
                 eprintln!("Failed to get last insert id");
-                return Err("Failed to insert zone".to_string());
+                return Err("Failed to create zone".to_string());
             }
         };
 
@@ -123,7 +123,7 @@ impl ZoneService {
             Ok(_) => (),
             Err(e) => {
                 eprintln!("Failed to commit transaction: {}", e);
-                return Err("Failed to insert zone".to_string());
+                return Err("Failed to create zone".to_string());
             }
         };
 

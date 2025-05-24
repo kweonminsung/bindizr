@@ -107,7 +107,7 @@ impl RecordService {
             Ok(tx) => tx,
             Err(err) => {
                 eprintln!("Failed to start transaction: {}", err);
-                return Err("Failed to insert record".to_string());
+                return Err("Failed to create record".to_string());
             }
         };
 
@@ -125,7 +125,7 @@ impl RecordService {
             Ok(_) => {}
             Err(e) => {
                 eprintln!("Failed to insert record: {}", e);
-                return Err("Failed to insert record".to_string());
+                return Err("Failed to create record".to_string());
             }
         };
 
@@ -134,7 +134,7 @@ impl RecordService {
             Some(id) => id,
             None => {
                 eprintln!("Failed to get last insert id");
-                return Err("Failed to insert record".to_string());
+                return Err("Failed to create record".to_string());
             }
         };
 

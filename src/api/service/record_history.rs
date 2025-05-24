@@ -12,13 +12,14 @@ impl RecordHistoryService {
     ) -> Result<RecordHistory, String> {
         let mut conn = pool.get_connection();
 
-        let res = match conn.exec_first(
+        let res = match conn.exec_map(
             r#"
                 SELECT *
                 FROM record_history
                 WHERE id = ?
             "#,
             (record_history_id,),
+            |row: mysql::Row| RecordHistory::from_row(row),
         ) {
             Ok(record_history) => record_history,
             Err(e) => {
@@ -27,9 +28,9 @@ impl RecordHistoryService {
             }
         };
 
-        let record_history = res.ok_or_else(|| "Record history not found".to_string())?;
-
-        Ok(RecordHistory::from_row(record_history))
+        res.into_iter()
+            .next()
+            .ok_or_else(|| "Record history not found".to_string())
     }
 
     pub fn get_record_histories(
