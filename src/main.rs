@@ -10,6 +10,9 @@ async fn bootstrap() {
     // load config
     config::initialize();
 
+    // initialize database connection pool
+    database::initialize();
+
     // initialize serializer thread
     serializer::initialize();
 
