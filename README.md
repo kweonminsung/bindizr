@@ -37,7 +37,7 @@ $ cat /etc/bind/rndc.conf
 # Output:
 key "rndc-key" {
     algorithm hmac-sha256;  # The algorithm used for RNDC authentication (must match on both sides)
-    secret "cqEa3Oo1CnCgKivL6hdUwuCzlfRH68yeAdrsGeF3Pu0=";  # Shared secret key
+    secret "RNDC_SECRET_KEY";  # Shared secret key (base64 encrypted)
 };
 ```
 
@@ -78,16 +78,16 @@ $ service bind restart
 
 $ echo '
 [server]
-port = 3000
+port = PORT
 
 [mysql]
-server_url = "mysql://root:kweonminsungabcd1234@3.39.183.190:50004/bindizr"
+server_url = "SERVER_URL"
 
 [bind]
-bind_config_path = "temp"
-rndc_algorithm = "hmac-sha256"
-rndc_secret_key = "cqEa3Oo1CnCgKivL6hdUwuCzlfRH68yeAdrsGeF3Pu0="
-rndc_server_url = "127.0.0.1:953"
+bind_config_path = "BIND_CONFIG_PATH"
+rndc_algorithm = "RNDC_ALGORITHM"
+rndc_secret_key = "RNDC_SECRET_KEY"
+rndc_server_url = "RNDC_SERVER_URL"
 ' > bindizr.conf
 
 $ ./bindizr start
