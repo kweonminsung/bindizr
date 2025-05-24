@@ -54,6 +54,12 @@ pub enum RecordType {
     PTR,
 }
 
+impl std::fmt::Display for RecordType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_str())
+    }
+}
+
 impl RecordType {
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s.to_uppercase().as_str() {

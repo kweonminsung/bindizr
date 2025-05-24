@@ -6,12 +6,13 @@ use crate::database::{
 use lazy_static::lazy_static;
 use mysql::prelude::*;
 use std::fmt::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
+use std::{fs, io, thread};
 
+// Initialize the serializer
 pub fn initialize() {
-    SERIALIZER.mpsc_send("initialize");
+    SERIALIZER.send_message("initialize");
 }
 
 pub struct Serializer {
@@ -22,13 +23,26 @@ impl Serializer {
     pub fn new() -> Self {
         let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
 
-        thread::spawn(move || loop {
+        // Spawn worker thread
+        thread::spawn(move || Self::worker_thread(rx));
+
+        Serializer { tx }
+    }
+
+    // Worker thread that processes messages
+    fn worker_thread(rx: Receiver<String>) {
+        loop {
             match rx.recv() {
                 Ok(message) => match message.as_str() {
                     "initialize" => {
                         println!("Serializer initialized");
                     }
-                    "write_config" => Serializer::write_config(),
+                    "write_config" => {
+                        Self::write_config();
+                        // if let Err(e) = Self::write_config() {
+                        //     eprintln!("Failed to write config: {}", e);
+                        // }
+                    }
                     "exit" => {
                         println!("Exiting serializer thread");
                         break;
@@ -37,60 +51,76 @@ impl Serializer {
                         println!("Received unsupported message: {}", message);
                     }
                 },
-                Err(_) => {}
+                Err(e) => {
+                    eprintln!("Error receiving message: {}", e);
+                    break;
+                }
             }
-        });
-
-        Serializer { tx }
+        }
     }
 
-    pub fn mpsc_send(&self, message: &str) {
+    // Send message to worker thread
+    pub fn send_message(&self, message: &str) {
         if let Err(e) = self.tx.send(message.to_string()) {
             eprintln!("error sending message: {}", e);
         }
     }
 
+    // Write DNS configuration files
     fn write_config() {
         let zones = Serializer::get_zones(&DATABASE_POOL);
 
-        let bind_config_path_env = config::get_config("bind.bind_config_path");
-        let bind_config_path = Path::new(&bind_config_path_env);
+        let bind_config_path_str = config::get_config("bind.bind_config_path");
+        let bind_config_path = PathBuf::from(&bind_config_path_str);
         if !bind_config_path.is_dir() {
             eprintln!(
                 "Bind config path is not a directory: {}",
-                bind_config_path_env
+                bind_config_path_str
             );
             return;
         }
         if !bind_config_path.exists() {
-            eprintln!("Bind config path does not exist: {}", bind_config_path_env);
+            eprintln!("Bind config path does not exist: {}", bind_config_path_str);
             return;
         }
 
-        std::fs::remove_dir_all(&bind_config_path).unwrap_or_else(|_| {
-            eprintln!("Failed to remove directory: {}", bind_config_path.display());
+        // Prepare directory for writing
+        let bindizr_config_path = bind_config_path.join("bindizr");
+        if bindizr_config_path.exists() {
+            fs::remove_dir_all(&bindizr_config_path).unwrap_or_else(|_| {
+                eprintln!(
+                    "Failed to reset bindizr config directory: {}",
+                    bindizr_config_path.display()
+                );
+            });
+        }
+        fs::create_dir_all(&bindizr_config_path).unwrap_or_else(|_| {
+            eprintln!(
+                "Failed to create bindizr config directory: {}",
+                bindizr_config_path.display()
+            );
         });
 
-        std::fs::create_dir_all(&bind_config_path).unwrap_or_else(|_| {
-            eprintln!("Failed to create directory: {}", bind_config_path.display());
-        });
-
-        let bindizr_config =
-            Serializer::serialize_bindizr_config(&bind_config_path.display().to_string(), &zones);
-        std::fs::write(
-            format!("{}/named.conf.bindizr", bind_config_path.display()),
-            bindizr_config,
+        // Write include zone config file
+        let include_zone_config = Serializer::serialize_include_zone_config(
+            &bindizr_config_path.display().to_string(),
+            &zones,
+        );
+        fs::write(
+            bindizr_config_path.join("named.conf.bindizr"),
+            include_zone_config,
         )
         .unwrap_or_else(|_| {
             eprintln!("Failed to write to file: named.conf.bindizr");
         });
 
+        // Write zone files
         for zone in zones {
             let records = Serializer::get_records(&DATABASE_POOL, Some(zone.id));
             let serialized_data = Serializer::serialize_zone(&zone, &records);
 
-            let file_path = format!("{}/{}.zone", bind_config_path.display(), zone.name);
-            std::fs::write(file_path, serialized_data).unwrap_or_else(|_| {
+            let file_path = bindizr_config_path.join(format!("{}.zone", zone.name));
+            fs::write(file_path, serialized_data).unwrap_or_else(|_| {
                 eprintln!("Failed to write to file: {}", zone.name);
             });
         }
@@ -107,7 +137,10 @@ impl Serializer {
             (),
             |row| Zone::from_row(row),
         )
-        .unwrap_or_else(|_| Vec::new())
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to fetch zones: {}", e);
+            Vec::new()
+        })
     }
 
     fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Vec<Record> {
@@ -120,32 +153,40 @@ impl Serializer {
                         SELECT *
                         FROM records
                         WHERE zone_id = ?
+                        ORDER BY record_type, name
                     "#,
                     (id,),
                     |row: mysql::Row| Record::from_row(row),
                 )
-                .unwrap_or_else(|_| Vec::new()),
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to fetch records for zone {}: {}", id, e);
+                    Vec::new()
+                }),
             None => conn
                 .exec_map(
                     r#"
                     SELECT *
                     FROM records
+                    ORDER BY zone_id, record_type, name
                 "#,
                     (),
                     |row: mysql::Row| Record::from_row(row),
                 )
-                .unwrap_or_else(|_| Vec::new()),
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to fetch all records: {}", e);
+                    Vec::new()
+                }),
         }
     }
 
-    fn serialize_bindizr_config(bind_config_dir: &str, zones: &[Zone]) -> String {
+    fn serialize_include_zone_config(bindizr_config_dir: &str, zones: &[Zone]) -> String {
         let mut output = String::new();
 
         for zone in zones {
             writeln!(
                 &mut output,
                 "zone \"{}\" {{ type master; file \"{}/{}.zone\"; }};",
-                zone.name, bind_config_dir, zone.name
+                zone.name, bindizr_config_dir, zone.name
             )
             .unwrap();
         }
@@ -159,8 +200,7 @@ impl Serializer {
         // SOA record
         writeln!(
             &mut output,
-            r#"
-; Automatically generated zone file
+            r#"; Automatically generated zone file
 $TTL {}
 {}.   IN  SOA {}. {}. (
         {} ; serial
@@ -184,8 +224,7 @@ $TTL {}
         // NS record
         writeln!(
             &mut output,
-            r#"
-@   IN  NS  {}.
+            r#"@   IN  NS  {}.
 ns  IN  A   {}
 "#,
             zone.primary_ns, zone.primary_ns_ip
@@ -208,7 +247,7 @@ ns  IN  A   {}
                 | RecordType::PTR => {
                     writeln!(
                         &mut output,
-                        "{} {} IN {:?} {}",
+                        "{} {} IN {} {}",
                         name, record.ttl, record.record_type, record.value
                     )
                     .unwrap();

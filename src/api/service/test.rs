@@ -40,7 +40,7 @@ impl TestService {
     pub fn write_dns_config() -> Result<String, String> {
         let serializer = &SERIALIZER;
 
-        serializer.mpsc_send("write_config");
+        serializer.send_message("write_config");
 
         Ok("Config write request sent".to_string())
     }
