@@ -164,15 +164,12 @@ mod platform {
 #[cfg(windows)]
 mod platform {
     use std::{env, fs, path::Path, process::Command};
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
     const PID_FILE: &str = "bindizr.pid";
 
     fn is_pid_running(pid: u32) -> bool {
-        use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::System::Threading::{
-            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-        };
-
         unsafe {
             let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
 
