@@ -47,7 +47,11 @@ async fn main() {
 mod platform {
     use nix::sys::signal::{kill, SIGTERM};
     use nix::unistd::{fork, ForkResult, Pid};
-    use std::{fs, path::Path, process::exit};
+    use std::{
+        env, fs,
+        path::Path,
+        process::{exit, Command},
+    };
 
     const PID_FILE: &str = "/tmp/bindizr.pid";
 
@@ -66,7 +70,7 @@ mod platform {
                         let _ = fs::remove_file(PID_FILE);
                     }
                     // fail to check if process is running
-                    Err(e) => {
+                    Err(_) => {
                         return;
                     }
                 }
@@ -79,19 +83,19 @@ mod platform {
         match unsafe { fork() } {
             Ok(ForkResult::Parent { .. }) => {
                 // parent process does nothing, just exits
-                return;
+                exit(0);
             }
             Ok(ForkResult::Child) => {
-                let pid = std::process::id();
-                fs::write(PID_FILE, pid.to_string()).unwrap();
-                println!("Bindizr running with PID {}", pid);
-
                 // rerun with --foreground flag
-                let exe = std::env::current_exe().unwrap();
-                let err = std::process::Command::new(exe)
+                let exe = env::current_exe().unwrap();
+                let child = Command::new(exe)
                     .arg("--foreground")
                     .spawn()
                     .expect("Failed to start");
+
+                let pid = child.id();
+                fs::write(PID_FILE, pid.to_string()).unwrap();
+                println!("Bindizr running with PID {}", pid);
 
                 exit(0);
             }
@@ -118,22 +122,18 @@ mod platform {
             }
         };
 
-        match kill(Pid::from_raw(pid), None) {
+        match kill(Pid::from_raw(pid), SIGTERM) {
             Ok(_) => {
-                // try sending SIGTERM to the process
-                if kill(Pid::from_raw(pid), SIGTERM).is_ok() {
-                    println!("Stopped bindizr (pid {})", pid);
-                    let _ = fs::remove_file(PID_FILE);
-                } else {
-                    eprintln!("Failed to kill process");
-                }
+                println!("Stopped bindizr (PID {})", pid);
+                let _ = fs::remove_file(PID_FILE);
             }
             Err(nix::errno::Errno::ESRCH) => {
                 // process not found, remove the PID file
                 let _ = fs::remove_file(PID_FILE);
             }
             Err(e) => {
-                eprintln!("Error checking process status: {}", e);
+                // etc errors(permission denied, etc)
+                eprintln!("Failed to kill process: {}", e);
             }
         }
     }
@@ -214,7 +214,7 @@ mod platform {
                 .unwrap();
 
             if status.success() {
-                println!("Stopped bindizr (pid {})", pid);
+                println!("Stopped bindizr (PID {})", pid);
                 let _ = fs::remove_file(PID_FILE);
             } else {
                 eprintln!("Failed to kill process");
