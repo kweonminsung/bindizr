@@ -6,14 +6,10 @@ lazy_static! {
     #[derive(Debug)]
     static ref _CONFIG_LOADED: Config = {
         Config::builder()
-            // .add_source(File::with_name("./bindizr.conf").required(true))
-            .add_source(File::from_str(
-                include_str!("../../bindizr.conf"),
-                FileFormat::Ini,
-            ))
+            .add_source(File::new("./bindizr.conf", FileFormat::Ini).required(true))
             .build()
             .expect("Failed to build configuration")
-    };
+        };
 }
 
 pub fn initialize() {
