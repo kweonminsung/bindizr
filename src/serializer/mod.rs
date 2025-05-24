@@ -224,7 +224,7 @@ ns  IN  A   {}
                 }
                 RecordType::SRV => {
                     // SRV is in the order of priority, weight, port, and target.
-                    // ex: _sip._tcp 3600 IN SRV 10 60 5060 sipserver.example.com.
+                    // e.g.: _sip._tcp 3600 IN SRV 10 60 5060 sipserver.example.com.
                     let parts: Vec<&str> = record.value.split_whitespace().collect();
                     if parts.len() == 3 {
                         writeln!(
@@ -241,7 +241,7 @@ ns  IN  A   {}
                     }
                 }
                 RecordType::SOA => {
-                    // mostly SOA is automatically generated, so ignore it or process it separately.
+                    // Mostly SOA is automatically generated, so ignore it or process it separately.
                     writeln!(
                         &mut output,
                         "{} {} IN SOA {}",

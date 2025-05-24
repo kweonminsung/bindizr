@@ -17,7 +17,6 @@ impl RecordController {
     pub async fn router() -> Router {
         let mut router = Router::new();
 
-        // register routes
         router.register_endpoint(Method::GET, "/records", RecordController::get_records);
         router.register_endpoint(Method::GET, "/records/:id", RecordController::get_record);
         router.register_endpoint(Method::POST, "/records", RecordController::create_record);

@@ -13,7 +13,6 @@ impl RecordHistoryController {
     pub async fn router() -> Router {
         let mut router = Router::new();
 
-        // register routes
         router.register_endpoint(
             Method::GET,
             "/records/:id/histories",

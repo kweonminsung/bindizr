@@ -9,6 +9,6 @@ pub fn parse_mysql_datetime(timestamp: &Value) -> DateTime<Utc> {
                 .unwrap()
                 .with_timezone(&Utc)
         }
-        _ => Utc::now(), // default
+        _ => Utc::now(), // Default
     }
 }

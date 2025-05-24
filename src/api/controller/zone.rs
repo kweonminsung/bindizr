@@ -18,7 +18,6 @@ impl ZoneController {
     pub async fn router() -> Router {
         let mut router = Router::new();
 
-        // register routes
         router.register_endpoint(Method::GET, "/zones", ZoneController::get_zones);
         router.register_endpoint(Method::GET, "/zones/:id", ZoneController::get_zone);
         router.register_endpoint(Method::POST, "/zones", ZoneController::create_zone);
@@ -120,9 +119,8 @@ impl ZoneController {
 
         let raw_zone = match ZoneService::update_zone(&DATABASE_POOL, zone_id, &body) {
             Ok(zone) => zone,
-            Err(err) => {
-                // let json_body = json!({ "error": "Failed to create zone" });
-                let json_body = json!({ "error": format!("Failed to update zone: {}", err) });
+            Err(_) => {
+                let json_body = json!({ "error": "Failed to create zone" });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };

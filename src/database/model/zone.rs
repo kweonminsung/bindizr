@@ -7,13 +7,13 @@ use mysql::Value;
 pub struct Zone {
     pub id: i32,
 
-    pub name: String, // zone name (ex: "example.com")
+    pub name: String, // zone name (e.g.: "example.com")
 
-    pub primary_ns: String, // primary name server (ex: "ns1.example.com")
+    pub primary_ns: String, // primary name server (e.g.: "ns1.example.com")
 
     pub primary_ns_ip: String, // primary name server IP
 
-    pub admin_email: String, // admin email (ex: "admin.example.com")
+    pub admin_email: String, // admin email (e.g.: "admin.example.com")
 
     pub ttl: i32, // default TTL (seconds)
 

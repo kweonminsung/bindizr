@@ -69,7 +69,7 @@ impl RecordService {
     ) -> Result<Record, String> {
         let mut conn = pool.get_connection();
 
-        // check if record already exists
+        // Check if record already exists
         if let Ok(_) = Self::get_record_by_name(&pool, &create_record_request.name) {
             return Err(format!(
                 "Record {} already exists",
@@ -101,12 +101,12 @@ impl RecordService {
         )
         .map_err(|e| format!("Failed to insert record: {}", e))?;
 
-        // get last insert id
+        // Get last insert id
         let last_insert_id = tx
             .last_insert_id()
             .ok_or_else(|| "Failed to get last insert id".to_string())?;
 
-        // create record history
+        // Create record history
         RecordHistoryService::create_record_history(
             &mut tx,
             last_insert_id as i32,
@@ -164,7 +164,7 @@ impl RecordService {
         )
         .map_err(|e| format!("Failed to update record: {}", e))?;
 
-        // create record history
+        // Create record history
         RecordHistoryService::create_record_history(
             &mut tx,
             record_id,
@@ -199,7 +199,7 @@ impl RecordService {
         tx.exec_drop("DELETE FROM records WHERE id = ?", (record_id,))
             .map_err(|e| format!("Failed to delete record: {}", e))?;
 
-        // create record history
+        // Create record history
         RecordHistoryService::create_record_history(
             &mut tx,
             record_id,

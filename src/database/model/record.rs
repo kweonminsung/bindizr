@@ -7,11 +7,11 @@ use serde::Serialize;
 pub struct Record {
     pub id: i32,
 
-    pub name: String, // domain name (ex: "www.example.com")
+    pub name: String, // domain name (e.g.: "www.example.com")
 
     pub record_type: RecordType, // record type
 
-    pub value: String, // record value (ex: IP address, CNAME, etc.)
+    pub value: String, // record value (e.g.: IP address, CNAME, etc.)
 
     pub ttl: i32, // TTL (seconds)
 

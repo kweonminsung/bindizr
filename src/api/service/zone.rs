@@ -52,7 +52,7 @@ impl ZoneService {
     ) -> Result<Zone, String> {
         let mut conn = pool.get_connection();
 
-        // check if zone already exists
+        // Check if zone already exists
         if let Ok(_) = Self::get_zone_by_name(&pool, &create_zone_request.name) {
             return Err(format!("Zone {} already exists", create_zone_request.name));
         }
@@ -83,7 +83,7 @@ impl ZoneService {
             .last_insert_id()
             .ok_or_else(|| "Failed to get last insert id".to_string())?;
 
-        // create zone history
+        // Create zone history
         ZoneHistoryService::create_zone_history(
             &mut tx,
             last_insert_id as i32,
@@ -134,7 +134,7 @@ impl ZoneService {
         )
         .map_err(|e| format!("Failed to update zone: {}", e))?;
 
-        // create zone history
+        // Create zone history
         ZoneHistoryService::create_zone_history(
             &mut tx,
             zone_id,
@@ -166,7 +166,7 @@ impl ZoneService {
         tx.exec_drop("DELETE FROM zones WHERE id = ?", (zone_id,))
             .map_err(|e| format!("Failed to delete zone: {}", e))?;
 
-        // create zone history
+        // Create zone history
         ZoneHistoryService::create_zone_history(
             &mut tx,
             zone_id,
