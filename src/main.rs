@@ -50,8 +50,27 @@ mod platform {
 
     pub fn start() {
         if Path::new(PID_FILE).exists() {
-            println!("Bindizr is already running");
-            return;
+            let pid_str = fs::read_to_string(PID_FILE).unwrap_or_default();
+            if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                let result = kill(Pid::from_raw(pid), None);
+                match result {
+                    Ok(_) => {
+                        println!("Bindizr is already running with PID {}", pid);
+                        return;
+                    }
+                    Err(nix::errno::Errno::ESRCH) => {
+                        // remove stale PID file
+                        let _ = fs::remove_file(PID_FILE);
+                    }
+                    // fail to check if process is running
+                    Err(e) => {
+                        return;
+                    }
+                }
+            } else {
+                // remove invalid PID file
+                let _ = fs::remove_file(PID_FILE);
+            }
         }
 
         match unsafe { fork() } {
@@ -86,17 +105,33 @@ mod platform {
             return;
         }
 
-        let pid = fs::read_to_string(PID_FILE)
-            .unwrap()
-            .trim()
-            .parse::<i32>()
-            .unwrap();
+        let pid_str = fs::read_to_string(PID_FILE).unwrap_or_default();
+        let pid = match pid_str.trim().parse::<i32>() {
+            Ok(pid) => pid,
+            Err(_) => {
+                // remove invalid PID file
+                let _ = fs::remove_file(PID_FILE);
+                return;
+            }
+        };
 
-        if kill(Pid::from_raw(pid), SIGTERM).is_ok() {
-            println!("Stopped bindizr (pid {})", pid);
-            fs::remove_file(PID_FILE).unwrap_or_default();
-        } else {
-            eprintln!("Failed to kill process");
+        match kill(Pid::from_raw(pid), None) {
+            Ok(_) => {
+                // try sending SIGTERM to the process
+                if kill(Pid::from_raw(pid), SIGTERM).is_ok() {
+                    println!("Stopped bindizr (pid {})", pid);
+                    let _ = fs::remove_file(PID_FILE);
+                } else {
+                    eprintln!("Failed to kill process");
+                }
+            }
+            Err(nix::errno::Errno::ESRCH) => {
+                // process not found, remove the PID file
+                let _ = fs::remove_file(PID_FILE);
+            }
+            Err(e) => {
+                eprintln!("Error checking process status: {}", e);
+            }
         }
     }
 }
@@ -107,10 +142,39 @@ mod platform {
 
     const PID_FILE: &str = "bindizr.pid";
 
+    fn is_pid_running(pid: u32) -> bool {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+
+            // no process or access denied
+            if handle == std::ptr::null_mut() {
+                return false;
+            }
+            CloseHandle(handle);
+            true
+        }
+    }
+
     pub fn start() {
         if Path::new(PID_FILE).exists() {
-            println!("Bindizr already running");
-            return;
+            let pid_str = fs::read_to_string(PID_FILE).unwrap_or_default();
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                if is_pid_running(pid) {
+                    println!("Bindizr is already running with PID {}", pid);
+                    return;
+                } else {
+                    // remove stale PID file
+                    let _ = fs::remove_file(PID_FILE);
+                }
+            } else {
+                // remove invalid PID file
+                let _ = fs::remove_file(PID_FILE);
+            }
         }
 
         let exe = env::current_exe().unwrap();
@@ -130,22 +194,31 @@ mod platform {
             return;
         }
 
-        let pid = fs::read_to_string(PID_FILE)
-            .unwrap()
-            .trim()
-            .parse::<u32>()
-            .unwrap();
+        let pid_str = fs::read_to_string(PID_FILE).unwrap_or_default();
+        let pid = match pid_str.trim().parse::<u32>() {
+            Ok(pid) => pid,
+            Err(_) => {
+                // remove invalid PID file
+                let _ = fs::remove_file(PID_FILE);
+                return;
+            }
+        };
 
-        let status = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/F"])
-            .status()
-            .unwrap();
+        if is_pid_running(pid) {
+            let status = Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .status()
+                .unwrap();
 
-        if status.success() {
-            println!("Stopped bindizr (pid {})", pid);
-            fs::remove_file(PID_FILE).unwrap_or_default();
+            if status.success() {
+                println!("Stopped bindizr (pid {})", pid);
+                let _ = fs::remove_file(PID_FILE);
+            } else {
+                eprintln!("Failed to kill process");
+            }
         } else {
-            eprintln!("Failed to kill process");
+            // remove stale PID file
+            let _ = fs::remove_file(PID_FILE);
         }
     }
 }
