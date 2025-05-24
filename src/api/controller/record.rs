@@ -17,7 +17,6 @@ impl RecordController {
     pub async fn router() -> Router {
         let mut router = Router::new();
 
-        // register routes
         router.register_endpoint(Method::GET, "/records", RecordController::get_records);
         router.register_endpoint(Method::GET, "/records/:id", RecordController::get_record);
         router.register_endpoint(Method::POST, "/records", RecordController::create_record);
@@ -34,7 +33,13 @@ impl RecordController {
     async fn get_records(request: Request) -> Response {
         let zone_id = get_query::<i32>(&request, "zone_id");
 
-        let raw_records = RecordService::get_records(&DATABASE_POOL, zone_id);
+        let raw_records = match RecordService::get_records(&DATABASE_POOL, zone_id) {
+            Ok(records) => records,
+            Err(err) => {
+                let json_body = json!({ "error": err });
+                return json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
 
         let records = raw_records
             .iter()
@@ -56,8 +61,8 @@ impl RecordController {
 
         let raw_record = match RecordService::get_record(&DATABASE_POOL, record_id) {
             Ok(record) => record,
-            Err(_) => {
-                let json_body = json!({ "error": "Record not found" });
+            Err(err) => {
+                let json_body = json!({ "error": err });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
@@ -71,7 +76,8 @@ impl RecordController {
     async fn create_record(request: Request) -> Response {
         let body = match get_body::<CreateRecordRequest>(request).await {
             Ok(b) => b,
-            Err(_) => {
+            Err(err) => {
+                eprintln!("Error parsing request body: {}", err);
                 let json_body = json!({ "error": "Invalid request body" });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
@@ -80,7 +86,7 @@ impl RecordController {
         let raw_record = match RecordService::create_record(&DATABASE_POOL, &body) {
             Ok(record) => record,
             Err(err) => {
-                let json_body = json!({ "error": format!("Failed to create record: {}", err) });
+                let json_body = json!({ "error": err });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
@@ -102,7 +108,8 @@ impl RecordController {
 
         let body = match get_body::<CreateRecordRequest>(request).await {
             Ok(b) => b,
-            Err(_) => {
+            Err(err) => {
+                eprintln!("Error parsing request body: {}", err);
                 let json_body = json!({ "error": "Invalid request body" });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
@@ -110,8 +117,8 @@ impl RecordController {
 
         let raw_record = match RecordService::update_record(&DATABASE_POOL, record_id, &body) {
             Ok(record) => record,
-            Err(_) => {
-                let json_body = json!({ "error": "Failed to update record" });
+            Err(err) => {
+                let json_body = json!({ "error": err });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
@@ -137,7 +144,7 @@ impl RecordController {
                 json_response(json_body, StatusCode::OK)
             }
             Err(err) => {
-                let json_body = json!({ "error": format!("Failed to delete record: {}", err) });
+                let json_body = json!({ "error": err });
                 json_response(json_body, StatusCode::BAD_REQUEST)
             }
         }

@@ -13,33 +13,44 @@ impl ZoneService {
     fn get_zone_by_name(pool: &DatabasePool, zone_name: &str) -> Result<Zone, String> {
         let mut conn = pool.get_connection();
 
-        let zone = conn
-            .exec_first(
-                r#"
+        let res = match conn.exec_map(
+            r#"
                 SELECT *
                 FROM zones
                 WHERE name = ?
             "#,
-                (zone_name,),
-            )
-            .map_err(|e| format!("Failed to fetch zone: {}", e))?
-            .ok_or_else(|| "Zone not found".to_string())?;
+            (zone_name,),
+            |row: mysql::Row| Zone::from_row(row),
+        ) {
+            Ok(zones) => zones,
+            Err(e) => {
+                eprintln!("Failed to fetch zone: {}", e);
+                return Err("Failed to fetch zone".to_string());
+            }
+        };
 
-        Ok(Zone::from_row(zone))
+        res.into_iter()
+            .next()
+            .ok_or_else(|| "Zone not found".to_string())
     }
 
-    pub fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
+    pub fn get_zones(pool: &DatabasePool) -> Result<Vec<Zone>, String> {
         let mut conn = pool.get_connection();
 
-        conn.exec_map(
+        match conn.exec_map(
             r#"
             SELECT *
             FROM zones
         "#,
             (),
             |row| Zone::from_row(row),
-        )
-        .unwrap_or_else(|_| Vec::new())
+        ) {
+            Ok(zones) => Ok(zones),
+            Err(e) => {
+                eprintln!("Failed to fetch zones: {}", e);
+                Err("Failed to fetch zones".to_string())
+            }
+        }
     }
 
     pub fn get_zone(pool: &DatabasePool, zone_id: i32) -> Result<Zone, String> {
@@ -52,16 +63,20 @@ impl ZoneService {
     ) -> Result<Zone, String> {
         let mut conn = pool.get_connection();
 
-        // check if zone already exists
+        // Check if zone already exists
         if let Ok(_) = Self::get_zone_by_name(&pool, &create_zone_request.name) {
             return Err(format!("Zone {} already exists", create_zone_request.name));
         }
 
-        let mut tx = conn
-            .start_transaction(mysql::TxOpts::default())
-            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+        let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
+            Ok(tx) => tx,
+            Err(e) => {
+                eprintln!("Failed to start transaction: {}", e);
+                return Err("Failed to insert zone".to_string());
+            }
+        };
 
-        tx.exec_drop(
+        match tx.exec_drop(
             "INSERT INTO zones (name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 &create_zone_request.name,
@@ -75,15 +90,24 @@ impl ZoneService {
                 create_zone_request.expire.unwrap_or(3600000),
                 create_zone_request.minimum_ttl.unwrap_or(86400),
             ),
-        )
-        .map_err(|e| format!("Failed to insert zone: {}", e))?;
+        ) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Failed to insert zone: {}", e);
+                return Err("Failed to insert zone".to_string());
+            }
+        };
 
         // Get last insert id
-        let last_insert_id = tx
-            .last_insert_id()
-            .ok_or_else(|| "Failed to get last insert id".to_string())?;
+        let last_insert_id = match tx.last_insert_id() {
+            Some(id) => id,
+            None => {
+                eprintln!("Failed to get last insert id");
+                return Err("Failed to insert zone".to_string());
+            }
+        };
 
-        // create zone history
+        // Create zone history
         ZoneHistoryService::create_zone_history(
             &mut tx,
             last_insert_id as i32,
@@ -95,8 +119,13 @@ impl ZoneService {
             ),
         )?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        match tx.commit() {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Failed to commit transaction: {}", e);
+                return Err("Failed to insert zone".to_string());
+            }
+        };
 
         CommonService::get_zone_by_id(&pool, last_insert_id as i32)
     }
@@ -108,15 +137,18 @@ impl ZoneService {
     ) -> Result<Zone, String> {
         let mut conn = pool.get_connection();
 
-        if CommonService::get_zone_by_id(&pool, zone_id).is_err() {
-            return Err("Zone not found".to_string());
-        }
+        // Check if zone exists
+        CommonService::get_zone_by_id(&pool, zone_id)?;
 
-        let mut tx = conn
-            .start_transaction(mysql::TxOpts::default())
-            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+        let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
+            Ok(tx) => tx,
+            Err(e) => {
+                eprintln!("Failed to start transaction: {}", e);
+                return Err("Failed to update zone".to_string());
+            }
+        };
 
-        tx.exec_drop(
+        match tx.exec_drop(
             "UPDATE zones SET name = ?, primary_ns = ?, primary_ns_ip = ?, admin_email = ?, ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ? WHERE id = ?",
             (
                 &update_zone_request.name,
@@ -131,10 +163,15 @@ impl ZoneService {
                 update_zone_request.minimum_ttl.unwrap_or(86400),
                 zone_id,
             ),
-        )
-        .map_err(|e| format!("Failed to update zone: {}", e))?;
+        ) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Failed to update zone: {}", e);
+                return Err("Failed to update zone".to_string());
+            }
+        };
 
-        // create zone history
+        // Create zone history
         ZoneHistoryService::create_zone_history(
             &mut tx,
             zone_id,
@@ -146,8 +183,13 @@ impl ZoneService {
             ),
         )?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        match tx.commit() {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Failed to commit transaction: {}", e);
+                return Err("Failed to update zone".to_string());
+            }
+        };
 
         CommonService::get_zone_by_id(&pool, zone_id)
     }
@@ -155,18 +197,26 @@ impl ZoneService {
     pub fn delete_zone(pool: &DatabasePool, zone_id: i32) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
-        if CommonService::get_zone_by_id(&pool, zone_id).is_err() {
-            return Err("Zone not found".to_string());
-        }
+        // Check if zone exists
+        CommonService::get_zone_by_id(&pool, zone_id)?;
 
-        let mut tx = conn
-            .start_transaction(mysql::TxOpts::default())
-            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+        let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
+            Ok(tx) => tx,
+            Err(e) => {
+                eprintln!("Failed to start transaction: {}", e);
+                return Err("Failed to delete zone".to_string());
+            }
+        };
 
-        tx.exec_drop("DELETE FROM zones WHERE id = ?", (zone_id,))
-            .map_err(|e| format!("Failed to delete zone: {}", e))?;
+        match tx.exec_drop("DELETE FROM zones WHERE id = ?", (zone_id,)) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Failed to delete zone: {}", e);
+                return Err("Failed to delete zone".to_string());
+            }
+        };
 
-        // create zone history
+        // Create zone history
         ZoneHistoryService::create_zone_history(
             &mut tx,
             zone_id,
@@ -177,8 +227,13 @@ impl ZoneService {
             ),
         )?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        match tx.commit() {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Failed to commit transaction: {}", e);
+                return Err("Failed to delete zone".to_string());
+            }
+        };
 
         Ok(())
     }

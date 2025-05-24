@@ -13,7 +13,6 @@ impl ZoneHistoryController {
     pub async fn router() -> Router {
         let mut router = Router::new();
 
-        // register routes
         router.register_endpoint(
             Method::GET,
             "/zones/:id/histories",
@@ -40,8 +39,8 @@ impl ZoneHistoryController {
         let raw_zone_histories =
             match ZoneHistoryService::get_zone_histories(&DATABASE_POOL, zone_id) {
                 Ok(zone_histories) => zone_histories,
-                Err(_) => {
-                    let json_body = json!({ "error": "Zone not found" });
+                Err(err) => {
+                    let json_body = json!({ "error": err });
                     return json_response(json_body, StatusCode::BAD_REQUEST);
                 }
             };
@@ -68,12 +67,15 @@ impl ZoneHistoryController {
             }
         };
 
-        if ZoneHistoryService::delete_zone_history(&DATABASE_POOL, history_id).is_err() {
-            let json_body = json!({ "error": "Failed to delete zone history" });
-            return json_response(json_body, StatusCode::BAD_REQUEST);
+        match ZoneHistoryService::delete_zone_history(&DATABASE_POOL, history_id) {
+            Ok(_) => {
+                let json_body = json!({ "message": "Zone history deleted successfully" });
+                json_response(json_body, StatusCode::OK)
+            }
+            Err(err) => {
+                let json_body = json!({ "error": err });
+                return json_response(json_body, StatusCode::BAD_REQUEST);
+            }
         }
-
-        let json_body = json!({ "message": "Zone history deleted successfully" });
-        json_response(json_body, StatusCode::OK)
     }
 }

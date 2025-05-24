@@ -12,7 +12,13 @@ impl TestService {
     // }
 
     pub fn get_dns_status() -> Result<String, String> {
-        let res = RndcClient::command("status")?;
+        let res = match RndcClient::command("status") {
+            Ok(response) => response,
+            Err(e) => {
+                eprintln!("Failed to get DNS status: {}", e);
+                return Err("Failed to get DNS status".to_string());
+            }
+        };
 
         if !res.result {
             return Err("Failed to get DNS status".to_string());
@@ -25,7 +31,13 @@ impl TestService {
     }
 
     pub fn reload_dns() -> Result<String, String> {
-        let res = RndcClient::command("reload")?;
+        let res = match RndcClient::command("reload") {
+            Ok(response) => response,
+            Err(e) => {
+                eprintln!("Failed to reload DNS: {}", e);
+                return Err("Failed to reload DNS".to_string());
+            }
+        };
 
         if !res.result {
             return Err("Failed to reload DNS".to_string());
@@ -40,7 +52,7 @@ impl TestService {
     pub fn write_dns_config() -> Result<String, String> {
         let serializer = &SERIALIZER;
 
-        serializer.mpsc_send("write_config");
+        serializer.send_message("write_config");
 
         Ok("Config write request sent".to_string())
     }

@@ -14,7 +14,7 @@ impl ApiController {
     pub async fn serve(request: Request) -> Response {
         let mut router = Router::new();
 
-        // register routes
+        // Register routes
         router.register_router(record::RecordController::router().await);
         router.register_router(zone::ZoneController::router().await);
         router.register_router(zone_history::ZoneHistoryController::router().await);

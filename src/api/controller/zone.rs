@@ -18,7 +18,6 @@ impl ZoneController {
     pub async fn router() -> Router {
         let mut router = Router::new();
 
-        // register routes
         router.register_endpoint(Method::GET, "/zones", ZoneController::get_zones);
         router.register_endpoint(Method::GET, "/zones/:id", ZoneController::get_zone);
         router.register_endpoint(Method::POST, "/zones", ZoneController::create_zone);
@@ -29,7 +28,13 @@ impl ZoneController {
     }
 
     async fn get_zones(_request: Request) -> Response {
-        let raw_zones = ZoneService::get_zones(&DATABASE_POOL);
+        let raw_zones = match ZoneService::get_zones(&DATABASE_POOL) {
+            Ok(zones) => zones,
+            Err(err) => {
+                let json_body = json!({ "error": err });
+                return json_response(json_body, StatusCode::BAD_REQUEST);
+            }
+        };
 
         let zones = raw_zones
             .iter()
@@ -53,14 +58,20 @@ impl ZoneController {
 
         let raw_zone = match ZoneService::get_zone(&DATABASE_POOL, zone_id) {
             Ok(zone) => zone,
-            Err(_) => {
-                let json_body = json!({ "error": "Zone not found" });
+            Err(err) => {
+                let json_body = json!({ "error": err });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
 
         let raw_records = match records_query {
-            Some(true) => RecordService::get_records(&DATABASE_POOL, Some(zone_id)),
+            Some(true) => match RecordService::get_records(&DATABASE_POOL, Some(zone_id)) {
+                Ok(records) => records,
+                Err(err) => {
+                    let json_body = json!({ "error": err });
+                    return json_response(json_body, StatusCode::BAD_REQUEST);
+                }
+            },
             _ => vec![],
         };
         let records = raw_records
@@ -81,7 +92,8 @@ impl ZoneController {
     async fn create_zone(request: Request) -> Response {
         let body = match get_body::<CreateZoneRequest>(request).await {
             Ok(b) => b,
-            Err(_) => {
+            Err(err) => {
+                eprintln!("Error parsing request body: {}", err);
                 let json_body = json!({ "error": "Invalid request body" });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
@@ -90,7 +102,7 @@ impl ZoneController {
         let raw_zone = match ZoneService::create_zone(&DATABASE_POOL, &body) {
             Ok(zone) => zone,
             Err(err) => {
-                let json_body = json!({ "error": format!("Failed to create zone: {}", err) });
+                let json_body = json!({ "error": err });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };
@@ -112,7 +124,8 @@ impl ZoneController {
 
         let body = match get_body::<CreateZoneRequest>(request).await {
             Ok(b) => b,
-            Err(_) => {
+            Err(err) => {
+                eprintln!("Error parsing request body: {}", err);
                 let json_body = json!({ "error": "Invalid request body" });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
@@ -121,8 +134,7 @@ impl ZoneController {
         let raw_zone = match ZoneService::update_zone(&DATABASE_POOL, zone_id, &body) {
             Ok(zone) => zone,
             Err(err) => {
-                // let json_body = json!({ "error": "Failed to create zone" });
-                let json_body = json!({ "error": format!("Failed to update zone: {}", err) });
+                let json_body = json!({ "error": err });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
         };

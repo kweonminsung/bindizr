@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 lazy_static! {
-    pub static ref RNDC_CLIENT_BASE: rndc::RndcClient = {
+    pub static ref _RNDC_CLIENT: rndc::RndcClient = {
         let server_url = crate::config::get_config("bind.rndc_server_url");
         let algorithm = crate::config::get_config("bind.rndc_algorithm");
         let secret_key = crate::config::get_config("bind.rndc_secret_key");
@@ -16,7 +16,7 @@ pub struct RndcClient;
 impl RndcClient {
     pub fn command(command: &str) -> Result<rndc::RndcResult, String> {
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let rndc_client = &RNDC_CLIENT_BASE;
+            let rndc_client = &_RNDC_CLIENT;
             let res = rndc_client.rndc_command(command)?;
 
             if !res.result {
