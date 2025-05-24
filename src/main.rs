@@ -21,7 +21,7 @@ pub async fn bootstrap() {
 async fn main() {
     #[cfg(not(any(windows, unix)))]
     {
-        eprintln!("Unsupported platform. Only Windows and Unix-like systems are supported.");
+        eprintln!("Unsupported platform. Only Windows and Unix-like systems are supported");
         std::process::exit(1);
     }
 
@@ -36,7 +36,7 @@ async fn main() {
         "start" => platform::start(),
         "stop" => platform::stop(),
         "-f" | "--foreground" => bootstrap().await,
-        _ => eprintln!("Unsupported command."),
+        _ => eprintln!("Unsupported command"),
     }
 }
 
@@ -50,7 +50,7 @@ mod platform {
 
     pub fn start() {
         if Path::new(PID_FILE).exists() {
-            println!("Bindizr is already running.");
+            println!("Bindizr is already running");
             return;
         }
 
@@ -62,7 +62,7 @@ mod platform {
             Ok(ForkResult::Child) => {
                 let pid = std::process::id();
                 fs::write(PID_FILE, pid.to_string()).unwrap();
-                println!("Bindizr running with PID {}.", pid);
+                println!("Bindizr running with PID {}", pid);
 
                 // rerun with --foreground flag
                 let exe = std::env::current_exe().unwrap();
@@ -82,7 +82,7 @@ mod platform {
 
     pub fn stop() {
         if !Path::new(PID_FILE).exists() {
-            println!("Bindizr not running.");
+            println!("Bindizr not running");
             return;
         }
 
@@ -93,10 +93,10 @@ mod platform {
             .unwrap();
 
         if kill(Pid::from_raw(pid), SIGTERM).is_ok() {
-            println!("Stopped bindizr (pid {}).", pid);
+            println!("Stopped bindizr (pid {})", pid);
             fs::remove_file(PID_FILE).unwrap_or_default();
         } else {
-            eprintln!("Failed to kill process.");
+            eprintln!("Failed to kill process");
         }
     }
 }
@@ -109,7 +109,7 @@ mod platform {
 
     pub fn start() {
         if Path::new(PID_FILE).exists() {
-            println!("Bindizr already running.");
+            println!("Bindizr already running");
             return;
         }
 
@@ -121,12 +121,12 @@ mod platform {
 
         let pid = child.id();
         fs::write(PID_FILE, pid.to_string()).unwrap();
-        println!("Bindizr running with PID {}.", pid);
+        println!("Bindizr running with PID {}", pid);
     }
 
     pub fn stop() {
         if !Path::new(PID_FILE).exists() {
-            println!("Bindizr not running.");
+            println!("Bindizr not running");
             return;
         }
 
@@ -142,10 +142,10 @@ mod platform {
             .unwrap();
 
         if status.success() {
-            println!("Stopped bindizr (pid {}).", pid);
+            println!("Stopped bindizr (pid {})", pid);
             fs::remove_file(PID_FILE).unwrap_or_default();
         } else {
-            eprintln!("Failed to kill process.");
+            eprintln!("Failed to kill process");
         }
     }
 }

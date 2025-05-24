@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use config::{Config, File, FileFormat, Source, Value};
 use lazy_static::lazy_static;
 
@@ -17,6 +18,8 @@ lazy_static! {
 
 pub fn initialize() {
     lazy_static::initialize(&_CONFIG_LOADED);
+
+    println!("Configuration loaded successfully");
 
     // Debug: Print the loaded configuration
     // for (key, value) in _CONFIG_LOADED.collect().unwrap() {
