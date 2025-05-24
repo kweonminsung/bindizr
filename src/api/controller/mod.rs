@@ -45,7 +45,7 @@ impl ApiController {
             Ok(status) => status,
             Err(err) => {
                 let json_body = json!({ "error": format!("Failed to get DNS status: {}", err) });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return utils::json_response(json_body, StatusCode::INTERNAL_SERVER_ERROR);
             }
         };
 
@@ -58,7 +58,7 @@ impl ApiController {
             Ok(msg) => msg,
             Err(err) => {
                 let json_body = json!({ "error": format!("Failed to reload DNS: {}", err) });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return utils::json_response(json_body, StatusCode::INTERNAL_SERVER_ERROR);
             }
         };
 
@@ -71,7 +71,7 @@ impl ApiController {
             Ok(msg) => msg,
             Err(err) => {
                 let json_body = json!({ "error": format!("Failed to write DNS config: {}", err) });
-                return utils::json_response(json_body, StatusCode::BAD_REQUEST);
+                return utils::json_response(json_body, StatusCode::INTERNAL_SERVER_ERROR);
             }
         };
 

@@ -1,12 +1,34 @@
 use lazy_static::lazy_static;
-use rndc::RndcClient;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 lazy_static! {
-    pub static ref RNDC_CLIENT: RndcClient = {
-        let server_url = crate::env::get_env("RNDC_SERVER_URL");
-        let algorithm = crate::env::get_env("RNDC_ALGORITHM");
-        let secret_key = crate::env::get_env("RNDC_SECRET_KEY");
+    pub static ref RNDC_CLIENT_BASE: rndc::RndcClient = {
+        let server_url = crate::config::get_config("bind.rndc_server_url");
+        let algorithm = crate::config::get_config("bind.rndc_algorithm");
+        let secret_key = crate::config::get_config("bind.rndc_secret_key");
 
-        RndcClient::new(&server_url, &algorithm, &secret_key)
+        rndc::RndcClient::new(&server_url, &algorithm, &secret_key)
     };
+}
+
+pub struct RndcClient;
+
+impl RndcClient {
+    pub fn command(command: &str) -> Result<rndc::RndcResult, String> {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let rndc_client = &RNDC_CLIENT_BASE;
+            let res = rndc_client.rndc_command(command)?;
+
+            if !res.result {
+                return Err("Failed to execute RNDC command".to_string());
+            }
+
+            Ok(res)
+        }));
+
+        match result {
+            Ok(res) => res,
+            Err(_) => Err("Panic occurred while accessing RNDC client".to_string()),
+        }
+    }
 }

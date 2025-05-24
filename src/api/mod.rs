@@ -2,7 +2,7 @@ mod controller;
 mod dto;
 mod service;
 
-use crate::env::get_env;
+use crate::config;
 use controller::ApiController;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
 pub async fn initialize() {
-    let app_port = get_env("API_PORT");
+    let app_port = config::get_config("server.port");
 
     let addr = SocketAddr::from(([127, 0, 0, 1], app_port.parse::<u16>().unwrap()));
     let listener = TcpListener::bind(addr).await.unwrap();

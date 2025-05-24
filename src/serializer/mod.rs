@@ -1,6 +1,8 @@
-use crate::database::model::{record::Record, record::RecordType, zone::Zone};
-use crate::database::{DatabasePool, DATABASE_POOL};
-use crate::env::get_env;
+use crate::config;
+use crate::database::{
+    model::{record::Record, record::RecordType, zone::Zone},
+    {DatabasePool, DATABASE_POOL},
+};
 use lazy_static::lazy_static;
 use mysql::prelude::*;
 use std::fmt::Write;
@@ -10,7 +12,6 @@ use std::thread;
 
 pub fn initialize() {
     SERIALIZER.mpsc_send("initialize");
-    // SERIALIZER.mpsc_send("write_config");
 }
 
 pub struct Serializer {
@@ -52,7 +53,7 @@ impl Serializer {
     fn write_config() {
         let zones = Serializer::get_zones(&DATABASE_POOL);
 
-        let bind_config_path_env = get_env("BIND_CONFIG_PATH");
+        let bind_config_path_env = config::get_config("bind.bind_config_path");
         let bind_config_path = Path::new(&bind_config_path_env);
         if !bind_config_path.is_dir() {
             eprintln!(

@@ -1,4 +1,4 @@
-use crate::{rndc::RNDC_CLIENT, serializer::SERIALIZER};
+use crate::{rndc::RndcClient, serializer::SERIALIZER};
 
 #[derive(Clone)]
 pub struct TestService;
@@ -12,9 +12,7 @@ impl TestService {
     // }
 
     pub fn get_dns_status() -> Result<String, String> {
-        let rndc_client = &RNDC_CLIENT;
-
-        let res = rndc_client.rndc_command("status")?;
+        let res = RndcClient::command("status")?;
 
         if !res.result {
             return Err("Failed to get DNS status".to_string());
@@ -27,9 +25,7 @@ impl TestService {
     }
 
     pub fn reload_dns() -> Result<String, String> {
-        let rndc_client = &RNDC_CLIENT;
-
-        let res = rndc_client.rndc_command("reload")?;
+        let res = RndcClient::command("reload")?;
 
         if !res.result {
             return Err("Failed to reload DNS".to_string());
