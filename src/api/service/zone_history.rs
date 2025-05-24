@@ -12,17 +12,22 @@ impl ZoneHistoryService {
     ) -> Result<ZoneHistory, String> {
         let mut conn = pool.get_connection();
 
-        let zone_history = conn
-            .exec_first(
-                r#"
+        let res = match conn.exec_first(
+            r#"
                 SELECT *
                 FROM zone_history
                 WHERE id = ?
             "#,
-                (zone_history_id,),
-            )
-            .map_err(|e| format!("Failed to fetch zone history: {}", e))?
-            .ok_or_else(|| "Zone history not found".to_string())?;
+            (zone_history_id,),
+        ) {
+            Ok(zone_history) => zone_history,
+            Err(e) => {
+                eprintln!("Failed to fetch zone history: {}", e);
+                return Err("Failed to fetch zone history".to_string());
+            }
+        };
+
+        let zone_history = res.ok_or_else(|| "Zone history not found".to_string())?;
 
         Ok(ZoneHistory::from_row(zone_history))
     }
@@ -33,23 +38,26 @@ impl ZoneHistoryService {
     ) -> Result<Vec<ZoneHistory>, String> {
         let mut conn = pool.get_connection();
 
-        if CommonService::get_zone_by_id(&pool, zone_id).is_err() {
-            return Err("Zone not found".to_string());
-        }
+        // Check if the zone exists
+        CommonService::get_zone_by_id(&pool, zone_id)?;
 
-        let zone_histories = conn
-            .exec_map(
-                r#"
+        let res = match conn.exec_map(
+            r#"
                 SELECT *
                 FROM zone_history
                 WHERE zone_id = ?
             "#,
-                (zone_id,),
-                |row: mysql::Row| ZoneHistory::from_row(row),
-            )
-            .map_err(|e| format!("Failed to fetch zone histories: {}", e))?;
+            (zone_id,),
+            |row: mysql::Row| ZoneHistory::from_row(row),
+        ) {
+            Ok(zone_histories) => zone_histories,
+            Err(e) => {
+                eprintln!("Failed to fetch zone histories: {}", e);
+                return Err("Failed to fetch zone histories".to_string());
+            }
+        };
 
-        Ok(zone_histories)
+        Ok(res)
     }
 
     pub fn create_zone_history(
@@ -57,15 +65,24 @@ impl ZoneHistoryService {
         zone_id: i32,
         log: &str,
     ) -> Result<i32, String> {
-        tx.exec_drop(
+        match tx.exec_drop(
             "INSERT INTO zone_history (zone_id, log) VALUES (?, ?)",
             (zone_id, log),
-        )
-        .map_err(|e| format!("Failed to insert zone history: {}", e))?;
+        ) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to insert zone history: {}", e);
+                return Err("Failed to insert zone history".to_string());
+            }
+        };
 
-        let last_inserted_id = tx
-            .last_insert_id()
-            .ok_or_else(|| "Failed to get last inserted ID".to_string())?;
+        let last_inserted_id = match tx.last_insert_id() {
+            Some(id) => id,
+            None => {
+                eprintln!("Failed to get last inserted ID");
+                return Err("Failed to insert zone history".to_string());
+            }
+        };
 
         Ok(last_inserted_id as i32)
     }
@@ -73,18 +90,22 @@ impl ZoneHistoryService {
     pub fn delete_zone_history(pool: &DatabasePool, zone_history_id: i32) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
-        if Self::get_zone_history_by_id(&pool, zone_history_id).is_err() {
-            return Err("Zone history not found".to_string());
-        }
+        // Check if the zone history exists
+        Self::get_zone_history_by_id(&pool, zone_history_id)?;
 
-        conn.exec_drop(
+        match conn.exec_drop(
             r#"
             DELETE FROM zone_history
             WHERE id = ?
         "#,
             (zone_history_id,),
-        )
-        .map_err(|e| format!("Failed to delete zone history: {}", e))?;
+        ) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to delete zone history: {}", e);
+                return Err("Failed to delete zone history".to_string());
+            }
+        };
 
         Ok(())
     }

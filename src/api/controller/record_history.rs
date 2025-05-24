@@ -39,8 +39,8 @@ impl RecordHistoryController {
         let raw_record_histories =
             match RecordHistoryService::get_record_histories(&DATABASE_POOL, record_id) {
                 Ok(record_histories) => record_histories,
-                Err(_) => {
-                    let json_body = json!({ "error": "Record not found" });
+                Err(err) => {
+                    let json_body = json!({ "error": err });
                     return json_response(json_body, StatusCode::BAD_REQUEST);
                 }
             };

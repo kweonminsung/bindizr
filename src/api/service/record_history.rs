@@ -12,17 +12,22 @@ impl RecordHistoryService {
     ) -> Result<RecordHistory, String> {
         let mut conn = pool.get_connection();
 
-        let record_history = conn
-            .exec_first(
-                r#"
+        let res = match conn.exec_first(
+            r#"
                 SELECT *
                 FROM record_history
                 WHERE id = ?
             "#,
-                (record_history_id,),
-            )
-            .map_err(|e| format!("Failed to fetch record history: {}", e))?
-            .ok_or_else(|| "Record history not found".to_string())?;
+            (record_history_id,),
+        ) {
+            Ok(record_history) => record_history,
+            Err(e) => {
+                eprintln!("Failed to fetch record history: {}", e);
+                return Err("Failed to fetch record history".to_string());
+            }
+        };
+
+        let record_history = res.ok_or_else(|| "Record history not found".to_string())?;
 
         Ok(RecordHistory::from_row(record_history))
     }
@@ -33,23 +38,26 @@ impl RecordHistoryService {
     ) -> Result<Vec<RecordHistory>, String> {
         let mut conn = pool.get_connection();
 
-        if CommonService::get_record_by_id(&pool, record_id).is_err() {
-            return Err("Record not found".to_string());
-        }
+        // Check if the record exists
+        CommonService::get_record_by_id(&pool, record_id)?;
 
-        let record_histories = conn
-            .exec_map(
-                r#"
+        let res = match conn.exec_map(
+            r#"
                 SELECT *
                 FROM record_history
                 WHERE record_id = ?
             "#,
-                (record_id,),
-                |row: mysql::Row| RecordHistory::from_row(row),
-            )
-            .map_err(|e| format!("Failed to fetch record histories: {}", e))?;
+            (record_id,),
+            |row: mysql::Row| RecordHistory::from_row(row),
+        ) {
+            Ok(record_histories) => record_histories,
+            Err(e) => {
+                eprintln!("Failed to fetch record histories: {}", e);
+                return Err("Failed to fetch record histories".to_string());
+            }
+        };
 
-        Ok(record_histories)
+        Ok(res)
     }
 
     pub fn create_record_history(
@@ -57,15 +65,24 @@ impl RecordHistoryService {
         record_id: i32,
         log: &str,
     ) -> Result<i32, String> {
-        tx.exec_drop(
+        match tx.exec_drop(
             "INSERT INTO record_history (log, record_id) VALUES (?, ?)",
             (log, record_id),
-        )
-        .map_err(|e| format!("Failed to insert record history: {}", e))?;
+        ) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Failed to insert record history: {}", e);
+                return Err("Failed to insert record history".to_string());
+            }
+        };
 
-        let last_insert_id = tx
-            .last_insert_id()
-            .ok_or_else(|| "Failed to get last insert id".to_string())?;
+        let last_insert_id = match tx.last_insert_id() {
+            Some(id) => id,
+            None => {
+                eprintln!("Failed to get last insert id");
+                return Err("Failed to insert record history".to_string());
+            }
+        };
 
         Ok(last_insert_id as i32)
     }
@@ -76,15 +93,19 @@ impl RecordHistoryService {
     ) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
-        if RecordHistoryService::get_record_history_by_id(&pool, record_history_id).is_err() {
-            return Err("Record history not found".to_string());
-        }
+        // Check if the record history exists
+        Self::get_record_history_by_id(&pool, record_history_id)?;
 
-        conn.exec_drop(
+        match conn.exec_drop(
             "DELETE FROM record_history WHERE id = ?",
             (record_history_id,),
-        )
-        .map_err(|e| format!("Failed to delete record history: {}", e))?;
+        ) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Failed to delete record history: {}", e);
+                return Err("Failed to delete record history".to_string());
+            }
+        };
 
         Ok(())
     }

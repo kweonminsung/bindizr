@@ -87,14 +87,14 @@ impl Serializer {
         // Prepare directory for writing
         let bindizr_config_path = bind_config_path.join("bindizr");
         if bindizr_config_path.exists() {
-            if let Err(_) = fs::remove_dir_all(&bindizr_config_path) {
+            if fs::remove_dir_all(&bindizr_config_path).is_err() {
                 return Err(format!(
                     "Failed to remove existing bindizr config directory: {}",
                     bindizr_config_path.display()
                 ));
             }
         }
-        if let Err(_) = fs::create_dir_all(&bindizr_config_path) {
+        if fs::create_dir_all(&bindizr_config_path).is_err() {
             return Err(format!(
                 "Failed to create bindizr config directory: {}",
                 bindizr_config_path.display()
@@ -104,10 +104,12 @@ impl Serializer {
         // Write include zone config file
         let include_zone_config =
             Self::serialize_include_zone_config(&bindizr_config_path.display().to_string(), &zones);
-        if let Err(_) = fs::write(
+        if fs::write(
             bindizr_config_path.join("named.conf.bindizr"),
             include_zone_config,
-        ) {
+        )
+        .is_err()
+        {
             return Err(format!(
                 "Failed to write to file: {}",
                 bindizr_config_path.join("named.conf.bindizr").display()
@@ -120,7 +122,7 @@ impl Serializer {
             let serialized_data = Self::serialize_zone(&zone, &records);
 
             let file_path = bindizr_config_path.join(format!("{}.zone", zone.name));
-            if let Err(_) = fs::write(file_path, serialized_data) {
+            if fs::write(file_path, serialized_data).is_err() {
                 return Err(format!("Failed to write to file: {}", zone.name));
             }
         }

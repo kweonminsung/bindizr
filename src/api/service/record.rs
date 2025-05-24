@@ -16,27 +16,36 @@ impl RecordService {
     fn get_record_by_name(pool: &DatabasePool, record_name: &str) -> Result<Record, String> {
         let mut conn = pool.get_connection();
 
-        let record = conn
-            .exec_first(
-                r#"
+        let res = match conn.exec_map(
+            r#"
                 SELECT *
                 FROM records
                 WHERE name = ?
             "#,
-                (record_name,),
-            )
-            .map_err(|e| format!("Failed to fetch record: {}", e))?
-            .ok_or_else(|| "Record not found".to_string())?;
+            (record_name,),
+            |row: mysql::Row| Record::from_row(row),
+        ) {
+            Ok(record) => record,
+            Err(e) => {
+                eprintln!("Failed to fetch record: {}", e);
+                return Err("Failed to fetch record".to_string());
+            }
+        };
 
-        Ok(Record::from_row(record))
+        res.into_iter()
+            .next()
+            .ok_or_else(|| "Record not found".to_string())
     }
 
-    pub fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Vec<Record> {
+    pub fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Result<Vec<Record>, String> {
         let mut conn = pool.get_connection();
 
         match zone_id {
-            Some(id) => conn
-                .exec_map(
+            Some(id) => {
+                // Check if zone exists
+                CommonService::get_zone_by_id(&pool, id)?;
+
+                match conn.exec_map(
                     r#"
                         SELECT *
                         FROM records
@@ -44,18 +53,28 @@ impl RecordService {
                     "#,
                     (id,),
                     |row: mysql::Row| Record::from_row(row),
-                )
-                .unwrap_or_else(|_| Vec::new()),
-            None => conn
-                .exec_map(
-                    r#"
+                ) {
+                    Ok(records) => Ok(records),
+                    Err(e) => {
+                        eprintln!("Failed to fetch records: {}", e);
+                        Err("Failed to fetch records".to_string())
+                    }
+                }
+            }
+            None => match conn.exec_map(
+                r#"
                     SELECT *
                     FROM records
                 "#,
-                    (),
-                    |row: mysql::Row| Record::from_row(row),
-                )
-                .unwrap_or_else(|_| Vec::new()),
+                (),
+                |row: mysql::Row| Record::from_row(row),
+            ) {
+                Ok(records) => Ok(records),
+                Err(e) => {
+                    eprintln!("Failed to fetch records: {}", e);
+                    Err("Failed to fetch records".to_string())
+                }
+            },
         }
     }
 
@@ -77,18 +96,22 @@ impl RecordService {
             ));
         }
 
-        if CommonService::get_zone_by_id(&pool, create_record_request.zone_id).is_err() {
-            return Err("Zone not found".to_string());
-        }
+        // Check if zone exists
+        CommonService::get_zone_by_id(&pool, create_record_request.zone_id)?;
 
+        // Validate record type
         let record_type = RecordType::from_str(&create_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", create_record_request.record_type))?;
 
-        let mut tx = conn
-            .start_transaction(mysql::TxOpts::default())
-            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+        let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
+            Ok(tx) => tx,
+            Err(err) => {
+                eprintln!("Failed to start transaction: {}", err);
+                return Err("Failed to insert record".to_string());
+            }
+        };
 
-        tx.exec_drop(
+        match tx.exec_drop(
             "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES (?, ?, ?, ?, ?, ?)",
             (
                 &create_record_request.name,
@@ -98,13 +121,22 @@ impl RecordService {
                 create_record_request.priority,
                 create_record_request.zone_id,
             ),
-        )
-        .map_err(|e| format!("Failed to insert record: {}", e))?;
+        ) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to insert record: {}", e);
+                return Err("Failed to insert record".to_string());
+            }
+        };
 
         // Get last insert id
-        let last_insert_id = tx
-            .last_insert_id()
-            .ok_or_else(|| "Failed to get last insert id".to_string())?;
+        let last_insert_id = match tx.last_insert_id() {
+            Some(id) => id,
+            None => {
+                eprintln!("Failed to get last insert id");
+                return Err("Failed to insert record".to_string());
+            }
+        };
 
         // Create record history
         RecordHistoryService::create_record_history(
@@ -119,11 +151,15 @@ impl RecordService {
                 create_record_request.record_type,
                 create_record_request.value,
             ),
-        )
-        .map_err(|e| format!("Failed to create record history: {}", e))?;
+        )?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        match tx.commit() {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to commit transaction: {}", e);
+                return Err("Failed to create record history".to_string());
+            }
+        };
 
         CommonService::get_record_by_id(&pool, last_insert_id as i32)
     }
@@ -135,22 +171,24 @@ impl RecordService {
     ) -> Result<Record, String> {
         let mut conn = pool.get_connection();
 
-        if CommonService::get_record_by_id(&pool, record_id).is_err() {
-            return Err("Record not found".to_string());
-        }
+        // Check if record exists
+        CommonService::get_record_by_id(&pool, record_id)?;
 
-        if CommonService::get_zone_by_id(&pool, update_record_request.zone_id).is_err() {
-            return Err("Zone not found".to_string());
-        }
+        // Check if zone exists
+        CommonService::get_zone_by_id(&pool, update_record_request.zone_id)?;
 
         let record_type = RecordType::from_str(&update_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
 
-        let mut tx = conn
-            .start_transaction(mysql::TxOpts::default())
-            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+        let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
+            Ok(tx) => tx,
+            Err(err) => {
+                eprintln!("Failed to start transaction: {}", err);
+                return Err("Failed to update record".to_string());
+            }
+        };
 
-        tx.exec_drop(
+        match tx.exec_drop(
             "UPDATE records SET name = ?, record_type = ?, value = ?, ttl = ?, priority = ?, zone_id = ? WHERE id = ?",
             (
                 &update_record_request.name,
@@ -161,8 +199,13 @@ impl RecordService {
                 update_record_request.zone_id,
                 record_id,
             ),
-        )
-        .map_err(|e| format!("Failed to update record: {}", e))?;
+        ) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to update record: {}", e);
+                return Err("Failed to update record".to_string());
+            }
+        };
 
         // Create record history
         RecordHistoryService::create_record_history(
@@ -179,8 +222,13 @@ impl RecordService {
             ),
         )?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        match tx.commit() {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to commit transaction: {}", e);
+                return Err("Failed to update record".to_string());
+            }
+        };
 
         CommonService::get_record_by_id(&pool, record_id)
     }
@@ -188,16 +236,24 @@ impl RecordService {
     pub fn delete_record(pool: &DatabasePool, record_id: i32) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
-        if CommonService::get_record_by_id(&pool, record_id).is_err() {
-            return Err("Record not found".to_string());
-        }
+        // Check if record exists
+        CommonService::get_record_by_id(&pool, record_id)?;
 
-        let mut tx = conn
-            .start_transaction(mysql::TxOpts::default())
-            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+        let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
+            Ok(tx) => tx,
+            Err(err) => {
+                eprintln!("Failed to start transaction: {}", err);
+                return Err("Failed to delete record".to_string());
+            }
+        };
 
-        tx.exec_drop("DELETE FROM records WHERE id = ?", (record_id,))
-            .map_err(|e| format!("Failed to delete record: {}", e))?;
+        match tx.exec_drop("DELETE FROM records WHERE id = ?", (record_id,)) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to delete record: {}", e);
+                return Err("Failed to delete record".to_string());
+            }
+        };
 
         // Create record history
         RecordHistoryService::create_record_history(
@@ -210,8 +266,13 @@ impl RecordService {
             ),
         )?;
 
-        tx.commit()
-            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        match tx.commit() {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to commit transaction: {}", e);
+                return Err("Failed to delete record".to_string());
+            }
+        };
 
         Ok(())
     }
