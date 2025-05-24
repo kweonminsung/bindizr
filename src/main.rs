@@ -6,7 +6,7 @@ mod serializer;
 
 use std::env;
 
-pub async fn bootstrap() {
+async fn bootstrap() {
     // load config
     config::initialize();
 
