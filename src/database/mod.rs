@@ -1,6 +1,7 @@
 pub mod model;
 mod utils;
 
+use crate::config;
 use lazy_static::lazy_static;
 use mysql::{prelude::Queryable, *};
 
@@ -100,7 +101,7 @@ impl DatabasePool {
 
 lazy_static! {
     pub static ref DATABASE_POOL: DatabasePool = {
-        let database_url = crate::env::get_env("DATABASE_URL");
+        let database_url = config::get_config("mysql.server_url");
         DatabasePool::new(&database_url)
     };
 }

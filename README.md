@@ -77,12 +77,17 @@ controls {
 $ service bind restart
 
 $ echo '
-API_PORT=APP_PORT
-DATABASE_URL=mysql://DB_USER:DB_PASSWORD@DB_HOST:DB_PORT/DB_DATABASE
-BIND_CONFIG_PATH=/etc/bind/bindizr
-RNDC_SERVER_URL=RNDC_SERVER_URL
-RNDC_ALGORITHM=RNDC_ALGORITHM
-RNDC_SECRET_KEY=RNDC_SECRET_KEY
+[server]
+port = 3000
+
+[mysql]
+server_url = "mysql://root:kweonminsungabcd1234@3.39.183.190:50004/bindizr"
+
+[bind]
+bind_config_path = "temp"
+rndc_algorithm = "hmac-sha256"
+rndc_secret_key = "cqEa3Oo1CnCgKivL6hdUwuCzlfRH68yeAdrsGeF3Pu0="
+rndc_server_url = "127.0.0.1:953"
 ' > bindizr.conf
 
 $ ./bindizr start

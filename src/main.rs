@@ -1,13 +1,13 @@
 mod api;
+mod config;
 mod database;
-mod env;
 mod rndc;
 mod serializer;
 
 #[tokio::main]
 async fn main() {
-    // load environment variables
-    env::initialize();
+    // load config
+    config::initialize();
 
     serializer::initialize();
 
