@@ -4,9 +4,9 @@ Synchronizing bind9(DNS) records with DB
 
 ## Concepts
 
-&nbsp;**Bindizr** is a Rust-based daemon and HTTP API that synchronizes DNS records between bind9 and a MySQL database.
+**Bindizr** is a Rust-based daemon and HTTP API that synchronizes DNS records between bind9 and a MySQL database.
 
-- It reads and writes zone configurations from a record config directory.
+- It reads and writes zone configurations from a bind config directory.
 
 - Changes made via HTTP API are stored in the database and written to zone files.
 
