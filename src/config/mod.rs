@@ -1,7 +1,8 @@
-use config::{Config, File, FileFormat, Value};
+use config::{Config, File, FileFormat, Source, Value};
 use lazy_static::lazy_static;
 
 lazy_static! {
+    #[derive(Debug)]
     static ref _CONFIG_LOADED: Config = {
         Config::builder()
             // .add_source(File::with_name("./bindizr.conf").required(true))
@@ -12,13 +13,15 @@ lazy_static! {
             .build()
             .expect("Failed to build configuration")
     };
-
-    // Debug: Print the loaded configuration
-
 }
 
 pub fn initialize() {
     lazy_static::initialize(&_CONFIG_LOADED);
+
+    // Debug: Print the loaded configuration
+    // for (key, value) in _CONFIG_LOADED.collect().unwrap() {
+    //     println!("{} = {}", key, value);
+    // }
 }
 
 pub fn get_config(key: &str) -> String {
