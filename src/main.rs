@@ -4,7 +4,7 @@ mod database;
 mod rndc;
 mod serializer;
 
-use std::env;
+use std::{env, process::exit};
 
 async fn bootstrap() {
     // load config
@@ -25,20 +25,42 @@ async fn main() {
     #[cfg(not(any(windows, unix)))]
     {
         eprintln!("Unsupported platform. Only Windows and Unix-like systems are supported");
-        std::process::exit(1);
+        exit(1);
     }
 
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} [start|stop|-f|--foreground]", args[0]);
-        std::process::exit(1);
+        eprintln!("Usage: {} [start|stop] [OPTIONS]", args[0]);
+        exit(1);
     }
 
     match args[1].as_str() {
-        "start" => platform::start(),
+        "start" => match args.len() {
+            2 => platform::start(),
+            3 => match args[2].as_str() {
+                "-f" | "--foreground" => {
+                    bootstrap().await;
+                }
+                "-h" | "--help" => {
+                    println!("Usage: {} start [-f|--foreground] [-h|--help]", args[0]);
+                    println!("Options:");
+                    println!("  -f, --foreground   Run in foreground (default is background)");
+                    println!("  -h, --help         Show this help message");
+                    exit(0);
+                }
+                _ => {
+                    eprintln!("Unsupported option: {}", args[2]);
+                    exit(1);
+                }
+            },
+            _ => {
+                eprintln!("Too many arguments provided");
+                exit(1);
+            }
+        },
         "stop" => platform::stop(),
-        "-f" | "--foreground" => bootstrap().await,
+        "bootstrap" => bootstrap().await,
         _ => eprintln!("Unsupported command"),
     }
 }
@@ -89,7 +111,7 @@ mod platform {
                 // rerun with --foreground flag
                 let exe = env::current_exe().unwrap();
                 let child = Command::new(exe)
-                    .arg("--foreground")
+                    .arg("bootstrap")
                     .spawn()
                     .expect("Failed to start");
 
@@ -182,7 +204,7 @@ mod platform {
 
         let exe = env::current_exe().unwrap();
         let child = Command::new(exe)
-            .arg("--foreground")
+            .arg("bootstrap")
             .spawn()
             .expect("Failed to start");
 
