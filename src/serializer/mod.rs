@@ -12,7 +12,6 @@ use std::thread;
 
 pub fn initialize() {
     SERIALIZER.mpsc_send("initialize");
-    // SERIALIZER.mpsc_send("write_config");
 }
 
 pub struct Serializer {

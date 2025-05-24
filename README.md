@@ -91,6 +91,9 @@ rndc_server_url = "127.0.0.1:953"
 ' > bindizr.conf
 
 $ ./bindizr start
+
+# Runs bindizr in foreground mode
+$ ./bindizr -f
 ```
 
 ## Dependencies
