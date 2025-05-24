@@ -6,9 +6,9 @@ use crate::database::{
 use lazy_static::lazy_static;
 use mysql::prelude::*;
 use std::fmt::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::{fs, io, thread};
+use std::{fs, thread};
 
 // Initialize the serializer
 pub fn initialize() {
@@ -38,10 +38,9 @@ impl Serializer {
                         println!("Serializer initialized");
                     }
                     "write_config" => {
-                        Self::write_config();
-                        // if let Err(e) = Self::write_config() {
-                        //     eprintln!("Failed to write config: {}", e);
-                        // }
+                        Self::write_config().unwrap_or_else(|e| {
+                            eprintln!("Failed to write config: {}", e);
+                        });
                     }
                     "exit" => {
                         println!("Exiting serializer thread");
@@ -67,63 +66,68 @@ impl Serializer {
     }
 
     // Write DNS configuration files
-    fn write_config() {
-        let zones = Serializer::get_zones(&DATABASE_POOL);
+    fn write_config() -> Result<(), String> {
+        let zones = Self::get_zones(&DATABASE_POOL);
 
         let bind_config_path_str = config::get_config("bind.bind_config_path");
         let bind_config_path = PathBuf::from(&bind_config_path_str);
         if !bind_config_path.is_dir() {
-            eprintln!(
+            return Err(format!(
                 "Bind config path is not a directory: {}",
                 bind_config_path_str
-            );
-            return;
+            ));
         }
         if !bind_config_path.exists() {
-            eprintln!("Bind config path does not exist: {}", bind_config_path_str);
-            return;
+            return Err(format!(
+                "Bind config path does not exist: {}",
+                bind_config_path_str
+            ));
         }
 
         // Prepare directory for writing
         let bindizr_config_path = bind_config_path.join("bindizr");
         if bindizr_config_path.exists() {
-            fs::remove_dir_all(&bindizr_config_path).unwrap_or_else(|_| {
-                eprintln!(
-                    "Failed to reset bindizr config directory: {}",
+            if let Err(_) = fs::remove_dir_all(&bindizr_config_path) {
+                return Err(format!(
+                    "Failed to remove existing bindizr config directory: {}",
                     bindizr_config_path.display()
-                );
-            });
+                ));
+            }
         }
-        fs::create_dir_all(&bindizr_config_path).unwrap_or_else(|_| {
-            eprintln!(
+        if let Err(_) = fs::create_dir_all(&bindizr_config_path) {
+            return Err(format!(
                 "Failed to create bindizr config directory: {}",
                 bindizr_config_path.display()
-            );
-        });
+            ));
+        }
 
         // Write include zone config file
-        let include_zone_config = Serializer::serialize_include_zone_config(
-            &bindizr_config_path.display().to_string(),
-            &zones,
-        );
-        fs::write(
+        let include_zone_config =
+            Self::serialize_include_zone_config(&bindizr_config_path.display().to_string(), &zones);
+        if let Err(_) = fs::write(
             bindizr_config_path.join("named.conf.bindizr"),
             include_zone_config,
-        )
-        .unwrap_or_else(|_| {
-            eprintln!("Failed to write to file: named.conf.bindizr");
-        });
+        ) {
+            return Err(format!(
+                "Failed to write to file: {}",
+                bindizr_config_path.join("named.conf.bindizr").display()
+            ));
+        }
 
         // Write zone files
         for zone in zones {
-            let records = Serializer::get_records(&DATABASE_POOL, Some(zone.id));
-            let serialized_data = Serializer::serialize_zone(&zone, &records);
+            let records = Self::get_records(&DATABASE_POOL, zone.id);
+            let serialized_data = Self::serialize_zone(&zone, &records);
 
             let file_path = bindizr_config_path.join(format!("{}.zone", zone.name));
-            fs::write(file_path, serialized_data).unwrap_or_else(|_| {
-                eprintln!("Failed to write to file: {}", zone.name);
-            });
+            if let Err(_) = fs::write(file_path, serialized_data) {
+                return Err(format!("Failed to write to file: {}", zone.name));
+            }
         }
+
+        println!("DNS configuration files written successfully.");
+
+        Ok(())
     }
 
     fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
@@ -143,40 +147,23 @@ impl Serializer {
         })
     }
 
-    fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Vec<Record> {
+    fn get_records(pool: &DatabasePool, zone_id: i32) -> Vec<Record> {
         let mut conn = pool.get_connection();
 
-        match zone_id {
-            Some(id) => conn
-                .exec_map(
-                    r#"
-                        SELECT *
-                        FROM records
-                        WHERE zone_id = ?
-                        ORDER BY record_type, name
-                    "#,
-                    (id,),
-                    |row: mysql::Row| Record::from_row(row),
-                )
-                .unwrap_or_else(|e| {
-                    eprintln!("Failed to fetch records for zone {}: {}", id, e);
-                    Vec::new()
-                }),
-            None => conn
-                .exec_map(
-                    r#"
-                    SELECT *
-                    FROM records
-                    ORDER BY zone_id, record_type, name
-                "#,
-                    (),
-                    |row: mysql::Row| Record::from_row(row),
-                )
-                .unwrap_or_else(|e| {
-                    eprintln!("Failed to fetch all records: {}", e);
-                    Vec::new()
-                }),
-        }
+        conn.exec_map(
+            r#"
+            SELECT *
+            FROM records
+            WHERE zone_id = ?
+            ORDER BY record_type, name
+        "#,
+            (zone_id,),
+            |row: mysql::Row| Record::from_row(row),
+        )
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to fetch records for zone {}: {}", zone_id, e);
+            Vec::new()
+        })
     }
 
     fn serialize_include_zone_config(bindizr_config_dir: &str, zones: &[Zone]) -> String {
