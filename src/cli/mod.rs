@@ -33,11 +33,7 @@ pub async fn execute(args: &Args) {
         "stop" => stop::execute(&args),
         "reload" => reload::execute(&args),
         "token" => {
-            if let Err(e) = token::handle_command(
-                args.subcommand.as_deref(),
-                &args.subcommand_args,
-                &args.option_values,
-            ) {
+            if let Err(e) = token::handle_command(&args) {
                 eprintln!("Error: {}", e);
                 exit(1);
             }

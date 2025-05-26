@@ -1,5 +1,5 @@
 use crate::{api::auth::AuthService, database::DATABASE_POOL};
-use std::{collections::HashMap, process::exit};
+use std::collections::HashMap;
 
 pub fn help_message(subcommand: &str) -> String {
     match subcommand {
@@ -29,23 +29,16 @@ pub fn help_message(subcommand: &str) -> String {
     }
 }
 
-pub fn handle_command(
-    subcommand: Option<&str>,
-    args: &[String],
-    option_values: &HashMap<String, String>,
-) -> Result<(), String> {
-    match subcommand {
-        Some("create") => create_token(args, option_values),
+pub fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
+    match args.subcommand.as_deref() {
+        Some("create") => create_token(&args.option_values),
         Some("list") => list_tokens(),
-        Some("delete") => delete_token(args),
-        _ => {
-            eprintln!("{}", help_message(""));
-            exit(1);
-        }
+        Some("delete") => delete_token(&args.subcommand_args),
+        _ => Err(help_message("").to_string()),
     }
 }
 
-fn create_token(args: &[String], options: &HashMap<String, String>) -> Result<(), String> {
+fn create_token(options: &HashMap<String, String>) -> Result<(), String> {
     let description = options.get("--description");
     let expires_in_days =
         match options.get("--expires-in-days") {
