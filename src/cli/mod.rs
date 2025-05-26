@@ -9,7 +9,7 @@ pub struct Args {
 }
 
 impl Args {
-    pub fn parse() -> Result<Self, String> {
+    fn parse() -> Result<Self, String> {
         let args: Vec<String> = env::args().collect();
 
         if args.len() < 2 {
@@ -35,7 +35,7 @@ impl Args {
         })
     }
 
-    pub fn help_message(program: &str) -> String {
+    fn help_message(program: &str) -> String {
         format!(
             "Usage: {} start [-f|--foreground] [-h|--help]\n\
             Options:\n\

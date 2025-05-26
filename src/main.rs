@@ -5,7 +5,10 @@ mod database;
 mod rndc;
 mod serializer;
 
-use cli::daemon::{Daemon, DaemonControl};
+use cli::{
+    daemon::{Daemon, DaemonControl},
+    Args,
+};
 use std::process::exit;
 
 async fn bootstrap() {
@@ -25,7 +28,7 @@ async fn main() {
     }
 
     // Process command line arguments
-    let args = cli::Args::process_args();
+    let args = Args::process_args();
 
     // Execute command
     match args.command.as_str() {
