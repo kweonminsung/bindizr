@@ -1,5 +1,5 @@
 use crate::{api::auth::AuthService, database::DATABASE_POOL};
-use std::process::exit;
+use std::{collections::HashMap, process::exit};
 
 pub fn help_message(subcommand: &str) -> String {
     match subcommand {
@@ -29,9 +29,13 @@ pub fn help_message(subcommand: &str) -> String {
     }
 }
 
-pub fn handle_command(subcommand: Option<&str>, args: &[String]) -> Result<(), String> {
+pub fn handle_command(
+    subcommand: Option<&str>,
+    args: &[String],
+    option_values: &HashMap<String, String>,
+) -> Result<(), String> {
     match subcommand {
-        Some("create") => create_token(args),
+        Some("create") => create_token(args, option_values),
         Some("list") => list_tokens(),
         Some("delete") => delete_token(args),
         _ => {
@@ -41,41 +45,22 @@ pub fn handle_command(subcommand: Option<&str>, args: &[String]) -> Result<(), S
     }
 }
 
-fn create_token(args: &[String]) -> Result<(), String> {
-    let mut description = None;
-    let mut expires_in_days = None;
+fn create_token(args: &[String], options: &HashMap<String, String>) -> Result<(), String> {
+    let description = options.get("--description");
+    let expires_in_days =
+        match options.get("--expires-in-days") {
+            Some(days_str) => Some(days_str.parse::<i64>().map_err(|_| {
+                "Invalid value for --expires-in-days, must be a number".to_string()
+            })?),
+            None => None,
+        };
 
-    // Parse arguments
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--description" => {
-                if i + 1 < args.len() {
-                    description = Some(args[i + 1].clone());
-                    i += 2;
-                } else {
-                    return Err("Missing value for --description".to_string());
-                }
-            }
-            "--expires-in-days" => {
-                if i + 1 < args.len() {
-                    expires_in_days = Some(args[i + 1].parse::<i64>().map_err(|_| {
-                        "Invalid value for --expires-in-days, must be a number".to_string()
-                    })?);
-                    i += 2;
-                } else {
-                    return Err("Missing value for --expires-in-days".to_string());
-                }
-            }
-            _ => {
-                return Err(format!("Unknown option: {}", args[i]));
-            }
-        }
-    }
-
-    // Create token
-    let token =
-        AuthService::generate_token(&DATABASE_POOL, description.as_deref(), expires_in_days)?;
+    // Generate token
+    let token = AuthService::generate_token(
+        &DATABASE_POOL,
+        description.map(|s| s.as_str()),
+        expires_in_days,
+    )?;
 
     // Print token details
     println!("API token created successfully:");

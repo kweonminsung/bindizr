@@ -11,6 +11,28 @@ pub trait DaemonControl {
     fn is_pid_running(pid: i32) -> bool;
 }
 
+// Check if the daemon is running
+pub fn is_running() -> bool {
+    match read_pid_file() {
+        Some(pid_str) => {
+            #[cfg(unix)]
+            {
+                if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                    return Daemon::is_pid_running(pid);
+                }
+            }
+            #[cfg(windows)]
+            {
+                if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                    return Daemon::is_pid_running(pid);
+                }
+            }
+            false
+        }
+        None => false,
+    }
+}
+
 // Common functions for PID file management
 pub fn read_pid_file() -> Option<String> {
     if Path::new(PID_FILE).exists() {
