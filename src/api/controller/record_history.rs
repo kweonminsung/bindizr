@@ -1,5 +1,6 @@
-use super::internal::{
-    get_param, utils::json_response, Method, Request, Response, Router, StatusCode,
+use super::{
+    auth,
+    internal::{get_param, utils::json_response, Method, Request, Response, Router, StatusCode},
 };
 use crate::{
     api::{dto::GetRecordHistoryResponse, service::record_history::RecordHistoryService},
@@ -18,10 +19,11 @@ impl RecordHistoryController {
             "/records/:id/histories",
             RecordHistoryController::get_record_histories,
         );
-        router.register_endpoint(
+        router.register_endpoint_with_middleware(
             Method::DELETE,
             "/records/:record_id/histories/:history_id",
             RecordHistoryController::delete_record_history,
+            auth::middleware::auth_middleware,
         );
 
         router

@@ -1,5 +1,6 @@
-use super::internal::{
-    get_param, utils::json_response, Method, Request, Response, Router, StatusCode,
+use super::{
+    auth,
+    internal::{get_param, utils::json_response, Method, Request, Response, Router, StatusCode},
 };
 use crate::{
     api::{dto::GetZoneHistoryResponse, service::zone_history::ZoneHistoryService},
@@ -18,10 +19,11 @@ impl ZoneHistoryController {
             "/zones/:id/histories",
             ZoneHistoryController::get_zone_histories,
         );
-        router.register_endpoint(
+        router.register_endpoint_with_middleware(
             Method::DELETE,
             "/zones/:zone_id/histories/:history_id",
             ZoneHistoryController::delete_zone_history,
+            auth::middleware::auth_middleware,
         );
 
         router

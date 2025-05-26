@@ -1,3 +1,4 @@
+pub mod auth;
 mod internal;
 mod record;
 mod record_history;
@@ -22,9 +23,24 @@ impl ApiController {
 
         // router.register_endpoint(Method::GET, "/test", test);
         router.register_endpoint(Method::GET, "/", ApiController::get_home);
-        router.register_endpoint(Method::GET, "/dns/status", ApiController::get_dns_status);
-        router.register_endpoint(Method::GET, "/dns/reload", ApiController::reload_dns);
-        router.register_endpoint(Method::POST, "/dns/config", ApiController::write_dns_config);
+        router.register_endpoint_with_middleware(
+            Method::GET,
+            "/dns/status",
+            ApiController::get_dns_status,
+            auth::middleware::auth_middleware,
+        );
+        router.register_endpoint_with_middleware(
+            Method::GET,
+            "/dns/reload",
+            ApiController::reload_dns,
+            auth::middleware::auth_middleware,
+        );
+        router.register_endpoint_with_middleware(
+            Method::POST,
+            "/dns/config",
+            ApiController::write_dns_config,
+            auth::middleware::auth_middleware,
+        );
 
         router.route(request).await
     }

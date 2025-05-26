@@ -121,10 +121,6 @@ impl Args {
         self.options.contains(&option.to_string())
     }
 
-    pub fn get_option_value(&self, option: &str) -> Option<&String> {
-        self.option_values.get(&option.to_string())
-    }
-
     fn help_message(program: &str) -> String {
         format!(
             "Usage: {} COMMAND [OPTIONS]\n\

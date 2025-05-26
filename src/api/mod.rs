@@ -1,5 +1,4 @@
-pub mod auth;
-mod controller;
+pub(crate) mod controller;
 mod dto;
 mod service;
 
@@ -12,9 +11,9 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
 pub async fn initialize() {
-    let app_port = config::get_config("server.port");
+    let app_port = config::get_config("server.port").parse::<u16>().unwrap();
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], app_port.parse::<u16>().unwrap()));
+    let addr = SocketAddr::from(([127, 0, 0, 1], app_port));
     let listener = TcpListener::bind(addr).await.unwrap();
 
     println!("Listening on http://{}", addr);

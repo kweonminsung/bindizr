@@ -6,11 +6,23 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::{future::Future, pin::Pin};
 
 pub type Request = hyper::Request<hyper::body::Incoming>;
 pub type Response = Result<hyper::Response<Full<Bytes>>, Infallible>;
 pub type StatusCode = hyper::StatusCode;
 pub type Method = hyper::Method;
+
+pub struct Route {
+    handler: Box<dyn Fn(Request) -> Pin<Box<dyn Future<Output = Response> + Send>> + Send + Sync>,
+    middleware: Option<
+        Box<
+            dyn Fn(Request) -> Pin<Box<dyn Future<Output = Result<Request, Response>> + Send>>
+                + Send
+                + Sync,
+        >,
+    >,
+}
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct RouteKey {
@@ -37,7 +49,19 @@ impl Router {
 
         for (key, route) in &self.routes {
             if &method == &key.method && Router::match_path(path, key.path_pattern) {
-                return (route.handler)(request).await;
+                match &route.middleware {
+                    Some(middleware) => match (middleware)(request).await {
+                        Ok(modified_request) => {
+                            return (route.handler)(modified_request).await;
+                        }
+                        Err(error) => {
+                            return error;
+                        }
+                    },
+                    None => {
+                        return (route.handler)(request).await;
+                    }
+                }
             }
         }
 
@@ -59,9 +83,9 @@ impl Router {
         &mut self,
         method: Method,
         path: &'static str,
-        handler_fn: fn(Request) -> Fut,
+        handler: fn(Request) -> Fut,
     ) where
-        Fut: std::future::Future<Output = Response> + Send + 'static,
+        Fut: Future<Output = Response> + Send + 'static,
     {
         let key = RouteKey {
             method,
@@ -71,7 +95,32 @@ impl Router {
         self.routes.insert(
             key,
             Route {
-                handler: Box::new(move |req| Box::pin(handler_fn(req))),
+                handler: Box::new(move |req| Box::pin(handler(req))),
+                middleware: None,
+            },
+        );
+    }
+
+    pub fn register_endpoint_with_middleware<Fut, FutMw>(
+        &mut self,
+        method: Method,
+        path: &'static str,
+        handler: fn(Request) -> Fut,
+        middleware: fn(Request) -> FutMw,
+    ) where
+        Fut: Future<Output = Response> + Send + 'static,
+        FutMw: Future<Output = Result<Request, Response>> + Send + 'static,
+    {
+        let key = RouteKey {
+            method,
+            path_pattern: path,
+        };
+
+        self.routes.insert(
+            key,
+            Route {
+                handler: Box::new(move |req| Box::pin(handler(req))),
+                middleware: Some(Box::new(move |req| Box::pin(middleware(req)))),
             },
         );
     }
@@ -92,14 +141,6 @@ impl Router {
 
         true
     }
-}
-
-pub struct Route {
-    pub handler: Box<
-        dyn Fn(Request) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
-            + Send
-            + Sync,
-    >,
 }
 
 pub fn get_param<T>(request: &Request, route_path: &str, key: &str) -> Option<T>

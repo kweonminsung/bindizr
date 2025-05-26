@@ -1,3 +1,5 @@
+pub mod middleware;
+
 use crate::database::{model::api_token::ApiToken, DatabasePool};
 use chrono::{Duration, Utc};
 use mysql::prelude::*;

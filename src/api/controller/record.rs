@@ -1,6 +1,9 @@
-use super::internal::{
-    get_body, get_param, get_query, utils::json_response, Method, Request, Response, Router,
-    StatusCode,
+use super::{
+    auth,
+    internal::{
+        get_body, get_param, get_query, utils::json_response, Method, Request, Response, Router,
+        StatusCode,
+    },
 };
 use crate::{
     api::{
@@ -19,12 +22,23 @@ impl RecordController {
 
         router.register_endpoint(Method::GET, "/records", RecordController::get_records);
         router.register_endpoint(Method::GET, "/records/:id", RecordController::get_record);
-        router.register_endpoint(Method::POST, "/records", RecordController::create_record);
-        router.register_endpoint(Method::PUT, "/records/:id", RecordController::update_record);
-        router.register_endpoint(
+        router.register_endpoint_with_middleware(
+            Method::POST,
+            "/records",
+            RecordController::create_record,
+            auth::middleware::auth_middleware,
+        );
+        router.register_endpoint_with_middleware(
+            Method::PUT,
+            "/records/:id",
+            RecordController::update_record,
+            auth::middleware::auth_middleware,
+        );
+        router.register_endpoint_with_middleware(
             Method::DELETE,
             "/records/:id",
             RecordController::delete_record,
+            auth::middleware::auth_middleware,
         );
 
         router
