@@ -5,8 +5,7 @@ mod database;
 mod rndc;
 mod serializer;
 
-use rndc::RndcClient;
-use serializer::SERIALIZER;
+use cli::daemon::{Daemon, DaemonControl};
 use std::process::exit;
 
 async fn bootstrap() {
@@ -34,15 +33,10 @@ async fn main() {
             if args.foreground {
                 bootstrap().await;
             } else {
-                platform::start();
+                Daemon::start();
             }
         }
-        "stop" => platform::stop(),
-        "reload" => {
-            SERIALIZER.send_message("write_config");
-
-            RndcClient::command("reload").expect("Failed to reload DNS configuration");
-        }
+        "stop" => Daemon::stop(),
         "bootstrap" => bootstrap().await,
         _ => {
             eprintln!("Unsupported command: {}", args.command);

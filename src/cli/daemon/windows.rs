@@ -10,9 +10,9 @@ use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_I
 pub struct WindowsDaemon;
 
 impl DaemonControl for WindowsDaemon {
-    fn is_pid_running(pid: u32) -> bool {
+    fn is_pid_running(pid: i32) -> bool {
         unsafe {
-            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid as u32);
             if handle == std::ptr::null_mut() {
                 return false;
             }
@@ -24,7 +24,7 @@ impl DaemonControl for WindowsDaemon {
     fn start() {
         // Check PID file
         if let Some(pid_str) = read_pid_file() {
-            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+            if let Ok(pid) = pid_str.trim().parse::<i32>() {
                 if Self::is_pid_running(pid) {
                     println!("Bindizr is already running with PID {}", pid);
                     return;
@@ -43,8 +43,8 @@ impl DaemonControl for WindowsDaemon {
             .spawn()
             .expect("Failed to start process");
 
-        let pid = child.id();
-        if let Err(e) = write_pid_file(pid) {
+        let pid = child.id() as i32;
+        if let Err(e) = write_pid_file(pid as u32) {
             eprintln!("Failed to write PID file: {}", e);
             exit(1);
         }
@@ -63,7 +63,7 @@ impl DaemonControl for WindowsDaemon {
         };
 
         // Parse PID
-        let pid = match pid_str.trim().parse::<u32>() {
+        let pid = match pid_str.trim().parse::<i32>() {
             Ok(pid) => pid,
             Err(_) => {
                 let _ = remove_pid_file();

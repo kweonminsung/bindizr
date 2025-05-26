@@ -1,33 +1,36 @@
-use super::{DaemonControl, read_pid_file, remove_pid_file, write_pid_file};
+use super::DaemonControl;
+use crate::cli::daemon::{read_pid_file, remove_pid_file, write_pid_file};
 use nix::sys::signal::{kill, SIGTERM};
 use nix::unistd::{fork, ForkResult, Pid};
-use std::{env, process::{Command, exit}};
+use std::{
+    env,
+    process::{exit, Command},
+};
 
 pub struct UnixDaemon;
 
 impl DaemonControl for UnixDaemon {
-    use super::*;
-    use nix::sys::signal::{kill, SIGTERM};
-    use nix::unistd::{fork, ForkResult, Pid};
-    use std::{env, process::Command};
+    fn is_pid_running(pid: i32) -> bool {
+        match kill(Pid::from_raw(pid), None) {
+            Ok(_) => true,
+            Err(nix::errno::Errno::ESRCH) => false,
+            Err(_) => {
+                // Assuming any other error means the process is running
+                true
+            }
+        }
+    }
 
     fn start() {
         // Check PID file
         if let Some(pid_str) = read_pid_file() {
             if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                match kill(Pid::from_raw(pid), None) {
-                    Ok(_) => {
-                        println!("Bindizr is already running with PID {}", pid);
-                        return;
-                    }
-                    Err(nix::errno::Errno::ESRCH) => {
-                        // Remove stale PID file
-                        let _ = remove_pid_file();
-                    }
-                    Err(e) => {
-                        eprintln!("Error checking process: {}", e);
-                        return;
-                    }
+                if Self::is_pid_running(pid) {
+                    println!("Bindizr is already running with PID {}", pid);
+                    return;
+                } else {
+                    // Remove stale PID file
+                    let _ = remove_pid_file();
                 }
             } else {
                 // Remove invalid PID file
@@ -83,18 +86,19 @@ impl DaemonControl for UnixDaemon {
         };
 
         // Terminate process
-        match kill(Pid::from_raw(pid), SIGTERM) {
-            Ok(_) => {
-                println!("Stopped bindizr (PID {})", pid);
-                let _ = remove_pid_file();
+        if Self::is_pid_running(pid) {
+            match kill(Pid::from_raw(pid), SIGTERM) {
+                Ok(_) => {
+                    println!("Stopped bindizr (PID {})", pid);
+                    let _ = remove_pid_file();
+                }
+                Err(e) => {
+                    eprintln!("Failed to kill process: {}", e);
+                }
             }
-            Err(nix::errno::Errno::ESRCH) => {
-                println!("Process not found, removed stale PID file");
-                let _ = remove_pid_file();
-            }
-            Err(e) => {
-                eprintln!("Failed to kill process: {}", e);
-            }
+        } else {
+            println!("Process not found, removed stale PID file");
+            let _ = remove_pid_file();
         }
     }
 }

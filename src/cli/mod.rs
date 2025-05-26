@@ -1,4 +1,4 @@
-mod daemon;
+pub mod daemon;
 
 use std::{env, process::exit};
 

@@ -8,7 +8,7 @@ pub const PID_FILE: &str = "bindizr.pid";
 pub trait DaemonControl {
     fn start();
     fn stop();
-    fn is_pid_running(pid: u32) -> bool;
+    fn is_pid_running(pid: i32) -> bool;
 }
 
 // Common functions for PID file management
