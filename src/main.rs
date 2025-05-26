@@ -5,14 +5,10 @@ mod database;
 mod rndc;
 mod serializer;
 
-use cli::{
-    daemon::{Daemon, DaemonControl},
-    Args,
-};
 use std::process::exit;
 
 async fn bootstrap() {
-    // Maintain initialization order
+    // Initialize components
     config::initialize();
     database::initialize();
     serializer::initialize();
@@ -28,18 +24,21 @@ async fn main() {
     }
 
     // Process command line arguments
-    let args = Args::process_args();
+    let args = cli::Args::process_args();
 
     // Execute command
     match args.command.as_str() {
-        "start" => {
-            if args.foreground {
-                bootstrap().await;
-            } else {
-                Daemon::start();
+        "start" => cli::start::execute(&args).await,
+        "stop" => cli::stop::execute(&args),
+        "reload" => cli::reload::execute(&args),
+        "token" => {
+            if let Err(e) =
+                cli::token::handle_command(args.subcommand.as_deref(), &args.subcommand_args)
+            {
+                eprintln!("Error: {}", e);
+                exit(1);
             }
         }
-        "stop" => Daemon::stop(),
         "bootstrap" => bootstrap().await,
         _ => {
             eprintln!("Unsupported command: {}", args.command);

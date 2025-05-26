@@ -1,3 +1,4 @@
+pub mod auth;
 mod controller;
 mod dto;
 mod service;

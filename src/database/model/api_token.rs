@@ -8,6 +8,8 @@ pub struct ApiToken {
 
     pub token: String,
 
+    pub description: Option<String>,
+
     pub created_at: DateTime<Utc>,
 
     pub expires_at: Option<DateTime<Utc>>,
@@ -20,6 +22,7 @@ impl ApiToken {
         ApiToken {
             id: row.get("id").unwrap(),
             token: row.get("token").unwrap(),
+            description: row.get("description").unwrap(),
             created_at: parse_mysql_datetime(&row.get("created_at").unwrap()),
             expires_at: match row.get::<Value, _>("expires_at") {
                 Some(value) => Some(utils::parse_mysql_datetime(&value)),
