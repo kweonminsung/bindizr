@@ -93,7 +93,7 @@ rndc_server_url = "RNDC_SERVER_URL"
 $ ./bindizr start
 
 # Runs bindizr in foreground mode
-$ ./bindizr -f
+$ ./bindizr start -f
 ```
 
 ## Dependencies
