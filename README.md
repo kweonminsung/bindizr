@@ -69,31 +69,101 @@ controls {
 };
 
 ' > /etc/bind/named.conf
+
+# Restart bind service
+$ service bind restart
 ```
 
-### 3. Restart Services
+### 3. Configure Bindizr Options
+
+Create a configuration file for Bindizr:
 
 ```bash
-$ service bind restart
+$ vim bindizr.conf # or use any text editor you prefer
+```
 
-$ echo '
+Add the following configuration, adjusting values to match your environment:
+
+```ini
 [server]
-port = PORT
+port = 3000                # HTTP API port
+
+[api]
+require_authentication = true  # Enable/disable API authentication
 
 [mysql]
-server_url = "SERVER_URL"
+server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
 
 [bind]
-bind_config_path = "BIND_CONFIG_PATH"
-rndc_algorithm = "RNDC_ALGORITHM"
-rndc_secret_key = "RNDC_SECRET_KEY"
-rndc_server_url = "RNDC_SERVER_URL"
-' > bindizr.conf
+bind_config_path = "BIND_CONFIG_PATH"   # Bind config path(e.g.: /etc/bind)
+rndc_algorithm = "RNDC_ALGORITHM"       # RNDC authentication algorithm
+rndc_secret_key = "RNDC_SECRET_KEY"     # RNDC secret key
+rndc_server_url = "RNDC_SERVER_URL"     # RNDC server address
+```
 
+### 4. Start Bindizr
+
+```bash
+# Start Bindizr service
 $ ./bindizr start
 
 # Runs bindizr in foreground mode
 $ ./bindizr start -f
+
+# Create an API token for authentication
+$ ./bindizr token create
+```
+
+## Usage and Options
+
+Bindizr provides a command-line interface for managing the DNS synchronization service and API tokens.
+
+### Basic Commands
+
+```bash
+# Start the bindizr service in background mode
+$ ./bindizr start
+
+# Start the bindizr service in foreground mode
+$ ./bindizr start -f
+
+# Stop the bindizr service
+$ ./bindizr stop
+
+# Reload DNS configuration
+$ ./bindizr reload
+
+# Show help information
+$ ./bindizr --help
+```
+
+### Token Management
+
+Bindizr uses API tokens for authentication. You can manage these tokens using the following commands:
+
+```bash
+# Create a new API token
+$ ./bindizr token create --description "API access for monitoring"
+
+# Create a token with expiration
+$ ./bindizr token create --description "Temporary access" --expires-in-days 30
+
+# List all API tokens
+$ ./bindizr token list
+
+# Delete an API token by ID
+$ ./bindizr token delete <TOKEN_ID>
+
+# Show token command help
+$ ./bindizr token --help
+```
+
+### API Authentication
+
+When making API requests, include the token in the Authorization header:
+
+```bash
+$ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/zones
 ```
 
 ## Dependencies
