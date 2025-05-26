@@ -51,5 +51,14 @@ pub fn get_table_creation_queries() -> Vec<&'static str> {
             FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
         );
         "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS api_tokens (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            token VARCHAR(64) UNIQUE NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME,
+            last_used_at DATETIME
+        );
+        "#,
     ]
 }

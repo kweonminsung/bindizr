@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod common;
 pub mod record;
 pub mod record_history;
