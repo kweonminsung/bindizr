@@ -11,7 +11,9 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
 pub async fn initialize() {
-    let app_port = config::get_config("server.port").parse::<u16>().unwrap();
+    let app_port = config::get_config("server.port")
+        .parse::<u16>()
+        .expect("Invalid server.port, must be a valid u16");
 
     let addr = SocketAddr::from(([127, 0, 0, 1], app_port));
     let listener = TcpListener::bind(addr).await.unwrap();
