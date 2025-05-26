@@ -1,6 +1,9 @@
-use super::internal::{
-    get_body, get_param, get_query, utils::json_response, Method, Request, Response, Router,
-    StatusCode,
+use super::{
+    auth,
+    internal::{
+        get_body, get_param, get_query, utils::json_response, Method, Request, Response, Router,
+        StatusCode,
+    },
 };
 use crate::{
     api::{
@@ -20,9 +23,24 @@ impl ZoneController {
 
         router.register_endpoint(Method::GET, "/zones", ZoneController::get_zones);
         router.register_endpoint(Method::GET, "/zones/:id", ZoneController::get_zone);
-        router.register_endpoint(Method::POST, "/zones", ZoneController::create_zone);
-        router.register_endpoint(Method::PUT, "/zones/:id", ZoneController::update_zone);
-        router.register_endpoint(Method::DELETE, "/zones/:id", ZoneController::delete_zone);
+        router.register_endpoint_with_middleware(
+            Method::POST,
+            "/zones",
+            ZoneController::create_zone,
+            auth::middleware::auth_middleware,
+        );
+        router.register_endpoint_with_middleware(
+            Method::PUT,
+            "/zones/:id",
+            ZoneController::update_zone,
+            auth::middleware::auth_middleware,
+        );
+        router.register_endpoint_with_middleware(
+            Method::DELETE,
+            "/zones/:id",
+            ZoneController::delete_zone,
+            auth::middleware::auth_middleware,
+        );
 
         router
     }
