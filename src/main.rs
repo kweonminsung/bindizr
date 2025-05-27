@@ -6,6 +6,7 @@ mod rndc;
 mod serializer;
 
 use cli::{execute, parser::Args};
+use std::env;
 
 async fn bootstrap() {
     serializer::initialize();
@@ -21,7 +22,7 @@ async fn main() {
     }
 
     // Process command line arguments
-    let args = Args::process_args();
+    let args = Args::process_args(env::args());
 
     if args.command.as_str() == "bootstrap" {
         return bootstrap().await;

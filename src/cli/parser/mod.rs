@@ -12,8 +12,8 @@ pub struct Args {
 }
 
 impl Args {
-    fn parse() -> Result<Self, String> {
-        let args: Vec<String> = env::args().collect();
+    fn parse(raw_args: std::env::Args) -> Result<Self, String> {
+        let args: Vec<String> = raw_args.collect();
 
         if args.len() < 2 {
             return Err(format!(
@@ -85,9 +85,9 @@ impl Args {
         })
     }
 
-    pub fn process_args() -> Self {
+    pub fn process_args(raw_args: env::Args) -> Self {
         // Parse command line arguments
-        let args = match Self::parse() {
+        let args = match Self::parse(raw_args) {
             Ok(args) => args,
             Err(msg) => {
                 eprintln!("{}", msg);

@@ -5,6 +5,9 @@ pub mod start;
 pub mod stop;
 pub mod token;
 
+#[cfg(test)]
+mod tests;
+
 use crate::{config, database};
 use parser::Args;
 use std::process::exit;
