@@ -11,7 +11,7 @@ use std::process::exit;
 
 fn pre_bootstrap(skip_for_running_daemon: bool) {
     // Skip initialization if the daemon is running and the flag is set
-    if skip_for_running_daemon && daemon::is_running() {
+    if skip_for_running_daemon || daemon::is_running() {
         return;
     }
 
