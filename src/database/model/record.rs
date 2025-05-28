@@ -4,28 +4,28 @@ use mysql::Value;
 use serde::Serialize;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Record {
-    pub id: i32,
+pub(crate) struct Record {
+    pub(crate) id: i32,
 
-    pub name: String, // domain name (e.g.: "www.example.com")
+    pub(crate) name: String, // domain name (e.g.: "www.example.com")
 
-    pub record_type: RecordType, // record type
+    pub(crate) record_type: RecordType, // record type
 
-    pub value: String, // record value (e.g.: IP address, CNAME, etc.)
+    pub(crate) value: String, // record value (e.g.: IP address, CNAME, etc.)
 
-    pub ttl: i32, // TTL (seconds)
+    pub(crate) ttl: i32, // TTL (seconds)
 
-    pub priority: Option<i32>, // priority (for MX and SRV records)
+    pub(crate) priority: Option<i32>, // priority (for MX and SRV records)
 
-    pub created_at: DateTime<Utc>,
+    pub(crate) created_at: DateTime<Utc>,
 
-    pub updated_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
 
-    pub zone_id: i32,
+    pub(crate) zone_id: i32,
 }
 
 impl Record {
-    pub fn from_row(row: mysql::Row) -> Self {
+    pub(crate) fn from_row(row: mysql::Row) -> Self {
         Record {
             id: row.get("id").unwrap(),
             name: row.get("name").unwrap(),
@@ -42,7 +42,7 @@ impl Record {
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
-pub enum RecordType {
+pub(crate) enum RecordType {
     A,
     AAAA,
     CNAME,
@@ -61,7 +61,7 @@ impl std::fmt::Display for RecordType {
 }
 
 impl RecordType {
-    pub fn from_str(s: &str) -> Result<Self, String> {
+    pub(crate) fn from_str(s: &str) -> Result<Self, String> {
         match s.to_uppercase().as_str() {
             "A" => Ok(RecordType::A),
             "AAAA" => Ok(RecordType::AAAA),
@@ -76,7 +76,7 @@ impl RecordType {
         }
     }
 
-    pub fn to_str(&self) -> &str {
+    pub(crate) fn to_str(&self) -> &str {
         match self {
             RecordType::A => "A",
             RecordType::AAAA => "AAAA",

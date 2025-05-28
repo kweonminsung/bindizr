@@ -5,10 +5,10 @@ use crate::database::{
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
-pub struct CommonService;
+pub(crate) struct CommonService;
 
 impl CommonService {
-    pub fn get_zone_by_id(pool: &DatabasePool, zone_id: i32) -> Result<Zone, String> {
+    pub(crate) fn get_zone_by_id(pool: &DatabasePool, zone_id: i32) -> Result<Zone, String> {
         let mut conn = pool.get_connection();
 
         let res = match conn.exec_map(
@@ -32,7 +32,7 @@ impl CommonService {
             .ok_or_else(|| "Zone not found".to_string())
     }
 
-    pub fn get_record_by_id(pool: &DatabasePool, record_id: i32) -> Result<Record, String> {
+    pub(crate) fn get_record_by_id(pool: &DatabasePool, record_id: i32) -> Result<Record, String> {
         let mut conn = pool.get_connection();
 
         let res = match conn.exec_map(

@@ -14,10 +14,10 @@ use crate::{
 };
 use serde_json::json;
 
-pub struct RecordController;
+pub(crate) struct RecordController;
 
 impl RecordController {
-    pub async fn router() -> Router {
+    pub(crate) async fn router() -> Router {
         let mut router = Router::new();
 
         router.register_endpoint(Method::GET, "/records", RecordController::get_records);

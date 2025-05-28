@@ -1,4 +1,4 @@
-pub mod model;
+pub(crate) mod model;
 mod schema;
 mod utils;
 
@@ -6,7 +6,7 @@ use crate::config;
 use lazy_static::lazy_static;
 use mysql::{prelude::Queryable, Opts, Pool, PooledConn};
 
-pub fn initialize() {
+pub(crate) fn initialize() {
     // Test database connection
     match DATABASE_POOL.get_connection().query_drop("SELECT 1") {
         Ok(_) => println!("Database initialized"),
@@ -15,12 +15,12 @@ pub fn initialize() {
 }
 
 #[derive(Clone)]
-pub struct DatabasePool {
+pub(crate) struct DatabasePool {
     pool: Pool,
 }
 
 impl DatabasePool {
-    pub fn new(url: &str) -> Self {
+    pub(crate) fn new(url: &str) -> Self {
         let opts = Opts::from_url(url).expect("Invalid database URL");
 
         let pool = Pool::new(opts).expect("Failed to create database pool");
@@ -43,7 +43,7 @@ impl DatabasePool {
         }
     }
 
-    pub fn get_connection(&self) -> PooledConn {
+    pub(crate) fn get_connection(&self) -> PooledConn {
         self.pool
             .get_conn()
             .expect("Failed to get connection from pool")
@@ -51,7 +51,7 @@ impl DatabasePool {
 }
 
 lazy_static! {
-    pub static ref DATABASE_POOL: DatabasePool = {
+    pub(crate) static ref DATABASE_POOL: DatabasePool = {
         let database_url = config::get_config("mysql.server_url");
         DatabasePool::new(&database_url)
     };

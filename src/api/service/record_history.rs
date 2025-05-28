@@ -3,7 +3,7 @@ use crate::database::{model::record_history::RecordHistory, DatabasePool};
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
-pub struct RecordHistoryService;
+pub(crate) struct RecordHistoryService;
 
 impl RecordHistoryService {
     fn get_record_history_by_id(
@@ -33,7 +33,7 @@ impl RecordHistoryService {
             .ok_or_else(|| "Record history not found".to_string())
     }
 
-    pub fn get_record_histories(
+    pub(crate) fn get_record_histories(
         pool: &DatabasePool,
         record_id: i32,
     ) -> Result<Vec<RecordHistory>, String> {
@@ -61,7 +61,7 @@ impl RecordHistoryService {
         Ok(res)
     }
 
-    pub fn create_record_history(
+    pub(crate) fn create_record_history(
         tx: &mut mysql::Transaction,
         record_id: i32,
         log: &str,
@@ -88,7 +88,7 @@ impl RecordHistoryService {
         Ok(last_insert_id as i32)
     }
 
-    pub fn delete_record_history(
+    pub(crate) fn delete_record_history(
         pool: &DatabasePool,
         record_history_id: i32,
     ) -> Result<(), String> {

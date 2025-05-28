@@ -1,17 +1,17 @@
 use crate::{rndc::RndcClient, serializer::SERIALIZER};
 
 #[derive(Clone)]
-pub struct TestService;
+pub(crate) struct TestService;
 
 impl TestService {
-    // pub fn get_table_names(pool: &DatabasePool) -> Vec<String> {
+    // pub(crate) fn get_table_names(pool: &DatabasePool) -> Vec<String> {
     //     let query = "SHOW TABLES";
     //     pool.get_connection()
     //         .query(query)
     //         .unwrap_or_else(|_| Vec::new())
     // }
 
-    pub fn get_dns_status() -> Result<String, String> {
+    pub(crate) fn get_dns_status() -> Result<String, String> {
         let res = match RndcClient::command("status") {
             Ok(response) => response,
             Err(e) => {
@@ -30,7 +30,7 @@ impl TestService {
         }
     }
 
-    pub fn reload_dns() -> Result<String, String> {
+    pub(crate) fn reload_dns() -> Result<String, String> {
         let res = match RndcClient::command("reload") {
             Ok(response) => response,
             Err(e) => {
@@ -49,7 +49,7 @@ impl TestService {
         }
     }
 
-    pub fn write_dns_config() -> Result<String, String> {
+    pub(crate) fn write_dns_config() -> Result<String, String> {
         let serializer = &SERIALIZER;
 
         serializer.send_message("write_config");

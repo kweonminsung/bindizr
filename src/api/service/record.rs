@@ -10,7 +10,7 @@ use chrono::Utc;
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
-pub struct RecordService;
+pub(crate) struct RecordService;
 
 impl RecordService {
     fn get_record_by_name(pool: &DatabasePool, record_name: &str) -> Result<Record, String> {
@@ -37,7 +37,7 @@ impl RecordService {
             .ok_or_else(|| "Record not found".to_string())
     }
 
-    pub fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Result<Vec<Record>, String> {
+    pub(crate) fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Result<Vec<Record>, String> {
         let mut conn = pool.get_connection();
 
         match zone_id {
@@ -78,11 +78,11 @@ impl RecordService {
         }
     }
 
-    pub fn get_record(pool: &DatabasePool, record_id: i32) -> Result<Record, String> {
+    pub(crate) fn get_record(pool: &DatabasePool, record_id: i32) -> Result<Record, String> {
         CommonService::get_record_by_id(&pool, record_id)
     }
 
-    pub fn create_record(
+    pub(crate) fn create_record(
         pool: &DatabasePool,
         create_record_request: &CreateRecordRequest,
     ) -> Result<Record, String> {
@@ -164,7 +164,7 @@ impl RecordService {
         CommonService::get_record_by_id(&pool, last_insert_id as i32)
     }
 
-    pub fn update_record(
+    pub(crate) fn update_record(
         pool: &DatabasePool,
         record_id: i32,
         update_record_request: &CreateRecordRequest,
@@ -233,7 +233,7 @@ impl RecordService {
         CommonService::get_record_by_id(&pool, record_id)
     }
 
-    pub fn delete_record(pool: &DatabasePool, record_id: i32) -> Result<(), String> {
+    pub(crate) fn delete_record(pool: &DatabasePool, record_id: i32) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
         // Check if record exists

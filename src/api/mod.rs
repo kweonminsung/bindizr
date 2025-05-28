@@ -10,7 +10,7 @@ use hyper_util::rt::TokioIo;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
-pub async fn initialize() {
+pub(crate) async fn initialize() {
     let app_port = config::get_config("server.port")
         .parse::<u16>()
         .expect("Invalid server.port, must be a valid u16");

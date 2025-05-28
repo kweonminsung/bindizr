@@ -1,4 +1,4 @@
-pub mod auth;
+pub(crate) mod auth;
 mod internal;
 mod record;
 mod record_history;
@@ -9,10 +9,10 @@ use super::service::test::TestService;
 use internal::{utils, Method, Request, Response, Router, StatusCode};
 use serde_json::json;
 
-pub struct ApiController;
+pub(crate) struct ApiController;
 
 impl ApiController {
-    pub async fn serve(request: Request) -> Response {
+    pub(crate) async fn serve(request: Request) -> Response {
         let mut router = Router::new();
 
         // Register routes

@@ -11,16 +11,16 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::{fs, thread};
 
 // Initialize the serializer
-pub fn initialize() {
+pub(crate) fn initialize() {
     SERIALIZER.send_message("initialize");
 }
 
-pub struct Serializer {
+pub(crate) struct Serializer {
     tx: Sender<String>,
 }
 
 impl Serializer {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
 
         // Spawn worker thread
@@ -59,7 +59,7 @@ impl Serializer {
     }
 
     // Send message to worker thread
-    pub fn send_message(&self, message: &str) {
+    pub(crate) fn send_message(&self, message: &str) {
         if let Err(e) = self.tx.send(message.to_string()) {
             eprintln!("error sending message: {}", e);
         }
@@ -183,7 +183,7 @@ impl Serializer {
         output
     }
 
-    pub fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
+    pub(crate) fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
         let mut output = String::new();
 
         // SOA record
@@ -285,5 +285,5 @@ ns  IN  A   {}
 }
 
 lazy_static! {
-    pub static ref SERIALIZER: Serializer = Serializer::new();
+    pub(crate) static ref SERIALIZER: Serializer = Serializer::new();
 }

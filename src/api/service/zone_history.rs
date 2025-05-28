@@ -3,7 +3,7 @@ use crate::database::{model::zone_history::ZoneHistory, DatabasePool};
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
-pub struct ZoneHistoryService;
+pub(crate) struct ZoneHistoryService;
 
 impl ZoneHistoryService {
     fn get_zone_history_by_id(
@@ -33,7 +33,7 @@ impl ZoneHistoryService {
             .ok_or_else(|| "Zone history not found".to_string())
     }
 
-    pub fn get_zone_histories(
+    pub(crate) fn get_zone_histories(
         pool: &DatabasePool,
         zone_id: i32,
     ) -> Result<Vec<ZoneHistory>, String> {
@@ -61,7 +61,7 @@ impl ZoneHistoryService {
         Ok(res)
     }
 
-    pub fn create_zone_history(
+    pub(crate) fn create_zone_history(
         tx: &mut mysql::Transaction,
         zone_id: i32,
         log: &str,
@@ -88,7 +88,10 @@ impl ZoneHistoryService {
         Ok(last_inserted_id as i32)
     }
 
-    pub fn delete_zone_history(pool: &DatabasePool, zone_history_id: i32) -> Result<(), String> {
+    pub(crate) fn delete_zone_history(
+        pool: &DatabasePool,
+        zone_history_id: i32,
+    ) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
         // Check if the zone history exists

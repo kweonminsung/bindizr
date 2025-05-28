@@ -3,12 +3,12 @@ use crate::cli::token;
 use std::{collections::HashMap, env, process::exit};
 
 #[derive(Debug)]
-pub struct Args {
-    pub command: String,
-    pub subcommand: Option<String>,
-    pub subcommand_args: Vec<String>,
-    pub options: Vec<String>,
-    pub option_values: HashMap<String, String>,
+pub(crate) struct Args {
+    pub(crate) command: String,
+    pub(crate) subcommand: Option<String>,
+    pub(crate) subcommand_args: Vec<String>,
+    pub(crate) options: Vec<String>,
+    pub(crate) option_values: HashMap<String, String>,
 }
 
 impl Args {
@@ -85,7 +85,7 @@ impl Args {
         })
     }
 
-    pub fn process_args(raw_args: env::Args) -> Self {
+    pub(crate) fn process_args(raw_args: env::Args) -> Self {
         // Parse command line arguments
         let args = match Self::parse(raw_args) {
             Ok(args) => args,
@@ -117,7 +117,7 @@ impl Args {
         args
     }
 
-    pub fn has_option(&self, option: &str) -> bool {
+    pub(crate) fn has_option(&self, option: &str) -> bool {
         self.options.contains(&option.to_string())
     }
 

@@ -1,4 +1,4 @@
-pub mod middleware;
+pub(crate) mod middleware;
 
 use crate::database::{model::api_token::ApiToken, DatabasePool};
 use chrono::{Duration, Utc};
@@ -6,10 +6,10 @@ use mysql::prelude::*;
 use rand::{distributions::Alphanumeric, Rng};
 use sha2::{Digest, Sha256};
 
-pub struct AuthService;
+pub(crate) struct AuthService;
 
 impl AuthService {
-    pub fn generate_token(
+    pub(crate) fn generate_token(
         pool: &DatabasePool,
         description: Option<&str>,
         expires_in_days: Option<i64>,
@@ -52,7 +52,7 @@ impl AuthService {
         Self::get_token_by_id(pool, token_id)
     }
 
-    pub fn get_token_by_id(pool: &DatabasePool, token_id: i32) -> Result<ApiToken, String> {
+    pub(crate) fn get_token_by_id(pool: &DatabasePool, token_id: i32) -> Result<ApiToken, String> {
         let mut conn = pool.get_connection();
 
         let res = match conn.exec_map(
@@ -74,7 +74,7 @@ impl AuthService {
             .ok_or_else(|| "Token not found".to_string())
     }
 
-    pub fn validate_token(pool: &DatabasePool, token_str: &str) -> Result<ApiToken, String> {
+    pub(crate) fn validate_token(pool: &DatabasePool, token_str: &str) -> Result<ApiToken, String> {
         let mut conn = pool.get_connection();
 
         let res = match conn.exec_map(
@@ -115,7 +115,7 @@ impl AuthService {
         Ok(token)
     }
 
-    pub fn list_tokens(pool: &DatabasePool) -> Result<Vec<ApiToken>, String> {
+    pub(crate) fn list_tokens(pool: &DatabasePool) -> Result<Vec<ApiToken>, String> {
         let mut conn = pool.get_connection();
 
         match conn.exec_map(
@@ -133,7 +133,7 @@ impl AuthService {
         }
     }
 
-    pub fn delete_token(pool: &DatabasePool, token_id: i32) -> Result<(), String> {
+    pub(crate) fn delete_token(pool: &DatabasePool, token_id: i32) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
         // Check if the token exists

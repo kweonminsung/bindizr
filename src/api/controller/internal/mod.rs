@@ -1,4 +1,4 @@
-pub mod utils;
+pub(crate) mod utils;
 
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Buf, Bytes};
@@ -8,12 +8,12 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::{future::Future, pin::Pin};
 
-pub type Request = hyper::Request<hyper::body::Incoming>;
-pub type Response = Result<hyper::Response<Full<Bytes>>, Infallible>;
-pub type StatusCode = hyper::StatusCode;
-pub type Method = hyper::Method;
+pub(crate) type Request = hyper::Request<hyper::body::Incoming>;
+pub(crate) type Response = Result<hyper::Response<Full<Bytes>>, Infallible>;
+pub(crate) type StatusCode = hyper::StatusCode;
+pub(crate) type Method = hyper::Method;
 
-pub struct Route {
+pub(crate) struct Route {
     handler: Box<dyn Fn(Request) -> Pin<Box<dyn Future<Output = Response> + Send>> + Send + Sync>,
     middleware: Option<
         Box<
@@ -30,20 +30,20 @@ struct RouteKey {
     path_pattern: &'static str,
 }
 
-pub struct Router {
+pub(crate) struct Router {
     routes: HashMap<RouteKey, Route>,
     not_found: fn() -> Response,
 }
 
 impl Router {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Router {
             routes: HashMap::new(),
             not_found: Router::default_not_found,
         }
     }
 
-    pub async fn route(&self, request: Request) -> Response {
+    pub(crate) async fn route(&self, request: Request) -> Response {
         let path = request.uri().path();
         let method = request.method().clone();
 
@@ -73,13 +73,13 @@ impl Router {
         utils::json_response(json_body, StatusCode::NOT_FOUND)
     }
 
-    pub fn register_router(&mut self, router: Router) {
+    pub(crate) fn register_router(&mut self, router: Router) {
         for (key, route) in router.routes {
             self.routes.insert(key, route);
         }
     }
 
-    pub fn register_endpoint<Fut>(
+    pub(crate) fn register_endpoint<Fut>(
         &mut self,
         method: Method,
         path: &'static str,
@@ -101,7 +101,7 @@ impl Router {
         );
     }
 
-    pub fn register_endpoint_with_middleware<Fut, FutMw>(
+    pub(crate) fn register_endpoint_with_middleware<Fut, FutMw>(
         &mut self,
         method: Method,
         path: &'static str,
@@ -143,7 +143,7 @@ impl Router {
     }
 }
 
-pub fn get_param<T>(request: &Request, route_path: &str, key: &str) -> Option<T>
+pub(crate) fn get_param<T>(request: &Request, route_path: &str, key: &str) -> Option<T>
 where
     T: std::str::FromStr,
 {
@@ -164,7 +164,7 @@ where
     None
 }
 
-pub fn get_query<T>(request: &Request, key: &str) -> Option<T>
+pub(crate) fn get_query<T>(request: &Request, key: &str) -> Option<T>
 where
     T: std::str::FromStr,
 {
@@ -180,7 +180,7 @@ where
     })
 }
 
-pub async fn get_body<T>(request: Request) -> Result<T, String>
+pub(crate) async fn get_body<T>(request: Request) -> Result<T, String>
 where
     T: DeserializeOwned,
 {

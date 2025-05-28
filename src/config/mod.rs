@@ -12,7 +12,7 @@ lazy_static! {
         };
 }
 
-pub fn initialize() {
+pub(crate) fn initialize() {
     lazy_static::initialize(&_CONFIG_LOADED);
 
     println!("Configuration loaded successfully");
@@ -23,7 +23,7 @@ pub fn initialize() {
     // }
 }
 
-pub fn get_config(key: &str) -> String {
+pub(crate) fn get_config(key: &str) -> String {
     _CONFIG_LOADED
         .get::<Value>(key)
         .unwrap_or_else(|_| panic!("Configuration key '{}' not found", key))

@@ -1,7 +1,7 @@
 use crate::{api::controller::auth::AuthService, database::DATABASE_POOL};
 use std::collections::HashMap;
 
-pub fn help_message(subcommand: &str) -> String {
+pub(crate) fn help_message(subcommand: &str) -> String {
     match subcommand {
         "create" => "Usage: bindizr token create [OPTIONS]\n\
             \n\
@@ -29,7 +29,7 @@ pub fn help_message(subcommand: &str) -> String {
     }
 }
 
-pub fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
+pub(crate) fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
     match args.subcommand.as_deref() {
         Some("create") => create_token(&args.option_values),
         Some("list") => list_tokens(),

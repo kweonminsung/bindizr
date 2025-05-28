@@ -3,7 +3,7 @@ use crate::api::controller::internal::{utils, Request, Response, StatusCode};
 use crate::{config, database::DATABASE_POOL};
 use serde_json::json;
 
-pub async fn auth_middleware(request: Request) -> Result<Request, Response> {
+pub(crate) async fn auth_middleware(request: Request) -> Result<Request, Response> {
     // Check if authentication is required
     if !config::get_config("api.require_authentication")
         .parse::<bool>()

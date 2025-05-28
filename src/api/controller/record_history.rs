@@ -8,10 +8,10 @@ use crate::{
 };
 use serde_json::json;
 
-pub struct RecordHistoryController;
+pub(crate) struct RecordHistoryController;
 
 impl RecordHistoryController {
-    pub async fn router() -> Router {
+    pub(crate) async fn router() -> Router {
         let mut router = Router::new();
 
         router.register_endpoint(

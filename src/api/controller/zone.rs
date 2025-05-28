@@ -15,10 +15,10 @@ use crate::{
 };
 use serde_json::json;
 
-pub struct ZoneController;
+pub(crate) struct ZoneController;
 
 impl ZoneController {
-    pub async fn router() -> Router {
+    pub(crate) async fn router() -> Router {
         let mut router = Router::new();
 
         router.register_endpoint(Method::GET, "/zones", ZoneController::get_zones);

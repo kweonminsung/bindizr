@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use mysql::Value;
 
-pub fn parse_mysql_datetime(timestamp: &Value) -> DateTime<Utc> {
+pub(crate) fn parse_mysql_datetime(timestamp: &Value) -> DateTime<Utc> {
     match timestamp {
         Value::Bytes(bytes) => {
             let timestamp_str = String::from_utf8_lossy(bytes);

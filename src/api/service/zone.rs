@@ -7,7 +7,7 @@ use chrono::Utc;
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
-pub struct ZoneService;
+pub(crate) struct ZoneService;
 
 impl ZoneService {
     fn get_zone_by_name(pool: &DatabasePool, zone_name: &str) -> Result<Zone, String> {
@@ -34,7 +34,7 @@ impl ZoneService {
             .ok_or_else(|| "Zone not found".to_string())
     }
 
-    pub fn get_zones(pool: &DatabasePool) -> Result<Vec<Zone>, String> {
+    pub(crate) fn get_zones(pool: &DatabasePool) -> Result<Vec<Zone>, String> {
         let mut conn = pool.get_connection();
 
         match conn.exec_map(
@@ -53,11 +53,11 @@ impl ZoneService {
         }
     }
 
-    pub fn get_zone(pool: &DatabasePool, zone_id: i32) -> Result<Zone, String> {
+    pub(crate) fn get_zone(pool: &DatabasePool, zone_id: i32) -> Result<Zone, String> {
         CommonService::get_zone_by_id(&pool, zone_id)
     }
 
-    pub fn create_zone(
+    pub(crate) fn create_zone(
         pool: &DatabasePool,
         create_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, String> {
@@ -130,7 +130,7 @@ impl ZoneService {
         CommonService::get_zone_by_id(&pool, last_insert_id as i32)
     }
 
-    pub fn update_zone(
+    pub(crate) fn update_zone(
         pool: &DatabasePool,
         zone_id: i32,
         update_zone_request: &CreateZoneRequest,
@@ -194,7 +194,7 @@ impl ZoneService {
         CommonService::get_zone_by_id(&pool, zone_id)
     }
 
-    pub fn delete_zone(pool: &DatabasePool, zone_id: i32) -> Result<(), String> {
+    pub(crate) fn delete_zone(pool: &DatabasePool, zone_id: i32) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
         // Check if zone exists

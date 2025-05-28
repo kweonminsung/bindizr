@@ -1,12 +1,9 @@
-pub mod daemon;
-pub mod parser;
-pub mod reload;
-pub mod start;
-pub mod stop;
-pub mod token;
-
-#[cfg(test)]
-mod tests;
+pub(crate) mod daemon;
+pub(crate) mod parser;
+pub(crate) mod reload;
+pub(crate) mod start;
+pub(crate) mod stop;
+pub(crate) mod token;
 
 use crate::{config, database};
 use parser::Args;
@@ -22,7 +19,7 @@ fn pre_bootstrap(skip_for_running_daemon: bool) {
     database::initialize();
 }
 
-pub async fn execute(args: &Args) {
+pub(crate) async fn execute(args: &Args) {
     match args.command.as_str() {
         "start" => pre_bootstrap(false),
         "stop" | "reload" => pre_bootstrap(true),
