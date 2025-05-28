@@ -237,7 +237,10 @@ ns  IN  A   {}
                     writeln!(
                         &mut output,
                         "{} {} IN {} {}",
-                        name, record.ttl, record.record_type, record.value
+                        name,
+                        record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default(),
+                        record.record_type,
+                        record.value
                     )
                     .unwrap();
                 }
@@ -246,7 +249,10 @@ ns  IN  A   {}
                     writeln!(
                         &mut output,
                         "{} {} IN MX {} {}",
-                        name, record.ttl, priority, record.value
+                        name,
+                        record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default(),
+                        priority,
+                        record.value
                     )
                     .unwrap();
                 }
@@ -259,7 +265,7 @@ ns  IN  A   {}
                             &mut output,
                             "{} {} IN SRV {} {} {} {}",
                             name,
-                            record.ttl,
+                            record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default(),
                             record.priority.unwrap_or(10), // default priority
                             parts[0],                      // weight
                             parts[1],                      // port
@@ -273,7 +279,9 @@ ns  IN  A   {}
                     writeln!(
                         &mut output,
                         "{} {} IN SOA {}",
-                        name, record.ttl, record.value
+                        name,
+                        record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default(),
+                        record.value
                     )
                     .unwrap();
                 }

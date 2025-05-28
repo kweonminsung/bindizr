@@ -41,7 +41,7 @@ pub(crate) struct GetRecordResponse {
     pub(crate) name: String,
     pub(crate) record_type: String,
     pub(crate) value: String,
-    pub(crate) ttl: i32,
+    pub(crate) ttl: Option<i32>,
     pub(crate) priority: Option<i32>,
     pub(crate) zone_id: i32,
 }
@@ -78,7 +78,7 @@ pub(crate) struct CreateRecordRequest {
     pub(crate) name: String,
     pub(crate) record_type: String,
     pub(crate) value: String,
-    pub(crate) ttl: i32,
+    pub(crate) ttl: Option<i32>,
     pub(crate) priority: Option<i32>,
     pub(crate) zone_id: i32,
 }

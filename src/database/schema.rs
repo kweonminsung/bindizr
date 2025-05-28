@@ -23,7 +23,7 @@ pub(crate) fn get_table_creation_queries() -> Vec<&'static str> {
             name VARCHAR(255) UNIQUE NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             value TEXT NOT NULL,
-            ttl INT NOT NULL,
+            ttl INT,
             priority INT,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

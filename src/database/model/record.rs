@@ -13,7 +13,7 @@ pub(crate) struct Record {
 
     pub(crate) value: String, // record value (e.g.: IP address, CNAME, etc.)
 
-    pub(crate) ttl: i32, // TTL (seconds)
+    pub(crate) ttl: Option<i32>, // TTL (seconds)
 
     pub(crate) priority: Option<i32>, // priority (for MX and SRV records)
 
