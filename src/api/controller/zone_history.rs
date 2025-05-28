@@ -14,10 +14,11 @@ impl ZoneHistoryController {
     pub(crate) async fn router() -> Router {
         let mut router = Router::new();
 
-        router.register_endpoint(
+        router.register_endpoint_with_middleware(
             Method::GET,
             "/zones/:id/histories",
             ZoneHistoryController::get_zone_histories,
+            auth::middleware::auth_middleware,
         );
         router.register_endpoint_with_middleware(
             Method::DELETE,

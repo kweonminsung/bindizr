@@ -14,10 +14,11 @@ impl RecordHistoryController {
     pub(crate) async fn router() -> Router {
         let mut router = Router::new();
 
-        router.register_endpoint(
+        router.register_endpoint_with_middleware(
             Method::GET,
             "/records/:id/histories",
             RecordHistoryController::get_record_histories,
+            auth::middleware::auth_middleware,
         );
         router.register_endpoint_with_middleware(
             Method::DELETE,

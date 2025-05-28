@@ -20,8 +20,18 @@ impl RecordController {
     pub(crate) async fn router() -> Router {
         let mut router = Router::new();
 
-        router.register_endpoint(Method::GET, "/records", RecordController::get_records);
-        router.register_endpoint(Method::GET, "/records/:id", RecordController::get_record);
+        router.register_endpoint_with_middleware(
+            Method::GET,
+            "/records",
+            RecordController::get_records,
+            auth::middleware::auth_middleware,
+        );
+        router.register_endpoint_with_middleware(
+            Method::GET,
+            "/records/:id",
+            RecordController::get_record,
+            auth::middleware::auth_middleware,
+        );
         router.register_endpoint_with_middleware(
             Method::POST,
             "/records",

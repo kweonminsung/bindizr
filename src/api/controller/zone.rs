@@ -21,8 +21,18 @@ impl ZoneController {
     pub(crate) async fn router() -> Router {
         let mut router = Router::new();
 
-        router.register_endpoint(Method::GET, "/zones", ZoneController::get_zones);
-        router.register_endpoint(Method::GET, "/zones/:id", ZoneController::get_zone);
+        router.register_endpoint_with_middleware(
+            Method::GET,
+            "/zones",
+            ZoneController::get_zones,
+            auth::middleware::auth_middleware,
+        );
+        router.register_endpoint_with_middleware(
+            Method::GET,
+            "/zones/:id",
+            ZoneController::get_zone,
+            auth::middleware::auth_middleware,
+        );
         router.register_endpoint_with_middleware(
             Method::POST,
             "/zones",
