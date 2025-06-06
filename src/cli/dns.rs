@@ -27,15 +27,13 @@ pub(crate) fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
 }
 
 fn write_dns_config() -> Result<(), String> {
-    // Logic to write DNS configuration
-    // This is a placeholder; actual implementation will depend on your application logic
+    SERIALIZER.send_message("write_config");
+
     println!("DNS configuration written successfully.");
     Ok(())
 }
 
 fn reload_dns_config() -> Result<(), String> {
-    SERIALIZER.send_message("write_config");
-
     match RndcClient::command("reload") {
         Ok(_) => println!("DNS configuration reloaded successfully"),
         Err(e) => eprintln!("Failed to reload DNS configuration: {}", e),
