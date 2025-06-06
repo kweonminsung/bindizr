@@ -1,6 +1,6 @@
 pub(crate) mod daemon;
+pub(crate) mod dns;
 pub(crate) mod parser;
-pub(crate) mod reload;
 pub(crate) mod start;
 pub(crate) mod stop;
 pub(crate) mod token;
@@ -21,9 +21,8 @@ fn pre_bootstrap(skip_for_running_daemon: bool) {
 
 pub(crate) async fn execute(args: &Args) {
     match args.command.as_str() {
-        "start" => pre_bootstrap(false),
-        "stop" | "reload" => pre_bootstrap(true),
-        "token" => pre_bootstrap(false),
+        "start" | "token" | "dns" => pre_bootstrap(false),
+        "stop" => pre_bootstrap(true),
         _ => pre_bootstrap(false),
     }
 
@@ -31,7 +30,12 @@ pub(crate) async fn execute(args: &Args) {
     match args.command.as_str() {
         "start" => start::execute(&args).await,
         "stop" => stop::execute(&args),
-        "reload" => reload::execute(&args),
+        "dns" => {
+            if let Err(e) = dns::handle_command(&args) {
+                eprintln!("Error: {}", e);
+                exit(1);
+            }
+        }
         "token" => {
             if let Err(e) = token::handle_command(&args) {
                 eprintln!("Error: {}", e);
