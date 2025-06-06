@@ -9,8 +9,8 @@ Synchronizing bind9 records with DB.
     <a href="https://github.com/netbirdio/netbird/blob/main/LICENSE">
         <img src="https://img.shields.io/badge/license-Apache 2.0-blue" />
     </a>
-    <a href="https://github.com/kweonminsung/bindizr/actions">
-        <img src="https://github.com/kweonminsung/bindizr/actions/workflows/test.yaml/badge.svg" />
+    <a href="https://github.com/kweonminsung/bindizr/actions/workflows/build_test.yaml">
+        <img src="https://github.com/kweonminsung/bindizr/actions/workflows/build_test.yaml/badge.svg" />
     </a>
 </p>
 </div>
