@@ -1,5 +1,5 @@
-use super::{reload, start, stop};
-use crate::cli::token;
+use super::{start, stop};
+use crate::cli::{dns, token};
 use std::{collections::HashMap, env, process::exit};
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ impl Args {
 
         if args.len() < 2 {
             return Err(format!(
-                "Usage: {} [start|stop|reload|token] [OPTIONS]",
+                "Usage: {} [start|stop|dns|token] [OPTIONS]",
                 args[0]
             ));
         }
@@ -31,7 +31,7 @@ impl Args {
         // Handle commands
         if args.len() > 2 {
             // Handle subcommands for the commands with subcommands
-            if command == "token" && args.len() > 2 {
+            if (command == "token" || command == "dns") && args.len() > 2 {
                 subcommand = Some(args[2].clone());
 
                 // Handle options and subcommand arguments
@@ -102,10 +102,13 @@ impl Args {
                 "token" if args.subcommand.is_some() => {
                     println!("{}", token::help_message(&args.subcommand.unwrap()));
                 }
+                "token" => println!("{}", token::help_message("")),
+                "dns" if args.subcommand.is_some() => {
+                    println!("{}", dns::help_message(&args.subcommand.unwrap()));
+                }
+                "dns" => println!("{}", dns::help_message("")),
                 "start" => println!("{}", start::help_message()),
                 "stop" => println!("{}", stop::help_message()),
-                "reload" => println!("{}", reload::help_message()),
-                "token" => println!("{}", token::help_message("")),
                 _ => println!(
                     "{}",
                     Self::help_message(&env::args().next().unwrap_or_default())
@@ -128,7 +131,7 @@ impl Args {
             Commands:\n\
             start         Start the bindizr service\n\
             stop          Stop the bindizr service\n\
-            reload        Reload DNS configuration\n\
+            dns           Manage DNS configurations\n\
             token         Manage API tokens\n\
             \n\
             Run '{} COMMAND --help' for more information on a command.",

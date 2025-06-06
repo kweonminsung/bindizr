@@ -10,18 +10,23 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::{fs, thread};
 
+struct Message {
+    msg: String,
+    ack: Option<Sender<()>>, // Optional acknowledgment channel
+}
+
 // Initialize the serializer
 pub(crate) fn initialize() {
     SERIALIZER.send_message("initialize");
 }
 
 pub(crate) struct Serializer {
-    tx: Sender<String>,
+    tx: Sender<Message>,
 }
 
 impl Serializer {
     pub(crate) fn new() -> Self {
-        let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
 
         // Spawn worker thread
         thread::spawn(move || Self::worker_thread(rx));
@@ -30,24 +35,34 @@ impl Serializer {
     }
 
     // Worker thread that processes messages
-    fn worker_thread(rx: Receiver<String>) {
+    fn worker_thread(rx: Receiver<Message>) {
         loop {
             match rx.recv() {
-                Ok(message) => match message.as_str() {
+                Ok(Message { msg, ack }) => match msg.as_str() {
                     "initialize" => {
                         println!("Serializer initialized");
+                        if let Some(ack) = ack {
+                            let _ = ack.send(());
+                        }
                     }
                     "write_config" => {
-                        Self::write_config().unwrap_or_else(|e| {
+                        if let Err(e) = Self::write_config() {
                             eprintln!("Failed to write config: {}", e);
-                        });
+                        }
+
+                        if let Some(ack) = ack {
+                            let _ = ack.send(()); // ACK even on failure
+                        }
                     }
                     "exit" => {
                         println!("Exiting serializer thread");
+                        if let Some(ack) = ack {
+                            let _ = ack.send(()); // ACK before exit
+                        }
                         break;
                     }
                     _ => {
-                        println!("Received unsupported message: {}", message);
+                        println!("Received unsupported message: {}", msg);
                     }
                 },
                 Err(e) => {
@@ -60,9 +75,32 @@ impl Serializer {
 
     // Send message to worker thread
     pub(crate) fn send_message(&self, message: &str) {
-        if let Err(e) = self.tx.send(message.to_string()) {
-            eprintln!("error sending message: {}", e);
+        let msg = Message {
+            msg: message.to_string(),
+            ack: None,
+        };
+        if let Err(e) = self.tx.send(msg) {
+            eprintln!("Error sending message: {}", e);
         }
+    }
+
+    // Send message with acknowledgment
+    pub(crate) fn send_message_and_wait(&self, message: &str) -> Result<(), String> {
+        let (ack_tx, ack_rx) = mpsc::channel();
+
+        let msg = Message {
+            msg: message.to_string(),
+            ack: Some(ack_tx),
+        };
+        if self.tx.send(msg).is_err() {
+            return Err("Failed to send message".to_string());
+        }
+
+        // Wait for acknowledgment
+        ack_rx
+            .recv()
+            .map_err(|e| format!("Failed to receive acknowledgment: {}", e))?;
+        Ok(())
     }
 
     // Write DNS configuration files
@@ -126,8 +164,6 @@ impl Serializer {
                 return Err(format!("Failed to write to file: {}", zone.name));
             }
         }
-
-        println!("DNS configuration files written successfully.");
 
         Ok(())
     }

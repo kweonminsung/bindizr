@@ -2,6 +2,9 @@
 use config::{Config, File, FileFormat, Source, Value};
 use lazy_static::lazy_static;
 
+#[cfg(test)]
+mod tests;
+
 lazy_static! {
     #[derive(Debug)]
     static ref _CONFIG_LOADED: Config = {

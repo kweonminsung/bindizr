@@ -130,8 +130,11 @@ $ ./bindizr start -f
 # Stop the bindizr service
 $ ./bindizr stop
 
+# Overwrite DNS configuration file
+$ ./bindizr dns write
+
 # Reload DNS configuration
-$ ./bindizr reload
+$ ./bindizr dns reload
 
 # Show help information
 $ ./bindizr --help
