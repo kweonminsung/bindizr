@@ -27,9 +27,12 @@ pub(crate) fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
 }
 
 fn write_dns_config() -> Result<(), String> {
-    SERIALIZER.send_message("write_config");
+    // SERIALIZER.send_message("write_config");
+    match SERIALIZER.send_message_and_wait("write_config") {
+        Ok(_) => println!("DNS configuration written successfully."),
+        Err(e) => return Err(format!("Failed to write DNS configuration: {}", e)),
+    }
 
-    println!("DNS configuration written successfully.");
     Ok(())
 }
 
