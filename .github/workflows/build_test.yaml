@@ -1,4 +1,4 @@
-name: "Build test"
+name: build_test
 
 on:
   # push:
