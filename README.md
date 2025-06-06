@@ -9,12 +9,12 @@ Synchronizing bind9 records with DB.
     <a href="https://github.com/netbirdio/netbird/blob/main/LICENSE">
         <img src="https://img.shields.io/badge/license-Apache 2.0-blue" />
     </a>
-    <a href="https://github.com/kweonminsung/bindizr/commits/main/">
-        <img src="https://img.shields.io/github/last-commit/kweonminsung/bindizr" />
-    </a>
-    <br>
     <a href="https://github.com/kweonminsung/bindizr/actions/workflows/build_test.yaml">
         <img src="https://github.com/kweonminsung/bindizr/actions/workflows/build_test.yaml/badge.svg" />
+    </a>
+    <br>
+    <a href="https://app.codacy.com/gh/kweonminsung/bindizr/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade">
+        <img src="https://app.codacy.com/project/badge/Grade/29665b2525ce453bb78429b13ec8ede9" />
     </a>
 </p>
 </div>
