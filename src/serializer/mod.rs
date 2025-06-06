@@ -46,13 +46,12 @@ impl Serializer {
                         }
                     }
                     "write_config" => {
-                        let result = Self::write_config();
-                        if let Some(ack) = ack {
-                            let _ = ack.send(()); // ACK even on failure
+                        if let Err(e) = Self::write_config() {
+                            eprintln!("Failed to write config: {}", e);
                         }
 
-                        if let Err(e) = result {
-                            eprintln!("Failed to write config: {}", e);
+                        if let Some(ack) = ack {
+                            let _ = ack.send(()); // ACK even on failure
                         }
                     }
                     "exit" => {
