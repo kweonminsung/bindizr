@@ -102,20 +102,18 @@ $ vim bindizr.conf # or use any text editor you prefer
 Add the following configuration, adjusting values to match your environment:
 
 ```ini
-[server]
-port = 3000                # HTTP API port
-
 [api]
+port = 3000                    # HTTP API port
 require_authentication = true  # Enable/disable API authentication
 
 [mysql]
-server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
+mysql_server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
 
 [bind]
 bind_config_path = "BIND_CONFIG_PATH"   # Bind config path(e.g.: /etc/bind)
+rndc_server_url = "RNDC_SERVER_URL"     # RNDC server address
 rndc_algorithm = "RNDC_ALGORITHM"       # RNDC authentication algorithm
 rndc_secret_key = "RNDC_SECRET_KEY"     # RNDC secret key
-rndc_server_url = "RNDC_SERVER_URL"     # RNDC server address
 ```
 
 ### 4. Start Bindizr

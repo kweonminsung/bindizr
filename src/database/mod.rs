@@ -52,7 +52,7 @@ impl DatabasePool {
 
 lazy_static! {
     pub(crate) static ref DATABASE_POOL: DatabasePool = {
-        let database_url = config::get_config("mysql.server_url");
+        let database_url = config::get_config("mysql.mysql_server_url");
         DatabasePool::new(&database_url)
     };
 }
