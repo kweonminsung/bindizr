@@ -1,6 +1,19 @@
-# Bindizr
+<div align="center">
+<p align="center">
+    <img src="public/bindizr_horizontal.png" width="400px">
+</p>
 
-Synchronizing bind9(DNS) records with DB
+Synchronizing bind9 records with DB.
+
+<p>
+    <a href="https://github.com/netbirdio/netbird/blob/main/LICENSE">
+        <img src="https://img.shields.io/badge/license-Apache 2.0-blue" />
+    </a>
+    <a href="https://github.com/kweonminsung/bindizr/actions">
+        <img src="https://github.com/kweonminsung/bindizr/actions/workflows/test.yaml/badge.svg" />
+    </a>
+</p>
+</div>
 
 ## Concepts
 
@@ -14,7 +27,7 @@ Synchronizing bind9(DNS) records with DB
 
 <br>
 
-&nbsp;<img src="public/concepts.png" width="462px" height="200x">
+&nbsp;<img src="public/concepts.png" width="462px">
 
 ## Get Started
 
