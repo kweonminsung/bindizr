@@ -21,8 +21,10 @@ fn pre_bootstrap(skip_for_running_daemon: bool) {
 
 pub(crate) async fn execute(args: &Args) {
     match args.command.as_str() {
-        "start" | "token" | "dns" => pre_bootstrap(false),
+        "start" => pre_bootstrap(false),
         "stop" => pre_bootstrap(true),
+        "dns" => pre_bootstrap(false),
+        "token" => pre_bootstrap(false),
         _ => pre_bootstrap(false),
     }
 
