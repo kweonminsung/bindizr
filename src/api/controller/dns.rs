@@ -1,5 +1,3 @@
-use serde_json::json;
-
 use crate::api::{
     controller::{
         auth,
@@ -7,6 +5,7 @@ use crate::api::{
     },
     service::dns::DnsService,
 };
+use serde_json::json;
 
 pub(crate) struct DnsController;
 

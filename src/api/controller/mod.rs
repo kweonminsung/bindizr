@@ -6,6 +6,7 @@ mod record_history;
 mod zone;
 mod zone_history;
 
+// use crate::{api::service::test::TestService, database::DATABASE_POOL};
 use internal::{utils, Method, Request, Response, Router, StatusCode};
 use serde_json::json;
 
@@ -22,7 +23,7 @@ impl ApiController {
         router.register_router(record_history::RecordHistoryController::router().await);
         router.register_router(dns::DnsController::router().await);
 
-        // router.register_endpoint(Method::GET, "/test", test);
+        // router.register_endpoint(Method::GET, "/test", ApiController::test);
         router.register_endpoint(Method::GET, "/", ApiController::get_home);
 
         router.route(request).await
@@ -34,8 +35,8 @@ impl ApiController {
         utils::json_response(json!({ "msg": "hello world!" }), StatusCode::OK)
     }
 
-    // fn test(&self, _request: Request) -> Response {
-    //     let json_body = json!({ "result": ApiService.get_table_names() });
+    // async fn test(_request: Request) -> Response {
+    //     let json_body = json!({ "result": TestService::get_table_names(&DATABASE_POOL) });
     //     utils::json_response(json_body, StatusCode::OK)
     // }
 }
