@@ -2,6 +2,7 @@ mod api;
 mod cli;
 mod config;
 mod database;
+mod logger;
 mod rndc;
 mod serializer;
 
