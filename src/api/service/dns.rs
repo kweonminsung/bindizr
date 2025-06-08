@@ -1,4 +1,4 @@
-use crate::{rndc::RndcClient, serializer::SERIALIZER};
+use crate::{log_error, rndc::RndcClient, serializer::SERIALIZER};
 
 #[derive(Clone)]
 pub(crate) struct DnsService;
@@ -8,7 +8,7 @@ impl DnsService {
         let res = match RndcClient::command("status") {
             Ok(response) => response,
             Err(e) => {
-                eprintln!("Failed to get DNS status: {}", e);
+                log_error!("Failed to get DNS status: {}", e);
                 return Err("Failed to get DNS status".to_string());
             }
         };
@@ -27,7 +27,7 @@ impl DnsService {
         let res = match RndcClient::command("reload") {
             Ok(response) => response,
             Err(e) => {
-                eprintln!("Failed to reload DNS: {}", e);
+                log_error!("Failed to reload DNS: {}", e);
                 return Err("Failed to reload DNS".to_string());
             }
         };
@@ -46,7 +46,7 @@ impl DnsService {
         match SERIALIZER.send_message_and_wait("write_config") {
             Ok(_) => Ok("DNS configuration written successfully.".to_string()),
             Err(e) => {
-                eprintln!("Failed to write DNS configuration: {}", e);
+                log_error!("Failed to write DNS configuration: {}", e);
                 Err("Failed to write DNS configuration".to_string())
             }
         }

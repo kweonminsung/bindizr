@@ -11,6 +11,7 @@ use crate::{
         service::record::RecordService,
     },
     database::DATABASE_POOL,
+    log_debug,
 };
 use serde_json::json;
 
@@ -101,7 +102,7 @@ impl RecordController {
         let body = match get_body::<CreateRecordRequest>(request).await {
             Ok(b) => b,
             Err(err) => {
-                eprintln!("Error parsing request body: {}", err);
+                log_debug!("Error parsing request body: {}", err);
                 let json_body = json!({ "error": "Invalid request body" });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
@@ -133,7 +134,7 @@ impl RecordController {
         let body = match get_body::<CreateRecordRequest>(request).await {
             Ok(b) => b,
             Err(err) => {
-                eprintln!("Error parsing request body: {}", err);
+                log_debug!("Error parsing request body: {}", err);
                 let json_body = json!({ "error": "Invalid request body" });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }

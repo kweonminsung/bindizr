@@ -1,14 +1,12 @@
 use super::AuthService;
 use crate::api::controller::internal::{utils, Request, Response, StatusCode};
+use crate::log_debug;
 use crate::{config, database::DATABASE_POOL};
 use serde_json::json;
 
 pub(crate) async fn auth_middleware(request: Request) -> Result<Request, Response> {
     // Check if authentication is required
-    if !config::get_config("api.require_authentication")
-        .parse::<bool>()
-        .unwrap_or(false)
-    {
+    if !config::get_config::<bool>("api.require_authentication") {
         return Ok(request);
     }
 
@@ -51,7 +49,7 @@ pub(crate) async fn auth_middleware(request: Request) -> Result<Request, Respons
             Ok(request)
         }
         Err(err) => {
-            eprintln!("Token validation error: {}", err);
+            log_debug!("Token validation error: {}", err);
             return Err(utils::json_response(
                 json!({ "error": "Invalid or expired token" }),
                 StatusCode::UNAUTHORIZED,

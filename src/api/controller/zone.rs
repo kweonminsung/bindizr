@@ -11,6 +11,7 @@ use crate::{
         service::{record::RecordService, zone::ZoneService},
     },
     database::DATABASE_POOL,
+    log_debug,
     serializer::Serializer,
 };
 use serde_json::json;
@@ -121,7 +122,7 @@ impl ZoneController {
         let body = match get_body::<CreateZoneRequest>(request).await {
             Ok(b) => b,
             Err(err) => {
-                eprintln!("Error parsing request body: {}", err);
+                log_debug!("Error parsing request body: {}", err);
                 let json_body = json!({ "error": "Invalid request body" });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }
@@ -153,7 +154,7 @@ impl ZoneController {
         let body = match get_body::<CreateZoneRequest>(request).await {
             Ok(b) => b,
             Err(err) => {
-                eprintln!("Error parsing request body: {}", err);
+                log_debug!("Error parsing request body: {}", err);
                 let json_body = json!({ "error": "Invalid request body" });
                 return json_response(json_body, StatusCode::BAD_REQUEST);
             }

@@ -2,6 +2,7 @@ use super::{common::CommonService, zone_history::ZoneHistoryService};
 use crate::{
     api::dto::CreateZoneRequest,
     database::{model::zone::Zone, DatabasePool},
+    log_error,
 };
 use chrono::Utc;
 use mysql::prelude::Queryable;
@@ -24,7 +25,7 @@ impl ZoneService {
         ) {
             Ok(zones) => zones,
             Err(e) => {
-                eprintln!("Failed to fetch zone: {}", e);
+                log_error!("Failed to fetch zone: {}", e);
                 return Err("Failed to fetch zone".to_string());
             }
         };
@@ -47,7 +48,7 @@ impl ZoneService {
         ) {
             Ok(zones) => Ok(zones),
             Err(e) => {
-                eprintln!("Failed to fetch zones: {}", e);
+                log_error!("Failed to fetch zones: {}", e);
                 Err("Failed to fetch zones".to_string())
             }
         }
@@ -71,7 +72,7 @@ impl ZoneService {
         let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
             Ok(tx) => tx,
             Err(e) => {
-                eprintln!("Failed to start transaction: {}", e);
+                log_error!("Failed to start transaction: {}", e);
                 return Err("Failed to create zone".to_string());
             }
         };
@@ -93,7 +94,7 @@ impl ZoneService {
         ) {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to insert zone: {}", e);
+                log_error!("Failed to insert zone: {}", e);
                 return Err("Failed to create zone".to_string());
             }
         };
@@ -102,7 +103,7 @@ impl ZoneService {
         let last_insert_id = match tx.last_insert_id() {
             Some(id) => id,
             None => {
-                eprintln!("Failed to get last insert id");
+                log_error!("Failed to get last insert id");
                 return Err("Failed to create zone".to_string());
             }
         };
@@ -122,7 +123,7 @@ impl ZoneService {
         match tx.commit() {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to commit transaction: {}", e);
+                log_error!("Failed to commit transaction: {}", e);
                 return Err("Failed to create zone".to_string());
             }
         };
@@ -143,7 +144,7 @@ impl ZoneService {
         let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
             Ok(tx) => tx,
             Err(e) => {
-                eprintln!("Failed to start transaction: {}", e);
+                log_error!("Failed to start transaction: {}", e);
                 return Err("Failed to update zone".to_string());
             }
         };
@@ -166,7 +167,7 @@ impl ZoneService {
         ) {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to update zone: {}", e);
+                log_error!("Failed to update zone: {}", e);
                 return Err("Failed to update zone".to_string());
             }
         };
@@ -186,7 +187,7 @@ impl ZoneService {
         match tx.commit() {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to commit transaction: {}", e);
+                log_error!("Failed to commit transaction: {}", e);
                 return Err("Failed to update zone".to_string());
             }
         };
@@ -203,7 +204,7 @@ impl ZoneService {
         let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
             Ok(tx) => tx,
             Err(e) => {
-                eprintln!("Failed to start transaction: {}", e);
+                log_error!("Failed to start transaction: {}", e);
                 return Err("Failed to delete zone".to_string());
             }
         };
@@ -211,7 +212,7 @@ impl ZoneService {
         match tx.exec_drop("DELETE FROM zones WHERE id = ?", (zone_id,)) {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to delete zone: {}", e);
+                log_error!("Failed to delete zone: {}", e);
                 return Err("Failed to delete zone".to_string());
             }
         };
@@ -230,7 +231,7 @@ impl ZoneService {
         match tx.commit() {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to commit transaction: {}", e);
+                log_error!("Failed to commit transaction: {}", e);
                 return Err("Failed to delete zone".to_string());
             }
         };

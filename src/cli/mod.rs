@@ -5,27 +5,35 @@ pub(crate) mod start;
 pub(crate) mod stop;
 pub(crate) mod token;
 
-use crate::{config, database};
+use crate::{api, config, database, logger, serializer};
 use parser::Args;
-use std::process::exit;
 
-fn pre_bootstrap(skip_for_running_daemon: bool) {
-    // Skip initialization if the daemon is running and the flag is set
-    if skip_for_running_daemon || daemon::is_running() {
-        return;
+fn pre_bootstrap(skip_logger_init: bool, skip_database_init: bool) {
+    config::initialize();
+
+    if !skip_logger_init {
+        logger::initialize();
     }
 
-    config::initialize();
-    database::initialize();
+    if !skip_database_init {
+        database::initialize();
+    }
+}
+
+async fn bootstrap() {
+    serializer::initialize();
+    api::initialize().await;
 }
 
 pub(crate) async fn execute(args: &Args) {
     match args.command.as_str() {
-        "start" => pre_bootstrap(false),
-        "stop" => pre_bootstrap(true),
-        "dns" => pre_bootstrap(false),
-        "token" => pre_bootstrap(false),
-        _ => pre_bootstrap(false),
+        "start" | "stop" => pre_bootstrap(true, true),
+        "dns" | "token" => pre_bootstrap(true, false),
+        "bootstrap" => pre_bootstrap(false, false),
+        _ => {
+            eprintln!("Unsupported command: {}", args.command);
+            std::process::exit(1);
+        }
     }
 
     // Execute command
@@ -35,18 +43,16 @@ pub(crate) async fn execute(args: &Args) {
         "dns" => {
             if let Err(e) = dns::handle_command(&args) {
                 eprintln!("Error: {}", e);
-                exit(1);
+                std::process::exit(1);
             }
         }
         "token" => {
             if let Err(e) = token::handle_command(&args) {
                 eprintln!("Error: {}", e);
-                exit(1);
+                std::process::exit(1);
             }
         }
-        _ => {
-            eprintln!("Unsupported command: {}", args.command);
-            exit(1);
-        }
+        "bootstrap" => bootstrap().await,
+        _ => {}
     }
 }

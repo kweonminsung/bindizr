@@ -3,9 +3,9 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 lazy_static! {
     pub(crate) static ref _RNDC_CLIENT: rndc::RndcClient = {
-        let server_url = crate::config::get_config("bind.rndc_server_url");
-        let algorithm = crate::config::get_config("bind.rndc_algorithm");
-        let secret_key = crate::config::get_config("bind.rndc_secret_key");
+        let server_url = crate::config::get_config::<String>("bind.rndc_server_url");
+        let algorithm = crate::config::get_config::<String>("bind.rndc_algorithm");
+        let secret_key = crate::config::get_config::<String>("bind.rndc_secret_key");
 
         rndc::RndcClient::new(&server_url, &algorithm, &secret_key)
     };

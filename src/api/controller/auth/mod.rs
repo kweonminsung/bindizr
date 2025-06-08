@@ -1,6 +1,9 @@
 pub(crate) mod middleware;
 
-use crate::database::{model::api_token::ApiToken, DatabasePool};
+use crate::{
+    database::{model::api_token::ApiToken, DatabasePool},
+    log_error,
+};
 use chrono::{Duration, Utc};
 use mysql::prelude::*;
 use rand::{distributions::Alphanumeric, Rng};
@@ -42,7 +45,7 @@ impl AuthService {
         ) {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to insert token: {}", e);
+                log_error!("Failed to insert token: {}", e);
                 return Err("Failed to create token".to_string());
             }
         };
@@ -64,7 +67,7 @@ impl AuthService {
         ) {
             Ok(tokens) => tokens,
             Err(e) => {
-                eprintln!("Failed to fetch token: {}", e);
+                log_error!("Failed to fetch token: {}", e);
                 return Err("Failed to fetch token".to_string());
             }
         };
@@ -88,7 +91,7 @@ impl AuthService {
         ) {
             Ok(tokens) => tokens,
             Err(e) => {
-                eprintln!("Failed to validate token: {}", e);
+                log_error!("Failed to validate token: {}", e);
                 return Err("Failed to validate token".to_string());
             }
         };
@@ -107,7 +110,7 @@ impl AuthService {
         ) {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to update last_used_at: {}", e);
+                log_error!("Failed to update last_used_at: {}", e);
                 return Err("Failed to update last_used_at".to_string());
             }
         }
@@ -127,7 +130,7 @@ impl AuthService {
         ) {
             Ok(tokens) => Ok(tokens),
             Err(e) => {
-                eprintln!("Failed to list tokens: {}", e);
+                log_error!("Failed to list tokens: {}", e);
                 Err("Failed to list tokens".to_string())
             }
         }
@@ -147,7 +150,7 @@ impl AuthService {
         ) {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to delete token: {}", e);
+                log_error!("Failed to delete token: {}", e);
                 return Err("Failed to delete token".to_string());
             }
         }

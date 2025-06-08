@@ -13,7 +13,7 @@ impl TestService {
         match conn.query_map(query, |table_name: String| table_name) {
             Ok(table_names) => table_names,
             Err(e) => {
-                eprintln!("Failed to fetch table names: {}", e);
+                log_error!("Failed to fetch table names: {}", e);
                 Vec::new()
             }
         }

@@ -108,6 +108,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "lazy_static",
+ "log",
  "mysql",
  "nix",
  "rand 0.8.5",
