@@ -169,7 +169,7 @@ pub(crate) fn initialize() {
 
     // Get log directory
     let log_dir = config::get_config("logging.log_output_dir");
-    let log_dir_path = if log_dir.is_empty() {
+    let log_dir_path = if !log_dir.is_empty() {
         PathBuf::from(&log_dir)
     } else {
         env::current_dir().unwrap()
@@ -236,10 +236,15 @@ fn initialize_with_dir(enable_file_logging: bool, log_level: Level, log_dir_path
     // Log initialization message
     if enable_file_logging {
         if let Some(path) = file_path {
+            // Get absolute path for logging
+            let absolute_path = path
+                .canonicalize()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| path.display().to_string());
+
             println!(
                 "Logging initialized. Level: {}, File: {}",
-                log_level,
-                path.display()
+                log_level, absolute_path
             );
         } else {
             println!("Logging initialized. Level: {}", log_level);
