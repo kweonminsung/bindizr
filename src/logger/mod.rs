@@ -47,6 +47,7 @@ pub(crate) struct Logger {
     log_level: Level,
     enable_file_logging: bool,
     log_dir_path: Option<PathBuf>,
+    is_daemon: bool,
     current_file: Arc<Mutex<Option<File>>>,
     current_date: Arc<Mutex<String>>,
 }
@@ -81,8 +82,8 @@ impl log::Log for Logger {
                 )
             };
 
-            if !daemon::is_running() {
-                // Print to console only in foreground mode
+            // Print to console only in foreground mode
+            if !self.is_daemon {
                 print!("{}", log_message);
             }
 
@@ -220,6 +221,7 @@ fn initialize_with_dir(enable_file_logging: bool, log_level: Level, log_dir_path
         log_level: log_level,
         enable_file_logging,
         log_dir_path,
+        is_daemon: daemon::is_running(),
         current_file: Arc::new(Mutex::new(current_file)),
         current_date: Arc::new(Mutex::new(today)),
     };
