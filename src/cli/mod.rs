@@ -5,9 +5,8 @@ pub(crate) mod start;
 pub(crate) mod stop;
 pub(crate) mod token;
 
-use crate::{config, database};
+use crate::{config, database, logger};
 use parser::Args;
-use std::process::exit;
 
 fn pre_bootstrap(skip_for_running_daemon: bool) {
     // Skip initialization if the daemon is running and the flag is set
@@ -16,6 +15,7 @@ fn pre_bootstrap(skip_for_running_daemon: bool) {
     }
 
     config::initialize();
+    logger::initialize();
     database::initialize();
 }
 
@@ -35,18 +35,18 @@ pub(crate) async fn execute(args: &Args) {
         "dns" => {
             if let Err(e) = dns::handle_command(&args) {
                 eprintln!("Error: {}", e);
-                exit(1);
+                std::process::exit(1);
             }
         }
         "token" => {
             if let Err(e) = token::handle_command(&args) {
                 eprintln!("Error: {}", e);
-                exit(1);
+                std::process::exit(1);
             }
         }
         _ => {
             eprintln!("Unsupported command: {}", args.command);
-            exit(1);
+            std::process::exit(1);
         }
     }
 }
