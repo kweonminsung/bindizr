@@ -5,19 +5,19 @@ pub(crate) mod start;
 pub(crate) mod stop;
 pub(crate) mod token;
 
-use crate::{api, config, database, log_warn, logger, serializer};
+use crate::{api, config, database, logger, serializer};
 use parser::Args;
 
-fn pre_bootstrap(skip_database_init: bool) {
+fn pre_bootstrap(skip_logger_init: bool, skip_database_init: bool) {
     config::initialize();
-    logger::initialize();
 
-    // Skip initialization if the daemon is running and the flag is set
-    if skip_database_init || daemon::is_running() {
-        return;
+    if !skip_logger_init {
+        logger::initialize();
     }
 
-    database::initialize();
+    if !skip_database_init {
+        database::initialize();
+    }
 }
 
 async fn bootstrap() {
@@ -26,10 +26,14 @@ async fn bootstrap() {
 }
 
 pub(crate) async fn execute(args: &Args) {
-    if args.command.as_str() == "bootstrap" {
-        pre_bootstrap(false);
-    } else {
-        pre_bootstrap(true);
+    match args.command.as_str() {
+        "start" | "stop" => pre_bootstrap(true, true),
+        "dns" | "token" => pre_bootstrap(true, false),
+        "bootstrap" => pre_bootstrap(false, false),
+        _ => {
+            eprintln!("Unsupported command: {}", args.command);
+            std::process::exit(1);
+        }
     }
 
     // Execute command
@@ -38,20 +42,17 @@ pub(crate) async fn execute(args: &Args) {
         "stop" => stop::execute(&args),
         "dns" => {
             if let Err(e) = dns::handle_command(&args) {
-                log_warn!("Error: {}", e);
+                eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }
         "token" => {
             if let Err(e) = token::handle_command(&args) {
-                log_warn!("Error: {}", e);
+                eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }
         "bootstrap" => bootstrap().await,
-        _ => {
-            log_warn!("Unsupported command: {}", args.command);
-            std::process::exit(1);
-        }
+        _ => {}
     }
 }

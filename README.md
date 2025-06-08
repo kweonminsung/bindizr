@@ -47,10 +47,10 @@ $ ufw allow 953/tcp
 
 ```bash
 # Generate RNDC configuration and key
-$ rndc-confgen [-A KEY_ALGORITHM] > /etc/bind/rndc.conf
+$ rndc-confgen [-A KEY_ALGORITHM] > /etc/bind/rndc.key
 
 # View the generated key (example below)
-$ cat /etc/bind/rndc.conf
+$ cat /etc/bind/rndc.key
 # Output:
 key "rndc-key" {
     algorithm hmac-sha256;  # The algorithm used for RNDC authentication (must match on both sides)
@@ -104,16 +104,21 @@ Add the following configuration, adjusting values to match your environment:
 ```ini
 [api]
 port = 3000                    # HTTP API port
-require_authentication = true  # Enable/disable API authentication
+require_authentication = true  # Enable API authentication (true/false)
 
 [mysql]
 mysql_server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
 
 [bind]
-bind_config_path = "BIND_CONFIG_PATH"   # Bind config path(e.g.: /etc/bind)
-rndc_server_url = "RNDC_SERVER_URL"     # RNDC server address
-rndc_algorithm = "RNDC_ALGORITHM"       # RNDC authentication algorithm
-rndc_secret_key = "RNDC_SECRET_KEY"     # RNDC secret key
+bind_config_path = "/etc/bind"       # Bind config path
+rndc_server_url = "127.0.0.1:953"    # RNDC server address
+rndc_algorithm = "sha256"            # RNDC authentication algorithm
+rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
+
+[logging]
+log_level = "debug"           # Log level: error, warn, info, debug, trace
+enable_file_logging = true    # Enable logging to file (true/false)
+log_file_path = "log"         # Path to log file (absolute or relative)
 ```
 
 ### 4. Start Bindizr

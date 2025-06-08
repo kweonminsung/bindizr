@@ -30,7 +30,13 @@ pub(crate) fn initialize() {
 pub(crate) fn get_config(key: &str) -> String {
     _CONFIG_LOADED
         .get::<Value>(key)
-        .unwrap_or_else(|_| panic!("Configuration key '{}' not found", key))
+        .unwrap_or_else(|_| {
+            eprintln!("Configuration '{}' not found", key);
+            std::process::exit(1);
+        })
         .into_string()
-        .unwrap_or_else(|_| panic!("Configuration key '{}' is not a string", key))
+        .unwrap_or_else(|_| {
+            eprintln!("Configuration '{}' is not a string", key);
+            std::process::exit(1);
+        })
 }
