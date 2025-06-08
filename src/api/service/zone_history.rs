@@ -1,7 +1,7 @@
 use super::common::CommonService;
 use crate::{
     database::{model::zone_history::ZoneHistory, DatabasePool},
-    log_debug, log_error,
+    log_error,
 };
 use mysql::prelude::Queryable;
 
@@ -26,7 +26,7 @@ impl ZoneHistoryService {
         ) {
             Ok(zone_history) => zone_history,
             Err(e) => {
-                log_debug!("Failed to fetch zone history: {}", e);
+                log_error!("Failed to fetch zone history: {}", e);
                 return Err("Failed to fetch zone history".to_string());
             }
         };

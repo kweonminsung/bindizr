@@ -5,7 +5,7 @@ use crate::{
         model::record::{Record, RecordType},
         DatabasePool,
     },
-    log_debug, log_error,
+    log_error,
 };
 use chrono::Utc;
 use mysql::prelude::Queryable;
@@ -28,7 +28,7 @@ impl RecordService {
         ) {
             Ok(record) => record,
             Err(e) => {
-                log_debug!("Failed to fetch record: {}", e);
+                log_error!("Failed to fetch record: {}", e);
                 return Err("Failed to fetch record".to_string());
             }
         };

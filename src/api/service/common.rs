@@ -3,7 +3,7 @@ use crate::{
         model::{record::Record, zone::Zone},
         DatabasePool,
     },
-    log_debug,
+    log_error,
 };
 use mysql::prelude::Queryable;
 
@@ -25,7 +25,7 @@ impl CommonService {
         ) {
             Ok(zones) => zones,
             Err(e) => {
-                log_debug!("Failed to fetch zone: {}", e);
+                log_error!("Failed to fetch zone: {}", e);
                 return Err("Failed to fetch zone".to_string());
             }
         };
@@ -49,7 +49,7 @@ impl CommonService {
         ) {
             Ok(records) => records,
             Err(e) => {
-                log_debug!("Failed to fetch record: {}", e);
+                log_error!("Failed to fetch record: {}", e);
                 return Err("Failed to fetch record".to_string());
             }
         };

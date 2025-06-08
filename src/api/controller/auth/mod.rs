@@ -2,7 +2,7 @@ pub(crate) mod middleware;
 
 use crate::{
     database::{model::api_token::ApiToken, DatabasePool},
-    log_debug, log_error,
+    log_error,
 };
 use chrono::{Duration, Utc};
 use mysql::prelude::*;
@@ -67,7 +67,7 @@ impl AuthService {
         ) {
             Ok(tokens) => tokens,
             Err(e) => {
-                log_debug!("Failed to fetch token: {}", e);
+                log_error!("Failed to fetch token: {}", e);
                 return Err("Failed to fetch token".to_string());
             }
         };

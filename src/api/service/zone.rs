@@ -2,7 +2,7 @@ use super::{common::CommonService, zone_history::ZoneHistoryService};
 use crate::{
     api::dto::CreateZoneRequest,
     database::{model::zone::Zone, DatabasePool},
-    log_debug, log_error,
+    log_error,
 };
 use chrono::Utc;
 use mysql::prelude::Queryable;
@@ -25,7 +25,7 @@ impl ZoneService {
         ) {
             Ok(zones) => zones,
             Err(e) => {
-                log_debug!("Failed to fetch zone: {}", e);
+                log_error!("Failed to fetch zone: {}", e);
                 return Err("Failed to fetch zone".to_string());
             }
         };

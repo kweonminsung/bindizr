@@ -1,7 +1,7 @@
 use super::common::CommonService;
 use crate::{
     database::{model::record_history::RecordHistory, DatabasePool},
-    log_debug, log_error,
+    log_error,
 };
 use mysql::prelude::Queryable;
 
@@ -26,7 +26,7 @@ impl RecordHistoryService {
         ) {
             Ok(record_history) => record_history,
             Err(e) => {
-                log_debug!("Failed to fetch record history: {}", e);
+                log_error!("Failed to fetch record history: {}", e);
                 return Err("Failed to fetch record history".to_string());
             }
         };
