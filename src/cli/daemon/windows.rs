@@ -38,6 +38,8 @@ impl DaemonControl for WindowsDaemon {
 
         // Start new process
         let exe = env::current_exe().expect("Failed to get executable path");
+
+        #[allow(clippy::zombie_processes)]
         let child = Command::new(exe)
             .arg("bootstrap")
             .spawn()

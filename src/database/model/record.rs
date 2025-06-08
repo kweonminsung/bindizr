@@ -41,6 +41,7 @@ impl Record {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub(crate) enum RecordType {
     A,

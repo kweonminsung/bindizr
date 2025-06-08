@@ -13,15 +13,14 @@ pub(crate) type Response = Result<hyper::Response<Full<Bytes>>, Infallible>;
 pub(crate) type StatusCode = hyper::StatusCode;
 pub(crate) type Method = hyper::Method;
 
+type HandlerFn = dyn Fn(Request) -> Pin<Box<dyn Future<Output = Response> + Send>> + Send + Sync;
+type MiddlewareFn = dyn Fn(Request) -> Pin<Box<dyn Future<Output = Result<Request, Response>> + Send>>
+    + Send
+    + Sync;
+
 pub(crate) struct Route {
-    handler: Box<dyn Fn(Request) -> Pin<Box<dyn Future<Output = Response> + Send>> + Send + Sync>,
-    middleware: Option<
-        Box<
-            dyn Fn(Request) -> Pin<Box<dyn Future<Output = Result<Request, Response>> + Send>>
-                + Send
-                + Sync,
-        >,
-    >,
+    handler: Box<HandlerFn>,
+    middleware: Option<Box<MiddlewareFn>>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
