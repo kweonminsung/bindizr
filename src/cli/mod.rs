@@ -38,16 +38,16 @@ pub(crate) async fn execute(args: &Args) {
 
     // Execute command
     match args.command.as_str() {
-        "start" => start::execute(&args).await,
-        "stop" => stop::execute(&args),
+        "start" => start::execute(args).await,
+        "stop" => stop::execute(args),
         "dns" => {
-            if let Err(e) = dns::handle_command(&args) {
+            if let Err(e) = dns::handle_command(args) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }
         "token" => {
-            if let Err(e) = token::handle_command(&args) {
+            if let Err(e) = token::handle_command(args) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }

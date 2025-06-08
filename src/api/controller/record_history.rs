@@ -50,7 +50,7 @@ impl RecordHistoryController {
 
         let record_histories = raw_record_histories
             .iter()
-            .map(|record_history| GetRecordHistoryResponse::from_record_history(record_history))
+            .map(GetRecordHistoryResponse::from_record_history)
             .collect::<Vec<GetRecordHistoryResponse>>();
 
         let json_body = json!({ "record_histories": record_histories });

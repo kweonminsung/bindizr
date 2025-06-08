@@ -68,7 +68,7 @@ impl RecordController {
 
         let records = raw_records
             .iter()
-            .map(|record| GetRecordResponse::from_record(record))
+            .map(GetRecordResponse::from_record)
             .collect::<Vec<GetRecordResponse>>();
 
         let json_body = json!({ "records": records });

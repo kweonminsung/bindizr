@@ -47,7 +47,7 @@ impl RecordService {
         match zone_id {
             Some(id) => {
                 // Check if zone exists
-                CommonService::get_zone_by_id(&pool, id)?;
+                CommonService::get_zone_by_id(pool, id)?;
 
                 match conn.exec_map(
                     r#"
@@ -83,7 +83,7 @@ impl RecordService {
     }
 
     pub(crate) fn get_record(pool: &DatabasePool, record_id: i32) -> Result<Record, String> {
-        CommonService::get_record_by_id(&pool, record_id)
+        CommonService::get_record_by_id(pool, record_id)
     }
 
     pub(crate) fn create_record(
@@ -93,7 +93,7 @@ impl RecordService {
         let mut conn = pool.get_connection();
 
         // Check if record already exists
-        if let Ok(_) = Self::get_record_by_name(&pool, &create_record_request.name) {
+        if Self::get_record_by_name(pool, &create_record_request.name).is_ok() {
             return Err(format!(
                 "Record {} already exists",
                 create_record_request.name
@@ -101,7 +101,7 @@ impl RecordService {
         }
 
         // Check if zone exists
-        CommonService::get_zone_by_id(&pool, create_record_request.zone_id)?;
+        CommonService::get_zone_by_id(pool, create_record_request.zone_id)?;
 
         // Validate record type
         let record_type = RecordType::from_str(&create_record_request.record_type)
@@ -165,7 +165,7 @@ impl RecordService {
             }
         };
 
-        CommonService::get_record_by_id(&pool, last_insert_id as i32)
+        CommonService::get_record_by_id(pool, last_insert_id as i32)
     }
 
     pub(crate) fn update_record(
@@ -176,10 +176,10 @@ impl RecordService {
         let mut conn = pool.get_connection();
 
         // Check if record exists
-        CommonService::get_record_by_id(&pool, record_id)?;
+        CommonService::get_record_by_id(pool, record_id)?;
 
         // Check if zone exists
-        CommonService::get_zone_by_id(&pool, update_record_request.zone_id)?;
+        CommonService::get_zone_by_id(pool, update_record_request.zone_id)?;
 
         let record_type = RecordType::from_str(&update_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
@@ -234,14 +234,14 @@ impl RecordService {
             }
         };
 
-        CommonService::get_record_by_id(&pool, record_id)
+        CommonService::get_record_by_id(pool, record_id)
     }
 
     pub(crate) fn delete_record(pool: &DatabasePool, record_id: i32) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
         // Check if record exists
-        CommonService::get_record_by_id(&pool, record_id)?;
+        CommonService::get_record_by_id(pool, record_id)?;
 
         let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
             Ok(tx) => tx,

@@ -44,7 +44,7 @@ impl ZoneService {
             FROM zones
         "#,
             (),
-            |row| Zone::from_row(row),
+            Zone::from_row,
         ) {
             Ok(zones) => Ok(zones),
             Err(e) => {
@@ -55,7 +55,7 @@ impl ZoneService {
     }
 
     pub(crate) fn get_zone(pool: &DatabasePool, zone_id: i32) -> Result<Zone, String> {
-        CommonService::get_zone_by_id(&pool, zone_id)
+        CommonService::get_zone_by_id(pool, zone_id)
     }
 
     pub(crate) fn create_zone(
@@ -65,7 +65,7 @@ impl ZoneService {
         let mut conn = pool.get_connection();
 
         // Check if zone already exists
-        if let Ok(_) = Self::get_zone_by_name(&pool, &create_zone_request.name) {
+        if Self::get_zone_by_name(pool, &create_zone_request.name).is_ok() {
             return Err(format!("Zone {} already exists", create_zone_request.name));
         }
 
@@ -128,7 +128,7 @@ impl ZoneService {
             }
         };
 
-        CommonService::get_zone_by_id(&pool, last_insert_id as i32)
+        CommonService::get_zone_by_id(pool, last_insert_id as i32)
     }
 
     pub(crate) fn update_zone(
@@ -139,7 +139,7 @@ impl ZoneService {
         let mut conn = pool.get_connection();
 
         // Check if zone exists
-        CommonService::get_zone_by_id(&pool, zone_id)?;
+        CommonService::get_zone_by_id(pool, zone_id)?;
 
         let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
             Ok(tx) => tx,
@@ -192,14 +192,14 @@ impl ZoneService {
             }
         };
 
-        CommonService::get_zone_by_id(&pool, zone_id)
+        CommonService::get_zone_by_id(pool, zone_id)
     }
 
     pub(crate) fn delete_zone(pool: &DatabasePool, zone_id: i32) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
         // Check if zone exists
-        CommonService::get_zone_by_id(&pool, zone_id)?;
+        CommonService::get_zone_by_id(pool, zone_id)?;
 
         let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
             Ok(tx) => tx,

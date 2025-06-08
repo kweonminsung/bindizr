@@ -216,7 +216,7 @@ fn initialize_with_dir(enable_file_logging: bool, log_level: Level, log_dir_path
 
     // Create logger
     let logger = Logger {
-        log_level: log_level,
+        log_level,
         enable_file_logging,
         log_dir_path,
         is_daemon: daemon::is_running(),

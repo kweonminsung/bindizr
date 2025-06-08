@@ -43,7 +43,7 @@ impl ZoneHistoryService {
         let mut conn = pool.get_connection();
 
         // Check if the zone exists
-        CommonService::get_zone_by_id(&pool, zone_id)?;
+        CommonService::get_zone_by_id(pool, zone_id)?;
 
         let res = match conn.exec_map(
             r#"
@@ -98,7 +98,7 @@ impl ZoneHistoryService {
         let mut conn = pool.get_connection();
 
         // Check if the zone history exists
-        Self::get_zone_history_by_id(&pool, zone_history_id)?;
+        Self::get_zone_history_by_id(pool, zone_history_id)?;
 
         match conn.exec_drop(
             r#"

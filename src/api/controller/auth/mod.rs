@@ -63,7 +63,7 @@ impl AuthService {
             SELECT * FROM api_tokens WHERE id = ?
             "#,
             (token_id,),
-            |row| ApiToken::from_row(row),
+            ApiToken::from_row,
         ) {
             Ok(tokens) => tokens,
             Err(e) => {
@@ -87,7 +87,7 @@ impl AuthService {
                 AND (expires_at IS NULL OR expires_at > NOW())
                 "#,
             (token_str,),
-            |row| ApiToken::from_row(row),
+            ApiToken::from_row,
         ) {
             Ok(tokens) => tokens,
             Err(e) => {
@@ -126,7 +126,7 @@ impl AuthService {
             SELECT * FROM api_tokens ORDER BY created_at DESC
             "#,
             (),
-            |row| ApiToken::from_row(row),
+            ApiToken::from_row,
         ) {
             Ok(tokens) => Ok(tokens),
             Err(e) => {

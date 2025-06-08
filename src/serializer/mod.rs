@@ -130,13 +130,11 @@ impl Serializer {
 
         // Prepare directory for writing
         let bindizr_config_path = bind_config_path.join("bindizr");
-        if bindizr_config_path.exists() {
-            if fs::remove_dir_all(&bindizr_config_path).is_err() {
-                return Err(format!(
-                    "Failed to remove existing bindizr config directory: {}",
-                    bindizr_config_path.display()
-                ));
-            }
+        if bindizr_config_path.exists() && fs::remove_dir_all(&bindizr_config_path).is_err() {
+            return Err(format!(
+                "Failed to remove existing bindizr config directory: {}",
+                bindizr_config_path.display()
+            ));
         }
         if fs::create_dir_all(&bindizr_config_path).is_err() {
             return Err(format!(
@@ -183,7 +181,7 @@ impl Serializer {
             FROM zones
         "#,
             (),
-            |row| Zone::from_row(row),
+            Zone::from_row,
         )
         .unwrap_or_else(|e| {
             log_error!("Failed to fetch zones: {}", e);
@@ -266,7 +264,7 @@ ns  IN  A   {}
             let name = if record.name == "@" {
                 "@".to_string()
             } else {
-                format!("{}", record.name)
+                record.name.to_string()
             };
 
             match record.record_type {

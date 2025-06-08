@@ -50,10 +50,10 @@ pub(crate) async fn auth_middleware(request: Request) -> Result<Request, Respons
         }
         Err(err) => {
             log_debug!("Token validation error: {}", err);
-            return Err(utils::json_response(
+            Err(utils::json_response(
                 json!({ "error": "Invalid or expired token" }),
                 StatusCode::UNAUTHORIZED,
-            ));
+            ))
         }
     }
 }

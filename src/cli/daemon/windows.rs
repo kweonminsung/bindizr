@@ -13,7 +13,7 @@ impl DaemonControl for WindowsDaemon {
     fn is_pid_running(pid: i32) -> bool {
         unsafe {
             let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid as u32);
-            if handle == std::ptr::null_mut() {
+            if handle.is_null() {
                 return false;
             }
             CloseHandle(handle);

@@ -24,14 +24,12 @@ impl ApiToken {
             token: row.get("token").unwrap(),
             description: row.get("description").unwrap(),
             created_at: parse_mysql_datetime(&row.get("created_at").unwrap()),
-            expires_at: match row.get::<Value, _>("expires_at") {
-                Some(value) => Some(utils::parse_mysql_datetime(&value)),
-                None => None,
-            },
-            last_used_at: match row.get::<Value, _>("last_used_at") {
-                Some(value) => Some(utils::parse_mysql_datetime(&value)),
-                None => None,
-            },
+            expires_at: row
+                .get::<Value, _>("expires_at")
+                .map(|value| utils::parse_mysql_datetime(&value)),
+            last_used_at: row
+                .get::<Value, _>("last_used_at")
+                .map(|value| utils::parse_mysql_datetime(&value)),
         }
     }
 }

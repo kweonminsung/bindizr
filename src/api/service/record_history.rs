@@ -43,7 +43,7 @@ impl RecordHistoryService {
         let mut conn = pool.get_connection();
 
         // Check if the record exists
-        CommonService::get_record_by_id(&pool, record_id)?;
+        CommonService::get_record_by_id(pool, record_id)?;
 
         let res = match conn.exec_map(
             r#"
@@ -98,7 +98,7 @@ impl RecordHistoryService {
         let mut conn = pool.get_connection();
 
         // Check if the record history exists
-        Self::get_record_history_by_id(&pool, record_history_id)?;
+        Self::get_record_history_by_id(pool, record_history_id)?;
 
         match conn.exec_drop(
             "DELETE FROM record_history WHERE id = ?",

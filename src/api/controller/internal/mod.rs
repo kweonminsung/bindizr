@@ -48,7 +48,7 @@ impl Router {
         let method = request.method().clone();
 
         for (key, route) in &self.routes {
-            if &method == &key.method && Router::match_path(path, key.path_pattern) {
+            if method == key.method && Router::match_path(path, key.path_pattern) {
                 match &route.middleware {
                     Some(middleware) => match (middleware)(request).await {
                         Ok(modified_request) => {
