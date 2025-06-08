@@ -1,4 +1,6 @@
 #![allow(unused_imports)]
+use std::any::type_name;
+
 use config::{Config, File, FileFormat, Source, Value};
 use lazy_static::lazy_static;
 
@@ -27,16 +29,23 @@ pub(crate) fn initialize() {
     // }
 }
 
-pub(crate) fn get_config(key: &str) -> String {
+fn get_config_str(key: &str) -> String {
     _CONFIG_LOADED
         .get::<Value>(key)
-        .unwrap_or_else(|_| {
-            eprintln!("Configuration '{}' not found", key);
-            std::process::exit(1);
-        })
+        .unwrap()
         .into_string()
-        .unwrap_or_else(|_| {
-            eprintln!("Configuration '{}' is not a string", key);
-            std::process::exit(1);
-        })
+        .unwrap()
+}
+
+pub(crate) fn get_config<T: serde::de::DeserializeOwned>(key: &str) -> T {
+    let value_str = get_config_str(key);
+
+    serde_json::from_str::<T>(&value_str).unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse configuration for '{}'. Expected type: {}. Error: {}",
+            key,
+            type_name::<T>(),
+            e
+        )
+    })
 }

@@ -148,7 +148,7 @@ impl Logger {
 }
 
 pub(crate) fn initialize() {
-    let log_level = match config::get_config("logging.log_level")
+    let log_level = match config::get_config::<String>("logging.log_level")
         .to_lowercase()
         .as_str()
     {
@@ -159,16 +159,14 @@ pub(crate) fn initialize() {
         _ => Level::Info,
     };
 
-    let enable_file_logging = config::get_config("logging.enable_file_logging")
-        .parse::<bool>()
-        .unwrap_or(false);
+    let enable_file_logging = config::get_config::<bool>("logging.enable_file_logging");
 
     if !enable_file_logging {
         return initialize_with_dir(enable_file_logging, log_level, None);
     }
 
     // Get log directory
-    let log_dir = config::get_config("logging.log_output_dir");
+    let log_dir = config::get_config::<String>("logging.log_output_dir");
     let log_dir_path = if !log_dir.is_empty() {
         PathBuf::from(&log_dir)
     } else {

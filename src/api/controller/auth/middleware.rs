@@ -6,10 +6,7 @@ use serde_json::json;
 
 pub(crate) async fn auth_middleware(request: Request) -> Result<Request, Response> {
     // Check if authentication is required
-    if !config::get_config("api.require_authentication")
-        .parse::<bool>()
-        .unwrap_or(false)
-    {
+    if !config::get_config::<bool>("api.require_authentication") {
         return Ok(request);
     }
 

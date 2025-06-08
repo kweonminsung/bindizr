@@ -113,7 +113,7 @@ impl Serializer {
     fn write_config() -> Result<(), String> {
         let zones = Self::get_zones(&DATABASE_POOL);
 
-        let bind_config_path_str = config::get_config("bind.bind_config_path");
+        let bind_config_path_str = config::get_config::<String>("bind.bind_config_path");
         let bind_config_path = PathBuf::from(&bind_config_path_str);
         if !bind_config_path.is_dir() {
             return Err(format!(
