@@ -8,6 +8,9 @@ mod tests;
 lazy_static! {
     #[derive(Debug)]
     static ref _CONFIG_LOADED: Config = {
+
+        // println!("Configuration loaded successfully");
+
         Config::builder()
             .add_source(File::new("./bindizr.conf", FileFormat::Ini).required(true))
             .build()
@@ -17,8 +20,6 @@ lazy_static! {
 
 pub(crate) fn initialize() {
     lazy_static::initialize(&_CONFIG_LOADED);
-
-    println!("Configuration loaded successfully");
 
     // Debug: Print the loaded configuration
     // for (key, value) in _CONFIG_LOADED.collect().unwrap() {

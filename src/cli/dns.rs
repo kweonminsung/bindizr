@@ -1,4 +1,4 @@
-use crate::{rndc::RndcClient, serializer::SERIALIZER};
+use crate::{log_info, rndc::RndcClient, serializer::SERIALIZER};
 
 pub(crate) fn help_message(subcommand: &str) -> String {
     match subcommand {
@@ -28,7 +28,9 @@ pub(crate) fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
 
 fn write_dns_config() -> Result<(), String> {
     match SERIALIZER.send_message_and_wait("write_config") {
-        Ok(_) => println!("DNS configuration written successfully."),
+        Ok(_) => {
+            log_info!("DNS configuration written successfully.");
+        }
         Err(e) => return Err(format!("Failed to write DNS configuration: {}", e)),
     }
 
@@ -37,7 +39,9 @@ fn write_dns_config() -> Result<(), String> {
 
 fn reload_dns_config() -> Result<(), String> {
     match RndcClient::command("reload") {
-        Ok(_) => println!("DNS configuration reloaded successfully"),
+        Ok(_) => {
+            log_info!("DNS configuration reloaded successfully");
+        }
         Err(e) => return Err(format!("Failed to reload DNS configuration: {}", e)),
     }
 

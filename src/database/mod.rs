@@ -2,16 +2,16 @@ pub(crate) mod model;
 mod schema;
 mod utils;
 
-use crate::config;
+use crate::{config, log_error, log_info};
 use lazy_static::lazy_static;
 use mysql::{prelude::Queryable, Error, Opts, Pool, PooledConn};
 
 pub(crate) fn initialize() {
     // Test database connection
     match DATABASE_POOL.get_connection().query_drop("SELECT 1") {
-        Ok(_) => println!("Database initialized"),
+        Ok(_) => {}
         Err(e) => {
-            eprintln!("Failed to connect to the database: {}", e);
+            log_error!("Failed to connect to the database: {}", e);
             std::process::exit(1);
         }
     }
@@ -25,22 +25,23 @@ pub(crate) struct DatabasePool {
 impl DatabasePool {
     pub(crate) fn new(url: &str) -> Self {
         let opts = Opts::from_url(url).unwrap_or_else(|_| {
-            eprintln!("Invalid database URL: {}", url);
+            log_error!("Invalid database URL: {}", url);
             std::process::exit(1);
         });
 
         let pool = Pool::new(opts).unwrap_or_else(|e| {
-            eprintln!("Failed to create database pool: {}", e);
+            log_error!("Failed to create database pool: {}", e);
             std::process::exit(1);
         });
         let database_pool = DatabasePool { pool };
 
         // Create tables
         if let Err(e) = database_pool.create_tables() {
-            eprintln!("Failed to create tables: {}", e);
+            log_error!("Failed to create tables: {}", e);
             std::process::exit(1);
         };
 
+        log_info!("Database pool initialized");
         database_pool
     }
 

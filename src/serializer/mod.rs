@@ -1,7 +1,13 @@
-use crate::config;
-use crate::database::{
-    model::{record::Record, record::RecordType, zone::Zone},
-    {DatabasePool, DATABASE_POOL},
+use crate::{config, log_error};
+use crate::{
+    database::{
+        model::{
+            record::{Record, RecordType},
+            zone::Zone,
+        },
+        DatabasePool, DATABASE_POOL,
+    },
+    log_info,
 };
 use lazy_static::lazy_static;
 use mysql::prelude::*;
@@ -40,14 +46,14 @@ impl Serializer {
             match rx.recv() {
                 Ok(Message { msg, ack }) => match msg.as_str() {
                     "initialize" => {
-                        println!("Serializer initialized");
+                        log_info!("Serializer initialized");
                         if let Some(ack) = ack {
                             let _ = ack.send(());
                         }
                     }
                     "write_config" => {
                         if let Err(e) = Self::write_config() {
-                            eprintln!("Failed to write config: {}", e);
+                            log_error!("Failed to write config: {}", e);
                         }
 
                         if let Some(ack) = ack {
@@ -66,7 +72,7 @@ impl Serializer {
                     }
                 },
                 Err(e) => {
-                    eprintln!("Error receiving message: {}", e);
+                    log_error!("Error receiving message: {}", e);
                     break;
                 }
             }
@@ -80,7 +86,7 @@ impl Serializer {
             ack: None,
         };
         if let Err(e) = self.tx.send(msg) {
-            eprintln!("Error sending message: {}", e);
+            log_error!("Error sending message: {}", e);
         }
     }
 
@@ -180,7 +186,7 @@ impl Serializer {
             |row| Zone::from_row(row),
         )
         .unwrap_or_else(|e| {
-            eprintln!("Failed to fetch zones: {}", e);
+            log_error!("Failed to fetch zones: {}", e);
             Vec::new()
         })
     }
@@ -199,7 +205,7 @@ impl Serializer {
             |row: mysql::Row| Record::from_row(row),
         )
         .unwrap_or_else(|e| {
-            eprintln!("Failed to fetch records for zone {}: {}", zone_id, e);
+            log_error!("Failed to fetch records for zone {}: {}", zone_id, e);
             Vec::new()
         })
     }

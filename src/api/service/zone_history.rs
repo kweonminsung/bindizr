@@ -1,5 +1,8 @@
 use super::common::CommonService;
-use crate::database::{model::zone_history::ZoneHistory, DatabasePool};
+use crate::{
+    database::{model::zone_history::ZoneHistory, DatabasePool},
+    log_debug, log_error,
+};
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
@@ -23,7 +26,7 @@ impl ZoneHistoryService {
         ) {
             Ok(zone_history) => zone_history,
             Err(e) => {
-                eprintln!("Failed to fetch zone history: {}", e);
+                log_debug!("Failed to fetch zone history: {}", e);
                 return Err("Failed to fetch zone history".to_string());
             }
         };
@@ -53,7 +56,7 @@ impl ZoneHistoryService {
         ) {
             Ok(zone_histories) => zone_histories,
             Err(e) => {
-                eprintln!("Failed to fetch zone histories: {}", e);
+                log_error!("Failed to fetch zone histories: {}", e);
                 return Err("Failed to fetch zone histories".to_string());
             }
         };
@@ -72,7 +75,7 @@ impl ZoneHistoryService {
         ) {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("Failed to insert zone history: {}", e);
+                log_error!("Failed to insert zone history: {}", e);
                 return Err("Failed to insert zone history".to_string());
             }
         };
@@ -80,7 +83,7 @@ impl ZoneHistoryService {
         let last_inserted_id = match tx.last_insert_id() {
             Some(id) => id,
             None => {
-                eprintln!("Failed to get last inserted ID");
+                log_error!("Failed to get last inserted ID");
                 return Err("Failed to insert zone history".to_string());
             }
         };
@@ -106,7 +109,7 @@ impl ZoneHistoryService {
         ) {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("Failed to delete zone history: {}", e);
+                log_error!("Failed to delete zone history: {}", e);
                 return Err("Failed to delete zone history".to_string());
             }
         };

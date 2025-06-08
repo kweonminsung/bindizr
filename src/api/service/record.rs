@@ -5,6 +5,7 @@ use crate::{
         model::record::{Record, RecordType},
         DatabasePool,
     },
+    log_debug, log_error,
 };
 use chrono::Utc;
 use mysql::prelude::Queryable;
@@ -27,7 +28,7 @@ impl RecordService {
         ) {
             Ok(record) => record,
             Err(e) => {
-                eprintln!("Failed to fetch record: {}", e);
+                log_debug!("Failed to fetch record: {}", e);
                 return Err("Failed to fetch record".to_string());
             }
         };
@@ -37,7 +38,10 @@ impl RecordService {
             .ok_or_else(|| "Record not found".to_string())
     }
 
-    pub(crate) fn get_records(pool: &DatabasePool, zone_id: Option<i32>) -> Result<Vec<Record>, String> {
+    pub(crate) fn get_records(
+        pool: &DatabasePool,
+        zone_id: Option<i32>,
+    ) -> Result<Vec<Record>, String> {
         let mut conn = pool.get_connection();
 
         match zone_id {
@@ -56,7 +60,7 @@ impl RecordService {
                 ) {
                     Ok(records) => Ok(records),
                     Err(e) => {
-                        eprintln!("Failed to fetch records: {}", e);
+                        log_error!("Failed to fetch records: {}", e);
                         Err("Failed to fetch records".to_string())
                     }
                 }
@@ -71,7 +75,7 @@ impl RecordService {
             ) {
                 Ok(records) => Ok(records),
                 Err(e) => {
-                    eprintln!("Failed to fetch records: {}", e);
+                    log_error!("Failed to fetch records: {}", e);
                     Err("Failed to fetch records".to_string())
                 }
             },
@@ -106,7 +110,7 @@ impl RecordService {
         let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
             Ok(tx) => tx,
             Err(err) => {
-                eprintln!("Failed to start transaction: {}", err);
+                log_error!("Failed to start transaction: {}", err);
                 return Err("Failed to create record".to_string());
             }
         };
@@ -124,7 +128,7 @@ impl RecordService {
         ) {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("Failed to insert record: {}", e);
+                log_error!("Failed to insert record: {}", e);
                 return Err("Failed to create record".to_string());
             }
         };
@@ -133,7 +137,7 @@ impl RecordService {
         let last_insert_id = match tx.last_insert_id() {
             Some(id) => id,
             None => {
-                eprintln!("Failed to get last insert id");
+                log_error!("Failed to get last insert id");
                 return Err("Failed to create record".to_string());
             }
         };
@@ -156,7 +160,7 @@ impl RecordService {
         match tx.commit() {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("Failed to commit transaction: {}", e);
+                log_error!("Failed to commit transaction: {}", e);
                 return Err("Failed to create record history".to_string());
             }
         };
@@ -183,7 +187,7 @@ impl RecordService {
         let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
             Ok(tx) => tx,
             Err(err) => {
-                eprintln!("Failed to start transaction: {}", err);
+                log_error!("Failed to start transaction: {}", err);
                 return Err("Failed to update record".to_string());
             }
         };
@@ -202,7 +206,7 @@ impl RecordService {
         ) {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("Failed to update record: {}", e);
+                log_error!("Failed to update record: {}", e);
                 return Err("Failed to update record".to_string());
             }
         };
@@ -225,7 +229,7 @@ impl RecordService {
         match tx.commit() {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("Failed to commit transaction: {}", e);
+                log_error!("Failed to commit transaction: {}", e);
                 return Err("Failed to update record".to_string());
             }
         };
@@ -242,7 +246,7 @@ impl RecordService {
         let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
             Ok(tx) => tx,
             Err(err) => {
-                eprintln!("Failed to start transaction: {}", err);
+                log_error!("Failed to start transaction: {}", err);
                 return Err("Failed to delete record".to_string());
             }
         };
@@ -250,7 +254,7 @@ impl RecordService {
         match tx.exec_drop("DELETE FROM records WHERE id = ?", (record_id,)) {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("Failed to delete record: {}", e);
+                log_error!("Failed to delete record: {}", e);
                 return Err("Failed to delete record".to_string());
             }
         };
@@ -269,7 +273,7 @@ impl RecordService {
         match tx.commit() {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("Failed to commit transaction: {}", e);
+                log_error!("Failed to commit transaction: {}", e);
                 return Err("Failed to delete record".to_string());
             }
         };

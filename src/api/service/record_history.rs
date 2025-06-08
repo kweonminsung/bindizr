@@ -1,5 +1,8 @@
 use super::common::CommonService;
-use crate::database::{model::record_history::RecordHistory, DatabasePool};
+use crate::{
+    database::{model::record_history::RecordHistory, DatabasePool},
+    log_debug, log_error,
+};
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
@@ -23,7 +26,7 @@ impl RecordHistoryService {
         ) {
             Ok(record_history) => record_history,
             Err(e) => {
-                eprintln!("Failed to fetch record history: {}", e);
+                log_debug!("Failed to fetch record history: {}", e);
                 return Err("Failed to fetch record history".to_string());
             }
         };
@@ -53,7 +56,7 @@ impl RecordHistoryService {
         ) {
             Ok(record_histories) => record_histories,
             Err(e) => {
-                eprintln!("Failed to fetch record histories: {}", e);
+                log_error!("Failed to fetch record histories: {}", e);
                 return Err("Failed to fetch record histories".to_string());
             }
         };
@@ -72,7 +75,7 @@ impl RecordHistoryService {
         ) {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to insert record history: {}", e);
+                log_error!("Failed to insert record history: {}", e);
                 return Err("Failed to insert record history".to_string());
             }
         };
@@ -80,7 +83,7 @@ impl RecordHistoryService {
         let last_insert_id = match tx.last_insert_id() {
             Some(id) => id,
             None => {
-                eprintln!("Failed to get last insert id");
+                log_error!("Failed to get last insert id");
                 return Err("Failed to insert record history".to_string());
             }
         };
@@ -103,7 +106,7 @@ impl RecordHistoryService {
         ) {
             Ok(_) => (),
             Err(e) => {
-                eprintln!("Failed to delete record history: {}", e);
+                log_error!("Failed to delete record history: {}", e);
                 return Err("Failed to delete record history".to_string());
             }
         };

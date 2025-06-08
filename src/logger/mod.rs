@@ -1,3 +1,4 @@
+use crate::cli::daemon;
 use crate::config;
 use chrono::Local;
 use log::{Level, Metadata, Record};
@@ -61,15 +62,29 @@ impl log::Log for Logger {
             let formatted_time = now.format("%Y-%m-%d %H:%M:%S%.3f").to_string();
             let today = now.format("%Y-%m-%d").to_string();
 
-            let log_message = format!(
-                "[{}] {} - {}: {}\n",
-                formatted_time,
-                record.level(),
-                record.target(),
-                record.args()
-            );
+            let log_message = if self.log_level == Level::Debug {
+                // Include target in debug logs
+                format!(
+                    "[{}] {} - {}: {}\n",
+                    formatted_time,
+                    record.level(),
+                    record.target(),
+                    record.args()
+                )
+            } else {
+                // Exclude target for other log levels
+                format!(
+                    "[{}] {}: {}\n",
+                    formatted_time,
+                    record.level(),
+                    record.args()
+                )
+            };
 
-            print!("{}", log_message);
+            if !daemon::is_running() {
+                // Print to console only in foreground mode
+                print!("{}", log_message);
+            }
 
             // Save to file if logging is enabled
             if self.enable_file_logging {
@@ -219,16 +234,16 @@ fn initialize_with_dir(enable_file_logging: bool, log_level: Level, log_dir_path
     // Log initialization message
     if enable_file_logging {
         if let Some(path) = file_path {
-            log_info!(
+            println!(
                 "Logging initialized. Level: {}, File: {}",
                 log_level,
                 path.display()
             );
         } else {
-            log_info!("Logging initialized. Level: {}", log_level);
+            println!("Logging initialized. Level: {}", log_level);
         }
     } else {
-        log_info!(
+        println!(
             "File logging disabled. Console logging level: {}",
             log_level
         );
