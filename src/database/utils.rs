@@ -13,6 +13,7 @@ pub(crate) fn parse_mysql_datetime(timestamp: &Value) -> DateTime<Utc> {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
     use mysql::Value;
