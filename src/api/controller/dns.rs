@@ -1,10 +1,6 @@
-use crate::api::{
-    controller::{
-        auth,
-        internal::{utils, Method, Request, Response, Router, StatusCode},
-    },
-    service::dns::DnsService,
-};
+use crate::api::controller::auth;
+use crate::api::controller::internal::{utils, Method, Request, Response, Router, StatusCode};
+use crate::api::service::dns::DnsService;
 use serde_json::json;
 
 pub struct DnsController;

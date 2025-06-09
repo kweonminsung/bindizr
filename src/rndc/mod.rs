@@ -1,7 +1,6 @@
+use crate::log_info;
 use lazy_static::lazy_static;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-
-use crate::log_info;
 
 pub fn initialize() {
     log_info!("RNDC client initialized");

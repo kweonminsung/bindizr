@@ -42,7 +42,6 @@ pub fn execute() {
             }
         } else {
             println!("\n\x1b[31mFailed to collect configuration\x1b[0m");
-            return;
         }
     } else {
         println!("Status: \x1b[31mNot running\x1b[0m");

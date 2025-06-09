@@ -1,14 +1,9 @@
-use crate::{config, log_error};
-use crate::{
-    database::{
-        model::{
-            record::{Record, RecordType},
-            zone::Zone,
-        },
-        DatabasePool, DATABASE_POOL,
-    },
-    log_info,
+use crate::database::model::{
+    record::{Record, RecordType},
+    zone::Zone,
 };
+use crate::database::{DatabasePool, DATABASE_POOL};
+use crate::{config, log_error, log_info};
 use lazy_static::lazy_static;
 use mysql::prelude::*;
 use std::fmt::Write;
