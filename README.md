@@ -150,6 +150,9 @@ $ ./bindizr start -f
 # Stop the bindizr service
 $ ./bindizr stop
 
+# Check the current status of bindizr service
+$ ./bindizr status
+
 # Overwrite DNS configuration file
 $ ./bindizr dns write
 
