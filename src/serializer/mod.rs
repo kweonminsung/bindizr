@@ -1,14 +1,9 @@
-use crate::{config, log_error};
-use crate::{
-    database::{
-        model::{
-            record::{Record, RecordType},
-            zone::Zone,
-        },
-        DatabasePool, DATABASE_POOL,
-    },
-    log_info,
+use crate::database::model::{
+    record::{Record, RecordType},
+    zone::Zone,
 };
+use crate::database::{DatabasePool, DATABASE_POOL};
+use crate::{config, log_error, log_info};
 use lazy_static::lazy_static;
 use mysql::prelude::*;
 use std::fmt::Write;
@@ -21,17 +16,17 @@ struct Message {
     ack: Option<Sender<()>>, // Optional acknowledgment channel
 }
 
-// Initialize the serializer
-pub(crate) fn initialize() {
-    SERIALIZER.send_message("initialize");
+pub fn initialize() {
+    log_info!("Serializer initialized");
+    lazy_static::initialize(&SERIALIZER);
 }
 
-pub(crate) struct Serializer {
+pub struct Serializer {
     tx: Sender<Message>,
 }
 
 impl Serializer {
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         let (tx, rx) = mpsc::channel();
 
         // Spawn worker thread
@@ -45,12 +40,6 @@ impl Serializer {
         loop {
             match rx.recv() {
                 Ok(Message { msg, ack }) => match msg.as_str() {
-                    "initialize" => {
-                        log_info!("Serializer initialized");
-                        if let Some(ack) = ack {
-                            let _ = ack.send(());
-                        }
-                    }
                     "write_config" => {
                         if let Err(e) = Self::write_config() {
                             log_error!("Failed to write config: {}", e);
@@ -80,7 +69,7 @@ impl Serializer {
     }
 
     // Send message to worker thread
-    pub(crate) fn send_message(&self, message: &str) {
+    pub fn _send_message(&self, message: &str) {
         let msg = Message {
             msg: message.to_string(),
             ack: None,
@@ -91,7 +80,7 @@ impl Serializer {
     }
 
     // Send message with acknowledgment
-    pub(crate) fn send_message_and_wait(&self, message: &str) -> Result<(), String> {
+    pub fn send_message_and_wait(&self, message: &str) -> Result<(), String> {
         let (ack_tx, ack_rx) = mpsc::channel();
 
         let msg = Message {
@@ -130,13 +119,11 @@ impl Serializer {
 
         // Prepare directory for writing
         let bindizr_config_path = bind_config_path.join("bindizr");
-        if bindizr_config_path.exists() {
-            if fs::remove_dir_all(&bindizr_config_path).is_err() {
-                return Err(format!(
-                    "Failed to remove existing bindizr config directory: {}",
-                    bindizr_config_path.display()
-                ));
-            }
+        if bindizr_config_path.exists() && fs::remove_dir_all(&bindizr_config_path).is_err() {
+            return Err(format!(
+                "Failed to remove existing bindizr config directory: {}",
+                bindizr_config_path.display()
+            ));
         }
         if fs::create_dir_all(&bindizr_config_path).is_err() {
             return Err(format!(
@@ -183,7 +170,7 @@ impl Serializer {
             FROM zones
         "#,
             (),
-            |row| Zone::from_row(row),
+            Zone::from_row,
         )
         .unwrap_or_else(|e| {
             log_error!("Failed to fetch zones: {}", e);
@@ -225,7 +212,7 @@ impl Serializer {
         output
     }
 
-    pub(crate) fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
+    pub fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
         let mut output = String::new();
 
         // SOA record
@@ -266,7 +253,7 @@ ns  IN  A   {}
             let name = if record.name == "@" {
                 "@".to_string()
             } else {
-                format!("{}", record.name)
+                record.name.to_string()
             };
 
             match record.record_type {
@@ -335,5 +322,5 @@ ns  IN  A   {}
 }
 
 lazy_static! {
-    pub(crate) static ref SERIALIZER: Serializer = Serializer::new();
+    pub static ref SERIALIZER: Serializer = Serializer::new();
 }

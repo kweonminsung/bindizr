@@ -3,20 +3,20 @@ use chrono::{DateTime, Utc};
 use mysql::Value;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct RecordHistory {
-    pub(crate) id: i32,
+pub struct RecordHistory {
+    pub id: i32,
 
-    pub(crate) log: String,
+    pub log: String,
 
-    pub(crate) created_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 
-    pub(crate) updated_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 
-    pub(crate) record_id: i32,
+    pub record_id: i32,
 }
 
 impl RecordHistory {
-    pub(crate) fn from_row(row: mysql::Row) -> Self {
+    pub fn from_row(row: mysql::Row) -> Self {
         RecordHistory {
             id: row.get("id").unwrap(),
             log: row.get("log").unwrap(),

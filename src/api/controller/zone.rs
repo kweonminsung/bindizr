@@ -16,10 +16,10 @@ use crate::{
 };
 use serde_json::json;
 
-pub(crate) struct ZoneController;
+pub struct ZoneController;
 
 impl ZoneController {
-    pub(crate) async fn router() -> Router {
+    pub async fn router() -> Router {
         let mut router = Router::new();
 
         router.register_endpoint_with_middleware(
@@ -67,7 +67,7 @@ impl ZoneController {
 
         let zones = raw_zones
             .iter()
-            .map(|zone| GetZoneResponse::from_zone(zone))
+            .map(GetZoneResponse::from_zone)
             .collect::<Vec<GetZoneResponse>>();
 
         let json_body = json!({ "zones": zones });
@@ -105,7 +105,7 @@ impl ZoneController {
         };
         let records = raw_records
             .iter()
-            .map(|record| GetRecordResponse::from_record(record))
+            .map(GetRecordResponse::from_record)
             .collect::<Vec<GetRecordResponse>>();
 
         if let Some(true) = render_query {

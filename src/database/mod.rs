@@ -1,4 +1,4 @@
-pub(crate) mod model;
+pub mod model;
 mod schema;
 mod utils;
 
@@ -6,21 +6,18 @@ use crate::{config, log_error, log_info};
 use lazy_static::lazy_static;
 use mysql::{prelude::Queryable, Error, Opts, Pool, PooledConn};
 
-pub(crate) fn initialize() {
-    // Test database connection
-    if let Err(e) = DATABASE_POOL.get_connection().query_drop("SELECT 1") {
-        log_error!("Failed to connect to the database: {}", e);
-        std::process::exit(1);
-    }
+pub fn initialize() {
+    log_info!("Database pool initialized");
+    lazy_static::initialize(&DATABASE_POOL);
 }
 
 #[derive(Clone)]
-pub(crate) struct DatabasePool {
+pub struct DatabasePool {
     pool: Pool,
 }
 
 impl DatabasePool {
-    pub(crate) fn new(url: &str) -> Self {
+    pub fn new(url: &str) -> Self {
         let opts = Opts::from_url(url).unwrap_or_else(|_| {
             log_error!("Invalid database URL: {}", url);
             std::process::exit(1);
@@ -38,7 +35,6 @@ impl DatabasePool {
             std::process::exit(1);
         };
 
-        log_info!("Database pool initialized");
         database_pool
     }
 
@@ -52,7 +48,7 @@ impl DatabasePool {
         Ok(())
     }
 
-    pub(crate) fn get_connection(&self) -> PooledConn {
+    pub fn get_connection(&self) -> PooledConn {
         self.pool
             .get_conn()
             .expect("Failed to get connection from pool")
@@ -60,7 +56,7 @@ impl DatabasePool {
 }
 
 lazy_static! {
-    pub(crate) static ref DATABASE_POOL: DatabasePool = {
+    pub static ref DATABASE_POOL: DatabasePool = {
         let database_url = config::get_config::<String>("mysql.mysql_server_url");
         DatabasePool::new(&database_url)
     };

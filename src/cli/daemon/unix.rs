@@ -1,5 +1,5 @@
 use super::DaemonControl;
-use crate::cli::daemon::{read_pid_file, remove_pid_file, write_pid_file};
+use crate::cli::daemon::{get_pid, remove_pid_file, write_pid_file};
 use nix::sys::signal::{kill, SIGTERM};
 use nix::unistd::{fork, ForkResult, Pid};
 use std::{
@@ -7,7 +7,7 @@ use std::{
     process::{exit, Command},
 };
 
-pub(crate) struct UnixDaemon;
+pub struct UnixDaemon;
 
 impl DaemonControl for UnixDaemon {
     fn is_pid_running(pid: i32) -> bool {
@@ -22,18 +22,13 @@ impl DaemonControl for UnixDaemon {
     }
 
     fn start() {
-        // Check PID file
-        if let Some(pid_str) = read_pid_file() {
-            if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                if Self::is_pid_running(pid) {
-                    println!("Bindizr is already running with PID {}", pid);
-                    return;
-                } else {
-                    // Remove stale PID file
-                    let _ = remove_pid_file();
-                }
+        // Check if daemon is already running
+        if let Some(pid) = get_pid() {
+            if Self::is_pid_running(pid) {
+                println!("Bindizr is already running with PID {}", pid);
+                return;
             } else {
-                // Remove invalid PID file
+                // Remove stale PID file
                 let _ = remove_pid_file();
             }
         }
@@ -66,21 +61,10 @@ impl DaemonControl for UnixDaemon {
     }
 
     fn stop() {
-        // Check PID file
-        let pid_str = match read_pid_file() {
+        let pid = match get_pid() {
             Some(pid) => pid,
             None => {
                 println!("Bindizr not running");
-                return;
-            }
-        };
-
-        // Parse PID
-        let pid = match pid_str.trim().parse::<i32>() {
-            Ok(pid) => pid,
-            Err(_) => {
-                let _ = remove_pid_file();
-                println!("Invalid PID in file, removed stale PID file");
                 return;
             }
         };

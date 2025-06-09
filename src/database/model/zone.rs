@@ -4,36 +4,36 @@ use mysql::Value;
 
 // structure for basic creation of SOA records and basic creation of NS records
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct Zone {
-    pub(crate) id: i32,
+pub struct Zone {
+    pub id: i32,
 
-    pub(crate) name: String, // zone name (e.g.: "example.com")
+    pub name: String, // zone name (e.g.: "example.com")
 
-    pub(crate) primary_ns: String, // primary name server (e.g.: "ns1.example.com")
+    pub primary_ns: String, // primary name server (e.g.: "ns1.example.com")
 
-    pub(crate) primary_ns_ip: String, // primary name server IP
+    pub primary_ns_ip: String, // primary name server IP
 
-    pub(crate) admin_email: String, // admin email (e.g.: "admin.example.com")
+    pub admin_email: String, // admin email (e.g.: "admin.example.com")
 
-    pub(crate) ttl: i32, // default TTL (seconds)
+    pub ttl: i32, // default TTL (seconds)
 
-    pub(crate) serial: i32, // serial number (SOA record)
+    pub serial: i32, // serial number (SOA record)
 
-    pub(crate) refresh: i32, // refresh period (seconds)
+    pub refresh: i32, // refresh period (seconds)
 
-    pub(crate) retry: i32, // retry period (seconds)
+    pub retry: i32, // retry period (seconds)
 
-    pub(crate) expire: i32, // expire period (seconds)
+    pub expire: i32, // expire period (seconds)
 
-    pub(crate) minimum_ttl: i32, // minimum TTL (seconds)
+    pub minimum_ttl: i32, // minimum TTL (seconds)
 
-    pub(crate) created_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 
-    pub(crate) updated_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl Zone {
-    pub(crate) fn from_row(row: mysql::Row) -> Self {
+    pub fn from_row(row: mysql::Row) -> Self {
         Zone {
             id: row.get("id").unwrap(),
             name: row.get("name").unwrap(),

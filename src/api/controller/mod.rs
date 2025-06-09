@@ -1,4 +1,4 @@
-pub(crate) mod auth;
+pub mod auth;
 mod dns;
 mod internal;
 mod record;
@@ -10,10 +10,10 @@ mod zone_history;
 use internal::{utils, Method, Request, Response, Router, StatusCode};
 use serde_json::json;
 
-pub(crate) struct ApiController;
+pub struct ApiController;
 
 impl ApiController {
-    pub(crate) async fn serve(request: Request) -> Response {
+    pub async fn serve(request: Request) -> Response {
         let mut router = Router::new();
 
         // Register routes

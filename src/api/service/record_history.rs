@@ -6,7 +6,7 @@ use crate::{
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
-pub(crate) struct RecordHistoryService;
+pub struct RecordHistoryService;
 
 impl RecordHistoryService {
     fn get_record_history_by_id(
@@ -36,14 +36,14 @@ impl RecordHistoryService {
             .ok_or_else(|| "Record history not found".to_string())
     }
 
-    pub(crate) fn get_record_histories(
+    pub fn get_record_histories(
         pool: &DatabasePool,
         record_id: i32,
     ) -> Result<Vec<RecordHistory>, String> {
         let mut conn = pool.get_connection();
 
         // Check if the record exists
-        CommonService::get_record_by_id(&pool, record_id)?;
+        CommonService::get_record_by_id(pool, record_id)?;
 
         let res = match conn.exec_map(
             r#"
@@ -64,7 +64,7 @@ impl RecordHistoryService {
         Ok(res)
     }
 
-    pub(crate) fn create_record_history(
+    pub fn create_record_history(
         tx: &mut mysql::Transaction,
         record_id: i32,
         log: &str,
@@ -91,14 +91,14 @@ impl RecordHistoryService {
         Ok(last_insert_id as i32)
     }
 
-    pub(crate) fn delete_record_history(
+    pub fn delete_record_history(
         pool: &DatabasePool,
         record_history_id: i32,
     ) -> Result<(), String> {
         let mut conn = pool.get_connection();
 
         // Check if the record history exists
-        Self::get_record_history_by_id(&pool, record_history_id)?;
+        Self::get_record_history_by_id(pool, record_history_id)?;
 
         match conn.exec_drop(
             "DELETE FROM record_history WHERE id = ?",

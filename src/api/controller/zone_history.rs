@@ -8,10 +8,10 @@ use crate::{
 };
 use serde_json::json;
 
-pub(crate) struct ZoneHistoryController;
+pub struct ZoneHistoryController;
 
 impl ZoneHistoryController {
-    pub(crate) async fn router() -> Router {
+    pub async fn router() -> Router {
         let mut router = Router::new();
 
         router.register_endpoint_with_middleware(
@@ -50,7 +50,7 @@ impl ZoneHistoryController {
 
         let zone_histories = raw_zone_histories
             .iter()
-            .map(|zone_history| GetZoneHistoryResponse::from_zone_history(zone_history))
+            .map(GetZoneHistoryResponse::from_zone_history)
             .collect::<Vec<GetZoneHistoryResponse>>();
 
         let json_body = json!({ "zone_histories": zone_histories });
@@ -77,7 +77,7 @@ impl ZoneHistoryController {
             }
             Err(err) => {
                 let json_body = json!({ "error": err });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
+                json_response(json_body, StatusCode::BAD_REQUEST)
             }
         }
     }

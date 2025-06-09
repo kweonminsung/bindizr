@@ -43,7 +43,7 @@ macro_rules! log_trace {
     };
 }
 
-pub(crate) struct Logger {
+pub struct Logger {
     log_level: Level,
     enable_file_logging: bool,
     log_dir_path: Option<PathBuf>,
@@ -147,7 +147,7 @@ impl Logger {
     }
 }
 
-pub(crate) fn initialize() {
+pub fn initialize() {
     let log_level = match config::get_config::<String>("logging.log_level")
         .to_lowercase()
         .as_str()
@@ -216,7 +216,7 @@ fn initialize_with_dir(enable_file_logging: bool, log_level: Level, log_dir_path
 
     // Create logger
     let logger = Logger {
-        log_level: log_level,
+        log_level,
         enable_file_logging,
         log_dir_path,
         is_daemon: daemon::is_running(),

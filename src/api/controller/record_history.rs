@@ -8,10 +8,10 @@ use crate::{
 };
 use serde_json::json;
 
-pub(crate) struct RecordHistoryController;
+pub struct RecordHistoryController;
 
 impl RecordHistoryController {
-    pub(crate) async fn router() -> Router {
+    pub async fn router() -> Router {
         let mut router = Router::new();
 
         router.register_endpoint_with_middleware(
@@ -50,7 +50,7 @@ impl RecordHistoryController {
 
         let record_histories = raw_record_histories
             .iter()
-            .map(|record_history| GetRecordHistoryResponse::from_record_history(record_history))
+            .map(GetRecordHistoryResponse::from_record_history)
             .collect::<Vec<GetRecordHistoryResponse>>();
 
         let json_body = json!({ "record_histories": record_histories });

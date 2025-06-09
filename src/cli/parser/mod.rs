@@ -1,14 +1,14 @@
 use super::{start, stop};
-use crate::cli::{dns, token};
+use crate::cli::{dns, status, token};
 use std::{collections::HashMap, env, process::exit};
 
 #[derive(Debug)]
-pub(crate) struct Args {
-    pub(crate) command: String,
-    pub(crate) subcommand: Option<String>,
-    pub(crate) subcommand_args: Vec<String>,
-    pub(crate) options: Vec<String>,
-    pub(crate) option_values: HashMap<String, String>,
+pub struct Args {
+    pub command: String,
+    pub subcommand: Option<String>,
+    pub subcommand_args: Vec<String>,
+    pub options: Vec<String>,
+    pub option_values: HashMap<String, String>,
 }
 
 impl Args {
@@ -17,7 +17,7 @@ impl Args {
 
         if args.len() < 2 {
             return Err(format!(
-                "Usage: {} [start|stop|dns|token] [OPTIONS]",
+                "Usage: {} [start|stop|status|dns|token] [OPTIONS]",
                 args[0]
             ));
         }
@@ -85,7 +85,7 @@ impl Args {
         })
     }
 
-    pub(crate) fn process_args(raw_args: env::Args) -> Self {
+    pub fn process_args(raw_args: env::Args) -> Self {
         // Parse command line arguments
         let args = match Self::parse(raw_args) {
             Ok(args) => args,
@@ -109,6 +109,7 @@ impl Args {
                 "dns" => println!("{}", dns::help_message("")),
                 "start" => println!("{}", start::help_message()),
                 "stop" => println!("{}", stop::help_message()),
+                "status" => println!("{}", status::help_message()),
                 _ => println!(
                     "{}",
                     Self::help_message(&env::args().next().unwrap_or_default())
@@ -120,7 +121,7 @@ impl Args {
         args
     }
 
-    pub(crate) fn has_option(&self, option: &str) -> bool {
+    pub fn has_option(&self, option: &str) -> bool {
         self.options.contains(&option.to_string())
     }
 
@@ -131,6 +132,7 @@ impl Args {
             Commands:\n\
             start         Start the bindizr service\n\
             stop          Stop the bindizr service\n\
+            status        Show the status of the bindizr service\n\
             dns           Manage DNS configurations\n\
             token         Manage API tokens\n\
             \n\

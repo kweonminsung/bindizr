@@ -1,22 +1,24 @@
-pub(crate) mod daemon;
-pub(crate) mod dns;
-pub(crate) mod parser;
-pub(crate) mod start;
-pub(crate) mod stop;
-pub(crate) mod token;
+pub mod daemon;
+pub mod dns;
+pub mod parser;
+pub mod start;
+pub mod status;
+pub mod stop;
+pub mod token;
 
-use crate::{api, config, database, logger, serializer};
+use crate::{api, config, database, logger, rndc, serializer};
 use parser::Args;
 
-fn pre_bootstrap(skip_logger_init: bool, skip_database_init: bool) {
+fn pre_bootstrap(skip_logger_init: bool, skip_subsystem_init: bool) {
     config::initialize();
 
     if !skip_logger_init {
         logger::initialize();
     }
 
-    if !skip_database_init {
+    if !skip_subsystem_init {
         database::initialize();
+        rndc::initialize();
     }
 }
 
@@ -25,9 +27,9 @@ async fn bootstrap() {
     api::initialize().await;
 }
 
-pub(crate) async fn execute(args: &Args) {
+pub async fn execute(args: &Args) {
     match args.command.as_str() {
-        "start" | "stop" => pre_bootstrap(true, true),
+        "start" | "stop" | "status" => pre_bootstrap(true, true),
         "dns" | "token" => pre_bootstrap(true, false),
         "bootstrap" => pre_bootstrap(false, false),
         _ => {
@@ -38,16 +40,17 @@ pub(crate) async fn execute(args: &Args) {
 
     // Execute command
     match args.command.as_str() {
-        "start" => start::execute(&args).await,
-        "stop" => stop::execute(&args),
+        "start" => start::execute(args).await,
+        "stop" => stop::execute(),
+        "status" => status::execute(),
         "dns" => {
-            if let Err(e) = dns::handle_command(&args) {
+            if let Err(e) = dns::handle_command(args) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }
         "token" => {
-            if let Err(e) = token::handle_command(&args) {
+            if let Err(e) = token::handle_command(args) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
