@@ -7,11 +7,8 @@ use lazy_static::lazy_static;
 use mysql::{prelude::Queryable, Error, Opts, Pool, PooledConn};
 
 pub(crate) fn initialize() {
-    // Test database connection
-    if let Err(e) = DATABASE_POOL.get_connection().query_drop("SELECT 1") {
-        log_error!("Failed to connect to the database: {}", e);
-        std::process::exit(1);
-    }
+    log_info!("Database pool initialized");
+    lazy_static::initialize(&DATABASE_POOL);
 }
 
 #[derive(Clone)]
@@ -38,7 +35,6 @@ impl DatabasePool {
             std::process::exit(1);
         };
 
-        log_info!("Database pool initialized");
         database_pool
     }
 

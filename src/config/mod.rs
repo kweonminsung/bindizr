@@ -1,8 +1,7 @@
 #![allow(unused_imports)]
-use std::any::type_name;
-
 use config::{Config, File, FileFormat, Source, Value};
 use lazy_static::lazy_static;
+use std::{any::type_name, str::FromStr};
 
 #[cfg(test)]
 mod tests;
@@ -37,10 +36,13 @@ fn get_config_str(key: &str) -> String {
         .unwrap()
 }
 
-pub(crate) fn get_config<T: serde::de::DeserializeOwned>(key: &str) -> T {
+pub(crate) fn get_config<T: 'static + FromStr>(key: &str) -> T
+where
+    <T as FromStr>::Err: std::fmt::Display,
+{
     let value_str = get_config_str(key);
 
-    serde_json::from_str::<T>(&value_str).unwrap_or_else(|e| {
+    value_str.parse::<T>().unwrap_or_else(|e| {
         panic!(
             "Failed to parse configuration for '{}'. Expected type: {}. Error: {}",
             key,

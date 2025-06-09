@@ -23,7 +23,8 @@ struct Message {
 
 // Initialize the serializer
 pub(crate) fn initialize() {
-    SERIALIZER.send_message("initialize");
+    log_info!("Serializer initialized");
+    lazy_static::initialize(&SERIALIZER);
 }
 
 pub(crate) struct Serializer {
@@ -45,12 +46,6 @@ impl Serializer {
         loop {
             match rx.recv() {
                 Ok(Message { msg, ack }) => match msg.as_str() {
-                    "initialize" => {
-                        log_info!("Serializer initialized");
-                        if let Some(ack) = ack {
-                            let _ = ack.send(());
-                        }
-                    }
                     "write_config" => {
                         if let Err(e) = Self::write_config() {
                             log_error!("Failed to write config: {}", e);
@@ -80,7 +75,7 @@ impl Serializer {
     }
 
     // Send message to worker thread
-    pub(crate) fn send_message(&self, message: &str) {
+    pub(crate) fn _send_message(&self, message: &str) {
         let msg = Message {
             msg: message.to_string(),
             ack: None,
