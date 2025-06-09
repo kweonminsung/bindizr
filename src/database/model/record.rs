@@ -4,28 +4,28 @@ use mysql::Value;
 use serde::Serialize;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct Record {
-    pub(crate) id: i32,
+pub struct Record {
+    pub id: i32,
 
-    pub(crate) name: String, // domain name (e.g.: "www.example.com")
+    pub name: String, // domain name (e.g.: "www.example.com")
 
-    pub(crate) record_type: RecordType, // record type
+    pub record_type: RecordType, // record type
 
-    pub(crate) value: String, // record value (e.g.: IP address, CNAME, etc.)
+    pub value: String, // record value (e.g.: IP address, CNAME, etc.)
 
-    pub(crate) ttl: Option<i32>, // TTL (seconds)
+    pub ttl: Option<i32>, // TTL (seconds)
 
-    pub(crate) priority: Option<i32>, // priority (for MX and SRV records)
+    pub priority: Option<i32>, // priority (for MX and SRV records)
 
-    pub(crate) created_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 
-    pub(crate) updated_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 
-    pub(crate) zone_id: i32,
+    pub zone_id: i32,
 }
 
 impl Record {
-    pub(crate) fn from_row(row: mysql::Row) -> Self {
+    pub fn from_row(row: mysql::Row) -> Self {
         Record {
             id: row.get("id").unwrap(),
             name: row.get("name").unwrap(),
@@ -43,7 +43,7 @@ impl Record {
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
-pub(crate) enum RecordType {
+pub enum RecordType {
     A,
     AAAA,
     CNAME,
@@ -62,7 +62,7 @@ impl std::fmt::Display for RecordType {
 }
 
 impl RecordType {
-    pub(crate) fn from_str(s: &str) -> Result<Self, String> {
+    pub fn from_str(s: &str) -> Result<Self, String> {
         match s.to_uppercase().as_str() {
             "A" => Ok(RecordType::A),
             "AAAA" => Ok(RecordType::AAAA),
@@ -77,7 +77,7 @@ impl RecordType {
         }
     }
 
-    pub(crate) fn to_str(&self) -> &str {
+    pub fn to_str(&self) -> &str {
         match self {
             RecordType::A => "A",
             RecordType::AAAA => "AAAA",

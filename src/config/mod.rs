@@ -19,7 +19,7 @@ lazy_static! {
         };
 }
 
-pub(crate) fn initialize() {
+pub fn initialize() {
     lazy_static::initialize(&_CONFIG_LOADED);
 
     // Debug: Print the loaded configuration
@@ -36,7 +36,7 @@ fn get_config_str(key: &str) -> String {
         .unwrap()
 }
 
-pub(crate) fn get_config<T: 'static + FromStr>(key: &str) -> T
+pub fn get_config<T: 'static + FromStr>(key: &str) -> T
 where
     <T as FromStr>::Err: std::fmt::Display,
 {

@@ -2,10 +2,10 @@ use crate::database::DatabasePool;
 use mysql::prelude::Queryable;
 
 #[derive(Clone)]
-pub(crate) struct TestService;
+pub struct TestService;
 
 impl TestService {
-    pub(crate) fn get_table_names(pool: &DatabasePool) -> Vec<String> {
+    pub fn get_table_names(pool: &DatabasePool) -> Vec<String> {
         let mut conn = pool.get_connection();
 
         let query = "SHOW TABLES";

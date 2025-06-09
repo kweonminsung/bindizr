@@ -1,6 +1,6 @@
 use crate::cli::daemon::{Daemon, DaemonControl};
 
-pub(crate) fn help_message() -> String {
+pub fn help_message() -> String {
     "Usage: bindizr stop\n\
     \n\
     Stop the bindizr service\n\
@@ -10,6 +10,6 @@ pub(crate) fn help_message() -> String {
         .to_string()
 }
 
-pub(crate) fn execute(_args: &crate::cli::Args) {
+pub fn execute(_args: &crate::cli::Args) {
     Daemon::stop();
 }

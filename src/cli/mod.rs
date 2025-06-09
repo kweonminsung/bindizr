@@ -1,9 +1,9 @@
-pub(crate) mod daemon;
-pub(crate) mod dns;
-pub(crate) mod parser;
-pub(crate) mod start;
-pub(crate) mod stop;
-pub(crate) mod token;
+pub mod daemon;
+pub mod dns;
+pub mod parser;
+pub mod start;
+pub mod stop;
+pub mod token;
 
 use crate::{api, config, database, logger, serializer};
 use parser::Args;
@@ -25,7 +25,7 @@ async fn bootstrap() {
     api::initialize().await;
 }
 
-pub(crate) async fn execute(args: &Args) {
+pub async fn execute(args: &Args) {
     match args.command.as_str() {
         "start" | "stop" => pre_bootstrap(true, true),
         "dns" | "token" => pre_bootstrap(true, false),

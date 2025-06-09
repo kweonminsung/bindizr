@@ -1,6 +1,6 @@
 use crate::{rndc::RndcClient, serializer::SERIALIZER};
 
-pub(crate) fn help_message(subcommand: &str) -> String {
+pub fn help_message(subcommand: &str) -> String {
     match subcommand {
         "write" => "Usage: bindizr dns write\n\
             \n\
@@ -18,7 +18,7 @@ pub(crate) fn help_message(subcommand: &str) -> String {
     }
 }
 
-pub(crate) fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
+pub fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
     match args.subcommand.as_deref() {
         Some("write") => write_dns_config(),
         Some("reload") => reload_dns_config(),

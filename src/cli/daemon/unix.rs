@@ -7,7 +7,7 @@ use std::{
     process::{exit, Command},
 };
 
-pub(crate) struct UnixDaemon;
+pub struct UnixDaemon;
 
 impl DaemonControl for UnixDaemon {
     fn is_pid_running(pid: i32) -> bool {

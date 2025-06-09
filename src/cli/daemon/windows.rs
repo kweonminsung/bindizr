@@ -7,7 +7,7 @@ use std::{
 use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
-pub(crate) struct WindowsDaemon;
+pub struct WindowsDaemon;
 
 impl DaemonControl for WindowsDaemon {
     fn is_pid_running(pid: i32) -> bool {

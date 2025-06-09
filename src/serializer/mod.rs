@@ -22,17 +22,17 @@ struct Message {
 }
 
 // Initialize the serializer
-pub(crate) fn initialize() {
+pub fn initialize() {
     log_info!("Serializer initialized");
     lazy_static::initialize(&SERIALIZER);
 }
 
-pub(crate) struct Serializer {
+pub struct Serializer {
     tx: Sender<Message>,
 }
 
 impl Serializer {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
 
         // Spawn worker thread
@@ -75,7 +75,7 @@ impl Serializer {
     }
 
     // Send message to worker thread
-    pub(crate) fn _send_message(&self, message: &str) {
+    pub fn _send_message(&self, message: &str) {
         let msg = Message {
             msg: message.to_string(),
             ack: None,
@@ -86,7 +86,7 @@ impl Serializer {
     }
 
     // Send message with acknowledgment
-    pub(crate) fn send_message_and_wait(&self, message: &str) -> Result<(), String> {
+    pub fn send_message_and_wait(&self, message: &str) -> Result<(), String> {
         let (ack_tx, ack_rx) = mpsc::channel();
 
         let msg = Message {
@@ -218,7 +218,7 @@ impl Serializer {
         output
     }
 
-    pub(crate) fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
+    pub fn serialize_zone(zone: &Zone, records: &[Record]) -> String {
         let mut output = String::new();
 
         // SOA record
@@ -328,5 +328,5 @@ ns  IN  A   {}
 }
 
 lazy_static! {
-    pub(crate) static ref SERIALIZER: Serializer = Serializer::new();
+    pub static ref SERIALIZER: Serializer = Serializer::new();
 }

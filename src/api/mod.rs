@@ -1,4 +1,4 @@
-pub(crate) mod controller;
+pub mod controller;
 mod dto;
 mod service;
 
@@ -10,7 +10,7 @@ use hyper_util::rt::TokioIo;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
-pub(crate) async fn initialize() {
+pub async fn initialize() {
     let app_port = config::get_config::<u16>("api.port");
 
     let addr = SocketAddr::from(([127, 0, 0, 1], app_port));

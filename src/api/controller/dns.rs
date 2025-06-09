@@ -7,10 +7,10 @@ use crate::api::{
 };
 use serde_json::json;
 
-pub(crate) struct DnsController;
+pub struct DnsController;
 
 impl DnsController {
-    pub(crate) async fn router() -> Router {
+    pub async fn router() -> Router {
         let mut router = Router::new();
 
         router.register_endpoint_with_middleware(

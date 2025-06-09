@@ -1,5 +1,5 @@
-pub(crate) mod api_token;
-pub(crate) mod record;
-pub(crate) mod record_history;
-pub(crate) mod zone;
-pub(crate) mod zone_history;
+pub mod api_token;
+pub mod record;
+pub mod record_history;
+pub mod zone;
+pub mod zone_history;

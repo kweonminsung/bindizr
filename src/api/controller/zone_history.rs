@@ -8,10 +8,10 @@ use crate::{
 };
 use serde_json::json;
 
-pub(crate) struct ZoneHistoryController;
+pub struct ZoneHistoryController;
 
 impl ZoneHistoryController {
-    pub(crate) async fn router() -> Router {
+    pub async fn router() -> Router {
         let mut router = Router::new();
 
         router.register_endpoint_with_middleware(

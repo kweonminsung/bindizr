@@ -3,22 +3,22 @@ use chrono::{DateTime, Utc};
 use mysql::Value;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct ApiToken {
-    pub(crate) id: i32,
+pub struct ApiToken {
+    pub id: i32,
 
-    pub(crate) token: String,
+    pub token: String,
 
-    pub(crate) description: Option<String>,
+    pub description: Option<String>,
 
-    pub(crate) created_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 
-    pub(crate) expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
 
-    pub(crate) last_used_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
 }
 
 impl ApiToken {
-    pub(crate) fn from_row(row: mysql::Row) -> Self {
+    pub fn from_row(row: mysql::Row) -> Self {
         ApiToken {
             id: row.get("id").unwrap(),
             token: row.get("token").unwrap(),

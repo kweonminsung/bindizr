@@ -3,7 +3,7 @@ use hyper::{body::Bytes, Response, StatusCode};
 use serde_json::Value;
 use std::convert::Infallible;
 
-pub(crate) fn json_response(
+pub fn json_response(
     json_body: Value,
     status: StatusCode,
 ) -> Result<hyper::Response<Full<Bytes>>, Infallible> {

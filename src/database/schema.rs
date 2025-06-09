@@ -1,4 +1,4 @@
-pub(crate) fn get_table_creation_queries() -> Vec<&'static str> {
+pub fn get_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (

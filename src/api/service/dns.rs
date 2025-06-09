@@ -1,10 +1,10 @@
 use crate::{log_error, rndc::RndcClient, serializer::SERIALIZER};
 
 #[derive(Clone)]
-pub(crate) struct DnsService;
+pub struct DnsService;
 
 impl DnsService {
-    pub(crate) fn get_dns_status() -> Result<String, String> {
+    pub fn get_dns_status() -> Result<String, String> {
         let res = match RndcClient::command("status") {
             Ok(response) => response,
             Err(e) => {
@@ -23,7 +23,7 @@ impl DnsService {
         }
     }
 
-    pub(crate) fn reload_dns() -> Result<String, String> {
+    pub fn reload_dns() -> Result<String, String> {
         let res = match RndcClient::command("reload") {
             Ok(response) => response,
             Err(e) => {
@@ -42,7 +42,7 @@ impl DnsService {
         }
     }
 
-    pub(crate) fn write_dns_config() -> Result<String, String> {
+    pub fn write_dns_config() -> Result<String, String> {
         match SERIALIZER.send_message_and_wait("write_config") {
             Ok(_) => Ok("DNS configuration written successfully.".to_string()),
             Err(e) => {
