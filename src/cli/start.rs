@@ -1,7 +1,4 @@
-use crate::cli::{
-    bootstrap,
-    daemon::{Daemon, DaemonControl},
-};
+use crate::cli::{bootstrap, daemon};
 
 pub fn help_message() -> String {
     "Usage: bindizr start [OPTIONS]\n\
@@ -20,6 +17,6 @@ pub async fn execute(args: &crate::cli::Args) {
         bootstrap().await;
     } else {
         // Run in background mode
-        Daemon::start();
+        daemon::start();
     }
 }

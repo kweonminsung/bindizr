@@ -1,5 +1,5 @@
 use super::{start, stop};
-use crate::cli::{dns, token};
+use crate::cli::{dns, status, token};
 use std::{collections::HashMap, env, process::exit};
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ impl Args {
 
         if args.len() < 2 {
             return Err(format!(
-                "Usage: {} [start|stop|dns|token] [OPTIONS]",
+                "Usage: {} [start|stop|status|dns|token] [OPTIONS]",
                 args[0]
             ));
         }
@@ -109,6 +109,7 @@ impl Args {
                 "dns" => println!("{}", dns::help_message("")),
                 "start" => println!("{}", start::help_message()),
                 "stop" => println!("{}", stop::help_message()),
+                "status" => println!("{}", status::help_message()),
                 _ => println!(
                     "{}",
                     Self::help_message(&env::args().next().unwrap_or_default())
@@ -131,6 +132,7 @@ impl Args {
             Commands:\n\
             start         Start the bindizr service\n\
             stop          Stop the bindizr service\n\
+            status        Show the status of the bindizr service\n\
             dns           Manage DNS configurations\n\
             token         Manage API tokens\n\
             \n\

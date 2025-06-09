@@ -21,7 +21,6 @@ struct Message {
     ack: Option<Sender<()>>, // Optional acknowledgment channel
 }
 
-// Initialize the serializer
 pub fn initialize() {
     log_info!("Serializer initialized");
     lazy_static::initialize(&SERIALIZER);
@@ -32,7 +31,7 @@ pub struct Serializer {
 }
 
 impl Serializer {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let (tx, rx) = mpsc::channel();
 
         // Spawn worker thread

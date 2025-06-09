@@ -1,45 +1,53 @@
 use std::{fs, path::Path};
 
+// PID file path according to the platform
 #[cfg(unix)]
 pub const PID_FILE: &str = "/tmp/bindizr.pid";
 #[cfg(windows)]
 pub const PID_FILE: &str = "bindizr.pid";
 
-pub trait DaemonControl {
+// Import platform-specific implementations
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
+mod windows;
+
+// Daemon according to the platform
+#[cfg(unix)]
+use unix::UnixDaemon as Daemon;
+#[cfg(windows)]
+use windows::WindowsDaemon as Daemon;
+
+// Daemon control trait
+trait DaemonControl {
     fn start();
     fn stop();
     fn is_pid_running(pid: i32) -> bool;
 }
 
+pub fn start() {
+    Daemon::start();
+}
+
+pub fn stop() {
+    Daemon::stop();
+}
+
 // Check if the daemon is running
 pub fn is_running() -> bool {
-    match read_pid_file() {
-        Some(pid_str) => {
-            #[cfg(unix)]
-            {
-                if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                    return Daemon::is_pid_running(pid);
-                }
-            }
-            #[cfg(windows)]
-            {
-                if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                    return Daemon::is_pid_running(pid);
-                }
-            }
-            false
-        }
+    match get_pid() {
+        Some(pid) => Daemon::is_pid_running(pid),
         None => false,
     }
 }
 
-// Common functions for PID file management
-pub fn read_pid_file() -> Option<String> {
+pub fn get_pid() -> Option<i32> {
     if Path::new(PID_FILE).exists() {
-        fs::read_to_string(PID_FILE).ok()
-    } else {
-        None
+        if let Ok(pid_str) = fs::read_to_string(PID_FILE) {
+            return pid_str.trim().parse::<i32>().ok();
+        }
     }
+    None
 }
 
 pub fn remove_pid_file() -> Result<(), std::io::Error> {
@@ -53,15 +61,3 @@ pub fn remove_pid_file() -> Result<(), std::io::Error> {
 pub fn write_pid_file(pid: u32) -> Result<(), std::io::Error> {
     fs::write(PID_FILE, pid.to_string())
 }
-
-// Import platform-specific implementations
-#[cfg(unix)]
-mod unix;
-#[cfg(windows)]
-mod windows;
-
-// Export the appropriate implementation
-#[cfg(unix)]
-pub use unix::UnixDaemon as Daemon;
-#[cfg(windows)]
-pub use windows::WindowsDaemon as Daemon;

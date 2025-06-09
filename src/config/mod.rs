@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 use config::{Config, File, FileFormat, Source, Value};
 use lazy_static::lazy_static;
-use std::{any::type_name, str::FromStr};
+use std::{any::type_name, collections::HashMap, str::FromStr};
 
 #[cfg(test)]
 mod tests;
@@ -9,9 +9,6 @@ mod tests;
 lazy_static! {
     #[derive(Debug)]
     static ref _CONFIG_LOADED: Config = {
-
-        // println!("Configuration loaded successfully");
-
         Config::builder()
             .add_source(File::new("./bindizr.conf", FileFormat::Ini).required(true))
             .build()
@@ -21,11 +18,6 @@ lazy_static! {
 
 pub fn initialize() {
     lazy_static::initialize(&_CONFIG_LOADED);
-
-    // Debug: Print the loaded configuration
-    // for (key, value) in _CONFIG_LOADED.collect().unwrap() {
-    //     println!("{} = {}", key, value);
-    // }
 }
 
 fn get_config_str(key: &str) -> String {
@@ -34,6 +26,12 @@ fn get_config_str(key: &str) -> String {
         .unwrap()
         .into_string()
         .unwrap()
+}
+
+pub fn get_config_map() -> Result<HashMap<String, Value>, String> {
+    _CONFIG_LOADED
+        .collect()
+        .map_err(|e| format!("Failed to collect configuration: {}", e))
 }
 
 pub fn get_config<T: 'static + FromStr>(key: &str) -> T
