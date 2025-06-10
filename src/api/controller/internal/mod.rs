@@ -1,5 +1,8 @@
 pub mod utils;
 
+#[cfg(test)]
+mod tests;
+
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Buf, Bytes};
 use serde::de::DeserializeOwned;
