@@ -1,68 +1,39 @@
-use super::{
-    auth,
-    internal::{
-        get_body, get_param, get_query, utils::json_response, Method, Request, Response, Router,
-        StatusCode,
-    },
-};
 use crate::{
     api::{
         dto::{CreateRecordRequest, GetRecordResponse},
         service::record::RecordService,
     },
     database::DATABASE_POOL,
-    log_debug,
 };
+use axum::{
+    extract::{Path, Query},
+    http::StatusCode,
+    response::IntoResponse,
+    routing, Json, Router,
+};
+use serde::Deserialize;
 use serde_json::json;
 
 pub struct RecordController;
 
 impl RecordController {
-    pub async fn router() -> Router {
-        let mut router = Router::new();
-
-        router.register_endpoint_with_middleware(
-            Method::GET,
-            "/records",
-            RecordController::get_records,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::GET,
-            "/records/:id",
-            RecordController::get_record,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::POST,
-            "/records",
-            RecordController::create_record,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::PUT,
-            "/records/:id",
-            RecordController::update_record,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::DELETE,
-            "/records/:id",
-            RecordController::delete_record,
-            auth::middleware::auth_middleware,
-        );
-
-        router
+    pub async fn routes() -> Router {
+        Router::new()
+            .route("/records", routing::get(Self::get_records))
+            .route("/records/{id}", routing::get(Self::get_record))
+            .route("/records", routing::post(Self::create_record))
+            .route("/records/{id}", routing::put(Self::update_record))
+            .route("/records/{id}", routing::delete(Self::delete_record))
     }
 
-    async fn get_records(request: Request) -> Response {
-        let zone_id = get_query::<i32>(&request, "zone_id");
+    async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl IntoResponse {
+        let zone_id = query.zone_id;
 
         let raw_records = match RecordService::get_records(&DATABASE_POOL, zone_id) {
             Ok(records) => records,
             Err(err) => {
                 let json_body = json!({ "error": err });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
+                return (StatusCode::BAD_REQUEST, Json(json_body));
             }
         };
 
@@ -72,106 +43,93 @@ impl RecordController {
             .collect::<Vec<GetRecordResponse>>();
 
         let json_body = json!({ "records": records });
-        json_response(json_body, StatusCode::OK)
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn get_record(request: Request) -> Response {
-        let record_id = match get_param::<i32>(&request, "/records/:id", "id") {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing record_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
+    async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
+        let record_id = params.id;
 
         let raw_record = match RecordService::get_record(&DATABASE_POOL, record_id) {
             Ok(record) => record,
             Err(err) => {
                 let json_body = json!({ "error": err });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
+                return (StatusCode::BAD_REQUEST, Json(json_body));
             }
         };
 
         let record = GetRecordResponse::from_record(&raw_record);
 
         let json_body = json!({ "record": record });
-        json_response(json_body, StatusCode::OK)
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn create_record(request: Request) -> Response {
-        let body = match get_body::<CreateRecordRequest>(request).await {
-            Ok(b) => b,
-            Err(err) => {
-                log_debug!("Error parsing request body: {}", err);
-                let json_body = json!({ "error": "Invalid request body" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
-
+    async fn create_record(Json(body): Json<CreateRecordRequest>) -> impl IntoResponse {
         let raw_record = match RecordService::create_record(&DATABASE_POOL, &body) {
             Ok(record) => record,
             Err(err) => {
                 let json_body = json!({ "error": err });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
+                return (StatusCode::BAD_REQUEST, Json(json_body));
             }
         };
 
         let record = GetRecordResponse::from_record(&raw_record);
-        let json_body = json!({ "record": record });
 
-        json_response(json_body, StatusCode::OK)
+        let json_body = json!({ "record": record });
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn update_record(request: Request) -> Response {
-        let record_id = match get_param::<i32>(&request, "/records/:id", "id") {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing record_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
-
-        let body = match get_body::<CreateRecordRequest>(request).await {
-            Ok(b) => b,
-            Err(err) => {
-                log_debug!("Error parsing request body: {}", err);
-                let json_body = json!({ "error": "Invalid request body" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
+    async fn update_record(
+        Path(params): Path<UpdateRecordParam>,
+        Json(body): Json<CreateRecordRequest>,
+    ) -> impl IntoResponse {
+        let record_id = params.id;
 
         let raw_record = match RecordService::update_record(&DATABASE_POOL, record_id, &body) {
             Ok(record) => record,
             Err(err) => {
                 let json_body = json!({ "error": err });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
+                return (StatusCode::BAD_REQUEST, Json(json_body));
             }
         };
 
         let record = GetRecordResponse::from_record(&raw_record);
-        let json_body = json!({ "record": record });
 
-        json_response(json_body, StatusCode::OK)
+        let json_body = json!({ "record": record });
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn delete_record(request: Request) -> Response {
-        let record_id = match get_param::<i32>(&request, "/records/:id", "id") {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing record_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
+    async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl IntoResponse {
+        let record_id = params.id;
 
         match RecordService::delete_record(&DATABASE_POOL, record_id) {
             Ok(_) => {
                 let json_body = json!({ "message": "Record deleted successfully" });
-                json_response(json_body, StatusCode::OK)
+                (StatusCode::OK, Json(json_body))
             }
             Err(err) => {
                 let json_body = json!({ "error": err });
-                json_response(json_body, StatusCode::BAD_REQUEST)
+                (StatusCode::BAD_REQUEST, Json(json_body))
             }
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct GetRecordsQuery {
+    zone_id: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetRecordParam {
+    id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateRecordParam {
+    id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteRecordParam {
+    id: i32,
 }

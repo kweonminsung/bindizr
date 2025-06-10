@@ -1,50 +1,38 @@
-use super::{
-    auth,
-    internal::{get_param, utils::json_response, Method, Request, Response, Router, StatusCode},
-};
+use axum::{extract::Path, http::StatusCode, response::IntoResponse, routing, Json, Router};
+use serde::Deserialize;
+use serde_json::json;
+
 use crate::{
     api::{dto::GetRecordHistoryResponse, service::record_history::RecordHistoryService},
     database::DATABASE_POOL,
 };
-use serde_json::json;
 
 pub struct RecordHistoryController;
 
 impl RecordHistoryController {
-    pub async fn router() -> Router {
-        let mut router = Router::new();
-
-        router.register_endpoint_with_middleware(
-            Method::GET,
-            "/records/:id/histories",
-            RecordHistoryController::get_record_histories,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::DELETE,
-            "/records/:record_id/histories/:history_id",
-            RecordHistoryController::delete_record_history,
-            auth::middleware::auth_middleware,
-        );
-
-        router
+    pub async fn routes() -> Router {
+        Router::new()
+            .route(
+                "/records/{id}/histories",
+                routing::get(RecordHistoryController::get_record_histories),
+            )
+            .route(
+                "/records/{record_id}/histories/{history_id}",
+                routing::delete(RecordHistoryController::delete_record_history),
+            )
     }
 
-    async fn get_record_histories(request: Request) -> Response {
-        let record_id = match get_param::<i32>(&request, "/records/:id/histories", "id") {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing record_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
+    async fn get_record_histories(
+        Path(params): Path<GetRecordHistoriesParam>,
+    ) -> impl IntoResponse {
+        let record_id = params.id;
 
         let raw_record_histories =
             match RecordHistoryService::get_record_histories(&DATABASE_POOL, record_id) {
                 Ok(record_histories) => record_histories,
                 Err(err) => {
                     let json_body = json!({ "error": err });
-                    return json_response(json_body, StatusCode::BAD_REQUEST);
+                    return (StatusCode::BAD_REQUEST, Json(json_body));
                 }
             };
 
@@ -54,28 +42,30 @@ impl RecordHistoryController {
             .collect::<Vec<GetRecordHistoryResponse>>();
 
         let json_body = json!({ "record_histories": record_histories });
-        json_response(json_body, StatusCode::OK)
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn delete_record_history(request: Request) -> Response {
-        let history_id = match get_param::<i32>(
-            &request,
-            "/records/:record_id/histories/:history_id",
-            "history_id",
-        ) {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing history_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
+    async fn delete_record_history(
+        Path(param): Path<DeleteRecordHistoryParam>,
+    ) -> impl IntoResponse {
+        let history_id = param.history_id;
 
         if RecordHistoryService::delete_record_history(&DATABASE_POOL, history_id).is_err() {
             let json_body = json!({ "error": "Failed to delete record history" });
-            return json_response(json_body, StatusCode::BAD_REQUEST);
+            return (StatusCode::BAD_REQUEST, Json(json_body));
         }
 
         let json_body = json!({ "message": "Record history deleted successfully" });
-        json_response(json_body, StatusCode::OK)
+        (StatusCode::OK, Json(json_body))
     }
+}
+#[derive(Debug, Deserialize)]
+struct GetRecordHistoriesParam {
+    id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteRecordHistoryParam {
+    _record_id: i32,
+    history_id: i32,
 }

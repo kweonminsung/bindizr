@@ -1,50 +1,36 @@
-use super::{
-    auth,
-    internal::{get_param, utils::json_response, Method, Request, Response, Router, StatusCode},
-};
+use axum::{extract::Path, http::StatusCode, response::IntoResponse, routing, Json, Router};
+use serde::Deserialize;
+use serde_json::json;
+
 use crate::{
     api::{dto::GetZoneHistoryResponse, service::zone_history::ZoneHistoryService},
     database::DATABASE_POOL,
 };
-use serde_json::json;
 
 pub struct ZoneHistoryController;
 
 impl ZoneHistoryController {
-    pub async fn router() -> Router {
-        let mut router = Router::new();
-
-        router.register_endpoint_with_middleware(
-            Method::GET,
-            "/zones/:id/histories",
-            ZoneHistoryController::get_zone_histories,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::DELETE,
-            "/zones/:zone_id/histories/:history_id",
-            ZoneHistoryController::delete_zone_history,
-            auth::middleware::auth_middleware,
-        );
-
-        router
+    pub async fn routes() -> Router {
+        Router::new()
+            .route(
+                "/zones/{id}/histories",
+                routing::get(Self::get_zone_histories),
+            )
+            .route(
+                "/zones/{zone_id}/histories/{history_id}",
+                routing::delete(Self::delete_zone_history),
+            )
     }
 
-    async fn get_zone_histories(request: Request) -> Response {
-        let zone_id = match get_param::<i32>(&request, "/zones/:id/histories", "id") {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing zone_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
+    async fn get_zone_histories(Path(params): Path<GetZoneHistoriesParam>) -> impl IntoResponse {
+        let zone_id = params.id;
 
         let raw_zone_histories =
             match ZoneHistoryService::get_zone_histories(&DATABASE_POOL, zone_id) {
                 Ok(zone_histories) => zone_histories,
                 Err(err) => {
                     let json_body = json!({ "error": err });
-                    return json_response(json_body, StatusCode::BAD_REQUEST);
+                    return (StatusCode::BAD_REQUEST, Json(json_body));
                 }
             };
 
@@ -54,31 +40,32 @@ impl ZoneHistoryController {
             .collect::<Vec<GetZoneHistoryResponse>>();
 
         let json_body = json!({ "zone_histories": zone_histories });
-        json_response(json_body, StatusCode::OK)
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn delete_zone_history(request: Request) -> Response {
-        let history_id = match get_param::<i32>(
-            &request,
-            "/zones/:zone_id/histories/:history_id",
-            "history_id",
-        ) {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing history_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
+    async fn delete_zone_history(Path(params): Path<DeleteZoneHistoryParam>) -> impl IntoResponse {
+        let history_id = params.history_id;
 
         match ZoneHistoryService::delete_zone_history(&DATABASE_POOL, history_id) {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone history deleted successfully" });
-                json_response(json_body, StatusCode::OK)
+                (StatusCode::OK, Json(json_body))
             }
             Err(err) => {
                 let json_body = json!({ "error": err });
-                json_response(json_body, StatusCode::BAD_REQUEST)
+                (StatusCode::BAD_REQUEST, Json(json_body))
             }
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct GetZoneHistoriesParam {
+    id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteZoneHistoryParam {
+    _zone_id: i32,
+    history_id: i32,
 }

@@ -1,67 +1,39 @@
-use super::{
-    auth,
-    internal::{
-        get_body, get_param, get_query, utils::json_response, Method, Request, Response, Router,
-        StatusCode,
-    },
+use axum::{
+    extract::{Path, Query},
+    http::StatusCode,
+    response::IntoResponse,
+    routing, Json, Router,
 };
+use serde::Deserialize;
+use serde_json::json;
+
 use crate::{
     api::{
         dto::{CreateZoneRequest, GetRecordResponse, GetZoneResponse},
         service::{record::RecordService, zone::ZoneService},
     },
     database::DATABASE_POOL,
-    log_debug,
     serializer::Serializer,
 };
-use serde_json::json;
 
 pub struct ZoneController;
 
 impl ZoneController {
-    pub async fn router() -> Router {
-        let mut router = Router::new();
-
-        router.register_endpoint_with_middleware(
-            Method::GET,
-            "/zones",
-            ZoneController::get_zones,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::GET,
-            "/zones/:id",
-            ZoneController::get_zone,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::POST,
-            "/zones",
-            ZoneController::create_zone,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::PUT,
-            "/zones/:id",
-            ZoneController::update_zone,
-            auth::middleware::auth_middleware,
-        );
-        router.register_endpoint_with_middleware(
-            Method::DELETE,
-            "/zones/:id",
-            ZoneController::delete_zone,
-            auth::middleware::auth_middleware,
-        );
-
-        router
+    pub async fn routes() -> Router {
+        Router::new()
+            .route("/zones", routing::get(Self::get_zones))
+            .route("/zones/{id}", routing::get(Self::get_zone))
+            .route("/zones", routing::post(Self::create_zone))
+            .route("/zones/{id}", routing::put(Self::update_zone))
+            .route("/zones/{id}", routing::delete(Self::delete_zone))
     }
 
-    async fn get_zones(_request: Request) -> Response {
+    async fn get_zones() -> impl IntoResponse {
         let raw_zones = match ZoneService::get_zones(&DATABASE_POOL) {
             Ok(zones) => zones,
             Err(err) => {
                 let json_body = json!({ "error": err });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
+                return (StatusCode::BAD_REQUEST, Json(json_body));
             }
         };
 
@@ -71,25 +43,22 @@ impl ZoneController {
             .collect::<Vec<GetZoneResponse>>();
 
         let json_body = json!({ "zones": zones });
-        json_response(json_body, StatusCode::OK)
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn get_zone(request: Request) -> Response {
-        let zone_id = match get_param::<i32>(&request, "/zones/:id", "id") {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing zone_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
-        let records_query = get_query::<bool>(&request, "records");
-        let render_query = get_query::<bool>(&request, "render");
+    async fn get_zone(
+        Path(params): Path<GetZoneParam>,
+        Query(query): Query<GetZoneQuery>,
+    ) -> impl IntoResponse {
+        let zone_id = params.id;
+        let records_query = query.records;
+        let render_query = query.render;
 
         let raw_zone = match ZoneService::get_zone(&DATABASE_POOL, zone_id) {
             Ok(zone) => zone,
             Err(err) => {
                 let json_body = json!({ "error": err });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
+                return (StatusCode::BAD_REQUEST, Json(json_body));
             }
         };
 
@@ -98,7 +67,7 @@ impl ZoneController {
                 Ok(records) => records,
                 Err(err) => {
                     let json_body = json!({ "error": err });
-                    return json_response(json_body, StatusCode::BAD_REQUEST);
+                    return (StatusCode::BAD_REQUEST, Json(json_body));
                 }
             },
             _ => vec![],
@@ -110,88 +79,82 @@ impl ZoneController {
 
         if let Some(true) = render_query {
             let zone_str = Serializer::serialize_zone(&raw_zone, &raw_records);
-            return json_response(json!({ "result": zone_str }), StatusCode::OK);
+            return (StatusCode::OK, Json(json!({ "result": zone_str })));
         }
 
         let zone = GetZoneResponse::from_zone(&raw_zone);
         let json_body = json!({ "zone": zone, "records": records });
-        json_response(json_body, StatusCode::OK)
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn create_zone(request: Request) -> Response {
-        let body = match get_body::<CreateZoneRequest>(request).await {
-            Ok(b) => b,
-            Err(err) => {
-                log_debug!("Error parsing request body: {}", err);
-                let json_body = json!({ "error": "Invalid request body" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
-
+    async fn create_zone(Json(body): Json<CreateZoneRequest>) -> impl IntoResponse {
         let raw_zone = match ZoneService::create_zone(&DATABASE_POOL, &body) {
             Ok(zone) => zone,
             Err(err) => {
                 let json_body = json!({ "error": err });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
+                return (StatusCode::BAD_REQUEST, Json(json_body));
             }
         };
 
         let zone = GetZoneResponse::from_zone(&raw_zone);
-        let json_body = json!({ "zone": zone });
 
-        json_response(json_body, StatusCode::OK)
+        let json_body = json!({ "zone": zone });
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn update_zone(request: Request) -> Response {
-        let zone_id = match get_param::<i32>(&request, "/zones/:id", "id") {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing zone_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
-
-        let body = match get_body::<CreateZoneRequest>(request).await {
-            Ok(b) => b,
-            Err(err) => {
-                log_debug!("Error parsing request body: {}", err);
-                let json_body = json!({ "error": "Invalid request body" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
+    async fn update_zone(
+        Path(params): Path<UpdateZoneParam>,
+        Json(body): Json<CreateZoneRequest>,
+    ) -> impl IntoResponse {
+        let zone_id = params.id;
 
         let raw_zone = match ZoneService::update_zone(&DATABASE_POOL, zone_id, &body) {
             Ok(zone) => zone,
             Err(err) => {
                 let json_body = json!({ "error": err });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
+                return (StatusCode::BAD_REQUEST, Json(json_body));
             }
         };
 
         let zone = GetZoneResponse::from_zone(&raw_zone);
-        let json_body = json!({ "zone": zone });
 
-        json_response(json_body, StatusCode::OK)
+        let json_body = json!({ "zone": zone });
+        (StatusCode::OK, Json(json_body))
     }
 
-    async fn delete_zone(request: Request) -> Response {
-        let zone_id = match get_param::<i32>(&request, "/zones/:id", "id") {
-            Some(id) => id,
-            None => {
-                let json_body = json!({ "error": "Invalid or missing zone_id" });
-                return json_response(json_body, StatusCode::BAD_REQUEST);
-            }
-        };
+    async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl IntoResponse {
+        let zone_id = params.id;
 
         match ZoneService::delete_zone(&DATABASE_POOL, zone_id) {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone deleted successfully" });
-                json_response(json_body, StatusCode::OK)
+                (StatusCode::OK, Json(json_body))
             }
             Err(err) => {
                 let json_body = json!({ "error": format!("Failed to delete zone: {}", err) });
-                json_response(json_body, StatusCode::BAD_REQUEST)
+                (StatusCode::BAD_REQUEST, Json(json_body))
             }
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct GetZoneParam {
+    id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetZoneQuery {
+    records: Option<bool>,
+    render: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateZoneParam {
+    id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteZoneParam {
+    id: i32,
 }
