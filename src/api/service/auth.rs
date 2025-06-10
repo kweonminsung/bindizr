@@ -1,5 +1,3 @@
-pub mod middleware;
-
 use crate::{
     database::{model::api_token::ApiToken, DatabasePool},
     log_error,

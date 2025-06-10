@@ -194,6 +194,6 @@ $ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/zones
 
 ## Dependencies
 
-- [hyper](https://hyper.rs/)
+- [axum](https://docs.rs/axum/latest/axum/index.html)
 - [mysql](https://crates.io/crates/mysql/)
 - [rndc](https://crates.io/crates/rndc)

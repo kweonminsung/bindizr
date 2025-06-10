@@ -1,4 +1,4 @@
-use crate::{api::controller::auth::AuthService, database::DATABASE_POOL};
+use crate::{api::service::auth::AuthService, database::DATABASE_POOL};
 use std::collections::HashMap;
 
 pub fn help_message(subcommand: &str) -> String {
