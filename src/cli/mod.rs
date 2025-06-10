@@ -9,17 +9,13 @@ pub mod token;
 use crate::{api, config, database, logger, rndc, serializer};
 use parser::Args;
 
-fn pre_bootstrap(skip_logger_init: bool, skip_subsystem_init: bool) {
-    config::initialize();
+fn init_logger() {
+    logger::initialize();
+}
 
-    if !skip_logger_init {
-        logger::initialize();
-    }
-
-    if !skip_subsystem_init {
-        database::initialize();
-        rndc::initialize();
-    }
+fn init_subsystems() {
+    database::initialize();
+    rndc::initialize();
 }
 
 async fn bootstrap() {
@@ -28,10 +24,15 @@ async fn bootstrap() {
 }
 
 pub async fn execute(args: &Args) {
+    config::initialize();
+
     match args.command.as_str() {
-        "start" | "stop" | "status" => pre_bootstrap(true, true),
-        "dns" | "token" => pre_bootstrap(true, false),
-        "bootstrap" => pre_bootstrap(false, false),
+        "start" | "stop" | "status" => {}
+        "dns" | "token" => init_subsystems(),
+        "bootstrap" => {
+            init_logger();
+            init_subsystems();
+        }
         _ => {
             eprintln!("Unsupported command: {}", args.command);
             std::process::exit(1);
