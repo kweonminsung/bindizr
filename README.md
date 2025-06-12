@@ -3,7 +3,7 @@
     <img src="public/bindizr_horizontal.png" width="400px">
 </p>
 
-Synchronizing bind9 records with Database
+DNS Synchronization Service for BIND9
 
 <p>
     <a href="https://github.com/netbirdio/netbird/blob/main/LICENSE">

@@ -53,7 +53,6 @@ assets = [
         "755",
     ],
     # both array and object syntaxes are equivalent:
-    { source = "README.md", dest = "usr/share/doc/bindizr/README", mode = "644" },
-    { source = "public/*", dest = "usr/share/doc/bindizr/public", mode = "644" },
+    { source = "README.Debian.md", dest = "usr/share/doc/bindizr/README", mode = "644" },
     { source = "bindizr.conf", dest = "etc/bindizr/bindizr.conf", mode = "755" },
 ]
