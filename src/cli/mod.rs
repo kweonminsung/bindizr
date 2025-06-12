@@ -55,6 +55,7 @@ pub async fn execute(args: &Args) {
             config::initialize_from_file(file);
         } else {
             eprintln!("Configuration file not specified");
+            std::process::exit(1);
         }
     } else {
         // Use default configuration file
