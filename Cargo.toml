@@ -14,6 +14,7 @@ axum = "0.8.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 config = "0.15.11"
+once_cell = "1.21.3"
 lazy_static = "1.4"
 log = { version = "0.4", features = ["std"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -46,9 +47,13 @@ section = "utility"
 priority = "optional"
 assets = [
     # target/release path is special, and gets replaced by cargo-deb with the actual target dir path.
-    ["target/release/bindizr", "usr/bin/", "755"],
+    [
+        "target/release/bindizr",
+        "usr/bin/",
+        "755",
+    ],
     # both array and object syntaxes are equivalent:
-    { source = "README.md", dest = "usr/share/doc/bindizr/README", mode = "644"},
-    { source = "public/*", dest = "usr/share/doc/bindizr/public", mode = "644"},
+    { source = "README.md", dest = "usr/share/doc/bindizr/README", mode = "644" },
+    { source = "public/*", dest = "usr/share/doc/bindizr/public", mode = "644" },
     { source = "bindizr.conf", dest = "etc/bindizr/bindizr.conf", mode = "755" },
 ]

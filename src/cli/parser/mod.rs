@@ -1,5 +1,5 @@
 use super::{start, stop};
-use crate::cli::{dns, help, status, token, SUPPORTED_COMMANDS};
+use crate::cli::{SUPPORTED_COMMANDS, dns, help, status, token};
 use std::{collections::HashMap, env, process::exit};
 
 #[derive(Debug)]
@@ -123,5 +123,9 @@ impl Args {
 
     pub fn has_option(&self, option: &str) -> bool {
         self.options.contains(&option.to_string())
+    }
+
+    pub fn get_option_value(&self, option: &str) -> Option<&String> {
+        self.option_values.get(option)
     }
 }

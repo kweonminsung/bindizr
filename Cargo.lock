@@ -157,6 +157,7 @@ dependencies = [
  "log",
  "mysql",
  "nix",
+ "once_cell",
  "rand 0.8.5",
  "rndc",
  "serde",

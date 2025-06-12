@@ -40,11 +40,25 @@ async fn bootstrap() -> Result<(), String> {
 }
 
 pub async fn execute(args: &Args) {
-    config::initialize();
-
     if !SUPPORTED_COMMANDS.contains(&args.command.as_str()) {
         eprintln!("Unsupported command: {}", args.command);
         std::process::exit(1);
+    }
+
+    // Initialize Configuration
+    if args.has_option("-c") || args.has_option("--config") {
+        // Load configuration from the specified file
+        let config_file = args
+            .get_option_value("-c")
+            .or_else(|| args.get_option_value("--config"));
+        if let Some(file) = config_file {
+            config::initialize_from_file(file);
+        } else {
+            eprintln!("Configuration file not specified");
+        }
+    } else {
+        // Use default configuration file
+        config::initialize();
     }
 
     // Execute command

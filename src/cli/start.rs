@@ -7,6 +7,7 @@ pub fn help_message() -> String {
     \n\
     Options:\n\
     -f, --foreground   Run in foreground (default is background)\n\
+    -c, --config <FILE>  Path to the configuration file (default: /etc/bindizr/bindizr.conf)\n\
     -h, --help         Show this help message"
         .to_string()
 }

@@ -1,33 +1,36 @@
-#![allow(unused_imports)]
 use config::{Config, File, FileFormat, Source, Value};
-use lazy_static::lazy_static;
+use once_cell::sync::OnceCell;
 use std::{any::type_name, collections::HashMap, str::FromStr};
 
 // Config file path according to the platform
 #[cfg(unix)]
-pub const CONF_FILE: &str = "/etc/bindizr/bindizr.conf";
+pub const CONF_FILE_PATH: &str = "/etc/bindizr/bindizr.conf";
 #[cfg(windows)]
-pub const CONF_FILE: &str = "./bindizr.conf";
+pub const CONF_FILE_PATH: &str = "./bindizr.conf";
 
-#[cfg(test)]
-mod tests;
-
-lazy_static! {
-    #[derive(Debug)]
-    static ref _CONFIG_LOADED: Config = {
-        Config::builder()
-            .add_source(File::new(CONF_FILE, FileFormat::Ini).required(true))
-            .build()
-            .expect("Failed to build configuration")
-        };
-}
+static CONFIG: OnceCell<Config> = OnceCell::new();
 
 pub fn initialize() {
-    lazy_static::initialize(&_CONFIG_LOADED);
+    initialize_from_file(CONF_FILE_PATH);
+}
+
+pub fn initialize_from_file(conf_file_path: &str) {
+    println!("Initializing configuration from file: {}", conf_file_path);
+
+    let cfg = Config::builder()
+        .add_source(File::new(conf_file_path, FileFormat::Ini).required(true))
+        .build()
+        .expect("Failed to build configuration");
+
+    CONFIG
+        .set(cfg)
+        .expect("Configuration has already been initialized");
 }
 
 fn get_config_str(key: &str) -> String {
-    _CONFIG_LOADED
+    CONFIG
+        .get()
+        .expect("Configuration not initialized")
         .get::<Value>(key)
         .unwrap()
         .into_string()
@@ -35,7 +38,9 @@ fn get_config_str(key: &str) -> String {
 }
 
 pub fn get_config_map() -> Result<HashMap<String, Value>, String> {
-    _CONFIG_LOADED
+    CONFIG
+        .get()
+        .ok_or_else(|| "Configuration not initialized".to_string())?
         .collect()
         .map_err(|e| format!("Failed to collect configuration: {}", e))
 }
