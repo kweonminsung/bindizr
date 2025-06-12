@@ -31,7 +31,7 @@ pub async fn bootstrap() -> Result<(), String> {
     init_subsystems();
 
     serializer::initialize();
-    api::initialize().await;
+    api::initialize().await?;
 
     Ok(())
 }
@@ -67,6 +67,7 @@ pub async fn execute(args: &Args) {
         "dns" => dns::handle_command(args),
         "token" => token::handle_command(args),
         "help" => help::handle_command(),
+        // Not user facing commands
         "bootstrap" => bootstrap().await,
         _ => Ok(()),
     } {
