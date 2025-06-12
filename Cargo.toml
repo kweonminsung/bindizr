@@ -34,3 +34,21 @@ nix = { version = "0.30.1", features = ["signal", "process"] }
 
 [dev-dependencies]
 tempfile = "3.20.0"
+
+[package.metadata.deb]
+maintainer = "Minsung Kweon <kevin136583@gmail.com>"
+copyright = "2025, Minsung Kweon <kevin136583@gmail.com>"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+A simple subcommand for the Cargo package manager for \
+building Debian packages from Rust projects."""
+section = "utility"
+priority = "optional"
+assets = [
+    # target/release path is special, and gets replaced by cargo-deb with the actual target dir path.
+    ["target/release/bindizr", "usr/bin/", "755"],
+    # both array and object syntaxes are equivalent:
+    { source = "README.md", dest = "usr/share/doc/bindizr/README", mode = "644"},
+    { source = "public/*", dest = "usr/share/doc/bindizr/public", mode = "644"},
+    { source = "bindizr.conf", dest = "etc/bindizr/bindizr.conf", mode = "755" },
+]
