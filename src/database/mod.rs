@@ -57,7 +57,7 @@ impl DatabasePool {
 
 lazy_static! {
     pub static ref DATABASE_POOL: DatabasePool = {
-        let database_url = config::get_config::<String>("mysql.mysql_server_url");
+        let database_url = config::get_config::<String>("mysql.server_url");
         DatabasePool::new(&database_url)
     };
 }

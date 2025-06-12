@@ -3,7 +3,7 @@
     <img src="public/bindizr_horizontal.png" width="400px">
 </p>
 
-Synchronizing bind9 records with DB.
+DNS Synchronization Service for BIND9
 
 <p>
     <a href="https://github.com/netbirdio/netbird/blob/main/LICENSE">
@@ -96,18 +96,19 @@ $ service bind restart
 Create a configuration file for Bindizr:
 
 ```bash
-$ vim bindizr.conf # or use any text editor you prefer
+$ vim /etc/bindizr/bindizr.conf # or use any text editor you prefer
 ```
 
 Add the following configuration, adjusting values to match your environment:
 
 ```ini
 [api]
+host = "127.0.0.1"             # HTTP API host
 port = 3000                    # HTTP API port
 require_authentication = true  # Enable API authentication (true/false)
 
 [mysql]
-mysql_server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
+server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
 
 [bind]
 bind_config_path = "/etc/bind"       # Bind config path
@@ -125,13 +126,13 @@ log_file_path = "log"         # Path to log file (absolute or relative)
 
 ```bash
 # Start Bindizr service
-$ ./bindizr start
+$ bindizr start
 
 # Runs bindizr in foreground mode
-$ ./bindizr start -f
+$ bindizr start -f
 
 # Create an API token for authentication
-$ ./bindizr token create
+$ bindizr token create
 ```
 
 ## Usage and Options
@@ -142,25 +143,28 @@ Bindizr provides a command-line interface for managing the DNS synchronization s
 
 ```bash
 # Start the bindizr service in background mode
-$ ./bindizr start
+$ bindizr start
 
 # Start the bindizr service in foreground mode
-$ ./bindizr start -f
+$ bindizr start -f
+
+# Start with a custom configuration file
+$ bindizr start -c <FILE>
 
 # Stop the bindizr service
-$ ./bindizr stop
+$ bindizr stop
 
 # Check the current status of bindizr service
-$ ./bindizr status
+$ bindizr status
 
 # Overwrite DNS configuration file
-$ ./bindizr dns write
+$ bindizr dns write
 
 # Reload DNS configuration
-$ ./bindizr dns reload
+$ bindizr dns reload
 
 # Show help information
-$ ./bindizr --help
+$ bindizr --help
 ```
 
 ### Token Management
@@ -169,19 +173,19 @@ Bindizr uses API tokens for authentication. You can manage these tokens using th
 
 ```bash
 # Create a new API token
-$ ./bindizr token create --description "API access for monitoring"
+$ bindizr token create --description "API access for monitoring"
 
 # Create a token with expiration
-$ ./bindizr token create --description "Temporary access" --expires-in-days 30
+$ bindizr token create --description "Temporary access" --expires-in-days 30
 
 # List all API tokens
-$ ./bindizr token list
+$ bindizr token list
 
 # Delete an API token by ID
-$ ./bindizr token delete <TOKEN_ID>
+$ bindizr token delete <TOKEN_ID>
 
 # Show token command help
-$ ./bindizr token --help
+$ bindizr token --help
 ```
 
 ### API Authentication

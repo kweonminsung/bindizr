@@ -1,62 +1,77 @@
 pub mod daemon;
-pub mod dns;
+mod dns;
+mod help;
 pub mod parser;
-pub mod start;
-pub mod status;
-pub mod stop;
-pub mod token;
+mod start;
+mod status;
+mod stop;
+mod token;
 
 use crate::{api, config, database, logger, rndc, serializer};
 use parser::Args;
 
-fn init_logger() {
-    logger::initialize();
-}
+pub const SUPPORTED_COMMANDS: [&str; 7] = [
+    "start",
+    "stop",
+    "status",
+    "dns",
+    "token",
+    "bootstrap",
+    "help",
+];
 
-fn init_subsystems() {
+pub fn init_subsystems() {
     database::initialize();
     rndc::initialize();
 }
 
-async fn bootstrap() {
+pub async fn bootstrap() -> Result<(), String> {
+    logger::initialize();
+
+    init_subsystems();
+
     serializer::initialize();
-    api::initialize().await;
+    api::initialize().await?;
+
+    Ok(())
 }
 
 pub async fn execute(args: &Args) {
-    config::initialize();
+    if !SUPPORTED_COMMANDS.contains(&args.command.as_str()) {
+        eprintln!("Unsupported command: {}", args.command);
+        std::process::exit(1);
+    }
 
-    match args.command.as_str() {
-        "start" | "stop" | "status" => {}
-        "dns" | "token" => init_subsystems(),
-        "bootstrap" => {
-            init_logger();
-            init_subsystems();
-        }
-        _ => {
-            eprintln!("Unsupported command: {}", args.command);
+    // Initialize Configuration
+    if args.has_option("-c") || args.has_option("--config") {
+        // Load configuration from the specified file
+        let config_file = args
+            .get_option_value("-c")
+            .or_else(|| args.get_option_value("--config"));
+        if let Some(file) = config_file {
+            config::initialize_from_file(file);
+        } else {
+            eprintln!("Configuration file not specified");
             std::process::exit(1);
         }
+    } else {
+        // Use default configuration file
+        config::initialize();
     }
 
     // Execute command
-    match args.command.as_str() {
-        "start" => start::execute(args).await,
-        "stop" => stop::execute(),
-        "status" => status::execute(),
-        "dns" => {
-            if let Err(e) = dns::handle_command(args) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
-        "token" => {
-            if let Err(e) = token::handle_command(args) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
+    if let Err(e) = match args.command.as_str() {
+        "start" => start::handle_command(args).await,
+        "stop" => stop::handle_command(),
+        "status" => status::handle_command(),
+        "dns" => dns::handle_command(args),
+        "token" => token::handle_command(args),
+        "help" => help::handle_command(),
+        // Not user facing commands
         "bootstrap" => bootstrap().await,
-        _ => {}
+        _ => Ok(()),
+    } {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
     }
 }

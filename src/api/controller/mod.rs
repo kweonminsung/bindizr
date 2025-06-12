@@ -32,7 +32,10 @@ impl ApiController {
     }
 
     async fn get_home() -> impl IntoResponse {
-        (StatusCode::OK, Json(json!({ "msg": "hello world!" })))
+        (
+            StatusCode::OK,
+            Json(json!({ "msg": "bindizr API running" })),
+        )
     }
 
     async fn not_found() -> impl IntoResponse {

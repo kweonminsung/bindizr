@@ -1,5 +1,5 @@
 use super::{start, stop};
-use crate::cli::{dns, status, token};
+use crate::cli::{SUPPORTED_COMMANDS, dns, help, status, token};
 use std::{collections::HashMap, env, process::exit};
 
 #[derive(Debug)]
@@ -11,14 +11,17 @@ pub struct Args {
     pub option_values: HashMap<String, String>,
 }
 
+const SUBCOMMAND_COMMANDS: [&str; 2] = ["dns", "token"];
+
 impl Args {
     fn parse(raw_args: std::env::Args) -> Result<Self, String> {
         let args: Vec<String> = raw_args.collect();
 
         if args.len() < 2 {
             return Err(format!(
-                "Usage: {} [start|stop|status|dns|token] [OPTIONS]",
-                args[0]
+                "Usage: {} [{}] [OPTIONS]",
+                args[0],
+                SUPPORTED_COMMANDS.join("|")
             ));
         }
 
@@ -31,7 +34,7 @@ impl Args {
         // Handle commands
         if args.len() > 2 {
             // Handle subcommands for the commands with subcommands
-            if (command == "token" || command == "dns") && args.len() > 2 {
+            if SUBCOMMAND_COMMANDS.contains(&command.as_str()) && args.len() > 2 {
                 subcommand = Some(args[2].clone());
 
                 // Handle options and subcommand arguments
@@ -110,10 +113,7 @@ impl Args {
                 "start" => println!("{}", start::help_message()),
                 "stop" => println!("{}", stop::help_message()),
                 "status" => println!("{}", status::help_message()),
-                _ => println!(
-                    "{}",
-                    Self::help_message(&env::args().next().unwrap_or_default())
-                ),
+                _ => println!("{}", help::help_message()),
             }
             exit(0);
         }
@@ -125,19 +125,7 @@ impl Args {
         self.options.contains(&option.to_string())
     }
 
-    fn help_message(program: &str) -> String {
-        format!(
-            "Usage: {} COMMAND [OPTIONS]\n\
-            \n\
-            Commands:\n\
-            start         Start the bindizr service\n\
-            stop          Stop the bindizr service\n\
-            status        Show the status of the bindizr service\n\
-            dns           Manage DNS configurations\n\
-            token         Manage API tokens\n\
-            \n\
-            Run '{} COMMAND --help' for more information on a command.",
-            program, program
-        )
+    pub fn get_option_value(&self, option: &str) -> Option<&String> {
+        self.option_values.get(option)
     }
 }
