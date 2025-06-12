@@ -148,6 +148,9 @@ $ bindizr start
 # Start the bindizr service in foreground mode
 $ bindizr start -f
 
+# Start with a custom configuration file
+$ bindizr start -c <FILE>
+
 # Stop the bindizr service
 $ bindizr stop
 

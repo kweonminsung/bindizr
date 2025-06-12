@@ -20,17 +20,14 @@ pub const SUPPORTED_COMMANDS: [&str; 7] = [
     "help",
 ];
 
-fn init_logger() {
-    logger::initialize();
-}
-
-fn init_subsystems() {
+pub fn init_subsystems() {
     database::initialize();
     rndc::initialize();
 }
 
-async fn bootstrap() -> Result<(), String> {
-    init_logger();
+pub async fn bootstrap() -> Result<(), String> {
+    logger::initialize();
+
     init_subsystems();
 
     serializer::initialize();

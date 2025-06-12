@@ -41,8 +41,7 @@ maintainer = "Minsung Kweon <kevin136583@gmail.com>"
 copyright = "2025, Minsung Kweon <kevin136583@gmail.com>"
 license-file = ["LICENSE", "4"]
 extended-description = """\
-A simple subcommand for the Cargo package manager for \
-building Debian packages from Rust projects."""
+DNS Synchronization Service for BIND9"""
 section = "utility"
 priority = "optional"
 assets = [
