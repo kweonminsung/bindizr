@@ -1,13 +1,24 @@
 pub mod daemon;
-pub mod dns;
+mod dns;
+mod help;
 pub mod parser;
-pub mod start;
-pub mod status;
-pub mod stop;
-pub mod token;
+mod start;
+mod status;
+mod stop;
+mod token;
 
 use crate::{api, config, database, logger, rndc, serializer};
 use parser::Args;
+
+pub const SUPPORTED_COMMANDS: [&str; 7] = [
+    "start",
+    "stop",
+    "status",
+    "dns",
+    "token",
+    "bootstrap",
+    "help",
+];
 
 fn init_logger() {
     logger::initialize();
@@ -31,8 +42,6 @@ async fn bootstrap() -> Result<(), String> {
 pub async fn execute(args: &Args) {
     config::initialize();
 
-    const SUPPORTED_COMMANDS: [&str; 6] = ["start", "stop", "status", "dns", "token", "bootstrap"];
-
     if !SUPPORTED_COMMANDS.contains(&args.command.as_str()) {
         eprintln!("Unsupported command: {}", args.command);
         std::process::exit(1);
@@ -45,6 +54,7 @@ pub async fn execute(args: &Args) {
         "status" => status::handle_command(),
         "dns" => dns::handle_command(args),
         "token" => token::handle_command(args),
+        "help" => help::handle_command(),
         "bootstrap" => bootstrap().await,
         _ => Ok(()),
     } {
