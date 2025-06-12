@@ -1,4 +1,4 @@
-use crate::cli::{bootstrap, daemon, init_logger};
+use crate::cli::{bootstrap, daemon};
 
 pub fn help_message() -> String {
     "Usage: bindizr start [OPTIONS]\n\
@@ -13,8 +13,6 @@ pub fn help_message() -> String {
 
 pub async fn execute(args: &crate::cli::Args) {
     if args.has_option("-f") || args.has_option("--foreground") {
-        init_logger();
-
         // Run in foreground mode
         bootstrap().await;
     } else {

@@ -27,9 +27,9 @@ pub async fn execute(args: &Args) {
     config::initialize();
 
     match args.command.as_str() {
-        "start" | "stop" | "status" => {}
+        "stop" | "status" => {}
         "dns" | "token" => init_subsystems(),
-        "bootstrap" => {
+        "start" | "bootstrap" => {
             init_logger();
             init_subsystems();
         }
