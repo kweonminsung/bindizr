@@ -1,4 +1,4 @@
-use crate::{api::service::auth::AuthService, database::DATABASE_POOL};
+use crate::{api::service::auth::AuthService, cli::init_subsystems, database::DATABASE_POOL};
 use std::collections::HashMap;
 
 pub fn help_message(subcommand: &str) -> String {
@@ -30,6 +30,8 @@ pub fn help_message(subcommand: &str) -> String {
 }
 
 pub fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
+    init_subsystems();
+
     match args.subcommand.as_deref() {
         Some("create") => create_token(&args.option_values),
         Some("list") => list_tokens(),

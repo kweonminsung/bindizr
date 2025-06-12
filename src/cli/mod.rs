@@ -18,45 +18,37 @@ fn init_subsystems() {
     rndc::initialize();
 }
 
-async fn bootstrap() {
+async fn bootstrap() -> Result<(), String> {
+    init_logger();
+    init_subsystems();
+
     serializer::initialize();
     api::initialize().await;
+
+    Ok(())
 }
 
 pub async fn execute(args: &Args) {
     config::initialize();
 
-    match args.command.as_str() {
-        "stop" | "status" => {}
-        "dns" | "token" => init_subsystems(),
-        "start" | "bootstrap" => {
-            init_logger();
-            init_subsystems();
-        }
-        _ => {
-            eprintln!("Unsupported command: {}", args.command);
-            std::process::exit(1);
-        }
+    const SUPPORTED_COMMANDS: [&str; 6] = ["start", "stop", "status", "dns", "token", "bootstrap"];
+
+    if !SUPPORTED_COMMANDS.contains(&args.command.as_str()) {
+        eprintln!("Unsupported command: {}", args.command);
+        std::process::exit(1);
     }
 
     // Execute command
-    match args.command.as_str() {
-        "start" => start::execute(args).await,
-        "stop" => stop::execute(),
-        "status" => status::execute(),
-        "dns" => {
-            if let Err(e) = dns::handle_command(args) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
-        "token" => {
-            if let Err(e) = token::handle_command(args) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
+    if let Err(e) = match args.command.as_str() {
+        "start" => start::handle_command(args).await,
+        "stop" => stop::handle_command(),
+        "status" => status::handle_command(),
+        "dns" => dns::handle_command(args),
+        "token" => token::handle_command(args),
         "bootstrap" => bootstrap().await,
-        _ => {}
+        _ => Ok(()),
+    } {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
     }
 }

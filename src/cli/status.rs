@@ -10,7 +10,7 @@ pub fn help_message() -> String {
         .to_string()
 }
 
-pub fn execute() {
+pub fn handle_command() -> Result<(), String> {
     println!("=== BINDIZR STATUS ===");
 
     // Check if daemon is running
@@ -46,4 +46,6 @@ pub fn execute() {
     } else {
         println!("Status: \x1b[31mNot running\x1b[0m");
     }
+
+    Ok(())
 }

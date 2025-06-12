@@ -11,12 +11,14 @@ pub fn help_message() -> String {
         .to_string()
 }
 
-pub async fn execute(args: &crate::cli::Args) {
+pub async fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
     if args.has_option("-f") || args.has_option("--foreground") {
         // Run in foreground mode
-        bootstrap().await;
+        bootstrap().await?;
     } else {
         // Run in background mode
         daemon::start();
     }
+
+    Ok(())
 }
