@@ -103,11 +103,12 @@ Add the following configuration, adjusting values to match your environment:
 
 ```ini
 [api]
+host = "127.0.0.1"             # HTTP API host
 port = 3000                    # HTTP API port
 require_authentication = true  # Enable API authentication (true/false)
 
 [mysql]
-mysql_server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
+server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
 
 [bind]
 bind_config_path = "/etc/bind"       # Bind config path

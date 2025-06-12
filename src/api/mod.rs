@@ -7,9 +7,10 @@ use controller::ApiController;
 use std::net::SocketAddr;
 
 pub async fn initialize() {
-    let app_port = config::get_config::<u16>("api.port");
+    let host = config::get_config::<String>("api.host");
+    let port = config::get_config::<u16>("api.port");
+    let addr = SocketAddr::from((host.parse::<std::net::IpAddr>().unwrap(), port));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], app_port));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
     log_info!("Listening on http://{}", addr);
