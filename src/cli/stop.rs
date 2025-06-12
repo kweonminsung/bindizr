@@ -10,6 +10,8 @@ pub fn help_message() -> String {
         .to_string()
 }
 
-pub fn execute() {
+pub fn handle_command() -> Result<(), String> {
     daemon::stop();
+
+    Ok(())
 }

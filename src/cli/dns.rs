@@ -1,4 +1,4 @@
-use crate::{rndc::RNDC_CLIENT, serializer::SERIALIZER};
+use crate::{cli::init_subsystems, rndc::RNDC_CLIENT, serializer::SERIALIZER};
 
 pub fn help_message(subcommand: &str) -> String {
     match subcommand {
@@ -19,6 +19,8 @@ pub fn help_message(subcommand: &str) -> String {
 }
 
 pub fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
+    init_subsystems();
+
     match args.subcommand.as_deref() {
         Some("write") => write_dns_config(),
         Some("reload") => reload_dns_config(),

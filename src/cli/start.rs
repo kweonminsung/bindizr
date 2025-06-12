@@ -1,4 +1,4 @@
-use crate::cli::{bootstrap, daemon, init_logger};
+use crate::cli::{bootstrap, daemon};
 
 pub fn help_message() -> String {
     "Usage: bindizr start [OPTIONS]\n\
@@ -7,18 +7,19 @@ pub fn help_message() -> String {
     \n\
     Options:\n\
     -f, --foreground   Run in foreground (default is background)\n\
+    -c, --config <FILE>  Path to the configuration file (default: /etc/bindizr/bindizr.conf)\n\
     -h, --help         Show this help message"
         .to_string()
 }
 
-pub async fn execute(args: &crate::cli::Args) {
+pub async fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
     if args.has_option("-f") || args.has_option("--foreground") {
-        init_logger();
-
         // Run in foreground mode
-        bootstrap().await;
+        bootstrap().await?;
     } else {
         // Run in background mode
         daemon::start();
     }
+
+    Ok(())
 }
