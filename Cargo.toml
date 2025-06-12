@@ -1,7 +1,12 @@
 [package]
 name = "bindizr"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+authors = ["kweonminsung"]
+description = "Synchronizing bind9 records with Database"
+repository = "https://github.com/kweonminsung/bindizr"
+license = "Apache-2.0"
+keywords = ["DNS", "BIND9", "CLI", "RNDC", "Rust"]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
