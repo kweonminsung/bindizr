@@ -1,6 +1,3 @@
 /target
-temp
-named.conf
-bindizr.conf
 *.log
 *.pid
