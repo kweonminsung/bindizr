@@ -11,9 +11,9 @@ use std::env;
 
 #[tokio::main]
 async fn main() {
-    #[cfg(not(any(windows, unix)))]
+    #[cfg(not(any(unix)))]
     {
-        eprintln!("Unsupported platform. Only Windows and Unix-like systems are supported");
+        eprintln!("Unsupported platform. Only Unix-like systems are supported");
         std::process::exit(1);
     }
 

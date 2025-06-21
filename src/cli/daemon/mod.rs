@@ -1,22 +1,10 @@
 use std::{fs, path::Path};
 
-// PID file path according to the platform
-#[cfg(unix)]
 pub const PID_FILE: &str = "/tmp/bindizr.pid";
-#[cfg(windows)]
-pub const PID_FILE: &str = "bindizr.pid";
 
-// Import platform-specific implementations
-#[cfg(unix)]
 mod unix;
-#[cfg(windows)]
-mod windows;
 
-// Daemon according to the platform
-#[cfg(unix)]
 use unix::UnixDaemon as Daemon;
-#[cfg(windows)]
-use windows::WindowsDaemon as Daemon;
 
 // Daemon control trait
 trait DaemonControl {

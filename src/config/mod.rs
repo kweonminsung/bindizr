@@ -2,11 +2,8 @@ use config::{Config, File, FileFormat, Source, Value};
 use once_cell::sync::OnceCell;
 use std::{any::type_name, collections::HashMap, str::FromStr};
 
-// Config file path according to the platform
-#[cfg(unix)]
+// Config file path
 pub const CONF_FILE_PATH: &str = "/etc/bindizr/bindizr.conf";
-#[cfg(windows)]
-pub const CONF_FILE_PATH: &str = "./bindizr.conf";
 
 static CONFIG: OnceCell<Config> = OnceCell::new();
 

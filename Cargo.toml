@@ -23,14 +23,6 @@ rndc = "0.1.2"
 rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59.0", features = [
-    "Win32_Foundation",
-    "Win32_System_Threading",
-] }
-
-[target.'cfg(unix)'.dependencies]
 nix = { version = "0.30.1", features = ["signal", "process"] }
 
 [dev-dependencies]
