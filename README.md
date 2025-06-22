@@ -43,7 +43,23 @@ $ sudo apt-get install sudo ufw dnsutils bind9
 $ ufw allow 953/tcp
 ```
 
-### 2. Configure RNDC and BIND
+### 2. Download Bindizr and Install
+
+You can download the latest bindizr binary from [Release](https://github.com/kweonminsung/bindizr/releases/latest).
+
+#### Debian Packages (DPKG)
+
+For Debian-based systems (Ubuntu, Debian, etc.), you can install Bindizr using the .deb package:
+
+```bash
+# Install using dpkg
+$ sudo dpkg -i bindizr_0.1.0_amd64.deb
+
+# Verify installation
+$ bindizr
+```
+
+### 3. Configure RNDC and BIND
 
 ```bash
 # Generate RNDC configuration and key
@@ -91,7 +107,7 @@ controls {
 $ service bind restart
 ```
 
-### 3. Configure Bindizr Options
+### 4. Configure Bindizr Options
 
 Create a configuration file for Bindizr:
 
@@ -122,7 +138,7 @@ enable_file_logging = true    # Enable logging to file (true/false)
 log_file_path = "log"         # Path to log file (absolute or relative)
 ```
 
-### 4. Start Bindizr
+### 5. Start Bindizr
 
 ```bash
 # Start Bindizr service

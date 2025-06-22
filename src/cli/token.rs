@@ -1,4 +1,9 @@
-use crate::{api::service::auth::AuthService, cli::init_subsystems, database::DATABASE_POOL};
+use crate::{
+    daemon::{self, socket::client::DAEMON_SOCKET_CLIENT},
+    database::model::api_token::ApiToken,
+    log_debug,
+};
+use serde_json::json;
 use std::collections::HashMap;
 
 pub fn help_message(subcommand: &str) -> String {
@@ -30,7 +35,7 @@ pub fn help_message(subcommand: &str) -> String {
 }
 
 pub fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
-    init_subsystems();
+    daemon::socket::client::initialize();
 
     match args.subcommand.as_deref() {
         Some("create") => create_token(&args.option_values),
@@ -50,12 +55,19 @@ fn create_token(options: &HashMap<String, String>) -> Result<(), String> {
             None => None,
         };
 
-    // Generate token
-    let token = AuthService::generate_token(
-        &DATABASE_POOL,
-        description.map(|s| s.as_str()),
-        expires_in_days,
+    // Create socket request
+    let res = DAEMON_SOCKET_CLIENT.send_command(
+        "token_create",
+        Some(json!({
+            "description": description,
+            "expires_in_days": expires_in_days,
+        })),
     )?;
+
+    log_debug!("Token creation result: {:?}", res);
+
+    let token: ApiToken = serde_json::from_value(res.data)
+        .map_err(|e| format!("Failed to parse token creation response: {}", e))?;
 
     // Print token details
     println!("API token created successfully:");
@@ -78,7 +90,13 @@ fn create_token(options: &HashMap<String, String>) -> Result<(), String> {
 }
 
 fn list_tokens() -> Result<(), String> {
-    let tokens = AuthService::list_tokens(&DATABASE_POOL)?;
+    // Create socket request
+    let res = DAEMON_SOCKET_CLIENT.send_command("token_list", None)?;
+
+    log_debug!("Token list result: {:?}", res);
+
+    let tokens: Vec<ApiToken> = serde_json::from_value(res.data)
+        .map_err(|e| format!("Failed to parse token list response: {}", e))?;
 
     if tokens.is_empty() {
         println!("No API tokens found");
@@ -117,7 +135,10 @@ fn delete_token(args: &[String]) -> Result<(), String> {
         .parse::<i32>()
         .map_err(|_| "Invalid token ID, must be a number".to_string())?;
 
-    AuthService::delete_token(&DATABASE_POOL, token_id)?;
+    // Create socket request
+    let res = DAEMON_SOCKET_CLIENT.send_command("token_delete", Some(json!({ "id": token_id })))?;
+
+    log_debug!("Token deletion result: {:?}", res);
 
     println!("Token deleted successfully");
     Ok(())
