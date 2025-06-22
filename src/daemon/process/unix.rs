@@ -61,7 +61,7 @@ impl ProcessCtl for UnixProcess {
         }
     }
 
-    fn _stop() {
+    fn stop() {
         let pid = match get_pid() {
             Some(pid) => pid,
             None => {

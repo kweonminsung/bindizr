@@ -64,7 +64,7 @@ impl Serializer {
                         break;
                     }
                     _ => {
-                        println!("Received unsupported message: {}", msg);
+                        log_error!("Received unsupported message: {}", msg);
                     }
                 },
                 Err(e) => {

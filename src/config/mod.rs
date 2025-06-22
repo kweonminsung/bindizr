@@ -42,30 +42,27 @@ fn get_config_map() -> Result<HashMap<String, config::Value>, String> {
         .map_err(|e| format!("Failed to collect configuration: {}", e))
 }
 
-fn config_value_to_json(val: &config::Value) -> serde_json::Value {
+fn config_value_to_json(val: &config::Value) -> Result<serde_json::Value, String> {
     match &val.kind {
-        ValueKind::Nil => serde_json::Value::Null,
-        ValueKind::Boolean(b) => serde_json::Value::Bool(*b),
-        ValueKind::I64(i) => serde_json::Value::Number(serde_json::Number::from(*i)),
-        ValueKind::U64(i) => serde_json::Value::Number(serde_json::Number::from(*i)),
+        ValueKind::Nil => Ok(serde_json::Value::Null),
+        ValueKind::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
+        ValueKind::I64(i) => Ok((*i).into()),
+        ValueKind::U64(i) => Ok((*i).into()),
         ValueKind::Float(f) => serde_json::Number::from_f64(*f)
             .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-        ValueKind::String(s) => serde_json::Value::String(s.clone()),
-        ValueKind::Array(arr) => {
-            let vec = arr.iter().map(config_value_to_json).collect();
-            serde_json::Value::Array(vec)
-        }
-        ValueKind::Table(map) => {
-            let obj = map
-                .iter()
-                .map(|(k, v)| (k.clone(), config_value_to_json(v)))
-                .collect();
-            serde_json::Value::Object(obj)
-        }
-        _ => {
-            panic!("Unsupported config value type: {:?}", val.kind);
-        }
+            .ok_or_else(|| "Invalid float value".to_string()),
+        ValueKind::String(s) => Ok(serde_json::Value::String(s.clone())),
+        ValueKind::Array(arr) => arr
+            .iter()
+            .map(config_value_to_json)
+            .collect::<Result<Vec<_>, _>>()
+            .map(serde_json::Value::Array),
+        ValueKind::Table(map) => map
+            .iter()
+            .map(|(k, v)| config_value_to_json(v).map(|json| (k.clone(), json)))
+            .collect::<Result<serde_json::Map<_, _>, _>>()
+            .map(serde_json::Value::Object),
+        _ => Err(format!("Unsupported config value type: {:?}", val.kind)),
     }
 }
 
@@ -74,8 +71,8 @@ pub fn get_config_json_map() -> Result<serde_json::Value, String> {
 
     let obj = raw_map
         .iter()
-        .map(|(k, v)| (k.clone(), config_value_to_json(v)))
-        .collect();
+        .map(|(k, v)| config_value_to_json(v).map(|json| (k.clone(), json)))
+        .collect::<Result<_, _>>()?;
 
     Ok(serde_json::Value::Object(obj))
 }

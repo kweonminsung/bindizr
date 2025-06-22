@@ -6,9 +6,10 @@ use std::{fs, path::Path};
 use unix::UnixProcess as Process;
 
 // Daemon control trait
+#[allow(dead_code)]
 trait ProcessCtl {
     fn start();
-    fn _stop();
+    fn stop();
     fn is_pid_running(pid: i32) -> bool;
 }
 
