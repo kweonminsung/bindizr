@@ -30,7 +30,6 @@ pub async fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
         } else {
             bootstrap(false, config_file).await?;
         }
-        bootstrap(false, config_file).await?;
     } else {
         // Run in background mode
         process::start();
