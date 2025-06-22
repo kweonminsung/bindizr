@@ -1,4 +1,10 @@
-use crate::{cli::daemon, config};
+use crate::{
+    daemon::{
+        self,
+        socket::{client::DAEMON_SOCKET_CLIENT, dto::DaemonStatusResponse},
+    },
+    log_debug,
+};
 
 pub fn help_message() -> String {
     "Usage: bindizr status\n\
@@ -11,41 +17,48 @@ pub fn help_message() -> String {
 }
 
 pub fn handle_command() -> Result<(), String> {
+    daemon::socket::client::initialize();
+
+    // Create socket request
+    let res = DAEMON_SOCKET_CLIENT.send_command("status", None)?;
+
+    log_debug!("Status command result: {:?}", res);
+
+    let status: DaemonStatusResponse = serde_json::from_value(res.data)
+        .map_err(|e| format!("Failed to parse status response: {}", e))?;
+
     println!("=== BINDIZR STATUS ===");
 
-    // Check if daemon is running
-    if daemon::is_running() {
-        let pid = match daemon::get_pid() {
-            Some(pid) => pid.to_string(),
-            None => "Unknown".to_string(),
-        };
+    println!("Status: \x1b[32mRunning\x1b[0m");
 
-        println!("Status: \x1b[32mRunning\x1b[0m");
-        println!("PID: {}", pid);
+    let pid = match status.pid {
+        Some(pid) => pid.to_string(),
+        None => "Unknown".to_string(),
+    };
+    println!("PID: {}", pid);
 
-        let version = env!("CARGO_PKG_VERSION");
-        println!("Version: {}", version);
+    println!("Version: {}", status.version);
 
-        println!("\nLoaded Configurations:");
-        let config_map = config::get_config_map();
-        if let Ok(sections) = config_map {
-            for (section, value) in sections {
-                println!("\n\x1b[36m[{}]\x1b[0m", section);
+    println!("Loaded Configurations:");
+    if let serde_json::Value::Object(sections) = status.config_map {
+        for (section, value) in sections {
+            println!("\x1b[36m[{}]\x1b[0m", section);
 
-                if let Ok(table) = value.into_table() {
+            match value {
+                serde_json::Value::Object(table) => {
                     for (k, v) in table {
                         println!("  \x1b[33m{:<22}\x1b[0m = {}", k, v);
                     }
-                } else {
-                    println!("  (not a table)");
+                }
+                other => {
+                    println!("  \x1b[33m<value>\x1b[0m = {}", other);
                 }
             }
-        } else {
-            println!("\n\x1b[31mFailed to collect configuration\x1b[0m");
+
+            println!();
         }
     } else {
-        println!("Status: \x1b[31mNot running\x1b[0m");
+        println!("\n\x1b[31mFailed to collect configuration\x1b[0m");
     }
-
     Ok(())
 }

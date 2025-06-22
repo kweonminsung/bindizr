@@ -1,8 +1,9 @@
 use crate::database::utils::{self, parse_mysql_datetime};
 use chrono::{DateTime, Utc};
 use mysql::Value;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct ApiToken {
     pub id: i32,
 

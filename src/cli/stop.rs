@@ -1,4 +1,4 @@
-use crate::cli::daemon;
+use crate::{daemon::socket::client::DAEMON_SOCKET_CLIENT, log_debug};
 
 pub fn help_message() -> String {
     "Usage: bindizr stop\n\
@@ -11,7 +11,11 @@ pub fn help_message() -> String {
 }
 
 pub fn handle_command() -> Result<(), String> {
-    daemon::stop();
+    let res = DAEMON_SOCKET_CLIENT.send_command("stop", None)?;
+
+    log_debug!("Stop command result: {:?}", res);
+
+    println!("Bindizr service stopped successfully.");
 
     Ok(())
 }

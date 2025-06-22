@@ -1,10 +1,11 @@
 pub mod model;
+
 mod schema;
 mod utils;
 
 use crate::{config, log_error, log_info};
 use lazy_static::lazy_static;
-use mysql::{prelude::Queryable, Error, Opts, Pool, PooledConn};
+use mysql::{Error, Opts, Pool, PooledConn, prelude::Queryable};
 
 pub fn initialize() {
     log_info!("Database pool initialized");

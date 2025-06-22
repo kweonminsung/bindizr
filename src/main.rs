@@ -1,6 +1,7 @@
 mod api;
 mod cli;
 mod config;
+mod daemon;
 mod database;
 mod logger;
 mod rndc;

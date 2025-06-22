@@ -12,7 +12,6 @@ pub fn help_message() -> String {
         status     Show the status of the Bind service\n\
         dns        Manage DNS records\n\
         token      Manage API tokens\n\
-        help       Show this help message\n\
-        bootstrap  Initialize the application"
+        help       Show this help message"
         .to_string()
 }
