@@ -1,9 +1,8 @@
-use crate::cli::daemon;
 use crate::config;
 use chrono::Local;
 use log::{Level, Metadata, Record};
 use std::env;
-use std::fs::{create_dir_all, File, OpenOptions};
+use std::fs::{File, OpenOptions, create_dir_all};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -11,35 +10,35 @@ use std::sync::{Arc, Mutex};
 #[macro_export]
 macro_rules! log_error {
     ($($arg:tt)*) => {
-        log::error!($($arg)*);
+        log::error!($($arg)*)
     };
 }
 
 #[macro_export]
 macro_rules! log_warn {
     ($($arg:tt)*) => {
-        log::warn!($($arg)*);
+        log::warn!($($arg)*)
     };
 }
 
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
-        log::info!($($arg)*);
+        log::info!($($arg)*)
     };
 }
 
 #[macro_export]
 macro_rules! log_debug {
     ($($arg:tt)*) => {
-        log::debug!($($arg)*);
+        log::debug!($($arg)*)
     };
 }
 
 #[macro_export]
 macro_rules! log_trace {
     ($($arg:tt)*) => {
-        log::trace!($($arg)*);
+        log::trace!($($arg)*)
     };
 }
 
@@ -147,7 +146,7 @@ impl Logger {
     }
 }
 
-pub fn initialize() {
+pub fn initialize(is_daemon: bool) {
     let log_level = match config::get_config::<String>("logging.log_level")
         .to_lowercase()
         .as_str()
@@ -162,7 +161,7 @@ pub fn initialize() {
     let enable_file_logging = config::get_config::<bool>("logging.enable_file_logging");
 
     if !enable_file_logging {
-        return initialize_with_dir(enable_file_logging, log_level, None);
+        return initialize_with_dir(is_daemon, enable_file_logging, log_level, None);
     }
 
     // Get log directory
@@ -181,15 +180,25 @@ pub fn initialize() {
                 log_dir_path.display(),
                 e
             );
-            return initialize_with_dir(enable_file_logging, log_level, None);
+            return initialize_with_dir(is_daemon, enable_file_logging, log_level, None);
         }
     }
 
-    initialize_with_dir(enable_file_logging, log_level, Some(log_dir_path));
+    initialize_with_dir(
+        is_daemon,
+        enable_file_logging,
+        log_level,
+        Some(log_dir_path),
+    );
 }
 
 // Initialize logger with specified directory
-fn initialize_with_dir(enable_file_logging: bool, log_level: Level, log_dir_path: Option<PathBuf>) {
+fn initialize_with_dir(
+    is_daemon: bool,
+    enable_file_logging: bool,
+    log_level: Level,
+    log_dir_path: Option<PathBuf>,
+) {
     let today = Local::now().format("%Y-%m-%d").to_string();
 
     // Create initial log file if logging is enabled
@@ -219,7 +228,7 @@ fn initialize_with_dir(enable_file_logging: bool, log_level: Level, log_dir_path
         log_level,
         enable_file_logging,
         log_dir_path,
-        is_daemon: daemon::is_running(),
+        is_daemon,
         current_file: Arc::new(Mutex::new(current_file)),
         current_date: Arc::new(Mutex::new(today)),
     };

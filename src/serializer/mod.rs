@@ -2,7 +2,7 @@ use crate::database::model::{
     record::{Record, RecordType},
     zone::Zone,
 };
-use crate::database::{DatabasePool, DATABASE_POOL};
+use crate::database::{DATABASE_POOL, DatabasePool};
 use crate::{config, log_error, log_info};
 use lazy_static::lazy_static;
 use mysql::prelude::*;
@@ -19,6 +19,14 @@ struct Message {
 pub fn initialize() {
     log_info!("Serializer initialized");
     lazy_static::initialize(&SERIALIZER);
+}
+
+pub fn shutdown() {
+    log_info!("Shutting down serializer");
+
+    if let Err(e) = SERIALIZER.send_message_and_wait("exit") {
+        log_error!("Failed to send exit message: {}", e);
+    }
 }
 
 pub struct Serializer {
@@ -50,14 +58,13 @@ impl Serializer {
                         }
                     }
                     "exit" => {
-                        println!("Exiting serializer thread");
                         if let Some(ack) = ack {
                             let _ = ack.send(()); // ACK before exit
                         }
                         break;
                     }
                     _ => {
-                        println!("Received unsupported message: {}", msg);
+                        log_error!("Received unsupported message: {}", msg);
                     }
                 },
                 Err(e) => {

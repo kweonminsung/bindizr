@@ -1,15 +1,14 @@
-use super::DaemonControl;
-use crate::cli::daemon::{get_pid, remove_pid_file, write_pid_file};
-use nix::sys::signal::{kill, SIGTERM};
-use nix::unistd::{fork, ForkResult, Pid};
+use super::{ProcessCtl, get_pid, remove_pid_file, write_pid_file};
+use nix::sys::signal::{SIGTERM, kill};
+use nix::unistd::{ForkResult, Pid, fork};
 use std::{
     env,
-    process::{exit, Command},
+    process::{Command, exit},
 };
 
-pub struct UnixDaemon;
+pub struct UnixProcess;
 
-impl DaemonControl for UnixDaemon {
+impl ProcessCtl for UnixProcess {
     fn is_pid_running(pid: i32) -> bool {
         match kill(Pid::from_raw(pid), None) {
             Ok(_) => true,
@@ -37,10 +36,12 @@ impl DaemonControl for UnixDaemon {
         match unsafe { fork() } {
             Ok(ForkResult::Parent { .. }) => exit(0),
             Ok(ForkResult::Child) => {
-                // Re-execute with bootstrap command
+                // Re-execute with foreground option
                 let exe = env::current_exe().expect("Failed to get executable path");
                 let child = Command::new(exe)
-                    .arg("bootstrap")
+                    .arg("start")
+                    .arg("--foreground")
+                    .arg("--silent") // Run in silent mode
                     .spawn()
                     .expect("Failed to start process");
 
