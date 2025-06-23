@@ -29,6 +29,9 @@ pub async fn initialize() -> Result<(), String> {
     SHUTDOWN_NOTIFY.set(notify.clone()).ok();
 
     axum::serve(listener, ApiController::routes().await)
+        .with_graceful_shutdown(async move {
+            notify.notified().await;
+        })
         .await
         .map_err(|e| format!("Error serving connection: {:?}", e))?;
 

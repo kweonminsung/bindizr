@@ -1,0 +1,767 @@
+openapi: 3.0.0
+servers: []
+# servers: [
+#   {
+#     url: 'http://localhost:3000',
+#     description: Local development server
+#   }
+# ]
+info:
+  description: This is the API documentation for Bindizr
+  version: "1.0.0"
+  title: Bindizr HTTP API
+  contact:
+    email: kevin136583@gmail.com
+  license:
+    name: Apache 2.0
+    url: 'http://www.apache.org/licenses/LICENSE-2.0.html'
+tags:
+  - name: Zone
+    description: Manage DNS zones including creation, update, deletion, and retrieval.
+  - name: Zone History
+    description: Manage DNS zone history including creation, update, deletion, and retrieval.
+  - name: Record
+    description: Manage DNS records including creation, update, deletion, and retrieval.
+  - name: Record History
+    description: Manage DNS record history including creation, update, deletion, and retrieval.
+paths:
+  /zones:
+    get:
+      tags:
+        - Zone
+      summary: List all DNS zones
+      operationId: get_zones
+      description: Retrieves a list of all DNS zones.
+      responses:
+        '200':
+          description: A list of DNS zones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GetZoneResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+    post:
+      tags:
+        - Zone
+      summary: Create a new DNS zone
+      operationId: create_zone
+      description: Creates a new DNS zone with the specified details.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateZoneRequest'
+      responses:
+        '201':
+          description: DNS zone created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetZoneResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+  /zones/{zone_id}:
+    get:
+      tags:
+        - Zone
+      summary: Get a specific DNS zone
+      operationId: get_zone
+      description: Retrieves details of a specific DNS zone by its ID.
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          description: The ID of the DNS zone to retrieve.
+          schema:
+            type: integer
+            format: int32
+        - name: records
+          in: query
+          required: false
+          description: Whether to include the history of the DNS zone.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Details of the DNS zone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetZoneResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+    put:
+      tags:
+        - Zone
+      summary: Update a specific DNS zone
+      operationId: update_zone
+      description: Updates the details of a specific DNS zone.
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          description: The ID of the DNS zone to update.
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateZoneRequest'
+      responses:
+        '200':
+          description: DNS zone updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetZoneResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+    delete:
+      tags:
+        - Zone
+      summary: Delete a specific DNS zone
+      operationId: delete_zone
+      description: Deletes a specific DNS zone by its ID.
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          description: The ID of the DNS zone to delete.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: DNS zone deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Zone deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+  /zones/{zone_id}/rendered:
+    get:
+      tags:
+        - Zone
+      summary: Get rendered DNS zone file
+      operationId: get_zone_rendered
+      description: Retrieves the rendered content of a specific DNS zone file.
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          description: The ID of the DNS zone to retrieve.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Rendered DNS zone file content
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/GetZoneRenderedResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+  /zones/{zone_id}/histories:
+    get:
+      tags:
+        - Zone History
+      summary: List history of a specific DNS zone
+      operationId: get_zone_histories
+      description: Retrieves the history of changes made to a specific DNS zone.
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          description: The ID of the DNS zone to retrieve history for.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A list of DNS zone history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GetZoneHistoryResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+  /zones/{zone_id}/histories/{history_id}:
+    delete:
+      tags:
+        - Zone History
+      summary: Delete a specific DNS zone history
+      operationId: delete_zone_history
+      description: Deletes a specific history of a DNS zone by its ID.
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          description: The ID of the DNS zone to delete history for.
+          schema:
+            type: integer
+            format: int32
+        - name: history_id
+          in: path
+          required: true
+          description: The ID of the history to delete.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: DNS zone history deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Zone history deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+  /records:
+    get:
+      tags:
+        - Record
+      summary: List all DNS records
+      operationId: get_records
+      description: Retrieves a list of all DNS records.
+      parameters:
+        - name: zone_id
+          in: query
+          required: false
+          description: The ID of the DNS zone to filter records by.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A list of DNS records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GetRecordResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+    post:
+      tags:
+        - Record
+      summary: Create a new DNS record
+      operationId: create_record
+      description: Creates a new DNS record with the specified details.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordRequest'
+      responses:
+        '201':
+          description: DNS record created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetRecordResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+  /records/{record_id}:
+    get:
+      tags:
+        - Record
+      summary: Get a specific DNS record
+      operationId: get_record
+      description: Retrieves details of a specific DNS record by its ID.
+      parameters:
+        - name: record_id
+          in: path
+          required: true
+          description: The ID of the DNS record to retrieve.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Details of the DNS record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetRecordResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+    put:
+      tags:
+        - Record
+      summary: Update a specific DNS record
+      operationId: update_record
+      description: Updates the details of a specific DNS record.
+      parameters:
+        - name: record_id
+          in: path
+          required: true
+          description: The ID of the DNS record to update.
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordRequest'
+      responses:
+        '200':
+          description: DNS record updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetRecordResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+    delete:
+      tags:
+        - Record
+      summary: Delete a specific DNS record
+      operationId: delete_record
+      description: Deletes a specific DNS record by its ID.
+      parameters:
+        - name: record_id
+          in: path
+          required: true
+          description: The ID of the DNS record to delete.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: DNS record deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Record deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+  /records/{record_id}/histories:
+    get:
+      tags:
+        - Record History
+      summary: List history of a specific DNS record
+      operationId: get_record_histories
+      description: Retrieves the history of changes made to a specific DNS record.
+      parameters:
+        - name: record_id
+          in: path
+          required: true
+          description: The ID of the DNS record to retrieve history for.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A list of DNS record history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GetRecordHistoryResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+  /records/{record_id}/histories/{history_id}:
+    delete:
+      tags:
+        - Record History
+      summary: Delete a specific DNS record history
+      operationId: delete_record_history
+      description: Deletes a specific history of a DNS record by its ID.
+      parameters:
+        - name: record_id
+          in: path
+          required: true
+          description: The ID of the DNS record to delete history for.
+          schema:
+            type: integer
+            format: int32
+        - name: history_id
+          in: path
+          required: true
+          description: The ID of the history to delete.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: DNS record history deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Record history deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+
+# ======================================================================
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  
+  schemas:
+    BadRequestError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: Invalid input data
+    UnauthorizedError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: No authorization header
+    GetZoneResponse:
+      type: object
+      required:
+        - id
+        - name
+        - primary_ns
+        - primary_ns_ip
+        - admin_email
+        - ttl
+        - refresh
+        - retry
+        - expire
+        - minimum_ttl
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: example.com
+        primary_ns:
+          type: string
+          example: ns1.example.com
+        primary_ns_ip:
+          type: string
+          format: ipv4
+          example: 127.0.0.1
+        admin_email:
+          type: string
+          format: email
+          example: admin@example.com
+        ttl:
+          type: integer
+          format: int32
+          example: 3600
+        serial:
+          type: integer
+          format: int32
+          example: 2025100101
+        refresh:
+          type: integer
+          format: int32
+          example: 7200
+        retry:
+          type: integer
+          format: int32
+          example: 3600
+        expire:
+          type: integer
+          format: int32
+          example: 604800
+        minimum_ttl:
+          type: integer
+          format: int32
+          example: 3600
+    GetZoneRenderedResponse:
+      type: string
+      description: Rendered zone file content
+      example: |
+        $ORIGIN example.com.
+        @   3600 IN SOA ns1.example.com. hostmaster.example.com. (
+              2025100101 ; serial
+              7200       ; refresh
+              3600       ; retry
+              604800     ; expire
+              3600 )     ; minimum_ttl
+        @   3600 IN NS ns1.example.com.
+    CreateZoneRequest:
+      type: object
+      required:
+        - name
+        - primary_ns
+        - primary_ns_ip
+        - admin_email
+        - ttl
+        - serial
+      properties:
+        name:
+          type: string
+          example: example.com
+        primary_ns:
+          type: string
+          example: ns1.example.com
+        primary_ns_ip:
+          type: string
+          format: ipv4
+          example: 127.0.0.1
+        admin_email:
+          type: string
+          format: email
+          example: admin@example.com
+        ttl:
+          type: integer
+          format: int32
+          example: 3600
+        serial:
+          type: integer
+          format: int32
+          example: 2025100101
+        refresh:
+          type: integer
+          format: int32
+          example: 7200
+        retry:
+          type: integer
+          format: int32
+          example: 3600
+        expire:
+          type: integer
+          format: int32
+          example: 604800
+        minimum_ttl:
+          type: integer
+          format: int32
+          example: 3600
+    GetZoneHistoryResponse:
+      type: object
+      required:
+        - id
+        - log
+        - created_at
+        - updated_at
+        - zone_id
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 1
+        log:
+          type: string
+          example: "[2025-10-01 12:00:00] Zone created: id=1, name=example.com"
+        created_at:
+          type: string
+          format: date-time
+          example: '2023-10-01T12:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2023-10-01T12:00:00Z'
+        zone_id:
+          type: integer
+          format: int32
+          example: 1
+    GetRecordResponse:
+      type: object
+      required:
+        - id
+        - name
+        - record_type
+        - value
+        - zone_id
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: sub
+        record_type:
+          type: string
+          enum: [A, AAAA, CNAME, MX, TXT, NS, SOA, SRV, PTR]
+          example: A
+        value:
+          type: string
+          example: 127.0.0.1
+        zone_id:
+          type: integer
+          format: int32
+          example: 1
+    CreateRecordRequest:
+      type: object
+      required:
+        - name
+        - record_type
+        - value
+        - zone_id
+      properties:
+        name:
+          type: string
+          example: sub
+        record_type:
+          type: string
+          enum: [A, AAAA, CNAME, MX, TXT, NS, SOA, SRV, PTR]
+          example: A
+        value:
+          type: string
+          example: 127.0.0.1
+        ttl:
+          type: integer
+          format: int32
+          example: 3600
+        priority:
+          type: integer
+          format: int32
+          example: 10
+        zone_id:
+          type: integer
+          format: int32
+          example: 1
+    GetRecordHistoryResponse:
+      type: object
+      required:
+        - id
+        - log
+        - created_at
+        - updated_at
+        - record_id
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 1
+        log:
+          type: string
+          example: "[2025-10-01 12:00:00] Record created: id=1, zone_id=1, name=sub, type=A, value=127.0.0.1"
+        created_at:
+          type: string
+          format: date-time
+          example: '2023-10-01T12:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2023-10-01T12:00:00Z'
+        record_id:
+          type: integer
+          format: int32
+          example: 1

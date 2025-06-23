@@ -1,12 +1,3 @@
-use axum::{
-    extract::{Path, Query},
-    http::StatusCode,
-    response::IntoResponse,
-    routing, Json, Router,
-};
-use serde::Deserialize;
-use serde_json::json;
-
 use crate::{
     api::{
         dto::{CreateZoneRequest, GetRecordResponse, GetZoneResponse},
@@ -15,6 +6,16 @@ use crate::{
     database::DATABASE_POOL,
     serializer::Serializer,
 };
+use axum::{
+    Json, Router,
+    body::Body,
+    extract::{Path, Query},
+    http::{Response, StatusCode, header},
+    response::IntoResponse,
+    routing,
+};
+use serde::Deserialize;
+use serde_json::json;
 
 pub struct ZoneController;
 
@@ -23,6 +24,10 @@ impl ZoneController {
         Router::new()
             .route("/zones", routing::get(Self::get_zones))
             .route("/zones/{id}", routing::get(Self::get_zone))
+            .route(
+                "/zones/{id}/rendered",
+                routing::get(Self::get_zone_rendered),
+            )
             .route("/zones", routing::post(Self::create_zone))
             .route("/zones/{id}", routing::put(Self::update_zone))
             .route("/zones/{id}", routing::delete(Self::delete_zone))
@@ -52,7 +57,6 @@ impl ZoneController {
     ) -> impl IntoResponse {
         let zone_id = params.id;
         let records_query = query.records;
-        let render_query = query.render;
 
         let raw_zone = match ZoneService::get_zone(&DATABASE_POOL, zone_id) {
             Ok(zone) => zone,
@@ -77,14 +81,37 @@ impl ZoneController {
             .map(GetRecordResponse::from_record)
             .collect::<Vec<GetRecordResponse>>();
 
-        if let Some(true) = render_query {
-            let zone_str = Serializer::serialize_zone(&raw_zone, &raw_records);
-            return (StatusCode::OK, Json(json!({ "result": zone_str })));
-        }
-
         let zone = GetZoneResponse::from_zone(&raw_zone);
         let json_body = json!({ "zone": zone, "records": records });
         (StatusCode::OK, Json(json_body))
+    }
+
+    async fn get_zone_rendered(Path(params): Path<GetZoneParam>) -> impl IntoResponse {
+        let zone_id = params.id;
+
+        let raw_zone = match ZoneService::get_zone(&DATABASE_POOL, zone_id) {
+            Ok(zone) => zone,
+            Err(err) => {
+                let json_body = json!({ "error": err });
+                return (StatusCode::BAD_REQUEST, Json(json_body)).into_response();
+            }
+        };
+
+        let raw_records = match RecordService::get_records(&DATABASE_POOL, Some(zone_id)) {
+            Ok(records) => records,
+            Err(err) => {
+                let json_body = json!({ "error": err });
+                return (StatusCode::BAD_REQUEST, Json(json_body)).into_response();
+            }
+        };
+
+        let zone_str = Serializer::serialize_zone(&raw_zone, &raw_records);
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "text/plain")
+            .body(Body::from(zone_str))
+            .unwrap()
+            .into_response()
     }
 
     async fn create_zone(Json(body): Json<CreateZoneRequest>) -> impl IntoResponse {
@@ -146,7 +173,6 @@ struct GetZoneParam {
 #[derive(Debug, Deserialize)]
 struct GetZoneQuery {
     records: Option<bool>,
-    render: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

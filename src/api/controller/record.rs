@@ -6,10 +6,11 @@ use crate::{
     database::DATABASE_POOL,
 };
 use axum::{
+    Json, Router,
     extract::{Path, Query},
     http::StatusCode,
     response::IntoResponse,
-    routing, Json, Router,
+    routing,
 };
 use serde::Deserialize;
 use serde_json::json;
