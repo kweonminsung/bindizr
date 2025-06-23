@@ -7,6 +7,7 @@ mod zone_history;
 
 use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
 use serde_json::json;
+use tower_http::cors::CorsLayer;
 
 use crate::config;
 
@@ -21,7 +22,8 @@ impl ApiController {
             .merge(record::RecordController::routes().await)
             .merge(dns::DnsController::routes().await)
             .route("/", routing::get(ApiController::get_home))
-            .fallback(Self::not_found);
+            .fallback(Self::not_found)
+            .layer(CorsLayer::permissive());
 
         // Check if authentication is required
         if config::get_config::<bool>("api.require_authentication") {
