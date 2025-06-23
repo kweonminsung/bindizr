@@ -5,7 +5,7 @@ mod record_history;
 mod zone;
 mod zone_history;
 
-use axum::{http::StatusCode, response::IntoResponse, routing, Json, Router};
+use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
 use serde_json::json;
 
 use crate::config;
@@ -39,6 +39,6 @@ impl ApiController {
     }
 
     async fn not_found() -> impl IntoResponse {
-        (StatusCode::NOT_FOUND, "Not Found")
+        (StatusCode::NOT_FOUND, "404 Not Found")
     }
 }
