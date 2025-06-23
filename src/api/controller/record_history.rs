@@ -1,4 +1,4 @@
-use axum::{extract::Path, http::StatusCode, response::IntoResponse, routing, Json, Router};
+use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse, routing};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -50,15 +50,19 @@ impl RecordHistoryController {
     ) -> impl IntoResponse {
         let history_id = param.history_id;
 
-        if RecordHistoryService::delete_record_history(&DATABASE_POOL, history_id).is_err() {
-            let json_body = json!({ "error": "Failed to delete record history" });
-            return (StatusCode::BAD_REQUEST, Json(json_body));
+        match RecordHistoryService::delete_record_history(&DATABASE_POOL, history_id) {
+            Ok(_) => {
+                let json_body = json!({ "message": "Record history deleted successfully" });
+                (StatusCode::OK, Json(json_body))
+            }
+            Err(err) => {
+                let json_body = json!({ "error": err });
+                (StatusCode::BAD_REQUEST, Json(json_body))
+            }
         }
-
-        let json_body = json!({ "message": "Record history deleted successfully" });
-        (StatusCode::OK, Json(json_body))
     }
 }
+
 #[derive(Debug, Deserialize)]
 struct GetRecordHistoriesParam {
     id: i32,
