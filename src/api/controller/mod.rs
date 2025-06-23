@@ -22,13 +22,15 @@ impl ApiController {
             .merge(record::RecordController::routes().await)
             .merge(dns::DnsController::routes().await)
             .route("/", routing::get(ApiController::get_home))
-            .fallback(Self::not_found)
-            .layer(CorsLayer::permissive());
+            .fallback(Self::not_found);
 
         // Check if authentication is required
         if config::get_config::<bool>("api.require_authentication") {
             router = router.layer(axum::middleware::from_fn(middleware::auth::auth_middleware));
         }
+
+        // Add CORS support
+        router = router.layer(CorsLayer::permissive());
 
         router
     }
