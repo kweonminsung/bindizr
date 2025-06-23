@@ -204,6 +204,12 @@ $ bindizr token delete <TOKEN_ID>
 $ bindizr token --help
 ```
 
+## API Documentation
+
+The full HTTP API documentation is available at:  
+👉 [https://kweonminsung.github.io/bindizr/](https://kweonminsung.github.io/bindizr/)
+
+
 ### API Authentication
 
 When making API requests, include the token in the Authorization header:
@@ -214,6 +220,14 @@ $ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/zones
 
 ## Dependencies
 
-- [axum](https://docs.rs/axum/latest/axum/index.html)
-- [mysql](https://crates.io/crates/mysql/)
-- [rndc](https://crates.io/crates/rndc)
+This project relies on the following core dependencies:
+
+- [`axum`](https://docs.rs/axum/latest/axum/) – A web application framework for building fast and modular APIs in Rust.
+- [`mysql`](https://crates.io/crates/mysql) – A MySQL database driver for Rust.
+- [`rndc`](https://crates.io/crates/rndc) – A library for interacting with BIND's Remote Name Daemon Control (RNDC) protocol.
+
+
+
+### License
+
+This project is licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
