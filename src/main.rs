@@ -7,9 +7,6 @@ mod logger;
 mod rndc;
 mod serializer;
 
-use cli::{execute, parser::Args};
-use std::env;
-
 #[tokio::main]
 async fn main() {
     #[cfg(not(any(unix)))]
@@ -18,8 +15,5 @@ async fn main() {
         std::process::exit(1);
     }
 
-    // Process command line arguments
-    let args = Args::process_args(env::args());
-
-    execute(&args).await;
+    cli::execute().await;
 }

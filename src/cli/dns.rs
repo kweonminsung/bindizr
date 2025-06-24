@@ -2,33 +2,25 @@ use crate::{
     daemon::{self, socket::client::DAEMON_SOCKET_CLIENT},
     log_debug,
 };
+use clap::Subcommand;
 
-pub fn help_message(subcommand: &str) -> String {
-    match subcommand {
-        "write" => "Usage: bindizr dns write\n\
-            \n\
-            Write DNS configuration to the server"
-            .to_string(),
-        "reload" => "Usage: bindizr dns reload\n\
-            Reload DNS configuration on the server"
-            .to_string(),
-        _ => "Usage: bindizr dns COMMAND\n\
-            \n\
-            Commands:\n\
-            write    Write DNS configuration to the server\n\
-            reload   Reload DNS configuration on the server"
-            .to_string(),
-    }
+#[derive(Subcommand, Debug)]
+pub enum DnsCommand {
+    /// Write DNS configuration to the server
+    Write,
+    /// Reload DNS configuration on the server
+    Reload,
+    /// Get the status of the DNS service
+    Status,
 }
 
-pub fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
+pub fn handle_command(subcommand: DnsCommand) -> Result<(), String> {
     daemon::socket::client::initialize();
 
-    match args.subcommand.as_deref() {
-        Some("write") => write_dns_config(),
-        Some("reload") => reload_dns_config(),
-        Some("status") => get_dns_status(),
-        _ => Err(help_message("").to_string()),
+    match subcommand {
+        DnsCommand::Write => write_dns_config(),
+        DnsCommand::Reload => reload_dns_config(),
+        DnsCommand::Status => get_dns_status(),
     }
 }
 

@@ -6,16 +6,6 @@ use crate::{
     log_debug,
 };
 
-pub fn help_message() -> String {
-    "Usage: bindizr status\n\
-    \n\
-    Show the current status of the bindizr service\n\
-    \n\
-    Options:\n\
-    -h, --help         Show this help message"
-        .to_string()
-}
-
 pub fn handle_command() -> Result<(), String> {
     daemon::socket::client::initialize();
 

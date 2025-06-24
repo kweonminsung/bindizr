@@ -1,16 +1,52 @@
-pub mod parser;
-
 mod dns;
-mod help;
 mod start;
 mod status;
 mod stop;
 mod token;
 
-use crate::{api, config, daemon, database, logger, rndc, serializer};
-use parser::Args;
+use crate::{
+    api,
+    cli::{dns::DnsCommand, token::TokenCommand},
+    config, daemon, database, logger, rndc, serializer,
+};
+use clap::{Parser, Subcommand};
 
-pub const SUPPORTED_COMMANDS: [&str; 6] = ["start", "stop", "status", "dns", "token", "help"];
+#[derive(Parser, Debug)]
+#[command(name = "bindizr", version, about)]
+pub struct Args {
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Start the bindizr service
+    Start {
+        /// Run in the foreground (default is background)
+        #[arg(short, long)]
+        foreground: bool,
+        /// Path to the configuration file (default: /etc/bindizr/bindizr.conf)
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<String>,
+        /// Run in silent mode (no stdout)
+        #[arg(short, long)]
+        silent: bool,
+    },
+    /// Stop the bindizr service
+    Stop,
+    /// Show the status of the bindizr service
+    Status,
+    /// Manage DNS system
+    Dns {
+        #[command(subcommand)]
+        subcommand: DnsCommand,
+    },
+    /// Manage API tokens
+    Token {
+        #[command(subcommand)]
+        subcommand: TokenCommand,
+    },
+}
 
 pub async fn bootstrap(is_daemon: bool, config_file: Option<&str>) -> Result<(), String> {
     // Initialize Configuration
@@ -33,21 +69,20 @@ pub async fn bootstrap(is_daemon: bool, config_file: Option<&str>) -> Result<(),
     Ok(())
 }
 
-pub async fn execute(args: &Args) {
-    if !SUPPORTED_COMMANDS.contains(&args.command.as_str()) {
-        eprintln!("Unsupported command: {}", args.command);
-        std::process::exit(1);
-    }
+pub async fn execute() {
+    let args = Args::parse();
 
     // Execute command
-    if let Err(e) = match args.command.as_str() {
-        "start" => start::handle_command(args).await,
-        "stop" => stop::handle_command(),
-        "status" => status::handle_command(),
-        "dns" => dns::handle_command(args),
-        "token" => token::handle_command(args),
-        "help" => help::handle_command(),
-        _ => Ok(()),
+    if let Err(e) = match args.command {
+        Command::Start {
+            foreground,
+            config,
+            silent,
+        } => start::handle_command(foreground, config, silent).await,
+        Command::Stop => stop::handle_command(),
+        Command::Status => status::handle_command(),
+        Command::Dns { subcommand } => dns::handle_command(subcommand),
+        Command::Token { subcommand } => token::handle_command(subcommand),
     } {
         eprintln!("Error: {}", e);
         std::process::exit(1);
