@@ -3,58 +3,43 @@ use crate::{
     database::model::api_token::ApiToken,
     log_debug,
 };
+use clap::Subcommand;
 use serde_json::json;
-use std::collections::HashMap;
 
-pub fn help_message(subcommand: &str) -> String {
-    match subcommand {
-        "create" => "Usage: bindizr token create [OPTIONS]\n\
-            \n\
-            Create a new API token\n\
-            \n\
-            Options:\n\
-            --description TEXT    Token description\n\
-            --expires-in-days N   Token expiration in days (default: never expires)"
-            .to_string(),
-        "list" => "Usage: bindizr token list\n\
-            \n\
-            List all API tokens"
-            .to_string(),
-        "delete" => "Usage: bindizr token delete TOKEN_ID\n\
-            \n\
-            Delete an API token by ID"
-            .to_string(),
-        _ => "Usage: bindizr token COMMAND\n\
-            \n\
-            Commands:\n\
-            create    Create a new API token\n\
-            list      List all API tokens\n\
-            delete    Delete an API token"
-            .to_string(),
-    }
+#[derive(Subcommand, Debug)]
+pub enum TokenCommand {
+    /// Create a new API token
+    Create {
+        /// Description of the token
+        #[arg(long, value_name = "TEXT")]
+        description: Option<String>,
+        /// Number of days until the token expires (default: never expires)
+        #[arg(long, value_name = "N", default_value_t = 0)]
+        expires_in_days: i64,
+    },
+    /// List all API tokens
+    List,
+    /// Delete an API token by ID
+    Delete {
+        /// ID of the token to delete
+        token_id: i32,
+    },
 }
 
-pub fn handle_command(args: &crate::cli::Args) -> Result<(), String> {
+pub fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
     daemon::socket::client::initialize();
 
-    match args.subcommand.as_deref() {
-        Some("create") => create_token(&args.option_values),
-        Some("list") => list_tokens(),
-        Some("delete") => delete_token(&args.subcommand_args),
-        _ => Err(help_message("").to_string()),
+    match subcommand {
+        TokenCommand::Create {
+            description,
+            expires_in_days,
+        } => create_token(description, Some(expires_in_days)),
+        TokenCommand::List => list_tokens(),
+        TokenCommand::Delete { token_id } => delete_token(token_id),
     }
 }
 
-fn create_token(options: &HashMap<String, String>) -> Result<(), String> {
-    let description = options.get("--description");
-    let expires_in_days =
-        match options.get("--expires-in-days") {
-            Some(days_str) => Some(days_str.parse::<i64>().map_err(|_| {
-                "Invalid value for --expires-in-days, must be a number".to_string()
-            })?),
-            None => None,
-        };
-
+fn create_token(description: Option<String>, expires_in_days: Option<i64>) -> Result<(), String> {
     // Create socket request
     let res = DAEMON_SOCKET_CLIENT.send_command(
         "token_create",
@@ -126,15 +111,7 @@ fn list_tokens() -> Result<(), String> {
     Ok(())
 }
 
-fn delete_token(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err("Token ID is required".to_string());
-    }
-
-    let token_id = args[0]
-        .parse::<i32>()
-        .map_err(|_| "Invalid token ID, must be a number".to_string())?;
-
+fn delete_token(token_id: i32) -> Result<(), String> {
     // Create socket request
     let res = DAEMON_SOCKET_CLIENT.send_command("token_delete", Some(json!({ "id": token_id })))?;
 
