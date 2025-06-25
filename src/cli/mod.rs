@@ -25,7 +25,7 @@ pub enum Command {
         /// Run in the foreground (default is background)
         #[arg(short, long)]
         foreground: bool,
-        /// Path to the configuration file (default: /etc/bindizr/bindizr.conf)
+        /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
         /// Run in silent mode (no stdout)

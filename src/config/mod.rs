@@ -1,9 +1,12 @@
+#[cfg(test)]
+mod tests;
+
 use config::{Config, File, FileFormat, Source, ValueKind};
 use once_cell::sync::OnceCell;
 use std::{any::type_name, collections::HashMap, str::FromStr};
 
 // Config file path
-pub const CONF_FILE_PATH: &str = "/etc/bindizr/bindizr.conf";
+pub const CONF_FILE_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 static CONFIG: OnceCell<Config> = OnceCell::new();
 
@@ -15,7 +18,7 @@ pub fn initialize_from_file(conf_file_path: &str) {
     println!("Initializing configuration from file: {}", conf_file_path);
 
     let cfg = Config::builder()
-        .add_source(File::new(conf_file_path, FileFormat::Ini).required(true))
+        .add_source(File::new(conf_file_path, FileFormat::Toml).required(true))
         .build()
         .expect("Failed to build configuration");
 
