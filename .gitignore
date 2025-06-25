@@ -1,6 +1,6 @@
 /target
 temp
 named.conf
-bindizr.conf
+bindizr.conf.toml
 *.log
 *.pid

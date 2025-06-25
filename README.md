@@ -112,12 +112,12 @@ $ service bind restart
 Create a configuration file for Bindizr:
 
 ```bash
-$ vim /etc/bindizr/bindizr.conf # or use any text editor you prefer
+$ vim /etc/bindizr/bindizr.conf.toml # or use any text editor you prefer
 ```
 
 Add the following configuration, adjusting values to match your environment:
 
-```ini
+```toml
 [api]
 host = "127.0.0.1"             # HTTP API host
 port = 3000                    # HTTP API port
