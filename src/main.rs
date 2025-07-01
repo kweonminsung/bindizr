@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod daemon;
 mod database;
+mod database_new;
 mod logger;
 mod rndc;
 mod serializer;
