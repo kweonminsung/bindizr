@@ -4,3 +4,4 @@ named.conf
 bindizr.conf.toml
 *.log
 *.pid
+bindizr.db

@@ -1,4 +1,4 @@
-use crate::database_new::{
+use crate::database::{
     DatabasePool, model::record_history::RecordHistory, repository::RecordHistoryRepository,
 };
 use async_trait::async_trait;
@@ -22,6 +22,25 @@ impl RecordHistoryRepository for MySqlRecordHistoryRepository {
             .bind(&record_history.log)
             .bind(record_history.record_id)
             .execute(&mut *conn)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        record_history.id = result
+            .last_insert_id()
+            .map(|id| id as i32)
+            .ok_or("Failed to retrieve last insert ID")?;
+        Ok(record_history)
+    }
+
+    async fn create_with_transaction(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+        mut record_history: RecordHistory,
+    ) -> Result<RecordHistory, String> {
+        let result = sqlx::query("INSERT INTO record_history (log, record_id) VALUES (?, ?)")
+            .bind(&record_history.log)
+            .bind(record_history.record_id)
+            .execute(tx.as_mut())
             .await
             .map_err(|e| e.to_string())?;
 

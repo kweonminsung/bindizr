@@ -11,7 +11,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 
-fn handle_client(mut stream: UnixStream) {
+async fn handle_client(mut stream: UnixStream) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
 
@@ -22,9 +22,9 @@ fn handle_client(mut stream: UnixStream) {
             Ok(cmd) => match cmd.command.as_str() {
                 "stop" => stop::shutdown(),
                 "status" => status::get_status(),
-                "token_create" => token::create_token(&cmd.data),
-                "token_list" => token::list_tokens(),
-                "token_delete" => token::delete_token(&cmd.data),
+                "token_create" => token::create_token(&cmd.data).await,
+                "token_list" => token::list_tokens().await,
+                "token_delete" => token::delete_token(&cmd.data).await,
                 "dns_write_config" => dns::write_dns_config(),
                 "dns_reload" => dns::reload_dns_config(),
                 "dns_status" => dns::get_dns_status(),
@@ -55,11 +55,14 @@ pub fn initialize() -> Result<(), String> {
 
     log_info!("Daemon socket server listening on {}", SOCKET_FILE_PATH);
 
-    std::thread::spawn(move || {
+    std::thread::spawn(async move || {
         for stream in listener.incoming() {
             match stream {
-                Ok(stream) => handle_client(stream),
-                Err(e) => log_error!("Error: {}", e),
+                Ok(stream) => handle_client(stream).await,
+                Err(e) => {
+                    log_error!("Error: {}", e);
+                    continue;
+                }
             }
         }
     });

@@ -1,6 +1,4 @@
-use crate::database_new::{
-    DatabasePool, model::api_token::ApiToken, repository::ApiTokenRepository,
-};
+use crate::database::{DatabasePool, model::api_token::ApiToken, repository::ApiTokenRepository};
 use async_trait::async_trait;
 use sqlx::Row;
 

@@ -1,11 +1,13 @@
-use crate::database::model::{
-    record::{Record, RecordType},
-    zone::Zone,
+use crate::database::get_zone_repository;
+use crate::database::{
+    get_record_repository,
+    model::{
+        record::{Record, RecordType},
+        zone::Zone,
+    },
 };
-use crate::database::{DATABASE_POOL, DatabasePool};
 use crate::{config, log_error, log_info};
 use lazy_static::lazy_static;
-use mysql::prelude::*;
 use std::fmt::Write;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -44,12 +46,12 @@ impl Serializer {
     }
 
     // Worker thread that processes messages
-    fn worker_thread(rx: Receiver<Message>) {
+    async fn worker_thread(rx: Receiver<Message>) {
         loop {
             match rx.recv() {
                 Ok(Message { msg, ack }) => match msg.as_str() {
                     "write_config" => {
-                        if let Err(e) = Self::write_config() {
+                        if let Err(e) = Self::write_config().await {
                             log_error!("Failed to write config: {}", e);
                         }
 
@@ -106,8 +108,8 @@ impl Serializer {
     }
 
     // Write DNS configuration files
-    fn write_config() -> Result<(), String> {
-        let zones = Self::get_zones(&DATABASE_POOL);
+    async fn write_config() -> Result<(), String> {
+        let zones = Self::get_zones().await;
 
         let bind_config_path_str = config::get_config::<String>("bind.bind_config_path");
         let bind_config_path = PathBuf::from(&bind_config_path_str);
@@ -156,7 +158,7 @@ impl Serializer {
 
         // Write zone files
         for zone in zones {
-            let records = Self::get_records(&DATABASE_POOL, zone.id);
+            let records = Self::get_records(zone.id).await;
             let serialized_data = Self::serialize_zone(&zone, &records);
 
             let file_path = bindizr_config_path.join(format!("{}.zone", zone.name));
@@ -168,40 +170,25 @@ impl Serializer {
         Ok(())
     }
 
-    fn get_zones(pool: &DatabasePool) -> Vec<Zone> {
-        let mut conn = pool.get_connection();
+    async fn get_zones() -> Vec<Zone> {
+        let zone_repository = get_zone_repository();
 
-        conn.exec_map(
-            r#"
-            SELECT *
-            FROM zones
-        "#,
-            (),
-            Zone::from_row,
-        )
-        .unwrap_or_else(|e| {
+        zone_repository.get_all().await.unwrap_or_else(|e| {
             log_error!("Failed to fetch zones: {}", e);
             Vec::new()
         })
     }
 
-    fn get_records(pool: &DatabasePool, zone_id: i32) -> Vec<Record> {
-        let mut conn = pool.get_connection();
+    async fn get_records(zone_id: i32) -> Vec<Record> {
+        let record_repository = get_record_repository();
 
-        conn.exec_map(
-            r#"
-            SELECT *
-            FROM records
-            WHERE zone_id = ?
-            ORDER BY record_type, name
-        "#,
-            (zone_id,),
-            |row: mysql::Row| Record::from_row(row),
-        )
-        .unwrap_or_else(|e| {
-            log_error!("Failed to fetch records for zone {}: {}", zone_id, e);
-            Vec::new()
-        })
+        record_repository
+            .get_by_zone_id(zone_id)
+            .await
+            .unwrap_or_else(|e| {
+                log_error!("Failed to fetch records for zone {}: {}", zone_id, e);
+                Vec::new()
+            })
     }
 
     fn serialize_include_zone_config(bindizr_config_dir: &str, zones: &[Zone]) -> String {

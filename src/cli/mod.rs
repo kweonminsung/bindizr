@@ -59,7 +59,7 @@ pub async fn bootstrap(is_daemon: bool, config_file: Option<&str>) -> Result<(),
     }
 
     logger::initialize(is_daemon);
-    database::initialize();
+    database::initialize().await;
     rndc::initialize();
     serializer::initialize();
 

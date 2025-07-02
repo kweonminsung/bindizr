@@ -1,4 +1,4 @@
-use crate::database_new::{
+use crate::database::{
     DatabasePool, model::zone_history::ZoneHistory, repository::ZoneHistoryRepository,
 };
 use async_trait::async_trait;
@@ -33,6 +33,28 @@ impl ZoneHistoryRepository for PostgresZoneHistoryRepository {
         .bind(&zone_history.log)
         .bind(zone_history.zone_id)
         .fetch_one(&mut *conn)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        zone_history.id = result.get("id");
+        Ok(zone_history)
+    }
+
+    async fn create_with_transaction(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+        mut zone_history: ZoneHistory,
+    ) -> Result<ZoneHistory, String> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO zone_history (log, zone_id)
+            VALUES ($1, $2)
+            RETURNING id
+            "#,
+        )
+        .bind(&zone_history.log)
+        .bind(zone_history.zone_id)
+        .fetch_one(tx.as_mut())
         .await
         .map_err(|e| e.to_string())?;
 

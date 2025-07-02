@@ -1,4 +1,3 @@
-pub mod common;
 pub mod dns;
 pub mod record;
 pub mod record_history;

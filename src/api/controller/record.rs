@@ -1,9 +1,6 @@
-use crate::{
-    api::{
-        dto::{CreateRecordRequest, GetRecordResponse},
-        service::record::RecordService,
-    },
-    database::DATABASE_POOL,
+use crate::api::{
+    dto::{CreateRecordRequest, GetRecordResponse},
+    service::record::RecordService,
 };
 use axum::{
     Json, Router,
@@ -30,7 +27,7 @@ impl RecordController {
     async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl IntoResponse {
         let zone_id = query.zone_id;
 
-        let raw_records = match RecordService::get_records(&DATABASE_POOL, zone_id) {
+        let raw_records = match RecordService::get_records(zone_id).await {
             Ok(records) => records,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -50,7 +47,7 @@ impl RecordController {
     async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
         let record_id = params.id;
 
-        let raw_record = match RecordService::get_record(&DATABASE_POOL, record_id) {
+        let raw_record = match RecordService::get_record(record_id).await {
             Ok(record) => record,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -65,7 +62,7 @@ impl RecordController {
     }
 
     async fn create_record(Json(body): Json<CreateRecordRequest>) -> impl IntoResponse {
-        let raw_record = match RecordService::create_record(&DATABASE_POOL, &body) {
+        let raw_record = match RecordService::create_record(&body).await {
             Ok(record) => record,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -85,7 +82,7 @@ impl RecordController {
     ) -> impl IntoResponse {
         let record_id = params.id;
 
-        let raw_record = match RecordService::update_record(&DATABASE_POOL, record_id, &body) {
+        let raw_record = match RecordService::update_record(record_id, &body).await {
             Ok(record) => record,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -102,7 +99,7 @@ impl RecordController {
     async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl IntoResponse {
         let record_id = params.id;
 
-        match RecordService::delete_record(&DATABASE_POOL, record_id) {
+        match RecordService::delete_record(record_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Record deleted successfully" });
                 (StatusCode::OK, Json(json_body))

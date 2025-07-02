@@ -1,4 +1,4 @@
-use crate::database_new::{
+use crate::database::{
     DatabasePool, model::zone_history::ZoneHistory, repository::ZoneHistoryRepository,
 };
 use async_trait::async_trait;
@@ -21,6 +21,26 @@ impl ZoneHistoryRepository for MySqlZoneHistoryRepository {
             .bind(&zone_history.log)
             .bind(zone_history.zone_id)
             .execute(&mut *conn)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        zone_history.id = result
+            .last_insert_id()
+            .map(|id| id as i32)
+            .ok_or("Failed to retrieve last insert ID")?;
+
+        Ok(zone_history)
+    }
+
+    async fn create_with_transaction(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+        mut zone_history: ZoneHistory,
+    ) -> Result<ZoneHistory, String> {
+        let result = sqlx::query("INSERT INTO zone_history (log, record_id) VALUES (?, ?)")
+            .bind(&zone_history.log)
+            .bind(zone_history.zone_id)
+            .execute(tx.as_mut())
             .await
             .map_err(|e| e.to_string())?;
 

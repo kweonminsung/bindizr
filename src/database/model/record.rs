@@ -1,44 +1,17 @@
-use crate::database::utils;
-use chrono::{DateTime, Utc};
-use mysql::Value;
 use serde::Serialize;
+use sqlx::FromRow;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Record {
     pub id: i32,
-
     pub name: String, // domain name (e.g.: "www.example.com")
-
+    #[sqlx(try_from = "String")]
     pub record_type: RecordType, // record type
-
     pub value: String, // record value (e.g.: IP address, CNAME, etc.)
-
     pub ttl: Option<i32>, // TTL (seconds)
-
     pub priority: Option<i32>, // priority (for MX and SRV records)
-
-    pub created_at: DateTime<Utc>,
-
-    pub updated_at: DateTime<Utc>,
-
+    pub created_at: String,
     pub zone_id: i32,
-}
-
-impl Record {
-    pub fn from_row(row: mysql::Row) -> Self {
-        Record {
-            id: row.get("id").unwrap(),
-            name: row.get("name").unwrap(),
-            record_type: RecordType::from_str(&row.get::<String, _>("record_type").unwrap())
-                .unwrap(),
-            value: row.get("value").unwrap(),
-            ttl: row.get("ttl").unwrap(),
-            priority: row.get("priority").unwrap(),
-            created_at: utils::parse_mysql_datetime(&row.get::<Value, _>("created_at").unwrap()),
-            updated_at: utils::parse_mysql_datetime(&row.get::<Value, _>("updated_at").unwrap()),
-            zone_id: row.get("zone_id").unwrap(),
-        }
-    }
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -58,6 +31,14 @@ pub enum RecordType {
 impl std::fmt::Display for RecordType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_str())
+    }
+}
+
+impl TryFrom<String> for RecordType {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        RecordType::from_str(&s)
     }
 }
 

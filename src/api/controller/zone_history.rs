@@ -2,10 +2,7 @@ use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{
-    api::{dto::GetZoneHistoryResponse, service::zone_history::ZoneHistoryService},
-    database::DATABASE_POOL,
-};
+use crate::api::{dto::GetZoneHistoryResponse, service::zone_history::ZoneHistoryService};
 
 pub struct ZoneHistoryController;
 
@@ -25,14 +22,13 @@ impl ZoneHistoryController {
     async fn get_zone_histories(Path(params): Path<GetZoneHistoriesParam>) -> impl IntoResponse {
         let zone_id = params.id;
 
-        let raw_zone_histories =
-            match ZoneHistoryService::get_zone_histories(&DATABASE_POOL, zone_id) {
-                Ok(zone_histories) => zone_histories,
-                Err(err) => {
-                    let json_body = json!({ "error": err });
-                    return (StatusCode::BAD_REQUEST, Json(json_body));
-                }
-            };
+        let raw_zone_histories = match ZoneHistoryService::get_zone_histories(zone_id).await {
+            Ok(zone_histories) => zone_histories,
+            Err(err) => {
+                let json_body = json!({ "error": err });
+                return (StatusCode::BAD_REQUEST, Json(json_body));
+            }
+        };
 
         let zone_histories = raw_zone_histories
             .iter()
@@ -46,7 +42,7 @@ impl ZoneHistoryController {
     async fn delete_zone_history(Path(params): Path<DeleteZoneHistoryParam>) -> impl IntoResponse {
         let history_id = params.history_id;
 
-        match ZoneHistoryService::delete_zone_history(&DATABASE_POOL, history_id) {
+        match ZoneHistoryService::delete_zone_history(history_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone history deleted successfully" });
                 (StatusCode::OK, Json(json_body))

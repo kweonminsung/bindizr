@@ -3,6 +3,7 @@ use crate::{
     database::model::api_token::ApiToken,
     log_debug,
 };
+use chrono::DateTime;
 use clap::Subcommand;
 use serde_json::json;
 
@@ -63,10 +64,17 @@ fn create_token(description: Option<String>, expires_in_days: Option<i64>) -> Re
     }
     println!(
         "Created at: {}",
-        token.created_at.format("%Y-%m-%d %H:%M:%S")
+        DateTime::parse_from_rfc3339(&token.created_at)
+            .map_err(|e| format!("Failed to parse created_at: {}", e))?
+            .format("%Y-%m-%d %H:%M:%S")
     );
     if let Some(expires) = token.expires_at {
-        println!("Expires at: {}", expires.format("%Y-%m-%d %H:%M:%S"));
+        println!(
+            "Expires at: {}",
+            DateTime::parse_from_rfc3339(&expires)
+                .map_err(|e| format!("Failed to parse expires_at: {}", e))?
+                .format("%Y-%m-%d %H:%M:%S")
+        );
     } else {
         println!("Expires at: Never");
     }
@@ -99,7 +107,11 @@ fn list_tokens() -> Result<(), String> {
         let desc = token.description.unwrap_or_else(|| "-".to_string());
         let expires = token
             .expires_at
-            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .map(|dt| {
+                DateTime::parse_from_rfc3339(&dt)
+                    .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+                    .unwrap_or_else(|_| "Invalid date".to_string())
+            })
             .unwrap_or_else(|| "Never".to_string());
 
         println!(

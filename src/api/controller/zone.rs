@@ -3,7 +3,6 @@ use crate::{
         dto::{CreateZoneRequest, GetRecordResponse, GetZoneResponse},
         service::{record::RecordService, zone::ZoneService},
     },
-    database::DATABASE_POOL,
     serializer::Serializer,
 };
 use axum::{
@@ -34,7 +33,7 @@ impl ZoneController {
     }
 
     async fn get_zones() -> impl IntoResponse {
-        let raw_zones = match ZoneService::get_zones(&DATABASE_POOL) {
+        let raw_zones = match ZoneService::get_zones().await {
             Ok(zones) => zones,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -58,7 +57,7 @@ impl ZoneController {
         let zone_id = params.id;
         let records_query = query.records;
 
-        let raw_zone = match ZoneService::get_zone(&DATABASE_POOL, zone_id) {
+        let raw_zone = match ZoneService::get_zone(zone_id).await {
             Ok(zone) => zone,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -67,7 +66,7 @@ impl ZoneController {
         };
 
         let raw_records = match records_query {
-            Some(true) => match RecordService::get_records(&DATABASE_POOL, Some(zone_id)) {
+            Some(true) => match RecordService::get_records(Some(zone_id)).await {
                 Ok(records) => records,
                 Err(err) => {
                     let json_body = json!({ "error": err });
@@ -89,7 +88,7 @@ impl ZoneController {
     async fn get_zone_rendered(Path(params): Path<GetZoneParam>) -> impl IntoResponse {
         let zone_id = params.id;
 
-        let raw_zone = match ZoneService::get_zone(&DATABASE_POOL, zone_id) {
+        let raw_zone = match ZoneService::get_zone(zone_id).await {
             Ok(zone) => zone,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -97,7 +96,7 @@ impl ZoneController {
             }
         };
 
-        let raw_records = match RecordService::get_records(&DATABASE_POOL, Some(zone_id)) {
+        let raw_records = match RecordService::get_records(Some(zone_id)).await {
             Ok(records) => records,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -115,7 +114,7 @@ impl ZoneController {
     }
 
     async fn create_zone(Json(body): Json<CreateZoneRequest>) -> impl IntoResponse {
-        let raw_zone = match ZoneService::create_zone(&DATABASE_POOL, &body) {
+        let raw_zone = match ZoneService::create_zone(&body).await {
             Ok(zone) => zone,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -135,7 +134,7 @@ impl ZoneController {
     ) -> impl IntoResponse {
         let zone_id = params.id;
 
-        let raw_zone = match ZoneService::update_zone(&DATABASE_POOL, zone_id, &body) {
+        let raw_zone = match ZoneService::update_zone(zone_id, &body).await {
             Ok(zone) => zone,
             Err(err) => {
                 let json_body = json!({ "error": err });
@@ -152,7 +151,7 @@ impl ZoneController {
     async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl IntoResponse {
         let zone_id = params.id;
 
-        match ZoneService::delete_zone(&DATABASE_POOL, zone_id) {
+        match ZoneService::delete_zone(zone_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone deleted successfully" });
                 (StatusCode::OK, Json(json_body))

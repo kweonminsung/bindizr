@@ -88,7 +88,6 @@ pub struct GetZoneHistoryResponse {
     pub id: i32,
     pub log: String,
     pub created_at: String,
-    pub updated_at: String,
     pub zone_id: i32,
 }
 impl GetZoneHistoryResponse {
@@ -97,7 +96,6 @@ impl GetZoneHistoryResponse {
             id: zone_history.id,
             log: zone_history.log.clone(),
             created_at: zone_history.created_at.to_string(),
-            updated_at: zone_history.updated_at.to_string(),
             zone_id: zone_history.zone_id,
         }
     }
@@ -108,7 +106,6 @@ pub struct GetRecordHistoryResponse {
     pub id: i32,
     pub log: String,
     pub created_at: String,
-    pub updated_at: String,
     pub record_id: i32,
 }
 impl GetRecordHistoryResponse {
@@ -117,7 +114,6 @@ impl GetRecordHistoryResponse {
             id: record_history.id,
             log: record_history.log.clone(),
             created_at: record_history.created_at.to_string(),
-            updated_at: record_history.updated_at.to_string(),
             record_id: record_history.record_id,
         }
     }
