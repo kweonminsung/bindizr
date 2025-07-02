@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
 // Structure for basic creation of SOA records and basic creation of NS records
@@ -14,5 +15,5 @@ pub struct Zone {
     pub retry: i32,            // retry period (seconds)
     pub expire: i32,           // expire period (seconds)
     pub minimum_ttl: i32,      // minimum TTL (seconds)
-    pub created_at: String,
+    pub created_at: DateTime<Utc>,
 }

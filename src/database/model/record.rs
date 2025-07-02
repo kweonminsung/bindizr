@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::FromRow;
 
@@ -10,7 +11,7 @@ pub struct Record {
     pub value: String, // record value (e.g.: IP address, CNAME, etc.)
     pub ttl: Option<i32>, // TTL (seconds)
     pub priority: Option<i32>, // priority (for MX and SRV records)
-    pub created_at: String,
+    pub created_at: DateTime<Utc>,
     pub zone_id: i32,
 }
 

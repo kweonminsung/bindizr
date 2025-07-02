@@ -1,5 +1,5 @@
 use crate::{config, log_error, log_info};
-use sqlx::{Any, AnyPool, Pool, Transaction, pool::PoolConnection};
+use sqlx::{MySql, Pool, Postgres, Sqlite, Transaction};
 use std::sync::OnceLock;
 
 pub mod model;
@@ -9,10 +9,11 @@ mod utils;
 
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
 
-#[derive(Debug, Clone)]
-pub struct DatabasePool {
-    pool: Pool<Any>,
-    database_type: DatabaseType,
+#[derive(Debug)]
+pub enum DatabasePool {
+    MySQL(Pool<MySql>),
+    PostgreSQL(Pool<Postgres>),
+    SQLite(Pool<Sqlite>),
 }
 
 #[derive(Debug, Clone)]
@@ -52,9 +53,12 @@ pub async fn initialize() {
         }
     };
 
-    sqlx::any::install_default_drivers();
+    let pool = match database_type {
+        DatabaseType::MySQL => DatabasePool::new_mysql(&database_url).await,
+        DatabaseType::PostgreSQL => DatabasePool::new_postgres(&database_url).await,
+        DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await,
+    };
 
-    let pool = DatabasePool::new(&database_url, database_type).await;
     DATABASE_POOL
         .set(pool)
         .expect("Failed to set database pool");
@@ -67,16 +71,62 @@ pub fn get_pool() -> &'static DatabasePool {
 }
 
 impl DatabasePool {
-    pub async fn new(url: &str, database_type: DatabaseType) -> Self {
-        let pool = Pool::<Any>::connect(url).await.unwrap_or_else(|e| {
-            log_error!("Failed to create database pool: {}", e);
+    pub async fn new_mysql(url: &str) -> Self {
+        let pool = Pool::<MySql>::connect(url).await.unwrap_or_else(|e| {
+            log_error!("Failed to create MySQL database pool: {}", e);
             std::process::exit(1);
         });
 
-        let database_pool = DatabasePool {
-            pool,
-            database_type,
-        };
+        let database_pool = DatabasePool::MySQL(pool);
+
+        // Create tables
+        if let Err(e) = database_pool.create_tables().await {
+            log_error!("Failed to create tables: {}", e);
+            std::process::exit(1);
+        }
+
+        database_pool
+    }
+
+    pub async fn new_postgres(url: &str) -> Self {
+        let pool = Pool::<Postgres>::connect(url).await.unwrap_or_else(|e| {
+            log_error!("Failed to create PostgreSQL database pool: {}", e);
+            std::process::exit(1);
+        });
+
+        let database_pool = DatabasePool::PostgreSQL(pool);
+
+        // Create tables
+        if let Err(e) = database_pool.create_tables().await {
+            log_error!("Failed to create tables: {}", e);
+            std::process::exit(1);
+        }
+
+        database_pool
+    }
+
+    pub async fn new_sqlite(url: &str) -> Self {
+        let pool = Pool::<Sqlite>::connect(url).await.unwrap_or_else(|e| {
+            log_error!("Failed to create SQLite database pool: {}", e);
+            std::process::exit(1);
+        });
+
+        let database_pool = DatabasePool::SQLite(pool);
+
+        // Enable foreign key constraints for SQLite
+        if let DatabasePool::SQLite(ref pool) = database_pool {
+            let mut conn = pool.acquire().await.unwrap_or_else(|e| {
+                log_error!("Failed to acquire SQLite connection: {}", e);
+                std::process::exit(1);
+            });
+            sqlx::query("PRAGMA foreign_keys = ON")
+                .execute(&mut *conn)
+                .await
+                .unwrap_or_else(|e| {
+                    log_error!("Failed to enable foreign keys: {}", e);
+                    std::process::exit(1);
+                });
+        }
 
         // Create tables
         if let Err(e) = database_pool.create_tables().await {
@@ -88,33 +138,74 @@ impl DatabasePool {
     }
 
     async fn create_tables(&self) -> Result<(), String> {
-        let mut conn = self.get_connection().await?;
-
         // Get table creation queries from schema module based on database type
-        let queries = match self.database_type {
-            DatabaseType::MySQL => schema::get_mysql_table_creation_queries(),
-            DatabaseType::PostgreSQL => schema::get_postgres_table_creation_queries(),
-            DatabaseType::SQLite => schema::get_sqlite_table_creation_queries(),
+        let queries = match self {
+            DatabasePool::MySQL(_) => schema::get_mysql_table_creation_queries(),
+            DatabasePool::PostgreSQL(_) => schema::get_postgres_table_creation_queries(),
+            DatabasePool::SQLite(_) => schema::get_sqlite_table_creation_queries(),
         };
 
-        for query in queries {
-            sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
-                log_error!("Failed to execute query '{}': {}", query, e);
-                e.to_string()
-            })?;
+        match self {
+            DatabasePool::MySQL(pool) => {
+                for query in queries {
+                    let mut conn = pool.acquire().await.map_err(|e| {
+                        log_error!("Failed to acquire MySQL connection: {}", e);
+                        e.to_string()
+                    })?;
+                    sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
+                        log_error!("Failed to execute query '{}': {}", query, e);
+                        e.to_string()
+                    })?;
+                }
+            }
+            DatabasePool::PostgreSQL(pool) => {
+                for query in queries {
+                    let mut conn = pool.acquire().await.map_err(|e| {
+                        log_error!("Failed to acquire PostgreSQL connection: {}", e);
+                        e.to_string()
+                    })?;
+                    sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
+                        log_error!("Failed to execute query '{}': {}", query, e);
+                        e.to_string()
+                    })?;
+                }
+            }
+            DatabasePool::SQLite(pool) => {
+                for query in queries {
+                    let mut conn = pool.acquire().await.map_err(|e| {
+                        log_error!("Failed to acquire SQLite connection: {}", e);
+                        e.to_string()
+                    })?;
+                    // Enable foreign key constraints for each connection
+                    sqlx::query("PRAGMA foreign_keys = ON")
+                        .execute(&mut *conn)
+                        .await
+                        .map_err(|e| {
+                            log_error!("Failed to enable foreign keys: {}", e);
+                            e.to_string()
+                        })?;
+                    sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
+                        log_error!("Failed to execute query '{}': {}", query, e);
+                        e.to_string()
+                    })?;
+                }
+            }
         }
         Ok(())
     }
 
-    async fn get_connection(&self) -> Result<PoolConnection<Any>, String> {
-        self.pool.acquire().await.map_err(|e| {
-            log_error!("Failed to acquire database connection: {}", e);
-            e.to_string()
-        })
+    pub async fn get_connection(&self) -> Result<sqlx::pool::PoolConnection<sqlx::Any>, String> {
+        unimplemented!(
+            "get_connection() is not implemented for the new version, use specific database pools directly"
+        )
     }
 
-    pub fn get_database_type(&self) -> &DatabaseType {
-        &self.database_type
+    pub fn get_database_type(&self) -> DatabaseType {
+        match self {
+            DatabasePool::MySQL(_) => DatabaseType::MySQL,
+            DatabasePool::PostgreSQL(_) => DatabaseType::PostgreSQL,
+            DatabasePool::SQLite(_) => DatabaseType::SQLite,
+        }
     }
 }
 
@@ -144,10 +235,34 @@ pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     repository::RepositoryFactory::create_api_token_repository(pool)
 }
 
-pub async fn start_transaction() -> Result<Transaction<'static, Any>, sqlx::Error> {
-    let pool: AnyPool = get_pool().pool.clone();
+pub async fn start_mysql_transaction() -> Result<Transaction<'static, MySql>, sqlx::Error> {
+    let pool = get_pool();
+    if let DatabasePool::MySQL(pool) = pool {
+        pool.begin().await
+    } else {
+        Err(sqlx::Error::Protocol("Expected MySQL pool".into()))
+    }
+}
 
-    let tx = pool.begin().await?;
+pub async fn start_postgres_transaction() -> Result<Transaction<'static, Postgres>, sqlx::Error> {
+    let pool = get_pool();
+    if let DatabasePool::PostgreSQL(pool) = pool {
+        pool.begin().await
+    } else {
+        Err(sqlx::Error::Protocol("Expected PostgreSQL pool".into()))
+    }
+}
 
-    Ok(tx)
+pub async fn start_sqlite_transaction() -> Result<Transaction<'static, Sqlite>, sqlx::Error> {
+    let pool = get_pool();
+    if let DatabasePool::SQLite(pool) = pool {
+        let mut tx = pool.begin().await?;
+        // Enable foreign key constraints for the transaction
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&mut *tx)
+            .await?;
+        Ok(tx)
+    } else {
+        Err(sqlx::Error::Protocol("Expected SQLite pool".into()))
+    }
 }

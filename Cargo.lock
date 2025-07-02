@@ -229,7 +229,9 @@ dependencies = [
  "sqlx",
  "tempfile",
  "tokio",
+ "tower",
  "tower-http",
+ "tower-service",
 ]
 
 [[package]]

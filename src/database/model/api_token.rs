@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -6,7 +7,7 @@ pub struct ApiToken {
     pub id: i32,
     pub token: String,
     pub description: Option<String>,
-    pub created_at: String,
-    pub expires_at: Option<String>,
-    pub last_used_at: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
 }

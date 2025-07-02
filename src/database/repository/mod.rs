@@ -8,9 +8,9 @@ use super::model::{
     zone::Zone,
     zone_history::ZoneHistory,
 };
-use crate::database::{DatabasePool, DatabaseType};
+use crate::database::DatabasePool;
 use async_trait::async_trait;
-use sqlx::Transaction;
+use sqlx::{Database, Transaction};
 
 // Zone Repository Trait
 #[allow(dead_code)]
@@ -19,7 +19,7 @@ pub trait ZoneRepository: Send + Sync {
     async fn create(&self, zone: Zone) -> Result<Zone, String>;
     async fn create_with_transaction(
         &self,
-        tx: &mut Transaction<'_, sqlx::Any>,
+        tx: &mut Transaction<'_, impl Database>,
         zone: Zone,
     ) -> Result<Zone, String>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, String>;
@@ -28,13 +28,13 @@ pub trait ZoneRepository: Send + Sync {
     async fn update(&self, zone: Zone) -> Result<Zone, String>;
     async fn update_with_transaction(
         &self,
-        tx: &mut Transaction<'_, sqlx::Any>,
+        tx: &mut Transaction<'_, impl Database>,
         zone: Zone,
     ) -> Result<Zone, String>;
     async fn delete(&self, id: i32) -> Result<(), String>;
     async fn delete_with_transaction(
         &self,
-        tx: &mut Transaction<'_, sqlx::Any>,
+        tx: &mut Transaction<'_, impl Database>,
         id: i32,
     ) -> Result<(), String>;
 }
@@ -46,7 +46,7 @@ pub trait RecordRepository: Send + Sync {
     async fn create(&self, record: Record) -> Result<Record, String>;
     async fn create_with_transaction(
         &self,
-        tx: &mut Transaction<'_, sqlx::Any>,
+        tx: &mut Transaction<'_, impl Database>,
         record: Record,
     ) -> Result<Record, String>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, String>;
@@ -60,13 +60,13 @@ pub trait RecordRepository: Send + Sync {
     async fn update(&self, record: Record) -> Result<Record, String>;
     async fn update_with_transaction(
         &self,
-        tx: &mut Transaction<'_, sqlx::Any>,
+        tx: &mut Transaction<'_, impl Database>,
         record: Record,
     ) -> Result<Record, String>;
     async fn delete(&self, id: i32) -> Result<(), String>;
     async fn delete_with_transaction(
         &self,
-        tx: &mut Transaction<'_, sqlx::Any>,
+        tx: &mut Transaction<'_, impl Database>,
         id: i32,
     ) -> Result<(), String>;
 }
@@ -78,7 +78,7 @@ pub trait ZoneHistoryRepository: Send + Sync {
     async fn create(&self, zone_history: ZoneHistory) -> Result<ZoneHistory, String>;
     async fn create_with_transaction(
         &self,
-        tx: &mut Transaction<'_, sqlx::Any>,
+        tx: &mut Transaction<'_, impl Database>,
         zone_history: ZoneHistory,
     ) -> Result<ZoneHistory, String>;
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneHistory>, String>;
@@ -93,7 +93,7 @@ pub trait RecordHistoryRepository: Send + Sync {
     async fn create(&self, record_history: RecordHistory) -> Result<RecordHistory, String>;
     async fn create_with_transaction(
         &self,
-        tx: &mut Transaction<'_, sqlx::Any>,
+        tx: &mut Transaction<'_, impl Database>,
         record_history: RecordHistory,
     ) -> Result<RecordHistory, String>;
     async fn get_by_id(&self, id: i32) -> Result<Option<RecordHistory>, String>;
@@ -117,58 +117,73 @@ pub struct RepositoryFactory;
 
 impl RepositoryFactory {
     pub fn create_zone_repository(pool: &DatabasePool) -> Box<dyn ZoneRepository> {
-        match pool.get_database_type() {
-            DatabaseType::MySQL | DatabaseType::SQLite => {
-                Box::new(mysql::MySqlZoneRepository::new(pool.clone()))
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlZoneRepository::new(mysql_pool.clone()))
             }
-            DatabaseType::PostgreSQL => {
-                Box::new(postgres::PostgresZoneRepository::new(pool.clone()))
+            DatabasePool::PostgreSQL(postgres_pool) => {
+                Box::new(postgres::PostgresZoneRepository::new(postgres_pool.clone()))
+            }
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteZoneRepository::new(sqlite_pool.clone()))
             }
         }
     }
 
     pub fn create_record_repository(pool: &DatabasePool) -> Box<dyn RecordRepository> {
-        match pool.get_database_type() {
-            DatabaseType::MySQL | DatabaseType::SQLite => {
-                Box::new(mysql::MySqlRecordRepository::new(pool.clone()))
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlRecordRepository::new(mysql_pool.clone()))
             }
-            DatabaseType::PostgreSQL => {
-                Box::new(postgres::PostgresRecordRepository::new(pool.clone()))
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresRecordRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteRecordRepository::new(sqlite_pool.clone()))
             }
         }
     }
 
     pub fn create_zone_history_repository(pool: &DatabasePool) -> Box<dyn ZoneHistoryRepository> {
-        match pool.get_database_type() {
-            DatabaseType::MySQL | DatabaseType::SQLite => {
-                Box::new(mysql::MySqlZoneHistoryRepository::new(pool.clone()))
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlZoneHistoryRepository::new(mysql_pool.clone()))
             }
-            DatabaseType::PostgreSQL => {
-                Box::new(postgres::PostgresZoneHistoryRepository::new(pool.clone()))
-            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresZoneHistoryRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteZoneHistoryRepository::new(sqlite_pool.clone()),
+            ),
         }
     }
 
     pub fn create_record_history_repository(
         pool: &DatabasePool,
     ) -> Box<dyn RecordHistoryRepository> {
-        match pool.get_database_type() {
-            DatabaseType::MySQL | DatabaseType::SQLite => {
-                Box::new(mysql::MySqlRecordHistoryRepository::new(pool.clone()))
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlRecordHistoryRepository::new(mysql_pool.clone()))
             }
-            DatabaseType::PostgreSQL => {
-                Box::new(postgres::PostgresRecordHistoryRepository::new(pool.clone()))
-            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresRecordHistoryRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteRecordHistoryRepository::new(sqlite_pool.clone()),
+            ),
         }
     }
 
     pub fn create_api_token_repository(pool: &DatabasePool) -> Box<dyn ApiTokenRepository> {
-        match pool.get_database_type() {
-            DatabaseType::MySQL | DatabaseType::SQLite => {
-                Box::new(mysql::MySqlApiTokenRepository::new(pool.clone()))
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlApiTokenRepository::new(mysql_pool.clone()))
             }
-            DatabaseType::PostgreSQL => {
-                Box::new(postgres::PostgresApiTokenRepository::new(pool.clone()))
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresApiTokenRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteApiTokenRepository::new(sqlite_pool.clone()))
             }
         }
     }
