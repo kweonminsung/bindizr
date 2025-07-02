@@ -7,7 +7,7 @@ use bindizr::{
     api::controller::ApiController,
     config,
     database::{
-        self,
+        self, DatabasePool,
         model::{
             record::{Record, RecordType},
             zone::Zone,
@@ -17,39 +17,75 @@ use bindizr::{
 };
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
-use std::env;
 use tempfile::NamedTempFile;
 use tower::ServiceExt;
 
 pub struct TestContext {
     pub app: Router,
     pub db_pool: SqlitePool,
-    pub _temp_file: NamedTempFile, // Keep alive for test duration
+    pub _temp_db_file: NamedTempFile, // Keep alive for test duration
+    pub _temp_config_file: NamedTempFile, // Keep alive for test duration
 }
 
 impl TestContext {
     pub async fn new() -> Self {
         // Create temporary SQLite database
-        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
-        let db_path = temp_file.path().to_str().unwrap();
+        let temp_db_file = NamedTempFile::new().expect("Failed to create temp file");
+        let db_path = temp_db_file.path().to_str().unwrap();
 
-        // Set environment variables for test configuration
-        env::set_var("DATABASE_URL", format!("sqlite://{}", db_path));
-        env::set_var("DATABASE_TYPE", "sqlite");
-        env::set_var("API_HOST", "127.0.0.1");
-        env::set_var("API_PORT", "3000");
-        env::set_var("API_REQUIRE_AUTHENTICATION", "false");
-        env::set_var("LOG_LEVEL", "debug");
-        env::set_var("LOG_TO_FILE", "false");
+        // Create temporary configuration file
+        let temp_config_file = NamedTempFile::new().expect("Failed to create temp config file");
+        let config_path = temp_config_file.path().to_str().unwrap();
+
+        // Write default configuration to temp file
+        std::fs::write(
+            config_path,
+            format!(
+                r#"
+            [api]
+            host = "127.0.0.1"
+            port = 3000
+            require_authentication = false
+
+            [database]
+            type = "sqlite"
+
+            [database.mysql]
+            server_url = ""
+
+            [database.sqlite]
+            file_path = "{}"
+
+            [database.postgresql]
+            server_url = ""
+
+            [bind]
+            bind_config_path = "/etc/bind"
+            rndc_server_url = "127.0.0.1:953"
+            rndc_algorithm = "sha256"
+            rndc_secret_key = "cqEa3Oo1CnCgKivL6hdUwuCzlfRH68yeAdrsGeF3Pu0="
+
+            [logging]
+            log_level = "debug"
+            enable_file_logging = false
+            log_file_path = "/var/log/bindizr"
+            "#,
+                db_path
+            ),
+        )
+        .unwrap();
 
         // Initialize components
-        config::initialize();
+        config::initialize_from_file(&config_path);
         logger::initialize(false);
         database::initialize().await;
         serializer::initialize();
 
         // Get database pool
-        let db_pool = database::get_pool().clone();
+        let db_pool = match database::get_pool() {
+            DatabasePool::SQLite(pool) => pool.clone(),
+            _ => panic!("Expected SQLite pool for tests"),
+        };
 
         // Create API router
         let app = ApiController::routes().await;
@@ -57,7 +93,8 @@ impl TestContext {
         Self {
             app,
             db_pool,
-            _temp_file: temp_file,
+            _temp_db_file: temp_db_file,
+            _temp_config_file: temp_config_file,
         }
     }
 
@@ -74,7 +111,7 @@ impl TestContext {
             retry: 3600,
             expire: 604800,
             minimum_ttl: 86400,
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: chrono::Utc::now(),
         };
 
         let result = sqlx::query(
@@ -112,7 +149,7 @@ impl TestContext {
             value: "192.168.1.100".to_string(),
             ttl: Some(3600),
             priority: None,
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: chrono::Utc::now(),
             zone_id,
         };
 

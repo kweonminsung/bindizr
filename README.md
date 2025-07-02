@@ -123,8 +123,17 @@ host = "127.0.0.1"             # HTTP API host
 port = 3000                    # HTTP API port
 require_authentication = true  # Enable API authentication (true/false)
 
-[mysql]
-server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
+[database]
+type = "mysql"                 # Database type: mysql, sqlite, postgresql
+
+[database.mysql]
+server_url = "mysql://user:password@hostname:port/database"      # Mysql server configuration
+
+[database.sqlite]
+file_path = "bindizr.db"       # SQLite database file path
+
+[database.postgresql]
+server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
 [bind]
 bind_config_path = "/etc/bind"       # Bind config path
