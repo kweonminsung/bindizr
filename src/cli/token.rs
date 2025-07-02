@@ -1,7 +1,5 @@
 use crate::{
-    daemon::{self, socket::client::DAEMON_SOCKET_CLIENT},
-    database::model::api_token::ApiToken,
-    log_debug,
+    daemon::socket::client::DaemonSocketClient, database::model::api_token::ApiToken, log_debug,
 };
 use chrono::DateTime;
 use clap::Subcommand;
@@ -27,28 +25,34 @@ pub enum TokenCommand {
     },
 }
 
-pub fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
-    daemon::socket::client::initialize();
+pub async fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
+    let client = DaemonSocketClient::new();
 
     match subcommand {
         TokenCommand::Create {
             description,
             expires_in_days,
-        } => create_token(description, Some(expires_in_days)),
-        TokenCommand::List => list_tokens(),
-        TokenCommand::Delete { token_id } => delete_token(token_id),
+        } => create_token(&client, description, Some(expires_in_days)).await,
+        TokenCommand::List => list_tokens(&client).await,
+        TokenCommand::Delete { token_id } => delete_token(&client, token_id).await,
     }
 }
 
-fn create_token(description: Option<String>, expires_in_days: Option<i64>) -> Result<(), String> {
+async fn create_token(
+    client: &DaemonSocketClient,
+    description: Option<String>,
+    expires_in_days: Option<i64>,
+) -> Result<(), String> {
     // Create socket request
-    let res = DAEMON_SOCKET_CLIENT.send_command(
-        "token_create",
-        Some(json!({
-            "description": description,
-            "expires_in_days": expires_in_days,
-        })),
-    )?;
+    let res = client
+        .send_command(
+            "token_create",
+            Some(json!({
+                "description": description,
+                "expires_in_days": expires_in_days,
+            })),
+        )
+        .await?;
 
     log_debug!("Token creation result: {:?}", res);
 
@@ -82,9 +86,9 @@ fn create_token(description: Option<String>, expires_in_days: Option<i64>) -> Re
     Ok(())
 }
 
-fn list_tokens() -> Result<(), String> {
+async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
     // Create socket request
-    let res = DAEMON_SOCKET_CLIENT.send_command("token_list", None)?;
+    let res = client.send_command("token_list", None).await?;
 
     log_debug!("Token list result: {:?}", res);
 
@@ -123,9 +127,11 @@ fn list_tokens() -> Result<(), String> {
     Ok(())
 }
 
-fn delete_token(token_id: i32) -> Result<(), String> {
+async fn delete_token(client: &DaemonSocketClient, token_id: i32) -> Result<(), String> {
     // Create socket request
-    let res = DAEMON_SOCKET_CLIENT.send_command("token_delete", Some(json!({ "id": token_id })))?;
+    let res = client
+        .send_command("token_delete", Some(json!({ "id": token_id })))
+        .await?;
 
     log_debug!("Token deletion result: {:?}", res);
 

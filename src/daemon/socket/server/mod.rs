@@ -8,14 +8,14 @@ use crate::daemon::socket::socket::SOCKET_FILE_PATH;
 use crate::{log_error, log_info};
 use serde_json::json;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::{UnixListener, UnixStream};
 
-async fn handle_client(mut stream: UnixStream) {
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
+async fn handle_client(stream: UnixStream) {
+    let mut reader = BufReader::new(stream);
     let mut line = String::new();
 
-    if reader.read_line(&mut line).is_ok() {
+    if reader.read_line(&mut line).await.is_ok() {
         let parsed: Result<DaemonCommand, _> = serde_json::from_str(&line);
 
         let raw_response = match parsed {
@@ -42,12 +42,13 @@ async fn handle_client(mut stream: UnixStream) {
             Err(e) => json_response_error(&e),
         };
 
-        let _ = stream.write_all(response.as_bytes());
-        let _ = stream.write_all(b"\n");
+        let mut stream = reader.into_inner();
+        let _ = stream.write_all(response.as_bytes()).await;
+        let _ = stream.write_all(b"\n").await;
     }
 }
 
-pub fn initialize() -> Result<(), String> {
+pub async fn initialize() -> Result<(), String> {
     let _ = fs::remove_file(SOCKET_FILE_PATH); // Remove old socket file
 
     let listener = UnixListener::bind(SOCKET_FILE_PATH)
@@ -55,12 +56,16 @@ pub fn initialize() -> Result<(), String> {
 
     log_info!("Daemon socket server listening on {}", SOCKET_FILE_PATH);
 
-    std::thread::spawn(async move || {
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => handle_client(stream).await,
+    tokio::spawn(async move {
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    tokio::spawn(async move {
+                        handle_client(stream).await;
+                    });
+                }
                 Err(e) => {
-                    log_error!("Error: {}", e);
+                    log_error!("Error accepting connection: {}", e);
                     continue;
                 }
             }

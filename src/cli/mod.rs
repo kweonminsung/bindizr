@@ -63,7 +63,7 @@ pub async fn bootstrap(is_daemon: bool, config_file: Option<&str>) -> Result<(),
     rndc::initialize();
     serializer::initialize();
 
-    daemon::socket::server::initialize()?;
+    daemon::socket::server::initialize().await?;
     api::initialize().await?;
 
     Ok(())
@@ -79,10 +79,10 @@ pub async fn execute() {
             config,
             silent,
         } => start::handle_command(foreground, config, silent).await,
-        Command::Stop => stop::handle_command(),
-        Command::Status => status::handle_command(),
-        Command::Dns { subcommand } => dns::handle_command(subcommand),
-        Command::Token { subcommand } => token::handle_command(subcommand),
+        Command::Stop => stop::handle_command().await,
+        Command::Status => status::handle_command().await,
+        Command::Dns { subcommand } => dns::handle_command(subcommand).await,
+        Command::Token { subcommand } => token::handle_command(subcommand).await,
     } {
         eprintln!("Error: {}", e);
         std::process::exit(1);
