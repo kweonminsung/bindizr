@@ -31,9 +31,9 @@ pub async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, St
     let created_token = api_token_repository
         .create(ApiToken {
             id: 0, // Will be set by the database
-            token: token,
+            token,
             description: description.map(|d| d.to_string()),
-            expires_at: expires_at,
+            expires_at,
             created_at: Utc::now(), // Will be set by the database
             last_used_at: None,
         })

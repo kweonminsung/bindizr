@@ -120,7 +120,7 @@ impl RecordService {
             .create(Record {
                 id: 0, // Will be set by the database
                 name: create_record_request.name.clone(),
-                record_type: record_type,
+                record_type,
                 value: create_record_request.value.clone(),
                 ttl: create_record_request.ttl,
                 priority: create_record_request.priority,

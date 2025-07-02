@@ -193,20 +193,6 @@ impl DatabasePool {
         }
         Ok(())
     }
-
-    pub async fn get_connection(&self) -> Result<sqlx::pool::PoolConnection<sqlx::Any>, String> {
-        unimplemented!(
-            "get_connection() is not implemented for the new version, use specific database pools directly"
-        )
-    }
-
-    pub fn get_database_type(&self) -> DatabaseType {
-        match self {
-            DatabasePool::MySQL(_) => DatabaseType::MySQL,
-            DatabasePool::PostgreSQL(_) => DatabaseType::PostgreSQL,
-            DatabasePool::SQLite(_) => DatabaseType::SQLite,
-        }
-    }
 }
 
 // Repository convenience functions - returns trait objects for runtime dispatch

@@ -26,7 +26,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         )
         .bind(&token.token)
         .bind(&token.description)
-        .bind(&token.expires_at)
+        .bind(token.expires_at)
         .fetch_one(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;
@@ -87,8 +87,8 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
             "#,
         )
         .bind(&token.description)
-        .bind(&token.expires_at)
-        .bind(&token.last_used_at)
+        .bind(token.expires_at)
+        .bind(token.last_used_at)
         .bind(token.id)
         .execute(&mut *conn)
         .await

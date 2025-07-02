@@ -25,7 +25,7 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
         )
         .bind(&token.token)
         .bind(&token.description)
-        .bind(&token.expires_at)
+        .bind(token.expires_at)
         .execute(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;
@@ -86,8 +86,8 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
             "#,
         )
         .bind(&token.description)
-        .bind(&token.expires_at)
-        .bind(&token.last_used_at)
+        .bind(token.expires_at)
+        .bind(token.last_used_at)
         .bind(token.id)
         .execute(&mut *conn)
         .await

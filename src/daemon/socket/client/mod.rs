@@ -9,6 +9,12 @@ use tokio::{
 
 pub struct DaemonSocketClient;
 
+impl Default for DaemonSocketClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DaemonSocketClient {
     pub fn new() -> Self {
         DaemonSocketClient
