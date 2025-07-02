@@ -1,16 +1,16 @@
 use crate::database::{
-    DatabasePool,
     model::record::{Record, RecordType},
     repository::RecordRepository,
 };
 use async_trait::async_trait;
+use sqlx::{MySql, Pool};
 
 pub struct MySqlRecordRepository {
-    pool: DatabasePool,
+    pool: Pool<MySql>,
 }
 
 impl MySqlRecordRepository {
-    pub fn new(pool: DatabasePool) -> Self {
+    pub fn new(pool: Pool<MySql>) -> Self {
         MySqlRecordRepository { pool }
     }
 }
@@ -18,7 +18,7 @@ impl MySqlRecordRepository {
 #[async_trait]
 impl RecordRepository for MySqlRecordRepository {
     async fn create(&self, mut record: Record) -> Result<Record, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let result = sqlx::query(
             r#"
@@ -36,45 +36,13 @@ impl RecordRepository for MySqlRecordRepository {
         .await
         .map_err(|e| e.to_string())?;
 
-        record.id = result
-            .last_insert_id()
-            .map(|id| id as i32)
-            .ok_or("Failed to retrieve last insert ID")?;
-
-        Ok(record)
-    }
-
-    async fn create_with_transaction(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
-        mut record: Record,
-    ) -> Result<Record, String> {
-        let result = sqlx::query(
-            r#"
-            INSERT INTO records (name, record_type, value, ttl, priority, zone_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&record.name)
-        .bind(record.record_type.to_string())
-        .bind(&record.value)
-        .bind(record.ttl)
-        .bind(record.priority)
-        .bind(record.zone_id)
-        .execute(tx.as_mut())
-        .await
-        .map_err(|e| e.to_string())?;
-
-        record.id = result
-            .last_insert_id()
-            .map(|id| id as i32)
-            .ok_or("Failed to retrieve last insert ID")?;
+        record.id = result.last_insert_id() as i32;
 
         Ok(record)
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let record = sqlx::query_as::<_, Record>("SELECT * FROM records WHERE id = ?")
             .bind(id)
@@ -86,7 +54,7 @@ impl RecordRepository for MySqlRecordRepository {
     }
 
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let records = sqlx::query_as::<_, Record>(
             "SELECT * FROM records WHERE zone_id = ? ORDER BY created_at DESC",
@@ -104,7 +72,7 @@ impl RecordRepository for MySqlRecordRepository {
         name: &str,
         record_type: &RecordType,
     ) -> Result<Option<Record>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let record =
             sqlx::query_as::<_, Record>("SELECT * FROM records WHERE name = ? AND record_type = ?")
@@ -118,7 +86,7 @@ impl RecordRepository for MySqlRecordRepository {
     }
 
     async fn get_all(&self) -> Result<Vec<Record>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let records = sqlx::query_as::<_, Record>("SELECT * FROM records ORDER BY created_at DESC")
             .fetch_all(&mut *conn)
@@ -129,12 +97,12 @@ impl RecordRepository for MySqlRecordRepository {
     }
 
     async fn update(&self, record: Record) -> Result<Record, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         sqlx::query(
             r#"
             UPDATE records
-            SET name = ?, record_type = ?, content = ?, ttl = ?
+            SET name = ?, record_type = ?, value = ?, ttl = ?
             WHERE id = ?
         "#,
         )
@@ -150,48 +118,11 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
-    async fn update_with_transaction(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
-        record: Record,
-    ) -> Result<Record, String> {
-        sqlx::query(
-            r#"
-            UPDATE records
-            SET name = ?, record_type = ?, value = ?, ttl = ?
-            WHERE id = ?
-        "#,
-        )
-        .bind(&record.name)
-        .bind(&record.record_type.to_string())
-        .bind(&record.value)
-        .bind(record.ttl)
-        .bind(record.id)
-        .execute(tx.as_mut())
-        .await
-        .map_err(|e| e.to_string())?;
-
-        Ok(record)
-    }
-
     async fn delete(&self, id: i32) -> Result<(), String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
         sqlx::query("DELETE FROM records WHERE id = ?")
             .bind(id)
             .execute(&mut *conn)
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    async fn delete_with_transaction(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
-        id: i32,
-    ) -> Result<(), String> {
-        sqlx::query("DELETE FROM records WHERE id = ?")
-            .bind(id)
-            .execute(tx.as_mut())
             .await
             .map_err(|e| e.to_string())?;
         Ok(())

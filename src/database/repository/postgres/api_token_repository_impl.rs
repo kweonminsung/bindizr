@@ -1,13 +1,13 @@
-use crate::database::{DatabasePool, model::api_token::ApiToken, repository::ApiTokenRepository};
+use crate::database::{model::api_token::ApiToken, repository::ApiTokenRepository};
 use async_trait::async_trait;
-use sqlx::Row;
+use sqlx::{Pool, Postgres, Row};
 
 pub struct PostgresApiTokenRepository {
-    pool: DatabasePool,
+    pool: Pool<Postgres>,
 }
 
 impl PostgresApiTokenRepository {
-    pub fn new(pool: DatabasePool) -> Self {
+    pub fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
 }
@@ -15,11 +15,7 @@ impl PostgresApiTokenRepository {
 #[async_trait]
 impl ApiTokenRepository for PostgresApiTokenRepository {
     async fn create(&self, mut token: ApiToken) -> Result<ApiToken, String> {
-        let mut conn = self
-            .pool
-            .get_connection()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let result = sqlx::query(
             r#"
@@ -40,11 +36,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, String> {
-        let mut conn = self
-            .pool
-            .get_connection()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let token = sqlx::query_as::<_, ApiToken>(
             "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens WHERE id = $1"
@@ -58,11 +50,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
     }
 
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, String> {
-        let mut conn = self
-            .pool
-            .get_connection()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let api_token = sqlx::query_as::<_, ApiToken>(
             "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens WHERE token = $1"
@@ -76,11 +64,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
     }
 
     async fn get_all(&self) -> Result<Vec<ApiToken>, String> {
-        let mut conn = self
-            .pool
-            .get_connection()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let tokens = sqlx::query_as::<_, ApiToken>(
             "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC"
@@ -93,11 +77,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
     }
 
     async fn update(&self, token: ApiToken) -> Result<ApiToken, String> {
-        let mut conn = self
-            .pool
-            .get_connection()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         sqlx::query(
             r#"
@@ -118,11 +98,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
     }
 
     async fn delete(&self, id: i32) -> Result<(), String> {
-        let mut conn = self
-            .pool
-            .get_connection()
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         sqlx::query("DELETE FROM api_tokens WHERE id = $1")
             .bind(id)

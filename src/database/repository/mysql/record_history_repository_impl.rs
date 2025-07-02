@@ -1,14 +1,13 @@
-use crate::database::{
-    DatabasePool, model::record_history::RecordHistory, repository::RecordHistoryRepository,
-};
+use crate::database::{model::record_history::RecordHistory, repository::RecordHistoryRepository};
 use async_trait::async_trait;
+use sqlx::{MySql, Pool};
 
 pub struct MySqlRecordHistoryRepository {
-    pool: DatabasePool,
+    pool: Pool<MySql>,
 }
 
 impl MySqlRecordHistoryRepository {
-    pub fn new(pool: DatabasePool) -> Self {
+    pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }
@@ -16,7 +15,7 @@ impl MySqlRecordHistoryRepository {
 #[async_trait]
 impl RecordHistoryRepository for MySqlRecordHistoryRepository {
     async fn create(&self, mut record_history: RecordHistory) -> Result<RecordHistory, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let result = sqlx::query("INSERT INTO record_history (log, record_id) VALUES (?, ?)")
             .bind(&record_history.log)
@@ -25,34 +24,13 @@ impl RecordHistoryRepository for MySqlRecordHistoryRepository {
             .await
             .map_err(|e| e.to_string())?;
 
-        record_history.id = result
-            .last_insert_id()
-            .map(|id| id as i32)
-            .ok_or("Failed to retrieve last insert ID")?;
-        Ok(record_history)
-    }
+        record_history.id = result.last_insert_id() as i32;
 
-    async fn create_with_transaction(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
-        mut record_history: RecordHistory,
-    ) -> Result<RecordHistory, String> {
-        let result = sqlx::query("INSERT INTO record_history (log, record_id) VALUES (?, ?)")
-            .bind(&record_history.log)
-            .bind(record_history.record_id)
-            .execute(tx.as_mut())
-            .await
-            .map_err(|e| e.to_string())?;
-
-        record_history.id = result
-            .last_insert_id()
-            .map(|id| id as i32)
-            .ok_or("Failed to retrieve last insert ID")?;
         Ok(record_history)
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<RecordHistory>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let record_history =
             sqlx::query_as::<_, RecordHistory>("SELECT * FROM record_history WHERE id = ?")
@@ -65,7 +43,7 @@ impl RecordHistoryRepository for MySqlRecordHistoryRepository {
     }
 
     async fn get_by_record_id(&self, record_id: i32) -> Result<Vec<RecordHistory>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let record_histories = sqlx::query_as::<_, RecordHistory>(
             "SELECT * FROM record_history WHERE record_id = ? ORDER BY created_at DESC",
@@ -79,7 +57,7 @@ impl RecordHistoryRepository for MySqlRecordHistoryRepository {
     }
 
     async fn delete(&self, id: i32) -> Result<(), String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         sqlx::query("DELETE FROM record_history WHERE id = ?")
             .bind(id)

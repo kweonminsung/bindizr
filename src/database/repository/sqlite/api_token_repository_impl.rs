@@ -1,19 +1,19 @@
 use crate::database::{model::api_token::ApiToken, repository::ApiTokenRepository};
 use async_trait::async_trait;
-use sqlx::{MySql, Pool};
+use sqlx::{Pool, Sqlite};
 
-pub struct MySqlApiTokenRepository {
-    pool: Pool<MySql>,
+pub struct SqliteApiTokenRepository {
+    pool: Pool<Sqlite>,
 }
 
-impl MySqlApiTokenRepository {
-    pub fn new(pool: Pool<MySql>) -> Self {
+impl SqliteApiTokenRepository {
+    pub fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
 }
 
 #[async_trait]
-impl ApiTokenRepository for MySqlApiTokenRepository {
+impl ApiTokenRepository for SqliteApiTokenRepository {
     async fn create(&self, mut token: ApiToken) -> Result<ApiToken, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
@@ -21,7 +21,7 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
             r#"
             INSERT INTO api_tokens (token, description, expires_at)
             VALUES (?, ?, ?)
-        "#,
+            "#,
         )
         .bind(&token.token)
         .bind(&token.description)
@@ -30,15 +30,14 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         .await
         .map_err(|e| e.to_string())?;
 
-        token.id = result.last_insert_id() as i32;
-
+        token.id = result.last_insert_rowid() as i32;
         Ok(token)
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let row = sqlx::query_as::<_, ApiToken>(
+        let token = sqlx::query_as::<_, ApiToken>(
             "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?"
         )
         .bind(id)
@@ -46,13 +45,13 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         .await
         .map_err(|e| e.to_string())?;
 
-        Ok(row)
+        Ok(token)
     }
 
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let row = sqlx::query_as::<_, ApiToken>(
+        let api_token = sqlx::query_as::<_, ApiToken>(
             "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens WHERE token = ?"
         )
         .bind(token)
@@ -60,20 +59,20 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         .await
         .map_err(|e| e.to_string())?;
 
-        Ok(row)
+        Ok(api_token)
     }
 
     async fn get_all(&self) -> Result<Vec<ApiToken>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let rows = sqlx::query_as::<_, ApiToken>(
+        let tokens = sqlx::query_as::<_, ApiToken>(
             "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC"
         )
         .fetch_all(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;
 
-        Ok(rows)
+        Ok(tokens)
     }
 
     async fn update(&self, token: ApiToken) -> Result<ApiToken, String> {
@@ -84,7 +83,7 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
             UPDATE api_tokens 
             SET description = ?, expires_at = ?, last_used_at = ?
             WHERE id = ?
-        "#,
+            "#,
         )
         .bind(&token.description)
         .bind(&token.expires_at)

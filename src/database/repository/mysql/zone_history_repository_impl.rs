@@ -1,13 +1,13 @@
-use crate::database::{
-    DatabasePool, model::zone_history::ZoneHistory, repository::ZoneHistoryRepository,
-};
+use crate::database::{model::zone_history::ZoneHistory, repository::ZoneHistoryRepository};
 use async_trait::async_trait;
+use sqlx::{MySql, Pool};
+
 pub struct MySqlZoneHistoryRepository {
-    pool: DatabasePool,
+    pool: Pool<MySql>,
 }
 
 impl MySqlZoneHistoryRepository {
-    pub fn new(pool: DatabasePool) -> Self {
+    pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }
@@ -15,45 +15,22 @@ impl MySqlZoneHistoryRepository {
 #[async_trait]
 impl ZoneHistoryRepository for MySqlZoneHistoryRepository {
     async fn create(&self, mut zone_history: ZoneHistory) -> Result<ZoneHistory, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let result = sqlx::query("INSERT INTO zone_history (log, record_id) VALUES (?, ?)")
+        let result = sqlx::query("INSERT INTO zone_history (log, zone_id) VALUES (?, ?)")
             .bind(&zone_history.log)
             .bind(zone_history.zone_id)
             .execute(&mut *conn)
             .await
             .map_err(|e| e.to_string())?;
 
-        zone_history.id = result
-            .last_insert_id()
-            .map(|id| id as i32)
-            .ok_or("Failed to retrieve last insert ID")?;
-
-        Ok(zone_history)
-    }
-
-    async fn create_with_transaction(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
-        mut zone_history: ZoneHistory,
-    ) -> Result<ZoneHistory, String> {
-        let result = sqlx::query("INSERT INTO zone_history (log, record_id) VALUES (?, ?)")
-            .bind(&zone_history.log)
-            .bind(zone_history.zone_id)
-            .execute(tx.as_mut())
-            .await
-            .map_err(|e| e.to_string())?;
-
-        zone_history.id = result
-            .last_insert_id()
-            .map(|id| id as i32)
-            .ok_or("Failed to retrieve last insert ID")?;
+        zone_history.id = result.last_insert_id() as i32;
 
         Ok(zone_history)
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneHistory>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let zone_history =
             sqlx::query_as::<_, ZoneHistory>("SELECT * FROM zone_history WHERE id = ?")
@@ -66,7 +43,7 @@ impl ZoneHistoryRepository for MySqlZoneHistoryRepository {
     }
 
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneHistory>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let zone_histories = sqlx::query_as::<_, ZoneHistory>(
             "SELECT * FROM zone_history WHERE zone_id = ? ORDER BY created_at DESC",
@@ -80,7 +57,7 @@ impl ZoneHistoryRepository for MySqlZoneHistoryRepository {
     }
 
     async fn delete(&self, id: i32) -> Result<(), String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         sqlx::query("DELETE FROM zone_history WHERE id = ?")
             .bind(id)

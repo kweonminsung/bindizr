@@ -33,8 +33,8 @@ pub async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, St
             id: 0, // Will be set by the database
             token: token,
             description: description.map(|d| d.to_string()),
-            expires_at: expires_at.map(|dt| dt.to_rfc3339()),
-            created_at: chrono::Utc::now().to_rfc3339(), // Will be set by the database
+            expires_at: expires_at,
+            created_at: Utc::now(), // Will be set by the database
             last_used_at: None,
         })
         .await

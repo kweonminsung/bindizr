@@ -1,5 +1,5 @@
 use crate::{config, log_error, log_info};
-use sqlx::{MySql, Pool, Postgres, Sqlite, Transaction};
+use sqlx::{MySql, Pool, Postgres, Sqlite};
 use std::sync::OnceLock;
 
 pub mod model;
@@ -233,36 +233,4 @@ pub fn get_record_history_repository() -> Box<dyn repository::RecordHistoryRepos
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_api_token_repository(pool)
-}
-
-pub async fn start_mysql_transaction() -> Result<Transaction<'static, MySql>, sqlx::Error> {
-    let pool = get_pool();
-    if let DatabasePool::MySQL(pool) = pool {
-        pool.begin().await
-    } else {
-        Err(sqlx::Error::Protocol("Expected MySQL pool".into()))
-    }
-}
-
-pub async fn start_postgres_transaction() -> Result<Transaction<'static, Postgres>, sqlx::Error> {
-    let pool = get_pool();
-    if let DatabasePool::PostgreSQL(pool) = pool {
-        pool.begin().await
-    } else {
-        Err(sqlx::Error::Protocol("Expected PostgreSQL pool".into()))
-    }
-}
-
-pub async fn start_sqlite_transaction() -> Result<Transaction<'static, Sqlite>, sqlx::Error> {
-    let pool = get_pool();
-    if let DatabasePool::SQLite(pool) = pool {
-        let mut tx = pool.begin().await?;
-        // Enable foreign key constraints for the transaction
-        sqlx::query("PRAGMA foreign_keys = ON")
-            .execute(&mut *tx)
-            .await?;
-        Ok(tx)
-    } else {
-        Err(sqlx::Error::Protocol("Expected SQLite pool".into()))
-    }
 }

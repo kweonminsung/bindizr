@@ -3,7 +3,6 @@ use crate::{
     database::{
         get_zone_history_repository, get_zone_repository,
         model::{zone::Zone, zone_history::ZoneHistory},
-        start_transaction,
     },
     log_error,
 };
@@ -55,31 +54,22 @@ impl ZoneService {
             }
         };
 
-        // Start transaction
-        let mut tx = start_transaction().await.map_err(|e| {
-            log_error!("Failed to start transaction: {}", e);
-            "Failed to create record".to_string()
-        })?;
-
         // Create zone
         let created_zone = zone_repository
-            .create_with_transaction(
-                &mut tx,
-                Zone {
-                    id: 0, // Will be set by the database
-                    name: create_zone_request.name.clone(),
-                    primary_ns: create_zone_request.primary_ns.clone(),
-                    primary_ns_ip: create_zone_request.primary_ns_ip.clone(),
-                    admin_email: create_zone_request.admin_email.clone(),
-                    ttl: create_zone_request.ttl,
-                    serial: create_zone_request.serial,
-                    refresh: create_zone_request.refresh.unwrap_or(86400),
-                    retry: create_zone_request.retry.unwrap_or(7200),
-                    expire: create_zone_request.expire.unwrap_or(3600000),
-                    minimum_ttl: create_zone_request.minimum_ttl.unwrap_or(86400),
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+            .create(Zone {
+                id: 0, // Will be set by the database
+                name: create_zone_request.name.clone(),
+                primary_ns: create_zone_request.primary_ns.clone(),
+                primary_ns_ip: create_zone_request.primary_ns_ip.clone(),
+                admin_email: create_zone_request.admin_email.clone(),
+                ttl: create_zone_request.ttl,
+                serial: create_zone_request.serial,
+                refresh: create_zone_request.refresh.unwrap_or(86400),
+                retry: create_zone_request.retry.unwrap_or(7200),
+                expire: create_zone_request.expire.unwrap_or(3600000),
+                minimum_ttl: create_zone_request.minimum_ttl.unwrap_or(86400),
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone: {}", e);
@@ -88,31 +78,22 @@ impl ZoneService {
 
         // Create zone history
         zone_history_repository
-            .create_with_transaction(
-                &mut tx,
-                ZoneHistory {
-                    id: 0, // Will be set by the database
-                    log: format!(
-                        "[{}] Zone created: id={}, name={}",
-                        Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                        created_zone.id,
-                        created_zone.name,
-                    ),
-                    zone_id: created_zone.id,
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+            .create(ZoneHistory {
+                id: 0, // Will be set by the database
+                log: format!(
+                    "[{}] Zone created: id={}, name={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                    created_zone.id,
+                    created_zone.name,
+                ),
+                zone_id: created_zone.id,
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone history: {}", e);
                 "Failed to create zone history".to_string()
             })?;
-
-        // Commit transaction
-        tx.commit().await.map_err(|e| {
-            log_error!("Failed to commit transaction: {}", e);
-            "Failed to create zone".to_string()
-        })?;
 
         Ok(created_zone)
     }
@@ -151,31 +132,22 @@ impl ZoneService {
             }
         };
 
-        // Start transaction
-        let mut tx = start_transaction().await.map_err(|e| {
-            log_error!("Failed to start transaction: {}", e);
-            "Failed to update zone".to_string()
-        })?;
-
         // Update zone
         let updated_zone = zone_repository
-            .update_with_transaction(
-                &mut tx,
-                Zone {
-                    id: zone_id,
-                    name: update_zone_request.name.clone(),
-                    primary_ns: update_zone_request.primary_ns.clone(),
-                    primary_ns_ip: update_zone_request.primary_ns_ip.clone(),
-                    admin_email: update_zone_request.admin_email.clone(),
-                    ttl: update_zone_request.ttl,
-                    serial: update_zone_request.serial,
-                    refresh: update_zone_request.refresh.unwrap_or(86400),
-                    retry: update_zone_request.retry.unwrap_or(7200),
-                    expire: update_zone_request.expire.unwrap_or(3600000),
-                    minimum_ttl: update_zone_request.minimum_ttl.unwrap_or(86400),
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+            .update(Zone {
+                id: zone_id,
+                name: update_zone_request.name.clone(),
+                primary_ns: update_zone_request.primary_ns.clone(),
+                primary_ns_ip: update_zone_request.primary_ns_ip.clone(),
+                admin_email: update_zone_request.admin_email.clone(),
+                ttl: update_zone_request.ttl,
+                serial: update_zone_request.serial,
+                refresh: update_zone_request.refresh.unwrap_or(86400),
+                retry: update_zone_request.retry.unwrap_or(7200),
+                expire: update_zone_request.expire.unwrap_or(3600000),
+                minimum_ttl: update_zone_request.minimum_ttl.unwrap_or(86400),
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to update zone: {}", e);
@@ -184,31 +156,22 @@ impl ZoneService {
 
         // Create zone history
         zone_history_repository
-            .create_with_transaction(
-                &mut tx,
-                ZoneHistory {
-                    id: 0, // Will be set by the database
-                    log: format!(
-                        "[{}] Zone updated: id={}, name={}",
-                        Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                        zone_id,
-                        update_zone_request.name,
-                    ),
+            .create(ZoneHistory {
+                id: 0, // Will be set by the database
+                log: format!(
+                    "[{}] Zone updated: id={}, name={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
                     zone_id,
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+                    update_zone_request.name,
+                ),
+                zone_id,
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone history: {}", e);
                 "Failed to create zone history".to_string()
             })?;
-
-        // Commit transaction
-        tx.commit().await.map_err(|e| {
-            log_error!("Failed to commit transaction: {}", e);
-            "Failed to update zone".to_string()
-        })?;
 
         Ok(updated_zone)
     }
@@ -230,47 +193,29 @@ impl ZoneService {
             }
         };
 
-        // Start transaction
-        let mut tx = start_transaction().await.map_err(|e| {
-            log_error!("Failed to start transaction: {}", e);
+        // Delete zone
+        zone_repository.delete(zone_id).await.map_err(|e| {
+            log_error!("Failed to delete zone: {}", e);
             "Failed to delete zone".to_string()
         })?;
 
-        // Delete zone
-        zone_repository
-            .delete_with_transaction(&mut tx, zone_id)
-            .await
-            .map_err(|e| {
-                log_error!("Failed to delete zone: {}", e);
-                "Failed to delete zone".to_string()
-            })?;
-
         // Create zone history
         zone_history_repository
-            .create_with_transaction(
-                &mut tx,
-                ZoneHistory {
-                    id: 0, // Will be set by the database
-                    log: format!(
-                        "[{}] Zone deleted: id={}",
-                        Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                        zone_id,
-                    ),
+            .create(ZoneHistory {
+                id: 0, // Will be set by the database
+                log: format!(
+                    "[{}] Zone deleted: id={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
                     zone_id,
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+                ),
+                zone_id,
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone history: {}", e);
                 "Failed to create zone history".to_string()
             })?;
-
-        // Commit transaction
-        tx.commit().await.map_err(|e| {
-            log_error!("Failed to commit transaction: {}", e);
-            "Failed to delete zone".to_string()
-        })?;
 
         Ok(())
     }

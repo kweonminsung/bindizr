@@ -1,5 +1,6 @@
 pub mod mysql;
 pub mod postgres;
+pub mod sqlite;
 
 use super::model::{
     api_token::ApiToken,
@@ -10,33 +11,17 @@ use super::model::{
 };
 use crate::database::DatabasePool;
 use async_trait::async_trait;
-use sqlx::{Database, Transaction};
 
 // Zone Repository Trait
 #[allow(dead_code)]
 #[async_trait]
 pub trait ZoneRepository: Send + Sync {
     async fn create(&self, zone: Zone) -> Result<Zone, String>;
-    async fn create_with_transaction(
-        &self,
-        tx: &mut Transaction<'_, impl Database>,
-        zone: Zone,
-    ) -> Result<Zone, String>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, String>;
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, String>;
     async fn get_all(&self) -> Result<Vec<Zone>, String>;
     async fn update(&self, zone: Zone) -> Result<Zone, String>;
-    async fn update_with_transaction(
-        &self,
-        tx: &mut Transaction<'_, impl Database>,
-        zone: Zone,
-    ) -> Result<Zone, String>;
     async fn delete(&self, id: i32) -> Result<(), String>;
-    async fn delete_with_transaction(
-        &self,
-        tx: &mut Transaction<'_, impl Database>,
-        id: i32,
-    ) -> Result<(), String>;
 }
 
 // Record Repository Trait
@@ -44,11 +29,6 @@ pub trait ZoneRepository: Send + Sync {
 #[async_trait]
 pub trait RecordRepository: Send + Sync {
     async fn create(&self, record: Record) -> Result<Record, String>;
-    async fn create_with_transaction(
-        &self,
-        tx: &mut Transaction<'_, impl Database>,
-        record: Record,
-    ) -> Result<Record, String>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, String>;
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, String>;
     async fn get_by_name_and_type(
@@ -58,17 +38,7 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<Option<Record>, String>;
     async fn get_all(&self) -> Result<Vec<Record>, String>;
     async fn update(&self, record: Record) -> Result<Record, String>;
-    async fn update_with_transaction(
-        &self,
-        tx: &mut Transaction<'_, impl Database>,
-        record: Record,
-    ) -> Result<Record, String>;
     async fn delete(&self, id: i32) -> Result<(), String>;
-    async fn delete_with_transaction(
-        &self,
-        tx: &mut Transaction<'_, impl Database>,
-        id: i32,
-    ) -> Result<(), String>;
 }
 
 // Zone History Repository Trait
@@ -76,11 +46,6 @@ pub trait RecordRepository: Send + Sync {
 #[async_trait]
 pub trait ZoneHistoryRepository: Send + Sync {
     async fn create(&self, zone_history: ZoneHistory) -> Result<ZoneHistory, String>;
-    async fn create_with_transaction(
-        &self,
-        tx: &mut Transaction<'_, impl Database>,
-        zone_history: ZoneHistory,
-    ) -> Result<ZoneHistory, String>;
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneHistory>, String>;
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneHistory>, String>;
     async fn delete(&self, id: i32) -> Result<(), String>;
@@ -91,11 +56,6 @@ pub trait ZoneHistoryRepository: Send + Sync {
 #[async_trait]
 pub trait RecordHistoryRepository: Send + Sync {
     async fn create(&self, record_history: RecordHistory) -> Result<RecordHistory, String>;
-    async fn create_with_transaction(
-        &self,
-        tx: &mut Transaction<'_, impl Database>,
-        record_history: RecordHistory,
-    ) -> Result<RecordHistory, String>;
     async fn get_by_id(&self, id: i32) -> Result<Option<RecordHistory>, String>;
     async fn get_by_record_id(&self, record_id: i32) -> Result<Vec<RecordHistory>, String>;
     async fn delete(&self, id: i32) -> Result<(), String>;

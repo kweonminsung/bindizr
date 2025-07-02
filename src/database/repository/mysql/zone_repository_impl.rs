@@ -1,12 +1,13 @@
-use crate::database::{DatabasePool, model::zone::Zone, repository::ZoneRepository};
+use crate::database::{model::zone::Zone, repository::ZoneRepository};
 use async_trait::async_trait;
+use sqlx::{MySql, Pool};
 
 pub struct MySqlZoneRepository {
-    pool: DatabasePool,
+    pool: Pool<MySql>,
 }
 
 impl MySqlZoneRepository {
-    pub fn new(pool: DatabasePool) -> Self {
+    pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }
@@ -14,7 +15,7 @@ impl MySqlZoneRepository {
 #[async_trait]
 impl ZoneRepository for MySqlZoneRepository {
     async fn create(&self, mut zone: Zone) -> Result<Zone, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let result = sqlx::query(
             r#"
@@ -36,49 +37,13 @@ impl ZoneRepository for MySqlZoneRepository {
         .await
         .map_err(|e| e.to_string())?;
 
-        zone.id = result
-            .last_insert_id()
-            .map(|id| id as i32)
-            .ok_or("Failed to retrieve last insert ID")?;
-
-        Ok(zone)
-    }
-
-    async fn create_with_transaction(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
-        mut zone: Zone,
-    ) -> Result<Zone, String> {
-        let result = sqlx::query(
-            r#"
-            INSERT INTO zones (name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&zone.name)
-        .bind(&zone.primary_ns)
-        .bind(&zone.primary_ns_ip)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
-        .bind(zone.serial)
-        .bind(zone.refresh)
-        .bind(zone.retry)
-        .bind(zone.expire)
-        .bind(zone.minimum_ttl)
-        .execute(tx.as_mut())
-        .await
-        .map_err(|e| e.to_string())?;
-
-        zone.id = result
-            .last_insert_id()
-            .map(|id| id as i32)
-            .ok_or("Failed to retrieve last insert ID")?;
+        zone.id = result.last_insert_id() as i32;
 
         Ok(zone)
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let zone = sqlx::query_as::<_, Zone>("SELECT * FROM zones WHERE id = ?")
             .bind(id)
@@ -90,7 +55,7 @@ impl ZoneRepository for MySqlZoneRepository {
     }
 
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let zone = sqlx::query_as::<_, Zone>("SELECT * FROM zones WHERE name = ?")
             .bind(name)
@@ -102,7 +67,7 @@ impl ZoneRepository for MySqlZoneRepository {
     }
 
     async fn get_all(&self) -> Result<Vec<Zone>, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let zones = sqlx::query_as::<_, Zone>("SELECT * FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
@@ -113,7 +78,7 @@ impl ZoneRepository for MySqlZoneRepository {
     }
 
     async fn update(&self, zone: Zone) -> Result<Zone, String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         sqlx::query(
             r#"
@@ -141,57 +106,12 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
-    async fn update_with_transaction(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
-        zone: Zone,
-    ) -> Result<Zone, String> {
-        sqlx::query(
-            r#"
-            UPDATE zones 
-            SET name = ?, primary_ns = ?, primary_ns_ip = ?, admin_email = ?, 
-                ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(&zone.name)
-        .bind(&zone.primary_ns)
-        .bind(&zone.primary_ns_ip)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
-        .bind(zone.serial)
-        .bind(zone.refresh)
-        .bind(zone.retry)
-        .bind(zone.expire)
-        .bind(zone.minimum_ttl)
-        .bind(zone.id)
-        .execute(tx.as_mut())
-        .await
-        .map_err(|e| e.to_string())?;
-
-        Ok(zone)
-    }
-
     async fn delete(&self, id: i32) -> Result<(), String> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         sqlx::query("DELETE FROM zones WHERE id = ?")
             .bind(id)
             .execute(&mut *conn)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        Ok(())
-    }
-
-    async fn delete_with_transaction(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Any>,
-        id: i32,
-    ) -> Result<(), String> {
-        sqlx::query("DELETE FROM zones WHERE id = ?")
-            .bind(id)
-            .execute(tx.as_mut())
             .await
             .map_err(|e| e.to_string())?;
 

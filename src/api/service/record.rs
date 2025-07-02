@@ -6,7 +6,6 @@ use crate::{
             record::{Record, RecordType},
             record_history::RecordHistory,
         },
-        start_transaction,
     },
     log_error,
 };
@@ -116,27 +115,18 @@ impl RecordService {
             }
         }
 
-        // Start transaction
-        let mut tx = start_transaction().await.map_err(|e| {
-            log_error!("Failed to start transaction: {}", e);
-            "Failed to create record".to_string()
-        })?;
-
         // Create record
         let created_record = record_repository
-            .create_with_transaction(
-                &mut tx,
-                Record {
-                    id: 0, // Will be set by the database
-                    name: create_record_request.name.clone(),
-                    record_type: record_type,
-                    value: create_record_request.value.clone(),
-                    ttl: create_record_request.ttl,
-                    priority: create_record_request.priority,
-                    zone_id: create_record_request.zone_id,
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+            .create(Record {
+                id: 0, // Will be set by the database
+                name: create_record_request.name.clone(),
+                record_type: record_type,
+                value: create_record_request.value.clone(),
+                ttl: create_record_request.ttl,
+                priority: create_record_request.priority,
+                zone_id: create_record_request.zone_id,
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to create record: {}", e);
@@ -145,34 +135,25 @@ impl RecordService {
 
         // Create record history
         record_history_repository
-            .create_with_transaction(
-                &mut tx,
-                RecordHistory {
-                    id: 0, // Will be set by the database
-                    record_id: created_record.id,
-                    log: format!(
-                        "[{}] Record created: id={}, zone_id={}, name={}, type={}, value={}",
-                        Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                        created_record.id,
-                        create_record_request.zone_id,
-                        create_record_request.name,
-                        create_record_request.record_type,
-                        create_record_request.value,
-                    ),
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+            .create(RecordHistory {
+                id: 0, // Will be set by the database
+                record_id: created_record.id,
+                log: format!(
+                    "[{}] Record created: id={}, zone_id={}, name={}, type={}, value={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                    created_record.id,
+                    create_record_request.zone_id,
+                    create_record_request.name,
+                    create_record_request.record_type,
+                    create_record_request.value,
+                ),
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to create record history: {}", e);
                 "Failed to create record history".to_string()
             })?;
-
-        // Commit transaction
-        tx.commit().await.map_err(|e| {
-            log_error!("Failed to commit transaction: {}", e);
-            "Failed to create record".to_string()
-        })?;
 
         Ok(created_record)
     }
@@ -233,27 +214,18 @@ impl RecordService {
             }
         }
 
-        // Start transaction
-        let mut tx = start_transaction().await.map_err(|e| {
-            log_error!("Failed to start transaction: {}", e);
-            "Failed to update record".to_string()
-        })?;
-
         // Update record
         let updated_record = record_repository
-            .update_with_transaction(
-                &mut tx,
-                Record {
-                    id: record_id,
-                    name: update_record_request.name.clone(),
-                    record_type,
-                    value: update_record_request.value.clone(),
-                    ttl: update_record_request.ttl,
-                    priority: update_record_request.priority,
-                    zone_id: update_record_request.zone_id,
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+            .update(Record {
+                id: record_id,
+                name: update_record_request.name.clone(),
+                record_type,
+                value: update_record_request.value.clone(),
+                ttl: update_record_request.ttl,
+                priority: update_record_request.priority,
+                zone_id: update_record_request.zone_id,
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to update record: {}", e);
@@ -262,34 +234,25 @@ impl RecordService {
 
         // Create record history
         record_history_repository
-            .create_with_transaction(
-                &mut tx,
-                RecordHistory {
-                    id: 0, // Will be set by the database
-                    record_id: updated_record.id,
-                    log: format!(
-                        "[{}] Record updated: id={}, zone_id={}, name={}, type={}, value={}",
-                        Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                        updated_record.id,
-                        update_record_request.zone_id,
-                        update_record_request.name,
-                        update_record_request.record_type,
-                        update_record_request.value,
-                    ),
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+            .create(RecordHistory {
+                id: 0, // Will be set by the database
+                record_id: updated_record.id,
+                log: format!(
+                    "[{}] Record updated: id={}, zone_id={}, name={}, type={}, value={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                    updated_record.id,
+                    update_record_request.zone_id,
+                    update_record_request.name,
+                    update_record_request.record_type,
+                    update_record_request.value,
+                ),
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to create record history: {}", e);
                 "Failed to create record history".to_string()
             })?;
-
-        // Commit transaction
-        tx.commit().await.map_err(|e| {
-            log_error!("Failed to commit transaction: {}", e);
-            "Failed to update record".to_string()
-        })?;
 
         Ok(updated_record)
     }
@@ -308,47 +271,29 @@ impl RecordService {
             }
         }?;
 
-        // Start transaction
-        let mut tx = start_transaction().await.map_err(|e| {
-            log_error!("Failed to start transaction: {}", e);
+        // Delete record
+        record_repository.delete(record_id).await.map_err(|e| {
+            log_error!("Failed to delete record: {}", e);
             "Failed to delete record".to_string()
         })?;
 
-        // Delete record
-        record_repository
-            .delete_with_transaction(&mut tx, record_id)
-            .await
-            .map_err(|e| {
-                log_error!("Failed to delete record: {}", e);
-                "Failed to delete record".to_string()
-            })?;
-
         // Create record history
         record_history_repository
-            .create_with_transaction(
-                &mut tx,
-                RecordHistory {
-                    id: 0, // Will be set by the database
+            .create(RecordHistory {
+                id: 0, // Will be set by the database
+                record_id,
+                log: format!(
+                    "[{}] Record deleted: id={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
                     record_id,
-                    log: format!(
-                        "[{}] Record deleted: id={}",
-                        Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                        record_id,
-                    ),
-                    created_at: Utc::now().to_string(), // Will be set by the database
-                },
-            )
+                ),
+                created_at: Utc::now(), // Will be set by the database
+            })
             .await
             .map_err(|e| {
                 log_error!("Failed to create record history: {}", e);
                 "Failed to create record history".to_string()
             })?;
-
-        // Commit transaction
-        tx.commit().await.map_err(|e| {
-            log_error!("Failed to commit transaction: {}", e);
-            "Failed to delete record".to_string()
-        })?;
 
         Ok(())
     }

@@ -1,7 +1,6 @@
 use crate::{
     daemon::socket::client::DaemonSocketClient, database::model::api_token::ApiToken, log_debug,
 };
-use chrono::DateTime;
 use clap::Subcommand;
 use serde_json::json;
 
@@ -68,17 +67,10 @@ async fn create_token(
     }
     println!(
         "Created at: {}",
-        DateTime::parse_from_rfc3339(&token.created_at)
-            .map_err(|e| format!("Failed to parse created_at: {}", e))?
-            .format("%Y-%m-%d %H:%M:%S")
+        &token.created_at.format("%Y-%m-%d %H:%M:%S")
     );
     if let Some(expires) = token.expires_at {
-        println!(
-            "Expires at: {}",
-            DateTime::parse_from_rfc3339(&expires)
-                .map_err(|e| format!("Failed to parse expires_at: {}", e))?
-                .format("%Y-%m-%d %H:%M:%S")
-        );
+        println!("Expires at: {}", &expires.format("%Y-%m-%d %H:%M:%S"));
     } else {
         println!("Expires at: Never");
     }
@@ -111,11 +103,7 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
         let desc = token.description.unwrap_or_else(|| "-".to_string());
         let expires = token
             .expires_at
-            .map(|dt| {
-                DateTime::parse_from_rfc3339(&dt)
-                    .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
-                    .unwrap_or_else(|_| "Invalid date".to_string())
-            })
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "Never".to_string());
 
         println!(
