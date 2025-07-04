@@ -1,10 +1,10 @@
 use crate::{
-    database::{model::api_token::ApiToken, DatabasePool},
+    database::{DatabasePool, model::api_token::ApiToken},
     log_error,
 };
 use chrono::{Duration, Utc};
 use mysql::prelude::*;
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{Rng, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 pub struct AuthService;
@@ -16,8 +16,8 @@ impl AuthService {
         expires_in_days: Option<i64>,
     ) -> Result<ApiToken, String> {
         // Generate random token (32 bytes)
-        let random_string: String = rand::thread_rng()
-            .sample_iter(&Alphanumeric)
+        let random_string: String = rand::rng()
+            .sample_iter(Alphanumeric)
             .take(32)
             .map(char::from)
             .collect();
