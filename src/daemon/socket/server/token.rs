@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use rand::{Rng, distributions::Alphanumeric};
+use rand::{Rng, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -13,8 +13,8 @@ pub async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, St
     let expires_in_days = data.get("expires_in_days").and_then(|v| v.as_i64());
 
     // Generate random token (32 bytes)
-    let random_string: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
+    let random_string: String = rand::rng()
+        .sample_iter(Alphanumeric)
         .take(32)
         .map(char::from)
         .collect();
