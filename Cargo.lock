@@ -209,7 +209,7 @@ dependencies = [
  "mysql",
  "nix",
  "once_cell",
- "rand 0.8.5",
+ "rand 0.9.1",
  "rndc",
  "serde",
  "serde_json",
