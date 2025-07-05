@@ -8,8 +8,7 @@
       "matchPackagePatterns": [
         ".*"
       ],
-      "rangeStrategy": "bumpMinor",
-      "allowedVersions": "~"
+      "rangeStrategy": "bumpMinor"
     }
   ]
 }
