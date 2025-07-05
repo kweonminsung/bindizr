@@ -1,0 +1,18 @@
+[api]
+host = "127.0.0.1"             # HTTP API host
+port = 3000                    # HTTP API port
+require_authentication = true  # Enable API authentication (true/false)
+
+[mysql]
+server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
+
+[bind]
+bind_config_path = "/etc/bind"       # Bind config path
+rndc_server_url = "127.0.0.1:953"    # RNDC server address
+rndc_algorithm = "sha256"            # RNDC authentication algorithm
+rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
+
+[logging]
+log_level = "debug"           # Log level: error, warn, info, debug, trace
+enable_file_logging = true    # Enable logging to file (true/false)
+log_file_path = "/var/log/bindizr"         # Path to log file (absolute or relative)
