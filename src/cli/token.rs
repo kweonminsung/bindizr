@@ -12,8 +12,8 @@ pub enum TokenCommand {
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
         /// Number of days until the token expires (default: never expires)
-        #[arg(long, value_name = "N", default_value_t = 0)]
-        expires_in_days: i64,
+        #[arg(long, value_name = "N")]
+        expires_in_days: Option<i64>,
     },
     /// List all API tokens
     List,
@@ -31,7 +31,7 @@ pub async fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
         TokenCommand::Create {
             description,
             expires_in_days,
-        } => create_token(&client, description, Some(expires_in_days)).await,
+        } => create_token(&client, description, expires_in_days).await,
         TokenCommand::List => list_tokens(&client).await,
         TokenCommand::Delete { token_id } => delete_token(&client, token_id).await,
     }
