@@ -21,7 +21,7 @@ DNS Synchronization Service for BIND9
 
 ## Concepts
 
-**Bindizr** is a Rust-based daemon and HTTP API that synchronizes DNS records between bind9 and a MySQL database.
+**Bindizr** is a Rust-based daemon and HTTP API that synchronizes DNS records between bind9 and a database (MySQL, PostgreSQL, or SQLite).
 
 - It reads and writes zone configurations from a bind config directory.
 
@@ -232,7 +232,7 @@ $ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/zones
 This project relies on the following core dependencies:
 
 - [`axum`](https://docs.rs/axum/latest/axum/) – A web application framework for building fast and modular APIs in Rust.
-- [`mysql`](https://crates.io/crates/mysql) – A MySQL database driver for Rust.
+- [`sqlx`](https://docs.rs/sqlx/latest/sqlx/) - An async, pure Rust SQL crate featuring compile-time checked queries without a DSL.
 - [`rndc`](https://crates.io/crates/rndc) – A library for interacting with BIND's Remote Name Daemon Control (RNDC) protocol.
 
 
