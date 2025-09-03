@@ -217,7 +217,6 @@ dependencies = [
  "clap",
  "config",
  "hex",
- "lazy_static",
  "log",
  "nix",
  "once_cell",

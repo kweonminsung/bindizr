@@ -1,10 +1,10 @@
 use crate::log_info;
-use lazy_static::lazy_static;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::OnceLock;
 
 pub fn initialize() {
     log_info!("RNDC client initialized");
-    lazy_static::initialize(&RNDC_CLIENT);
+    RNDC_CLIENT.get_or_init(RndcClient::new);
 }
 
 pub struct RndcClient {
@@ -40,6 +40,8 @@ impl RndcClient {
     }
 }
 
-lazy_static! {
-    pub static ref RNDC_CLIENT: RndcClient = RndcClient::new();
+pub static RNDC_CLIENT: OnceLock<RndcClient> = OnceLock::new();
+
+pub fn get_rndc_client() -> &'static RndcClient {
+    RNDC_CLIENT.get().expect("RNDC client is not initialized")
 }

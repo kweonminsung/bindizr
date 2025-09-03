@@ -13,7 +13,7 @@ use bindizr::{
             zone::Zone,
         },
     },
-    logger, serializer,
+    serializer,
 };
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
@@ -75,9 +75,8 @@ impl TestContext {
         )
         .unwrap();
 
-        // Initialize components
-        config::initialize_from_file(&config_path);
-        logger::initialize(false);
+        // Initialize components (skip if already initialized)
+        config::initialize(Some(config_path));
         database::initialize().await;
         serializer::initialize();
 

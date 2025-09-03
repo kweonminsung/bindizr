@@ -35,6 +35,10 @@ impl DatabaseType {
 }
 
 pub async fn initialize() {
+    if is_initialized() {
+        return;
+    }
+
     let database_type_str = config::get_config::<String>("database.type");
     let database_type = DatabaseType::from_str(&database_type_str).unwrap_or_else(|e| {
         log_error!("{}", e);
@@ -64,6 +68,10 @@ pub async fn initialize() {
         .expect("Failed to set database pool");
 
     log_info!("Database pool initialized");
+}
+
+fn is_initialized() -> bool {
+    DATABASE_POOL.get().is_some()
 }
 
 pub fn get_pool() -> &'static DatabasePool {

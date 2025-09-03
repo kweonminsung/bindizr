@@ -52,10 +52,10 @@ pub async fn bootstrap(is_daemon: bool, config_file: Option<&str>) -> Result<(),
     // Initialize Configuration
     if let Some(file) = config_file {
         // Load configuration from the specified file
-        config::initialize_from_file(file);
+        config::initialize(Some(file));
     } else {
         // Use default configuration file
-        config::initialize();
+        config::initialize(None);
     }
 
     logger::initialize(is_daemon);

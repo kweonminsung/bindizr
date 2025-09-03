@@ -7,9 +7,9 @@ use crate::database::{
     },
 };
 use crate::{config, log_error, log_info};
-use lazy_static::lazy_static;
 use std::fmt::Write;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::{fs, thread};
 
@@ -20,14 +20,16 @@ struct Message {
 
 pub fn initialize() {
     log_info!("Serializer initialized");
-    lazy_static::initialize(&SERIALIZER);
+    SERIALIZER.get_or_init(Serializer::new);
 }
 
 pub fn shutdown() {
     log_info!("Shutting down serializer");
 
-    if let Err(e) = SERIALIZER.send_message_and_wait("exit") {
-        log_error!("Failed to send exit message: {}", e);
+    if let Some(s) = SERIALIZER.get() {
+        if let Err(e) = s.send_message_and_wait("exit") {
+            log_error!("Failed to send exit message: {}", e);
+        }
     }
 }
 
@@ -315,6 +317,8 @@ ns  IN  A   {}
     }
 }
 
-lazy_static! {
-    pub static ref SERIALIZER: Serializer = Serializer::new();
+pub static SERIALIZER: OnceLock<Serializer> = OnceLock::new();
+
+pub fn get_serializer() -> &'static Serializer {
+    SERIALIZER.get().expect("Serializer is not initialized")
 }
