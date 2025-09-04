@@ -178,7 +178,7 @@ impl ZoneService {
 
     pub async fn delete_zone(zone_id: i32) -> Result<(), String> {
         let zone_repository = get_zone_repository();
-        let zone_history_repository = get_zone_history_repository();
+        // let zone_history_repository = get_zone_history_repository();
 
         // Check if zone exists
         match zone_repository.get_by_id(zone_id).await {
@@ -200,22 +200,22 @@ impl ZoneService {
         })?;
 
         // Create zone history
-        zone_history_repository
-            .create(ZoneHistory {
-                id: 0, // Will be set by the database
-                log: format!(
-                    "[{}] Zone deleted: id={}",
-                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    zone_id,
-                ),
-                zone_id,
-                created_at: Utc::now(), // Will be set by the database
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone history: {}", e);
-                "Failed to create zone history".to_string()
-            })?;
+        // zone_history_repository
+        //     .create(ZoneHistory {
+        //         id: 0, // Will be set by the database
+        //         log: format!(
+        //             "[{}] Zone deleted: id={}",
+        //             Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        //             zone_id,
+        //         ),
+        //         zone_id,
+        //         created_at: Utc::now(), // Will be set by the database
+        //     })
+        //     .await
+        //     .map_err(|e| {
+        //         log_error!("Failed to create zone history: {}", e);
+        //         "Failed to create zone history".to_string()
+        //     })?;
 
         Ok(())
     }

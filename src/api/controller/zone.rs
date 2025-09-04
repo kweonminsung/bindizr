@@ -126,7 +126,7 @@ impl ZoneController {
         let zone = GetZoneResponse::from_zone(&raw_zone);
 
         let json_body = json!({ "zone": zone });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::CREATED, Json(json_body))
     }
 
     async fn update_zone(

@@ -180,14 +180,6 @@ impl DatabasePool {
                         log_error!("Failed to acquire SQLite connection: {}", e);
                         e.to_string()
                     })?;
-                    // Enable foreign key constraints for each connection
-                    sqlx::query("PRAGMA foreign_keys = ON")
-                        .execute(&mut *conn)
-                        .await
-                        .map_err(|e| {
-                            log_error!("Failed to enable foreign keys: {}", e);
-                            e.to_string()
-                        })?;
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log_error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()

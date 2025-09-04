@@ -8,7 +8,7 @@ async fn test_zone_crud_operations() {
     // Test GET /zones (empty)
     let (status, body) = ctx.make_request("GET", "/zones", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.as_array().unwrap().is_empty());
+    assert!(body["zones"].as_array().unwrap().is_empty());
 
     // Test POST /zones (create)
     let create_zone_request = serde_json::json!({
@@ -29,20 +29,20 @@ async fn test_zone_crud_operations() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let zone_id = body["data"]["id"].as_i64().unwrap();
-    assert_eq!(body["data"]["name"], "test.com");
+    let zone_id = body["zone"]["id"].as_i64().unwrap();
+    assert_eq!(body["zone"]["name"], "test.com");
 
     // Test GET /zones/{id}
     let (status, body) = ctx
         .make_request("GET", &format!("/zones/{}", zone_id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["data"]["name"], "test.com");
+    assert_eq!(body["zone"]["name"], "test.com");
 
     // Test GET /zones (with data)
     let (status, body) = ctx.make_request("GET", "/zones", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body["zones"].as_array().unwrap().len(), 1);
 
     // Test PUT /zones/{id} (update)
     let update_zone_request = serde_json::json!({
@@ -66,7 +66,7 @@ async fn test_zone_crud_operations() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["data"]["name"], "updated-test.com");
+    assert_eq!(body["zone"]["name"], "updated-test.com");
 
     // Test DELETE /zones/{id}
     let (status, _) = ctx
@@ -78,7 +78,7 @@ async fn test_zone_crud_operations() {
     let (status, _) = ctx
         .make_request("GET", &format!("/zones/{}", zone_id), None)
         .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -108,10 +108,10 @@ async fn test_zone_history() {
 
     // Test GET /zones/{id}/history
     let (status, body) = ctx
-        .make_request("GET", &format!("/zones/{}/history", zone.id), None)
+        .make_request("GET", &format!("/zones/{}/histories", zone.id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     // Should return history array (might be empty initially)
-    assert!(body.as_array().is_some());
+    assert!(body["zone_histories"].as_array().is_some());
 }

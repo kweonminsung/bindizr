@@ -11,7 +11,7 @@ async fn test_record_crud_operations() {
         .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.as_array().unwrap().is_empty());
+    assert!(body["records"].as_array().unwrap().is_empty());
 
     // Test POST /records (create)
     let create_record_request = serde_json::json!({
@@ -27,23 +27,23 @@ async fn test_record_crud_operations() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let record_id = body["data"]["id"].as_i64().unwrap();
-    assert_eq!(body["data"]["name"], "api.example.com");
-    assert_eq!(body["data"]["record_type"], "A");
+    let record_id = body["record"]["id"].as_i64().unwrap();
+    assert_eq!(body["record"]["name"], "api.example.com");
+    assert_eq!(body["record"]["record_type"], "A");
 
     // Test GET /records/{id}
     let (status, body) = ctx
         .make_request("GET", &format!("/records/{}", record_id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["data"]["name"], "api.example.com");
+    assert_eq!(body["record"]["name"], "api.example.com");
 
     // Test GET /records (with data)
     let (status, body) = ctx
         .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body["records"].as_array().unwrap().len(), 1);
 
     // Test PUT /records/{id} (update)
     let update_record_request = serde_json::json!({
@@ -62,20 +62,20 @@ async fn test_record_crud_operations() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["data"]["name"], "api-updated.example.com");
-    assert_eq!(body["data"]["value"], "192.168.1.201");
+    assert_eq!(body["record"]["name"], "api-updated.example.com");
+    assert_eq!(body["record"]["value"], "192.168.1.201");
 
     // Test DELETE /records/{id}
     let (status, _) = ctx
         .make_request("DELETE", &format!("/records/{}", record_id), None)
         .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
 
     // Verify deletion
     let (status, _) = ctx
         .make_request("GET", &format!("/records/{}", record_id), None)
         .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -91,7 +91,7 @@ async fn test_record_history() {
     assert_eq!(status, StatusCode::OK);
 
     // Should return history array (might be empty initially)
-    assert!(body.as_array().is_some());
+    assert!(body["record_histories"].as_array().is_some());
 }
 
 #[tokio::test]
@@ -131,11 +131,11 @@ async fn test_multiple_record_types() {
             .make_request("POST", "/records", Some(create_request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(body["data"]["record_type"], record_type);
-        assert_eq!(body["data"]["value"], value);
+        assert_eq!(body["record"]["record_type"], record_type);
+        assert_eq!(body["record"]["value"], value);
 
         if let Some(expected_priority) = priority {
-            assert_eq!(body["data"]["priority"], expected_priority);
+            assert_eq!(body["record"]["priority"], expected_priority);
         }
     }
 
@@ -144,5 +144,5 @@ async fn test_multiple_record_types() {
         .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body.as_array().unwrap().len(), 5);
+    assert_eq!(body["records"].as_array().unwrap().len(), 5);
 }

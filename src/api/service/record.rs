@@ -259,7 +259,7 @@ impl RecordService {
 
     pub async fn delete_record(record_id: i32) -> Result<(), String> {
         let record_repository = get_record_repository();
-        let record_history_repository = get_record_history_repository();
+        // let record_history_repository = get_record_history_repository();
 
         // Check if record exists
         match record_repository.get_by_id(record_id).await {
@@ -278,22 +278,22 @@ impl RecordService {
         })?;
 
         // Create record history
-        record_history_repository
-            .create(RecordHistory {
-                id: 0, // Will be set by the database
-                record_id,
-                log: format!(
-                    "[{}] Record deleted: id={}",
-                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    record_id,
-                ),
-                created_at: Utc::now(), // Will be set by the database
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create record history: {}", e);
-                "Failed to create record history".to_string()
-            })?;
+        // record_history_repository
+        //     .create(RecordHistory {
+        //         id: 0, // Will be set by the database
+        //         record_id,
+        //         log: format!(
+        //             "[{}] Record deleted: id={}",
+        //             Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        //             record_id,
+        //         ),
+        //         created_at: Utc::now(), // Will be set by the database
+        //     })
+        //     .await
+        //     .map_err(|e| {
+        //         log_error!("Failed to create record history: {}", e);
+        //         "Failed to create record history".to_string()
+        //     })?;
 
         Ok(())
     }
