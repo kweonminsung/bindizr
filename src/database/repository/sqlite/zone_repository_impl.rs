@@ -44,7 +44,7 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT * FROM zones WHERE id = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = ?")
             .bind(id)
             .fetch_optional(&mut *conn)
             .await
@@ -56,7 +56,7 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT * FROM zones WHERE name = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = ?")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await
@@ -68,7 +68,7 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn get_all(&self) -> Result<Vec<Zone>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT * FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await
             .map_err(|e| e.to_string())?;

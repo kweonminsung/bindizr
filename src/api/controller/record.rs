@@ -73,7 +73,7 @@ impl RecordController {
         let record = GetRecordResponse::from_record(&raw_record);
 
         let json_body = json!({ "record": record });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::CREATED, Json(json_body))
     }
 
     async fn update_record(

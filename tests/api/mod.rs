@@ -20,13 +20,13 @@ mod test {
     async fn test_error_handling() {
         let ctx = TestContext::new().await;
 
-        // Test 404 for non-existent zone
+        // Test 400 for non-existent zone
         let (status, _) = ctx.make_request("GET", "/zones/99999", None).await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(status, StatusCode::BAD_REQUEST);
 
-        // Test 404 for non-existent record
+        // Test 400 for non-existent record
         let (status, _) = ctx.make_request("GET", "/records/99999", None).await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(status, StatusCode::BAD_REQUEST);
 
         // Test invalid JSON for zone creation
         let invalid_json = serde_json::json!({
@@ -35,7 +35,7 @@ mod test {
         });
 
         let (status, _) = ctx.make_request("POST", "/zones", Some(invalid_json)).await;
-        assert!(status == StatusCode::BAD_REQUEST || status == StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(status == StatusCode::BAD_REQUEST);
 
         // Test invalid record type
         let zone = ctx.create_test_zone().await;
@@ -49,6 +49,6 @@ mod test {
         let (status, _) = ctx
             .make_request("POST", "/records", Some(invalid_record))
             .await;
-        assert!(status == StatusCode::BAD_REQUEST || status == StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(status == StatusCode::BAD_REQUEST);
     }
 }

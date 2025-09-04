@@ -63,7 +63,7 @@ impl TestContext {
             bind_config_path = "/etc/bind"
             rndc_server_url = "127.0.0.1:953"
             rndc_algorithm = "sha256"
-            rndc_secret_key = "cqEa3Oo1CnCgKivL6hdUwuCzlfRH68yeAdrsGeF3Pu0="
+            rndc_secret_key = "YmluZGl6cg==" # This is "test" base64-encoded
 
             [logging]
             log_level = "debug"

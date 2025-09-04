@@ -43,7 +43,7 @@ impl RecordRepository for SqliteRecordRepository {
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let record = sqlx::query_as::<_, Record>("SELECT * FROM records WHERE id = ?")
+        let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
             .bind(id)
             .fetch_optional(&mut *conn)
             .await
@@ -56,7 +56,7 @@ impl RecordRepository for SqliteRecordRepository {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let records =
-            sqlx::query_as::<_, Record>("SELECT * FROM records WHERE zone_id = ? ORDER BY name")
+            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name")
                 .bind(zone_id)
                 .fetch_all(&mut *conn)
                 .await
@@ -73,7 +73,7 @@ impl RecordRepository for SqliteRecordRepository {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let record =
-            sqlx::query_as::<_, Record>("SELECT * FROM records WHERE name = ? AND record_type = ?")
+            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = ? AND record_type = ?")
                 .bind(name)
                 .bind(record_type.to_str())
                 .fetch_optional(&mut *conn)
@@ -86,7 +86,7 @@ impl RecordRepository for SqliteRecordRepository {
     async fn get_all(&self) -> Result<Vec<Record>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let records = sqlx::query_as::<_, Record>("SELECT * FROM records ORDER BY name")
+        let records = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records ORDER BY name")
             .fetch_all(&mut *conn)
             .await
             .map_err(|e| e.to_string())?;

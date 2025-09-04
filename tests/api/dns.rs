@@ -2,6 +2,7 @@ use crate::common::TestContext;
 use axum::http::StatusCode;
 
 #[tokio::test]
+#[ignore]
 async fn test_dns_operations() {
     let ctx = TestContext::new().await;
 

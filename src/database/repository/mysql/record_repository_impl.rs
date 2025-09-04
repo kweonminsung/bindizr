@@ -44,7 +44,7 @@ impl RecordRepository for MySqlRecordRepository {
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let record = sqlx::query_as::<_, Record>("SELECT * FROM records WHERE id = ?")
+        let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
             .bind(id)
             .fetch_optional(&mut *conn)
             .await
@@ -56,13 +56,12 @@ impl RecordRepository for MySqlRecordRepository {
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let records = sqlx::query_as::<_, Record>(
-            "SELECT * FROM records WHERE zone_id = ? ORDER BY created_at DESC",
-        )
-        .bind(zone_id)
-        .fetch_all(&mut *conn)
-        .await
-        .map_err(|e| e.to_string())?;
+        let records =
+            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name")
+                .bind(zone_id)
+                .fetch_all(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
 
         Ok(records)
     }
@@ -75,7 +74,7 @@ impl RecordRepository for MySqlRecordRepository {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let record =
-            sqlx::query_as::<_, Record>("SELECT * FROM records WHERE name = ? AND record_type = ?")
+            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = ? AND record_type = ?")
                 .bind(name)
                 .bind(record_type.to_string())
                 .fetch_optional(&mut *conn)
@@ -88,7 +87,7 @@ impl RecordRepository for MySqlRecordRepository {
     async fn get_all(&self) -> Result<Vec<Record>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let records = sqlx::query_as::<_, Record>("SELECT * FROM records ORDER BY created_at DESC")
+        let records = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records ORDER BY name")
             .fetch_all(&mut *conn)
             .await
             .map_err(|e| e.to_string())?;
@@ -102,14 +101,16 @@ impl RecordRepository for MySqlRecordRepository {
         sqlx::query(
             r#"
             UPDATE records
-            SET name = ?, record_type = ?, value = ?, ttl = ?
+            SET name = ?, record_type = ?, value = ?, ttl = ?, priority = ?, zone_id = ?
             WHERE id = ?
         "#,
         )
         .bind(&record.name)
-        .bind(record.record_type.to_string())
+        .bind(record.record_type.to_str())
         .bind(&record.value)
         .bind(record.ttl)
+        .bind(record.priority)
+        .bind(record.zone_id)
         .bind(record.id)
         .execute(&mut *conn)
         .await

@@ -86,7 +86,7 @@ async fn test_record_history() {
 
     // Test GET /records/{id}/history
     let (status, body) = ctx
-        .make_request("GET", &format!("/records/{}/history", record.id), None)
+        .make_request("GET", &format!("/records/{}/histories", record.id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 

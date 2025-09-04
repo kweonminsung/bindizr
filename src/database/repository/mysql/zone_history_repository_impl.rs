@@ -32,12 +32,13 @@ impl ZoneHistoryRepository for MySqlZoneHistoryRepository {
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneHistory>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let zone_history =
-            sqlx::query_as::<_, ZoneHistory>("SELECT * FROM zone_history WHERE id = ?")
-                .bind(id)
-                .fetch_optional(&mut *conn)
-                .await
-                .map_err(|e| e.to_string())?;
+        let zone_history = sqlx::query_as::<_, ZoneHistory>(
+            "SELECT id, log, created_at, zone_id FROM zone_history WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|e| e.to_string())?;
 
         Ok(zone_history)
     }
@@ -46,7 +47,7 @@ impl ZoneHistoryRepository for MySqlZoneHistoryRepository {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let zone_histories = sqlx::query_as::<_, ZoneHistory>(
-            "SELECT * FROM zone_history WHERE zone_id = ? ORDER BY created_at DESC",
+            "SELECT id, log, created_at, zone_id FROM zone_history WHERE zone_id = ? ORDER BY created_at DESC",
         )
         .bind(zone_id)
         .fetch_all(&mut *conn)

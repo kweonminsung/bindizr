@@ -31,12 +31,13 @@ impl RecordHistoryRepository for SqliteRecordHistoryRepository {
     async fn get_by_id(&self, id: i32) -> Result<Option<RecordHistory>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
-        let record_history =
-            sqlx::query_as::<_, RecordHistory>("SELECT * FROM record_history WHERE id = ?")
-                .bind(id)
-                .fetch_optional(&mut *conn)
-                .await
-                .map_err(|e| e.to_string())?;
+        let record_history = sqlx::query_as::<_, RecordHistory>(
+            "SELECT id, log, created_at, record_id FROM record_history WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|e| e.to_string())?;
 
         Ok(record_history)
     }
@@ -45,7 +46,7 @@ impl RecordHistoryRepository for SqliteRecordHistoryRepository {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let record_histories = sqlx::query_as::<_, RecordHistory>(
-            "SELECT * FROM record_history WHERE record_id = ? ORDER BY created_at DESC",
+            "SELECT id, log, created_at, record_id FROM record_history WHERE record_id = ? ORDER BY created_at DESC",
         )
         .bind(record_id)
         .fetch_all(&mut *conn)

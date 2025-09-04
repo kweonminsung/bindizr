@@ -11,18 +11,8 @@ pub const CONF_FILE_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 static CONFIG: OnceCell<Config> = OnceCell::new();
 
 pub fn initialize(conf_file_path: Option<&str>) {
-    if is_initialized() {
-        return;
-    }
+    let conf_file_path = conf_file_path.unwrap_or(CONF_FILE_PATH);
 
-    initialize_from_file(conf_file_path.unwrap_or(CONF_FILE_PATH));
-}
-
-fn is_initialized() -> bool {
-    CONFIG.get().is_some()
-}
-
-fn initialize_from_file(conf_file_path: &str) {
     println!("Initializing configuration from file: {}", conf_file_path);
 
     let cfg = Config::builder()
@@ -30,9 +20,7 @@ fn initialize_from_file(conf_file_path: &str) {
         .build()
         .expect("Failed to build configuration");
 
-    CONFIG
-        .set(cfg)
-        .expect("Configuration has already been initialized");
+    CONFIG.get_or_init(|| cfg);
 }
 
 fn get_config_str(key: &str) -> String {
