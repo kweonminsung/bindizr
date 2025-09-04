@@ -1,5 +1,6 @@
 use crate::{
     api::{
+        controller::middleware::body_parser::JsonBody,
         dto::{CreateZoneRequest, GetRecordResponse, GetZoneResponse},
         service::{record::RecordService, zone::ZoneService},
     },
@@ -113,7 +114,7 @@ impl ZoneController {
             .into_response()
     }
 
-    async fn create_zone(Json(body): Json<CreateZoneRequest>) -> impl IntoResponse {
+    async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> impl IntoResponse {
         let raw_zone = match ZoneService::create_zone(&body).await {
             Ok(zone) => zone,
             Err(err) => {

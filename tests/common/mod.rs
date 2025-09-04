@@ -17,63 +17,16 @@ use bindizr::{
 };
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
-use tempfile::NamedTempFile;
 use tower::ServiceExt;
 
 pub struct TestContext {
-    pub app: Router,
+    pub api_router: Router,
     pub db_pool: SqlitePool,
-    pub _temp_db_file: NamedTempFile, // Keep alive for test duration
-    pub _temp_config_file: NamedTempFile, // Keep alive for test duration
 }
 
 impl TestContext {
     pub async fn new() -> Self {
-        // Create temporary SQLite database
-        let temp_db_file = NamedTempFile::new().expect("Failed to create temp file");
-        let db_path = temp_db_file.path().to_str().unwrap();
-
-        // Create temporary configuration file
-        let temp_config_file = NamedTempFile::new().expect("Failed to create temp config file");
-        let config_path = temp_config_file.path().to_str().unwrap();
-
-        // Write default configuration to temp file
-        std::fs::write(
-            config_path,
-            format!(
-                r#"
-            [api]
-            host = "127.0.0.1"
-            port = 3000
-            require_authentication = false
-
-            [database]
-            type = "sqlite"
-
-            [database.mysql]
-            server_url = ""
-
-            [database.sqlite]
-            file_path = "{}"
-
-            [database.postgresql]
-            server_url = ""
-
-            [bind]
-            bind_config_path = "/etc/bind"
-            rndc_server_url = "127.0.0.1:953"
-            rndc_algorithm = "sha256"
-            rndc_secret_key = "YmluZGl6cg==" # This is "test" base64-encoded
-
-            [logging]
-            log_level = "debug"
-            enable_file_logging = false
-            log_file_path = "/var/log/bindizr"
-            "#,
-                db_path
-            ),
-        )
-        .unwrap();
+        let config_path = "tests/fixture/bindizr.conf.toml";
 
         // Initialize components (skip if already initialized)
         config::initialize(Some(config_path));
@@ -87,13 +40,11 @@ impl TestContext {
         };
 
         // Create API router
-        let app = ApiController::routes().await;
+        let api_router = ApiController::routes().await;
 
         Self {
-            app,
+            api_router,
             db_pool,
-            _temp_db_file: temp_db_file,
-            _temp_config_file: temp_config_file,
         }
     }
 
@@ -193,7 +144,7 @@ impl TestContext {
             request_builder.body(Body::empty()).unwrap()
         };
 
-        let response = self.app.clone().oneshot(request).await.unwrap();
+        let response = self.api_router.clone().oneshot(request).await.unwrap();
         let status = response.status();
 
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)

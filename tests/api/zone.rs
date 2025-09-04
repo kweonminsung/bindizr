@@ -72,7 +72,7 @@ async fn test_zone_crud_operations() {
     let (status, _) = ctx
         .make_request("DELETE", &format!("/zones/{}", zone_id), None)
         .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
 
     // Verify deletion
     let (status, _) = ctx

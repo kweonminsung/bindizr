@@ -1,4 +1,5 @@
 use crate::api::{
+    controller::middleware::body_parser::JsonBody,
     dto::{CreateRecordRequest, GetRecordResponse},
     service::record::RecordService,
 };
@@ -61,7 +62,7 @@ impl RecordController {
         (StatusCode::OK, Json(json_body))
     }
 
-    async fn create_record(Json(body): Json<CreateRecordRequest>) -> impl IntoResponse {
+    async fn create_record(JsonBody(body): JsonBody<CreateRecordRequest>) -> impl IntoResponse {
         let raw_record = match RecordService::create_record(&body).await {
             Ok(record) => record,
             Err(err) => {

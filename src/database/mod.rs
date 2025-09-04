@@ -1,5 +1,5 @@
 use crate::{config, log_error, log_info};
-use sqlx::{MySql, Pool, Postgres, Sqlite};
+use sqlx::{MySql, Pool, Postgres, Sqlite, sqlite::SqlitePoolOptions};
 use std::sync::OnceLock;
 
 pub mod model;
@@ -112,29 +112,25 @@ impl DatabasePool {
 
         database_pool
     }
-
     pub async fn new_sqlite(url: &str) -> Self {
-        let pool = Pool::<Sqlite>::connect(url).await.unwrap_or_else(|e| {
-            log_error!("Failed to create SQLite database pool: {}", e);
-            std::process::exit(1);
-        });
-
-        let database_pool = DatabasePool::SQLite(pool);
-
-        // Enable foreign key constraints for SQLite
-        if let DatabasePool::SQLite(ref pool) = database_pool {
-            let mut conn = pool.acquire().await.unwrap_or_else(|e| {
-                log_error!("Failed to acquire SQLite connection: {}", e);
+        let pool = SqlitePoolOptions::new()
+            .after_connect(|conn, _meta| {
+                Box::pin(async move {
+                    // Enable foreign key constraints for SQLite
+                    sqlx::query("PRAGMA foreign_keys = ON")
+                        .execute(conn)
+                        .await
+                        .map(|_| ())
+                })
+            })
+            .connect(url)
+            .await
+            .unwrap_or_else(|e| {
+                log_error!("Failed to create SQLite database pool: {}", e);
                 std::process::exit(1);
             });
-            sqlx::query("PRAGMA foreign_keys = ON")
-                .execute(&mut *conn)
-                .await
-                .unwrap_or_else(|e| {
-                    log_error!("Failed to enable foreign keys: {}", e);
-                    std::process::exit(1);
-                });
-        }
+
+        let database_pool = DatabasePool::SQLite(pool);
 
         // Create tables
         if let Err(e) = database_pool.create_tables().await {

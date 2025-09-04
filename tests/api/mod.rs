@@ -35,7 +35,7 @@ mod test {
         });
 
         let (status, _) = ctx.make_request("POST", "/zones", Some(invalid_json)).await;
-        assert!(status == StatusCode::BAD_REQUEST);
+        assert_eq!(status, StatusCode::BAD_REQUEST);
 
         // Test invalid record type
         let zone = ctx.create_test_zone().await;
