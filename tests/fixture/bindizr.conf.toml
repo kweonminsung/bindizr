@@ -1,0 +1,28 @@
+
+[api]
+host = "127.0.0.1"
+port = 3000
+require_authentication = false
+
+[database]
+type = "sqlite"
+
+[database.mysql]
+server_url = ""
+
+[database.sqlite]
+file_path = "file::memory:?cache=shared"
+
+[database.postgresql]
+server_url = ""
+
+[bind]
+bind_config_path = "/etc/bind"
+rndc_server_url = "127.0.0.1:953"
+rndc_algorithm = "sha256"
+rndc_secret_key = "YmluZGl6cg=="  # This is "test" base64-encoded
+
+[logging]
+log_level = "debug"
+enable_file_logging = false
+log_file_path = "/var/log/bindizr"
