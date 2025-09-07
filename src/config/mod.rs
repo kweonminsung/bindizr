@@ -28,7 +28,7 @@ fn get_config_str(key: &str) -> String {
         .get()
         .expect("Configuration not initialized")
         .get::<config::Value>(key)
-        .unwrap()
+        .expect(&format!("Configuration key '{}' not found", key))
         .into_string()
         .unwrap()
 }
