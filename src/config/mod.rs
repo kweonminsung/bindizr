@@ -5,6 +5,8 @@ use config::{Config, File, FileFormat, Source, ValueKind};
 use once_cell::sync::OnceCell;
 use std::{any::type_name, collections::HashMap, str::FromStr};
 
+use crate::log_error;
+
 // Config file path
 pub const CONF_FILE_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
@@ -18,7 +20,14 @@ pub fn initialize(conf_file_path: Option<&str>) {
     let cfg = Config::builder()
         .add_source(File::new(conf_file_path, FileFormat::Toml).required(true))
         .build()
-        .expect("Failed to build configuration");
+        .unwrap_or_else(|e| {
+            log_error!(
+                "Failed to build configuration from file '{}': {}",
+                conf_file_path,
+                e
+            );
+            std::process::exit(1);
+        });
 
     CONFIG.get_or_init(|| cfg);
 }
@@ -28,9 +37,19 @@ fn get_config_str(key: &str) -> String {
         .get()
         .expect("Configuration not initialized")
         .get::<config::Value>(key)
-        .unwrap()
+        .unwrap_or_else(|_| {
+            log_error!("Configuration key '{}' not found", key);
+            std::process::exit(1);
+        })
         .into_string()
-        .unwrap()
+        .unwrap_or_else(|e| {
+            log_error!(
+                "Failed to convert configuration value for key '{}' to string: {}",
+                key,
+                e
+            );
+            std::process::exit(1);
+        })
 }
 
 fn get_config_map() -> Result<HashMap<String, config::Value>, String> {
@@ -83,11 +102,12 @@ where
     let value_str = get_config_str(key);
 
     value_str.parse::<T>().unwrap_or_else(|e| {
-        panic!(
+        log_error!(
             "Failed to parse configuration for '{}'. Expected type: {}. Error: {}",
             key,
             type_name::<T>(),
             e
-        )
+        );
+        std::process::exit(1);
     })
 }

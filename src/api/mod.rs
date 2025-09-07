@@ -3,7 +3,7 @@ pub mod service;
 
 mod dto;
 
-use crate::{config, log_info};
+use crate::{config, log_error, log_info};
 use controller::ApiController;
 use once_cell::sync::OnceCell;
 use std::{net::SocketAddr, sync::Arc};
@@ -20,7 +20,10 @@ pub async fn initialize() -> Result<(), String> {
 
     let addr = SocketAddr::from((ip_addr, port));
 
-    let listener = TcpListener::bind(addr).await.unwrap();
+    let listener = TcpListener::bind(addr).await.unwrap_or_else(|e| {
+        log_error!("Failed to bind to address {}: {:?}", addr, e);
+        std::process::exit(1);
+    });
 
     log_info!("Listening on http://{}", addr);
 
