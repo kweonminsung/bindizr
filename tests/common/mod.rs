@@ -39,6 +39,16 @@ impl TestContext {
             _ => panic!("Expected SQLite pool for tests"),
         };
 
+        // Clear the database for a clean test environment
+        sqlx::query("DELETE FROM records")
+            .execute(&db_pool)
+            .await
+            .expect("Failed to clear records table");
+        sqlx::query("DELETE FROM zones")
+            .execute(&db_pool)
+            .await
+            .expect("Failed to clear zones table");
+
         // Create API router
         let api_router = ApiController::routes().await;
 
