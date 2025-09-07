@@ -16,6 +16,9 @@ path = "src/lib.rs"
 name = "bindizr"
 path = "src/main.rs"
 
+[profile.release]
+panic = "unwind"
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 axum = "0.8.4"
