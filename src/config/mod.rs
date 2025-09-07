@@ -42,7 +42,14 @@ fn get_config_str(key: &str) -> String {
             std::process::exit(1);
         })
         .into_string()
-        .unwrap()
+        .unwrap_or_else(|e| {
+            log_error!(
+                "Failed to convert configuration value for key '{}' to string: {}",
+                key,
+                e
+            );
+            std::process::exit(1);
+        })
 }
 
 fn get_config_map() -> Result<HashMap<String, config::Value>, String> {
