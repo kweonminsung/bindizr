@@ -4,7 +4,7 @@ Bindizr is a Rust-based daemon that synchronizes DNS zone records between BIND9 
 It provides an HTTP API for managing DNS zones and automatically applies changes to BIND9 via RNDC.
 
 Main Features:
-  - Synchronize BIND9 DNS zone files with MySQL database.
+- Synchronize BIND9 DNS zone files with MySQL, PostgreSQL, or SQLite database.
   - Expose HTTP API for external management.
   - Automatically reload BIND9 zones after updates.
   - Token-based API authentication.

@@ -1,16 +1,13 @@
 use crate::{
-    daemon::{
-        self,
-        socket::{client::DAEMON_SOCKET_CLIENT, dto::DaemonStatusResponse},
-    },
+    daemon::socket::{client::DaemonSocketClient, dto::DaemonStatusResponse},
     log_debug,
 };
 
-pub fn handle_command() -> Result<(), String> {
-    daemon::socket::client::initialize();
+pub async fn handle_command() -> Result<(), String> {
+    let client = DaemonSocketClient::new();
 
     // Create socket request
-    let res = DAEMON_SOCKET_CLIENT.send_command("status", None)?;
+    let res = client.send_command("status", None).await?;
 
     log_debug!("Status command result: {:?}", res);
 

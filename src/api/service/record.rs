@@ -1,282 +1,299 @@
-use super::{common::CommonService, record_history::RecordHistoryService};
 use crate::{
     api::dto::CreateRecordRequest,
     database::{
-        model::record::{Record, RecordType},
-        DatabasePool,
+        get_record_history_repository, get_record_repository, get_zone_repository,
+        model::{
+            record::{Record, RecordType},
+            record_history::RecordHistory,
+        },
     },
     log_error,
 };
 use chrono::Utc;
-use mysql::prelude::Queryable;
 
 #[derive(Clone)]
 pub struct RecordService;
 
 impl RecordService {
-    fn get_record_by_name(pool: &DatabasePool, record_name: &str) -> Result<Record, String> {
-        let mut conn = pool.get_connection();
-
-        let res = match conn.exec_map(
-            r#"
-                SELECT *
-                FROM records
-                WHERE name = ?
-            "#,
-            (record_name,),
-            |row: mysql::Row| Record::from_row(row),
-        ) {
-            Ok(record) => record,
-            Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
-                return Err("Failed to fetch record".to_string());
-            }
-        };
-
-        res.into_iter()
-            .next()
-            .ok_or_else(|| "Record not found".to_string())
-    }
-
-    pub fn get_records(
-        pool: &DatabasePool,
-        zone_id: Option<i32>,
-    ) -> Result<Vec<Record>, String> {
-        let mut conn = pool.get_connection();
+    pub async fn get_records(zone_id: Option<i32>) -> Result<Vec<Record>, String> {
+        let zone_repository = get_zone_repository();
+        let record_repository = get_record_repository();
 
         match zone_id {
             Some(id) => {
                 // Check if zone exists
-                CommonService::get_zone_by_id(pool, id)?;
+                match zone_repository.get_by_id(id).await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        return Err("Zone not found".to_string());
+                    }
+                    Err(e) => {
+                        log_error!("Failed to fetch zone: {}", e);
+                        return Err("Failed to fetch zone".to_string());
+                    }
+                }
 
-                match conn.exec_map(
-                    r#"
-                        SELECT *
-                        FROM records
-                        WHERE zone_id = ?
-                    "#,
-                    (id,),
-                    |row: mysql::Row| Record::from_row(row),
-                ) {
+                // Fetch records by zone_id
+                match record_repository.get_by_zone_id(id).await {
                     Ok(records) => Ok(records),
                     Err(e) => {
-                        log_error!("Failed to fetch records: {}", e);
-                        Err("Failed to fetch records".to_string())
+                        log_error!("Failed to fetch records for zone {}: {}", id, e);
+                        Err(format!("Failed to fetch records for zone {}", id))
                     }
                 }
             }
-            None => match conn.exec_map(
-                r#"
-                    SELECT *
-                    FROM records
-                "#,
-                (),
-                |row: mysql::Row| Record::from_row(row),
-            ) {
-                Ok(records) => Ok(records),
-                Err(e) => {
-                    log_error!("Failed to fetch records: {}", e);
-                    Err("Failed to fetch records".to_string())
+            None => {
+                // Fetch all records
+                match record_repository.get_all().await {
+                    Ok(records) => Ok(records),
+                    Err(e) => {
+                        log_error!("Failed to fetch all records: {}", e);
+                        Err("Failed to fetch all records".to_string())
+                    }
                 }
-            },
+            }
         }
     }
 
-    pub fn get_record(pool: &DatabasePool, record_id: i32) -> Result<Record, String> {
-        CommonService::get_record_by_id(pool, record_id)
+    pub async fn get_record(record_id: i32) -> Result<Record, String> {
+        let record_repository = get_record_repository();
+
+        match record_repository.get_by_id(record_id).await {
+            Ok(Some(record)) => Ok(record),
+            Ok(None) => Err(format!("Record with id {} not found", record_id)),
+            Err(e) => {
+                log_error!("Failed to fetch record: {}", e);
+                Err("Failed to fetch record".to_string())
+            }
+        }
     }
 
-    pub fn create_record(
-        pool: &DatabasePool,
+    pub async fn create_record(
         create_record_request: &CreateRecordRequest,
     ) -> Result<Record, String> {
-        let mut conn = pool.get_connection();
-
-        // Check if record already exists
-        if Self::get_record_by_name(pool, &create_record_request.name).is_ok() {
-            return Err(format!(
-                "Record {} already exists",
-                create_record_request.name
-            ));
-        }
-
-        // Check if zone exists
-        CommonService::get_zone_by_id(pool, create_record_request.zone_id)?;
+        let zone_repository = get_zone_repository();
+        let record_repository = get_record_repository();
+        let record_history_repository = get_record_history_repository();
 
         // Validate record type
         let record_type = RecordType::from_str(&create_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", create_record_request.record_type))?;
 
-        let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
-            Ok(tx) => tx,
-            Err(err) => {
-                log_error!("Failed to start transaction: {}", err);
-                return Err("Failed to create record".to_string());
+        // Check if record with the same name and type already exists
+        match record_repository
+            .get_by_name_and_type(&create_record_request.name, &record_type)
+            .await
+        {
+            Ok(Some(existing_record)) => {
+                return Err(format!(
+                    "Record with name '{}' and type '{}' already exists",
+                    existing_record.name, existing_record.record_type
+                ));
             }
-        };
-
-        match tx.exec_drop(
-            "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                &create_record_request.name,
-                record_type.to_str(),
-                &create_record_request.value,
-                create_record_request.ttl,
-                create_record_request.priority,
-                create_record_request.zone_id,
-            ),
-        ) {
-            Ok(_) => {}
+            Ok(None) => {}
             Err(e) => {
-                log_error!("Failed to insert record: {}", e);
+                log_error!("Failed to check existing record: {}", e);
                 return Err("Failed to create record".to_string());
             }
-        };
+        }
 
-        // Get last insert id
-        let last_insert_id = match tx.last_insert_id() {
-            Some(id) => id,
-            None => {
-                log_error!("Failed to get last insert id");
+        // Check if zone exists
+        match zone_repository
+            .get_by_id(create_record_request.zone_id)
+            .await
+        {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return Err(format!(
+                    "Zone with id {} not found",
+                    create_record_request.zone_id
+                ));
+            }
+            Err(e) => {
+                log_error!("Failed to fetch zone: {}", e);
                 return Err("Failed to create record".to_string());
             }
-        };
+        }
+
+        // Create record
+        let created_record = record_repository
+            .create(Record {
+                id: 0, // Will be set by the database
+                name: create_record_request.name.clone(),
+                record_type,
+                value: create_record_request.value.clone(),
+                ttl: create_record_request.ttl,
+                priority: create_record_request.priority,
+                zone_id: create_record_request.zone_id,
+                created_at: Utc::now(), // Will be set by the database
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create record: {}", e);
+                "Failed to create record".to_string()
+            })?;
 
         // Create record history
-        RecordHistoryService::create_record_history(
-            &mut tx,
-            last_insert_id as i32,
-            &format!(
-                "[{}] Record created: id={}, zone_id={}, name={}, type={}, value={}",
-                Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                last_insert_id,
-                create_record_request.zone_id,
-                create_record_request.name,
-                create_record_request.record_type,
-                create_record_request.value,
-            ),
-        )?;
+        record_history_repository
+            .create(RecordHistory {
+                id: 0, // Will be set by the database
+                record_id: created_record.id,
+                log: format!(
+                    "[{}] Record created: id={}, zone_id={}, name={}, type={}, value={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                    created_record.id,
+                    create_record_request.zone_id,
+                    create_record_request.name,
+                    create_record_request.record_type,
+                    create_record_request.value,
+                ),
+                created_at: Utc::now(), // Will be set by the database
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create record history: {}", e);
+                "Failed to create record history".to_string()
+            })?;
 
-        match tx.commit() {
-            Ok(_) => {}
-            Err(e) => {
-                log_error!("Failed to commit transaction: {}", e);
-                return Err("Failed to create record history".to_string());
-            }
-        };
-
-        CommonService::get_record_by_id(pool, last_insert_id as i32)
+        Ok(created_record)
     }
 
-    pub fn update_record(
-        pool: &DatabasePool,
+    pub async fn update_record(
         record_id: i32,
         update_record_request: &CreateRecordRequest,
     ) -> Result<Record, String> {
-        let mut conn = pool.get_connection();
+        let zone_repository = get_zone_repository();
+        let record_repository = get_record_repository();
+        let record_history_repository = get_record_history_repository();
 
         // Check if record exists
-        CommonService::get_record_by_id(pool, record_id)?;
+        match record_repository.get_by_id(record_id).await {
+            Ok(Some(record)) => Ok(record),
+            Ok(None) => Err(format!("Record with id {} not found", record_id)),
+            Err(e) => {
+                log_error!("Failed to fetch record: {}", e);
+                Err("Failed to fetch record".to_string())
+            }
+        }?;
 
         // Check if zone exists
-        CommonService::get_zone_by_id(pool, update_record_request.zone_id)?;
+        match zone_repository
+            .get_by_id(update_record_request.zone_id)
+            .await
+        {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return Err("Zone not found".to_string());
+            }
+            Err(e) => {
+                log_error!("Failed to fetch zone: {}", e);
+                return Err("Failed to fetch zone".to_string());
+            }
+        }
 
+        // Validate record type
         let record_type = RecordType::from_str(&update_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
 
-        let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
-            Ok(tx) => tx,
-            Err(err) => {
-                log_error!("Failed to start transaction: {}", err);
-                return Err("Failed to update record".to_string());
+        // Check if record with the same name and type already exists
+        match record_repository
+            .get_by_name_and_type(&update_record_request.name, &record_type)
+            .await
+        {
+            Ok(Some(existing_record)) if existing_record.id != record_id => {
+                return Err(format!(
+                    "Record with name '{}' and type '{}' already exists",
+                    existing_record.name, existing_record.record_type
+                ));
             }
-        };
-
-        match tx.exec_drop(
-            "UPDATE records SET name = ?, record_type = ?, value = ?, ttl = ?, priority = ?, zone_id = ? WHERE id = ?",
-            (
-                &update_record_request.name,
-                record_type.to_str(),
-                &update_record_request.value,
-                update_record_request.ttl,
-                update_record_request.priority,
-                update_record_request.zone_id,
-                record_id,
-            ),
-        ) {
-            Ok(_) => {}
+            Ok(Some(_)) => (), // The same record, allow update
+            Ok(None) => {}
             Err(e) => {
-                log_error!("Failed to update record: {}", e);
-                return Err("Failed to update record".to_string());
+                log_error!("Failed to check existing record: {}", e);
+                return Err("Failed to create record".to_string());
             }
-        };
+        }
+
+        // Update record
+        let updated_record = record_repository
+            .update(Record {
+                id: record_id,
+                name: update_record_request.name.clone(),
+                record_type,
+                value: update_record_request.value.clone(),
+                ttl: update_record_request.ttl,
+                priority: update_record_request.priority,
+                zone_id: update_record_request.zone_id,
+                created_at: Utc::now(), // Will be set by the database
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to update record: {}", e);
+                "Failed to update record".to_string()
+            })?;
 
         // Create record history
-        RecordHistoryService::create_record_history(
-            &mut tx,
-            record_id,
-            &format!(
-                "[{}] Record updated: id={}, zone_id={}, name={}, type={}, value={}",
-                Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                record_id,
-                update_record_request.zone_id,
-                update_record_request.name,
-                update_record_request.record_type,
-                update_record_request.value,
-            ),
-        )?;
+        record_history_repository
+            .create(RecordHistory {
+                id: 0, // Will be set by the database
+                record_id: updated_record.id,
+                log: format!(
+                    "[{}] Record updated: id={}, zone_id={}, name={}, type={}, value={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                    updated_record.id,
+                    update_record_request.zone_id,
+                    update_record_request.name,
+                    update_record_request.record_type,
+                    update_record_request.value,
+                ),
+                created_at: Utc::now(), // Will be set by the database
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create record history: {}", e);
+                "Failed to create record history".to_string()
+            })?;
 
-        match tx.commit() {
-            Ok(_) => {}
-            Err(e) => {
-                log_error!("Failed to commit transaction: {}", e);
-                return Err("Failed to update record".to_string());
-            }
-        };
-
-        CommonService::get_record_by_id(pool, record_id)
+        Ok(updated_record)
     }
 
-    pub fn delete_record(pool: &DatabasePool, record_id: i32) -> Result<(), String> {
-        let mut conn = pool.get_connection();
+    pub async fn delete_record(record_id: i32) -> Result<(), String> {
+        let record_repository = get_record_repository();
+        // let record_history_repository = get_record_history_repository();
 
         // Check if record exists
-        CommonService::get_record_by_id(pool, record_id)?;
-
-        let mut tx = match conn.start_transaction(mysql::TxOpts::default()) {
-            Ok(tx) => tx,
-            Err(err) => {
-                log_error!("Failed to start transaction: {}", err);
-                return Err("Failed to delete record".to_string());
-            }
-        };
-
-        match tx.exec_drop("DELETE FROM records WHERE id = ?", (record_id,)) {
-            Ok(_) => {}
+        match record_repository.get_by_id(record_id).await {
+            Ok(Some(record)) => Ok(record),
+            Ok(None) => Err(format!("Record with id {} not found", record_id)),
             Err(e) => {
-                log_error!("Failed to delete record: {}", e);
-                return Err("Failed to delete record".to_string());
+                log_error!("Failed to fetch record: {}", e);
+                Err("Failed to fetch record".to_string())
             }
-        };
+        }?;
+
+        // Delete record
+        record_repository.delete(record_id).await.map_err(|e| {
+            log_error!("Failed to delete record: {}", e);
+            "Failed to delete record".to_string()
+        })?;
 
         // Create record history
-        RecordHistoryService::create_record_history(
-            &mut tx,
-            record_id,
-            &format!(
-                "[{}] Record deleted: id={}",
-                Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                record_id,
-            ),
-        )?;
-
-        match tx.commit() {
-            Ok(_) => {}
-            Err(e) => {
-                log_error!("Failed to commit transaction: {}", e);
-                return Err("Failed to delete record".to_string());
-            }
-        };
+        // record_history_repository
+        //     .create(RecordHistory {
+        //         id: 0, // Will be set by the database
+        //         record_id,
+        //         log: format!(
+        //             "[{}] Record deleted: id={}",
+        //             Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        //             record_id,
+        //         ),
+        //         created_at: Utc::now(), // Will be set by the database
+        //     })
+        //     .await
+        //     .map_err(|e| {
+        //         log_error!("Failed to create record history: {}", e);
+        //         "Failed to create record history".to_string()
+        //     })?;
 
         Ok(())
     }

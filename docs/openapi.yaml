@@ -658,7 +658,6 @@ components:
         - id
         - log
         - created_at
-        - updated_at
         - zone_id
       properties:
         id:
@@ -669,10 +668,6 @@ components:
           type: string
           example: "[2025-10-01 12:00:00] Zone created: id=1, name=example.com"
         created_at:
-          type: string
-          format: date-time
-          example: '2023-10-01T12:00:00Z'
-        updated_at:
           type: string
           format: date-time
           example: '2023-10-01T12:00:00Z'
@@ -743,7 +738,6 @@ components:
         - id
         - log
         - created_at
-        - updated_at
         - record_id
       properties:
         id:
@@ -754,10 +748,6 @@ components:
           type: string
           example: "[2025-10-01 12:00:00] Record created: id=1, zone_id=1, name=sub, type=A, value=127.0.0.1"
         created_at:
-          type: string
-          format: date-time
-          example: '2023-10-01T12:00:00Z'
-        updated_at:
           type: string
           format: date-time
           example: '2023-10-01T12:00:00Z'

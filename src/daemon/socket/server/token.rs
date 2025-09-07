@@ -1,25 +1,64 @@
+use chrono::{Duration, Utc};
+use rand::{Rng, distr::Alphanumeric};
+use sha2::{Digest, Sha256};
+
 use crate::{
-    api::service::auth::AuthService, daemon::socket::dto::DaemonResponse, database::DATABASE_POOL,
+    daemon::socket::dto::DaemonResponse,
+    database::{get_api_token_repository, model::api_token::ApiToken},
+    log_error,
 };
 
-pub fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let description = data.get("description").and_then(|v| v.as_str());
     let expires_in_days = data.get("expires_in_days").and_then(|v| v.as_i64());
 
-    // Generate token
-    let token = AuthService::generate_token(&DATABASE_POOL, description, expires_in_days)?;
+    // Generate random token (32 bytes)
+    let random_string: String = rand::rng()
+        .sample_iter(Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+
+    // SHA-256 hashing
+    let mut hasher = Sha256::new();
+    hasher.update(random_string);
+    let token = hex::encode(hasher.finalize());
+
+    let expires_at = expires_in_days.map(|days| Utc::now() + Duration::days(days));
+
+    // Create token
+    let api_token_repository = get_api_token_repository();
+    let created_token = api_token_repository
+        .create(ApiToken {
+            id: 0, // Will be set by the database
+            token,
+            description: description.map(|d| d.to_string()),
+            expires_at,
+            created_at: Utc::now(), // Will be set by the database
+            last_used_at: None,
+        })
+        .await
+        .map_err(|e| format!("Failed to create token: {}", e))?;
 
     // Create response
     let response = DaemonResponse {
         message: "Token created successfully".to_string(),
-        data: serde_json::to_value(token).unwrap(),
+        data: serde_json::to_value(created_token).unwrap(),
     };
     Ok(response)
 }
 
-pub fn list_tokens() -> Result<DaemonResponse, String> {
-    let tokens = AuthService::list_tokens(&DATABASE_POOL)
-        .map_err(|e| format!("Failed to list tokens: {}", e))?;
+pub async fn list_tokens() -> Result<DaemonResponse, String> {
+    let api_token_repository = get_api_token_repository();
+
+    // List tokens
+    let tokens = match api_token_repository.get_all().await {
+        Ok(tokens) => Ok(tokens),
+        Err(e) => {
+            log_error!("Failed to list tokens: {}", e);
+            Err("Failed to list tokens".to_string())
+        }
+    }?;
 
     let response = DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
@@ -28,7 +67,7 @@ pub fn list_tokens() -> Result<DaemonResponse, String> {
     Ok(response)
 }
 
-pub fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let token_id = data.get("id").and_then(|v| v.as_i64());
 
     if token_id.is_none() {
@@ -37,7 +76,22 @@ pub fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, String> 
 
     let token_id = token_id.unwrap() as i32;
 
-    AuthService::delete_token(&DATABASE_POOL, token_id)
+    let api_token_repository = get_api_token_repository();
+
+    // Check if token exists
+    match api_token_repository.get_by_id(token_id).await {
+        Ok(Some(_)) => (),
+        Ok(None) => return Err("Token not found".to_string()),
+        Err(e) => {
+            log_error!("Failed to fetch token by ID: {}", e);
+            return Err("Failed to fetch token by ID".to_string());
+        }
+    }
+
+    // Delete token
+    api_token_repository
+        .delete(token_id)
+        .await
         .map_err(|e| format!("Failed to delete token: {}", e))?;
 
     let response = DaemonResponse {

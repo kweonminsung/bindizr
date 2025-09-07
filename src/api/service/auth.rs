@@ -1,158 +1,47 @@
 use crate::{
-    database::{DatabasePool, model::api_token::ApiToken},
+    database::{get_api_token_repository, model::api_token::ApiToken},
     log_error,
 };
-use chrono::{Duration, Utc};
-use mysql::prelude::*;
-use rand::{Rng, distr::Alphanumeric};
-use sha2::{Digest, Sha256};
+use chrono::Utc;
 
 pub struct AuthService;
 
 impl AuthService {
-    pub fn generate_token(
-        pool: &DatabasePool,
-        description: Option<&str>,
-        expires_in_days: Option<i64>,
-    ) -> Result<ApiToken, String> {
-        // Generate random token (32 bytes)
-        let random_string: String = rand::rng()
-            .sample_iter(Alphanumeric)
-            .take(32)
-            .map(char::from)
-            .collect();
+    pub async fn validate_token(token_str: &str) -> Result<ApiToken, String> {
+        let api_token_repository = get_api_token_repository();
 
-        // SHA-256 hashing
-        let mut hasher = Sha256::new();
-        hasher.update(random_string);
-        let token = hex::encode(hasher.finalize());
-
-        let expires_at = expires_in_days.map(|days| Utc::now() + Duration::days(days));
-
-        let mut conn = pool.get_connection();
-        match conn.exec_drop(
-            r#"
-            INSERT INTO api_tokens (token, description, expires_at)
-            VALUES (?, ?, ?)
-            "#,
-            (
-                &token,
-                description,
-                expires_at.map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string()),
-            ),
-        ) {
-            Ok(_) => (),
-            Err(e) => {
-                log_error!("Failed to insert token: {}", e);
-                return Err("Failed to create token".to_string());
-            }
-        };
-
-        let token_id = conn.last_insert_id() as i32;
-
-        Self::get_token_by_id(pool, token_id)
-    }
-
-    pub fn get_token_by_id(pool: &DatabasePool, token_id: i32) -> Result<ApiToken, String> {
-        let mut conn = pool.get_connection();
-
-        let res = match conn.exec_map(
-            r#"
-            SELECT * FROM api_tokens WHERE id = ?
-            "#,
-            (token_id,),
-            ApiToken::from_row,
-        ) {
-            Ok(tokens) => tokens,
-            Err(e) => {
-                log_error!("Failed to fetch token: {}", e);
-                return Err("Failed to fetch token".to_string());
-            }
-        };
-
-        res.into_iter()
-            .next()
-            .ok_or_else(|| "Token not found".to_string())
-    }
-
-    pub fn validate_token(pool: &DatabasePool, token_str: &str) -> Result<ApiToken, String> {
-        let mut conn = pool.get_connection();
-
-        let res = match conn.exec_map(
-            r#"
-                SELECT * FROM api_tokens 
-                WHERE token = ? 
-                AND (expires_at IS NULL OR expires_at > NOW())
-                "#,
-            (token_str,),
-            ApiToken::from_row,
-        ) {
-            Ok(tokens) => tokens,
+        let stored_token = match api_token_repository.get_by_token(token_str).await {
+            Ok(Some(token)) => token,
+            Ok(None) => return Err("Invalid or expired token".to_string()),
             Err(e) => {
                 log_error!("Failed to validate token: {}", e);
                 return Err("Failed to validate token".to_string());
             }
         };
 
-        let token = res
-            .into_iter()
-            .next()
-            .ok_or_else(|| "Invalid or expired token".to_string())?;
+        // Check if the token is expired
+        if let Some(expires_at) = &stored_token.expires_at {
+            if Utc::now() > *expires_at {
+                return Err("Token has expired".to_string());
+            }
+        }
 
         // Update last_used_at to current time
-        match conn.exec_drop(
-            r#"
-            UPDATE api_tokens SET last_used_at = NOW() WHERE id = ?
-            "#,
-            (token.id,),
-        ) {
-            Ok(_) => (),
-            Err(e) => {
+        let updated_token = api_token_repository
+            .update(ApiToken {
+                id: stored_token.id,
+                token: stored_token.token,
+                description: stored_token.description,
+                expires_at: stored_token.expires_at,
+                created_at: stored_token.created_at,
+                last_used_at: Some(Utc::now()),
+            })
+            .await
+            .map_err(|e| {
                 log_error!("Failed to update last_used_at: {}", e);
-                return Err("Failed to update last_used_at".to_string());
-            }
-        }
+                "Failed to update last_used_at".to_string()
+            })?;
 
-        Ok(token)
-    }
-
-    pub fn list_tokens(pool: &DatabasePool) -> Result<Vec<ApiToken>, String> {
-        let mut conn = pool.get_connection();
-
-        match conn.exec_map(
-            r#"
-            SELECT * FROM api_tokens ORDER BY created_at DESC
-            "#,
-            (),
-            ApiToken::from_row,
-        ) {
-            Ok(tokens) => Ok(tokens),
-            Err(e) => {
-                log_error!("Failed to list tokens: {}", e);
-                Err("Failed to list tokens".to_string())
-            }
-        }
-    }
-
-    pub fn delete_token(pool: &DatabasePool, token_id: i32) -> Result<(), String> {
-        let mut conn = pool.get_connection();
-
-        // Check if the token exists
-        Self::get_token_by_id(pool, token_id)?;
-
-        match conn.exec_drop(
-            r#"
-            DELETE FROM api_tokens WHERE id = ?
-            "#,
-            (token_id,),
-        ) {
-            Ok(_) => (),
-            Err(e) => {
-                log_error!("Failed to delete token: {}", e);
-                return Err("Failed to delete token".to_string());
-            }
-        }
-
-        Ok(())
+        Ok(updated_token)
     }
 }

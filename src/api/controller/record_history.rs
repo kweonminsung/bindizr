@@ -2,10 +2,7 @@ use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{
-    api::{dto::GetRecordHistoryResponse, service::record_history::RecordHistoryService},
-    database::DATABASE_POOL,
-};
+use crate::api::{dto::GetRecordHistoryResponse, service::record_history::RecordHistoryService};
 
 pub struct RecordHistoryController;
 
@@ -27,14 +24,14 @@ impl RecordHistoryController {
     ) -> impl IntoResponse {
         let record_id = params.id;
 
-        let raw_record_histories =
-            match RecordHistoryService::get_record_histories(&DATABASE_POOL, record_id) {
-                Ok(record_histories) => record_histories,
-                Err(err) => {
-                    let json_body = json!({ "error": err });
-                    return (StatusCode::BAD_REQUEST, Json(json_body));
-                }
-            };
+        let raw_record_histories = match RecordHistoryService::get_record_histories(record_id).await
+        {
+            Ok(record_histories) => record_histories,
+            Err(err) => {
+                let json_body = json!({ "error": err });
+                return (StatusCode::BAD_REQUEST, Json(json_body));
+            }
+        };
 
         let record_histories = raw_record_histories
             .iter()
@@ -50,7 +47,7 @@ impl RecordHistoryController {
     ) -> impl IntoResponse {
         let history_id = param.history_id;
 
-        match RecordHistoryService::delete_record_history(&DATABASE_POOL, history_id) {
+        match RecordHistoryService::delete_record_history(history_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Record history deleted successfully" });
                 (StatusCode::OK, Json(json_body))

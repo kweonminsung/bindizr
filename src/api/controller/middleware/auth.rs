@@ -1,9 +1,8 @@
 use crate::api::service::auth::AuthService;
-use crate::database::DATABASE_POOL;
 use crate::log_debug;
+use axum::Json;
 use axum::body::Body;
 use axum::http::header::AUTHORIZATION;
-use axum::Json;
 use axum::{
     http::{Request, StatusCode},
     middleware::Next,
@@ -33,7 +32,7 @@ pub async fn auth_middleware(mut req: Request<Body>, next: Next) -> Result<Respo
     let token = &auth_str[7..];
 
     // Validate token
-    match AuthService::validate_token(&DATABASE_POOL, token) {
+    match AuthService::validate_token(token).await {
         Ok(api_token) => {
             req.extensions_mut().insert(api_token);
             Ok(next.run(req).await)

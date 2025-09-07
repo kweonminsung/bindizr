@@ -1,7 +1,4 @@
-use crate::{
-    daemon::{self, socket::client::DAEMON_SOCKET_CLIENT},
-    log_debug,
-};
+use crate::{daemon::socket::client::DaemonSocketClient, log_debug};
 use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]
@@ -14,34 +11,34 @@ pub enum DnsCommand {
     Status,
 }
 
-pub fn handle_command(subcommand: DnsCommand) -> Result<(), String> {
-    daemon::socket::client::initialize();
+pub async fn handle_command(subcommand: DnsCommand) -> Result<(), String> {
+    let client = DaemonSocketClient::new();
 
     match subcommand {
-        DnsCommand::Write => write_dns_config(),
-        DnsCommand::Reload => reload_dns_config(),
-        DnsCommand::Status => get_dns_status(),
+        DnsCommand::Write => write_dns_config(&client).await,
+        DnsCommand::Reload => reload_dns_config(&client).await,
+        DnsCommand::Status => get_dns_status(&client).await,
     }
 }
 
-fn write_dns_config() -> Result<(), String> {
-    let res = DAEMON_SOCKET_CLIENT.send_command("dns_write_config", None)?;
+async fn write_dns_config(client: &DaemonSocketClient) -> Result<(), String> {
+    let res = client.send_command("dns_write_config", None).await?;
 
     log_debug!("DNS configuration write result: {:?}", res);
 
     Ok(())
 }
 
-fn reload_dns_config() -> Result<(), String> {
-    let res = DAEMON_SOCKET_CLIENT.send_command("dns_reload", None)?;
+async fn reload_dns_config(client: &DaemonSocketClient) -> Result<(), String> {
+    let res = client.send_command("dns_reload", None).await?;
 
     log_debug!("DNS configuration reload result: {:?}", res);
 
     Ok(())
 }
 
-fn get_dns_status() -> Result<(), String> {
-    let res = DAEMON_SOCKET_CLIENT.send_command("dns_status", None)?;
+async fn get_dns_status(client: &DaemonSocketClient) -> Result<(), String> {
+    let res = client.send_command("dns_status", None).await?;
 
     log_debug!("DNS status result: {:?}", res);
 

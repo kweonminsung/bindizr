@@ -1,7 +1,8 @@
-use crate::{daemon::socket::client::DAEMON_SOCKET_CLIENT, log_debug};
+use crate::{daemon::socket::client::DaemonSocketClient, log_debug};
 
-pub fn handle_command() -> Result<(), String> {
-    let res = DAEMON_SOCKET_CLIENT.send_command("stop", None)?;
+pub async fn handle_command() -> Result<(), String> {
+    let client = DaemonSocketClient::new();
+    let res = client.send_command("stop", None).await?;
 
     log_debug!("Stop command result: {:?}", res);
 

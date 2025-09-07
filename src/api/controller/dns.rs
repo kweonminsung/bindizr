@@ -1,5 +1,5 @@
 use crate::api::service::dns::DnsService;
-use axum::{http::StatusCode, response::IntoResponse, routing, Json, Router};
+use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
 use serde_json::json;
 
 pub struct DnsController;

@@ -1,7 +1,5 @@
 use crate::{
-    daemon::{self, socket::client::DAEMON_SOCKET_CLIENT},
-    database::model::api_token::ApiToken,
-    log_debug,
+    daemon::socket::client::DaemonSocketClient, database::model::api_token::ApiToken, log_debug,
 };
 use clap::Subcommand;
 use serde_json::json;
@@ -14,8 +12,8 @@ pub enum TokenCommand {
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
         /// Number of days until the token expires (default: never expires)
-        #[arg(long, value_name = "N", default_value_t = 0)]
-        expires_in_days: i64,
+        #[arg(long, value_name = "N")]
+        expires_in_days: Option<i64>,
     },
     /// List all API tokens
     List,
@@ -26,28 +24,34 @@ pub enum TokenCommand {
     },
 }
 
-pub fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
-    daemon::socket::client::initialize();
+pub async fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
+    let client = DaemonSocketClient::new();
 
     match subcommand {
         TokenCommand::Create {
             description,
             expires_in_days,
-        } => create_token(description, Some(expires_in_days)),
-        TokenCommand::List => list_tokens(),
-        TokenCommand::Delete { token_id } => delete_token(token_id),
+        } => create_token(&client, description, expires_in_days).await,
+        TokenCommand::List => list_tokens(&client).await,
+        TokenCommand::Delete { token_id } => delete_token(&client, token_id).await,
     }
 }
 
-fn create_token(description: Option<String>, expires_in_days: Option<i64>) -> Result<(), String> {
+async fn create_token(
+    client: &DaemonSocketClient,
+    description: Option<String>,
+    expires_in_days: Option<i64>,
+) -> Result<(), String> {
     // Create socket request
-    let res = DAEMON_SOCKET_CLIENT.send_command(
-        "token_create",
-        Some(json!({
-            "description": description,
-            "expires_in_days": expires_in_days,
-        })),
-    )?;
+    let res = client
+        .send_command(
+            "token_create",
+            Some(json!({
+                "description": description,
+                "expires_in_days": expires_in_days,
+            })),
+        )
+        .await?;
 
     log_debug!("Token creation result: {:?}", res);
 
@@ -63,10 +67,10 @@ fn create_token(description: Option<String>, expires_in_days: Option<i64>) -> Re
     }
     println!(
         "Created at: {}",
-        token.created_at.format("%Y-%m-%d %H:%M:%S")
+        &token.created_at.format("%Y-%m-%d %H:%M:%S")
     );
     if let Some(expires) = token.expires_at {
-        println!("Expires at: {}", expires.format("%Y-%m-%d %H:%M:%S"));
+        println!("Expires at: {}", &expires.format("%Y-%m-%d %H:%M:%S"));
     } else {
         println!("Expires at: Never");
     }
@@ -74,9 +78,9 @@ fn create_token(description: Option<String>, expires_in_days: Option<i64>) -> Re
     Ok(())
 }
 
-fn list_tokens() -> Result<(), String> {
+async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
     // Create socket request
-    let res = DAEMON_SOCKET_CLIENT.send_command("token_list", None)?;
+    let res = client.send_command("token_list", None).await?;
 
     log_debug!("Token list result: {:?}", res);
 
@@ -111,9 +115,11 @@ fn list_tokens() -> Result<(), String> {
     Ok(())
 }
 
-fn delete_token(token_id: i32) -> Result<(), String> {
+async fn delete_token(client: &DaemonSocketClient, token_id: i32) -> Result<(), String> {
     // Create socket request
-    let res = DAEMON_SOCKET_CLIENT.send_command("token_delete", Some(json!({ "id": token_id })))?;
+    let res = client
+        .send_command("token_delete", Some(json!({ "id": token_id })))
+        .await?;
 
     log_debug!("Token deletion result: {:?}", res);
 

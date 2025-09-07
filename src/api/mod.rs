@@ -1,6 +1,6 @@
+pub mod controller;
 pub mod service;
 
-mod controller;
 mod dto;
 
 use crate::{config, log_info};
