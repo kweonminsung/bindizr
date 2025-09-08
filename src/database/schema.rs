@@ -19,7 +19,7 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             value TEXT NOT NULL,
             ttl INT,
@@ -81,7 +81,7 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             value TEXT NOT NULL,
             ttl INTEGER,
@@ -143,7 +143,7 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
             record_type TEXT NOT NULL,
             value TEXT NOT NULL,
             ttl INTEGER,
