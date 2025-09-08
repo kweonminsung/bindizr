@@ -19,13 +19,14 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             value TEXT NOT NULL,
             ttl INT,
             priority INT,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INT NOT NULL,
+            UNIQUE (name, record_type),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -81,13 +82,14 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
+            name VARCHAR(255) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             value TEXT NOT NULL,
             ttl INTEGER,
             priority INTEGER,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INTEGER NOT NULL,
+            UNIQUE (name, record_type),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -143,13 +145,14 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
             record_type TEXT NOT NULL,
             value TEXT NOT NULL,
             ttl INTEGER,
             priority INTEGER,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INTEGER NOT NULL,
+            UNIQUE (name, record_type),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
