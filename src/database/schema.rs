@@ -26,7 +26,6 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             priority INT,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INT NOT NULL,
-            UNIQUE (name, record_type),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -89,7 +88,6 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             priority INTEGER,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INTEGER NOT NULL,
-            UNIQUE (name, record_type),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -152,7 +150,6 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             priority INTEGER,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INTEGER NOT NULL,
-            UNIQUE (name, record_type),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,

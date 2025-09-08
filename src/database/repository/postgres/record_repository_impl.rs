@@ -88,6 +88,20 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(record)
     }
 
+    async fn get_records_by_name(&self, name: &str) -> Result<Vec<Record>, String> {
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+
+        let records = sqlx::query_as::<_, Record>(
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = $1"
+        )
+        .bind(name)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(records)
+    }
+
     async fn get_all(&self) -> Result<Vec<Record>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 

@@ -79,21 +79,33 @@ impl RecordService {
         let record_type = RecordType::from_str(&create_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", create_record_request.record_type))?;
 
-        // Check if record with the same name and type already exists
-        match record_repository
-            .get_by_name_and_type(&create_record_request.name, &record_type)
+        // CNAME validation
+        let existing_records = match record_repository
+            .get_records_by_name(&create_record_request.name)
             .await
         {
-            Ok(Some(existing_record)) => {
-                return Err(format!(
-                    "Record with name '{}' and type '{}' already exists",
-                    existing_record.name, existing_record.record_type
-                ));
-            }
-            Ok(None) => {}
+            Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to check existing record: {}", e);
                 return Err("Failed to create record".to_string());
+            }
+        };
+
+        if !existing_records.is_empty() {
+            if record_type == RecordType::CNAME {
+                return Err(format!(
+                    "A record with name '{}' already exists, so CNAME cannot be used",
+                    create_record_request.name
+                ));
+            }
+            if existing_records
+                .iter()
+                .any(|r| r.record_type == RecordType::CNAME)
+            {
+                return Err(format!(
+                    "A CNAME record with name '{}' already exists",
+                    create_record_request.name
+                ));
             }
         }
 
@@ -195,22 +207,38 @@ impl RecordService {
         let record_type = RecordType::from_str(&update_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
 
-        // Check if record with the same name and type already exists
-        match record_repository
-            .get_by_name_and_type(&update_record_request.name, &record_type)
+        // CNAME validation
+        let existing_records = match record_repository
+            .get_records_by_name(&update_record_request.name)
             .await
         {
-            Ok(Some(existing_record)) if existing_record.id != record_id => {
-                return Err(format!(
-                    "Record with name '{}' and type '{}' already exists",
-                    existing_record.name, existing_record.record_type
-                ));
-            }
-            Ok(Some(_)) => (), // The same record, allow update
-            Ok(None) => {}
+            Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to check existing record: {}", e);
-                return Err("Failed to create record".to_string());
+                return Err("Failed to update record".to_string());
+            }
+        };
+
+        let other_records: Vec<_> = existing_records
+            .into_iter()
+            .filter(|r| r.id != record_id)
+            .collect();
+
+        if !other_records.is_empty() {
+            if record_type == RecordType::CNAME {
+                return Err(format!(
+                    "A record with name '{}' already exists, so CNAME cannot be used",
+                    update_record_request.name
+                ));
+            }
+            if other_records
+                .iter()
+                .any(|r| r.record_type == RecordType::CNAME)
+            {
+                return Err(format!(
+                    "A CNAME record with name '{}' already exists",
+                    update_record_request.name
+                ));
             }
         }
 
