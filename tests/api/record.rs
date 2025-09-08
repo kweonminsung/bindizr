@@ -15,20 +15,19 @@ async fn test_record_crud_operations() {
 
     // Test POST /records (create)
     let create_record_request = serde_json::json!({
-        "name": "api.example.com",
+        "name": "api",
         "record_type": "A",
         "value": "192.168.1.200",
         "ttl": 1800,
         "zone_id": zone.id
     });
-
     let (status, body) = ctx
         .make_request("POST", "/records", Some(create_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
     let record_id = body["record"]["id"].as_i64().unwrap();
-    assert_eq!(body["record"]["name"], "api.example.com");
+    assert_eq!(body["record"]["name"], "api");
     assert_eq!(body["record"]["record_type"], "A");
 
     // Test GET /records/{id}
@@ -36,18 +35,44 @@ async fn test_record_crud_operations() {
         .make_request("GET", &format!("/records/{}", record_id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["record"]["name"], "api.example.com");
+    assert_eq!(body["record"]["name"], "api");
+
+    // Test POST /records with same name and same type (should fail)
+    let duplicate_record_request = serde_json::json!({
+        "name": "api",
+        "record_type": "A",
+        "value": "192.168.1.200",
+        "ttl": 1800,
+        "zone_id": zone.id
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/records", Some(duplicate_record_request))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Test POST /records with same name and different type (should succeed)
+    let different_type_record_request = serde_json::json!({
+        "name": "api",
+        "record_type": "CNAME",
+        "value": "other.example.com",
+        "ttl": 1800,
+        "zone_id": zone.id
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/records", Some(different_type_record_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
 
     // Test GET /records (with data)
     let (status, body) = ctx
         .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["records"].as_array().unwrap().len(), 1);
+    assert_eq!(body["records"].as_array().unwrap().len(), 2);
 
     // Test PUT /records/{id} (update)
     let update_record_request = serde_json::json!({
-        "name": "api-updated.example.com",
+        "name": "api-updated",
         "record_type": "A",
         "value": "192.168.1.201",
         "ttl": 3600,
@@ -62,7 +87,7 @@ async fn test_record_crud_operations() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["record"]["name"], "api-updated.example.com");
+    assert_eq!(body["record"]["name"], "api-updated");
     assert_eq!(body["record"]["value"], "192.168.1.201");
 
     // Test DELETE /records/{id}
@@ -100,21 +125,11 @@ async fn test_multiple_record_types() {
     let zone = ctx.create_test_zone().await;
 
     let record_types = vec![
-        ("mail.example.com", "MX", "10 mail.example.com", Some(10)),
-        (
-            "_sip._tcp.example.com",
-            "SRV",
-            "10 5 5060 sip.example.com",
-            Some(10),
-        ),
-        (
-            "example.com",
-            "TXT",
-            "v=spf1 include:_spf.google.com ~all",
-            None,
-        ),
-        ("ipv6.example.com", "AAAA", "2001:db8::1", None),
-        ("alias.example.com", "CNAME", "www.example.com", None),
+        ("mail", "MX", "10 mail.example.com", Some(10)),
+        ("_sip._tcp", "SRV", "10 5 5060 sip.example.com", Some(10)),
+        ("@", "TXT", "v=spf1 include:_spf.google.com ~all", None),
+        ("ipv6", "AAAA", "2001:db8::1", None),
+        ("alias", "CNAME", "www.example.com", None),
     ];
 
     for (name, record_type, value, priority) in record_types {
