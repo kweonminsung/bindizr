@@ -33,11 +33,11 @@ install -D -m 755 target/release/%{crate} %{buildroot}%{_bindir}/%{crate}
 
 # Install the configuration file
 install -d %{buildroot}%{_sysconfdir}/%{crate}
-install -p -m 644 tests/fixture/bindizr.conf.toml %{buildroot}%{_sysconfdir}/%{crate}/bindizr.conf.toml
+install -p -m 644 bindizr.conf.toml %{buildroot}%{_sysconfdir}/%{crate}/bindizr.conf.toml
 
 # Install the documentation
 install -d %{buildroot}%{_docdir}/%{crate}
-install -p -m 644 README.md %{buildroot}%{_docdir}/%{crate}/README.md
+install -p -m 644 packaging/rpm/README.md %{buildroot}%{_docdir}/%{crate}/README.md
 
 # Install the license file
 install -d %{buildroot}%{_licensedir}/%{crate}

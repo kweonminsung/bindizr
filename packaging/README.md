@@ -70,7 +70,7 @@ $ git clone https://github.com/kweonminsung/bindizr.git
 $ cd bindizr
 
 # Create the source tarball
-$ tar -czf bindizr-0.1.0-beta.1.tar.gz --exclude-vcs --exclude-backups .
+$ git archive --format=tar.gz --prefix=bindizr-0.1.0-beta.1/ -o bindizr-0.1.0-beta.1.tar.gz HEAD
 
 # Build the RPM package
 $ rpmbuild -ba packaging/rpm/bindizr.spec --define "_sourcedir $(pwd)"
