@@ -49,23 +49,3 @@ nix = { version = "0.30.1", features = ["signal", "process"] }
 tempfile = "3.21.0"
 tower = "0.5"
 tower-service = "0.3"
-
-[package.metadata.deb]
-maintainer = "Minsung Kweon <kevin136583@gmail.com>"
-copyright = "2025, Minsung Kweon <kevin136583@gmail.com>"
-license-file = ["LICENSE", "4"]
-extended-description = """\
-DNS Synchronization Service for BIND9"""
-section = "utility"
-priority = "optional"
-assets = [
-    # target/release path is special, and gets replaced by cargo-deb with the actual target dir path.
-    [
-        "target/release/bindizr",
-        "usr/bin/",
-        "755",
-    ],
-    # both array and object syntaxes are equivalent:
-    { source = "README.Debian.md", dest = "usr/share/doc/bindizr/README", mode = "644" },
-    { source = "bindizr.conf.toml", dest = "etc/bindizr/bindizr.conf.toml", mode = "755" },
-]

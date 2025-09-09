@@ -1,0 +1,24 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE=1
+export RUST_BACKTRACE=1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --locked
+
+override_dh_auto_install:
+	install -d debian/bindizr/usr/bin
+	install -m 755 target/release/bindizr debian/bindizr/usr/bin/
+	install -d debian/bindizr/etc/bindizr
+	install -m 644 bindizr.conf.toml debian/bindizr/etc/bindizr/bindizr.conf.toml
+	install -d debian/bindizr/usr/share/doc/bindizr
+	install -m 644 packaging/debian/README.md debian/bindizr/usr/share/doc/bindizr/README.md
+	install -d debian/bindizr/usr/share/licenses/bindizr
+	install -m 644 LICENSE debian/bindizr/usr/share/licenses/bindizr/LICENSE
+
+override_dh_auto_clean:
+	cargo clean
+	dh_auto_clean

@@ -47,6 +47,8 @@ $ ufw allow 953/tcp
 
 You can download the latest bindizr binary from [Release](https://github.com/kweonminsung/bindizr/releases/latest).
 
+For building from source, see the [packaging documentation](packaging/README.md).
+
 #### Debian Packages (DPKG)
 
 For Debian-based systems (Ubuntu, Debian, etc.), you can install Bindizr using the .deb package:
@@ -54,6 +56,17 @@ For Debian-based systems (Ubuntu, Debian, etc.), you can install Bindizr using t
 ```bash
 # Install using dpkg
 $ sudo dpkg -i bindizr_0.1.0_amd64.deb
+
+# Verify installation
+$ bindizr
+```
+#### Red Hat Packages (RPM)
+
+For Red Hat-based systems (Fedora, CentOS, RHEL, etc.), you can install Bindizr using the .rpm file:
+
+```bash
+# Install the .rpm package
+$ sudo rpm -i bindizr_0.1.0_amd64.rpm
 
 # Verify installation
 $ bindizr

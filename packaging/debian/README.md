@@ -11,8 +11,8 @@ Main Features:
 
 Configuration:
   - The default configuration file is located at:
-      /etc/bindizr/bindizr.conf
-  - Configuration is written in INI format. It includes sections for API, MySQL, BIND9, and logging.
+      /etc/bindizr/bindizr.conf.toml
+  - Configuration is written in TOML format. It includes sections for API, database, BIND9, and logging.
 
 Quick Start:
   1. Install and configure BIND9 and RNDC.
