@@ -44,8 +44,8 @@ install -d %{buildroot}%{_licensedir}/%{crate}
 install -p -m 644 LICENSE %{buildroot}%{_licensedir}/%{crate}/LICENSE
 
 %files
-%license LICENSE
-%doc README.md
+%license %{_licensedir}/%{crate}/LICENSE
+%doc %{_docdir}/%{crate}/README.md
 %{_bindir}/%{crate}
 %config(noreplace) %{_sysconfdir}/%{crate}/bindizr.conf.toml
 
