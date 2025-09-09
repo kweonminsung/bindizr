@@ -4,4 +4,13 @@ named.conf
 /bindizr.conf.toml
 *.log
 *.pid
-bindizr.db
+*.tar.gz
+/bindizr.db
+/debian
+
+/packaging/debian/*
+!/packaging/debian/README.md
+!/packaging/debian/changelog
+!/packaging/debian/control
+!/packaging/debian/copyright
+!/packaging/debian/rules

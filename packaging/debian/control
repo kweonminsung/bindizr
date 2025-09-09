@@ -1,0 +1,14 @@
+Source: bindizr
+Section: utility
+Priority: optional
+Maintainer: Minsung Kweon <kevin136583@gmail.com>
+Build-Depends: debhelper-compat (= 13), # cargo, rustc
+Standards-Version: 4.5.0
+Homepage: https://github.com/kweonminsung/bindizr
+
+Package: bindizr
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: DNS Synchronization Service for BIND9
+ DNS Synchronization Service for BIND9.
+ This service allows you to manage BIND9 DNS zones and records through a RESTful API.
