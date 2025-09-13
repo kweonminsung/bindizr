@@ -81,7 +81,7 @@ impl RecordService {
 
         // CNAME validation
         let existing_records = match record_repository
-            .get_records_by_name(&create_record_request.name)
+            .get_by_name(&create_record_request.name)
             .await
         {
             Ok(records) => records,
@@ -91,19 +91,24 @@ impl RecordService {
             }
         };
 
-        if !existing_records.is_empty() {
+        let existing_records_in_zone: Vec<_> = existing_records
+            .into_iter()
+            .filter(|r| r.zone_id == create_record_request.zone_id)
+            .collect();
+
+        if !existing_records_in_zone.is_empty() {
             if record_type == RecordType::CNAME {
                 return Err(format!(
-                    "A record with name '{}' already exists, so CNAME cannot be used",
+                    "A record with name '{}' already exists in this zone, so CNAME cannot be used",
                     create_record_request.name
                 ));
             }
-            if existing_records
+            if existing_records_in_zone
                 .iter()
                 .any(|r| r.record_type == RecordType::CNAME)
             {
                 return Err(format!(
-                    "A CNAME record with name '{}' already exists",
+                    "A CNAME record with name '{}' already exists in this zone",
                     create_record_request.name
                 ));
             }
@@ -209,7 +214,7 @@ impl RecordService {
 
         // CNAME validation
         let existing_records = match record_repository
-            .get_records_by_name(&update_record_request.name)
+            .get_by_name(&update_record_request.name)
             .await
         {
             Ok(records) => records,
@@ -219,24 +224,24 @@ impl RecordService {
             }
         };
 
-        let other_records: Vec<_> = existing_records
+        let other_records_in_zone: Vec<_> = existing_records
             .into_iter()
-            .filter(|r| r.id != record_id)
+            .filter(|r| r.id != record_id && r.zone_id == update_record_request.zone_id)
             .collect();
 
-        if !other_records.is_empty() {
+        if !other_records_in_zone.is_empty() {
             if record_type == RecordType::CNAME {
                 return Err(format!(
-                    "A record with name '{}' already exists, so CNAME cannot be used",
+                    "A record with name '{}' already exists in this zone, so CNAME cannot be used",
                     update_record_request.name
                 ));
             }
-            if other_records
+            if other_records_in_zone
                 .iter()
                 .any(|r| r.record_type == RecordType::CNAME)
             {
                 return Err(format!(
-                    "A CNAME record with name '{}' already exists",
+                    "A CNAME record with name '{}' already exists in this zone",
                     update_record_request.name
                 ));
             }

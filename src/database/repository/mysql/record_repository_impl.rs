@@ -84,7 +84,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
-    async fn get_records_by_name(&self, name: &str) -> Result<Vec<Record>, String> {
+    async fn get_by_name(&self, name: &str) -> Result<Vec<Record>, String> {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let records =
