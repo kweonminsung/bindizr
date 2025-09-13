@@ -36,7 +36,7 @@ pub trait RecordRepository: Send + Sync {
         name: &str,
         record_type: &RecordType,
     ) -> Result<Option<Record>, String>;
-    async fn get_records_by_name(&self, name: &str) -> Result<Vec<Record>, String>;
+    async fn get_by_name(&self, name: &str) -> Result<Vec<Record>, String>;
     async fn get_all(&self) -> Result<Vec<Record>, String>;
     async fn update(&self, record: Record) -> Result<Record, String>;
     async fn delete(&self, id: i32) -> Result<(), String>;
