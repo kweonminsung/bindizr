@@ -40,9 +40,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/GetZoneResponse'
+                type: object
+                properties:
+                  zones:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GetZoneResponse'
         '401':
           description: Unauthorized
           content:
@@ -234,9 +237,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/GetZoneHistoryResponse'
+                type: object
+                properties:
+                  zone_histories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GetZoneHistoryResponse'
         '401':
           description: Unauthorized
           content:
@@ -303,9 +309,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/GetRecordResponse'
+                type: object
+                properties:
+                  records:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GetRecordResponse'
         '401':
           description: Unauthorized
           content:
@@ -462,9 +471,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/GetRecordHistoryResponse'
+                type: object
+                properties:
+                  record_histories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GetRecordHistoryResponse'
         '401':
           description: Unauthorized
           content:
