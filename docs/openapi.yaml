@@ -24,6 +24,8 @@ tags:
     description: Manage DNS records including creation, update, deletion, and retrieval.
   - name: Record History
     description: Manage DNS record history including creation, update, deletion, and retrieval.
+  - name: DNS
+    description: Manage DNS server operations including status check, reload, and configuration.
 paths:
   /zones:
     get:
@@ -508,7 +510,108 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-
+  /dns/status:
+    get:
+      tags:
+        - DNS
+      summary: Get DNS server status
+      operationId: get_dns_status
+      description: Retrieves the current status of the DNS server.
+      responses:
+        '200':
+          description: DNS server status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: Bind9 is running
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Failed to get DNS status
+  /dns/reload:
+    get:
+      tags:
+        - DNS
+      summary: Reload DNS server configuration
+      operationId: reload_dns
+      description: Reloads the DNS server configuration to apply any changes.
+      responses:
+        '200':
+          description: DNS server reloaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: DNS server reloaded successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Failed to reload DNS
+  /dns/config:
+    post:
+      tags:
+        - DNS
+      summary: Write DNS server configuration
+      operationId: write_dns_config
+      description: Writes the DNS server configuration
+      responses:
+        '200':
+          description: DNS server configuration updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  msg:
+                    type: string
+                    example: DNS configuration written successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Failed to write DNS config
 # ======================================================================
 security:
   - bearerAuth: []
