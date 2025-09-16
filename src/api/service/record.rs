@@ -79,6 +79,12 @@ impl RecordService {
         let record_type = RecordType::from_str(&create_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", create_record_request.record_type))?;
 
+        // SOA validation
+        if record_type == RecordType::SOA {
+            log_error!("Cannot create SOA record manually");
+            return Err("Cannot create SOA record manually".to_string());
+        }
+
         // CNAME validation
         let existing_records = match record_repository
             .get_by_name(&create_record_request.name)
@@ -212,6 +218,12 @@ impl RecordService {
         let record_type = RecordType::from_str(&update_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
 
+        // SOA validation
+        if record_type == RecordType::SOA {
+            log_error!("Cannot update to SOA record type");
+            return Err("Cannot update to SOA record type".to_string());
+        }
+
         // CNAME validation
         let existing_records = match record_repository
             .get_by_name(&update_record_request.name)
@@ -295,7 +307,7 @@ impl RecordService {
         // let record_history_repository = get_record_history_repository();
 
         // Check if record exists
-        match record_repository.get_by_id(record_id).await {
+        let existing_record = match record_repository.get_by_id(record_id).await {
             Ok(Some(record)) => Ok(record),
             Ok(None) => Err(format!("Record with id {} not found", record_id)),
             Err(e) => {
@@ -303,6 +315,12 @@ impl RecordService {
                 Err("Failed to fetch record".to_string())
             }
         }?;
+
+        // Prevent deletion of SOA records
+        if existing_record.record_type == RecordType::SOA {
+            log_error!("Cannot delete SOA record");
+            return Err("Cannot delete SOA record".to_string());
+        }
 
         // Delete record
         record_repository.delete(record_id).await.map_err(|e| {
