@@ -1,4 +1,4 @@
-use crate::{daemon::socket::client::DaemonSocketClient, log_debug};
+use crate::{log_debug, socket::client::DaemonSocketClient};
 use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]

@@ -3,9 +3,9 @@ use rand::{Rng, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    daemon::socket::dto::DaemonResponse,
     database::{get_api_token_repository, model::api_token::ApiToken},
     log_error,
+    socket::dto::DaemonResponse,
 };
 
 pub async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {

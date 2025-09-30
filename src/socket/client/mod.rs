@@ -1,4 +1,4 @@
-use crate::daemon::socket::{
+use crate::socket::{
     dto::{DaemonCommand, DaemonResponse},
     socket::SOCKET_FILE_PATH,
 };

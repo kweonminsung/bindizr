@@ -203,18 +203,14 @@ rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace
-enable_file_logging = true    # Enable logging to file (true/false)
-log_file_path = "/var/log/bindizr"         # Path to log file (absolute or relative)
 ```
 
-### 5. Start Bindizr
+### 5. Start Bindizr Service
 
 ```bash
 # Start Bindizr service
-$ bindizr start
-
-# Runs bindizr in foreground mode
-$ bindizr start -f
+$ sudo systemctl enable bindizr
+$ sudo systemctl start bindizr
 
 # Create an API token for authentication
 $ bindizr token create
@@ -227,17 +223,11 @@ Bindizr provides a command-line interface for managing the DNS synchronization s
 ### Basic Commands
 
 ```bash
-# Start the bindizr service in background mode
+# Start bindizr on foreground
 $ bindizr start
-
-# Start the bindizr service in foreground mode
-$ bindizr start -f
 
 # Start with a custom configuration file
 $ bindizr start -c <FILE>
-
-# Stop the bindizr service
-$ bindizr stop
 
 # Check the current status of bindizr service
 $ bindizr status

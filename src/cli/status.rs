@@ -1,6 +1,6 @@
 use crate::{
-    daemon::socket::{client::DaemonSocketClient, dto::DaemonStatusResponse},
     log_debug,
+    socket::{client::DaemonSocketClient, dto::DaemonStatusResponse},
 };
 
 pub async fn handle_command() -> Result<(), String> {

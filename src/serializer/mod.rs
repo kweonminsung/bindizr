@@ -23,16 +23,6 @@ pub fn initialize() {
     SERIALIZER.get_or_init(Serializer::new);
 }
 
-pub fn shutdown() {
-    log_info!("Shutting down serializer");
-
-    if let Some(s) = SERIALIZER.get() {
-        if let Err(e) = s.send_message_and_wait("exit") {
-            log_error!("Failed to send exit message: {}", e);
-        }
-    }
-}
-
 pub struct Serializer {
     tx: Sender<Message>,
 }

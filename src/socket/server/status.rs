@@ -1,10 +1,8 @@
-use crate::{
-    config,
-    daemon::{process, socket::dto::DaemonResponse},
-};
+use crate::{config, socket::dto::DaemonResponse};
+use std::process;
 
 pub fn get_status() -> Result<DaemonResponse, String> {
-    let pid = process::get_pid();
+    let pid = Some(process::id());
     let version = env!("CARGO_PKG_VERSION");
     let config_map_json = config::get_config_json_map()
         .map_err(|e| format!("Failed to collect configuration: {}", e))?;

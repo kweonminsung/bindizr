@@ -24,5 +24,3 @@ rndc_secret_key = "YmluZGl6cg=="  # This is "test" base64-encoded
 
 [logging]
 log_level = "debug"
-enable_file_logging = false
-log_file_path = "/var/log/bindizr"
