@@ -19,7 +19,7 @@ Quick Start:
   2. Create the bindizr configuration file.
   3. Start the bindizr service:
 
-     bindizr start
+     sudo systemctl start bindizr
 
   4. Generate API tokens for authentication:
 

@@ -6,12 +6,6 @@ export RUST_BACKTRACE=1
 %:
 	dh $@
 
-override_dh_systemd_enable:
-	# Do not automatically enable the service
-
-override_dh_systemd_start:
-	# Do not automatically start the service
-
 override_dh_auto_build:
 	cargo build --release --locked --target x86_64-unknown-linux-musl
 
@@ -24,8 +18,8 @@ override_dh_auto_install:
 	install -m 644 packaging/debian/README.md debian/bindizr/usr/share/doc/bindizr/README.md
 	install -d debian/bindizr/usr/share/licenses/bindizr
 	install -m 644 LICENSE debian/bindizr/usr/share/licenses/bindizr/LICENSE
-	install -d debian/bindizr/lib/systemd/system
-	install -m 644 packaging/debian/bindizr.service debian/bindizr/lib/systemd/system/
+	install -d debian/bindizr/usr/lib/systemd/system
+	install -m 644 packaging/debian/bindizr.service debian/bindizr/usr/lib/systemd/system/
 
 override_dh_auto_clean:
 	cargo clean
