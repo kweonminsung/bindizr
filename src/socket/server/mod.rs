@@ -1,6 +1,5 @@
 mod dns;
 mod status;
-mod stop;
 mod token;
 
 use crate::socket::dto::DaemonCommand;
@@ -20,7 +19,6 @@ async fn handle_client(stream: UnixStream) {
 
         let raw_response = match parsed {
             Ok(cmd) => match cmd.command.as_str() {
-                "stop" => stop::shutdown(),
                 "status" => status::get_status(),
                 "token_create" => token::create_token(&cmd.data).await,
                 "token_list" => token::list_tokens().await,
@@ -73,14 +71,6 @@ pub async fn initialize() -> Result<(), String> {
     });
 
     Ok(())
-}
-
-pub fn shutdown() {
-    log_info!("Shutting down daemon socket server");
-
-    if let Err(e) = fs::remove_file(SOCKET_FILE_PATH) {
-        log_error!("Failed to remove socket file: {}", e);
-    }
 }
 
 fn json_response_error(msg: &str) -> String {

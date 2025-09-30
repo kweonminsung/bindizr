@@ -1,14 +1,14 @@
 %global crate bindizr
 
 Name:           %{crate}
-Version:        0.1.0~beta.1
+Version:        0.1.0~beta.2
 Release:        1%{?dist}
 Summary:        DNS Synchronization Service for BIND9
 
 License:        Apache-2.0
 URL:            https://github.com/kweonminsung/bindizr
 # NOTE: The version in the URL and setup macro needs the original hyphenated form.
-Source0:        https://github.com/kweonminsung/bindizr/archive/v0.1.0-beta.1/bindizr-0.1.0-beta.1.tar.gz
+Source0:        https://github.com/kweonminsung/bindizr/archive/v0.1.0-beta.2/bindizr-0.1.0-beta.2.tar.gz
 
 # Build dependencies for Fedora/CentOS/RHEL
 # BuildRequires:  rust
@@ -20,7 +20,7 @@ DNS Synchronization Service for BIND9.
 This service allows you to manage BIND9 DNS zones and records through a RESTful API.
 
 %prep
-%setup -q -n %{name}-0.1.0-beta.1
+%setup -q -n %{name}-0.1.0-beta.2
 
 %build
 # Build the release binary
@@ -59,5 +59,8 @@ install -p -m 644 packaging/rpm/bindizr.service %{buildroot}%{_unitdir}/bindizr.
 %systemd_postun_with_restart bindizr.service
 
 %changelog
+* Tue Sep 30 2025 Minsung Kweon <kevin136583@gmail.com> - 0.1.0~beta.2-1
+- Removed fork based daemonization
+
 * Tue Sep 09 2025 Minsung Kweon <kevin136583@gmail.com> - 0.1.0~beta.1-1
 - Initial RPM packaging

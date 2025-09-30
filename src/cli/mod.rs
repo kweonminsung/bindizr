@@ -1,13 +1,12 @@
 mod dns;
 mod start;
 mod status;
-mod stop;
 mod token;
 
 use crate::{
     api,
     cli::{dns::DnsCommand, token::TokenCommand},
-    config, database, logger, rndc, serializer, socket,
+    config, database, log_info, logger, rndc, serializer, socket,
 };
 use clap::{Parser, Subcommand};
 
@@ -26,8 +25,6 @@ pub enum Command {
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
     },
-    /// Stop the bindizr service
-    Stop,
     /// Show the status of the bindizr service
     Status,
     /// Manage DNS system
@@ -57,6 +54,10 @@ pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     rndc::initialize();
     serializer::initialize();
 
+    log_info!("Bindizr is running in foreground mode.");
+    log_info!("For production use, please run bindizr as a systemd service:");
+    log_info!("    systemctl start bindizr");
+
     socket::server::initialize().await?;
     api::initialize().await?;
 
@@ -69,7 +70,6 @@ pub async fn execute() {
     // Execute command
     if let Err(e) = match args.command {
         Command::Start { config } => start::handle_command(config).await,
-        Command::Stop => stop::handle_command().await,
         Command::Status => status::handle_command().await,
         Command::Dns { subcommand } => dns::handle_command(subcommand).await,
         Command::Token { subcommand } => token::handle_command(subcommand).await,
