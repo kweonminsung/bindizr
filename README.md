@@ -106,21 +106,22 @@ First, set variables for your BIND configuration. The paths vary depending on yo
   ```bash
   $ BIND_CONF_DIR=/etc/bind
   $ BIND_CONF_FILE=/etc/bind/named.conf
+  $ RNDC_KEY_FILE=/etc/bind/rndc.key
   ```
 - **For Red Hat-based systems (e.g., Fedora, CentOS):**
   ```bash
   $ BIND_CONF_DIR=/etc/named
   $ BIND_CONF_FILE=/etc/named.conf
+  $ RNDC_KEY_FILE=/etc/rndc.key
   ```
 
 Now, generate the RNDC configuration and key using the variable:
 ```bash
 # Generate RNDC configuration and key
-$ rndc-confgen -a -c "$BIND_CONF_DIR/rndc.key"
-$ sudo chmod 640 "$BIND_CONF_DIR/rndc.key"
+$ rndc-confgen -a
 
 # View the generated key (example below)
-$ cat $BIND_CONF_DIR/rndc.key
+$ cat $RNDC_KEY_FILE
 
 # Output:
 key "rndc-key" {
@@ -135,7 +136,7 @@ Now, update your main BIND configuration file (`$BIND_CONF_FILE`) by adding the 
 # Append the include statements to named.conf
 echo "
 include \"$BIND_CONF_DIR/bindizr/named.conf.bindizr\";
-include \"$BIND_CONF_DIR/rndc.key\";
+include \"$RNDC_KEY_FILE\";
 " | sudo tee -a "$BIND_CONF_FILE"
 ```
 

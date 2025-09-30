@@ -14,12 +14,13 @@ fi
 # 2. Set OS-specific variables
 if [ "$OS_FAMILY" = "debian" ]; then
     BIND_CONF_DIR="/etc/bind"
-    BIND_CONF_FILE="$BIND_CONF_DIR/named.conf"
+    BIND_CONF_FILE="/etc/bind/named.conf"
+    RNDC_KEY_FILE="/etc/bind/rndc.key"
 elif [ "$OS_FAMILY" = "redhat" ]; then
     BIND_CONF_DIR="/etc/named"
     BIND_CONF_FILE="/etc/named.conf"
+    RNDC_KEY_FILE="/etc/rndc.key"
 fi
-RNDC_KEY_FILE="$BIND_CONF_DIR/rndc.key"
 BINDIZR_FILE="$BIND_CONF_DIR/bindizr/named.conf.bindizr"
 BINDIZR_DIR=$(dirname "$BINDIZR_FILE")
 
