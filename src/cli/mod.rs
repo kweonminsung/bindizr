@@ -19,7 +19,7 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Start the bindizr service
+    /// Start bindizr on foreground
     Start {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
         #[arg(short, long, value_name = "FILE")]

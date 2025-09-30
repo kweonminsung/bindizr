@@ -205,10 +205,11 @@ rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
 log_level = "debug"           # Log level: error, warn, info, debug, trace
 ```
 
-### 5. Start Bindizr
+### 5. Start Bindizr Service
 
 ```bash
 # Start Bindizr service
+$ sudo systemctl enable bindizr
 $ sudo systemctl start bindizr
 
 # Create an API token for authentication
