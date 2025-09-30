@@ -12,11 +12,12 @@ For Debian-based systems (Ubuntu, Debian, etc.), you can build and install Bindi
 - `debhelper`
 - `rustc`
 - `cargo`
+- `musl-tools` (for static linking)
 
 ```bash
 # Install build dependencies
 $ sudo apt-get update
-$ sudo apt-get install build-essential debhelper rustc cargo
+$ sudo apt-get install build-essential debhelper rustc cargo musl-tools
 ```
 
 ### Building the Package
@@ -56,10 +57,11 @@ For Red Hat-based systems (Fedora, CentOS, RHEL, etc.), you can build and instal
 - `rpm-build`
 - `rust`
 - `cargo`
+- `musl-tools` (for static linking)
 
 ```bash
 # Install build dependencies
-$ sudo dnf install rpm-build rust cargo
+$ sudo dnf install rpm-build rust cargo musl-tools
 ```
 
 ### Building the Package

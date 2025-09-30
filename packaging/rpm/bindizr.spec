@@ -23,13 +23,13 @@ This service allows you to manage BIND9 DNS zones and records through a RESTful 
 
 %build
 # Build the release binary
-cargo build --release --locked
+cargo build --release --locked --target x86_64-unknown-linux-musl
 
 %install
 rm -rf %{buildroot}
 
 # Install the binary
-install -D -m 755 target/release/%{crate} %{buildroot}%{_bindir}/%{crate}
+install -D -m 755 target/x86_64-unknown-linux-musl/release/%{crate} %{buildroot}%{_bindir}/%{crate}
 
 # Install the configuration file
 install -d %{buildroot}%{_sysconfdir}/%{crate}
