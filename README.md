@@ -203,8 +203,6 @@ rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace
-enable_file_logging = true    # Enable logging to file (true/false)
-log_file_path = "/var/log/bindizr"         # Path to log file (absolute or relative)
 ```
 
 ### 5. Start Bindizr

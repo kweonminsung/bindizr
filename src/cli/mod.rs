@@ -52,7 +52,7 @@ pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
         config::initialize(None);
     }
 
-    logger::initialize(false);
+    logger::initialize();
     database::initialize().await;
     rndc::initialize();
     serializer::initialize();
