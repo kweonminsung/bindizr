@@ -43,7 +43,6 @@ rndc = "0.1.3"
 rand = "0.9"
 sha2 = "0.10"
 hex = "0.4"
-nix = { version = "0.30.1", features = ["signal", "process"] }
 
 [dev-dependencies]
 tempfile = "3.21.0"

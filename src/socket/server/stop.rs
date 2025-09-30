@@ -1,8 +1,5 @@
-use crate::{
-    api,
-    daemon::{self, socket::dto::DaemonResponse},
-    serializer,
-};
+use crate::socket::dto::DaemonResponse;
+use crate::{api, serializer, socket};
 
 const SHUTDOWN_DELAY_MS: u64 = 100;
 
@@ -12,10 +9,8 @@ pub fn shutdown() -> Result<DaemonResponse, String> {
         std::thread::sleep(std::time::Duration::from_millis(SHUTDOWN_DELAY_MS));
 
         serializer::shutdown();
-        daemon::socket::server::shutdown();
+        socket::server::shutdown();
         api::shutdown();
-
-        daemon::process::remove_pid_file().unwrap();
 
         std::process::exit(0);
     });

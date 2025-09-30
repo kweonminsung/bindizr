@@ -1,11 +1,11 @@
 mod api;
 mod cli;
 mod config;
-mod daemon;
 mod database;
 mod logger;
 mod rndc;
 mod serializer;
+mod socket;
 
 #[tokio::main]
 async fn main() {

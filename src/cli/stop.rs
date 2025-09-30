@@ -1,4 +1,4 @@
-use crate::{daemon::socket::client::DaemonSocketClient, log_debug};
+use crate::{log_debug, socket::client::DaemonSocketClient};
 
 pub async fn handle_command() -> Result<(), String> {
     let client = DaemonSocketClient::new();

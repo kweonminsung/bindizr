@@ -1,6 +1,4 @@
-use crate::{
-    daemon::socket::dto::DaemonResponse, rndc::get_rndc_client, serializer::get_serializer,
-};
+use crate::{rndc::get_rndc_client, serializer::get_serializer, socket::dto::DaemonResponse};
 
 pub fn write_dns_config() -> Result<DaemonResponse, String> {
     match get_serializer().send_message_and_wait("write_config") {

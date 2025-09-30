@@ -7,7 +7,7 @@ mod token;
 use crate::{
     api,
     cli::{dns::DnsCommand, token::TokenCommand},
-    config, daemon, database, logger, rndc, serializer,
+    config, database, logger, rndc, serializer, socket,
 };
 use clap::{Parser, Subcommand};
 
@@ -22,15 +22,9 @@ pub struct Args {
 pub enum Command {
     /// Start the bindizr service
     Start {
-        /// Run in the foreground (default is background)
-        #[arg(short, long)]
-        foreground: bool,
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
-        /// Run in silent mode (no stdout)
-        #[arg(short, long)]
-        silent: bool,
     },
     /// Stop the bindizr service
     Stop,
@@ -48,7 +42,7 @@ pub enum Command {
     },
 }
 
-pub async fn bootstrap(is_daemon: bool, config_file: Option<&str>) -> Result<(), String> {
+pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     // Initialize Configuration
     if let Some(file) = config_file {
         // Load configuration from the specified file
@@ -58,12 +52,12 @@ pub async fn bootstrap(is_daemon: bool, config_file: Option<&str>) -> Result<(),
         config::initialize(None);
     }
 
-    logger::initialize(is_daemon);
+    logger::initialize(false);
     database::initialize().await;
     rndc::initialize();
     serializer::initialize();
 
-    daemon::socket::server::initialize().await?;
+    socket::server::initialize().await?;
     api::initialize().await?;
 
     Ok(())
@@ -74,11 +68,7 @@ pub async fn execute() {
 
     // Execute command
     if let Err(e) = match args.command {
-        Command::Start {
-            foreground,
-            config,
-            silent,
-        } => start::handle_command(foreground, config, silent).await,
+        Command::Start { config } => start::handle_command(config).await,
         Command::Stop => stop::handle_command().await,
         Command::Status => status::handle_command().await,
         Command::Dns { subcommand } => dns::handle_command(subcommand).await,
