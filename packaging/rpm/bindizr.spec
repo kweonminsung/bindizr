@@ -13,6 +13,7 @@ Source0:        https://github.com/kweonminsung/bindizr/archive/v0.1.0-beta.1/bi
 # Build dependencies for Fedora/CentOS/RHEL
 # BuildRequires:  rust
 # BuildRequires:  cargo
+BuildRequires:  systemd
 
 %description
 DNS Synchronization Service for BIND9.
@@ -43,11 +44,19 @@ install -p -m 644 packaging/rpm/README.md %{buildroot}%{_docdir}/%{crate}/README
 install -d %{buildroot}%{_licensedir}/%{crate}
 install -p -m 644 LICENSE %{buildroot}%{_licensedir}/%{crate}/LICENSE
 
+# Install systemd service file
+install -d %{buildroot}%{_unitdir}
+install -p -m 644 packaging/rpm/bindizr.service %{buildroot}%{_unitdir}/bindizr.service
+
 %files
 %license %{_licensedir}/%{crate}/LICENSE
+%{_unitdir}/bindizr.service
 %doc %{_docdir}/%{crate}/README.md
 %{_bindir}/%{crate}
 %config(noreplace) %{_sysconfdir}/%{crate}/bindizr.conf.toml
+
+%postun
+%systemd_postun_with_restart bindizr.service
 
 %changelog
 * Tue Sep 09 2025 Minsung Kweon <kevin136583@gmail.com> - 0.1.0~beta.1-1

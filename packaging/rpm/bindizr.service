@@ -1,0 +1,17 @@
+[Unit]
+Description=Bindizr DNS Synchronization Service
+After=network.target named.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bindizr start
+WorkingDirectory=/etc/bindizr
+Restart=on-failure
+RestartSec=5
+User=named
+Group=named
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
