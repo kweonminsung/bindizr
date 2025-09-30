@@ -37,10 +37,18 @@ DNS Synchronization Service for BIND9
 
 ### 1. Install BIND9
 
+#### Debian (Ubuntu, etc.)
 ```bash
 $ sudo apt-get update
 $ sudo apt-get install sudo ufw dnsutils bind9
-$ ufw allow 953/tcp
+$ sudo ufw allow 953/tcp
+```
+
+#### Red Hat (Fedora, CentOS, etc.)
+```bash
+$ sudo yum install bind bind-utils
+$ sudo firewall-cmd --add-port=953/tcp --permanent
+$ sudo firewall-cmd --reload
 ```
 
 ### 2. Download Bindizr and Install
@@ -74,12 +82,42 @@ $ bindizr
 
 ### 3. Configure RNDC and BIND
 
+We provide two methods for configuring BIND and RNDC: a recommended automated script and a manual setup.
+
+#### Recommended: Automated Setup Script
+
+This script automatically detects your BIND configuration directory, generates an RNDC key if needed, and updates your `named.conf` file.
+
+```bash
+# Download and run the setup script
+$ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/scripts/setup_bind_rndc.sh | sudo bash
+
+# Restart bind service
+$ sudo service bind restart
+```
+
+<details>
+<summary>Alternative: Manual Setup</summary>
+
+First, set a variable for your BIND configuration directory. The path varies depending on your operating system.
+
+- **For Debian-based systems (e.g., Ubuntu):**
+  ```bash
+  $ BIND_CONF_DIR=/etc/bind
+  ```
+- **For Red Hat-based systems (e.g., Fedora, CentOS):**
+  ```bash
+  $ BIND_CONF_DIR=/etc/named
+  ```
+
+Now, generate the RNDC configuration and key using the variable:
 ```bash
 # Generate RNDC configuration and key
-$ rndc-confgen [-A KEY_ALGORITHM] > /etc/bind/rndc.key
+$ rndc-confgen [-A KEY_ALGORITHM] > $BIND_CONF_DIR/rndc.key
 
 # View the generated key (example below)
-$ cat /etc/bind/rndc.key
+$ cat $BIND_CONF_DIR/rndc.key
+
 # Output:
 key "rndc-key" {
     algorithm hmac-sha256;  # The algorithm used for RNDC authentication (must match on both sides)
@@ -87,18 +125,18 @@ key "rndc-key" {
 };
 ```
 
-Now create or update the main BIND configuration file:
+Now, update your main BIND configuration file (`$BIND_CONF_DIR/named.conf`) by adding the following lines. This ensures that BIND loads both the Bindizr configuration and the RNDC key.
 
 ```bash
-# Compose the main named.conf
-$ echo '
-include "/etc/bind/named.conf.options";
-include "/etc/bind/named.conf.local";
-include "/etc/bind/named.conf.default-zones";
+# Append the include statements to named.conf
+echo "
+include \"$BIND_CONF_DIR/bindizr/named.conf.bindizr\";
+include \"$BIND_CONF_DIR/rndc.key\";
+" | sudo tee -a $BIND_CONF_DIR/named.conf
+```
 
-include "/etc/bind/bindizr/named.conf.bindizr";
-include "/etc/bind/rndc.key";
-
+You also need to add a `controls` block to allow `rndc` to connect. If you don't have one, add the following:
+```
 controls {
     # Listens on all interfaces (0.0.0.0) using port 953 (default RNDC port)
     # Adjust IP and port as needed for your environment.
@@ -113,12 +151,15 @@ controls {
     # inet 192.168.1.10 port 953
     #     allow { 192.168.1.0/24; } keys { "rndc-key"; };
 };
-
-' > /etc/bind/named.conf
-
-# Restart bind service
-$ service bind restart
 ```
+
+After saving the changes, restart the BIND service:
+```bash
+# Restart bind service
+$ sudo service bind restart
+```
+
+</details>
 
 ### 4. Configure Bindizr Options
 
@@ -149,7 +190,7 @@ file_path = "bindizr.db"       # SQLite database file path
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
 [bind]
-bind_config_path = "/etc/bind"       # Bind config path
+bind_config_path = "$BIND_CONF_DIR"       # Bind config path
 rndc_server_url = "127.0.0.1:953"    # RNDC server address
 rndc_algorithm = "sha256"            # RNDC authentication algorithm
 rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
