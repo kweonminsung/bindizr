@@ -6,12 +6,15 @@ if [ -d /etc/bind ]; then
     BIND_CONF_DIR="/etc/bind"
 elif [ -d /etc/named ]; then
     BIND_CONF_DIR="/etc/named"
+    CONF_FILE="/etc/named.conf"
 else
     echo "❌ Could not determine BIND config directory."
     exit 1
 fi
 
-CONF_FILE="$BIND_CONF_DIR/named.conf"
+if [ -z "${CONF_FILE:-}" ]; then
+    CONF_FILE="$BIND_CONF_DIR/named.conf"
+fi
 RNDC_KEY_FILE="$BIND_CONF_DIR/rndc.key"
 BINDIZR_FILE="$BIND_CONF_DIR/bindizr/named.conf.bindizr"
 
