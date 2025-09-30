@@ -93,28 +93,31 @@ This script automatically detects your BIND configuration directory, generates a
 $ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/scripts/setup_bind_rndc.sh | sudo bash
 
 # Restart bind service
-$ sudo service bind restart  # For Debian-based systems
-$ sudo service named restart  # For Red Hat-based systems
+$ sudo systemctl restart bind9  # For Debian-based systems
+$ sudo systemctl restart named  # For Red Hat-based systems
 ```
 
 <details>
 <summary>Alternative: Manual Setup</summary>
 
-First, set a variable for your BIND configuration directory. The path varies depending on your operating system.
+First, set variables for your BIND configuration. The paths vary depending on your operating system.
 
 - **For Debian-based systems (e.g., Ubuntu):**
   ```bash
   $ BIND_CONF_DIR=/etc/bind
+  $ BIND_CONF_FILE=/etc/bind/named.conf
   ```
 - **For Red Hat-based systems (e.g., Fedora, CentOS):**
   ```bash
   $ BIND_CONF_DIR=/etc/named
+  $ BIND_CONF_FILE=/etc/named.conf
   ```
 
 Now, generate the RNDC configuration and key using the variable:
 ```bash
 # Generate RNDC configuration and key
-$ rndc-confgen [-A KEY_ALGORITHM] > $BIND_CONF_DIR/rndc.key
+$ rndc-confgen -a -c "$BIND_CONF_DIR/rndc.key"
+$ sudo chmod 640 "$BIND_CONF_DIR/rndc.key"
 
 # View the generated key (example below)
 $ cat $BIND_CONF_DIR/rndc.key
@@ -126,14 +129,14 @@ key "rndc-key" {
 };
 ```
 
-Now, update your main BIND configuration file (`$BIND_CONF_DIR/named.conf`) by adding the following lines. This ensures that BIND loads both the Bindizr configuration and the RNDC key.
+Now, update your main BIND configuration file (`$BIND_CONF_FILE`) by adding the following lines. This ensures that BIND loads both the Bindizr configuration and the RNDC key.
 
 ```bash
 # Append the include statements to named.conf
 echo "
 include \"$BIND_CONF_DIR/bindizr/named.conf.bindizr\";
 include \"$BIND_CONF_DIR/rndc.key\";
-" | sudo tee -a $BIND_CONF_DIR/named.conf
+" | sudo tee -a "$BIND_CONF_FILE"
 ```
 
 You also need to add a `controls` block to allow `rndc` to connect. If you don't have one, add the following:
@@ -157,8 +160,8 @@ controls {
 After saving the changes, restart the BIND service:
 ```bash
 # Restart bind service
-$ sudo service bind restart  # For Debian-based systems
-$ sudo service named restart  # For Red Hat-based systems
+$ sudo systemctl restart bind9  # For Debian-based systems
+$ sudo systemctl restart named  # For Red Hat-based systems
 ```
 
 </details>

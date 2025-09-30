@@ -14,10 +14,10 @@ fi
 # 2. Set OS-specific variables
 if [ "$OS_FAMILY" = "debian" ]; then
     BIND_CONF_DIR="/etc/bind"
-    CONF_FILE="$BIND_CONF_DIR/named.conf"
+    BIND_CONF_FILE="$BIND_CONF_DIR/named.conf"
 elif [ "$OS_FAMILY" = "redhat" ]; then
     BIND_CONF_DIR="/etc/named"
-    CONF_FILE="/etc/named.conf"
+    BIND_CONF_FILE="/etc/named.conf"
 fi
 RNDC_KEY_FILE="$BIND_CONF_DIR/rndc.key"
 BINDIZR_FILE="$BIND_CONF_DIR/bindizr/named.conf.bindizr"
@@ -31,32 +31,46 @@ if [ ! -d "$BINDIZR_DIR" ]; then
     sudo mkdir -p "$BINDIZR_DIR"
 fi
 
-# 4. Generate RNDC key (skip if already exists)
+# 4. Create bindizr config file if it doesn't exist
+if [ ! -f "$BINDIZR_FILE" ]; then
+    echo "📄 Creating bindizr config file at $BINDIZR_FILE..."
+    sudo touch "$BINDIZR_FILE"
+fi
+
+# 5. Generate RNDC key and set permissions
 if [ ! -f "$RNDC_KEY_FILE" ]; then
     echo "🔑 Generating RNDC key..."
-    rndc-confgen -a -c "$RNDC_KEY_FILE"
+    sudo rndc-confgen -a -c "$RNDC_KEY_FILE"
+
+    echo "🔒 Setting permissions for $RNDC_KEY_FILE..."
+    if [ "$OS_FAMILY" = "debian" ]; then
+        sudo chown root:bind "$RNDC_KEY_FILE"
+    elif [ "$OS_FAMILY" = "redhat" ]; then
+        sudo chown root:named "$RNDC_KEY_FILE"
+    fi
+    sudo chmod 640 "$RNDC_KEY_FILE"
 else
     echo "ℹ️ RNDC key already exists at $RNDC_KEY_FILE (skipping)"
 fi
 
-# 5. Append include statements if not already present
+# 6. Append include statements if not already present
 LINES=(
   "include \"$BINDIZR_FILE\";"
   "include \"$RNDC_KEY_FILE\";"
 )
 
 for line in "${LINES[@]}"; do
-  if ! grep -qxF "$line" "$CONF_FILE"; then
-    echo "$line" | sudo tee -a "$CONF_FILE" >/dev/null
+  if ! grep -qxF "$line" "$BIND_CONF_FILE"; then
+    echo "$line" | sudo tee -a "$BIND_CONF_FILE" >/dev/null
     echo "➕ Added: $line"
   else
     echo "✔ Already present: $line"
   fi
 done
 
-# 6. Add controls block if not already present
-if ! grep -q "controls {" "$CONF_FILE"; then
-    cat <<EOF | sudo tee -a "$CONF_FILE" >/dev/null
+# 7. Add controls block if not already present
+if ! grep -q "controls {" "$BIND_CONF_FILE"; then
+    cat <<EOF | sudo tee -a "$BIND_CONF_FILE" >/dev/null
 controls {
     inet 127.0.0.1 port 953
         allow { 127.0.0.1; } keys { "rndc-key"; };
@@ -69,7 +83,7 @@ fi
 
 echo "✅ Setup complete. Restart named to apply changes:"
 if [ "$OS_FAMILY" = "debian" ]; then
-    echo "   sudo service bind restart
+    echo "   sudo systemctl restart bind9"
 elif [ "$OS_FAMILY" = "redhat" ]; then
-    echo "   sudo service named restart
+    echo "   sudo systemctl restart named"
 fi
