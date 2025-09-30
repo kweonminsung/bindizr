@@ -1,4 +1,5 @@
 %global crate bindizr
+%global _unitdir /usr/lib/systemd/system
 
 Name:           %{crate}
 Version:        0.1.0~beta.2
