@@ -13,7 +13,7 @@ Source0:        https://github.com/kweonminsung/bindizr/archive/v0.1.0-beta.2/bi
 # Build dependencies for Fedora/CentOS/RHEL
 # BuildRequires:  rust
 # BuildRequires:  cargo
-BuildRequires:  systemd
+# BuildRequires:  systemd
 
 %description
 DNS Synchronization Service for BIND9.
