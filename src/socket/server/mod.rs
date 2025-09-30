@@ -37,7 +37,7 @@ async fn handle_client(stream: UnixStream) {
         let response = match raw_response {
             Ok(res) => serde_json::to_string(&res)
                 .unwrap_or_else(|_| json_response_error("Failed to serialize response")),
-            Err(e) => json_response_error(&e.to_string()),
+            Err(e) => json_response_error(&e),
         };
 
         let mut stream = reader.into_inner();
