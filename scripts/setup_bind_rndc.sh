@@ -21,10 +21,17 @@ elif [ "$OS_FAMILY" = "redhat" ]; then
 fi
 RNDC_KEY_FILE="$BIND_CONF_DIR/rndc.key"
 BINDIZR_FILE="$BIND_CONF_DIR/bindizr/named.conf.bindizr"
+BINDIZR_DIR=$(dirname "$BINDIZR_FILE")
 
 echo "✅ Using BIND_CONF_DIR=$BIND_CONF_DIR"
 
-# 2. Generate RNDC key (skip if already exists)
+# 3. Create bindizr config directory if it doesn't exist
+if [ ! -d "$BINDIZR_DIR" ]; then
+    echo "📁 Creating bindizr config directory at $BINDIZR_DIR..."
+    sudo mkdir -p "$BINDIZR_DIR"
+fi
+
+# 4. Generate RNDC key (skip if already exists)
 if [ ! -f "$RNDC_KEY_FILE" ]; then
     echo "🔑 Generating RNDC key..."
     rndc-confgen -a -c "$RNDC_KEY_FILE"
@@ -32,7 +39,7 @@ else
     echo "ℹ️ RNDC key already exists at $RNDC_KEY_FILE (skipping)"
 fi
 
-# 3. Append include statements if not already present
+# 5. Append include statements if not already present
 LINES=(
   "include \"$BINDIZR_FILE\";"
   "include \"$RNDC_KEY_FILE\";"
@@ -47,7 +54,7 @@ for line in "${LINES[@]}"; do
   fi
 done
 
-# 4. Add controls block if not already present
+# 6. Add controls block if not already present
 if ! grep -q "controls {" "$CONF_FILE"; then
     cat <<EOF | sudo tee -a "$CONF_FILE" >/dev/null
 controls {
