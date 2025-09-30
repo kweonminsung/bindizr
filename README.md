@@ -93,7 +93,8 @@ This script automatically detects your BIND configuration directory, generates a
 $ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/scripts/setup_bind_rndc.sh | sudo bash
 
 # Restart bind service
-$ sudo service bind restart
+$ sudo service bind restart  # For Debian-based systems
+$ sudo service named restart  # For Red Hat-based systems
 ```
 
 <details>
@@ -156,7 +157,8 @@ controls {
 After saving the changes, restart the BIND service:
 ```bash
 # Restart bind service
-$ sudo service bind restart
+$ sudo service bind restart  # For Debian-based systems
+$ sudo service named restart  # For Red Hat-based systems
 ```
 
 </details>

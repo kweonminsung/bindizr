@@ -1,19 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
-# 1. Detect BIND configuration directory depending on OS type
+# 1. Detect OS Family
 if [ -d /etc/bind ]; then
-    BIND_CONF_DIR="/etc/bind"
+    OS_FAMILY="debian"
 elif [ -d /etc/named ]; then
-    BIND_CONF_DIR="/etc/named"
-    CONF_FILE="/etc/named.conf"
+    OS_FAMILY="redhat"
 else
-    echo "❌ Could not determine BIND config directory."
+    echo "❌ Could not determine BIND config directory. Neither /etc/bind nor /etc/named found."
     exit 1
 fi
 
-if [ -z "${CONF_FILE:-}" ]; then
+# 2. Set OS-specific variables
+if [ "$OS_FAMILY" = "debian" ]; then
+    BIND_CONF_DIR="/etc/bind"
     CONF_FILE="$BIND_CONF_DIR/named.conf"
+elif [ "$OS_FAMILY" = "redhat" ]; then
+    BIND_CONF_DIR="/etc/named"
+    CONF_FILE="/etc/named.conf"
 fi
 RNDC_KEY_FILE="$BIND_CONF_DIR/rndc.key"
 BINDIZR_FILE="$BIND_CONF_DIR/bindizr/named.conf.bindizr"
@@ -57,4 +61,8 @@ else
 fi
 
 echo "✅ Setup complete. Restart named to apply changes:"
-echo "   sudo systemctl restart named"
+if [ "$OS_FAMILY" = "debian" ]; then
+    echo "   sudo service bind restart
+elif [ "$OS_FAMILY" = "redhat" ]; then
+    echo "   sudo service named restart
+fi
