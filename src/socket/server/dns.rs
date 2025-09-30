@@ -1,7 +1,7 @@
 use crate::{rndc::get_rndc_client, serializer::get_serializer, socket::dto::DaemonResponse};
 
-pub fn write_dns_config() -> Result<DaemonResponse, String> {
-    match get_serializer().send_message_and_wait("write_config") {
+pub async fn write_dns_config() -> Result<DaemonResponse, String> {
+    match get_serializer().write_config_sync().await {
         Ok(_) => Ok(DaemonResponse {
             message: "DNS configuration written successfully.".to_string(),
             data: serde_json::Value::Null,
@@ -11,11 +11,16 @@ pub fn write_dns_config() -> Result<DaemonResponse, String> {
 }
 
 pub fn reload_dns_config() -> Result<DaemonResponse, String> {
-    match get_serializer().send_message_and_wait("reload") {
-        Ok(_) => Ok(DaemonResponse {
-            message: "DNS configuration reloaded successfully.".to_string(),
-            data: serde_json::Value::Null,
-        }),
+    match get_rndc_client().command("reload") {
+        Ok(response) => {
+            if !response.result {
+                return Err("Failed to reload DNS configuration".to_string());
+            }
+            Ok(DaemonResponse {
+                message: "DNS configuration reloaded successfully.".to_string(),
+                data: serde_json::Value::Null,
+            })
+        }
         Err(e) => Err(format!("Failed to reload DNS configuration: {}", e)),
     }
 }

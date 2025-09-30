@@ -14,3 +14,4 @@ named.conf
 !/packaging/debian/control
 !/packaging/debian/copyright
 !/packaging/debian/rules
+!/packaging/debian/bindizr.service

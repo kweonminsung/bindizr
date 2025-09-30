@@ -23,7 +23,7 @@ async fn handle_client(stream: UnixStream) {
                 "token_create" => token::create_token(&cmd.data).await,
                 "token_list" => token::list_tokens().await,
                 "token_delete" => token::delete_token(&cmd.data).await,
-                "dns_write_config" => dns::write_dns_config(),
+                "dns_write_config" => dns::write_dns_config().await,
                 "dns_reload" => dns::reload_dns_config(),
                 "dns_status" => dns::get_dns_status(),
                 _ => Err("Unsupported daemon command".to_string()),

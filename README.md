@@ -113,10 +113,16 @@ First, set variables for your BIND configuration. The paths vary depending on yo
   $ RNDC_KEY_FILE=/etc/rndc.key
   ```
 
+Next, create the necessary directories and files.
+```bash
+$ sudo mkdir -p "/etc/bindizr/zones"
+$ sudo touch "/etc/bindizr/zones/named.conf"
+```
+
 Now, generate the RNDC configuration and key using the variable:
 ```bash
 # Generate RNDC configuration and key
-$ rndc-confgen -a
+$ sudo rndc-confgen -a
 
 # View the generated key (example below)
 $ cat $RNDC_KEY_FILE

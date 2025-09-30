@@ -9,15 +9,10 @@ use crate::database::{
 };
 use crate::{log_error, log_info};
 use std::fmt::Write;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::{fs, thread};
-
-struct Message {
-    msg: String,
-    ack: Option<Sender<()>>, // Optional acknowledgment channel
-}
+use tokio::sync::Mutex;
 
 pub fn initialize() {
     log_info!("Serializer initialized");
@@ -25,79 +20,19 @@ pub fn initialize() {
 }
 
 pub struct Serializer {
-    tx: Sender<Message>,
+    writing: Mutex<()>,
 }
 
 impl Serializer {
     fn new() -> Self {
-        let (tx, rx) = mpsc::channel();
-
-        // Spawn worker thread
-        thread::spawn(move || Self::worker_thread(rx));
-
-        Serializer { tx }
-    }
-
-    // Worker thread that processes messages
-    async fn worker_thread(rx: Receiver<Message>) {
-        loop {
-            match rx.recv() {
-                Ok(Message { msg, ack }) => match msg.as_str() {
-                    "write_config" => {
-                        if let Err(e) = Self::write_config().await {
-                            log_error!("Failed to write config: {}", e);
-                        }
-
-                        if let Some(ack) = ack {
-                            let _ = ack.send(()); // ACK even on failure
-                        }
-                    }
-                    "exit" => {
-                        if let Some(ack) = ack {
-                            let _ = ack.send(()); // ACK before exit
-                        }
-                        break;
-                    }
-                    _ => {
-                        log_error!("Received unsupported message: {}", msg);
-                    }
-                },
-                Err(e) => {
-                    log_error!("Error receiving message: {}", e);
-                    break;
-                }
-            }
+        Serializer {
+            writing: Mutex::new(()),
         }
     }
 
-    // Send message to worker thread
-    pub fn _send_message(&self, message: &str) {
-        let msg = Message {
-            msg: message.to_string(),
-            ack: None,
-        };
-        if let Err(e) = self.tx.send(msg) {
-            log_error!("Error sending message: {}", e);
-        }
-    }
-
-    // Send message with acknowledgment
-    pub fn send_message_and_wait(&self, message: &str) -> Result<(), String> {
-        let (ack_tx, ack_rx) = mpsc::channel();
-
-        let msg = Message {
-            msg: message.to_string(),
-            ack: Some(ack_tx),
-        };
-        if self.tx.send(msg).is_err() {
-            return Err("Failed to send message".to_string());
-        }
-
-        // Wait for acknowledgment
-        ack_rx
-            .recv()
-            .map_err(|e| format!("Failed to receive acknowledgment: {}", e))?;
-        Ok(())
+    pub async fn write_config_sync(&self) -> Result<(), String> {
+        let _guard = self.writing.lock().await;
+        Self::write_config().await
     }
 
     // Write DNS configuration files
@@ -112,40 +47,49 @@ impl Serializer {
             ));
         }
 
-        println!("====================================1");
         // Prepare directory for writing
         let zone_config_dir = bindizr_config_dir.join("zones");
-        if zone_config_dir.exists() && fs::remove_dir_all(&zone_config_dir).is_err() {
+        if zone_config_dir.exists() {
+            if let Err(e) = fs::remove_dir_all(&zone_config_dir) {
+                return Err(format!(
+                    "Failed to remove existing zone config directory: {}: {}",
+                    zone_config_dir.display(),
+                    e
+                ));
+            }
+        }
+        if let Err(e) = fs::create_dir_all(&zone_config_dir) {
             return Err(format!(
-                "Failed to remove existing zone config directory: {}",
-                zone_config_dir.display()
+                "Failed to create zone config directory: {}: {}",
+                zone_config_dir.display(),
+                e
             ));
         }
-        if fs::create_dir_all(&zone_config_dir).is_err() {
-            return Err(format!(
-                "Failed to create zone config directory: {}",
-                zone_config_dir.display()
-            ));
-        }
-        println!("====================================2");
+
         // Write include zone config file
         let include_zone_config =
             Self::serialize_include_zone_config(&zone_config_dir.display().to_string(), &zones);
-        if fs::write(zone_config_dir.join("named.conf"), include_zone_config).is_err() {
+        let named_conf_path = zone_config_dir.join("named.conf");
+        if let Err(e) = fs::write(&named_conf_path, include_zone_config) {
             return Err(format!(
-                "Failed to write to file: {}",
-                zone_config_dir.join("named.conf").display()
+                "Failed to write to file: {}: {}",
+                named_conf_path.display(),
+                e
             ));
         }
-        println!("====================================3");
+
         // Write zone files
         for zone in zones {
             let records = Self::get_records(zone.id).await;
             let serialized_data = Self::serialize_zone(&zone, &records);
 
             let file_path = zone_config_dir.join(format!("{}.zone", zone.name));
-            if fs::write(file_path, serialized_data).is_err() {
-                return Err(format!("Failed to write to file: {}", zone.name));
+            if let Err(e) = fs::write(&file_path, serialized_data) {
+                return Err(format!(
+                    "Failed to write to file: {}: {}",
+                    file_path.display(),
+                    e
+                ));
             }
         }
 

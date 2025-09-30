@@ -42,12 +42,12 @@ impl DnsService {
         }
     }
 
-    pub fn write_dns_config() -> Result<String, String> {
-        match get_serializer().send_message_and_wait("write_config") {
+    pub async fn write_dns_config() -> Result<String, String> {
+        match get_serializer().write_config_sync().await {
             Ok(_) => Ok("DNS configuration written successfully.".to_string()),
             Err(e) => {
                 log_error!("Failed to write DNS configuration: {}", e);
-                Err("Failed to write DNS configuration".to_string())
+                Err(format!("Failed to write DNS configuration: {}", e))
             }
         }
     }

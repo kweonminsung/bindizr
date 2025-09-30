@@ -39,15 +39,15 @@ impl DnsController {
     }
 
     async fn write_dns_config() -> impl IntoResponse {
-        let msg = match DnsService::write_dns_config() {
-            Ok(msg) => msg,
+        match DnsService::write_dns_config().await {
+            Ok(msg) => {
+                let json_body = json!({ "msg": msg  });
+                (StatusCode::OK, Json(json_body))
+            }
             Err(err) => {
                 let json_body = json!({ "error": format!("Failed to write DNS config: {}", err) });
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json_body));
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(json_body))
             }
-        };
-
-        let json_body = json!({ "msg": msg  });
-        (StatusCode::OK, Json(json_body))
+        }
     }
 }
