@@ -1,3 +1,4 @@
+use crate::config::BINDIZR_CONF_DIR;
 use crate::database::get_zone_repository;
 use crate::database::{
     get_record_repository,
@@ -6,7 +7,7 @@ use crate::database::{
         zone::Zone,
     },
 };
-use crate::{config, log_error, log_info};
+use crate::{log_error, log_info};
 use std::fmt::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -103,57 +104,46 @@ impl Serializer {
     async fn write_config() -> Result<(), String> {
         let zones = Self::get_zones().await;
 
-        let bind_config_path_str = config::get_config::<String>("bind.bind_config_path");
-        let bind_config_path = PathBuf::from(&bind_config_path_str);
-        if !bind_config_path.is_dir() {
+        let bindizr_config_dir = PathBuf::from(BINDIZR_CONF_DIR);
+        if !bindizr_config_dir.exists() {
             return Err(format!(
-                "Bind config path is not a directory: {}",
-                bind_config_path_str
-            ));
-        }
-        if !bind_config_path.exists() {
-            return Err(format!(
-                "Bind config path does not exist: {}",
-                bind_config_path_str
+                "Bindizr config directory does not exist: {}",
+                BINDIZR_CONF_DIR
             ));
         }
 
+        println!("====================================1");
         // Prepare directory for writing
-        let bindizr_config_path = bind_config_path.join("bindizr");
-        if bindizr_config_path.exists() && fs::remove_dir_all(&bindizr_config_path).is_err() {
+        let zone_config_dir = bindizr_config_dir.join("zones");
+        if zone_config_dir.exists() && fs::remove_dir_all(&zone_config_dir).is_err() {
             return Err(format!(
-                "Failed to remove existing bindizr config directory: {}",
-                bindizr_config_path.display()
+                "Failed to remove existing zone config directory: {}",
+                zone_config_dir.display()
             ));
         }
-        if fs::create_dir_all(&bindizr_config_path).is_err() {
+        if fs::create_dir_all(&zone_config_dir).is_err() {
             return Err(format!(
-                "Failed to create bindizr config directory: {}",
-                bindizr_config_path.display()
+                "Failed to create zone config directory: {}",
+                zone_config_dir.display()
             ));
         }
-
+        println!("====================================2");
         // Write include zone config file
         let include_zone_config =
-            Self::serialize_include_zone_config(&bindizr_config_path.display().to_string(), &zones);
-        if fs::write(
-            bindizr_config_path.join("named.conf.bindizr"),
-            include_zone_config,
-        )
-        .is_err()
-        {
+            Self::serialize_include_zone_config(&zone_config_dir.display().to_string(), &zones);
+        if fs::write(zone_config_dir.join("named.conf"), include_zone_config).is_err() {
             return Err(format!(
                 "Failed to write to file: {}",
-                bindizr_config_path.join("named.conf.bindizr").display()
+                zone_config_dir.join("named.conf").display()
             ));
         }
-
+        println!("====================================3");
         // Write zone files
         for zone in zones {
             let records = Self::get_records(zone.id).await;
             let serialized_data = Self::serialize_zone(&zone, &records);
 
-            let file_path = bindizr_config_path.join(format!("{}.zone", zone.name));
+            let file_path = zone_config_dir.join(format!("{}.zone", zone.name));
             if fs::write(file_path, serialized_data).is_err() {
                 return Err(format!("Failed to write to file: {}", zone.name));
             }
@@ -183,14 +173,14 @@ impl Serializer {
             })
     }
 
-    fn serialize_include_zone_config(bindizr_config_dir: &str, zones: &[Zone]) -> String {
+    fn serialize_include_zone_config(zone_config_dir: &str, zones: &[Zone]) -> String {
         let mut output = String::new();
 
         for zone in zones {
             writeln!(
                 &mut output,
                 "zone \"{}\" {{ type master; file \"{}/{}.zone\"; }};",
-                zone.name, bindizr_config_dir, zone.name
+                zone.name, zone_config_dir, zone.name
             )
             .unwrap();
         }

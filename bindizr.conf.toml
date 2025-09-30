@@ -16,7 +16,6 @@ file_path = "bindizr.db"       # SQLite database file path
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
 [bind]
-bind_config_path = "/etc/bind"       # Bind config path
 rndc_server_url = "127.0.0.1:953"    # RNDC server address
 rndc_algorithm = "sha256"            # RNDC authentication algorithm
 rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key

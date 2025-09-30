@@ -3,17 +3,21 @@ mod tests;
 
 use config::{Config, File, FileFormat, Source, ValueKind};
 use once_cell::sync::OnceCell;
-use std::{any::type_name, collections::HashMap, str::FromStr};
-
-use crate::log_error;
+use std::{any::type_name, collections::HashMap, path::PathBuf, str::FromStr};
 
 // Config file path
-pub const CONF_FILE_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
+pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";
+pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 static CONFIG: OnceCell<Config> = OnceCell::new();
 
 pub fn initialize(conf_file_path: Option<&str>) {
-    let conf_file_path = conf_file_path.unwrap_or(CONF_FILE_PATH);
+    let conf_file_path = conf_file_path.unwrap_or(BINDIZR_CONF_PATH);
+
+    if !PathBuf::from(conf_file_path).exists() {
+        eprintln!("Bindizr config does not exist: {}", conf_file_path);
+        std::process::exit(1);
+    }
 
     println!("Initializing configuration from file: {}", conf_file_path);
 
@@ -21,10 +25,9 @@ pub fn initialize(conf_file_path: Option<&str>) {
         .add_source(File::new(conf_file_path, FileFormat::Toml).required(true))
         .build()
         .unwrap_or_else(|e| {
-            log_error!(
+            eprintln!(
                 "Failed to build configuration from file '{}': {}",
-                conf_file_path,
-                e
+                conf_file_path, e
             );
             std::process::exit(1);
         });
@@ -38,15 +41,14 @@ fn get_config_str(key: &str) -> String {
         .expect("Configuration not initialized")
         .get::<config::Value>(key)
         .unwrap_or_else(|_| {
-            log_error!("Configuration key '{}' not found", key);
+            eprintln!("Configuration key '{}' not found", key);
             std::process::exit(1);
         })
         .into_string()
         .unwrap_or_else(|e| {
-            log_error!(
+            eprintln!(
                 "Failed to convert configuration value for key '{}' to string: {}",
-                key,
-                e
+                key, e
             );
             std::process::exit(1);
         })
@@ -102,7 +104,7 @@ where
     let value_str = get_config_str(key);
 
     value_str.parse::<T>().unwrap_or_else(|e| {
-        log_error!(
+        eprintln!(
             "Failed to parse configuration for '{}'. Expected type: {}. Error: {}",
             key,
             type_name::<T>(),

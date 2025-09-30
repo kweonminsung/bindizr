@@ -17,7 +17,6 @@ file_path = "file::memory:?cache=shared"
 server_url = ""
 
 [bind]
-bind_config_path = "/etc/bind"
 rndc_server_url = "127.0.0.1:953"
 rndc_algorithm = "sha256"
 rndc_secret_key = "YmluZGl6cg=="  # This is "test" base64-encoded

@@ -104,13 +104,11 @@ First, set variables for your BIND configuration. The paths vary depending on yo
 
 - **For Debian-based systems (e.g., Ubuntu):**
   ```bash
-  $ BIND_CONF_DIR=/etc/bind
   $ BIND_CONF_FILE=/etc/bind/named.conf
   $ RNDC_KEY_FILE=/etc/bind/rndc.key
   ```
 - **For Red Hat-based systems (e.g., Fedora, CentOS):**
   ```bash
-  $ BIND_CONF_DIR=/etc/named
   $ BIND_CONF_FILE=/etc/named.conf
   $ RNDC_KEY_FILE=/etc/rndc.key
   ```
@@ -135,7 +133,7 @@ Now, update your main BIND configuration file (`$BIND_CONF_FILE`) by adding the 
 ```bash
 # Append the include statements to named.conf
 echo "
-include \"$BIND_CONF_DIR/bindizr/named.conf.bindizr\";
+include \"/etc/bindizr/zones/named.conf\";
 include \"$RNDC_KEY_FILE\";
 " | sudo tee -a "$BIND_CONF_FILE"
 ```
@@ -196,7 +194,6 @@ file_path = "bindizr.db"       # SQLite database file path
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
 [bind]
-bind_config_path = "$BIND_CONF_DIR"       # Bind config path
 rndc_server_url = "127.0.0.1:953"    # RNDC server address
 rndc_algorithm = "sha256"            # RNDC authentication algorithm
 rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key

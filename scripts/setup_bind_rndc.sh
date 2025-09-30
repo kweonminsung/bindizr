@@ -13,29 +13,26 @@ fi
 
 # 2. Set OS-specific variables
 if [ "$OS_FAMILY" = "debian" ]; then
-    BIND_CONF_DIR="/etc/bind"
     BIND_CONF_FILE="/etc/bind/named.conf"
     RNDC_KEY_FILE="/etc/bind/rndc.key"
 elif [ "$OS_FAMILY" = "redhat" ]; then
-    BIND_CONF_DIR="/etc/named"
     BIND_CONF_FILE="/etc/named.conf"
     RNDC_KEY_FILE="/etc/rndc.key"
 fi
-BINDIZR_FILE="$BIND_CONF_DIR/bindizr/named.conf.bindizr"
-BINDIZR_DIR=$(dirname "$BINDIZR_FILE")
-
-echo "✅ Using BIND_CONF_DIR=$BIND_CONF_DIR"
+BINDIZR_DIR="/etc/bindizr"
+ZONE_CONFIG_DIR="$BINDIZR_DIR/zones"
+ZONE_CONFIG_FILE="$BINDIZR_DIR/zones/named.conf"
 
 # 3. Create bindizr config directory if it doesn't exist
-if [ ! -d "$BINDIZR_DIR" ]; then
+if [ ! -d "$ZONE_CONFIG_DIR" ]; then
     echo "📁 Creating bindizr config directory at $BINDIZR_DIR..."
-    sudo mkdir -p "$BINDIZR_DIR"
+    sudo mkdir -p "$ZONE_CONFIG_DIR"
 fi
 
-# 4. Create bindizr config file if it doesn't exist
-if [ ! -f "$BINDIZR_FILE" ]; then
-    echo "📄 Creating bindizr config file at $BINDIZR_FILE..."
-    sudo touch "$BINDIZR_FILE"
+# 4. Create zone config file if it doesn't exist
+if [ ! -f "$ZONE_CONFIG_FILE" ]; then
+    echo "📄 Creating zone config file at $ZONE_CONFIG_FILE..."
+    sudo touch "$ZONE_CONFIG_FILE"
 fi
 
 # 5. Generate RNDC key and set permissions
