@@ -1,4 +1,4 @@
-name: build_test
+name: ci
 
 on:
   # push:
@@ -11,9 +11,7 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v5
     - name: Build

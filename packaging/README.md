@@ -1,88 +1,79 @@
 # Packaging Bindizr
 
-This document provides instructions for building Debian and RPM packages for Bindizr from the source code.
+This document provides instructions for building Debian and RPM packages for Bindizr from the source code using `fpm`.
 
-## Debian Packages (DPKG)
+## Prerequisites
 
-For Debian-based systems (Ubuntu, Debian, etc.), you can build and install Bindizr using the `dpkg-buildpackage` command.
+This section describes how to install the necessary dependencies to build the packages.
 
-### Prerequisites
+### 1. FPM (Effing Package Management)
 
-- `build-essential`
-- `debhelper`
-- `rustc`
-- `cargo`
-- `musl-tools` (for static linking)
+`fpm` is a Ruby-based tool, so it's best installed via RubyGems.
 
+**Install Ruby and Build Tools**
+
+First, you need to install Ruby and some development tools.
+
+*   **On Debian/Ubuntu:**
+    ```bash
+    sudo apt update
+    sudo apt install -y ruby ruby-dev build-essential
+    ```
+*   **On Fedora/CentOS/RHEL:**
+    ```bash
+    sudo dnf install -y ruby ruby-devel gcc make rpm-build
+    ```
+
+**Install fpm**
+
+Now, install `fpm` using `gem`:
 ```bash
-# Install build dependencies
-$ sudo apt-get update
-$ sudo apt-get install build-essential debhelper rustc cargo musl-tools
+sudo gem install --no-document fpm
 ```
 
-### Building the Package
+You can verify the installation by checking the version:
+```bash
+fpm --version
+```
+
+### 2. Rust Toolchain
+
+You'll also need the Rust compiler, Cargo, and `musl-tools` for static linking.
+
+*   **On Debian/Ubuntu:**
+    ```bash
+    sudo apt install -y rustc cargo musl-tools
+    ```
+*   **On Fedora/CentOS/RHEL:**
+    ```bash
+    sudo dnf install -y rust cargo musl-tools
+    ```
+
+## Building Packages
+
+A helper script is provided to build both `.deb` and `.rpm` packages.
 
 ```bash
 # Clone the repository
 $ git clone https://github.com/kweonminsung/bindizr.git
 $ cd bindizr
 
-# The debian packaging scripts expect the 'debian' directory to be at the root.
-# We'll create a temporary symlink to it.
-$ ln -s packaging/debian .
+# Run the build script
+$ ./scripts/build_packages.sh
 
-# Build the Debian package
-$ dpkg-buildpackage -us -uc
-
-# Clean up the symlink
-$ rm debian
-
-# The generated .deb file will be in the parent directory
-$ ls ../bindizr_*.deb
+# The generated packages will be in the root directory
+$ ls bindizr*.{deb,rpm}
 ```
 
-### Installing the Package
+## Installing the Package
+
+### Debian/Ubuntu
 
 ```bash
-# Install the generated .deb file
-$ sudo dpkg -i ../bindizr_*.deb
+$ sudo dpkg -i bindizr_*.deb
 ```
 
-## Red Hat Packages (RPM)
-
-For Red Hat-based systems (Fedora, CentOS, RHEL, etc.), you can build and install Bindizr using the `.spec` file.
-
-### Prerequisites
-
-- `rpm-build`
-- `rust`
-- `cargo`
-- `musl-tools` (for static linking)
+### Fedora/CentOS/RHEL
 
 ```bash
-# Install build dependencies
-$ sudo dnf install rpm-build rust cargo musl-tools
-```
-
-### Building the Package
-
-```bash
-# Clone the repository
-$ git clone https://github.com/kweonminsung/bindizr.git
-$ cd bindizr
-
-# Create the source tarball
-$ git archive --format=tar.gz --prefix=bindizr-0.1.0-beta.2/ -o bindizr-0.1.0-beta.2.tar.gz HEAD
-
-# Build the RPM package
-$ rpmbuild -ba packaging/rpm/bindizr.spec --define "_sourcedir $(pwd)"
-
-# The generated .rpm file will be in ~/rpmbuild/RPMS/
-$ ls ~/rpmbuild/RPMS/x86_64/bindizr-*.rpm
-```
-
-### Installing the Package
-
-```bash
-# Install the RPM package
-$ sudo rpm -i ~/rpmbuild/RPMS/x86_64/bindizr-*.rpm
+$ sudo rpm -i bindizr_*.rpm
