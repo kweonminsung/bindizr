@@ -9,6 +9,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -19,15 +20,22 @@ jobs:
           sudo apt-get install -y ruby ruby-dev build-essential
           sudo gem install --no-document fpm
 
+      - name: Install musl tools and sqlite dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools pkg-config libsqlite3-dev
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           target: x86_64-unknown-linux-musl
-          override: true
 
       - name: Build packages
-        run: ./scripts/build_packages.sh
+        run: |
+          export CC_x86_64_unknown_linux_musl=musl-gcc
+          export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+          ./scripts/build_packages.sh
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
