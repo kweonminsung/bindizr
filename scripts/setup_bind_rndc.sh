@@ -53,7 +53,7 @@ fi
 
 # 6. Append include statements if not already present
 LINES=(
-  "include \"$BINDIZR_FILE\";"
+  "include \"$ZONE_CONFIG_FILE\";"
   "include \"$RNDC_KEY_FILE\";"
 )
 
