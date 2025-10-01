@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: Set up Ruby and FPM
         run: |
@@ -20,7 +20,7 @@ jobs:
           sudo gem install --no-document fpm
 
       - name: Set up Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           target: x86_64-unknown-linux-musl
@@ -30,7 +30,7 @@ jobs:
         run: ./scripts/build_packages.sh
 
       - name: Create Release and Upload Assets
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             bindizr_*.deb
