@@ -180,7 +180,6 @@ ns  IN  A   {}
                 RecordType::A
                 | RecordType::AAAA
                 | RecordType::CNAME
-                | RecordType::TXT
                 | RecordType::NS
                 | RecordType::PTR => {
                     writeln!(
@@ -233,6 +232,46 @@ ns  IN  A   {}
                         record.value
                     )
                     .unwrap();
+                }
+                RecordType::TXT => {
+                    let ttl = record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default();
+                    let value = record.value.trim_matches('"'); // Remove surrounding quotes if any
+
+                    // RFC 1035: A single TXT record can have multiple segments, each up to 255 bytes.
+                    const MAX_TXT_SEGMENT_LEN: usize = 255;
+
+                    let mut segments = Vec::new();
+                    let mut current = String::new();
+                    for ch in value.chars() {
+                        if current.len() + ch.len_utf8() > MAX_TXT_SEGMENT_LEN {
+                            segments.push(current);
+                            current = String::new();
+                        }
+                        current.push(ch);
+                    }
+                    if !current.is_empty() {
+                        segments.push(current);
+                    }
+
+                    if segments.len() == 1 {
+                        // Single-segment TXT record
+                        writeln!(
+                            &mut output,
+                            "{} {} IN TXT \"{}\"",
+                            name, ttl, segments[0]
+                        ).unwrap();
+                    } else {
+                        // Multi-segment TXT record
+                        writeln!(
+                            &mut output,
+                            "{} {} IN TXT (",
+                            name, ttl
+                        ).unwrap();
+                        for seg in &segments {
+                            writeln!(&mut output, "\t\"{}\"", seg).unwrap();
+                        }
+                        writeln!(&mut output, ")").unwrap();
+                    }
                 }
             }
         }
