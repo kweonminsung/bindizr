@@ -69,7 +69,7 @@ impl Serializer {
                     ));
                 }
             }
-            Ok(false) => {} // Directory doesn't exist, will be created below
+            Ok(false) => {} // Directory doesn't exist, will be created next
             Err(e) => {
                 return Err(format!(
                     "Failed to check zone config directory: {}: {}",
