@@ -185,13 +185,14 @@ $TTL {}
         )
         .unwrap();
 
-        // NS record
+        // NS record and nameserver A record
+        // Note: The NS record (@ IN NS) is now stored in the database and will be
+        // rendered from the records list below. We only output the nameserver A record here.
         writeln!(
             &mut output,
-            r#"@   IN  NS  {}.
-ns  IN  A   {}
+            r#"ns  IN  A   {}
 "#,
-            zone.primary_ns, zone.primary_ns_ip
+            zone.primary_ns_ip
         )
         .unwrap();
 
