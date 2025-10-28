@@ -185,13 +185,12 @@ $TTL {}
         )
         .unwrap();
 
-        // NS record
+        // A record for the nameserver
         writeln!(
             &mut output,
-            r#"@   IN  NS  {}.
-ns  IN  A   {}
+            r#"ns  IN  A   {}
 "#,
-            zone.primary_ns, zone.primary_ns_ip
+            zone.primary_ns_ip
         )
         .unwrap();
 

@@ -95,8 +95,28 @@ impl TestContext {
         .await
         .expect("Failed to insert test zone");
 
+        let zone_id = result.last_insert_rowid() as i32;
+
+        // Create NS record for the zone (matching the service layer behavior)
+        sqlx::query(
+            r#"
+            INSERT INTO records (name, record_type, value, ttl, priority, created_at, zone_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind("@")
+        .bind("NS")
+        .bind(format!("{}.", zone.primary_ns))
+        .bind::<Option<i32>>(None)
+        .bind::<Option<i32>>(None)
+        .bind(&zone.created_at)
+        .bind(zone_id)
+        .execute(&self.db_pool)
+        .await
+        .expect("Failed to insert NS record for test zone");
+
         Zone {
-            id: result.last_insert_rowid() as i32,
+            id: zone_id,
             ..zone
         }
     }
