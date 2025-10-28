@@ -185,7 +185,7 @@ $TTL {}
         )
         .unwrap();
 
-        // NS record and nameserver A record
+        // Nameserver A record
         // Note: The NS record (@ IN NS) is now stored in the database and will be
         // rendered from the records list below. We only output the nameserver A record here.
         writeln!(

@@ -98,6 +98,8 @@ impl TestContext {
         let zone_id = result.last_insert_rowid() as i32;
 
         // Create NS record to match what the zone service does
+        // Note: We create this manually in the test helper rather than using ZoneService::create_zone
+        // to keep test setup simple and avoid dependencies on additional repositories/services
         sqlx::query(
             r#"
             INSERT INTO records (name, record_type, value, ttl, priority, created_at, zone_id)
