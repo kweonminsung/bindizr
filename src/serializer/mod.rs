@@ -41,19 +41,38 @@ impl Serializer {
         let zones = Self::get_zones().await;
 
         let bindizr_config_dir = PathBuf::from(BINDIZR_CONF_DIR);
-        if !fs::try_exists(&bindizr_config_dir).await.unwrap_or(false) {
-            return Err(format!(
-                "Bindizr config directory does not exist: {}",
-                BINDIZR_CONF_DIR
-            ));
+        match fs::try_exists(&bindizr_config_dir).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(format!(
+                    "Bindizr config directory does not exist: {}",
+                    BINDIZR_CONF_DIR
+                ));
+            }
+            Err(e) => {
+                return Err(format!(
+                    "Failed to check bindizr config directory: {}: {}",
+                    BINDIZR_CONF_DIR, e
+                ));
+            }
         }
 
         // Prepare directory for writing
         let zone_config_dir = bindizr_config_dir.join("zones");
-        if fs::try_exists(&zone_config_dir).await.unwrap_or(false) {
-            if let Err(e) = fs::remove_dir_all(&zone_config_dir).await {
+        match fs::try_exists(&zone_config_dir).await {
+            Ok(true) => {
+                if let Err(e) = fs::remove_dir_all(&zone_config_dir).await {
+                    return Err(format!(
+                        "Failed to remove existing zone config directory: {}: {}",
+                        zone_config_dir.display(),
+                        e
+                    ));
+                }
+            }
+            Ok(false) => {} // Directory doesn't exist, will be created below
+            Err(e) => {
                 return Err(format!(
-                    "Failed to remove existing zone config directory: {}: {}",
+                    "Failed to check zone config directory: {}: {}",
                     zone_config_dir.display(),
                     e
                 ));
