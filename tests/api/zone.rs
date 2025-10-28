@@ -115,3 +115,41 @@ async fn test_zone_history() {
     // Should return history array (might be empty initially)
     assert!(body["zone_histories"].as_array().is_some());
 }
+
+#[tokio::test]
+async fn test_zone_creates_ns_record_automatically() {
+    let ctx = TestContext::new().await;
+
+    // Create a zone via API
+    let create_zone_request = serde_json::json!({
+        "name": "autotest.com",
+        "primary_ns": "ns1.autotest.com",
+        "primary_ns_ip": "10.0.0.5",
+        "admin_email": "admin.autotest.com",
+        "ttl": 3600,
+        "serial": 2023010101,
+    });
+
+    let (status, body) = ctx
+        .make_request("POST", "/zones", Some(create_zone_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let zone_id = body["zone"]["id"].as_i64().unwrap();
+
+    // Verify NS record was created automatically
+    let (status, body) = ctx
+        .make_request("GET", &format!("/zones/{}?records=true", zone_id), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let records = body["records"].as_array().unwrap();
+    
+    // Find the NS record
+    let ns_record = records.iter().find(|r| r["record_type"] == "NS");
+    assert!(ns_record.is_some(), "NS record should be created automatically");
+    
+    let ns_record = ns_record.unwrap();
+    assert_eq!(ns_record["name"], "@");
+    assert_eq!(ns_record["value"], "ns1.autotest.com.");
+}
