@@ -8,6 +8,7 @@ use crate::database::{
     },
 };
 use crate::{log_error, log_info};
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::fs;
 use std::path::PathBuf;
@@ -78,10 +79,19 @@ impl Serializer {
             ));
         }
 
+        // Fetch all records at once to avoid N+1 query problem
+        let all_records = Self::get_all_records().await;
+        
+        // Group records by zone_id for efficient lookup
+        let mut records_by_zone: HashMap<i32, Vec<Record>> = HashMap::new();
+        for record in all_records {
+            records_by_zone.entry(record.zone_id).or_default().push(record);
+        }
+
         // Write zone files
         for zone in zones {
-            let records = Self::get_records(zone.id).await;
-            let serialized_data = Self::serialize_zone(&zone, &records);
+            let records = records_by_zone.get(&zone.id).map_or(&[][..], |v| v.as_slice());
+            let serialized_data = Self::serialize_zone(&zone, records);
 
             let file_path = zone_config_dir.join(format!("{}.zone", zone.name));
             if let Err(e) = fs::write(&file_path, serialized_data) {
@@ -105,16 +115,13 @@ impl Serializer {
         })
     }
 
-    async fn get_records(zone_id: i32) -> Vec<Record> {
+    async fn get_all_records() -> Vec<Record> {
         let record_repository = get_record_repository();
 
-        record_repository
-            .get_by_zone_id(zone_id)
-            .await
-            .unwrap_or_else(|e| {
-                log_error!("Failed to fetch records for zone {}: {}", zone_id, e);
-                Vec::new()
-            })
+        record_repository.get_all().await.unwrap_or_else(|e| {
+            log_error!("Failed to fetch all records: {}", e);
+            Vec::new()
+        })
     }
 
     fn serialize_include_zone_config(zone_config_dir: &str, zones: &[Zone]) -> String {
@@ -170,11 +177,7 @@ ns  IN  A   {}
         .unwrap();
 
         for record in records {
-            let name = if record.name == "@" {
-                "@".to_string()
-            } else {
-                record.name.to_string()
-            };
+            let name = if record.name == "@" { "@" } else { &record.name };
 
             match record.record_type {
                 RecordType::A
@@ -182,26 +185,36 @@ ns  IN  A   {}
                 | RecordType::CNAME
                 | RecordType::NS
                 | RecordType::PTR => {
-                    writeln!(
-                        &mut output,
-                        "{} {} IN {} {}",
-                        name,
-                        record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default(),
-                        record.record_type,
-                        record.value
-                    )
+                    if let Some(ttl) = record.ttl {
+                        writeln!(
+                            &mut output,
+                            "{} {} IN {} {}",
+                            name, ttl, record.record_type, record.value
+                        )
+                    } else {
+                        writeln!(
+                            &mut output,
+                            "{} IN {} {}",
+                            name, record.record_type, record.value
+                        )
+                    }
                     .unwrap();
                 }
                 RecordType::MX => {
                     let priority = record.priority.unwrap_or(10);
-                    writeln!(
-                        &mut output,
-                        "{} {} IN MX {} {}",
-                        name,
-                        record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default(),
-                        priority,
-                        record.value
-                    )
+                    if let Some(ttl) = record.ttl {
+                        writeln!(
+                            &mut output,
+                            "{} {} IN MX {} {}",
+                            name, ttl, priority, record.value
+                        )
+                    } else {
+                        writeln!(
+                            &mut output,
+                            "{} IN MX {} {}",
+                            name, priority, record.value
+                        )
+                    }
                     .unwrap();
                 }
                 RecordType::SRV => {
@@ -209,32 +222,42 @@ ns  IN  A   {}
                     // e.g.: _sip._tcp 3600 IN SRV 10 60 5060 sipserver.example.com.
                     let parts: Vec<&str> = record.value.split_whitespace().collect();
                     if parts.len() == 3 {
-                        writeln!(
-                            &mut output,
-                            "{} {} IN SRV {} {} {} {}",
-                            name,
-                            record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default(),
-                            record.priority.unwrap_or(10), // default priority
-                            parts[0],                      // weight
-                            parts[1],                      // port
-                            parts[2],                      // target
-                        )
+                        let priority = record.priority.unwrap_or(10);
+                        if let Some(ttl) = record.ttl {
+                            writeln!(
+                                &mut output,
+                                "{} {} IN SRV {} {} {} {}",
+                                name,
+                                ttl,
+                                priority,  // default priority
+                                parts[0],  // weight
+                                parts[1],  // port
+                                parts[2],  // target
+                            )
+                        } else {
+                            writeln!(
+                                &mut output,
+                                "{} IN SRV {} {} {} {}",
+                                name,
+                                priority,  // default priority
+                                parts[0],  // weight
+                                parts[1],  // port
+                                parts[2],  // target
+                            )
+                        }
                         .unwrap();
                     }
                 }
                 RecordType::SOA => {
                     // Mostly SOA is automatically generated, so ignore it or process it separately.
-                    writeln!(
-                        &mut output,
-                        "{} {} IN SOA {}",
-                        name,
-                        record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default(),
-                        record.value
-                    )
+                    if let Some(ttl) = record.ttl {
+                        writeln!(&mut output, "{} {} IN SOA {}", name, ttl, record.value)
+                    } else {
+                        writeln!(&mut output, "{} IN SOA {}", name, record.value)
+                    }
                     .unwrap();
                 }
                 RecordType::TXT => {
-                    let ttl = record.ttl.map(|ttl| ttl.to_string()).unwrap_or_default();
                     let value = record.value.trim_matches('"'); // Remove surrounding quotes if any
 
                     // RFC 1035: A single TXT record can have multiple segments, each up to 255 bytes.
@@ -255,22 +278,23 @@ ns  IN  A   {}
 
                     if segments.len() == 1 {
                         // Single-segment TXT record
-                        writeln!(
-                            &mut output,
-                            "{} {} IN TXT \"{}\"",
-                            name, ttl, segments[0]
-                        ).unwrap();
+                        if let Some(ttl) = record.ttl {
+                            writeln!(&mut output, "{} {} IN TXT \"{}\"", name, ttl, segments[0])
+                        } else {
+                            writeln!(&mut output, "{} IN TXT \"{}\"", name, segments[0])
+                        }
+                        .unwrap();
                     } else {
                         // Multi-segment TXT record
-                        writeln!(
-                            &mut output,
-                            "{} {} IN TXT (",
-                            name, ttl
-                        ).unwrap();
-                        for seg in &segments {
-                            writeln!(&mut output, "\t\"{}\"", seg).unwrap();
+                        write!(&mut output, "{} ", name).unwrap();
+                        if let Some(ttl) = record.ttl {
+                            write!(&mut output, "{} ", ttl).unwrap();
                         }
-                        writeln!(&mut output, ")").unwrap();
+                        write!(&mut output, "IN TXT").unwrap();
+                        for seg in &segments {
+                            write!(&mut output, " \"{}\"", seg).unwrap();
+                        }
+                        writeln!(&mut output).unwrap();
                     }
                 }
             }
