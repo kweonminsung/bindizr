@@ -6,7 +6,7 @@ use crate::socket::dto::DaemonCommand;
 use crate::socket::socket::SOCKET_FILE_PATH;
 use crate::{log_error, log_info};
 use serde_json::json;
-use std::fs;
+use tokio::fs;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 
@@ -47,7 +47,7 @@ async fn handle_client(stream: UnixStream) {
 }
 
 pub async fn initialize() -> Result<(), String> {
-    let _ = fs::remove_file(SOCKET_FILE_PATH); // Remove old socket file
+    let _ = fs::remove_file(SOCKET_FILE_PATH).await; // Remove old socket file
 
     let listener = UnixListener::bind(SOCKET_FILE_PATH)
         .map_err(|e| format!("Failed to bind Unix socket: {}", e))?;

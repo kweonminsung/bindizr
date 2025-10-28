@@ -10,9 +10,9 @@ use crate::database::{
 use crate::{log_error, log_info};
 use std::collections::HashMap;
 use std::fmt::Write;
-use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use tokio::fs;
 use tokio::sync::Mutex;
 
 pub fn initialize() {
@@ -41,7 +41,7 @@ impl Serializer {
         let zones = Self::get_zones().await;
 
         let bindizr_config_dir = PathBuf::from(BINDIZR_CONF_DIR);
-        if !bindizr_config_dir.exists() {
+        if !fs::try_exists(&bindizr_config_dir).await.unwrap_or(false) {
             return Err(format!(
                 "Bindizr config directory does not exist: {}",
                 BINDIZR_CONF_DIR
@@ -50,8 +50,8 @@ impl Serializer {
 
         // Prepare directory for writing
         let zone_config_dir = bindizr_config_dir.join("zones");
-        if zone_config_dir.exists() {
-            if let Err(e) = fs::remove_dir_all(&zone_config_dir) {
+        if fs::try_exists(&zone_config_dir).await.unwrap_or(false) {
+            if let Err(e) = fs::remove_dir_all(&zone_config_dir).await {
                 return Err(format!(
                     "Failed to remove existing zone config directory: {}: {}",
                     zone_config_dir.display(),
@@ -59,7 +59,7 @@ impl Serializer {
                 ));
             }
         }
-        if let Err(e) = fs::create_dir_all(&zone_config_dir) {
+        if let Err(e) = fs::create_dir_all(&zone_config_dir).await {
             return Err(format!(
                 "Failed to create zone config directory: {}: {}",
                 zone_config_dir.display(),
@@ -71,7 +71,7 @@ impl Serializer {
         let include_zone_config =
             Self::serialize_include_zone_config(&zone_config_dir.display().to_string(), &zones);
         let named_conf_path = zone_config_dir.join("named.conf");
-        if let Err(e) = fs::write(&named_conf_path, include_zone_config) {
+        if let Err(e) = fs::write(&named_conf_path, include_zone_config).await {
             return Err(format!(
                 "Failed to write to file: {}: {}",
                 named_conf_path.display(),
@@ -94,7 +94,7 @@ impl Serializer {
             let serialized_data = Self::serialize_zone(&zone, records);
 
             let file_path = zone_config_dir.join(format!("{}.zone", zone.name));
-            if let Err(e) = fs::write(&file_path, serialized_data) {
+            if let Err(e) = fs::write(&file_path, serialized_data).await {
                 return Err(format!(
                     "Failed to write to file: {}: {}",
                     file_path.display(),
