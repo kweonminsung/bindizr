@@ -85,42 +85,7 @@ impl RecordService {
             return Err("Cannot create SOA record manually".to_string());
         }
 
-        // CNAME validation
-        let existing_records = match record_repository
-            .get_by_name(&create_record_request.name)
-            .await
-        {
-            Ok(records) => records,
-            Err(e) => {
-                log_error!("Failed to check existing record: {}", e);
-                return Err("Failed to create record".to_string());
-            }
-        };
-
-        let existing_records_in_zone: Vec<_> = existing_records
-            .into_iter()
-            .filter(|r| r.zone_id == create_record_request.zone_id)
-            .collect();
-
-        if !existing_records_in_zone.is_empty() {
-            if record_type == RecordType::CNAME {
-                return Err(format!(
-                    "A record with name '{}' already exists in this zone, so CNAME cannot be used",
-                    create_record_request.name
-                ));
-            }
-            if existing_records_in_zone
-                .iter()
-                .any(|r| r.record_type == RecordType::CNAME)
-            {
-                return Err(format!(
-                    "A CNAME record with name '{}' already exists in this zone",
-                    create_record_request.name
-                ));
-            }
-        }
-
-        // Check if zone exists
+        // Check if zone exists and fetch existing records in the zone for CNAME validation
         match zone_repository
             .get_by_id(create_record_request.zone_id)
             .await
@@ -135,6 +100,41 @@ impl RecordService {
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
                 return Err("Failed to create record".to_string());
+            }
+        };
+
+        // CNAME validation - fetch records from the same zone for efficient validation
+        let existing_records_in_zone = match record_repository
+            .get_by_zone_id(create_record_request.zone_id)
+            .await
+        {
+            Ok(records) => records,
+            Err(e) => {
+                log_error!("Failed to check existing records: {}", e);
+                return Err("Failed to create record".to_string());
+            }
+        };
+
+        let existing_records_with_name: Vec<_> = existing_records_in_zone
+            .iter()
+            .filter(|r| r.name == create_record_request.name)
+            .collect();
+
+        if !existing_records_with_name.is_empty() {
+            if record_type == RecordType::CNAME {
+                return Err(format!(
+                    "A record with name '{}' already exists in this zone, so CNAME cannot be used",
+                    create_record_request.name
+                ));
+            }
+            if existing_records_with_name
+                .iter()
+                .any(|r| r.record_type == RecordType::CNAME)
+            {
+                return Err(format!(
+                    "A CNAME record with name '{}' already exists in this zone",
+                    create_record_request.name
+                ));
             }
         }
 

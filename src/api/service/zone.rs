@@ -66,7 +66,7 @@ impl ZoneService {
                 serial: create_zone_request.serial,
                 refresh: create_zone_request.refresh.unwrap_or(86400),
                 retry: create_zone_request.retry.unwrap_or(7200),
-                expire: create_zone_request.expire.unwrap_or(3600000),
+                expire: create_zone_request.expire.unwrap_or(3_600_000),
                 minimum_ttl: create_zone_request.minimum_ttl.unwrap_or(86400),
                 created_at: Utc::now(), // Will be set by the database
             })
@@ -144,7 +144,7 @@ impl ZoneService {
                 serial: update_zone_request.serial,
                 refresh: update_zone_request.refresh.unwrap_or(86400),
                 retry: update_zone_request.retry.unwrap_or(7200),
-                expire: update_zone_request.expire.unwrap_or(3600000),
+                expire: update_zone_request.expire.unwrap_or(3_600_000),
                 minimum_ttl: update_zone_request.minimum_ttl.unwrap_or(86400),
                 created_at: Utc::now(), // Will be set by the database
             })

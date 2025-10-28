@@ -64,7 +64,6 @@ pub async fn initialize() -> Result<(), String> {
                 }
                 Err(e) => {
                     log_error!("Error accepting connection: {}", e);
-                    continue;
                 }
             }
         }
