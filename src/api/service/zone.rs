@@ -1,8 +1,12 @@
 use crate::{
     api::dto::CreateZoneRequest,
     database::{
-        get_zone_history_repository, get_zone_repository,
-        model::{zone::Zone, zone_history::ZoneHistory},
+        get_record_repository, get_zone_history_repository, get_zone_repository,
+        model::{
+            record::{Record, RecordType},
+            zone::Zone,
+            zone_history::ZoneHistory,
+        },
     },
     log_error,
 };
@@ -40,6 +44,7 @@ impl ZoneService {
     pub async fn create_zone(create_zone_request: &CreateZoneRequest) -> Result<Zone, String> {
         let zone_repository = get_zone_repository();
         let zone_history_repository = get_zone_history_repository();
+        let record_repository = get_record_repository();
 
         // Check if zone already exists
         match zone_repository.get_by_name(&create_zone_request.name).await {
@@ -74,6 +79,24 @@ impl ZoneService {
             .map_err(|e| {
                 log_error!("Failed to create zone: {}", e);
                 "Failed to create zone".to_string()
+            })?;
+
+        // Create NS record automatically to match the zone file serialization
+        record_repository
+            .create(Record {
+                id: 0, // Will be set by the database
+                name: "@".to_string(),
+                record_type: RecordType::NS,
+                value: create_zone_request.primary_ns.clone(),
+                ttl: None, // Use zone default TTL
+                priority: None,
+                zone_id: created_zone.id,
+                created_at: Utc::now(), // Will be set by the database
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create NS record for zone: {}", e);
+                "Failed to create NS record for zone".to_string()
             })?;
 
         // Create zone history
