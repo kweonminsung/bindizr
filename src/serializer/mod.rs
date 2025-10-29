@@ -184,18 +184,7 @@ $TTL {}
             zone.minimum_ttl,
         )
         .unwrap();
-
-        // Nameserver A record
-        // Note: The NS record (@ IN NS) is now stored in the database and will be
-        // rendered from the records list below. We only output the nameserver A record here.
-        writeln!(
-            &mut output,
-            r#"ns  IN  A   {}
-"#,
-            zone.primary_ns_ip
-        )
-        .unwrap();
-
+    
         for record in records {
             let name = if record.name == "@" { "@" } else { &record.name };
 

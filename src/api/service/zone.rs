@@ -81,14 +81,14 @@ impl ZoneService {
                 "Failed to create zone".to_string()
             })?;
 
-        // Create NS record automatically to match the zone file serialization
+        // Create NS record for the zone
         record_repository
             .create(Record {
                 id: 0, // Will be set by the database
                 name: "@".to_string(),
                 record_type: RecordType::NS,
-                value: create_zone_request.primary_ns.clone(),
-                ttl: None, // Use zone default TTL
+                value: format!("{}.", created_zone.primary_ns),
+                ttl: None,
                 priority: None,
                 zone_id: created_zone.id,
                 created_at: Utc::now(), // Will be set by the database

@@ -97,9 +97,7 @@ impl TestContext {
 
         let zone_id = result.last_insert_rowid() as i32;
 
-        // Create NS record to match what the zone service does
-        // Note: We create this manually in the test helper rather than using ZoneService::create_zone
-        // to keep test setup simple and avoid dependencies on additional repositories/services
+        // Create NS record for the zone
         sqlx::query(
             r#"
             INSERT INTO records (name, record_type, value, ttl, priority, created_at, zone_id)
@@ -108,7 +106,7 @@ impl TestContext {
         )
         .bind("@")
         .bind("NS")
-        .bind(&zone.primary_ns)
+        .bind(format!("{}.", zone.primary_ns))
         .bind::<Option<i32>>(None)
         .bind::<Option<i32>>(None)
         .bind(&zone.created_at)
