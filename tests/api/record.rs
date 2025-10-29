@@ -6,13 +6,16 @@ async fn test_record_crud_operations() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
-    // Test GET /records (empty)
+    // Test GET /records (should have NS record)
     let (status, body) = ctx
         .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body["records"].as_array().unwrap().is_empty());
 
+    let records = body["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1, "Expected one NS record to be auto-created");
+    assert_eq!(records[0]["record_type"], "NS");
+    
     // Test POST /records (create)
     let create_record_request = serde_json::json!({
         "name": "api",
@@ -68,7 +71,7 @@ async fn test_record_crud_operations() {
         .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["records"].as_array().unwrap().len(), 3);
+    assert_eq!(body["records"].as_array().unwrap().len(), 4); // NS record + 3 created records
 
     // Test PUT /records/{id} (update)
     let update_record_request = serde_json::json!({
@@ -159,7 +162,7 @@ async fn test_multiple_record_types() {
         .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["records"].as_array().unwrap().len(), 5);
+    assert_eq!(body["records"].as_array().unwrap().len(), 6); // NS record + 5 created records
 }
 
 #[tokio::test]

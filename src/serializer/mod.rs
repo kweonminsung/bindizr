@@ -184,17 +184,7 @@ $TTL {}
             zone.minimum_ttl,
         )
         .unwrap();
-
-        // NS record
-        writeln!(
-            &mut output,
-            r#"@   IN  NS  {}.
-ns  IN  A   {}
-"#,
-            zone.primary_ns, zone.primary_ns_ip
-        )
-        .unwrap();
-
+    
         for record in records {
             let name = if record.name == "@" { "@" } else { &record.name };
 
