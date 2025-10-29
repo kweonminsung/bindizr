@@ -734,6 +734,9 @@ components:
         - admin_email
         - ttl
         - serial
+      anyOf:
+        - required: [primary_ns_ip]
+        - required: [primary_ns_ipv6]
       properties:
         name:
           type: string

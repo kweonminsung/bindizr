@@ -92,7 +92,7 @@ impl ZoneRepository for PostgresZoneRepository {
             UPDATE zones 
             SET name = $1, primary_ns = $2, primary_ns_ip = $3, primary_ns_ipv6 = $4, admin_email = $5,
                 ttl = $6, serial = $7, refresh = $8, retry = $9, expire = $10, minimum_ttl = $11
-            WHERE id = $11
+            WHERE id = $12
             "#,
         )
         .bind(&zone.name)
