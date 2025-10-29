@@ -729,8 +729,6 @@ components:
       required:
         - name
         - primary_ns
-        - primary_ns_ip
-        - primary_ns_ipv6
         - admin_email
         - ttl
         - serial
