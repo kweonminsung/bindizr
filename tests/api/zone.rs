@@ -15,6 +15,7 @@ async fn test_zone_crud_operations() {
         "name": "test.com",
         "primary_ns": "ns1.test.com",
         "primary_ns_ip": "10.0.0.1",
+        "primary_ns_ipv6": "2001:db8::1",
         "admin_email": "admin.test.com",
         "ttl": 3600,
         "serial": 2023010101,
@@ -31,17 +32,6 @@ async fn test_zone_crud_operations() {
 
     let zone_id = body["zone"]["id"].as_i64().unwrap();
     assert_eq!(body["zone"]["name"], "test.com");
-
-    // Verify that an NS record was automatically created for the zone
-    let (status, body) = ctx
-        .make_request("GET", &format!("/records?zone_id={}", zone_id), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let records = body["records"].as_array().unwrap();
-    assert_eq!(records.len(), 1, "Expected one NS record to be created automatically");
-    assert_eq!(records[0]["record_type"], "NS");
-    assert_eq!(records[0]["name"], "@");
-    assert_eq!(records[0]["value"], "ns1.test.com");
 
     // Test GET /zones/{id}
     let (status, body) = ctx
@@ -60,6 +50,7 @@ async fn test_zone_crud_operations() {
         "name": "updated-test.com",
         "primary_ns": "ns1.updated-test.com",
         "primary_ns_ip": "10.0.0.2",
+        "primary_ns_ipv6": "2001:db8::2",
         "admin_email": "admin.updated-test.com",
         "ttl": 7200,
         "serial": 2023010102,
@@ -88,6 +79,47 @@ async fn test_zone_crud_operations() {
     // Verify deletion
     let (status, _) = ctx
         .make_request("GET", &format!("/zones/{}", zone_id), None)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Test creating a zone with only primary_ns_ip
+    let create_zone_ip_only = serde_json::json!({
+        "name": "ip-only.com",
+        "primary_ns": "ns1.ip-only.com",
+        "primary_ns_ip": "10.0.0.3",
+        "admin_email": "admin.ip-only.com",
+        "ttl": 3600,
+        "serial": 2023010101
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(create_zone_ip_only))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // Test creating a zone with only primary_ns_ipv6
+    let create_zone_ipv6_only = serde_json::json!({
+        "name": "ipv6-only.com",
+        "primary_ns": "ns1.ipv6-only.com",
+        "primary_ns_ipv6": "2001:db8::3",
+        "admin_email": "admin.ipv6-only.com",
+        "ttl": 3600,
+        "serial": 2023010101
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(create_zone_ipv6_only))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // Test creating a zone with neither primary_ns_ip nor primary_ns_ipv6 (should fail)
+    let create_zone_no_ip = serde_json::json!({
+        "name": "no-ip.com",
+        "primary_ns": "ns1.no-ip.com",
+        "admin_email": "admin.no-ip.com",
+        "ttl": 3600,
+        "serial": 2023010101
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(create_zone_no_ip))
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
@@ -126,40 +158,3 @@ async fn test_zone_history() {
     // Should return history array (might be empty initially)
     assert!(body["zone_histories"].as_array().is_some());
 }
-
-#[tokio::test]
-async fn test_ns_record_auto_creation() {
-    let ctx = TestContext::new().await;
-
-    // Create a zone
-    let create_zone_request = serde_json::json!({
-        "name": "autotest.com",
-        "primary_ns": "ns1.autotest.com",
-        "primary_ns_ip": "10.0.0.10",
-        "admin_email": "admin.autotest.com",
-        "ttl": 3600,
-        "serial": 2023010101,
-    });
-
-    let (status, body) = ctx
-        .make_request("POST", "/zones", Some(create_zone_request))
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-    let zone_id = body["zone"]["id"].as_i64().unwrap();
-
-    // Verify NS record was automatically created
-    let (status, body) = ctx
-        .make_request("GET", &format!("/records?zone_id={}", zone_id), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    
-    let records = body["records"].as_array().unwrap();
-    assert_eq!(records.len(), 1, "Expected exactly one NS record to be auto-created");
-    
-    let ns_record = &records[0];
-    assert_eq!(ns_record["record_type"], "NS", "Auto-created record should be NS type");
-    assert_eq!(ns_record["name"], "@", "NS record name should be @ (zone apex)");
-    assert_eq!(ns_record["value"], "ns1.autotest.com", "NS record should point to primary_ns");
-    assert_eq!(ns_record["zone_id"], zone_id);
-}
-

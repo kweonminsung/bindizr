@@ -86,11 +86,11 @@ impl RecordService {
         }
 
         // Check if zone exists and fetch existing records in the zone for CNAME validation
-        match zone_repository
+        let zone = match zone_repository
             .get_by_id(create_record_request.zone_id)
             .await
         {
-            Ok(Some(_)) => {}
+            Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err(format!(
                     "Zone with id {} not found",
@@ -102,6 +102,17 @@ impl RecordService {
                 return Err("Failed to create record".to_string());
             }
         };
+
+        // Prevent manual creation of records related to primary_ns
+        if (record_type == RecordType::NS && create_record_request.name == "@")
+            || (record_type == RecordType::A && create_record_request.name == zone.primary_ns)
+            || (record_type == RecordType::AAAA && create_record_request.name == zone.primary_ns)
+        {
+            return Err(
+                "Cannot manually create records that are automatically generated for the primary NS"
+                    .to_string(),
+            );
+        }
 
         // CNAME validation - fetch records from the same zone for efficient validation
         let existing_records_in_zone = match record_repository
@@ -200,11 +211,11 @@ impl RecordService {
         }?;
 
         // Check if zone exists
-        match zone_repository
+        let zone = match zone_repository
             .get_by_id(update_record_request.zone_id)
             .await
         {
-            Ok(Some(_)) => {}
+            Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err("Zone not found".to_string());
             }
@@ -212,7 +223,7 @@ impl RecordService {
                 log_error!("Failed to fetch zone: {}", e);
                 return Err("Failed to fetch zone".to_string());
             }
-        }
+        };
 
         // Validate record type
         let record_type = RecordType::from_str(&update_record_request.record_type)
@@ -222,6 +233,17 @@ impl RecordService {
         if record_type == RecordType::SOA {
             log_error!("Cannot update to SOA record type");
             return Err("Cannot update to SOA record type".to_string());
+        }
+
+        // Prevent manual update of records related to primary_ns
+        if (record_type == RecordType::NS && update_record_request.name == "@")
+            || (record_type == RecordType::A && update_record_request.name == zone.primary_ns)
+            || (record_type == RecordType::AAAA && update_record_request.name == zone.primary_ns)
+        {
+            return Err(
+                "Cannot manually update records that are automatically generated for the primary NS"
+                    .to_string(),
+            );
         }
 
         // CNAME validation
