@@ -41,7 +41,7 @@ async fn test_zone_crud_operations() {
     assert_eq!(records.len(), 1, "Expected one NS record to be created automatically");
     assert_eq!(records[0]["record_type"], "NS");
     assert_eq!(records[0]["name"], "@");
-    assert_eq!(records[0]["value"], "ns1.test.com.");
+    assert_eq!(records[0]["value"], "ns1.test.com");
 
     // Test GET /zones/{id}
     let (status, body) = ctx
@@ -159,7 +159,7 @@ async fn test_ns_record_auto_creation() {
     let ns_record = &records[0];
     assert_eq!(ns_record["record_type"], "NS", "Auto-created record should be NS type");
     assert_eq!(ns_record["name"], "@", "NS record name should be @ (zone apex)");
-    assert_eq!(ns_record["value"], "ns1.autotest.com.", "NS record should point to primary_ns");
+    assert_eq!(ns_record["value"], "ns1.autotest.com", "NS record should point to primary_ns");
     assert_eq!(ns_record["zone_id"], zone_id);
 }
 

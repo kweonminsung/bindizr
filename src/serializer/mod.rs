@@ -1,3 +1,5 @@
+mod utils;
+
 use crate::config::BINDIZR_CONF_DIR;
 use crate::database::get_zone_repository;
 use crate::database::{
@@ -166,7 +168,7 @@ impl Serializer {
             &mut output,
             r#"; Automatically generated zone file
 $TTL {}
-{}.   IN  SOA {}. {}. (
+{}   IN  SOA {} {} (
         {} ; serial
         {} ; refresh
         {} ; retry
@@ -174,9 +176,9 @@ $TTL {}
         {} ) ; minimum TTL
 "#,
             zone.ttl,
-            zone.name,
-            zone.primary_ns,
-            zone.admin_email.replace("@", "."),
+            utils::to_fqdn(&zone.name),
+            utils::to_fqdn(&zone.primary_ns),
+            utils::normalize_email(&zone.admin_email),
             zone.serial,
             zone.refresh,
             zone.retry,
@@ -190,10 +192,7 @@ $TTL {}
 
             match record.record_type {
                 RecordType::A
-                | RecordType::AAAA
-                | RecordType::CNAME
-                | RecordType::NS
-                | RecordType::PTR => {
+                | RecordType::AAAA => {
                     if let Some(ttl) = record.ttl {
                         writeln!(
                             &mut output,
@@ -209,19 +208,38 @@ $TTL {}
                     }
                     .unwrap();
                 }
+                // NS, CNAME, PTR use FQDN for value
+                RecordType::CNAME 
+                | RecordType::NS 
+                | RecordType::PTR => {
+                    if let Some(ttl) = record.ttl {
+                        writeln!(
+                            &mut output,
+                            "{} {} IN {} {}",
+                            name, record.record_type, ttl, utils::to_fqdn(&record.value)
+                        )
+                    } else {
+                        writeln!(
+                            &mut output,
+                            "{} IN {} {}",
+                            name, record.record_type, utils::to_fqdn(&record.value)
+                        )
+                    }
+                    .unwrap();
+                }
                 RecordType::MX => {
                     let priority = record.priority.unwrap_or(10);
                     if let Some(ttl) = record.ttl {
                         writeln!(
                             &mut output,
                             "{} {} IN MX {} {}",
-                            name, ttl, priority, record.value
+                            name, ttl, priority, utils::to_fqdn(&record.value)
                         )
                     } else {
                         writeln!(
                             &mut output,
                             "{} IN MX {} {}",
-                            name, priority, record.value
+                            name, priority,  utils::to_fqdn(&record.value)
                         )
                     }
                     .unwrap();
@@ -241,7 +259,7 @@ $TTL {}
                                 priority,  // default priority
                                 parts[0],  // weight
                                 parts[1],  // port
-                                parts[2],  // target
+                                utils::to_fqdn(parts[2]),  // target
                             )
                         } else {
                             writeln!(
@@ -251,7 +269,7 @@ $TTL {}
                                 priority,  // default priority
                                 parts[0],  // weight
                                 parts[1],  // port
-                                parts[2],  // target
+                                utils::to_fqdn(parts[2]),  // target
                             )
                         }
                         .unwrap();
@@ -260,9 +278,17 @@ $TTL {}
                 RecordType::SOA => {
                     // Mostly SOA is automatically generated, so ignore it or process it separately.
                     if let Some(ttl) = record.ttl {
-                        writeln!(&mut output, "{} {} IN SOA {}", name, ttl, record.value)
+                        writeln!(
+                            &mut output,
+                            "{} {} IN SOA {}",
+                            utils::to_fqdn(name), ttl, record.value
+                        )
                     } else {
-                        writeln!(&mut output, "{} IN SOA {}", name, record.value)
+                        writeln!(
+                            &mut output,
+                            "{} IN SOA {}",
+                            utils::to_fqdn(name), record.value
+                        )
                     }
                     .unwrap();
                 }

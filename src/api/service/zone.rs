@@ -87,7 +87,7 @@ impl ZoneService {
                 id: 0, // Will be set by the database
                 name: "@".to_string(),
                 record_type: RecordType::NS,
-                value: format!("{}.", created_zone.primary_ns),
+                value: created_zone.primary_ns.clone(),
                 ttl: None,
                 priority: None,
                 zone_id: created_zone.id,
