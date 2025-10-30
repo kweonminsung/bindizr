@@ -65,7 +65,7 @@ impl TestContext {
             primary_ns: "ns1.example.com".to_string(),
             primary_ns_ip: Some("192.168.1.1".to_string()),
             primary_ns_ipv6: Some("2001:db8::1".to_string()),
-            admin_email: "admin.example.com".to_string(),
+            admin_email: "admin@example.com".to_string(),
             ttl: 3600,
             serial: 2023010101,
             refresh: 7200,

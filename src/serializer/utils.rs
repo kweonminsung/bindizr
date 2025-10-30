@@ -1,4 +1,4 @@
-pub(crate) fn to_fqdn(name: &str) -> String {
+pub fn to_fqdn(name: &str) -> String {
     if name.ends_with('.') {
         name.to_string()
     } else {
@@ -6,20 +6,29 @@ pub(crate) fn to_fqdn(name: &str) -> String {
     }
 }
 
-// pub(crate) fn is_fqdn(name: &str) -> bool {
+pub fn to_relative_domain(fqdn: &str, zone_name: &str) -> String {
+    let normalized_zone = to_fqdn(zone_name);
+
+    if fqdn == normalized_zone {
+        "@".to_string()
+    } else if fqdn.ends_with(&normalized_zone) {
+        let relative_part = &fqdn[..fqdn.len() - normalized_zone.len()];
+        relative_part.trim_end_matches('.').to_string()
+    } else {
+        fqdn.trim_end_matches('.').to_string()
+    }
+}
+
+// pub fn is_fqdn(name: &str) -> bool {
 //     name.ends_with('.')
 // }
 
-// pub(crate) fn normalize_domain_name(name: &str, zone_name: &str) -> String {
-//     if name.ends_with('.') {
-//         name.to_string()
-//     } else if name.is_empty() || name == "@" {
-//         format!("{}.", zone_name)
-//     } else {
-//         format!("{}.{}.", name, zone_name)
-//     }
-// }
+pub fn to_bind_rname(email: &str) -> String {
+    let email = email.replace('@', ".");
 
-pub(crate) fn normalize_email(email: &str) -> String {
-    email.replace('@', ".")
+    if email.ends_with('.') {
+        email.to_string()
+    } else {
+        format!("{}.", email)
+    }
 }

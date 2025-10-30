@@ -1,4 +1,4 @@
-mod utils;
+pub mod utils;
 
 use crate::config::BINDIZR_CONF_DIR;
 use crate::database::get_zone_repository;
@@ -183,7 +183,7 @@ $TTL {}
             zone.ttl,
             utils::to_fqdn(&zone.name),
             utils::to_fqdn(&zone.primary_ns),
-            utils::normalize_email(&zone.admin_email),
+            utils::to_bind_rname(&zone.admin_email),
             zone.serial,
             zone.refresh,
             zone.retry,

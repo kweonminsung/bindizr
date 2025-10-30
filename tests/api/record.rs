@@ -236,3 +236,77 @@ async fn test_cname_validation() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+
+#[tokio::test]
+async fn test_prevent_default_records_creation() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+
+    // Try to create an NS record (should fail)
+    let ns_record_request = serde_json::json!({
+        "name": "@",
+        "record_type": "NS",
+        "value": "ns1.example.com",
+        "ttl": 3600,
+        "zone_id": zone.id
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/records", Some(ns_record_request))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Try to create an A record to A type for the primary_ns (should fail)
+    let a_record_request = serde_json::json!({
+        "name": "ns1",
+        "record_type": "A",
+        "value": "1.1.1.1",
+        "ttl": 3600,
+        "zone_id": zone.id
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/records", Some(a_record_request))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_prevent_updating_to_default_records() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+    let record = ctx.create_test_record(zone.id).await;
+
+    // Try to update an existing record to NS type with name "@" (should fail)
+    let update_ns_request = serde_json::json!({
+        "name": "@",
+        "record_type": "NS",
+        "value": "ns1.example.com",
+        "ttl": 3600,
+        "zone_id": zone.id
+    });
+    let (status, _) = ctx
+        .make_request(
+            "PUT",
+            &format!("/records/{}", record.id),
+            Some(update_ns_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Try to update an existing record to A type for the primary_ns (should fail)
+    let update_a_request = serde_json::json!({
+        "name": "ns1",
+        "record_type": "A",
+        "value": "1.1.1.1",
+        "ttl": 3600,
+        "zone_id": zone.id
+    });
+    let (status, _) = ctx
+        .make_request(
+            "PUT",
+            &format!("/records/{}", record.id),
+            Some(update_a_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

@@ -16,7 +16,7 @@ async fn test_zone_crud_operations() {
         "primary_ns": "ns1.test.com",
         "primary_ns_ip": "10.0.0.1",
         "primary_ns_ipv6": "2001:db8::1",
-        "admin_email": "admin.test.com",
+        "admin_email": "admin@test.com",
         "ttl": 3600,
         "serial": 2023010101,
         "refresh": 7200,
@@ -51,7 +51,7 @@ async fn test_zone_crud_operations() {
         "primary_ns": "ns1.updated-test.com",
         "primary_ns_ip": "10.0.0.2",
         "primary_ns_ipv6": "2001:db8::2",
-        "admin_email": "admin.updated-test.com",
+        "admin_email": "admin@updated-test.com",
         "ttl": 7200,
         "serial": 2023010102,
         "refresh": 14400,
@@ -87,7 +87,7 @@ async fn test_zone_crud_operations() {
         "name": "ip-only.com",
         "primary_ns": "ns1.ip-only.com",
         "primary_ns_ip": "10.0.0.3",
-        "admin_email": "admin.ip-only.com",
+        "admin_email": "admin@ip-only.com",
         "ttl": 3600,
         "serial": 2023010101
     });
@@ -101,7 +101,7 @@ async fn test_zone_crud_operations() {
         "name": "ipv6-only.com",
         "primary_ns": "ns1.ipv6-only.com",
         "primary_ns_ipv6": "2001:db8::3",
-        "admin_email": "admin.ipv6-only.com",
+        "admin_email": "admin@ipv6-only.com",
         "ttl": 3600,
         "serial": 2023010101
     });
@@ -114,7 +114,7 @@ async fn test_zone_crud_operations() {
     let create_zone_no_ip = serde_json::json!({
         "name": "no-ip.com",
         "primary_ns": "ns1.no-ip.com",
-        "admin_email": "admin.no-ip.com",
+        "admin_email": "admin@no-ip.com",
         "ttl": 3600,
         "serial": 2023010101
     });
