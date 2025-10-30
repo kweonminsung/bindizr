@@ -237,7 +237,7 @@ impl RecordService {
             .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
 
         // CNAME validation for '@' name
-        if record_type == RecordType::CNAME && create_record_request.name == "@" {
+        if record_type == RecordType::CNAME && update_record_request.name == "@" {
             return Err("CNAME record cannot have '@' as name".to_string());
         }
 
