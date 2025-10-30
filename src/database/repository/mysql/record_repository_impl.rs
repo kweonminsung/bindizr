@@ -119,7 +119,7 @@ impl RecordRepository for MySqlRecordRepository {
         "#,
         )
         .bind(&record.name)
-        .bind(record.record_type.to_str())
+        .bind(record.record_type.to_string())
         .bind(&record.value)
         .bind(record.ttl)
         .bind(record.priority)

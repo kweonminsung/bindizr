@@ -1,4 +1,8 @@
-use crate::{database::model::api_token::ApiToken, log_debug, socket::client::DaemonSocketClient};
+use crate::{
+    database::model::api_token::ApiToken,
+    log_debug,
+    socket::{client::DaemonSocketClient, dto::DaemonCommandKind},
+};
 use clap::Subcommand;
 use serde_json::json;
 
@@ -43,7 +47,7 @@ async fn create_token(
     // Create socket request
     let res = client
         .send_command(
-            "token_create",
+            DaemonCommandKind::TokenCreate,
             Some(json!({
                 "description": description,
                 "expires_in_days": expires_in_days,
@@ -78,7 +82,9 @@ async fn create_token(
 
 async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
     // Create socket request
-    let res = client.send_command("token_list", None).await?;
+    let res = client
+        .send_command(DaemonCommandKind::TokenList, None)
+        .await?;
 
     log_debug!("Token list result: {:?}", res);
 
@@ -116,7 +122,10 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
 async fn delete_token(client: &DaemonSocketClient, token_id: i32) -> Result<(), String> {
     // Create socket request
     let res = client
-        .send_command("token_delete", Some(json!({ "id": token_id })))
+        .send_command(
+            DaemonCommandKind::TokenDelete,
+            Some(json!({ "id": token_id })),
+        )
         .await?;
 
     log_debug!("Token deletion result: {:?}", res);

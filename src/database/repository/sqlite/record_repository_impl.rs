@@ -27,7 +27,7 @@ impl RecordRepository for SqliteRecordRepository {
             "#,
         )
         .bind(&record.name)
-        .bind(record.record_type.to_str())
+        .bind(record.record_type.to_string())
         .bind(&record.value)
         .bind(record.ttl)
         .bind(record.priority)
@@ -75,7 +75,7 @@ impl RecordRepository for SqliteRecordRepository {
         let record =
             sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = ? AND record_type = ?")
                 .bind(name)
-                .bind(record_type.to_str())
+                .bind(record_type.to_string())
                 .fetch_optional(&mut *conn)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -118,7 +118,7 @@ impl RecordRepository for SqliteRecordRepository {
             "#,
         )
         .bind(&record.name)
-        .bind(record.record_type.to_str())
+        .bind(record.record_type.to_string())
         .bind(&record.value)
         .bind(record.ttl)
         .bind(record.priority)

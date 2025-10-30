@@ -2,7 +2,7 @@ mod dns;
 mod status;
 mod token;
 
-use crate::socket::dto::DaemonCommand;
+use crate::socket::dto::{DaemonCommand, DaemonCommandKind};
 use crate::socket::socket::SOCKET_FILE_PATH;
 use crate::{log_error, log_info};
 use serde_json::json;
@@ -18,15 +18,14 @@ async fn handle_client(stream: UnixStream) {
         let parsed: Result<DaemonCommand, _> = serde_json::from_str(&line);
 
         let raw_response = match parsed {
-            Ok(cmd) => match cmd.command.as_str() {
-                "status" => status::get_status(),
-                "token_create" => token::create_token(&cmd.data).await,
-                "token_list" => token::list_tokens().await,
-                "token_delete" => token::delete_token(&cmd.data).await,
-                "dns_write_config" => dns::write_dns_config().await,
-                "dns_reload" => dns::reload_dns_config(),
-                "dns_status" => dns::get_dns_status(),
-                _ => Err("Unsupported daemon command".to_string()),
+            Ok(cmd) => match cmd.command {
+                DaemonCommandKind::Status => status::get_status(),
+                DaemonCommandKind::TokenCreate => token::create_token(&cmd.data).await,
+                DaemonCommandKind::TokenList => token::list_tokens().await,
+                DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
+                DaemonCommandKind::DnsWriteConfig => dns::write_dns_config().await,
+                DaemonCommandKind::DnsReload => dns::reload_dns_config(),
+                DaemonCommandKind::DnsStatus => dns::get_dns_status(),
             },
             Err(e) => {
                 log_error!("Failed to parse command: {}", e);

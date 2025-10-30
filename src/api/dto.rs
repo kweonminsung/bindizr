@@ -52,7 +52,7 @@ impl GetRecordResponse {
         GetRecordResponse {
             id: record.id,
             name: record.name.clone(),
-            record_type: record.record_type.to_str().to_string(),
+            record_type: record.record_type.to_string(),
             value: record.value.clone(),
             ttl: record.ttl,
             priority: record.priority,

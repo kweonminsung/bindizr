@@ -1,5 +1,5 @@
 use crate::socket::{
-    dto::{DaemonCommand, DaemonResponse},
+    dto::{DaemonCommand, DaemonCommandKind, DaemonResponse},
     socket::SOCKET_FILE_PATH,
 };
 use tokio::{
@@ -22,7 +22,7 @@ impl DaemonSocketClient {
 
     pub async fn send_command(
         &self,
-        command: &str,
+        command: DaemonCommandKind,
         data: Option<serde_json::Value>,
     ) -> Result<DaemonResponse, String> {
         // Connect to the socket
@@ -35,7 +35,7 @@ impl DaemonSocketClient {
 
         // Serialize the command to JSON
         let cmd = DaemonCommand {
-            command: command.to_string(),
+            command,
             data: data.unwrap_or(serde_json::Value::Null),
         };
         let json = serde_json::to_string(&cmd)

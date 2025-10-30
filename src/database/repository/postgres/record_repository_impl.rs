@@ -28,7 +28,7 @@ impl RecordRepository for PostgresRecordRepository {
             "#,
         )
         .bind(&record.name)
-        .bind(record.record_type.to_str())
+        .bind(record.record_type.to_string())
         .bind(&record.value)
         .bind(record.ttl)
         .bind(record.priority)
@@ -80,7 +80,7 @@ impl RecordRepository for PostgresRecordRepository {
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = $1 AND record_type = $2"
         )
         .bind(name)
-        .bind(record_type.to_str())
+        .bind(record_type.to_string())
         .fetch_optional(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;
@@ -126,7 +126,7 @@ impl RecordRepository for PostgresRecordRepository {
             "#,
         )
         .bind(&record.name)
-        .bind(record.record_type.to_str())
+        .bind(record.record_type.to_string())
         .bind(&record.value)
         .bind(record.ttl)
         .bind(record.priority)
