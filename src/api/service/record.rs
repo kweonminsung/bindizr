@@ -7,6 +7,7 @@ use crate::{
             record_history::RecordHistory,
         },
     },
+    serializer::utils::{to_relative_domain, to_fqdn},
     log_error,
 };
 use chrono::Utc;
@@ -79,18 +80,23 @@ impl RecordService {
         let record_type = RecordType::from_str(&create_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", create_record_request.record_type))?;
 
+        // CNAME validation for '@' name
+        if record_type == RecordType::CNAME && create_record_request.name == "@" {
+            return Err("CNAME record cannot have '@' as name".to_string());
+        }
+
         // SOA validation
         if record_type == RecordType::SOA {
             log_error!("Cannot create SOA record manually");
             return Err("Cannot create SOA record manually".to_string());
         }
 
-        // Check if zone exists and fetch existing records in the zone for CNAME validation
-        match zone_repository
+        // Check if zone exists
+        let zone = match zone_repository
             .get_by_id(create_record_request.zone_id)
             .await
         {
-            Ok(Some(_)) => {}
+            Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err(format!(
                     "Zone with id {} not found",
@@ -103,7 +109,19 @@ impl RecordService {
             }
         };
 
-        // CNAME validation - fetch records from the same zone for efficient validation
+        // Prevent manual creation of records related to primary_ns
+        let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
+        if (record_type == RecordType::NS && create_record_request.name == "@")
+            || (record_type == RecordType::A && create_record_request.name == primary_ns_relative_name)
+            || (record_type == RecordType::AAAA && create_record_request.name == primary_ns_relative_name)
+        {
+            return Err(
+                "Cannot manually create records that are automatically generated for the primary NS"
+                    .to_string(),
+            );
+        }
+
+        // CNAME validation
         let existing_records_in_zone = match record_repository
             .get_by_zone_id(create_record_request.zone_id)
             .await
@@ -200,11 +218,11 @@ impl RecordService {
         }?;
 
         // Check if zone exists
-        match zone_repository
+        let zone = match zone_repository
             .get_by_id(update_record_request.zone_id)
             .await
         {
-            Ok(Some(_)) => {}
+            Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err("Zone not found".to_string());
             }
@@ -212,16 +230,33 @@ impl RecordService {
                 log_error!("Failed to fetch zone: {}", e);
                 return Err("Failed to fetch zone".to_string());
             }
-        }
+        };
 
         // Validate record type
         let record_type = RecordType::from_str(&update_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
 
+        // CNAME validation for '@' name
+        if record_type == RecordType::CNAME && update_record_request.name == "@" {
+            return Err("CNAME record cannot have '@' as name".to_string());
+        }
+
         // SOA validation
         if record_type == RecordType::SOA {
             log_error!("Cannot update to SOA record type");
             return Err("Cannot update to SOA record type".to_string());
+        }
+
+        // Prevent manual update of records related to primary_ns
+        let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
+        if (record_type == RecordType::NS && update_record_request.name == "@")
+            || (record_type == RecordType::A && update_record_request.name == primary_ns_relative_name)
+            || (record_type == RecordType::AAAA && update_record_request.name == primary_ns_relative_name)
+        {
+            return Err(
+                "Cannot manually update records that are automatically generated for the primary NS"
+                    .to_string(),
+            );
         }
 
         // CNAME validation

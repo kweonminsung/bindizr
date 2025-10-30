@@ -19,14 +19,15 @@ impl ZoneRepository for PostgresZoneRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO zones (name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id
             "#
         )
         .bind(&zone.name)
         .bind(&zone.primary_ns)
         .bind(&zone.primary_ns_ip)
+        .bind(&zone.primary_ns_ipv6)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
         .bind(zone.serial)
@@ -46,7 +47,7 @@ impl ZoneRepository for PostgresZoneRepository {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let zone = sqlx::query_as::<_, Zone>(
-            "SELECT id, name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1"
+            "SELECT id, name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1"
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -60,7 +61,7 @@ impl ZoneRepository for PostgresZoneRepository {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let zone = sqlx::query_as::<_, Zone>(
-            "SELECT id, name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1"
+            "SELECT id, name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1"
         )
         .bind(name)
         .fetch_optional(&mut *conn)
@@ -74,7 +75,7 @@ impl ZoneRepository for PostgresZoneRepository {
         let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
 
         let zones = sqlx::query_as::<_, Zone>(
-            "SELECT id, name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name"
+            "SELECT id, name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name"
         )
         .fetch_all(&mut *conn)
         .await
@@ -89,14 +90,15 @@ impl ZoneRepository for PostgresZoneRepository {
         sqlx::query(
             r#"
             UPDATE zones 
-            SET name = $1, primary_ns = $2, primary_ns_ip = $3, admin_email = $4, 
-                ttl = $5, serial = $6, refresh = $7, retry = $8, expire = $9, minimum_ttl = $10
-            WHERE id = $11
+            SET name = $1, primary_ns = $2, primary_ns_ip = $3, primary_ns_ipv6 = $4, admin_email = $5,
+                ttl = $6, serial = $7, refresh = $8, retry = $9, expire = $10, minimum_ttl = $11
+            WHERE id = $12
             "#,
         )
         .bind(&zone.name)
         .bind(&zone.primary_ns)
         .bind(&zone.primary_ns_ip)
+        .bind(&zone.primary_ns_ipv6)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
         .bind(zone.serial)

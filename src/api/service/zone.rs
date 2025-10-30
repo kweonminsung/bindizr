@@ -1,12 +1,8 @@
 use crate::{
     api::dto::CreateZoneRequest,
     database::{
-        get_record_repository, get_zone_history_repository, get_zone_repository,
-        model::{
-            record::{Record, RecordType},
-            zone::Zone,
-            zone_history::ZoneHistory,
-        },
+        get_zone_history_repository, get_zone_repository,
+        model::{zone::Zone, zone_history::ZoneHistory},
     },
     log_error,
 };
@@ -44,7 +40,15 @@ impl ZoneService {
     pub async fn create_zone(create_zone_request: &CreateZoneRequest) -> Result<Zone, String> {
         let zone_repository = get_zone_repository();
         let zone_history_repository = get_zone_history_repository();
-        let record_repository = get_record_repository();
+
+        // Validate that at least one of primary_ns_ip or primary_ns_ipv6 is present
+        if create_zone_request.primary_ns_ip.is_none()
+            && create_zone_request.primary_ns_ipv6.is_none()
+        {
+            return Err(
+                "At least one of primary_ns_ip or primary_ns_ipv6 must be provided".to_string(),
+            );
+        }
 
         // Check if zone already exists
         match zone_repository.get_by_name(&create_zone_request.name).await {
@@ -66,6 +70,7 @@ impl ZoneService {
                 name: create_zone_request.name.clone(),
                 primary_ns: create_zone_request.primary_ns.clone(),
                 primary_ns_ip: create_zone_request.primary_ns_ip.clone(),
+                primary_ns_ipv6: create_zone_request.primary_ns_ipv6.clone(),
                 admin_email: create_zone_request.admin_email.clone(),
                 ttl: create_zone_request.ttl,
                 serial: create_zone_request.serial,
@@ -79,24 +84,6 @@ impl ZoneService {
             .map_err(|e| {
                 log_error!("Failed to create zone: {}", e);
                 "Failed to create zone".to_string()
-            })?;
-
-        // Create NS record for the zone
-        record_repository
-            .create(Record {
-                id: 0, // Will be set by the database
-                name: "@".to_string(),
-                record_type: RecordType::NS,
-                value: created_zone.primary_ns.clone(),
-                ttl: None,
-                priority: None,
-                zone_id: created_zone.id,
-                created_at: Utc::now(), // Will be set by the database
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create NS record for zone: {}", e);
-                "Failed to create NS record for zone".to_string()
             })?;
 
         // Create zone history
@@ -127,6 +114,15 @@ impl ZoneService {
     ) -> Result<Zone, String> {
         let zone_repository = get_zone_repository();
         let zone_history_repository = get_zone_history_repository();
+
+        // Validate that at least one of primary_ns_ip or primary_ns_ipv6 is present
+        if update_zone_request.primary_ns_ip.is_none()
+            && update_zone_request.primary_ns_ipv6.is_none()
+        {
+            return Err(
+                "At least one of primary_ns_ip or primary_ns_ipv6 must be provided".to_string(),
+            );
+        }
 
         // Check if zone exists
         match zone_repository.get_by_id(zone_id).await {
@@ -162,6 +158,7 @@ impl ZoneService {
                 name: update_zone_request.name.clone(),
                 primary_ns: update_zone_request.primary_ns.clone(),
                 primary_ns_ip: update_zone_request.primary_ns_ip.clone(),
+                primary_ns_ipv6: update_zone_request.primary_ns_ipv6.clone(),
                 admin_email: update_zone_request.admin_email.clone(),
                 ttl: update_zone_request.ttl,
                 serial: update_zone_request.serial,
