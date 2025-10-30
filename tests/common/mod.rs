@@ -63,8 +63,9 @@ impl TestContext {
             id: 0, // Will be set by database
             name: "example.com".to_string(),
             primary_ns: "ns1.example.com".to_string(),
-            primary_ns_ip: "192.168.1.1".to_string(),
-            admin_email: "admin.example.com".to_string(),
+            primary_ns_ip: Some("192.168.1.1".to_string()),
+            primary_ns_ipv6: Some("2001:db8::1".to_string()),
+            admin_email: "admin@example.com".to_string(),
             ttl: 3600,
             serial: 2023010101,
             refresh: 7200,
@@ -76,13 +77,14 @@ impl TestContext {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, primary_ns, primary_ns_ip, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zones (name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(&zone.name)
         .bind(&zone.primary_ns)
         .bind(&zone.primary_ns_ip)
+        .bind(&zone.primary_ns_ipv6)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
         .bind(zone.serial)
@@ -95,8 +97,10 @@ impl TestContext {
         .await
         .expect("Failed to insert test zone");
 
+        let zone_id = result.last_insert_rowid() as i32;
+
         Zone {
-            id: result.last_insert_rowid() as i32,
+            id: zone_id,
             ..zone
         }
     }

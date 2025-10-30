@@ -41,6 +41,15 @@ impl ZoneService {
         let zone_repository = get_zone_repository();
         let zone_history_repository = get_zone_history_repository();
 
+        // Validate that at least one of primary_ns_ip or primary_ns_ipv6 is present
+        if create_zone_request.primary_ns_ip.is_none()
+            && create_zone_request.primary_ns_ipv6.is_none()
+        {
+            return Err(
+                "At least one of primary_ns_ip or primary_ns_ipv6 must be provided".to_string(),
+            );
+        }
+
         // Check if zone already exists
         match zone_repository.get_by_name(&create_zone_request.name).await {
             Ok(Some(_)) => {
@@ -61,6 +70,7 @@ impl ZoneService {
                 name: create_zone_request.name.clone(),
                 primary_ns: create_zone_request.primary_ns.clone(),
                 primary_ns_ip: create_zone_request.primary_ns_ip.clone(),
+                primary_ns_ipv6: create_zone_request.primary_ns_ipv6.clone(),
                 admin_email: create_zone_request.admin_email.clone(),
                 ttl: create_zone_request.ttl,
                 serial: create_zone_request.serial,
@@ -105,6 +115,15 @@ impl ZoneService {
         let zone_repository = get_zone_repository();
         let zone_history_repository = get_zone_history_repository();
 
+        // Validate that at least one of primary_ns_ip or primary_ns_ipv6 is present
+        if update_zone_request.primary_ns_ip.is_none()
+            && update_zone_request.primary_ns_ipv6.is_none()
+        {
+            return Err(
+                "At least one of primary_ns_ip or primary_ns_ipv6 must be provided".to_string(),
+            );
+        }
+
         // Check if zone exists
         match zone_repository.get_by_id(zone_id).await {
             Ok(Some(_)) => {}
@@ -139,6 +158,7 @@ impl ZoneService {
                 name: update_zone_request.name.clone(),
                 primary_ns: update_zone_request.primary_ns.clone(),
                 primary_ns_ip: update_zone_request.primary_ns_ip.clone(),
+                primary_ns_ipv6: update_zone_request.primary_ns_ipv6.clone(),
                 admin_email: update_zone_request.admin_email.clone(),
                 ttl: update_zone_request.ttl,
                 serial: update_zone_request.serial,

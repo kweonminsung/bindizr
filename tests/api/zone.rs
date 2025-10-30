@@ -15,7 +15,8 @@ async fn test_zone_crud_operations() {
         "name": "test.com",
         "primary_ns": "ns1.test.com",
         "primary_ns_ip": "10.0.0.1",
-        "admin_email": "admin.test.com",
+        "primary_ns_ipv6": "2001:db8::1",
+        "admin_email": "admin@test.com",
         "ttl": 3600,
         "serial": 2023010101,
         "refresh": 7200,
@@ -49,7 +50,8 @@ async fn test_zone_crud_operations() {
         "name": "updated-test.com",
         "primary_ns": "ns1.updated-test.com",
         "primary_ns_ip": "10.0.0.2",
-        "admin_email": "admin.updated-test.com",
+        "primary_ns_ipv6": "2001:db8::2",
+        "admin_email": "admin@updated-test.com",
         "ttl": 7200,
         "serial": 2023010102,
         "refresh": 14400,
@@ -77,6 +79,47 @@ async fn test_zone_crud_operations() {
     // Verify deletion
     let (status, _) = ctx
         .make_request("GET", &format!("/zones/{}", zone_id), None)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Test creating a zone with only primary_ns_ip
+    let create_zone_ip_only = serde_json::json!({
+        "name": "ip-only.com",
+        "primary_ns": "ns1.ip-only.com",
+        "primary_ns_ip": "10.0.0.3",
+        "admin_email": "admin@ip-only.com",
+        "ttl": 3600,
+        "serial": 2023010101
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(create_zone_ip_only))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // Test creating a zone with only primary_ns_ipv6
+    let create_zone_ipv6_only = serde_json::json!({
+        "name": "ipv6-only.com",
+        "primary_ns": "ns1.ipv6-only.com",
+        "primary_ns_ipv6": "2001:db8::3",
+        "admin_email": "admin@ipv6-only.com",
+        "ttl": 3600,
+        "serial": 2023010101
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(create_zone_ipv6_only))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // Test creating a zone with neither primary_ns_ip nor primary_ns_ipv6 (should fail)
+    let create_zone_no_ip = serde_json::json!({
+        "name": "no-ip.com",
+        "primary_ns": "ns1.no-ip.com",
+        "admin_email": "admin@no-ip.com",
+        "ttl": 3600,
+        "serial": 2023010101
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(create_zone_no_ip))
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }

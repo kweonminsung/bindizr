@@ -658,6 +658,7 @@ components:
         - name
         - primary_ns
         - primary_ns_ip
+        - primary_ns_ipv6
         - admin_email
         - ttl
         - refresh
@@ -679,6 +680,10 @@ components:
           type: string
           format: ipv4
           example: 127.0.0.1
+        primary_ns_ipv6:
+          type: string
+          format: ipv6
+          example: "::1"
         admin_email:
           type: string
           format: email
@@ -724,10 +729,12 @@ components:
       required:
         - name
         - primary_ns
-        - primary_ns_ip
         - admin_email
         - ttl
         - serial
+      anyOf:
+        - required: [primary_ns_ip]
+        - required: [primary_ns_ipv6]
       properties:
         name:
           type: string
@@ -739,6 +746,10 @@ components:
           type: string
           format: ipv4
           example: 127.0.0.1
+        primary_ns_ipv6:
+          type: string
+          format: ipv6
+          example: "::1"
         admin_email:
           type: string
           format: email

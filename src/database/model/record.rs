@@ -31,7 +31,7 @@ pub enum RecordType {
 
 impl std::fmt::Display for RecordType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_str())
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -60,7 +60,7 @@ impl RecordType {
         }
     }
 
-    pub fn to_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         match self {
             RecordType::A => "A",
             RecordType::AAAA => "AAAA",
