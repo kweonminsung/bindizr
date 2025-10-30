@@ -10,6 +10,8 @@ use crate::database::{
     },
 };
 use crate::{log_error, log_info};
+use crate::serializer::utils::{to_bind_rname, to_fqdn, to_relative_domain};
+
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::PathBuf;
@@ -173,7 +175,7 @@ impl Serializer {
             &mut output,
             r#"; Automatically generated zone file
 $TTL {}
-{}   IN  SOA {} {} (
+{} IN SOA {} {} (
         {} ; serial
         {} ; refresh
         {} ; retry
@@ -181,9 +183,9 @@ $TTL {}
         {} ) ; minimum TTL
 "#,
             zone.ttl,
-            utils::to_fqdn(&zone.name),
-            utils::to_fqdn(&zone.primary_ns),
-            utils::to_bind_rname(&zone.admin_email),
+            to_fqdn(&zone.name),
+            to_fqdn(&zone.primary_ns),
+            to_bind_rname(&zone.admin_email),
             zone.serial,
             zone.refresh,
             zone.retry,
@@ -195,16 +197,16 @@ $TTL {}
         // Add NS, A, AAAA records for the primary NS
         writeln!(
             &mut output,
-            "@\t\tIN\tNS\t{}",
-            utils::to_fqdn(&zone.primary_ns)
+            "@ IN NS {}",
+            to_fqdn(&zone.primary_ns)
         )
         .unwrap();
 
         if let Some(ip) = &zone.primary_ns_ip {
             writeln!(
                 &mut output,
-                "{}\t\tIN\tA\t{}",
-                utils::to_fqdn(&zone.primary_ns),
+                "{} IN A {}",
+                to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name),
                 ip
             )
             .unwrap();
@@ -212,8 +214,8 @@ $TTL {}
         if let Some(ipv6) = &zone.primary_ns_ipv6 {
             writeln!(
                 &mut output,
-                "{}\t\tIN\tAAAA\t{}",
-                utils::to_fqdn(&zone.primary_ns),
+                "{} IN AAAA {}",
+                to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name),
                 ipv6
             )
             .unwrap();
@@ -252,7 +254,7 @@ $TTL {}
                             name,
                             record.record_type,
                             ttl,
-                            utils::to_fqdn(&record.value)
+                            to_fqdn(&record.value)
                         )
                     } else {
                         writeln!(
@@ -260,7 +262,7 @@ $TTL {}
                             "{} IN {} {}",
                             name,
                             record.record_type,
-                            utils::to_fqdn(&record.value)
+                            to_fqdn(&record.value)
                         )
                     }
                     .unwrap();
@@ -274,7 +276,7 @@ $TTL {}
                             name,
                             ttl,
                             priority,
-                            utils::to_fqdn(&record.value)
+                            to_fqdn(&record.value)
                         )
                     } else {
                         writeln!(
@@ -282,7 +284,7 @@ $TTL {}
                             "{} IN MX {} {}",
                             name,
                             priority,
-                            utils::to_fqdn(&record.value)
+                            to_fqdn(&record.value)
                         )
                     }
                     .unwrap();
@@ -302,7 +304,7 @@ $TTL {}
                                 priority,                 // default priority
                                 parts[0],                 // weight
                                 parts[1],                 // port
-                                utils::to_fqdn(parts[2]), // target
+                                to_fqdn(parts[2]), // target
                             )
                         } else {
                             writeln!(
@@ -312,7 +314,7 @@ $TTL {}
                                 priority,                 // default priority
                                 parts[0],                 // weight
                                 parts[1],                 // port
-                                utils::to_fqdn(parts[2]), // target
+                                to_fqdn(parts[2]), // target
                             )
                         }
                         .unwrap();
@@ -324,7 +326,7 @@ $TTL {}
                         writeln!(
                             &mut output,
                             "{} {} IN SOA {}",
-                            utils::to_fqdn(name),
+                            to_fqdn(name),
                             ttl,
                             record.value
                         )
@@ -332,7 +334,7 @@ $TTL {}
                         writeln!(
                             &mut output,
                             "{} IN SOA {}",
-                            utils::to_fqdn(name),
+                            to_fqdn(name),
                             record.value
                         )
                     }
