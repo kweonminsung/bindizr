@@ -1,4 +1,7 @@
-use crate::{log_debug, socket::client::DaemonSocketClient};
+use crate::{
+    log_debug,
+    socket::{client::DaemonSocketClient, dto::DaemonCommandKind},
+};
 use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]
@@ -22,7 +25,9 @@ pub async fn handle_command(subcommand: DnsCommand) -> Result<(), String> {
 }
 
 async fn write_dns_config(client: &DaemonSocketClient) -> Result<(), String> {
-    let res = client.send_command("dns_write_config", None).await?;
+    let res = client
+        .send_command(DaemonCommandKind::DnsWriteConfig, None)
+        .await?;
 
     log_debug!("DNS configuration write result: {:?}", res);
 
@@ -30,7 +35,9 @@ async fn write_dns_config(client: &DaemonSocketClient) -> Result<(), String> {
 }
 
 async fn reload_dns_config(client: &DaemonSocketClient) -> Result<(), String> {
-    let res = client.send_command("dns_reload", None).await?;
+    let res = client
+        .send_command(DaemonCommandKind::DnsReload, None)
+        .await?;
 
     log_debug!("DNS configuration reload result: {:?}", res);
 
@@ -38,7 +45,9 @@ async fn reload_dns_config(client: &DaemonSocketClient) -> Result<(), String> {
 }
 
 async fn get_dns_status(client: &DaemonSocketClient) -> Result<(), String> {
-    let res = client.send_command("dns_status", None).await?;
+    let res = client
+        .send_command(DaemonCommandKind::DnsStatus, None)
+        .await?;
 
     log_debug!("DNS status result: {:?}", res);
 

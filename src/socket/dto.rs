@@ -1,8 +1,20 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DaemonCommandKind {
+    Status,
+    TokenCreate,
+    TokenList,
+    TokenDelete,
+    DnsWriteConfig,
+    DnsReload,
+    DnsStatus,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DaemonCommand {
-    pub command: String,
+    pub command: DaemonCommandKind,
     pub data: serde_json::Value,
 }
 
