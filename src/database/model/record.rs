@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::FromRow;
 
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
@@ -16,8 +16,7 @@ pub struct Record {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "UPPERCASE")]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub enum RecordType {
     A,
     AAAA,
@@ -32,7 +31,7 @@ pub enum RecordType {
 
 impl std::fmt::Display for RecordType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -58,6 +57,20 @@ impl RecordType {
             "SRV" => Ok(RecordType::SRV),
             "PTR" => Ok(RecordType::PTR),
             _ => Err(format!("Invalid record type: {}", s)),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            RecordType::A => "A",
+            RecordType::AAAA => "AAAA",
+            RecordType::CNAME => "CNAME",
+            RecordType::MX => "MX",
+            RecordType::TXT => "TXT",
+            RecordType::NS => "NS",
+            RecordType::SOA => "SOA",
+            RecordType::SRV => "SRV",
+            RecordType::PTR => "PTR",
         }
     }
 }
