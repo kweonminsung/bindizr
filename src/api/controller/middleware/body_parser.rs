@@ -2,6 +2,8 @@ use axum::{extract::rejection::JsonRejection, http::StatusCode, response::IntoRe
 use axum_macros::FromRequest;
 use serde_json::json;
 
+use crate::log_error;
+
 // create an extractor that internally uses `axum::Json` but has a custom rejection
 #[derive(FromRequest)]
 #[from_request(via(axum::Json), rejection(ApiError))]
@@ -23,9 +25,12 @@ impl From<JsonRejection> for ApiError {
             JsonRejection::MissingJsonContentType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
+
+        log_error!("JSON Rejection: {:?}", rejection);
+
         Self {
             code,
-            message: rejection.to_string(),
+            message: "Invalid or malformed JSON body".to_string(),
         }
     }
 }
@@ -35,7 +40,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let payload = json!({
             "message": self.message,
-            "origin": "derive_from_request"
+            // "origin": "derive_from_request"
         });
 
         (self.code, axum::Json(payload)).into_response()
