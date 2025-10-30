@@ -80,13 +80,18 @@ impl RecordService {
         let record_type = RecordType::from_str(&create_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", create_record_request.record_type))?;
 
+        // CNAME validation for '@' name
+        if record_type == RecordType::CNAME && create_record_request.name == "@" {
+            return Err("CNAME record cannot have '@' as name".to_string());
+        }
+
         // SOA validation
         if record_type == RecordType::SOA {
             log_error!("Cannot create SOA record manually");
             return Err("Cannot create SOA record manually".to_string());
         }
 
-        // Check if zone exists and fetch existing records in the zone for CNAME validation
+        // Check if zone exists
         let zone = match zone_repository
             .get_by_id(create_record_request.zone_id)
             .await
@@ -116,7 +121,7 @@ impl RecordService {
             );
         }
 
-        // CNAME validation - fetch records from the same zone for efficient validation
+        // CNAME validation
         let existing_records_in_zone = match record_repository
             .get_by_zone_id(create_record_request.zone_id)
             .await
@@ -230,6 +235,11 @@ impl RecordService {
         // Validate record type
         let record_type = RecordType::from_str(&update_record_request.record_type)
             .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
+
+        // CNAME validation for '@' name
+        if record_type == RecordType::CNAME && create_record_request.name == "@" {
+            return Err("CNAME record cannot have '@' as name".to_string());
+        }
 
         // SOA validation
         if record_type == RecordType::SOA {
