@@ -237,7 +237,6 @@ async fn test_cname_validation() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-
 #[tokio::test]
 async fn test_prevent_default_records_creation() {
     let ctx = TestContext::new().await;

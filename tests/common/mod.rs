@@ -92,7 +92,7 @@ impl TestContext {
         .bind(zone.retry)
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
-        .bind(&zone.created_at)
+        .bind(zone.created_at)
         .execute(&self.db_pool)
         .await
         .expect("Failed to insert test zone");
@@ -128,7 +128,7 @@ impl TestContext {
         .bind(&record.value)
         .bind(record.ttl)
         .bind(record.priority)
-        .bind(&record.created_at)
+        .bind(record.created_at)
         .bind(record.zone_id)
         .execute(&self.db_pool)
         .await

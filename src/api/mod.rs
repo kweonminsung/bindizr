@@ -1,5 +1,7 @@
 pub mod controller;
+pub mod error;
 pub mod service;
+pub mod validation;
 
 mod dto;
 

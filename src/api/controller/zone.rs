@@ -34,21 +34,17 @@ impl ZoneController {
     }
 
     async fn get_zones() -> impl IntoResponse {
-        let raw_zones = match ZoneService::get_zones().await {
-            Ok(zones) => zones,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
+        match ZoneService::get_zones().await {
+            Ok(zones) => {
+                let zones = zones
+                    .iter()
+                    .map(GetZoneResponse::from_zone)
+                    .collect::<Vec<GetZoneResponse>>();
+                let json_body = json!({ "zones": zones });
+                (StatusCode::OK, Json(json_body)).into_response()
             }
-        };
-
-        let zones = raw_zones
-            .iter()
-            .map(GetZoneResponse::from_zone)
-            .collect::<Vec<GetZoneResponse>>();
-
-        let json_body = json!({ "zones": zones });
-        (StatusCode::OK, Json(json_body))
+            Err(err) => err.into_response(),
+        }
     }
 
     async fn get_zone(
@@ -60,19 +56,13 @@ impl ZoneController {
 
         let raw_zone = match ZoneService::get_zone(zone_id).await {
             Ok(zone) => zone,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
-            }
+            Err(err) => return err.into_response(),
         };
 
         let raw_records = match records_query {
             Some(true) => match RecordService::get_records(Some(zone_id)).await {
                 Ok(records) => records,
-                Err(err) => {
-                    let json_body = json!({ "error": err });
-                    return (StatusCode::BAD_REQUEST, Json(json_body));
-                }
+                Err(err) => return err.into_response(),
             },
             _ => vec![],
         };
@@ -83,7 +73,7 @@ impl ZoneController {
 
         let zone = GetZoneResponse::from_zone(&raw_zone);
         let json_body = json!({ "zone": zone, "records": records });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::OK, Json(json_body)).into_response()
     }
 
     async fn get_zone_rendered(Path(params): Path<GetZoneParam>) -> impl IntoResponse {
@@ -91,18 +81,12 @@ impl ZoneController {
 
         let raw_zone = match ZoneService::get_zone(zone_id).await {
             Ok(zone) => zone,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body)).into_response();
-            }
+            Err(err) => return err.into_response(),
         };
 
         let raw_records = match RecordService::get_records(Some(zone_id)).await {
             Ok(records) => records,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body)).into_response();
-            }
+            Err(err) => return err.into_response(),
         };
 
         let zone_str = Serializer::serialize_zone(&raw_zone, &raw_records);
@@ -115,18 +99,14 @@ impl ZoneController {
     }
 
     async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> impl IntoResponse {
-        let raw_zone = match ZoneService::create_zone(&body).await {
-            Ok(zone) => zone,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
+        match ZoneService::create_zone(&body).await {
+            Ok(zone) => {
+                let zone = GetZoneResponse::from_zone(&zone);
+                let json_body = json!({ "zone": zone });
+                (StatusCode::CREATED, Json(json_body)).into_response()
             }
-        };
-
-        let zone = GetZoneResponse::from_zone(&raw_zone);
-
-        let json_body = json!({ "zone": zone });
-        (StatusCode::CREATED, Json(json_body))
+            Err(err) => err.into_response(),
+        }
     }
 
     async fn update_zone(
@@ -135,18 +115,14 @@ impl ZoneController {
     ) -> impl IntoResponse {
         let zone_id = params.id;
 
-        let raw_zone = match ZoneService::update_zone(zone_id, &body).await {
-            Ok(zone) => zone,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
+        match ZoneService::update_zone(zone_id, &body).await {
+            Ok(zone) => {
+                let zone = GetZoneResponse::from_zone(&zone);
+                let json_body = json!({ "zone": zone });
+                (StatusCode::OK, Json(json_body)).into_response()
             }
-        };
-
-        let zone = GetZoneResponse::from_zone(&raw_zone);
-
-        let json_body = json!({ "zone": zone });
-        (StatusCode::OK, Json(json_body))
+            Err(err) => err.into_response(),
+        }
     }
 
     async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl IntoResponse {
@@ -155,12 +131,9 @@ impl ZoneController {
         match ZoneService::delete_zone(zone_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone deleted successfully" });
-                (StatusCode::OK, Json(json_body))
+                (StatusCode::OK, Json(json_body)).into_response()
             }
-            Err(err) => {
-                let json_body = json!({ "error": format!("Failed to delete zone: {}", err) });
-                (StatusCode::BAD_REQUEST, Json(json_body))
-            }
+            Err(err) => err.into_response(),
         }
     }
 }
