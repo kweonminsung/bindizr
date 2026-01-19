@@ -24,10 +24,7 @@ impl ZoneHistoryController {
 
         let raw_zone_histories = match ZoneHistoryService::get_zone_histories(zone_id).await {
             Ok(zone_histories) => zone_histories,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
-            }
+            Err(err) => return err.into_response(),
         };
 
         let zone_histories = raw_zone_histories
@@ -36,7 +33,7 @@ impl ZoneHistoryController {
             .collect::<Vec<GetZoneHistoryResponse>>();
 
         let json_body = json!({ "zone_histories": zone_histories });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::OK, Json(json_body)).into_response()
     }
 
     async fn delete_zone_history(Path(params): Path<DeleteZoneHistoryParam>) -> impl IntoResponse {
@@ -45,12 +42,9 @@ impl ZoneHistoryController {
         match ZoneHistoryService::delete_zone_history(history_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone history deleted successfully" });
-                (StatusCode::OK, Json(json_body))
+                (StatusCode::OK, Json(json_body)).into_response()
             }
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                (StatusCode::BAD_REQUEST, Json(json_body))
-            }
+            Err(err) => err.into_response(),
         }
     }
 }

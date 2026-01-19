@@ -1,5 +1,7 @@
+pub mod error;
+
+use self::error::RndcError;
 use crate::log_info;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::OnceLock;
 
 pub fn initialize() {
@@ -18,25 +20,24 @@ impl RndcClient {
         let secret_key = crate::config::get_config::<String>("bind.rndc_secret_key");
 
         RndcClient {
-            client: rndc::RndcClient::new(&server_url, &algorithm, &secret_key),
+            client: rndc::RndcClient::new(&server_url, &algorithm, &secret_key)
+                .expect("Failed to initialize RNDC client"),
         }
     }
 
-    pub fn command(&self, command: &str) -> Result<rndc::RndcResult, String> {
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let res = self.client.rndc_command(command)?;
+    pub fn command(&self, command: &str) -> Result<rndc::RndcResult, RndcError> {
+        let res = self
+            .client
+            .rndc_command(command)
+            .map_err(|e| RndcError::CommandFailed(e.to_string()))?;
 
-            if !res.result {
-                return Err("Failed to execute RNDC command".to_string());
-            }
-
-            Ok(res)
-        }));
-
-        match result {
-            Ok(res) => res,
-            Err(_) => Err("Panic occurred while accessing RNDC client".to_string()),
+        if !res.result {
+            return Err(RndcError::CommandFailed(
+                "Command execution failed".to_string(),
+            ));
         }
+
+        Ok(res)
     }
 }
 

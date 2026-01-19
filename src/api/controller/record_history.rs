@@ -27,10 +27,7 @@ impl RecordHistoryController {
         let raw_record_histories = match RecordHistoryService::get_record_histories(record_id).await
         {
             Ok(record_histories) => record_histories,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
-            }
+            Err(err) => return err.into_response(),
         };
 
         let record_histories = raw_record_histories
@@ -39,7 +36,7 @@ impl RecordHistoryController {
             .collect::<Vec<GetRecordHistoryResponse>>();
 
         let json_body = json!({ "record_histories": record_histories });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::OK, Json(json_body)).into_response()
     }
 
     async fn delete_record_history(
@@ -50,12 +47,9 @@ impl RecordHistoryController {
         match RecordHistoryService::delete_record_history(history_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Record history deleted successfully" });
-                (StatusCode::OK, Json(json_body))
+                (StatusCode::OK, Json(json_body)).into_response()
             }
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                (StatusCode::BAD_REQUEST, Json(json_body))
-            }
+            Err(err) => err.into_response(),
         }
     }
 }

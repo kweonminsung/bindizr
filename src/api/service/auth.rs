@@ -1,4 +1,5 @@
 use crate::{
+    api::error::ApiError,
     database::{get_api_token_repository, model::api_token::ApiToken},
     log_error,
 };
@@ -7,15 +8,15 @@ use chrono::Utc;
 pub struct AuthService;
 
 impl AuthService {
-    pub async fn validate_token(token_str: &str) -> Result<ApiToken, String> {
+    pub async fn validate_token(token_str: &str) -> Result<ApiToken, ApiError> {
         let api_token_repository = get_api_token_repository();
 
         let stored_token = match api_token_repository.get_by_token(token_str).await {
             Ok(Some(token)) => token,
-            Ok(None) => return Err("Invalid or expired token".to_string()),
+            Ok(None) => return Err(ApiError::Unauthorized("Invalid or expired token".to_string())),
             Err(e) => {
                 log_error!("Failed to validate token: {}", e);
-                return Err("Failed to validate token".to_string());
+                return Err(ApiError::InternalServerError("Failed to validate token".to_string()));
             }
         };
 
@@ -23,7 +24,7 @@ impl AuthService {
         if let Some(expires_at) = &stored_token.expires_at
             && Utc::now() > *expires_at
         {
-            return Err("Token has expired".to_string());
+            return Err(ApiError::Unauthorized("Token has expired".to_string()));
         }
 
         // Update last_used_at to current time
@@ -39,7 +40,7 @@ impl AuthService {
             .await
             .map_err(|e| {
                 log_error!("Failed to update last_used_at: {}", e);
-                "Failed to update last_used_at".to_string()
+                ApiError::InternalServerError("Failed to update last_used_at".to_string())
             })?;
 
         Ok(updated_token)

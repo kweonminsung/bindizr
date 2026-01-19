@@ -1,5 +1,5 @@
 use crate::{
-    api::dto::CreateRecordRequest,
+    api::{dto::CreateRecordRequest, error::ApiError},
     database::{
         get_record_history_repository, get_record_repository, get_zone_repository,
         model::{
@@ -7,8 +7,8 @@ use crate::{
             record_history::RecordHistory,
         },
     },
-    serializer::utils::{to_relative_domain, to_fqdn},
     log_error,
+    serializer::utils::{to_fqdn, to_relative_domain},
 };
 use chrono::Utc;
 
@@ -16,7 +16,7 @@ use chrono::Utc;
 pub struct RecordService;
 
 impl RecordService {
-    pub async fn get_records(zone_id: Option<i32>) -> Result<Vec<Record>, String> {
+    pub async fn get_records(zone_id: Option<i32>) -> Result<Vec<Record>, ApiError> {
         let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
 
@@ -26,11 +26,11 @@ impl RecordService {
                 match zone_repository.get_by_id(id).await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
-                        return Err("Zone not found".to_string());
+                        return Err(ApiError::BadRequest("Zone not found".to_string()));
                     }
                     Err(e) => {
                         log_error!("Failed to fetch zone: {}", e);
-                        return Err("Failed to fetch zone".to_string());
+                        return Err(ApiError::InternalServerError("Failed to fetch zone".to_string()));
                     }
                 }
 
@@ -39,7 +39,10 @@ impl RecordService {
                     Ok(records) => Ok(records),
                     Err(e) => {
                         log_error!("Failed to fetch records for zone {}: {}", id, e);
-                        Err(format!("Failed to fetch records for zone {}", id))
+                        Err(ApiError::InternalServerError(format!(
+                            "Failed to fetch records for zone {}",
+                            id
+                        )))
                     }
                 }
             }
@@ -49,46 +52,60 @@ impl RecordService {
                     Ok(records) => Ok(records),
                     Err(e) => {
                         log_error!("Failed to fetch all records: {}", e);
-                        Err("Failed to fetch all records".to_string())
+                        Err(ApiError::InternalServerError(
+                            "Failed to fetch all records".to_string(),
+                        ))
                     }
                 }
             }
         }
     }
 
-    pub async fn get_record(record_id: i32) -> Result<Record, String> {
+    pub async fn get_record(record_id: i32) -> Result<Record, ApiError> {
         let record_repository = get_record_repository();
 
         match record_repository.get_by_id(record_id).await {
             Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(format!("Record with id {} not found", record_id)),
+            Ok(None) => Err(ApiError::NotFound(format!(
+                "Record with id {} not found",
+                record_id
+            ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err("Failed to fetch record".to_string())
+                Err(ApiError::InternalServerError("Failed to fetch record".to_string()))
             }
         }
     }
 
     pub async fn create_record(
         create_record_request: &CreateRecordRequest,
-    ) -> Result<Record, String> {
+    ) -> Result<Record, ApiError> {
         let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
         let record_history_repository = get_record_history_repository();
 
         // Validate record type
-        let record_type = RecordType::from_str(&create_record_request.record_type)
-            .map_err(|_| format!("Invalid record type: {}", create_record_request.record_type))?;
+        let record_type =
+            RecordType::from_str(&create_record_request.record_type).map_err(|_| {
+                ApiError::BadRequest(format!(
+                    "Invalid record type: {}",
+                    create_record_request.record_type
+                ))
+            })?;
 
         // CNAME validation for '@' name
         if record_type == RecordType::CNAME && create_record_request.name == "@" {
-            return Err("CNAME record cannot have '@' as name".to_string());
+            return Err(ApiError::BadRequest(
+                "CNAME record cannot have '@' as name".to_string(),
+            ));
         }
 
         // SOA validation
         if record_type == RecordType::SOA {
             log_error!("Cannot create SOA record manually");
-            return Err("Cannot create SOA record manually".to_string());
+            return Err(ApiError::BadRequest(
+                "Cannot create SOA record manually".to_string(),
+            ));
         }
 
         // Check if zone exists
@@ -98,27 +115,29 @@ impl RecordService {
         {
             Ok(Some(zone)) => zone,
             Ok(None) => {
-                return Err(format!(
+                return Err(ApiError::NotFound(format!(
                     "Zone with id {} not found",
                     create_record_request.zone_id
-                ));
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err("Failed to create record".to_string());
+                return Err(ApiError::InternalServerError("Failed to create record".to_string()));
             }
         };
 
         // Prevent manual creation of records related to primary_ns
         let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
         if (record_type == RecordType::NS && create_record_request.name == "@")
-            || (record_type == RecordType::A && create_record_request.name == primary_ns_relative_name)
-            || (record_type == RecordType::AAAA && create_record_request.name == primary_ns_relative_name)
+            || (record_type == RecordType::A
+                && create_record_request.name == primary_ns_relative_name)
+            || (record_type == RecordType::AAAA
+                && create_record_request.name == primary_ns_relative_name)
         {
-            return Err(
+            return Err(ApiError::BadRequest(
                 "Cannot manually create records that are automatically generated for the primary NS"
                     .to_string(),
-            );
+            ));
         }
 
         // CNAME validation
@@ -129,7 +148,7 @@ impl RecordService {
             Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to check existing records: {}", e);
-                return Err("Failed to create record".to_string());
+                return Err(ApiError::InternalServerError("Failed to create record".to_string()));
             }
         };
 
@@ -140,19 +159,19 @@ impl RecordService {
 
         if !existing_records_with_name.is_empty() {
             if record_type == RecordType::CNAME {
-                return Err(format!(
+                return Err(ApiError::BadRequest(format!(
                     "A record with name '{}' already exists in this zone, so CNAME cannot be used",
                     create_record_request.name
-                ));
+                )));
             }
             if existing_records_with_name
                 .iter()
                 .any(|r| r.record_type == RecordType::CNAME)
             {
-                return Err(format!(
+                return Err(ApiError::BadRequest(format!(
                     "A CNAME record with name '{}' already exists in this zone",
                     create_record_request.name
-                ));
+                )));
             }
         }
 
@@ -171,7 +190,7 @@ impl RecordService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create record: {}", e);
-                "Failed to create record".to_string()
+                ApiError::InternalServerError("Failed to create record".to_string())
             })?;
 
         // Create record history
@@ -193,7 +212,7 @@ impl RecordService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create record history: {}", e);
-                "Failed to create record history".to_string()
+                ApiError::InternalServerError("Failed to create record history".to_string())
             })?;
 
         Ok(created_record)
@@ -202,7 +221,7 @@ impl RecordService {
     pub async fn update_record(
         record_id: i32,
         update_record_request: &CreateRecordRequest,
-    ) -> Result<Record, String> {
+    ) -> Result<Record, ApiError> {
         let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
         let record_history_repository = get_record_history_repository();
@@ -210,10 +229,13 @@ impl RecordService {
         // Check if record exists
         match record_repository.get_by_id(record_id).await {
             Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(format!("Record with id {} not found", record_id)),
+            Ok(None) => Err(ApiError::NotFound(format!(
+                "Record with id {} not found",
+                record_id
+            ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err("Failed to fetch record".to_string())
+                Err(ApiError::InternalServerError("Failed to fetch record".to_string()))
             }
         }?;
 
@@ -224,39 +246,50 @@ impl RecordService {
         {
             Ok(Some(zone)) => zone,
             Ok(None) => {
-                return Err("Zone not found".to_string());
+                return Err(ApiError::BadRequest("Zone not found".to_string()));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err("Failed to fetch zone".to_string());
+                return Err(ApiError::InternalServerError("Failed to fetch zone".to_string()));
             }
         };
 
         // Validate record type
-        let record_type = RecordType::from_str(&update_record_request.record_type)
-            .map_err(|_| format!("Invalid record type: {}", update_record_request.record_type))?;
+        let record_type =
+            RecordType::from_str(&update_record_request.record_type).map_err(|_| {
+                ApiError::BadRequest(format!(
+                    "Invalid record type: {}",
+                    update_record_request.record_type
+                ))
+            })?;
 
         // CNAME validation for '@' name
         if record_type == RecordType::CNAME && update_record_request.name == "@" {
-            return Err("CNAME record cannot have '@' as name".to_string());
+            return Err(ApiError::BadRequest(
+                "CNAME record cannot have '@' as name".to_string(),
+            ));
         }
 
         // SOA validation
         if record_type == RecordType::SOA {
             log_error!("Cannot update to SOA record type");
-            return Err("Cannot update to SOA record type".to_string());
+            return Err(ApiError::BadRequest(
+                "Cannot update to SOA record type".to_string(),
+            ));
         }
 
         // Prevent manual update of records related to primary_ns
         let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
         if (record_type == RecordType::NS && update_record_request.name == "@")
-            || (record_type == RecordType::A && update_record_request.name == primary_ns_relative_name)
-            || (record_type == RecordType::AAAA && update_record_request.name == primary_ns_relative_name)
+            || (record_type == RecordType::A
+                && update_record_request.name == primary_ns_relative_name)
+            || (record_type == RecordType::AAAA
+                && update_record_request.name == primary_ns_relative_name)
         {
-            return Err(
+            return Err(ApiError::BadRequest(
                 "Cannot manually update records that are automatically generated for the primary NS"
                     .to_string(),
-            );
+            ));
         }
 
         // CNAME validation
@@ -267,7 +300,7 @@ impl RecordService {
             Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to check existing record: {}", e);
-                return Err("Failed to update record".to_string());
+                return Err(ApiError::InternalServerError("Failed to update record".to_string()));
             }
         };
 
@@ -278,19 +311,19 @@ impl RecordService {
 
         if !other_records_in_zone.is_empty() {
             if record_type == RecordType::CNAME {
-                return Err(format!(
+                return Err(ApiError::BadRequest(format!(
                     "A record with name '{}' already exists in this zone, so CNAME cannot be used",
                     update_record_request.name
-                ));
+                )));
             }
             if other_records_in_zone
                 .iter()
                 .any(|r| r.record_type == RecordType::CNAME)
             {
-                return Err(format!(
+                return Err(ApiError::BadRequest(format!(
                     "A CNAME record with name '{}' already exists in this zone",
                     update_record_request.name
-                ));
+                )));
             }
         }
 
@@ -309,7 +342,7 @@ impl RecordService {
             .await
             .map_err(|e| {
                 log_error!("Failed to update record: {}", e);
-                "Failed to update record".to_string()
+                ApiError::InternalServerError("Failed to update record".to_string())
             })?;
 
         // Create record history
@@ -331,55 +364,40 @@ impl RecordService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create record history: {}", e);
-                "Failed to create record history".to_string()
+                ApiError::InternalServerError("Failed to create record history".to_string())
             })?;
 
         Ok(updated_record)
     }
 
-    pub async fn delete_record(record_id: i32) -> Result<(), String> {
+    pub async fn delete_record(record_id: i32) -> Result<(), ApiError> {
         let record_repository = get_record_repository();
         // let record_history_repository = get_record_history_repository();
 
         // Check if record exists
         let existing_record = match record_repository.get_by_id(record_id).await {
             Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(format!("Record with id {} not found", record_id)),
+            Ok(None) => Err(ApiError::NotFound(format!(
+                "Record with id {} not found",
+                record_id
+            ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err("Failed to fetch record".to_string())
+                Err(ApiError::InternalServerError("Failed to fetch record".to_string()))
             }
         }?;
 
         // Prevent deletion of SOA records
         if existing_record.record_type == RecordType::SOA {
             log_error!("Cannot delete SOA record");
-            return Err("Cannot delete SOA record".to_string());
+            return Err(ApiError::BadRequest("Cannot delete SOA record".to_string()));
         }
 
         // Delete record
         record_repository.delete(record_id).await.map_err(|e| {
             log_error!("Failed to delete record: {}", e);
-            "Failed to delete record".to_string()
+            ApiError::InternalServerError("Failed to delete record".to_string())
         })?;
-
-        // Create record history
-        // record_history_repository
-        //     .create(RecordHistory {
-        //         id: 0, // Will be set by the database
-        //         record_id,
-        //         log: format!(
-        //             "[{}] Record deleted: id={}",
-        //             Utc::now().format("%Y-%m-%d %H:%M:%S"),
-        //             record_id,
-        //         ),
-        //         created_at: Utc::now(), // Will be set by the database
-        //     })
-        //     .await
-        //     .map_err(|e| {
-        //         log_error!("Failed to create record history: {}", e);
-        //         "Failed to create record history".to_string()
-        //     })?;
 
         Ok(())
     }

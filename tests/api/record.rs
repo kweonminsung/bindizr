@@ -99,7 +99,7 @@ async fn test_record_crud_operations() {
     let (status, _) = ctx
         .make_request("GET", &format!("/records/{}", record_id), None)
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -236,7 +236,6 @@ async fn test_cname_validation() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
-
 
 #[tokio::test]
 async fn test_prevent_default_records_creation() {

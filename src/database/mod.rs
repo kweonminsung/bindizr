@@ -2,6 +2,7 @@ use crate::{config, log_error, log_info};
 use sqlx::{MySql, Pool, Postgres, Sqlite, sqlite::SqlitePoolOptions};
 use std::sync::OnceLock;
 
+pub mod error;
 pub mod model;
 pub mod repository;
 mod schema;

@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests;
 
+pub mod error;
+
 use config::{Config, File, FileFormat, Source, ValueKind};
 use once_cell::sync::OnceCell;
 use std::{any::type_name, collections::HashMap, path::PathBuf, str::FromStr};

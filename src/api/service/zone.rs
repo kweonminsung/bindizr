@@ -1,6 +1,7 @@
 use crate::{
-    api::dto::CreateZoneRequest,
+    api::{dto::CreateZoneRequest, error::ApiError},
     database::{
+        error::DatabaseError,
         get_zone_history_repository, get_zone_repository,
         model::{zone::Zone, zone_history::ZoneHistory},
     },
@@ -12,32 +13,34 @@ use chrono::Utc;
 pub struct ZoneService;
 
 impl ZoneService {
-    pub async fn get_zones() -> Result<Vec<Zone>, String> {
+    pub async fn get_zones() -> Result<Vec<Zone>, ApiError> {
         let zone_repository = get_zone_repository();
 
-        match zone_repository.get_all().await {
-            Ok(zones) => Ok(zones),
-            Err(e) => {
-                log_error!("Failed to fetch zones: {}", e);
-                Err("Failed to fetch zones".to_string())
-            }
-        }
+        zone_repository.get_all().await.map_err(|e: DatabaseError| {
+            log_error!("Failed to fetch zones: {}", e);
+            ApiError::InternalServerError("Failed to fetch zones".to_string())
+        })
     }
 
-    pub async fn get_zone(zone_id: i32) -> Result<Zone, String> {
+    pub async fn get_zone(zone_id: i32) -> Result<Zone, ApiError> {
         let zone_repository = get_zone_repository();
 
         match zone_repository.get_by_id(zone_id).await {
             Ok(Some(zone)) => Ok(zone),
-            Ok(None) => Err(format!("Zone with id {} not found", zone_id)),
+            Ok(None) => Err(ApiError::NotFound(format!(
+                "Zone with id {} not found",
+                zone_id
+            ))),
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                Err("Failed to fetch zone".to_string())
+                Err(ApiError::InternalServerError(
+                    "Failed to fetch zone".to_string(),
+                ))
             }
         }
     }
 
-    pub async fn create_zone(create_zone_request: &CreateZoneRequest) -> Result<Zone, String> {
+    pub async fn create_zone(create_zone_request: &CreateZoneRequest) -> Result<Zone, ApiError> {
         let zone_repository = get_zone_repository();
         let zone_history_repository = get_zone_history_repository();
 
@@ -45,21 +48,25 @@ impl ZoneService {
         if create_zone_request.primary_ns_ip.is_none()
             && create_zone_request.primary_ns_ipv6.is_none()
         {
-            return Err(
+            return Err(ApiError::BadRequest(
                 "At least one of primary_ns_ip or primary_ns_ipv6 must be provided".to_string(),
-            );
+            ));
         }
 
         // Check if zone already exists
         match zone_repository.get_by_name(&create_zone_request.name).await {
             Ok(Some(_)) => {
                 log_error!("Zone with name {} already exists", create_zone_request.name);
-                return Err("Zone with this name already exists".to_string());
+                return Err(ApiError::BadRequest(
+                    "Zone with this name already exists".to_string(),
+                ));
             }
             Ok(None) => (),
             Err(e) => {
                 log_error!("Failed to check existing zone: {}", e);
-                return Err("Failed to create zone".to_string());
+                return Err(ApiError::InternalServerError(
+                    "Failed to create zone".to_string(),
+                ));
             }
         };
 
@@ -81,9 +88,9 @@ impl ZoneService {
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
-            .map_err(|e| {
+            .map_err(|e: DatabaseError| {
                 log_error!("Failed to create zone: {}", e);
-                "Failed to create zone".to_string()
+                ApiError::InternalServerError("Failed to create zone".to_string())
             })?;
 
         // Create zone history
@@ -100,9 +107,9 @@ impl ZoneService {
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
-            .map_err(|e| {
+            .map_err(|e: DatabaseError| {
                 log_error!("Failed to create zone history: {}", e);
-                "Failed to create zone history".to_string()
+                ApiError::InternalServerError("Failed to create zone history".to_string())
             })?;
 
         Ok(created_zone)
@@ -111,7 +118,7 @@ impl ZoneService {
     pub async fn update_zone(
         zone_id: i32,
         update_zone_request: &CreateZoneRequest,
-    ) -> Result<Zone, String> {
+    ) -> Result<Zone, ApiError> {
         let zone_repository = get_zone_repository();
         let zone_history_repository = get_zone_history_repository();
 
@@ -119,9 +126,9 @@ impl ZoneService {
         if update_zone_request.primary_ns_ip.is_none()
             && update_zone_request.primary_ns_ipv6.is_none()
         {
-            return Err(
+            return Err(ApiError::BadRequest(
                 "At least one of primary_ns_ip or primary_ns_ipv6 must be provided".to_string(),
-            );
+            ));
         }
 
         // Check if zone exists
@@ -129,11 +136,16 @@ impl ZoneService {
             Ok(Some(_)) => {}
             Ok(None) => {
                 log_error!("Zone with id {} not found", zone_id);
-                return Err(format!("Zone with id {} not found", zone_id));
+                return Err(ApiError::NotFound(format!(
+                    "Zone with id {} not found",
+                    zone_id
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err("Failed to update zone".to_string());
+                return Err(ApiError::InternalServerError(
+                    "Failed to update zone".to_string(),
+                ));
             }
         };
 
@@ -141,13 +153,17 @@ impl ZoneService {
         match zone_repository.get_by_name(&update_zone_request.name).await {
             Ok(Some(existing_zone)) if existing_zone.id != zone_id => {
                 log_error!("Zone with name {} already exists", update_zone_request.name);
-                return Err("Zone with this name already exists".to_string());
+                return Err(ApiError::BadRequest(
+                    "Zone with this name already exists".to_string(),
+                ));
             }
             Ok(Some(_)) => (), // The same zone, allow update
             Ok(None) => (),
             Err(e) => {
                 log_error!("Failed to check existing zone: {}", e);
-                return Err("Failed to update zone".to_string());
+                return Err(ApiError::InternalServerError(
+                    "Failed to update zone".to_string(),
+                ));
             }
         };
 
@@ -169,9 +185,9 @@ impl ZoneService {
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
-            .map_err(|e| {
+            .map_err(|e: DatabaseError| {
                 log_error!("Failed to update zone: {}", e);
-                "Failed to update zone".to_string()
+                ApiError::InternalServerError("Failed to update zone".to_string())
             })?;
 
         // Create zone history
@@ -188,54 +204,43 @@ impl ZoneService {
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
-            .map_err(|e| {
+            .map_err(|e: DatabaseError| {
                 log_error!("Failed to create zone history: {}", e);
-                "Failed to create zone history".to_string()
+                ApiError::InternalServerError("Failed to create zone history".to_string())
             })?;
 
         Ok(updated_zone)
     }
 
-    pub async fn delete_zone(zone_id: i32) -> Result<(), String> {
+    pub async fn delete_zone(zone_id: i32) -> Result<(), ApiError> {
         let zone_repository = get_zone_repository();
-        // let zone_history_repository = get_zone_history_repository();
 
         // Check if zone exists
         match zone_repository.get_by_id(zone_id).await {
             Ok(Some(_)) => {}
             Ok(None) => {
                 log_error!("Zone with id {} not found", zone_id);
-                return Err(format!("Zone with id {} not found", zone_id));
+                return Err(ApiError::NotFound(format!(
+                    "Zone with id {} not found",
+                    zone_id
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err("Failed to update zone".to_string());
+                return Err(ApiError::InternalServerError(
+                    "Failed to delete zone".to_string(),
+                ));
             }
         };
 
         // Delete zone
-        zone_repository.delete(zone_id).await.map_err(|e| {
-            log_error!("Failed to delete zone: {}", e);
-            "Failed to delete zone".to_string()
-        })?;
-
-        // Create zone history
-        // zone_history_repository
-        //     .create(ZoneHistory {
-        //         id: 0, // Will be set by the database
-        //         log: format!(
-        //             "[{}] Zone deleted: id={}",
-        //             Utc::now().format("%Y-%m-%d %H:%M:%S"),
-        //             zone_id,
-        //         ),
-        //         zone_id,
-        //         created_at: Utc::now(), // Will be set by the database
-        //     })
-        //     .await
-        //     .map_err(|e| {
-        //         log_error!("Failed to create zone history: {}", e);
-        //         "Failed to create zone history".to_string()
-        //     })?;
+        zone_repository
+            .delete(zone_id)
+            .await
+            .map_err(|e: DatabaseError| {
+                log_error!("Failed to delete zone: {}", e);
+                ApiError::InternalServerError("Failed to delete zone".to_string())
+            })?;
 
         Ok(())
     }

@@ -30,10 +30,7 @@ impl RecordController {
 
         let raw_records = match RecordService::get_records(zone_id).await {
             Ok(records) => records,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
-            }
+            Err(err) => return err.into_response(),
         };
 
         let records = raw_records
@@ -42,7 +39,7 @@ impl RecordController {
             .collect::<Vec<GetRecordResponse>>();
 
         let json_body = json!({ "records": records });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::OK, Json(json_body)).into_response()
     }
 
     async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
@@ -50,31 +47,25 @@ impl RecordController {
 
         let raw_record = match RecordService::get_record(record_id).await {
             Ok(record) => record,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
-            }
+            Err(err) => return err.into_response(),
         };
 
         let record = GetRecordResponse::from_record(&raw_record);
 
         let json_body = json!({ "record": record });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::OK, Json(json_body)).into_response()
     }
 
     async fn create_record(JsonBody(body): JsonBody<CreateRecordRequest>) -> impl IntoResponse {
         let raw_record = match RecordService::create_record(&body).await {
             Ok(record) => record,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
-            }
+            Err(err) => return err.into_response(),
         };
 
         let record = GetRecordResponse::from_record(&raw_record);
 
         let json_body = json!({ "record": record });
-        (StatusCode::CREATED, Json(json_body))
+        (StatusCode::CREATED, Json(json_body)).into_response()
     }
 
     async fn update_record(
@@ -85,16 +76,13 @@ impl RecordController {
 
         let raw_record = match RecordService::update_record(record_id, &body).await {
             Ok(record) => record,
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                return (StatusCode::BAD_REQUEST, Json(json_body));
-            }
+            Err(err) => return err.into_response(),
         };
 
         let record = GetRecordResponse::from_record(&raw_record);
 
         let json_body = json!({ "record": record });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::OK, Json(json_body)).into_response()
     }
 
     async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl IntoResponse {
@@ -103,12 +91,9 @@ impl RecordController {
         match RecordService::delete_record(record_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Record deleted successfully" });
-                (StatusCode::OK, Json(json_body))
+                (StatusCode::OK, Json(json_body)).into_response()
             }
-            Err(err) => {
-                let json_body = json!({ "error": err });
-                (StatusCode::BAD_REQUEST, Json(json_body))
-            }
+            Err(err) => err.into_response(),
         }
     }
 }

@@ -9,8 +9,8 @@ use crate::database::{
         zone::Zone,
     },
 };
-use crate::{log_error, log_info};
 use crate::serializer::utils::{to_bind_rname, to_fqdn, to_relative_domain};
+use crate::{log_error, log_info};
 
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -195,12 +195,7 @@ $TTL {}
         .unwrap();
 
         // Add NS, A, AAAA records for the primary NS
-        writeln!(
-            &mut output,
-            "@ IN NS {}",
-            to_fqdn(&zone.primary_ns)
-        )
-        .unwrap();
+        writeln!(&mut output, "@ IN NS {}", to_fqdn(&zone.primary_ns)).unwrap();
 
         if let Some(ip) = &zone.primary_ns_ip {
             writeln!(
@@ -301,9 +296,9 @@ $TTL {}
                                 "{} {} IN SRV {} {} {} {}",
                                 name,
                                 ttl,
-                                priority,                 // default priority
-                                parts[0],                 // weight
-                                parts[1],                 // port
+                                priority,          // default priority
+                                parts[0],          // weight
+                                parts[1],          // port
                                 to_fqdn(parts[2]), // target
                             )
                         } else {
@@ -311,9 +306,9 @@ $TTL {}
                                 &mut output,
                                 "{} IN SRV {} {} {} {}",
                                 name,
-                                priority,                 // default priority
-                                parts[0],                 // weight
-                                parts[1],                 // port
+                                priority,          // default priority
+                                parts[0],          // weight
+                                parts[1],          // port
                                 to_fqdn(parts[2]), // target
                             )
                         }
@@ -331,12 +326,7 @@ $TTL {}
                             record.value
                         )
                     } else {
-                        writeln!(
-                            &mut output,
-                            "{} IN SOA {}",
-                            to_fqdn(name),
-                            record.value
-                        )
+                        writeln!(&mut output, "{} IN SOA {}", to_fqdn(name), record.value)
                     }
                     .unwrap();
                 }

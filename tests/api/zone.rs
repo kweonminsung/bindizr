@@ -80,7 +80,7 @@ async fn test_zone_crud_operations() {
     let (status, _) = ctx
         .make_request("GET", &format!("/zones/{}", zone_id), None)
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Test creating a zone with only primary_ns_ip
     let create_zone_ip_only = serde_json::json!({

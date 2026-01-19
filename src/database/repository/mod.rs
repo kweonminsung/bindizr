@@ -9,68 +9,68 @@ use super::model::{
     zone::Zone,
     zone_history::ZoneHistory,
 };
-use crate::database::DatabasePool;
+use crate::database::{DatabasePool, error::DatabaseError};
 use async_trait::async_trait;
 
 // Zone Repository Trait
 #[allow(dead_code)]
 #[async_trait]
 pub trait ZoneRepository: Send + Sync {
-    async fn create(&self, zone: Zone) -> Result<Zone, String>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, String>;
-    async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, String>;
-    async fn get_all(&self) -> Result<Vec<Zone>, String>;
-    async fn update(&self, zone: Zone) -> Result<Zone, String>;
-    async fn delete(&self, id: i32) -> Result<(), String>;
+    async fn create(&self, zone: Zone) -> Result<Zone, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, DatabaseError>;
+    async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError>;
+    async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError>;
+    async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 // Record Repository Trait
 #[allow(dead_code)]
 #[async_trait]
 pub trait RecordRepository: Send + Sync {
-    async fn create(&self, record: Record) -> Result<Record, String>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<Record>, String>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, String>;
+    async fn create(&self, record: Record) -> Result<Record, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
+    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     async fn get_by_name_and_type(
         &self,
         name: &str,
         record_type: &RecordType,
-    ) -> Result<Option<Record>, String>;
-    async fn get_by_name(&self, name: &str) -> Result<Vec<Record>, String>;
-    async fn get_all(&self) -> Result<Vec<Record>, String>;
-    async fn update(&self, record: Record) -> Result<Record, String>;
-    async fn delete(&self, id: i32) -> Result<(), String>;
+    ) -> Result<Option<Record>, DatabaseError>;
+    async fn get_by_name(&self, name: &str) -> Result<Vec<Record>, DatabaseError>;
+    async fn get_all(&self) -> Result<Vec<Record>, DatabaseError>;
+    async fn update(&self, record: Record) -> Result<Record, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 // Zone History Repository Trait
 #[allow(dead_code)]
 #[async_trait]
 pub trait ZoneHistoryRepository: Send + Sync {
-    async fn create(&self, zone_history: ZoneHistory) -> Result<ZoneHistory, String>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneHistory>, String>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneHistory>, String>;
-    async fn delete(&self, id: i32) -> Result<(), String>;
+    async fn create(&self, zone_history: ZoneHistory) -> Result<ZoneHistory, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneHistory>, DatabaseError>;
+    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneHistory>, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 // Record History Repository Trait
 #[allow(dead_code)]
 #[async_trait]
 pub trait RecordHistoryRepository: Send + Sync {
-    async fn create(&self, record_history: RecordHistory) -> Result<RecordHistory, String>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<RecordHistory>, String>;
-    async fn get_by_record_id(&self, record_id: i32) -> Result<Vec<RecordHistory>, String>;
-    async fn delete(&self, id: i32) -> Result<(), String>;
+    async fn create(&self, record_history: RecordHistory) -> Result<RecordHistory, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<RecordHistory>, DatabaseError>;
+    async fn get_by_record_id(&self, record_id: i32) -> Result<Vec<RecordHistory>, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 // API Token Repository Trait
 #[async_trait]
 pub trait ApiTokenRepository: Send + Sync {
-    async fn create(&self, token: ApiToken) -> Result<ApiToken, String>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, String>;
-    async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, String>;
-    async fn get_all(&self) -> Result<Vec<ApiToken>, String>;
-    async fn update(&self, token: ApiToken) -> Result<ApiToken, String>;
-    async fn delete(&self, id: i32) -> Result<(), String>;
+    async fn create(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, DatabaseError>;
+    async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError>;
+    async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
+    async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 // Repository Factory
