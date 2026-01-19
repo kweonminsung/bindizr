@@ -39,7 +39,7 @@ impl RecordService {
                     Ok(records) => Ok(records),
                     Err(e) => {
                         log_error!("Failed to fetch records for zone {}: {}", id, e);
-                        Err(ApiError::NotFound(format!(
+                        Err(ApiError::InternalServerError(format!(
                             "Failed to fetch records for zone {}",
                             id
                         )))
@@ -52,7 +52,7 @@ impl RecordService {
                     Ok(records) => Ok(records),
                     Err(e) => {
                         log_error!("Failed to fetch all records: {}", e);
-                        Err(ApiError::BadRequest(
+                        Err(ApiError::InternalServerError(
                             "Failed to fetch all records".to_string(),
                         ))
                     }
@@ -72,7 +72,7 @@ impl RecordService {
             ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ApiError::BadRequest("Failed to fetch record".to_string()))
+                Err(ApiError::InternalServerError("Failed to fetch record".to_string()))
             }
         }
     }
@@ -122,7 +122,7 @@ impl RecordService {
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ApiError::BadRequest("Failed to create record".to_string()));
+                return Err(ApiError::InternalServerError("Failed to create record".to_string()));
             }
         };
 
@@ -148,7 +148,7 @@ impl RecordService {
             Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to check existing records: {}", e);
-                return Err(ApiError::BadRequest("Failed to create record".to_string()));
+                return Err(ApiError::InternalServerError("Failed to create record".to_string()));
             }
         };
 
@@ -159,7 +159,7 @@ impl RecordService {
 
         if !existing_records_with_name.is_empty() {
             if record_type == RecordType::CNAME {
-                return Err(ApiError::NotFound(format!(
+                return Err(ApiError::BadRequest(format!(
                     "A record with name '{}' already exists in this zone, so CNAME cannot be used",
                     create_record_request.name
                 )));
@@ -168,7 +168,7 @@ impl RecordService {
                 .iter()
                 .any(|r| r.record_type == RecordType::CNAME)
             {
-                return Err(ApiError::NotFound(format!(
+                return Err(ApiError::BadRequest(format!(
                     "A CNAME record with name '{}' already exists in this zone",
                     create_record_request.name
                 )));
@@ -235,7 +235,7 @@ impl RecordService {
             ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ApiError::BadRequest("Failed to fetch record".to_string()))
+                Err(ApiError::InternalServerError("Failed to fetch record".to_string()))
             }
         }?;
 
@@ -250,7 +250,7 @@ impl RecordService {
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ApiError::BadRequest("Failed to fetch zone".to_string()));
+                return Err(ApiError::InternalServerError("Failed to fetch zone".to_string()));
             }
         };
 
@@ -300,7 +300,7 @@ impl RecordService {
             Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to check existing record: {}", e);
-                return Err(ApiError::BadRequest("Failed to update record".to_string()));
+                return Err(ApiError::InternalServerError("Failed to update record".to_string()));
             }
         };
 
@@ -311,7 +311,7 @@ impl RecordService {
 
         if !other_records_in_zone.is_empty() {
             if record_type == RecordType::CNAME {
-                return Err(ApiError::NotFound(format!(
+                return Err(ApiError::BadRequest(format!(
                     "A record with name '{}' already exists in this zone, so CNAME cannot be used",
                     update_record_request.name
                 )));
@@ -320,7 +320,7 @@ impl RecordService {
                 .iter()
                 .any(|r| r.record_type == RecordType::CNAME)
             {
-                return Err(ApiError::NotFound(format!(
+                return Err(ApiError::BadRequest(format!(
                     "A CNAME record with name '{}' already exists in this zone",
                     update_record_request.name
                 )));
@@ -383,7 +383,7 @@ impl RecordService {
             ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ApiError::BadRequest("Failed to fetch record".to_string()))
+                Err(ApiError::InternalServerError("Failed to fetch record".to_string()))
             }
         }?;
 
@@ -398,24 +398,6 @@ impl RecordService {
             log_error!("Failed to delete record: {}", e);
             ApiError::InternalServerError("Failed to delete record".to_string())
         })?;
-
-        // Create record history
-        // record_history_repository
-        //     .create(RecordHistory {
-        //         id: 0, // Will be set by the database
-        //         record_id,
-        //         log: format!(
-        //             "[{}] Record deleted: id={}",
-        //             Utc::now().format("%Y-%m-%d %H:%M:%S"),
-        //             record_id,
-        //         ),
-        //         created_at: Utc::now(), // Will be set by the database
-        //     })
-        //     .await
-        //     .map_err(|e| {
-        //         log_error!("Failed to create record history: {}", e);
-        //         "Failed to create record history".to_string()
-        //     })?;
 
         Ok(())
     }
