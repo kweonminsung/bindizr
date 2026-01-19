@@ -15,39 +15,30 @@ impl DnsController {
     async fn get_dns_status() -> impl IntoResponse {
         let status = match DnsService::get_dns_status() {
             Ok(status) => status,
-            Err(err) => {
-                let json_body = json!({ "error": format!("Failed to get DNS status: {}", err) });
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json_body));
-            }
+            Err(err) => return err.into_response(),
         };
 
         let json_body = json!({ "status": status  });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::OK, Json(json_body)).into_response()
     }
 
     async fn reload_dns() -> impl IntoResponse {
         let msg = match DnsService::reload_dns() {
             Ok(msg) => msg,
-            Err(err) => {
-                let json_body = json!({ "error": format!("Failed to reload DNS: {}", err) });
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json_body));
-            }
+            Err(err) => return err.into_response(),
         };
 
         let json_body = json!({ "msg": msg  });
-        (StatusCode::OK, Json(json_body))
+        (StatusCode::OK, Json(json_body)).into_response()
     }
 
     async fn write_dns_config() -> impl IntoResponse {
         match DnsService::write_dns_config().await {
             Ok(msg) => {
                 let json_body = json!({ "msg": msg  });
-                (StatusCode::OK, Json(json_body))
+                (StatusCode::OK, Json(json_body)).into_response()
             }
-            Err(err) => {
-                let json_body = json!({ "error": format!("Failed to write DNS config: {}", err) });
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(json_body))
-            }
+            Err(err) => err.into_response(),
         }
     }
 }
