@@ -1,6 +1,7 @@
 use thiserror::Error;
 
-/// Database-related errors
+/// TODO: Database-related errors
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum DatabaseError {
     #[error("Connection failed: {0}")]

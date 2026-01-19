@@ -1,6 +1,7 @@
 use thiserror::Error;
 
-/// Validation-related errors
+/// TODO: Validation-related errors
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum ValidationError {
     #[error("Invalid input: {0}")]

@@ -1,6 +1,7 @@
 use thiserror::Error;
 
-/// Configuration-related errors
+/// TODO: Configuration-related errors
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("Configuration not found: {0}")]

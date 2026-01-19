@@ -1,6 +1,7 @@
 use thiserror::Error;
 
-/// RNDC-related errors
+/// TODO: RNDC-related errors
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum RndcError {
     #[error("Command execution failed: {0}")]
