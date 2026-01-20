@@ -9,7 +9,7 @@ use super::model::{
     zone::Zone,
     zone_history::ZoneHistory,
 };
-use crate::database::{DatabasePool, error::DatabaseError};
+use crate::database::{DatabasePool, error::DatabaseError, model::{dns_instance::DnsInstance, dns_key::DnsKey}};
 use async_trait::async_trait;
 
 // Zone Repository Trait
@@ -59,6 +59,28 @@ pub trait RecordHistoryRepository: Send + Sync {
     async fn create(&self, record_history: RecordHistory) -> Result<RecordHistory, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<RecordHistory>, DatabaseError>;
     async fn get_by_record_id(&self, record_id: i32) -> Result<Vec<RecordHistory>, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
+// DNS Instance Repository Trait
+#[allow(dead_code)]
+#[async_trait]
+pub trait DnsInstanceRepository: Send + Sync {
+    async fn create(&self, dns_instance: DnsInstance) -> Result<DnsInstance, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<DnsInstance>, DatabaseError>;
+    async fn get_all(&self) -> Result<Vec<DnsInstance>, DatabaseError>;
+    async fn update(&self, dns_instance: DnsInstance) -> Result<DnsInstance, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
+// DNS Key Repository Trait
+#[allow(dead_code)]
+#[async_trait]
+pub trait DnsKeyRepository: Send + Sync {
+    async fn create(&self, dns_key: DnsKey) -> Result<DnsKey, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<DnsKey>, DatabaseError>;
+    async fn get_all(&self) -> Result<Vec<DnsKey>, DatabaseError>;
+    async fn update(&self, dns_key: DnsKey) -> Result<DnsKey, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 

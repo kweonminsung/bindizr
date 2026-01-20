@@ -58,6 +58,41 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             last_used_at DATETIME
         );
         "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dns_keys (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255),
+            key_type VARCHAR(50) NOT NULL,
+            key_algorithm VARCHAR(50) NOT NULL,
+            key_name VARCHAR(255) NOT NULL,
+            secret TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            dns_instance_id INT NOT NULL
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dns_instances (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255),
+            host VARCHAR(255) NOT NULL,
+            rndc_port INT NOT NULL,
+            rndc_key_id INT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (rndc_key_id) REFERENCES dns_keys(id) ON DELETE RESTRICT
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_dns_config (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            zone_id INT NOT NULL,
+            dns_instance_id INT NOT NULL,
+            dns_key_id INT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (dns_instance_id) REFERENCES dns_instances(id) ON DELETE CASCADE,
+            FOREIGN KEY (dns_key_id) REFERENCES dns_keys(id) ON DELETE RESTRICT
+        );
+        "#,
     ]
 }
 
@@ -121,6 +156,41 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             last_used_at TIMESTAMP
         );
         "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dns_keys (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255),
+            key_type VARCHAR(50) NOT NULL,
+            key_algorithm VARCHAR(50) NOT NULL,
+            key_name VARCHAR(255) NOT NULL,
+            secret TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            dns_instance_id INTEGER NOT NULL
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dns_instances (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255),
+            host VARCHAR(255) NOT NULL,
+            rndc_port INTEGER NOT NULL,
+            rndc_key_id INTEGER NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (rndc_key_id) REFERENCES dns_keys(id) ON DELETE RESTRICT
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_dns_config (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            dns_instance_id INTEGER NOT NULL,
+            dns_key_id INTEGER NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (dns_instance_id) REFERENCES dns_instances(id) ON DELETE CASCADE,
+            FOREIGN KEY (dns_key_id) REFERENCES dns_keys(id) ON DELETE RESTRICT
+        );
+        "#,
     ]
 }
 
@@ -182,6 +252,41 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             expires_at DATETIME,
             last_used_at DATETIME
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dns_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            key_type TEXT NOT NULL,
+            key_algorithm TEXT NOT NULL,
+            key_name TEXT NOT NULL,
+            secret TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            dns_instance_id INTEGER NOT NULL
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dns_instances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            host TEXT NOT NULL,
+            rndc_port INTEGER NOT NULL,
+            rndc_key_id INTEGER NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (rndc_key_id) REFERENCES dns_keys(id) ON DELETE RESTRICT
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_dns_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            zone_id INTEGER NOT NULL,
+            dns_instance_id INTEGER NOT NULL,
+            dns_key_id INTEGER NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (dns_instance_id) REFERENCES dns_instances(id) ON DELETE CASCADE,
+            FOREIGN KEY (dns_key_id) REFERENCES dns_keys(id) ON DELETE RESTRICT
         );
         "#,
     ]
