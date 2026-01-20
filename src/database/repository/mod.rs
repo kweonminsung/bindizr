@@ -170,4 +170,32 @@ impl RepositoryFactory {
             }
         }
     }
+
+    pub fn create_dns_instance_repository(pool: &DatabasePool) -> Box<dyn DnsInstanceRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlDnsInstanceRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresDnsInstanceRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteDnsInstanceRepository::new(sqlite_pool.clone()))
+            }
+        }
+    }
+
+    pub fn create_dns_key_repository(pool: &DatabasePool) -> Box<dyn DnsKeyRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlDnsKeyRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresDnsKeyRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteDnsKeyRepository::new(sqlite_pool.clone()))
+            }
+        }
+    }
 }
