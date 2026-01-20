@@ -3,6 +3,7 @@ mod dns_instance_repository_impl;
 mod dns_key_repository_impl;
 mod record_history_repository_impl;
 mod record_repository_impl;
+mod zone_dns_config_repository_impl;
 mod zone_history_repository_impl;
 mod zone_repository_impl;
 
@@ -11,5 +12,6 @@ pub use dns_instance_repository_impl::PostgresDnsInstanceRepository;
 pub use dns_key_repository_impl::PostgresDnsKeyRepository;
 pub use record_history_repository_impl::PostgresRecordHistoryRepository;
 pub use record_repository_impl::PostgresRecordRepository;
+pub use zone_dns_config_repository_impl::PostgresZoneDnsConfigRepository;
 pub use zone_history_repository_impl::PostgresZoneHistoryRepository;
 pub use zone_repository_impl::PostgresZoneRepository;

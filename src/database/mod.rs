@@ -217,3 +217,17 @@ pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_api_token_repository(pool)
 }
+pub fn get_dns_instance_repository() -> Box<dyn repository::DnsInstanceRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_dns_instance_repository(pool)
+}
+
+pub fn get_dns_key_repository() -> Box<dyn repository::DnsKeyRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_dns_key_repository(pool)
+}
+
+pub fn get_zone_dns_config_repository() -> Box<dyn repository::ZoneDnsConfigRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_zone_dns_config_repository(pool)
+}

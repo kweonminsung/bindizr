@@ -8,8 +8,11 @@ use super::model::{
     record_history::RecordHistory,
     zone::Zone,
     zone_history::ZoneHistory,
+    dns_instance::DnsInstance,
+    dns_key::DnsKey,
+    zone_dns_config::ZoneDnsConfig,
 };
-use crate::database::{DatabasePool, error::DatabaseError, model::{dns_instance::DnsInstance, dns_key::DnsKey}};
+use crate::database::{DatabasePool, error::DatabaseError};
 use async_trait::async_trait;
 
 // Zone Repository Trait
@@ -81,6 +84,18 @@ pub trait DnsKeyRepository: Send + Sync {
     async fn get_by_id(&self, id: i32) -> Result<Option<DnsKey>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<DnsKey>, DatabaseError>;
     async fn update(&self, dns_key: DnsKey) -> Result<DnsKey, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
+// Zone DNS Config Repository Trait
+#[allow(dead_code)]
+#[async_trait]
+pub trait ZoneDnsConfigRepository: Send + Sync {
+    async fn create(&self, zone_dns_config: ZoneDnsConfig) -> Result<ZoneDnsConfig, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneDnsConfig>, DatabaseError>;
+    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError>;
+    async fn get_by_dns_instance_id(&self, dns_instance_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError>;
+    async fn update(&self, zone_dns_config: ZoneDnsConfig) -> Result<ZoneDnsConfig, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
@@ -195,6 +210,20 @@ impl RepositoryFactory {
             ),
             DatabasePool::SQLite(sqlite_pool) => {
                 Box::new(sqlite::SqliteDnsKeyRepository::new(sqlite_pool.clone()))
+            }
+        }
+    }
+
+    pub fn create_zone_dns_config_repository(pool: &DatabasePool) -> Box<dyn ZoneDnsConfigRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlZoneDnsConfigRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresZoneDnsConfigRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteZoneDnsConfigRepository::new(sqlite_pool.clone()))
             }
         }
     }
