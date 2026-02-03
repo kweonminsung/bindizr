@@ -20,8 +20,8 @@ impl DnsKeyRepository for MySqlDnsKeyRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO dns_keys (name, key_type, key_algorithm, key_name, secret, dns_instance_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO dns_keys (name, key_type, key_algorithm, key_name, secret)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(&dns_key.name)
@@ -29,7 +29,6 @@ impl DnsKeyRepository for MySqlDnsKeyRepository {
         .bind(dns_key.key_algorithm.as_str())
         .bind(&dns_key.key_name)
         .bind(&dns_key.secret)
-        .bind(dns_key.dns_instance_id)
         .execute(&mut *conn)
         .await?;
 
@@ -42,7 +41,7 @@ impl DnsKeyRepository for MySqlDnsKeyRepository {
         let mut conn = self.pool.acquire().await?;
 
         let dns_key = sqlx::query_as::<_, DnsKey>(
-            "SELECT id, name, key_type, key_algorithm, key_name, secret, created_at, dns_instance_id FROM dns_keys WHERE id = ?"
+            "SELECT id, name, key_type, key_algorithm, key_name, secret, created_at FROM dns_keys WHERE id = ?"
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -55,7 +54,7 @@ impl DnsKeyRepository for MySqlDnsKeyRepository {
         let mut conn = self.pool.acquire().await?;
 
         let dns_keys = sqlx::query_as::<_, DnsKey>(
-            "SELECT id, name, key_type, key_algorithm, key_name, secret, created_at, dns_instance_id FROM dns_keys ORDER BY id"
+            "SELECT id, name, key_type, key_algorithm, key_name, secret, created_at FROM dns_keys ORDER BY id"
         )
         .fetch_all(&mut *conn)
         .await?;
@@ -69,7 +68,7 @@ impl DnsKeyRepository for MySqlDnsKeyRepository {
         sqlx::query(
             r#"
             UPDATE dns_keys 
-            SET name = ?, key_type = ?, key_algorithm = ?, key_name = ?, secret = ?, dns_instance_id = ?
+            SET name = ?, key_type = ?, key_algorithm = ?, key_name = ?, secret = ?
             WHERE id = ?
             "#,
         )
@@ -78,7 +77,6 @@ impl DnsKeyRepository for MySqlDnsKeyRepository {
         .bind(dns_key.key_algorithm.as_str())
         .bind(&dns_key.key_name)
         .bind(&dns_key.secret)
-        .bind(dns_key.dns_instance_id)
         .bind(dns_key.id)
         .execute(&mut *conn)
         .await?;

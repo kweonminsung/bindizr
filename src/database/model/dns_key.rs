@@ -13,7 +13,6 @@ pub struct DnsKey {
     pub key_name: String,               // key name
     pub secret: String,                 // key secret
     pub created_at: DateTime<Utc>,
-    pub dns_instance_id: i32,           // foreign key to dns_instances table
 }
 
 #[allow(clippy::upper_case_acronyms)]

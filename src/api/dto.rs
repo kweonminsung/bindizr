@@ -1,5 +1,6 @@
 use crate::database::model::{
-    record::Record, record_history::RecordHistory, zone::Zone, zone_history::ZoneHistory,
+    dns_instance::DnsInstance, dns_key::DnsKey, record::Record, record_history::RecordHistory,
+    zone::Zone, zone_dns_config::ZoneDnsConfig, zone_history::ZoneHistory,
 };
 use serde::{Deserialize, Serialize};
 
@@ -120,4 +121,116 @@ impl GetRecordHistoryResponse {
             record_id: record_history.record_id,
         }
     }
+}
+
+#[derive(Serialize, Debug)]
+pub struct GetDnsInstanceResponse {
+    pub id: i32,
+    pub name: Option<String>,
+    pub host: String,
+    pub rndc_port: i32,
+    pub rndc_key_id: i32,
+    pub created_at: String,
+}
+impl GetDnsInstanceResponse {
+    pub fn from_dns_instance(dns_instance: &DnsInstance) -> Self {
+        GetDnsInstanceResponse {
+            id: dns_instance.id,
+            name: dns_instance.name.clone(),
+            host: dns_instance.host.clone(),
+            rndc_port: dns_instance.rndc_port,
+            rndc_key_id: dns_instance.rndc_key_id,
+            created_at: dns_instance.created_at.to_string(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CreateDnsInstanceRequest {
+    pub name: Option<String>,
+    pub host: String,
+    pub rndc_port: i32,
+    pub rndc_key_id: i32,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct UpdateDnsInstanceRequest {
+    pub name: Option<String>,
+    pub host: String,
+    pub rndc_port: i32,
+    pub rndc_key_id: i32,
+}
+
+#[derive(Serialize, Debug)]
+pub struct GetDnsKeyResponse {
+    pub id: i32,
+    pub name: Option<String>,
+    pub key_type: String,
+    pub key_algorithm: String,
+    pub key_name: String,
+    pub secret: String,
+    pub created_at: String,
+}
+impl GetDnsKeyResponse {
+    pub fn from_dns_key(dns_key: &DnsKey) -> Self {
+        GetDnsKeyResponse {
+            id: dns_key.id,
+            name: dns_key.name.clone(),
+            key_type: dns_key.key_type.to_string(),
+            key_algorithm: dns_key.key_algorithm.to_string(),
+            key_name: dns_key.key_name.clone(),
+            secret: dns_key.secret.clone(),
+            created_at: dns_key.created_at.to_string(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CreateDnsKeyRequest {
+    pub name: Option<String>,
+    pub key_type: String,
+    pub key_algorithm: String,
+    pub key_name: String,
+    pub secret: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct UpdateDnsKeyRequest {
+    pub name: Option<String>,
+    pub key_type: String,
+    pub key_algorithm: String,
+    pub key_name: String,
+    pub secret: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct GetZoneDnsConfigResponse {
+    pub id: i32,
+    pub zone_id: i32,
+    pub dns_instance_id: i32,
+    pub dns_key_id: i32,
+    pub created_at: String,
+}
+impl GetZoneDnsConfigResponse {
+    pub fn from_zone_dns_config(zone_dns_config: &ZoneDnsConfig) -> Self {
+        GetZoneDnsConfigResponse {
+            id: zone_dns_config.id,
+            zone_id: zone_dns_config.zone_id,
+            dns_instance_id: zone_dns_config.dns_instance_id,
+            dns_key_id: zone_dns_config.dns_key_id,
+            created_at: zone_dns_config.created_at.to_string(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CreateZoneDnsConfigRequest {
+    pub dns_instance_id: i32,
+    pub dns_key_id: i32,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct UpdateZoneDnsConfigRequest {
+    pub dns_instance_id: i32,
+    pub dns_key_id: i32,
 }

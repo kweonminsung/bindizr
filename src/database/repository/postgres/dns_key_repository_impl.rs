@@ -20,8 +20,8 @@ impl DnsKeyRepository for PostgresDnsKeyRepository {
 
         let result = sqlx::query_as::<_, (i32,)>(
             r#"
-            INSERT INTO dns_keys (name, key_type, key_algorithm, key_name, secret, dns_instance_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO dns_keys (name, key_type, key_algorithm, key_name, secret)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id
             "#,
         )
@@ -30,7 +30,6 @@ impl DnsKeyRepository for PostgresDnsKeyRepository {
         .bind(dns_key.key_algorithm.as_str())
         .bind(&dns_key.key_name)
         .bind(&dns_key.secret)
-        .bind(dns_key.dns_instance_id)
         .fetch_one(&mut *conn)
         .await?;
 
@@ -43,7 +42,7 @@ impl DnsKeyRepository for PostgresDnsKeyRepository {
         let mut conn = self.pool.acquire().await?;
 
         let dns_key = sqlx::query_as::<_, DnsKey>(
-            "SELECT id, name, key_type, key_algorithm, key_name, secret, created_at, dns_instance_id FROM dns_keys WHERE id = $1"
+            "SELECT id, name, key_type, key_algorithm, key_name, secret, created_at FROM dns_keys WHERE id = $1"
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -56,7 +55,7 @@ impl DnsKeyRepository for PostgresDnsKeyRepository {
         let mut conn = self.pool.acquire().await?;
 
         let dns_keys = sqlx::query_as::<_, DnsKey>(
-            "SELECT id, name, key_type, key_algorithm, key_name, secret, created_at, dns_instance_id FROM dns_keys ORDER BY id"
+            "SELECT id, name, key_type, key_algorithm, key_name, secret, created_at FROM dns_keys ORDER BY id"
         )
         .fetch_all(&mut *conn)
         .await?;
@@ -70,8 +69,8 @@ impl DnsKeyRepository for PostgresDnsKeyRepository {
         sqlx::query(
             r#"
             UPDATE dns_keys 
-            SET name = $1, key_type = $2, key_algorithm = $3, key_name = $4, secret = $5, dns_instance_id = $6
-            WHERE id = $7
+            SET name = $1, key_type = $2, key_algorithm = $3, key_name = $4, secret = $5
+            WHERE id = $6
             "#,
         )
         .bind(&dns_key.name)
@@ -79,7 +78,6 @@ impl DnsKeyRepository for PostgresDnsKeyRepository {
         .bind(dns_key.key_algorithm.as_str())
         .bind(&dns_key.key_name)
         .bind(&dns_key.secret)
-        .bind(dns_key.dns_instance_id)
         .bind(dns_key.id)
         .execute(&mut *conn)
         .await?;

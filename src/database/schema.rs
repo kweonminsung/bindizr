@@ -66,8 +66,7 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             key_algorithm VARCHAR(50) NOT NULL,
             key_name VARCHAR(255) NOT NULL,
             secret TEXT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            dns_instance_id INT NOT NULL
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
         r#"
@@ -164,8 +163,7 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             key_algorithm VARCHAR(50) NOT NULL,
             key_name VARCHAR(255) NOT NULL,
             secret TEXT NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            dns_instance_id INTEGER NOT NULL
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
         r#"
@@ -262,8 +260,7 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             key_algorithm TEXT NOT NULL,
             key_name TEXT NOT NULL,
             secret TEXT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            dns_instance_id INTEGER NOT NULL
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
         r#"
