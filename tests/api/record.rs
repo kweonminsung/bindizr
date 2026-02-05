@@ -18,7 +18,7 @@ async fn test_record_crud_operations() {
         "record_type": "A",
         "value": "192.168.1.200",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, body) = ctx
         .make_request("POST", "/records", Some(create_record_request))
@@ -47,7 +47,7 @@ async fn test_record_crud_operations() {
         "record_type": "A",
         "value": "192.168.1.201",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(duplicate_record_request))
@@ -60,7 +60,7 @@ async fn test_record_crud_operations() {
         "record_type": "TXT",
         "value": "some text",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(different_type_record_request))
@@ -80,7 +80,7 @@ async fn test_record_crud_operations() {
         "record_type": "A",
         "value": "192.168.1.201",
         "ttl": 3600,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
 
     let (status, body) = ctx
@@ -160,7 +160,7 @@ async fn test_multiple_record_types() {
             "value": value,
             "ttl": 3600,
             "priority": priority,
-            "zone_id": zone.id
+            "zone_name": zone.name
         });
 
         let (status, body) = ctx
@@ -194,7 +194,7 @@ async fn test_cname_validation() {
         "record_type": "A",
         "value": "1.1.1.1",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(a_record_request))
@@ -207,7 +207,7 @@ async fn test_cname_validation() {
         "record_type": "CNAME",
         "value": "other.example.com",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(cname_record_request))
@@ -220,7 +220,7 @@ async fn test_cname_validation() {
         "record_type": "CNAME",
         "value": "another.example.com",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, body) = ctx
         .make_request("POST", "/records", Some(cname_record_request))
@@ -235,7 +235,7 @@ async fn test_cname_validation() {
         "record_type": "A",
         "value": "2.2.2.2",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(a_record_request))
@@ -248,7 +248,7 @@ async fn test_cname_validation() {
         "record_type": "CNAME",
         "value": "updated.example.com",
         "ttl": 3600,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request(
@@ -271,7 +271,7 @@ async fn test_prevent_default_records_creation() {
         "record_type": "NS",
         "value": "ns1.example.com",
         "ttl": 3600,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(ns_record_request))
@@ -284,7 +284,7 @@ async fn test_prevent_default_records_creation() {
         "record_type": "A",
         "value": "1.1.1.1",
         "ttl": 3600,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(a_record_request))
@@ -304,7 +304,7 @@ async fn test_prevent_updating_to_default_records() {
         "record_type": "NS",
         "value": "ns1.example.com",
         "ttl": 3600,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request(
@@ -325,7 +325,7 @@ async fn test_prevent_updating_to_default_records() {
         "record_type": "A",
         "value": "1.1.1.1",
         "ttl": 3600,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request(

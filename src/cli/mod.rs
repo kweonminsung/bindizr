@@ -69,7 +69,7 @@ pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     log_info!("Bindizr is running in foreground mode.");
     log_info!("For production use, please run bindizr as a systemd service:");
-    log_info!("    systemctl start bindizr");
+    log_info!("# systemctl start bindizr");
 
     socket::server::initialize().await?;
     api::initialize().await?;

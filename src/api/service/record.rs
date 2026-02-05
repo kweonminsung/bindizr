@@ -121,14 +121,14 @@ impl RecordService {
 
         // Check if zone exists
         let zone = match zone_repository
-            .get_by_id(create_record_request.zone_id)
+            .get_by_name(&create_record_request.zone_name)
             .await
         {
             Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "Zone with id {} not found",
-                    create_record_request.zone_id
+                    "Zone with name '{}' not found",
+                    create_record_request.zone_name
                 )));
             }
             Err(e) => {
@@ -154,10 +154,7 @@ impl RecordService {
         }
 
         // CNAME validation
-        let existing_records_in_zone = match record_repository
-            .get_by_zone_id(create_record_request.zone_id)
-            .await
-        {
+        let existing_records_in_zone = match record_repository.get_by_zone_id(zone.id).await {
             Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to check existing records: {}", e);
@@ -199,7 +196,7 @@ impl RecordService {
                 value: create_record_request.value.clone(),
                 ttl: create_record_request.ttl,
                 priority: create_record_request.priority,
-                zone_id: create_record_request.zone_id,
+                zone_id: zone.id,
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
@@ -217,7 +214,7 @@ impl RecordService {
                     "[{}] Record created: id={}, zone_id={}, name={}, type={}, value={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
                     created_record.id,
-                    create_record_request.zone_id,
+                    zone.id,
                     create_record_request.name,
                     create_record_request.record_type,
                     create_record_request.value,
@@ -271,12 +268,15 @@ impl RecordService {
 
         // Check if zone exists
         let zone = match zone_repository
-            .get_by_id(update_record_request.zone_id)
+            .get_by_name(&update_record_request.zone_name)
             .await
         {
             Ok(Some(zone)) => zone,
             Ok(None) => {
-                return Err(ApiError::BadRequest("Zone not found".to_string()));
+                return Err(ApiError::NotFound(format!(
+                    "Zone with name '{}' not found",
+                    update_record_request.zone_name
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
@@ -340,7 +340,7 @@ impl RecordService {
 
         let other_records_in_zone: Vec<_> = existing_records
             .into_iter()
-            .filter(|r| r.id != record_id && r.zone_id == update_record_request.zone_id)
+            .filter(|r| r.id != record_id && r.zone_id == zone.id)
             .collect();
 
         if !other_records_in_zone.is_empty() {
@@ -370,7 +370,7 @@ impl RecordService {
                 value: update_record_request.value.clone(),
                 ttl: update_record_request.ttl,
                 priority: update_record_request.priority,
-                zone_id: update_record_request.zone_id,
+                zone_id: zone.id,
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
@@ -388,7 +388,7 @@ impl RecordService {
                     "[{}] Record updated: id={}, zone_id={}, name={}, type={}, value={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
                     updated_record.id,
-                    update_record_request.zone_id,
+                    zone.id,
                     update_record_request.name,
                     update_record_request.record_type,
                     update_record_request.value,

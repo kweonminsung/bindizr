@@ -1,6 +1,6 @@
 use crate::database::model::{
-    dns_instance::DnsInstance, dns_key::DnsKey, record::Record, record_history::RecordHistory,
-    zone::Zone, zone_dns_config::ZoneDnsConfig, zone_history::ZoneHistory,
+    dns::Dns, key::Key, record::Record, record_history::RecordHistory, zone::Zone,
+    zone_dns_config::ZoneDnsConfig, zone_history::ZoneHistory,
 };
 use serde::{Deserialize, Serialize};
 
@@ -84,7 +84,7 @@ pub struct CreateRecordRequest {
     pub value: String,
     pub ttl: Option<i32>,
     pub priority: Option<i32>,
-    pub zone_id: i32,
+    pub zone_name: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -124,82 +124,74 @@ impl GetRecordHistoryResponse {
 }
 
 #[derive(Serialize, Debug)]
-pub struct GetDnsInstanceResponse {
+pub struct GetDnsResponse {
     pub id: i32,
-    pub name: Option<String>,
+    pub name: String,
     pub host: String,
     pub rndc_port: i32,
-    pub rndc_key_id: i32,
     pub created_at: String,
 }
-impl GetDnsInstanceResponse {
-    pub fn from_dns_instance(dns_instance: &DnsInstance) -> Self {
-        GetDnsInstanceResponse {
-            id: dns_instance.id,
-            name: dns_instance.name.clone(),
-            host: dns_instance.host.clone(),
-            rndc_port: dns_instance.rndc_port,
-            rndc_key_id: dns_instance.rndc_key_id,
-            created_at: dns_instance.created_at.to_string(),
+impl GetDnsResponse {
+    pub fn from_dns(dns: &Dns) -> Self {
+        GetDnsResponse {
+            id: dns.id,
+            name: dns.name.clone(),
+            host: dns.host.clone(),
+            rndc_port: dns.rndc_port,
+            created_at: dns.created_at.to_string(),
         }
     }
 }
 
 #[derive(Deserialize, Debug)]
-pub struct CreateDnsInstanceRequest {
-    pub name: Option<String>,
+pub struct CreateDnsRequest {
+    pub name: String,
     pub host: String,
     pub rndc_port: i32,
-    pub rndc_key_id: i32,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct UpdateDnsInstanceRequest {
-    pub name: Option<String>,
+pub struct UpdateDnsRequest {
+    pub name: String,
     pub host: String,
     pub rndc_port: i32,
-    pub rndc_key_id: i32,
 }
 
 #[derive(Serialize, Debug)]
-pub struct GetDnsKeyResponse {
+pub struct GetKeyResponse {
     pub id: i32,
-    pub name: Option<String>,
+    pub name: String,
     pub key_type: String,
     pub key_algorithm: String,
-    pub key_name: String,
     pub secret: String,
     pub created_at: String,
 }
-impl GetDnsKeyResponse {
-    pub fn from_dns_key(dns_key: &DnsKey) -> Self {
-        GetDnsKeyResponse {
-            id: dns_key.id,
-            name: dns_key.name.clone(),
-            key_type: dns_key.key_type.to_string(),
-            key_algorithm: dns_key.key_algorithm.to_string(),
-            key_name: dns_key.key_name.clone(),
-            secret: dns_key.secret.clone(),
-            created_at: dns_key.created_at.to_string(),
+impl GetKeyResponse {
+    pub fn from_key(key: &Key) -> Self {
+        GetKeyResponse {
+            id: key.id,
+            name: key.name.clone(),
+            key_type: key.key_type.to_string(),
+            key_algorithm: key.key_algorithm.to_string(),
+            secret: key.secret.clone(),
+            created_at: key.created_at.to_string(),
         }
     }
 }
 
 #[derive(Deserialize, Debug)]
-pub struct CreateDnsKeyRequest {
-    pub name: Option<String>,
+pub struct CreateKeyRequest {
+    pub name: String,
     pub key_type: String,
     pub key_algorithm: String,
-    pub key_name: String,
     pub secret: String,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct UpdateDnsKeyRequest {
-    pub name: Option<String>,
+pub struct UpdateKeyRequest {
+    pub name: String,
     pub key_type: String,
     pub key_algorithm: String,
-    pub key_name: String,
     pub secret: String,
 }
 
@@ -207,8 +199,8 @@ pub struct UpdateDnsKeyRequest {
 pub struct GetZoneDnsConfigResponse {
     pub id: i32,
     pub zone_id: i32,
-    pub dns_instance_id: i32,
-    pub dns_key_id: i32,
+    pub dns_id: i32,
+    pub key_id: i32,
     pub created_at: String,
 }
 impl GetZoneDnsConfigResponse {
@@ -216,8 +208,8 @@ impl GetZoneDnsConfigResponse {
         GetZoneDnsConfigResponse {
             id: zone_dns_config.id,
             zone_id: zone_dns_config.zone_id,
-            dns_instance_id: zone_dns_config.dns_instance_id,
-            dns_key_id: zone_dns_config.dns_key_id,
+            dns_id: zone_dns_config.dns_id,
+            key_id: zone_dns_config.key_id,
             created_at: zone_dns_config.created_at.to_string(),
         }
     }
@@ -225,12 +217,45 @@ impl GetZoneDnsConfigResponse {
 
 #[derive(Deserialize, Debug)]
 pub struct CreateZoneDnsConfigRequest {
-    pub dns_instance_id: i32,
-    pub dns_key_id: i32,
+    pub dns_id: i32,
+    pub key_id: i32,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct UpdateZoneDnsConfigRequest {
-    pub dns_instance_id: i32,
-    pub dns_key_id: i32,
+    pub dns_id: i32,
+    pub key_id: i32,
+}
+
+#[derive(Serialize, Debug)]
+pub struct GetDnsKeyResponse {
+    pub dns_id: i32,
+    pub key_id: i32,
+    pub dns_name: String,
+    pub key_name: String,
+    pub created_at: String,
+}
+
+impl GetDnsKeyResponse {
+    // TODO: This method needs dns_name and key_name from joined data
+    pub fn from_dns_key(dns_key: &crate::database::model::dns_key::DnsKey) -> Self {
+        GetDnsKeyResponse {
+            dns_id: dns_key.dns_id,
+            key_id: dns_key.key_id,
+            dns_name: "".to_string(), // TODO: fetch from dns table
+            key_name: "".to_string(), // TODO: fetch from keys table
+            created_at: dns_key.created_at.to_string(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CreateDnsKeyRequest {
+    pub dns_name: String,
+    pub key_name: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct UpdateDnsKeyRequest {
+    pub key_name: String,
 }

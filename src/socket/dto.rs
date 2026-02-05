@@ -10,16 +10,16 @@ pub enum DaemonCommandKind {
     DnsWriteConfig,
     DnsReload,
     DnsStatus,
-    // DNS Instance commands
+    // DNS commands
     GetDns,
     ListDns,
     CreateDns,
     DeleteDns,
-    // DNS Key commands
-    GetDnsKey,
-    ListDnsKeys,
-    CreateDnsKey,
-    DeleteDnsKey,
+    // Key commands
+    GetKey,
+    ListKeys,
+    CreateKey,
+    DeleteKey,
     // Zone commands
     GetZone,
     ListZones,

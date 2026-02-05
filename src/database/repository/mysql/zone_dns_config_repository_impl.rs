@@ -23,13 +23,13 @@ impl ZoneDnsConfigRepository for MySqlZoneDnsConfigRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zone_dns_config (zone_id, dns_instance_id, dns_key_id)
+            INSERT INTO zone_dns_config (zone_id, dns_id, key_id)
             VALUES (?, ?, ?)
             "#,
         )
         .bind(zone_dns_config.zone_id)
-        .bind(zone_dns_config.dns_instance_id)
-        .bind(zone_dns_config.dns_key_id)
+        .bind(zone_dns_config.dns_id)
+        .bind(zone_dns_config.key_id)
         .execute(&mut *conn)
         .await?;
 
@@ -42,7 +42,7 @@ impl ZoneDnsConfigRepository for MySqlZoneDnsConfigRepository {
         let mut conn = self.pool.acquire().await?;
 
         let zone_dns_config = sqlx::query_as::<_, ZoneDnsConfig>(
-            "SELECT id, zone_id, dns_instance_id, dns_key_id, created_at FROM zone_dns_config WHERE id = ?"
+            "SELECT id, zone_id, dns_id, key_id, created_at FROM zone_dns_config WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -55,7 +55,7 @@ impl ZoneDnsConfigRepository for MySqlZoneDnsConfigRepository {
         let mut conn = self.pool.acquire().await?;
 
         let zone_dns_configs = sqlx::query_as::<_, ZoneDnsConfig>(
-            "SELECT id, zone_id, dns_instance_id, dns_key_id, created_at FROM zone_dns_config WHERE zone_id = ? ORDER BY id"
+            "SELECT id, zone_id, dns_id, key_id, created_at FROM zone_dns_config WHERE zone_id = ? ORDER BY id"
         )
         .bind(zone_id)
         .fetch_all(&mut *conn)
@@ -64,16 +64,13 @@ impl ZoneDnsConfigRepository for MySqlZoneDnsConfigRepository {
         Ok(zone_dns_configs)
     }
 
-    async fn get_by_dns_instance_id(
-        &self,
-        dns_instance_id: i32,
-    ) -> Result<Vec<ZoneDnsConfig>, DatabaseError> {
+    async fn get_by_dns_id(&self, dns_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zone_dns_configs = sqlx::query_as::<_, ZoneDnsConfig>(
-            "SELECT id, zone_id, dns_instance_id, dns_key_id, created_at FROM zone_dns_config WHERE dns_instance_id = ? ORDER BY id"
+            "SELECT id, zone_id, dns_id, key_id, created_at FROM zone_dns_config WHERE dns_id = ? ORDER BY id"
         )
-        .bind(dns_instance_id)
+        .bind(dns_id)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -86,13 +83,13 @@ impl ZoneDnsConfigRepository for MySqlZoneDnsConfigRepository {
         sqlx::query(
             r#"
             UPDATE zone_dns_config 
-            SET zone_id = ?, dns_instance_id = ?, dns_key_id = ?
+            SET zone_id = ?, dns_id = ?, key_id = ?
             WHERE id = ?
             "#,
         )
         .bind(zone_dns_config.zone_id)
-        .bind(zone_dns_config.dns_instance_id)
-        .bind(zone_dns_config.dns_key_id)
+        .bind(zone_dns_config.dns_id)
+        .bind(zone_dns_config.key_id)
         .bind(zone_dns_config.id)
         .execute(&mut *conn)
         .await?;

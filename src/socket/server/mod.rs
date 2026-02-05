@@ -1,6 +1,5 @@
 mod dns;
-mod dns_instance;
-mod dns_key;
+mod key;
 mod record;
 mod status;
 mod token;
@@ -31,16 +30,16 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::DnsWriteConfig => dns::write_dns_config().await,
                 DaemonCommandKind::DnsReload => dns::reload_dns_config(),
                 DaemonCommandKind::DnsStatus => dns::get_dns_status(),
-                // DNS Instance commands
-                DaemonCommandKind::GetDns => dns_instance::get_dns_instance(&cmd.data).await,
-                DaemonCommandKind::ListDns => dns_instance::list_dns_instances().await,
-                DaemonCommandKind::CreateDns => dns_instance::create_dns_instance(&cmd.data).await,
-                DaemonCommandKind::DeleteDns => dns_instance::delete_dns_instance(&cmd.data).await,
-                // DNS Key commands
-                DaemonCommandKind::GetDnsKey => dns_key::get_dns_key(&cmd.data).await,
-                DaemonCommandKind::ListDnsKeys => dns_key::list_dns_keys().await,
-                DaemonCommandKind::CreateDnsKey => dns_key::create_dns_key(&cmd.data).await,
-                DaemonCommandKind::DeleteDnsKey => dns_key::delete_dns_key(&cmd.data).await,
+                // DNS commands
+                DaemonCommandKind::GetDns => dns::get_dns(&cmd.data).await,
+                DaemonCommandKind::ListDns => dns::list_dnss().await,
+                DaemonCommandKind::CreateDns => dns::create_dns(&cmd.data).await,
+                DaemonCommandKind::DeleteDns => dns::delete_dns(&cmd.data).await,
+                // Key commands
+                DaemonCommandKind::GetKey => key::get_key(&cmd.data).await,
+                DaemonCommandKind::ListKeys => key::list_keys().await,
+                DaemonCommandKind::CreateKey => key::create_key(&cmd.data).await,
+                DaemonCommandKind::DeleteKey => key::delete_key(&cmd.data).await,
                 // Zone commands
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones().await,

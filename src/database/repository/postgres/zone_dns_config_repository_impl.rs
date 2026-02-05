@@ -23,14 +23,14 @@ impl ZoneDnsConfigRepository for PostgresZoneDnsConfigRepository {
 
         let result = sqlx::query_as::<_, (i32,)>(
             r#"
-            INSERT INTO zone_dns_config (zone_id, dns_instance_id, dns_key_id)
+            INSERT INTO zone_dns_config (zone_id, dns_id, key_id)
             VALUES ($1, $2, $3)
             RETURNING id
             "#,
         )
         .bind(zone_dns_config.zone_id)
-        .bind(zone_dns_config.dns_instance_id)
-        .bind(zone_dns_config.dns_key_id)
+        .bind(zone_dns_config.dns_id)
+        .bind(zone_dns_config.key_id)
         .fetch_one(&mut *conn)
         .await?;
 
@@ -43,7 +43,7 @@ impl ZoneDnsConfigRepository for PostgresZoneDnsConfigRepository {
         let mut conn = self.pool.acquire().await?;
 
         let zone_dns_config = sqlx::query_as::<_, ZoneDnsConfig>(
-            "SELECT id, zone_id, dns_instance_id, dns_key_id, created_at FROM zone_dns_config WHERE id = $1"
+            "SELECT id, zone_id, dns_id, key_id, created_at FROM zone_dns_config WHERE id = $1",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -56,7 +56,7 @@ impl ZoneDnsConfigRepository for PostgresZoneDnsConfigRepository {
         let mut conn = self.pool.acquire().await?;
 
         let zone_dns_configs = sqlx::query_as::<_, ZoneDnsConfig>(
-            "SELECT id, zone_id, dns_instance_id, dns_key_id, created_at FROM zone_dns_config WHERE zone_id = $1 ORDER BY id"
+            "SELECT id, zone_id, dns_id, key_id, created_at FROM zone_dns_config WHERE zone_id = $1 ORDER BY id"
         )
         .bind(zone_id)
         .fetch_all(&mut *conn)
@@ -65,16 +65,13 @@ impl ZoneDnsConfigRepository for PostgresZoneDnsConfigRepository {
         Ok(zone_dns_configs)
     }
 
-    async fn get_by_dns_instance_id(
-        &self,
-        dns_instance_id: i32,
-    ) -> Result<Vec<ZoneDnsConfig>, DatabaseError> {
+    async fn get_by_dns_id(&self, dns_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zone_dns_configs = sqlx::query_as::<_, ZoneDnsConfig>(
-            "SELECT id, zone_id, dns_instance_id, dns_key_id, created_at FROM zone_dns_config WHERE dns_instance_id = $1 ORDER BY id"
+            "SELECT id, zone_id, dns_id, key_id, created_at FROM zone_dns_config WHERE dns_id = $1 ORDER BY id"
         )
-        .bind(dns_instance_id)
+        .bind(dns_id)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -87,13 +84,13 @@ impl ZoneDnsConfigRepository for PostgresZoneDnsConfigRepository {
         sqlx::query(
             r#"
             UPDATE zone_dns_config 
-            SET zone_id = $1, dns_instance_id = $2, dns_key_id = $3
+            SET zone_id = $1, dns_id = $2, key_id = $3
             WHERE id = $4
             "#,
         )
         .bind(zone_dns_config.zone_id)
-        .bind(zone_dns_config.dns_instance_id)
-        .bind(zone_dns_config.dns_key_id)
+        .bind(zone_dns_config.dns_id)
+        .bind(zone_dns_config.key_id)
         .bind(zone_dns_config.id)
         .execute(&mut *conn)
         .await?;

@@ -5,7 +5,7 @@ use crate::{
     },
     database::{
         error::DatabaseError,
-        get_dns_instance_repository, get_dns_key_repository, get_zone_dns_config_repository,
+        get_dns_key_repository, get_dns_repository, get_zone_dns_config_repository,
         get_zone_history_repository, get_zone_repository,
         model::{zone_dns_config::ZoneDnsConfig, zone_history::ZoneHistory},
     },
@@ -52,7 +52,7 @@ impl ZoneDnsConfigService {
         request: &CreateZoneDnsConfigRequest,
     ) -> Result<ZoneDnsConfig, ApiError> {
         let zone_repository = get_zone_repository();
-        let dns_instance_repository = get_dns_instance_repository();
+        let dns_repository = get_dns_repository();
         let dns_key_repository = get_dns_key_repository();
         let zone_dns_config_repository = get_zone_dns_config_repository();
 
@@ -73,33 +73,30 @@ impl ZoneDnsConfigService {
             }
         }
 
-        // Validate DNS instance exists
-        match dns_instance_repository
-            .get_by_id(request.dns_instance_id)
-            .await
-        {
+        // Validate DNS exists
+        match dns_repository.get_by_id(request.dns_id).await {
             Ok(Some(_)) => {}
             Ok(None) => {
                 return Err(ApiError::BadRequest(format!(
-                    "DNS instance with id {} not found",
-                    request.dns_instance_id
+                    "DNS with id {} not found",
+                    request.dns_id
                 )));
             }
             Err(e) => {
-                log_error!("Failed to validate DNS instance: {}", e);
+                log_error!("Failed to validate DNS: {}", e);
                 return Err(ApiError::InternalServerError(
-                    "Failed to validate DNS instance".to_string(),
+                    "Failed to validate DNS".to_string(),
                 ));
             }
         }
 
         // Validate DNS key exists
-        match dns_key_repository.get_by_id(request.dns_key_id).await {
+        match dns_key_repository.get_by_id(request.key_id).await {
             Ok(Some(_)) => {}
             Ok(None) => {
                 return Err(ApiError::BadRequest(format!(
                     "DNS key with id {} not found",
-                    request.dns_key_id
+                    request.key_id
                 )));
             }
             Err(e) => {
@@ -113,8 +110,8 @@ impl ZoneDnsConfigService {
         let zone_dns_config = ZoneDnsConfig {
             id: 0,
             zone_id,
-            dns_instance_id: request.dns_instance_id,
-            dns_key_id: request.dns_key_id,
+            dns_id: request.dns_id,
+            key_id: request.key_id,
             created_at: Utc::now(),
         };
 
@@ -132,11 +129,11 @@ impl ZoneDnsConfigService {
             .create(ZoneHistory {
                 id: 0,
                 log: format!(
-                    "[{}] Zone DNS configuration created: id={}, dns_instance_id={}, dns_key_id={}",
+                    "[{}] Zone DNS configuration created: id={}, dns_id={}, key_id={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
                     created_config.id,
-                    created_config.dns_instance_id,
-                    created_config.dns_key_id,
+                    created_config.dns_id,
+                    created_config.key_id,
                 ),
                 zone_id,
                 created_at: Utc::now(),
@@ -156,7 +153,7 @@ impl ZoneDnsConfigService {
         request: &UpdateZoneDnsConfigRequest,
     ) -> Result<ZoneDnsConfig, ApiError> {
         let zone_repository = get_zone_repository();
-        let dns_instance_repository = get_dns_instance_repository();
+        let dns_repository = get_dns_repository();
         let dns_key_repository = get_dns_key_repository();
         let zone_dns_config_repository = get_zone_dns_config_repository();
 
@@ -201,33 +198,30 @@ impl ZoneDnsConfigService {
             }
         };
 
-        // Validate DNS instance exists
-        match dns_instance_repository
-            .get_by_id(request.dns_instance_id)
-            .await
-        {
+        // Validate DNS exists
+        match dns_repository.get_by_id(request.dns_id).await {
             Ok(Some(_)) => {}
             Ok(None) => {
                 return Err(ApiError::BadRequest(format!(
-                    "DNS instance with id {} not found",
-                    request.dns_instance_id
+                    "DNS with id {} not found",
+                    request.dns_id
                 )));
             }
             Err(e) => {
-                log_error!("Failed to validate DNS instance: {}", e);
+                log_error!("Failed to validate DNS: {}", e);
                 return Err(ApiError::InternalServerError(
-                    "Failed to validate DNS instance".to_string(),
+                    "Failed to validate DNS".to_string(),
                 ));
             }
         }
 
         // Validate DNS key exists
-        match dns_key_repository.get_by_id(request.dns_key_id).await {
+        match dns_key_repository.get_by_id(request.key_id).await {
             Ok(Some(_)) => {}
             Ok(None) => {
                 return Err(ApiError::BadRequest(format!(
                     "DNS key with id {} not found",
-                    request.dns_key_id
+                    request.key_id
                 )));
             }
             Err(e) => {
@@ -238,8 +232,8 @@ impl ZoneDnsConfigService {
             }
         }
 
-        zone_dns_config.dns_instance_id = request.dns_instance_id;
-        zone_dns_config.dns_key_id = request.dns_key_id;
+        zone_dns_config.dns_id = request.dns_id;
+        zone_dns_config.key_id = request.key_id;
 
         let updated_config = zone_dns_config_repository
             .update(zone_dns_config)
@@ -255,11 +249,11 @@ impl ZoneDnsConfigService {
             .create(ZoneHistory {
                 id: 0,
                 log: format!(
-                    "[{}] Zone DNS configuration updated: id={}, dns_instance_id={}, dns_key_id={}",
+                    "[{}] Zone DNS configuration updated: id={}, dns_id={}, key_id={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
                     updated_config.id,
-                    updated_config.dns_instance_id,
-                    updated_config.dns_key_id,
+                    updated_config.dns_id,
+                    updated_config.key_id,
                 ),
                 zone_id,
                 created_at: Utc::now(),
