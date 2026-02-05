@@ -22,14 +22,14 @@ impl ZoneService {
         })
     }
 
-    pub async fn get_zone(zone_id: i32) -> Result<Zone, ApiError> {
+    pub async fn get_zone(zone_name: &str) -> Result<Zone, ApiError> {
         let zone_repository = get_zone_repository();
 
-        match zone_repository.get_by_id(zone_id).await {
+        match zone_repository.get_by_name(zone_name).await {
             Ok(Some(zone)) => Ok(zone),
             Ok(None) => Err(ApiError::NotFound(format!(
-                "Zone with id {} not found",
-                zone_id
+                "Zone with name '{}' not found",
+                zone_name
             ))),
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
@@ -116,7 +116,7 @@ impl ZoneService {
     }
 
     pub async fn update_zone(
-        zone_id: i32,
+        zone_name: &str,
         update_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, ApiError> {
         let zone_repository = get_zone_repository();
@@ -132,13 +132,13 @@ impl ZoneService {
         }
 
         // Check if zone exists
-        match zone_repository.get_by_id(zone_id).await {
-            Ok(Some(_)) => {}
+        let zone_id = match zone_repository.get_by_name(zone_name).await {
+            Ok(Some(zone)) => zone.id,
             Ok(None) => {
-                log_error!("Zone with id {} not found", zone_id);
+                log_error!("Zone with name '{}' not found", zone_name);
                 return Err(ApiError::NotFound(format!(
-                    "Zone with id {} not found",
-                    zone_id
+                    "Zone with name '{}' not found",
+                    zone_name
                 )));
             }
             Err(e) => {
@@ -149,23 +149,24 @@ impl ZoneService {
             }
         };
 
-        // Check if zone with the same name already exists
-        match zone_repository.get_by_name(&update_zone_request.name).await {
-            Ok(Some(existing_zone)) if existing_zone.id != zone_id => {
-                log_error!("Zone with name {} already exists", update_zone_request.name);
-                return Err(ApiError::BadRequest(
-                    "Zone with this name already exists".to_string(),
-                ));
-            }
-            Ok(Some(_)) => (), // The same zone, allow update
-            Ok(None) => (),
-            Err(e) => {
-                log_error!("Failed to check existing zone: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to update zone".to_string(),
-                ));
-            }
-        };
+        // Check if zone with the new name already exists (if name is being changed)
+        if zone_name != update_zone_request.name {
+            match zone_repository.get_by_name(&update_zone_request.name).await {
+                Ok(Some(_)) => {
+                    log_error!("Zone with name {} already exists", update_zone_request.name);
+                    return Err(ApiError::BadRequest(
+                        "Zone with this name already exists".to_string(),
+                    ));
+                }
+                Ok(None) => (),
+                Err(e) => {
+                    log_error!("Failed to check existing zone: {}", e);
+                    return Err(ApiError::InternalServerError(
+                        "Failed to update zone".to_string(),
+                    ));
+                }
+            };
+        }
 
         // Update zone
         let updated_zone = zone_repository
@@ -212,17 +213,17 @@ impl ZoneService {
         Ok(updated_zone)
     }
 
-    pub async fn delete_zone(zone_id: i32) -> Result<(), ApiError> {
+    pub async fn delete_zone(zone_name: &str) -> Result<(), ApiError> {
         let zone_repository = get_zone_repository();
 
-        // Check if zone exists
-        match zone_repository.get_by_id(zone_id).await {
-            Ok(Some(_)) => {}
+        // Check if zone exists and get its ID
+        let zone_id = match zone_repository.get_by_name(zone_name).await {
+            Ok(Some(zone)) => zone.id,
             Ok(None) => {
-                log_error!("Zone with id {} not found", zone_id);
+                log_error!("Zone with name '{}' not found", zone_name);
                 return Err(ApiError::NotFound(format!(
-                    "Zone with id {} not found",
-                    zone_id
+                    "Zone with name '{}' not found",
+                    zone_name
                 )));
             }
             Err(e) => {

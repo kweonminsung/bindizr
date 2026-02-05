@@ -83,21 +83,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-  /zones/{zone_id}:
+  /zones/{zone_name}:
     get:
       tags:
         - Zone
       summary: Get a specific DNS zone
       operationId: get_zone
-      description: Retrieves details of a specific DNS zone by its ID.
+      description: Retrieves details of a specific DNS zone by its name.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the DNS zone to retrieve.
+          description: The name of the DNS zone to retrieve.
           schema:
-            type: integer
-            format: int32
+            type: string
         - name: records
           in: query
           required: false
@@ -125,13 +124,12 @@ paths:
       operationId: update_zone
       description: Updates the details of a specific DNS zone.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the DNS zone to update.
+          description: The name of the DNS zone to update.
           schema:
-            type: integer
-            format: int32
+            type: string
       requestBody:
         required: true
         content:
@@ -162,15 +160,14 @@ paths:
         - Zone
       summary: Delete a specific DNS zone
       operationId: delete_zone
-      description: Deletes a specific DNS zone by its ID.
+      description: Deletes a specific DNS zone by its name.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the DNS zone to delete.
+          description: The name of the DNS zone to delete.
           schema:
-            type: integer
-            format: int32
+            type: string
       responses:
         '200':
           description: DNS zone deleted successfully
@@ -188,7 +185,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-  /zones/{zone_id}/rendered:
+  /zones/{zone_name}/rendered:
     get:
       tags:
         - Zone
@@ -196,13 +193,12 @@ paths:
       operationId: get_zone_rendered
       description: Retrieves the rendered content of a specific DNS zone file.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the DNS zone to retrieve.
+          description: The name of the DNS zone to retrieve.
           schema:
-            type: integer
-            format: int32
+            type: string
       responses:
         '200':
           description: Rendered DNS zone file content
@@ -216,7 +212,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-  /zones/{zone_id}/histories:
+  /zones/{zone_name}/histories:
     get:
       tags:
         - Zone History
@@ -224,13 +220,12 @@ paths:
       operationId: get_zone_histories
       description: Retrieves the history of changes made to a specific DNS zone.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the DNS zone to retrieve history for.
+          description: The name of the DNS zone to retrieve history for.
           schema:
-            type: integer
-            format: int32
+            type: string
       responses:
         '200':
           description: A list of DNS zone history entries
@@ -249,7 +244,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-  /zones/{zone_id}/histories/{history_id}:
+  /zones/{zone_name}/histories/{history_id}:
     delete:
       tags:
         - Zone History
@@ -257,13 +252,12 @@ paths:
       operationId: delete_zone_history
       description: Deletes a specific history of a DNS zone by its ID.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the DNS zone to delete history for.
+          description: The name of the DNS zone to delete history for.
           schema:
-            type: integer
-            format: int32
+            type: string
         - name: history_id
           in: path
           required: true
@@ -352,21 +346,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-  /records/{record_id}:
+  /records/{record_name}/{record_type}:
     get:
       tags:
         - Record
       summary: Get a specific DNS record
       operationId: get_record
-      description: Retrieves details of a specific DNS record by its ID.
+      description: Retrieves details of a specific DNS record by its name and type.
       parameters:
-        - name: record_id
+        - name: record_name
           in: path
           required: true
-          description: The ID of the DNS record to retrieve.
+          description: The name of the DNS record to retrieve.
           schema:
-            type: integer
-            format: int32
+            type: string
+        - name: record_type
+          in: path
+          required: true
+          description: The type of the DNS record to retrieve.
+          schema:
+            type: string
       responses:
         '200':
           description: Details of the DNS record
@@ -387,13 +386,18 @@ paths:
       operationId: update_record
       description: Updates the details of a specific DNS record.
       parameters:
-        - name: record_id
+        - name: record_name
           in: path
           required: true
-          description: The ID of the DNS record to update.
+          description: The name of the DNS record to update.
           schema:
-            type: integer
-            format: int32
+            type: string
+        - name: record_type
+          in: path
+          required: true
+          description: The type of the DNS record to update.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -424,15 +428,20 @@ paths:
         - Record
       summary: Delete a specific DNS record
       operationId: delete_record
-      description: Deletes a specific DNS record by its ID.
+      description: Deletes a specific DNS record by its name and type.
       parameters:
-        - name: record_id
+        - name: record_name
           in: path
           required: true
-          description: The ID of the DNS record to delete.
+          description: The name of the DNS record to delete.
           schema:
-            type: integer
-            format: int32
+            type: string
+        - name: record_type
+          in: path
+          required: true
+          description: The type of the DNS record to delete.
+          schema:
+            type: string
       responses:
         '200':
           description: DNS record deleted successfully
@@ -450,7 +459,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-  /records/{record_id}/histories:
+  /records/{record_name}/{record_type}/histories:
     get:
       tags:
         - Record History
@@ -458,13 +467,18 @@ paths:
       operationId: get_record_histories
       description: Retrieves the history of changes made to a specific DNS record.
       parameters:
-        - name: record_id
+        - name: record_name
           in: path
           required: true
-          description: The ID of the DNS record to retrieve history for.
+          description: The name of the DNS record to retrieve history for.
           schema:
-            type: integer
-            format: int32
+            type: string
+        - name: record_type
+          in: path
+          required: true
+          description: The type of the DNS record to retrieve history for.
+          schema:
+            type: string
       responses:
         '200':
           description: A list of DNS record history entries
@@ -483,7 +497,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-  /records/{record_id}/histories/{history_id}:
+  /records/{record_name}/{record_type}/histories/{history_id}:
     delete:
       tags:
         - Record History
@@ -491,13 +505,18 @@ paths:
       operationId: delete_record_history
       description: Deletes a specific history of a DNS record by its ID.
       parameters:
-        - name: record_id
+        - name: record_name
           in: path
           required: true
-          description: The ID of the DNS record to delete history for.
+          description: The name of the DNS record to delete history for.
           schema:
-            type: integer
-            format: int32
+            type: string
+        - name: record_type
+          in: path
+          required: true
+          description: The type of the DNS record to delete history for.
+          schema:
+            type: string
         - name: history_id
           in: path
           required: true

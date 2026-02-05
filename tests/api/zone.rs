@@ -30,12 +30,12 @@ async fn test_zone_crud_operations() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let zone_id = body["zone"]["id"].as_i64().unwrap();
-    assert_eq!(body["zone"]["name"], "test.com");
+    let zone_name = body["zone"]["name"].as_str().unwrap();
+    assert_eq!(zone_name, "test.com");
 
-    // Test GET /zones/{id}
+    // Test GET /zones/{name}
     let (status, body) = ctx
-        .make_request("GET", &format!("/zones/{}", zone_id), None)
+        .make_request("GET", &format!("/zones/{}", zone_name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["zone"]["name"], "test.com");
@@ -45,7 +45,7 @@ async fn test_zone_crud_operations() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["zones"].as_array().unwrap().len(), 1);
 
-    // Test PUT /zones/{id} (update)
+    // Test PUT /zones/{name} (update)
     let update_zone_request = serde_json::json!({
         "name": "updated-test.com",
         "primary_ns": "ns1.updated-test.com",
@@ -63,22 +63,23 @@ async fn test_zone_crud_operations() {
     let (status, body) = ctx
         .make_request(
             "PUT",
-            &format!("/zones/{}", zone_id),
+            &format!("/zones/{}", zone_name),
             Some(update_zone_request),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["zone"]["name"], "updated-test.com");
+    let updated_zone_name = body["zone"]["name"].as_str().unwrap();
+    assert_eq!(updated_zone_name, "updated-test.com");
 
-    // Test DELETE /zones/{id}
+    // Test DELETE /zones/{name}
     let (status, _) = ctx
-        .make_request("DELETE", &format!("/zones/{}", zone_id), None)
+        .make_request("DELETE", &format!("/zones/{}", updated_zone_name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     // Verify deletion
     let (status, _) = ctx
-        .make_request("GET", &format!("/zones/{}", zone_id), None)
+        .make_request("GET", &format!("/zones/{}", updated_zone_name), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
@@ -130,9 +131,9 @@ async fn test_zone_rendered_output() {
     let zone = ctx.create_test_zone().await;
     let _record = ctx.create_test_record(zone.id).await;
 
-    // Test GET /zones/{id}/rendered
+    // Test GET /zones/{name}/rendered
     let (status, body) = ctx
-        .make_request("GET", &format!("/zones/{}/rendered", zone.id), None)
+        .make_request("GET", &format!("/zones/{}/rendered", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
@@ -149,9 +150,9 @@ async fn test_zone_history() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
-    // Test GET /zones/{id}/history
+    // Test GET /zones/{name}/history
     let (status, body) = ctx
-        .make_request("GET", &format!("/zones/{}/histories", zone.id), None)
+        .make_request("GET", &format!("/zones/{}/histories", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 

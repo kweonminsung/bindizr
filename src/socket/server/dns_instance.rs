@@ -4,12 +4,12 @@ use crate::socket::dto::DaemonResponse;
 use serde_json::json;
 
 pub async fn get_dns_instance(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let id = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")? as i32;
+    let host = data
+        .get("host")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'host' field")?;
 
-    match DnsInstanceService::get_dns_instance(id).await {
+    match DnsInstanceService::get_dns_instance(host).await {
         Ok(dns_instance) => {
             let response = GetDnsInstanceResponse::from_dns_instance(&dns_instance);
             Ok(DaemonResponse {
@@ -54,14 +54,14 @@ pub async fn create_dns_instance(data: &serde_json::Value) -> Result<DaemonRespo
 }
 
 pub async fn delete_dns_instance(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let id = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")? as i32;
+    let host = data
+        .get("host")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'host' field")?;
 
-    match DnsInstanceService::delete_dns_instance(id).await {
+    match DnsInstanceService::delete_dns_instance(host).await {
         Ok(_) => Ok(DaemonResponse {
-            message: format!("DNS instance {} deleted successfully", id),
+            message: format!("DNS instance '{}' deleted successfully", host),
             data: json!(null),
         }),
         Err(e) => Err(e.to_string()),

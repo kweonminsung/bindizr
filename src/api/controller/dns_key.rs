@@ -12,9 +12,9 @@ impl DnsKeyController {
         Router::new()
             .route("/keys", routing::get(Self::get_dns_keys))
             .route("/keys", routing::post(Self::create_dns_key))
-            .route("/keys/{id}", routing::get(Self::get_dns_key))
-            .route("/keys/{id}", routing::put(Self::update_dns_key))
-            .route("/keys/{id}", routing::delete(Self::delete_dns_key))
+            .route("/keys/{key_name}", routing::get(Self::get_dns_key))
+            .route("/keys/{key_name}", routing::put(Self::update_dns_key))
+            .route("/keys/{key_name}", routing::delete(Self::delete_dns_key))
     }
 
     async fn get_dns_keys() -> impl IntoResponse {
@@ -30,8 +30,8 @@ impl DnsKeyController {
         }
     }
 
-    async fn get_dns_key(Path(id): Path<i32>) -> impl IntoResponse {
-        match DnsKeyService::get_dns_key(id).await {
+    async fn get_dns_key(Path(key_name): Path<String>) -> impl IntoResponse {
+        match DnsKeyService::get_dns_key(&key_name).await {
             Ok(dns_key) => {
                 let response = GetDnsKeyResponse::from_dns_key(&dns_key);
                 (StatusCode::OK, Json(response)).into_response()
@@ -51,10 +51,10 @@ impl DnsKeyController {
     }
 
     async fn update_dns_key(
-        Path(id): Path<i32>,
+        Path(key_name): Path<String>,
         Json(request): Json<UpdateDnsKeyRequest>,
     ) -> impl IntoResponse {
-        match DnsKeyService::update_dns_key(id, &request).await {
+        match DnsKeyService::update_dns_key(&key_name, &request).await {
             Ok(dns_key) => {
                 let response = GetDnsKeyResponse::from_dns_key(&dns_key);
                 (StatusCode::OK, Json(response)).into_response()
@@ -63,8 +63,8 @@ impl DnsKeyController {
         }
     }
 
-    async fn delete_dns_key(Path(id): Path<i32>) -> impl IntoResponse {
-        match DnsKeyService::delete_dns_key(id).await {
+    async fn delete_dns_key(Path(key_name): Path<String>) -> impl IntoResponse {
+        match DnsKeyService::delete_dns_key(&key_name).await {
             Ok(_) => {
                 let json_body = json!({ "message": "DNS key deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()

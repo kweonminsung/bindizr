@@ -1,7 +1,8 @@
 use crate::{
     api::error::ApiError,
     database::{
-        get_record_history_repository, get_record_repository, model::record_history::RecordHistory,
+        get_record_history_repository, get_record_repository,
+        model::{record::RecordType, record_history::RecordHistory},
     },
     log_error,
 };
@@ -10,13 +11,23 @@ use crate::{
 pub struct RecordHistoryService;
 
 impl RecordHistoryService {
-    pub async fn get_record_histories(record_id: i32) -> Result<Vec<RecordHistory>, ApiError> {
+    pub async fn get_record_histories(
+        name: &str,
+        record_type: &str,
+    ) -> Result<Vec<RecordHistory>, ApiError> {
         let record_repository = get_record_repository();
         let record_history_repository = get_record_history_repository();
 
+        // Validate record type
+        let record_type = RecordType::from_str(record_type)
+            .map_err(|_| ApiError::BadRequest(format!("Invalid record type: {}", record_type)))?;
+
         // Check if the record exists
-        match record_repository.get_by_id(record_id).await {
-            Ok(Some(_)) => {}
+        let record = match record_repository
+            .get_by_name_and_type(name, &record_type)
+            .await
+        {
+            Ok(Some(r)) => r,
             Ok(None) => {
                 return Err(ApiError::NotFound("Record not found".to_string()));
             }
@@ -29,7 +40,7 @@ impl RecordHistoryService {
         };
 
         let record_histories = record_history_repository
-            .get_by_record_id(record_id)
+            .get_by_record_id(record.id)
             .await
             .map_err(|e| {
                 log_error!("Failed to fetch record histories: {}", e);

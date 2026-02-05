@@ -4,12 +4,12 @@ use crate::socket::dto::DaemonResponse;
 use serde_json::json;
 
 pub async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let id = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")? as i32;
+    let name = data
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'name' field")?;
 
-    match ZoneService::get_zone(id).await {
+    match ZoneService::get_zone(name).await {
         Ok(zone) => {
             let response = GetZoneResponse::from_zone(&zone);
             Ok(DaemonResponse {
@@ -52,14 +52,14 @@ pub async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, Str
 }
 
 pub async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let id = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")? as i32;
+    let name = data
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'name' field")?;
 
-    match ZoneService::delete_zone(id).await {
+    match ZoneService::delete_zone(name).await {
         Ok(_) => Ok(DaemonResponse {
-            message: format!("Zone {} deleted successfully", id),
+            message: format!("Zone '{}' deleted successfully", name),
             data: json!(null),
         }),
         Err(e) => Err(e.to_string()),

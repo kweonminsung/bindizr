@@ -63,14 +63,21 @@ impl RecordService {
         }
     }
 
-    pub async fn get_record(record_id: i32) -> Result<Record, ApiError> {
+    pub async fn get_record(name: &str, record_type: &str) -> Result<Record, ApiError> {
         let record_repository = get_record_repository();
 
-        match record_repository.get_by_id(record_id).await {
+        // Validate record type
+        let record_type = RecordType::from_str(record_type)
+            .map_err(|_| ApiError::BadRequest(format!("Invalid record type: {}", record_type)))?;
+
+        match record_repository
+            .get_by_name_and_type(name, &record_type)
+            .await
+        {
             Ok(Some(record)) => Ok(record),
             Ok(None) => Err(ApiError::NotFound(format!(
-                "Record with id {} not found",
-                record_id
+                "Record with name '{}' and type '{}' not found",
+                name, record_type
             ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
@@ -227,27 +234,40 @@ impl RecordService {
     }
 
     pub async fn update_record(
-        record_id: i32,
+        name: &str,
+        record_type_str: &str,
         update_record_request: &CreateRecordRequest,
     ) -> Result<Record, ApiError> {
         let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
         let record_history_repository = get_record_history_repository();
 
+        // Validate old record type
+        let old_record_type = RecordType::from_str(record_type_str).map_err(|_| {
+            ApiError::BadRequest(format!("Invalid record type: {}", record_type_str))
+        })?;
+
         // Check if record exists
-        match record_repository.get_by_id(record_id).await {
-            Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(ApiError::NotFound(format!(
-                "Record with id {} not found",
-                record_id
-            ))),
+        let existing_record = match record_repository
+            .get_by_name_and_type(name, &old_record_type)
+            .await
+        {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return Err(ApiError::NotFound(format!(
+                    "Record with name '{}' and type '{}' not found",
+                    name, record_type_str
+                )));
+            }
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ApiError::InternalServerError(
+                return Err(ApiError::InternalServerError(
                     "Failed to fetch record".to_string(),
-                ))
+                ));
             }
-        }?;
+        };
+
+        let record_id = existing_record.id;
 
         // Check if zone exists
         let zone = match zone_repository
@@ -384,24 +404,35 @@ impl RecordService {
         Ok(updated_record)
     }
 
-    pub async fn delete_record(record_id: i32) -> Result<(), ApiError> {
+    pub async fn delete_record(name: &str, record_type_str: &str) -> Result<(), ApiError> {
         let record_repository = get_record_repository();
-        // let record_history_repository = get_record_history_repository();
+
+        // Valid record type
+        let record_type = RecordType::from_str(record_type_str).map_err(|_| {
+            ApiError::BadRequest(format!("Invalid record type: {}", record_type_str))
+        })?;
 
         // Check if record exists
-        let existing_record = match record_repository.get_by_id(record_id).await {
-            Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(ApiError::NotFound(format!(
-                "Record with id {} not found",
-                record_id
-            ))),
+        let existing_record = match record_repository
+            .get_by_name_and_type(name, &record_type)
+            .await
+        {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return Err(ApiError::NotFound(format!(
+                    "Record with name '{}' and type '{}' not found",
+                    name, record_type_str
+                )));
+            }
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ApiError::InternalServerError(
+                return Err(ApiError::InternalServerError(
                     "Failed to fetch record".to_string(),
-                ))
+                ));
             }
-        }?;
+        };
+
+        let record_id = existing_record.id;
 
         // Prevent deletion of SOA records
         if existing_record.record_type == RecordType::SOA {

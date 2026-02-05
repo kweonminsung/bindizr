@@ -10,13 +10,13 @@ use crate::{
 pub struct ZoneHistoryService;
 
 impl ZoneHistoryService {
-    pub async fn get_zone_histories(zone_id: i32) -> Result<Vec<ZoneHistory>, ApiError> {
+    pub async fn get_zone_histories(zone_name: &str) -> Result<Vec<ZoneHistory>, ApiError> {
         let zone_repository = get_zone_repository();
         let zone_history_repository = get_zone_history_repository();
 
         // Check if the zone exists
-        match zone_repository.get_by_id(zone_id).await {
-            Ok(Some(_)) => {}
+        let zone = match zone_repository.get_by_name(zone_name).await {
+            Ok(Some(z)) => z,
             Ok(None) => {
                 return Err(ApiError::NotFound("Zone not found".to_string()));
             }
@@ -29,7 +29,7 @@ impl ZoneHistoryService {
         };
 
         let zone_histories = zone_history_repository
-            .get_by_zone_id(zone_id)
+            .get_by_zone_id(zone.id)
             .await
             .map_err(|e| {
                 log_error!("Failed to fetch zone histories: {}", e);

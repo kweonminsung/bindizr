@@ -10,11 +10,11 @@ impl RecordHistoryController {
     pub async fn routes() -> Router {
         Router::new()
             .route(
-                "/records/{id}/histories",
+                "/records/{name}/{record_type}/histories",
                 routing::get(RecordHistoryController::get_record_histories),
             )
             .route(
-                "/records/{record_id}/histories/{history_id}",
+                "/records/{record_name}/{record_type}/histories/{history_id}",
                 routing::delete(RecordHistoryController::delete_record_history),
             )
     }
@@ -22,13 +22,14 @@ impl RecordHistoryController {
     async fn get_record_histories(
         Path(params): Path<GetRecordHistoriesParam>,
     ) -> impl IntoResponse {
-        let record_id = params.id;
+        let name = params.name;
+        let record_type = params.record_type;
 
-        let raw_record_histories = match RecordHistoryService::get_record_histories(record_id).await
-        {
-            Ok(record_histories) => record_histories,
-            Err(err) => return err.into_response(),
-        };
+        let raw_record_histories =
+            match RecordHistoryService::get_record_histories(&name, &record_type).await {
+                Ok(record_histories) => record_histories,
+                Err(err) => return err.into_response(),
+            };
 
         let record_histories = raw_record_histories
             .iter()
@@ -56,11 +57,13 @@ impl RecordHistoryController {
 
 #[derive(Debug, Deserialize)]
 struct GetRecordHistoriesParam {
-    id: i32,
+    name: String,
+    record_type: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct DeleteRecordHistoryParam {
-    _record_id: i32,
+    _record_name: String,
+    _record_type: String,
     history_id: i32,
 }

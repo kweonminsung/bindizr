@@ -50,6 +50,19 @@ impl DnsInstanceRepository for PostgresDnsInstanceRepository {
         Ok(dns_instance)
     }
 
+    async fn get_by_host(&self, host: &str) -> Result<Option<DnsInstance>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let dns_instance = sqlx::query_as::<_, DnsInstance>(
+            "SELECT id, name, host, rndc_port, rndc_key_id, created_at FROM dns_instances WHERE host = $1"
+        )
+        .bind(host)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        Ok(dns_instance)
+    }
+
     async fn get_all(&self) -> Result<Vec<DnsInstance>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

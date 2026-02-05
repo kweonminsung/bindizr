@@ -15,12 +15,15 @@ impl DnsInstanceController {
         Router::new()
             .route("/dns", routing::get(Self::get_dns_instances))
             .route("/dns", routing::post(Self::create_dns_instance))
-            .route("/dns/{id}", routing::get(Self::get_dns_instance))
-            .route("/dns/{id}", routing::put(Self::update_dns_instance))
-            .route("/dns/{id}", routing::delete(Self::delete_dns_instance))
-            .route("/dns/{id}/keys", routing::get(Self::get_dns_instance_keys))
+            .route("/dns/{host}", routing::get(Self::get_dns_instance))
+            .route("/dns/{host}", routing::put(Self::update_dns_instance))
+            .route("/dns/{host}", routing::delete(Self::delete_dns_instance))
             .route(
-                "/dns/{id}/zones",
+                "/dns/{host}/keys",
+                routing::get(Self::get_dns_instance_keys),
+            )
+            .route(
+                "/dns/{host}/zones",
                 routing::get(Self::get_dns_instance_zones),
             )
     }
@@ -38,8 +41,8 @@ impl DnsInstanceController {
         }
     }
 
-    async fn get_dns_instance(Path(id): Path<i32>) -> impl IntoResponse {
-        match DnsInstanceService::get_dns_instance(id).await {
+    async fn get_dns_instance(Path(host): Path<String>) -> impl IntoResponse {
+        match DnsInstanceService::get_dns_instance(&host).await {
             Ok(dns_instance) => {
                 let response = GetDnsInstanceResponse::from_dns_instance(&dns_instance);
                 (StatusCode::OK, Json(response)).into_response()
@@ -61,10 +64,10 @@ impl DnsInstanceController {
     }
 
     async fn update_dns_instance(
-        Path(id): Path<i32>,
+        Path(host): Path<String>,
         Json(request): Json<UpdateDnsInstanceRequest>,
     ) -> impl IntoResponse {
-        match DnsInstanceService::update_dns_instance(id, &request).await {
+        match DnsInstanceService::update_dns_instance(&host, &request).await {
             Ok(dns_instance) => {
                 let response = GetDnsInstanceResponse::from_dns_instance(&dns_instance);
                 (StatusCode::OK, Json(response)).into_response()
@@ -73,8 +76,8 @@ impl DnsInstanceController {
         }
     }
 
-    async fn delete_dns_instance(Path(id): Path<i32>) -> impl IntoResponse {
-        match DnsInstanceService::delete_dns_instance(id).await {
+    async fn delete_dns_instance(Path(host): Path<String>) -> impl IntoResponse {
+        match DnsInstanceService::delete_dns_instance(&host).await {
             Ok(_) => {
                 let json_body = json!({ "message": "DNS instance deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()
@@ -83,8 +86,8 @@ impl DnsInstanceController {
         }
     }
 
-    async fn get_dns_instance_keys(Path(id): Path<i32>) -> impl IntoResponse {
-        match DnsInstanceService::get_dns_instance_keys(id).await {
+    async fn get_dns_instance_keys(Path(host): Path<String>) -> impl IntoResponse {
+        match DnsInstanceService::get_dns_instance_keys(&host).await {
             Ok(keys) => {
                 let response: Vec<GetDnsKeyResponse> =
                     keys.iter().map(GetDnsKeyResponse::from_dns_key).collect();
@@ -94,8 +97,8 @@ impl DnsInstanceController {
         }
     }
 
-    async fn get_dns_instance_zones(Path(id): Path<i32>) -> impl IntoResponse {
-        match DnsInstanceService::get_dns_instance_zones(id).await {
+    async fn get_dns_instance_zones(Path(host): Path<String>) -> impl IntoResponse {
+        match DnsInstanceService::get_dns_instance_zones(&host).await {
             Ok(zone_ids) => {
                 let json_body = json!({ "zone_ids": zone_ids });
                 (StatusCode::OK, Json(json_body)).into_response()

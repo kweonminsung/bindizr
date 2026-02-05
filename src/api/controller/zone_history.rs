@@ -10,19 +10,19 @@ impl ZoneHistoryController {
     pub async fn routes() -> Router {
         Router::new()
             .route(
-                "/zones/{id}/histories",
+                "/zones/{name}/histories",
                 routing::get(Self::get_zone_histories),
             )
             .route(
-                "/zones/{zone_id}/histories/{history_id}",
+                "/zones/{zone_name}/histories/{history_id}",
                 routing::delete(Self::delete_zone_history),
             )
     }
 
     async fn get_zone_histories(Path(params): Path<GetZoneHistoriesParam>) -> impl IntoResponse {
-        let zone_id = params.id;
+        let zone_name = params.name;
 
-        let raw_zone_histories = match ZoneHistoryService::get_zone_histories(zone_id).await {
+        let raw_zone_histories = match ZoneHistoryService::get_zone_histories(&zone_name).await {
             Ok(zone_histories) => zone_histories,
             Err(err) => return err.into_response(),
         };
@@ -51,11 +51,11 @@ impl ZoneHistoryController {
 
 #[derive(Debug, Deserialize)]
 struct GetZoneHistoriesParam {
-    id: i32,
+    name: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct DeleteZoneHistoryParam {
-    _zone_id: i32,
+    _zone_name: String,
     history_id: i32,
 }

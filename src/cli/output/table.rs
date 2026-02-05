@@ -4,8 +4,8 @@ use tabled::Tabled;
 /// Table row for DNS instance display
 #[derive(Debug, Deserialize, Tabled)]
 pub struct DnsInstanceRow {
-    #[tabled(rename = "ID")]
-    pub id: i32,
+    // #[tabled(rename = "ID")]
+    // pub id: i32,
     #[tabled(rename = "NAME")]
     pub name: String,
     #[tabled(rename = "HOST")]
@@ -19,8 +19,8 @@ pub struct DnsInstanceRow {
 /// Table row for DNS key display
 #[derive(Debug, Deserialize, Tabled)]
 pub struct DnsKeyRow {
-    #[tabled(rename = "ID")]
-    pub id: i32,
+    // #[tabled(rename = "ID")]
+    // pub id: i32,
     #[tabled(rename = "NAME")]
     pub name: String,
     #[tabled(rename = "TYPE")]
@@ -34,8 +34,8 @@ pub struct DnsKeyRow {
 /// Table row for zone display
 #[derive(Debug, Deserialize, Tabled)]
 pub struct ZoneRow {
-    #[tabled(rename = "ID")]
-    pub id: i32,
+    // #[tabled(rename = "ID")]
+    // pub id: i32,
     #[tabled(rename = "NAME")]
     pub name: String,
     #[tabled(rename = "PRIMARY-NS")]
@@ -51,8 +51,8 @@ pub struct ZoneRow {
 /// Table row for record display
 #[derive(Debug, Deserialize, Tabled)]
 pub struct RecordRow {
-    #[tabled(rename = "ID")]
-    pub id: i32,
+    // #[tabled(rename = "ID")]
+    // pub id: i32,
     #[tabled(rename = "NAME")]
     pub name: String,
     #[tabled(rename = "TYPE")]

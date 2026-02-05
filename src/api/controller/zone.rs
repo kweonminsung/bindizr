@@ -23,14 +23,14 @@ impl ZoneController {
     pub async fn routes() -> Router {
         Router::new()
             .route("/zones", routing::get(Self::get_zones))
-            .route("/zones/{id}", routing::get(Self::get_zone))
+            .route("/zones/{name}", routing::get(Self::get_zone))
             .route(
-                "/zones/{id}/rendered",
+                "/zones/{name}/rendered",
                 routing::get(Self::get_zone_rendered),
             )
             .route("/zones", routing::post(Self::create_zone))
-            .route("/zones/{id}", routing::put(Self::update_zone))
-            .route("/zones/{id}", routing::delete(Self::delete_zone))
+            .route("/zones/{name}", routing::put(Self::update_zone))
+            .route("/zones/{name}", routing::delete(Self::delete_zone))
     }
 
     async fn get_zones() -> impl IntoResponse {
@@ -51,16 +51,16 @@ impl ZoneController {
         Path(params): Path<GetZoneParam>,
         Query(query): Query<GetZoneQuery>,
     ) -> impl IntoResponse {
-        let zone_id = params.id;
+        let zone_name = params.name;
         let records_query = query.records;
 
-        let raw_zone = match ZoneService::get_zone(zone_id).await {
+        let raw_zone = match ZoneService::get_zone(&zone_name).await {
             Ok(zone) => zone,
             Err(err) => return err.into_response(),
         };
 
         let raw_records = match records_query {
-            Some(true) => match RecordService::get_records(Some(zone_id)).await {
+            Some(true) => match RecordService::get_records(Some(raw_zone.id)).await {
                 Ok(records) => records,
                 Err(err) => return err.into_response(),
             },
@@ -77,14 +77,14 @@ impl ZoneController {
     }
 
     async fn get_zone_rendered(Path(params): Path<GetZoneParam>) -> impl IntoResponse {
-        let zone_id = params.id;
+        let zone_name = params.name;
 
-        let raw_zone = match ZoneService::get_zone(zone_id).await {
+        let raw_zone = match ZoneService::get_zone(&zone_name).await {
             Ok(zone) => zone,
             Err(err) => return err.into_response(),
         };
 
-        let raw_records = match RecordService::get_records(Some(zone_id)).await {
+        let raw_records = match RecordService::get_records(Some(raw_zone.id)).await {
             Ok(records) => records,
             Err(err) => return err.into_response(),
         };
@@ -113,9 +113,9 @@ impl ZoneController {
         Path(params): Path<UpdateZoneParam>,
         Json(body): Json<CreateZoneRequest>,
     ) -> impl IntoResponse {
-        let zone_id = params.id;
+        let zone_name = params.name;
 
-        match ZoneService::update_zone(zone_id, &body).await {
+        match ZoneService::update_zone(&zone_name, &body).await {
             Ok(zone) => {
                 let zone = GetZoneResponse::from_zone(&zone);
                 let json_body = json!({ "zone": zone });
@@ -126,9 +126,9 @@ impl ZoneController {
     }
 
     async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl IntoResponse {
-        let zone_id = params.id;
+        let zone_name = params.name;
 
-        match ZoneService::delete_zone(zone_id).await {
+        match ZoneService::delete_zone(&zone_name).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()
@@ -140,7 +140,7 @@ impl ZoneController {
 
 #[derive(Debug, Deserialize)]
 struct GetZoneParam {
-    id: i32,
+    name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -150,10 +150,10 @@ struct GetZoneQuery {
 
 #[derive(Debug, Deserialize)]
 struct UpdateZoneParam {
-    id: i32,
+    name: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct DeleteZoneParam {
-    id: i32,
+    name: String,
 }

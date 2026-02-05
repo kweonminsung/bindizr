@@ -28,14 +28,14 @@ impl DnsKeyService {
             })
     }
 
-    pub async fn get_dns_key(id: i32) -> Result<DnsKey, ApiError> {
+    pub async fn get_dns_key(key_name: &str) -> Result<DnsKey, ApiError> {
         let dns_key_repository = get_dns_key_repository();
 
-        match dns_key_repository.get_by_id(id).await {
+        match dns_key_repository.get_by_key_name(key_name).await {
             Ok(Some(dns_key)) => Ok(dns_key),
             Ok(None) => Err(ApiError::NotFound(format!(
-                "DNS key with id {} not found",
-                id
+                "DNS key with key_name '{}' not found",
+                key_name
             ))),
             Err(e) => {
                 log_error!("Failed to fetch DNS key: {}", e);
@@ -74,18 +74,18 @@ impl DnsKeyService {
     }
 
     pub async fn update_dns_key(
-        id: i32,
+        key_name: &str,
         request: &UpdateDnsKeyRequest,
     ) -> Result<DnsKey, ApiError> {
         let dns_key_repository = get_dns_key_repository();
 
         // Check if DNS key exists
-        let mut dns_key = match dns_key_repository.get_by_id(id).await {
+        let mut dns_key = match dns_key_repository.get_by_key_name(key_name).await {
             Ok(Some(dns_key)) => dns_key,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "DNS key with id {} not found",
-                    id
+                    "DNS key with key_name '{}' not found",
+                    key_name
                 )));
             }
             Err(e) => {
@@ -116,17 +116,17 @@ impl DnsKeyService {
         })
     }
 
-    pub async fn delete_dns_key(id: i32) -> Result<(), ApiError> {
+    pub async fn delete_dns_key(key_name: &str) -> Result<(), ApiError> {
         let dns_key_repository = get_dns_key_repository();
         let dns_instance_repository = get_dns_instance_repository();
 
-        // Check if DNS key exists
-        match dns_key_repository.get_by_id(id).await {
-            Ok(Some(_)) => {}
+        // Check if DNS key exists and get its ID
+        let dns_key_id = match dns_key_repository.get_by_key_name(key_name).await {
+            Ok(Some(key)) => key.id,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "DNS key with id {} not found",
-                    id
+                    "DNS key with key_name '{}' not found",
+                    key_name
                 )));
             }
             Err(e) => {
@@ -135,12 +135,12 @@ impl DnsKeyService {
                     "Failed to fetch DNS key".to_string(),
                 ));
             }
-        }
+        };
 
         // Check if DNS key is used as rndc_key in any DNS instance
         match dns_instance_repository.get_all().await {
             Ok(instances) => {
-                let is_used = instances.iter().any(|i| i.rndc_key_id == id);
+                let is_used = instances.iter().any(|i| i.rndc_key_id == dns_key_id);
                 if is_used {
                     return Err(ApiError::BadRequest(
                         "Cannot delete DNS key that is used as RNDC key in DNS instances"
@@ -156,7 +156,7 @@ impl DnsKeyService {
             }
         }
 
-        dns_key_repository.delete(id).await.map_err(|e| {
+        dns_key_repository.delete(dns_key_id).await.map_err(|e| {
             log_error!("Failed to delete DNS key: {}", e);
             ApiError::InternalServerError("Failed to delete DNS key".to_string())
         })

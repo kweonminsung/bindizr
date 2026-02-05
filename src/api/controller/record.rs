@@ -19,10 +19,19 @@ impl RecordController {
     pub async fn routes() -> Router {
         Router::new()
             .route("/records", routing::get(Self::get_records))
-            .route("/records/{id}", routing::get(Self::get_record))
+            .route(
+                "/records/{name}/{record_type}",
+                routing::get(Self::get_record),
+            )
             .route("/records", routing::post(Self::create_record))
-            .route("/records/{id}", routing::put(Self::update_record))
-            .route("/records/{id}", routing::delete(Self::delete_record))
+            .route(
+                "/records/{name}/{record_type}",
+                routing::put(Self::update_record),
+            )
+            .route(
+                "/records/{name}/{record_type}",
+                routing::delete(Self::delete_record),
+            )
     }
 
     async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl IntoResponse {
@@ -43,9 +52,10 @@ impl RecordController {
     }
 
     async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
-        let record_id = params.id;
+        let name = params.name;
+        let record_type = params.record_type;
 
-        let raw_record = match RecordService::get_record(record_id).await {
+        let raw_record = match RecordService::get_record(&name, &record_type).await {
             Ok(record) => record,
             Err(err) => return err.into_response(),
         };
@@ -72,9 +82,10 @@ impl RecordController {
         Path(params): Path<UpdateRecordParam>,
         Json(body): Json<CreateRecordRequest>,
     ) -> impl IntoResponse {
-        let record_id = params.id;
+        let name = params.name;
+        let record_type = params.record_type;
 
-        let raw_record = match RecordService::update_record(record_id, &body).await {
+        let raw_record = match RecordService::update_record(&name, &record_type, &body).await {
             Ok(record) => record,
             Err(err) => return err.into_response(),
         };
@@ -86,9 +97,10 @@ impl RecordController {
     }
 
     async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl IntoResponse {
-        let record_id = params.id;
+        let name = params.name;
+        let record_type = params.record_type;
 
-        match RecordService::delete_record(record_id).await {
+        match RecordService::delete_record(&name, &record_type).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Record deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()
@@ -105,15 +117,18 @@ struct GetRecordsQuery {
 
 #[derive(Debug, Deserialize)]
 struct GetRecordParam {
-    id: i32,
+    name: String,
+    record_type: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct UpdateRecordParam {
-    id: i32,
+    name: String,
+    record_type: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct DeleteRecordParam {
-    id: i32,
+    name: String,
+    record_type: String,
 }

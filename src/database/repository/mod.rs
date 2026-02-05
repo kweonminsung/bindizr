@@ -71,6 +71,7 @@ pub trait RecordHistoryRepository: Send + Sync {
 pub trait DnsInstanceRepository: Send + Sync {
     async fn create(&self, dns_instance: DnsInstance) -> Result<DnsInstance, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<DnsInstance>, DatabaseError>;
+    async fn get_by_host(&self, host: &str) -> Result<Option<DnsInstance>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<DnsInstance>, DatabaseError>;
     async fn update(&self, dns_instance: DnsInstance) -> Result<DnsInstance, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
@@ -82,6 +83,7 @@ pub trait DnsInstanceRepository: Send + Sync {
 pub trait DnsKeyRepository: Send + Sync {
     async fn create(&self, dns_key: DnsKey) -> Result<DnsKey, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<DnsKey>, DatabaseError>;
+    async fn get_by_key_name(&self, key_name: &str) -> Result<Option<DnsKey>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<DnsKey>, DatabaseError>;
     async fn update(&self, dns_key: DnsKey) -> Result<DnsKey, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;

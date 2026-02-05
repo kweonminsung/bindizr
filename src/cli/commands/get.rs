@@ -10,35 +10,47 @@ use serde_json::json;
 pub enum GetCommand {
     /// Get DNS instances
     Dns {
-        /// The ID of the DNS instance (optional)
-        id: Option<i32>,
+        /// The host address of the DNS instance (optional)
+        host: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
 
     /// Get DNS keys
+    #[command(
+        aliases = ["dns-key", "key", "keys"]
+    )]
     DnsKeys {
-        /// The ID of the DNS key (optional)
-        id: Option<i32>,
+        /// The key name of the DNS key (optional)
+        key_name: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
 
     /// Get zones
+    #[command(
+        aliases = ["zone"]
+    )]
     Zones {
-        /// The ID of the zone (optional)
-        id: Option<i32>,
+        /// The name of the zone (optional)
+        name: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
 
     /// Get records
+    #[command(
+        aliases = ["record"]
+    )]
     Records {
-        /// The ID of the record (optional)
-        id: Option<i32>,
+        /// The name of the record (optional)
+        name: Option<String>,
+        /// The record type (optional, required if name is provided)
+        #[arg(short = 't', long)]
+        record_type: Option<String>,
         /// Filter by zone ID
         #[arg(short, long)]
         zone: Option<i32>,
@@ -52,10 +64,10 @@ pub async fn handle_command(subcommand: GetCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
     match subcommand {
-        GetCommand::Dns { id, output } => {
-            let response = if let Some(id) = id {
+        GetCommand::Dns { host, output } => {
+            let response = if let Some(host) = host {
                 client
-                    .send_command(DaemonCommandKind::GetDns, Some(json!({ "id": id })))
+                    .send_command(DaemonCommandKind::GetDns, Some(json!({ "host": host })))
                     .await?
             } else {
                 client
@@ -76,10 +88,13 @@ pub async fn handle_command(subcommand: GetCommand) -> Result<(), String> {
                 }
             })?;
         }
-        GetCommand::DnsKeys { id, output } => {
-            let response = if let Some(id) = id {
+        GetCommand::DnsKeys { key_name, output } => {
+            let response = if let Some(key_name) = key_name {
                 client
-                    .send_command(DaemonCommandKind::GetDnsKey, Some(json!({ "id": id })))
+                    .send_command(
+                        DaemonCommandKind::GetDnsKey,
+                        Some(json!({ "key_name": key_name })),
+                    )
                     .await?
             } else {
                 client
@@ -100,10 +115,10 @@ pub async fn handle_command(subcommand: GetCommand) -> Result<(), String> {
                 }
             })?;
         }
-        GetCommand::Zones { id, output } => {
-            let response = if let Some(id) = id {
+        GetCommand::Zones { name, output } => {
+            let response = if let Some(name) = name {
                 client
-                    .send_command(DaemonCommandKind::GetZone, Some(json!({ "id": id })))
+                    .send_command(DaemonCommandKind::GetZone, Some(json!({ "name": name })))
                     .await?
             } else {
                 client
@@ -123,10 +138,20 @@ pub async fn handle_command(subcommand: GetCommand) -> Result<(), String> {
                 }
             })?;
         }
-        GetCommand::Records { id, zone, output } => {
-            let response = if let Some(id) = id {
+        GetCommand::Records {
+            name,
+            record_type,
+            zone,
+            output,
+        } => {
+            let response = if let Some(name) = name {
+                let record_type =
+                    record_type.ok_or("record_type is required when name is provided")?;
                 client
-                    .send_command(DaemonCommandKind::GetRecord, Some(json!({ "id": id })))
+                    .send_command(
+                        DaemonCommandKind::GetRecord,
+                        Some(json!({ "name": name, "record_type": record_type })),
+                    )
                     .await?
             } else if let Some(zone_id) = zone {
                 client

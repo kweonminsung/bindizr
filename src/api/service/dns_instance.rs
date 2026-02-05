@@ -27,14 +27,14 @@ impl DnsInstanceService {
             })
     }
 
-    pub async fn get_dns_instance(id: i32) -> Result<DnsInstance, ApiError> {
+    pub async fn get_dns_instance(host: &str) -> Result<DnsInstance, ApiError> {
         let dns_instance_repository = get_dns_instance_repository();
 
-        match dns_instance_repository.get_by_id(id).await {
+        match dns_instance_repository.get_by_host(host).await {
             Ok(Some(dns_instance)) => Ok(dns_instance),
             Ok(None) => Err(ApiError::NotFound(format!(
-                "DNS instance with id {} not found",
-                id
+                "DNS instance with host '{}' not found",
+                host
             ))),
             Err(e) => {
                 log_error!("Failed to fetch DNS instance: {}", e);
@@ -87,19 +87,19 @@ impl DnsInstanceService {
     }
 
     pub async fn update_dns_instance(
-        id: i32,
+        host: &str,
         request: &UpdateDnsInstanceRequest,
     ) -> Result<DnsInstance, ApiError> {
         let dns_instance_repository = get_dns_instance_repository();
         let dns_key_repository = get_dns_key_repository();
 
         // Check if DNS instance exists
-        let mut dns_instance = match dns_instance_repository.get_by_id(id).await {
+        let mut dns_instance = match dns_instance_repository.get_by_host(host).await {
             Ok(Some(dns_instance)) => dns_instance,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "DNS instance with id {} not found",
-                    id
+                    "DNS instance with host '{}' not found",
+                    host
                 )));
             }
             Err(e) => {
@@ -141,17 +141,17 @@ impl DnsInstanceService {
             })
     }
 
-    pub async fn delete_dns_instance(id: i32) -> Result<(), ApiError> {
+    pub async fn delete_dns_instance(host: &str) -> Result<(), ApiError> {
         let dns_instance_repository = get_dns_instance_repository();
         let zone_dns_config_repository = get_zone_dns_config_repository();
 
-        // Check if DNS instance exists
-        match dns_instance_repository.get_by_id(id).await {
-            Ok(Some(_)) => {}
+        // Check if DNS instance exists and get its ID
+        let dns_instance_id = match dns_instance_repository.get_by_host(host).await {
+            Ok(Some(instance)) => instance.id,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "DNS instance with id {} not found",
-                    id
+                    "DNS instance with host '{}' not found",
+                    host
                 )));
             }
             Err(e) => {
@@ -160,10 +160,13 @@ impl DnsInstanceService {
                     "Failed to fetch DNS instance".to_string(),
                 ));
             }
-        }
+        };
 
         // Check if DNS instance is used in zone configurations
-        match zone_dns_config_repository.get_by_dns_instance_id(id).await {
+        match zone_dns_config_repository
+            .get_by_dns_instance_id(dns_instance_id)
+            .await
+        {
             Ok(configs) => {
                 if !configs.is_empty() {
                     return Err(ApiError::BadRequest(
@@ -180,25 +183,28 @@ impl DnsInstanceService {
             }
         }
 
-        dns_instance_repository.delete(id).await.map_err(|e| {
-            log_error!("Failed to delete DNS instance: {}", e);
-            ApiError::InternalServerError("Failed to delete DNS instance".to_string())
-        })
+        dns_instance_repository
+            .delete(dns_instance_id)
+            .await
+            .map_err(|e| {
+                log_error!("Failed to delete DNS instance: {}", e);
+                ApiError::InternalServerError("Failed to delete DNS instance".to_string())
+            })
     }
 
     pub async fn get_dns_instance_keys(
-        id: i32,
+        host: &str,
     ) -> Result<Vec<crate::database::model::dns_key::DnsKey>, ApiError> {
         let dns_instance_repository = get_dns_instance_repository();
         let dns_key_repository = get_dns_key_repository();
 
         // Check if DNS instance exists
-        match dns_instance_repository.get_by_id(id).await {
+        match dns_instance_repository.get_by_host(host).await {
             Ok(Some(_)) => {}
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "DNS instance with id {} not found",
-                    id
+                    "DNS instance with host '{}' not found",
+                    host
                 )));
             }
             Err(e) => {
@@ -221,17 +227,17 @@ impl DnsInstanceService {
         }
     }
 
-    pub async fn get_dns_instance_zones(id: i32) -> Result<Vec<i32>, ApiError> {
+    pub async fn get_dns_instance_zones(host: &str) -> Result<Vec<i32>, ApiError> {
         let dns_instance_repository = get_dns_instance_repository();
         let zone_dns_config_repository = get_zone_dns_config_repository();
 
-        // Check if DNS instance exists
-        match dns_instance_repository.get_by_id(id).await {
-            Ok(Some(_)) => {}
+        // Check if DNS instance exists and get its ID
+        let dns_instance_id = match dns_instance_repository.get_by_host(host).await {
+            Ok(Some(instance)) => instance.id,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "DNS instance with id {} not found",
-                    id
+                    "DNS instance with host '{}' not found",
+                    host
                 )));
             }
             Err(e) => {
@@ -240,9 +246,12 @@ impl DnsInstanceService {
                     "Failed to fetch DNS instance".to_string(),
                 ));
             }
-        }
+        };
 
-        match zone_dns_config_repository.get_by_dns_instance_id(id).await {
+        match zone_dns_config_repository
+            .get_by_dns_instance_id(dns_instance_id)
+            .await
+        {
             Ok(configs) => Ok(configs.into_iter().map(|c| c.zone_id).collect()),
             Err(e) => {
                 log_error!("Failed to fetch zone configurations: {}", e);

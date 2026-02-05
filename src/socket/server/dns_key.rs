@@ -4,12 +4,12 @@ use crate::socket::dto::DaemonResponse;
 use serde_json::json;
 
 pub async fn get_dns_key(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let id = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")? as i32;
+    let key_name = data
+        .get("key_name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'key_name' field")?;
 
-    match DnsKeyService::get_dns_key(id).await {
+    match DnsKeyService::get_dns_key(key_name).await {
         Ok(dns_key) => {
             let response = GetDnsKeyResponse::from_dns_key(&dns_key);
             Ok(DaemonResponse {
@@ -54,14 +54,14 @@ pub async fn create_dns_key(data: &serde_json::Value) -> Result<DaemonResponse, 
 }
 
 pub async fn delete_dns_key(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let id = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")? as i32;
+    let key_name = data
+        .get("key_name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'key_name' field")?;
 
-    match DnsKeyService::delete_dns_key(id).await {
+    match DnsKeyService::delete_dns_key(key_name).await {
         Ok(_) => Ok(DaemonResponse {
-            message: format!("DNS key {} deleted successfully", id),
+            message: format!("DNS key '{}' deleted successfully", key_name),
             data: json!(null),
         }),
         Err(e) => Err(e.to_string()),

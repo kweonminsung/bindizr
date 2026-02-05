@@ -4,12 +4,16 @@ use crate::socket::dto::DaemonResponse;
 use serde_json::json;
 
 pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let id = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")? as i32;
+    let name = data
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'name' field")?;
+    let record_type = data
+        .get("record_type")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'record_type' field")?;
 
-    match RecordService::get_record(id).await {
+    match RecordService::get_record(name, record_type).await {
         Ok(record) => {
             let response = GetRecordResponse::from_record(&record);
             Ok(DaemonResponse {
@@ -63,14 +67,18 @@ pub async fn create_record(data: &serde_json::Value) -> Result<DaemonResponse, S
 }
 
 pub async fn delete_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let id = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")? as i32;
+    let name = data
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'name' field")?;
+    let record_type = data
+        .get("record_type")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'record_type' field")?;
 
-    match RecordService::delete_record(id).await {
+    match RecordService::delete_record(name, record_type).await {
         Ok(_) => Ok(DaemonResponse {
-            message: format!("Record {} deleted successfully", id),
+            message: format!("Record '{}' ({}) deleted successfully", name, record_type),
             data: json!(null),
         }),
         Err(e) => Err(e.to_string()),

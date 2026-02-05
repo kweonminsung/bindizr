@@ -50,6 +50,19 @@ impl DnsKeyRepository for SqliteDnsKeyRepository {
         Ok(dns_key)
     }
 
+    async fn get_by_key_name(&self, key_name: &str) -> Result<Option<DnsKey>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let dns_key = sqlx::query_as::<_, DnsKey>(
+            "SELECT id, name, key_type, key_algorithm, key_name, secret, created_at FROM dns_keys WHERE key_name = ?"
+        )
+        .bind(key_name)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        Ok(dns_key)
+    }
+
     async fn get_all(&self) -> Result<Vec<DnsKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
