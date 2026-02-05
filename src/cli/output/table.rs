@@ -70,8 +70,8 @@ pub struct RecordRow {
     #[tabled(rename = "PRIORITY", display_with = "display_option_i32")]
     #[serde(default)]
     pub priority: Option<i32>,
-    #[tabled(rename = "ZONE-ID")]
-    pub zone_id: i32,
+    #[tabled(rename = "ZONE")]
+    pub zone_name: String,
 }
 
 impl DnsRow {

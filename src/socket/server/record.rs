@@ -1,5 +1,6 @@
 use crate::api::dto::{CreateRecordRequest, GetRecordResponse};
 use crate::api::service::record::RecordService;
+use crate::database::get_zone_repository;
 use crate::socket::dto::DaemonResponse;
 use serde_json::json;
 
@@ -15,7 +16,17 @@ pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, Stri
 
     match RecordService::get_record(name, record_type).await {
         Ok(record) => {
-            let response = GetRecordResponse::from_record(&record);
+            let zone_repository = get_zone_repository();
+            let zone_name = zone_repository
+                .get_by_id(record.zone_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|z| z.name)
+                .unwrap_or_default();
+
+            let mut response = GetRecordResponse::from_record(&record);
+            response.zone_name = Some(zone_name);
             Ok(DaemonResponse {
                 message: "Record retrieved successfully".to_string(),
                 data: serde_json::to_value(response).unwrap(),
@@ -26,21 +37,36 @@ pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, Stri
 }
 
 pub async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let zone_id = data
-        .get("zone_id")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32);
+    let zone_name = data
+        .get("zone_name")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string());
 
-    let records = if let Some(zone_id) = zone_id {
-        RecordService::get_records(Some(zone_id)).await
+    let records = if let Some(zone_name) = zone_name {
+        RecordService::get_records(Some(zone_name)).await
     } else {
         RecordService::get_records(None).await
     };
 
     match records {
         Ok(records) => {
-            let response: Vec<GetRecordResponse> =
-                records.iter().map(GetRecordResponse::from_record).collect();
+            let zone_repository = get_zone_repository();
+            let mut response: Vec<GetRecordResponse> = Vec::new();
+
+            for record in records.iter() {
+                let zone_name = zone_repository
+                    .get_by_id(record.zone_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|z| z.name)
+                    .unwrap_or_default();
+
+                let mut rec_response = GetRecordResponse::from_record(record);
+                rec_response.zone_name = Some(zone_name);
+                response.push(rec_response);
+            }
+
             Ok(DaemonResponse {
                 message: format!("Found {} record(s)", response.len()),
                 data: serde_json::to_value(response).unwrap(),
@@ -56,7 +82,17 @@ pub async fn create_record(data: &serde_json::Value) -> Result<DaemonResponse, S
 
     match RecordService::create_record(&request).await {
         Ok(record) => {
-            let response = GetRecordResponse::from_record(&record);
+            let zone_repository = get_zone_repository();
+            let zone_name = zone_repository
+                .get_by_id(record.zone_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|z| z.name)
+                .unwrap_or_default();
+
+            let mut response = GetRecordResponse::from_record(&record);
+            response.zone_name = Some(zone_name);
             Ok(DaemonResponse {
                 message: "Record created successfully".to_string(),
                 data: serde_json::to_value(response).unwrap(),

@@ -52,7 +52,7 @@ pub trait RecordRepository: Send + Sync {
 pub trait ZoneHistoryRepository: Send + Sync {
     async fn create(&self, zone_history: ZoneHistory) -> Result<ZoneHistory, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneHistory>, DatabaseError>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneHistory>, DatabaseError>;
+    async fn get_by_zone_name(&self, zone_name: &str) -> Result<Vec<ZoneHistory>, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
@@ -62,7 +62,11 @@ pub trait ZoneHistoryRepository: Send + Sync {
 pub trait RecordHistoryRepository: Send + Sync {
     async fn create(&self, record_history: RecordHistory) -> Result<RecordHistory, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<RecordHistory>, DatabaseError>;
-    async fn get_by_record_id(&self, record_id: i32) -> Result<Vec<RecordHistory>, DatabaseError>;
+    async fn get_by_record_name_and_type(
+        &self,
+        record_name: &str,
+        record_type: &str,
+    ) -> Result<Vec<RecordHistory>, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 

@@ -1,4 +1,5 @@
 mod dns;
+mod dns_key;
 mod key;
 mod middleware;
 mod record;
@@ -25,6 +26,7 @@ impl ApiController {
             .merge(dns::DnsController::routes().await)
             .merge(key::KeyController::routes().await)
             .merge(zone_dns_config::ZoneDnsConfigController::routes().await)
+            .merge(dns_key::DnsKeyController::routes().await)
             .route("/", routing::get(ApiController::get_home))
             .fallback(Self::not_found);
 

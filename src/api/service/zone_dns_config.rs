@@ -5,7 +5,7 @@ use crate::{
     },
     database::{
         error::DatabaseError,
-        get_dns_key_repository, get_dns_repository, get_zone_dns_config_repository,
+        get_dns_repository, get_key_repository, get_zone_dns_config_repository,
         get_zone_history_repository, get_zone_repository,
         model::{zone_dns_config::ZoneDnsConfig, zone_history::ZoneHistory},
     },
@@ -17,17 +17,17 @@ use chrono::Utc;
 pub struct ZoneDnsConfigService;
 
 impl ZoneDnsConfigService {
-    pub async fn get_zone_dns_configs(zone_id: i32) -> Result<Vec<ZoneDnsConfig>, ApiError> {
+    pub async fn get_zone_dns_configs(zone_name: &str) -> Result<Vec<ZoneDnsConfig>, ApiError> {
         let zone_repository = get_zone_repository();
         let zone_dns_config_repository = get_zone_dns_config_repository();
 
-        // Check if zone exists
-        match zone_repository.get_by_id(zone_id).await {
-            Ok(Some(_)) => {}
+        // Check if zone exists and get zone_id
+        let zone = match zone_repository.get_by_name(zone_name).await {
+            Ok(Some(z)) => z,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "Zone with id {} not found",
-                    zone_id
+                    "Zone with name '{}' not found",
+                    zone_name
                 )));
             }
             Err(e) => {
@@ -36,10 +36,10 @@ impl ZoneDnsConfigService {
                     "Failed to fetch zone".to_string(),
                 ));
             }
-        }
+        };
 
         zone_dns_config_repository
-            .get_by_zone_id(zone_id)
+            .get_by_zone_id(zone.id)
             .await
             .map_err(|e: DatabaseError| {
                 log_error!("Failed to fetch zone DNS configurations: {}", e);
@@ -48,21 +48,21 @@ impl ZoneDnsConfigService {
     }
 
     pub async fn create_zone_dns_config(
-        zone_id: i32,
+        zone_name: &str,
         request: &CreateZoneDnsConfigRequest,
     ) -> Result<ZoneDnsConfig, ApiError> {
         let zone_repository = get_zone_repository();
         let dns_repository = get_dns_repository();
-        let dns_key_repository = get_dns_key_repository();
+        let key_repository = get_key_repository();
         let zone_dns_config_repository = get_zone_dns_config_repository();
 
-        // Check if zone exists
-        match zone_repository.get_by_id(zone_id).await {
-            Ok(Some(_)) => {}
+        // Check if zone exists and get zone_id
+        let zone = match zone_repository.get_by_name(zone_name).await {
+            Ok(Some(z)) => z,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "Zone with id {} not found",
-                    zone_id
+                    "Zone with name '{}' not found",
+                    zone_name
                 )));
             }
             Err(e) => {
@@ -71,15 +71,15 @@ impl ZoneDnsConfigService {
                     "Failed to fetch zone".to_string(),
                 ));
             }
-        }
+        };
 
-        // Validate DNS exists
-        match dns_repository.get_by_id(request.dns_id).await {
-            Ok(Some(_)) => {}
+        // Validate DNS exists and get dns_id
+        let dns = match dns_repository.get_by_name(&request.dns_name).await {
+            Ok(Some(d)) => d,
             Ok(None) => {
                 return Err(ApiError::BadRequest(format!(
-                    "DNS with id {} not found",
-                    request.dns_id
+                    "DNS with name '{}' not found",
+                    request.dns_name
                 )));
             }
             Err(e) => {
@@ -88,29 +88,29 @@ impl ZoneDnsConfigService {
                     "Failed to validate DNS".to_string(),
                 ));
             }
-        }
+        };
 
-        // Validate DNS key exists
-        match dns_key_repository.get_by_id(request.key_id).await {
-            Ok(Some(_)) => {}
+        // Validate key exists
+        let key = match key_repository.get_by_id(request.key_id).await {
+            Ok(Some(k)) => k,
             Ok(None) => {
                 return Err(ApiError::BadRequest(format!(
-                    "DNS key with id {} not found",
+                    "Key with id {} not found",
                     request.key_id
                 )));
             }
             Err(e) => {
-                log_error!("Failed to validate DNS key: {}", e);
+                log_error!("Failed to validate Key: {}", e);
                 return Err(ApiError::InternalServerError(
-                    "Failed to validate DNS key".to_string(),
+                    "Failed to validate Key".to_string(),
                 ));
             }
-        }
+        };
 
         let zone_dns_config = ZoneDnsConfig {
             id: 0,
-            zone_id,
-            dns_id: request.dns_id,
+            zone_id: zone.id,
+            dns_id: dns.id,
             key_id: request.key_id,
             created_at: Utc::now(),
         };
@@ -129,13 +129,12 @@ impl ZoneDnsConfigService {
             .create(ZoneHistory {
                 id: 0,
                 log: format!(
-                    "[{}] Zone DNS configuration created: id={}, dns_id={}, key_id={}",
+                    "[{}] Zone DNS configuration created: dns_name={}, key_name={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    created_config.id,
-                    created_config.dns_id,
-                    created_config.key_id,
+                    dns.name,
+                    key.name,
                 ),
-                zone_id,
+                zone_name: zone.name.clone(),
                 created_at: Utc::now(),
             })
             .await
@@ -148,22 +147,22 @@ impl ZoneDnsConfigService {
     }
 
     pub async fn update_zone_dns_config(
-        zone_id: i32,
-        dns_id: i32,
+        zone_name: &str,
+        current_dns_name: &str,
         request: &UpdateZoneDnsConfigRequest,
     ) -> Result<ZoneDnsConfig, ApiError> {
         let zone_repository = get_zone_repository();
         let dns_repository = get_dns_repository();
-        let dns_key_repository = get_dns_key_repository();
+        let key_repository = get_key_repository();
         let zone_dns_config_repository = get_zone_dns_config_repository();
 
-        // Check if zone exists
-        match zone_repository.get_by_id(zone_id).await {
-            Ok(Some(_)) => {}
+        // Check if zone exists and get zone_id
+        let zone = match zone_repository.get_by_name(zone_name).await {
+            Ok(Some(z)) => z,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "Zone with id {} not found",
-                    zone_id
+                    "Zone with name '{}' not found",
+                    zone_name
                 )));
             }
             Err(e) => {
@@ -172,39 +171,68 @@ impl ZoneDnsConfigService {
                     "Failed to fetch zone".to_string(),
                 ));
             }
-        }
+        };
 
-        // Check if zone DNS config exists
-        let mut zone_dns_config = match zone_dns_config_repository.get_by_id(dns_id).await {
-            Ok(Some(config)) => {
-                if config.zone_id != zone_id {
-                    return Err(ApiError::BadRequest(
-                        "Zone DNS configuration does not belong to the specified zone".to_string(),
-                    ));
-                }
-                config
-            }
+        // Get current DNS instance by name
+        let current_dns = match dns_repository.get_by_name(current_dns_name).await {
+            Ok(Some(d)) => d,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "Zone DNS configuration with id {} not found",
-                    dns_id
+                    "DNS with name '{}' not found",
+                    current_dns_name
                 )));
             }
             Err(e) => {
-                log_error!("Failed to fetch zone DNS configuration: {}", e);
+                log_error!("Failed to fetch DNS: {}", e);
                 return Err(ApiError::InternalServerError(
-                    "Failed to fetch zone DNS configuration".to_string(),
+                    "Failed to fetch DNS".to_string(),
                 ));
             }
         };
 
-        // Validate DNS exists
-        match dns_repository.get_by_id(request.dns_id).await {
-            Ok(Some(_)) => {}
+        // Get current key by id
+        let current_key = match key_repository.get_by_id(request.key_id).await {
+            Ok(Some(k)) => k,
             Ok(None) => {
                 return Err(ApiError::BadRequest(format!(
-                    "DNS with id {} not found",
-                    request.dns_id
+                    "Key with id {} not found",
+                    request.key_id
+                )));
+            }
+            Err(e) => {
+                log_error!("Failed to validate Key: {}", e);
+                return Err(ApiError::InternalServerError(
+                    "Failed to validate Key".to_string(),
+                ));
+            }
+        };
+
+        // Find zone DNS config by zone_id and current dns_id
+        let configs = zone_dns_config_repository
+            .get_by_zone_id(zone.id)
+            .await
+            .map_err(|e| {
+                log_error!("Failed to fetch zone DNS configurations: {}", e);
+                ApiError::InternalServerError("Failed to fetch zone DNS configurations".to_string())
+            })?;
+
+        let mut zone_dns_config = configs
+            .into_iter()
+            .find(|c| c.dns_id == current_dns.id)
+            .ok_or_else(|| {
+                ApiError::NotFound(format!(
+                    "Zone DNS configuration for zone '{}' and DNS '{}' not found",
+                    zone_name, current_dns_name
+                ))
+            })?;
+
+        // Validate new DNS exists and get new dns_id
+        let new_dns = match dns_repository.get_by_name(&request.dns_name).await {
+            Ok(Some(d)) => d,
+            Ok(None) => {
+                return Err(ApiError::BadRequest(format!(
+                    "DNS with name '{}' not found",
+                    request.dns_name
                 )));
             }
             Err(e) => {
@@ -213,26 +241,26 @@ impl ZoneDnsConfigService {
                     "Failed to validate DNS".to_string(),
                 ));
             }
-        }
+        };
 
-        // Validate DNS key exists
-        match dns_key_repository.get_by_id(request.key_id).await {
-            Ok(Some(_)) => {}
+        // Validate key exists
+        let new_key = match key_repository.get_by_id(request.key_id).await {
+            Ok(Some(k)) => k,
             Ok(None) => {
                 return Err(ApiError::BadRequest(format!(
-                    "DNS key with id {} not found",
+                    "Key with id {} not found",
                     request.key_id
                 )));
             }
             Err(e) => {
-                log_error!("Failed to validate DNS key: {}", e);
+                log_error!("Failed to validate Key: {}", e);
                 return Err(ApiError::InternalServerError(
-                    "Failed to validate DNS key".to_string(),
+                    "Failed to validate Key".to_string(),
                 ));
             }
-        }
+        };
 
-        zone_dns_config.dns_id = request.dns_id;
+        zone_dns_config.dns_id = new_dns.id;
         zone_dns_config.key_id = request.key_id;
 
         let updated_config = zone_dns_config_repository
@@ -249,13 +277,14 @@ impl ZoneDnsConfigService {
             .create(ZoneHistory {
                 id: 0,
                 log: format!(
-                    "[{}] Zone DNS configuration updated: id={}, dns_id={}, key_id={}",
+                    "[{}] Zone DNS configuration updated: previous_dns_name={}, new_dns_name={}, previous_key_name={}, new_key_name={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    updated_config.id,
-                    updated_config.dns_id,
-                    updated_config.key_id,
+                    current_dns.name,
+                    new_dns.name,
+                    current_key.name,
+                    new_key.name,
                 ),
-                zone_id,
+                zone_name: zone.name.clone(),
                 created_at: Utc::now(),
             })
             .await
@@ -267,17 +296,18 @@ impl ZoneDnsConfigService {
         Ok(updated_config)
     }
 
-    pub async fn delete_zone_dns_config(zone_id: i32, dns_id: i32) -> Result<(), ApiError> {
+    pub async fn delete_zone_dns_config(zone_name: &str, dns_name: &str) -> Result<(), ApiError> {
         let zone_repository = get_zone_repository();
+        let dns_repository = get_dns_repository();
         let zone_dns_config_repository = get_zone_dns_config_repository();
 
-        // Check if zone exists
-        match zone_repository.get_by_id(zone_id).await {
-            Ok(Some(_)) => {}
+        // Check if zone exists and get zone_id
+        let zone = match zone_repository.get_by_name(zone_name).await {
+            Ok(Some(z)) => z,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "Zone with id {} not found",
-                    zone_id
+                    "Zone with name '{}' not found",
+                    zone_name
                 )));
             }
             Err(e) => {
@@ -286,33 +316,46 @@ impl ZoneDnsConfigService {
                     "Failed to fetch zone".to_string(),
                 ));
             }
-        }
+        };
 
-        // Check if zone DNS config exists and belongs to the zone
-        match zone_dns_config_repository.get_by_id(dns_id).await {
-            Ok(Some(config)) => {
-                if config.zone_id != zone_id {
-                    return Err(ApiError::BadRequest(
-                        "Zone DNS configuration does not belong to the specified zone".to_string(),
-                    ));
-                }
-            }
+        // Get DNS instance by name
+        let dns = match dns_repository.get_by_name(dns_name).await {
+            Ok(Some(d)) => d,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "Zone DNS configuration with id {} not found",
-                    dns_id
+                    "DNS with name '{}' not found",
+                    dns_name
                 )));
             }
             Err(e) => {
-                log_error!("Failed to fetch zone DNS configuration: {}", e);
+                log_error!("Failed to fetch DNS: {}", e);
                 return Err(ApiError::InternalServerError(
-                    "Failed to fetch zone DNS configuration".to_string(),
+                    "Failed to fetch DNS".to_string(),
                 ));
             }
-        }
+        };
+
+        // Find zone DNS config by zone_id and dns_id
+        let configs = zone_dns_config_repository
+            .get_by_zone_id(zone.id)
+            .await
+            .map_err(|e| {
+                log_error!("Failed to fetch zone DNS configurations: {}", e);
+                ApiError::InternalServerError("Failed to fetch zone DNS configurations".to_string())
+            })?;
+
+        let zone_dns_config = configs
+            .into_iter()
+            .find(|c| c.dns_id == dns.id)
+            .ok_or_else(|| {
+                ApiError::NotFound(format!(
+                    "Zone DNS configuration for zone '{}' and DNS '{}' not found",
+                    zone_name, dns_name
+                ))
+            })?;
 
         zone_dns_config_repository
-            .delete(dns_id)
+            .delete(zone_dns_config.id)
             .await
             .map_err(|e| {
                 log_error!("Failed to delete zone DNS configuration: {}", e);

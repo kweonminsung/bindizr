@@ -21,11 +21,14 @@ impl RecordHistoryRepository for SqliteRecordHistoryRepository {
     ) -> Result<RecordHistory, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let result = sqlx::query("INSERT INTO record_history (log, record_id) VALUES (?, ?)")
-            .bind(&record_history.log)
-            .bind(record_history.record_id)
-            .execute(&mut *conn)
-            .await?;
+        let result = sqlx::query(
+            "INSERT INTO record_history (log, record_name, record_type) VALUES (?, ?, ?)",
+        )
+        .bind(&record_history.log)
+        .bind(&record_history.record_name)
+        .bind(&record_history.record_type)
+        .execute(&mut *conn)
+        .await?;
 
         record_history.id = result.last_insert_rowid() as i32;
         Ok(record_history)
@@ -35,7 +38,7 @@ impl RecordHistoryRepository for SqliteRecordHistoryRepository {
         let mut conn = self.pool.acquire().await?;
 
         let record_history = sqlx::query_as::<_, RecordHistory>(
-            "SELECT id, log, created_at, record_id FROM record_history WHERE id = ?",
+            "SELECT id, log, created_at, record_name, record_type FROM record_history WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -44,13 +47,18 @@ impl RecordHistoryRepository for SqliteRecordHistoryRepository {
         Ok(record_history)
     }
 
-    async fn get_by_record_id(&self, record_id: i32) -> Result<Vec<RecordHistory>, DatabaseError> {
+    async fn get_by_record_name_and_type(
+        &self,
+        record_name: &str,
+        record_type: &str,
+    ) -> Result<Vec<RecordHistory>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let record_histories = sqlx::query_as::<_, RecordHistory>(
-            "SELECT id, log, created_at, record_id FROM record_history WHERE record_id = ? ORDER BY created_at DESC",
+            "SELECT id, log, created_at, record_name, record_type FROM record_history WHERE record_name = ? AND record_type = ? ORDER BY created_at DESC",
         )
-        .bind(record_id)
+        .bind(record_name)
+        .bind(record_type)
         .fetch_all(&mut *conn)
         .await
         ?;

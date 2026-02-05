@@ -27,6 +27,12 @@ pub enum DeleteCommand {
         )]
         record_type: String,
     },
+
+    /// Delete a key
+    Key {
+        /// The name of the key
+        name: String,
+    },
 }
 
 pub async fn handle_command(subcommand: DeleteCommand) -> Result<(), String> {
@@ -51,6 +57,12 @@ pub async fn handle_command(subcommand: DeleteCommand) -> Result<(), String> {
                     DaemonCommandKind::DeleteRecord,
                     Some(json!({ "name": name, "record_type": record_type })),
                 )
+                .await?;
+            println!("{}", response.message);
+        }
+        DeleteCommand::Key { name } => {
+            let response = client
+                .send_command(DaemonCommandKind::DeleteKey, Some(json!({ "name": name })))
                 .await?;
             println!("{}", response.message);
         }

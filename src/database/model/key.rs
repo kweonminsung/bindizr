@@ -74,12 +74,12 @@ impl KeyAlgorithm {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s.to_uppercase().as_str() {
-            "HMACMD5" => Ok(KeyAlgorithm::HMACMD5),
-            "HMACSHA1" => Ok(KeyAlgorithm::HMACSHA1),
-            "HMACSHA224" => Ok(KeyAlgorithm::HMACSHA224),
-            "HMACSHA256" => Ok(KeyAlgorithm::HMACSHA256),
-            "HMACSHA384" => Ok(KeyAlgorithm::HMACSHA384),
-            "HMACSHA512" => Ok(KeyAlgorithm::HMACSHA512),
+            "MD5" | "HMACMD5" => Ok(KeyAlgorithm::HMACMD5),
+            "SHA1" | "HMACSHA1" => Ok(KeyAlgorithm::HMACSHA1),
+            "SHA224" | "HMACSHA224" => Ok(KeyAlgorithm::HMACSHA224),
+            "SHA256" | "HMACSHA256" => Ok(KeyAlgorithm::HMACSHA256),
+            "SHA384" | "HMACSHA384" => Ok(KeyAlgorithm::HMACSHA384),
+            "SHA512" | "HMACSHA512" => Ok(KeyAlgorithm::HMACSHA512),
             _ => Err(format!("Invalid key algorithm: {}", s)),
         }
     }

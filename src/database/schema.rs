@@ -35,8 +35,7 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             id INT PRIMARY KEY AUTO_INCREMENT,
             log TEXT NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            zone_id INT NOT NULL,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+            zone_name VARCHAR(255) NOT NULL
         );
         "#,
         r#"
@@ -44,8 +43,8 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             id INT PRIMARY KEY AUTO_INCREMENT,
             log TEXT NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            record_id INT NOT NULL,
-            FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+            record_name VARCHAR(255) NOT NULL,
+            record_type VARCHAR(50) NOT NULL
         );
         "#,
         r#"
@@ -140,8 +139,7 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             id SERIAL PRIMARY KEY,
             log TEXT NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            zone_id INTEGER NOT NULL,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+            zone_name VARCHAR(255) NOT NULL
         );
         "#,
         r#"
@@ -149,8 +147,8 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             id SERIAL PRIMARY KEY,
             log TEXT NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            record_id INTEGER NOT NULL,
-            FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+            record_name VARCHAR(255) NOT NULL,
+            record_type VARCHAR(50) NOT NULL
         );
         "#,
         r#"
@@ -245,8 +243,7 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             log TEXT NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            zone_id INTEGER NOT NULL,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+            zone_name TEXT NOT NULL
         );
         "#,
         r#"
@@ -254,8 +251,8 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             log TEXT NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            record_id INTEGER NOT NULL,
-            FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+            record_name TEXT NOT NULL,
+            record_type TEXT NOT NULL
         );
         "#,
         r#"

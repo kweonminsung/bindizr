@@ -98,12 +98,11 @@ impl ZoneService {
             .create(ZoneHistory {
                 id: 0, // Will be set by the database
                 log: format!(
-                    "[{}] Zone created: id={}, name={}",
+                    "[{}] Zone created: name={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    created_zone.id,
                     created_zone.name,
                 ),
-                zone_id: created_zone.id,
+                zone_name: created_zone.name.clone(),
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
@@ -196,12 +195,12 @@ impl ZoneService {
             .create(ZoneHistory {
                 id: 0, // Will be set by the database
                 log: format!(
-                    "[{}] Zone updated: id={}, name={}",
+                    "[{}] Zone updated: previous_name={}, new_name={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    zone_id,
+                    zone_name,
                     update_zone_request.name,
                 ),
-                zone_id,
+                zone_name: update_zone_request.name.clone(),
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
@@ -215,10 +214,11 @@ impl ZoneService {
 
     pub async fn delete_zone(zone_name: &str) -> Result<(), ApiError> {
         let zone_repository = get_zone_repository();
+        let zone_history_repository = get_zone_history_repository();
 
         // Check if zone exists and get its ID
-        let zone_id = match zone_repository.get_by_name(zone_name).await {
-            Ok(Some(zone)) => zone.id,
+        let zone = match zone_repository.get_by_name(zone_name).await {
+            Ok(Some(z)) => z,
             Ok(None) => {
                 log_error!("Zone with name '{}' not found", zone_name);
                 return Err(ApiError::NotFound(format!(
@@ -234,6 +234,9 @@ impl ZoneService {
             }
         };
 
+        let zone_id = zone.id;
+        let zone_name_clone = zone.name.clone();
+
         // Delete zone
         zone_repository
             .delete(zone_id)
@@ -241,6 +244,24 @@ impl ZoneService {
             .map_err(|e: DatabaseError| {
                 log_error!("Failed to delete zone: {}", e);
                 ApiError::InternalServerError("Failed to delete zone".to_string())
+            })?;
+
+        // Create zone history
+        zone_history_repository
+            .create(ZoneHistory {
+                id: 0,
+                log: format!(
+                    "[{}] Zone deleted: name={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                    zone_name_clone,
+                ),
+                zone_name: zone_name_clone,
+                created_at: Utc::now(),
+            })
+            .await
+            .map_err(|e: DatabaseError| {
+                log_error!("Failed to create zone history: {}", e);
+                ApiError::InternalServerError("Failed to create zone history".to_string())
             })?;
 
         Ok(())

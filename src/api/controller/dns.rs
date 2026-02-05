@@ -76,8 +76,15 @@ impl DnsController {
     async fn get_dns_keys(Path(name): Path<String>) -> impl IntoResponse {
         match DnsKeyService::get_dns_keys(&name).await {
             Ok(keys) => {
-                let response: Vec<GetDnsKeyResponse> =
-                    keys.iter().map(GetDnsKeyResponse::from_dns_key).collect();
+                let response: Vec<GetDnsKeyResponse> = keys
+                    .iter()
+                    .map(|(dns_key, key_name)| {
+                        let mut resp = GetDnsKeyResponse::from_dns_key(dns_key);
+                        resp.dns_name = Some(name.clone());
+                        resp.key_name = Some(key_name.clone());
+                        resp
+                    })
+                    .collect();
                 (StatusCode::OK, Json(response)).into_response()
             }
             Err(err) => err.into_response(),

@@ -8,7 +8,7 @@ async fn test_record_crud_operations() {
 
     // Test GET /records (should have NS record)
     let (status, _) = ctx
-        .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
+        .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
@@ -69,7 +69,7 @@ async fn test_record_crud_operations() {
 
     // Test GET /records (with data)
     let (status, body) = ctx
-        .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
+        .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["records"].as_array().unwrap().len(), 3);
@@ -177,7 +177,7 @@ async fn test_multiple_record_types() {
 
     // Verify all records were created
     let (status, body) = ctx
-        .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
+        .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["records"].as_array().unwrap().len(), 5);

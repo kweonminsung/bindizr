@@ -296,13 +296,13 @@ paths:
       operationId: get_records
       description: Retrieves a list of all DNS records.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: query
           required: false
-          description: The ID of the DNS zone to filter records by.
+          description: The name of the DNS zone to filter records by.
           schema:
-            type: integer
-            format: int32
+            type: string
+            example: example.com
       responses:
         '200':
           description: A list of DNS records
@@ -724,6 +724,135 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
+  /dns-keys:
+    post:
+      tags:
+        - DNS Server
+      summary: Create a DNS key association
+      operationId: create_dns_key
+      description: Associates a key with a DNS server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDnsKeyRequest'
+      responses:
+        '201':
+          description: DNS key created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetDnsKeyResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+  /dns/{dns_name}/key:
+    get:
+      tags:
+        - DNS Server
+      summary: Get key associated with a DNS server
+      operationId: get_dns_key
+      description: Retrieves the key associated with a specific DNS server.
+      parameters:
+        - name: dns_name
+          in: path
+          required: true
+          description: The name of the DNS server.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GetDnsKeyResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+    put:
+      tags:
+        - DNS Server
+      summary: Update DNS key association
+      operationId: update_dns_key
+      description: Updates the key associated with a DNS server.
+      parameters:
+        - name: dns_name
+          in: path
+          required: true
+          description: The name of the DNS server.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDnsKeyRequest'
+      responses:
+        '200':
+          description: DNS key updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetDnsKeyResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+    delete:
+      tags:
+        - DNS Server
+      summary: Delete DNS key association
+      operationId: delete_dns_key
+      description: Removes the key association from a DNS server.
+      parameters:
+        - name: dns_name
+          in: path
+          required: true
+          description: The name of the DNS server.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: DNS key deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: DNS key deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
   /dns/{dns_name}/zones:
     get:
       tags:
@@ -901,7 +1030,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-  /zones/{zone_id}/dns:
+  /zones/{zone_name}/dns:
     get:
       tags:
         - Zone DNS Config
@@ -909,13 +1038,13 @@ paths:
       operationId: get_zone_dns_configs
       description: Retrieves a list of DNS server configurations associated with a specific zone.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the zone.
+          description: The name of the zone.
           schema:
-            type: integer
-            format: int32
+            type: string
+            example: example.com
       responses:
         '200':
           description: A list of DNS configurations
@@ -938,13 +1067,13 @@ paths:
       operationId: create_zone_dns_config
       description: Associates a DNS server and key with a specific zone.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the zone.
+          description: The name of the zone.
           schema:
-            type: integer
-            format: int32
+            type: string
+            example: example.com
       requestBody:
         required: true
         content:
@@ -970,7 +1099,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
-  /zones/{zone_id}/dns/{dns_id}:
+  /zones/{zone_name}/dns/{dns_name}:
     put:
       tags:
         - Zone DNS Config
@@ -978,20 +1107,20 @@ paths:
       operationId: update_zone_dns_config
       description: Updates the DNS configuration for a specific zone.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the zone.
+          description: The name of the zone.
           schema:
-            type: integer
-            format: int32
-        - name: dns_id
+            type: string
+            example: example.com
+        - name: dns_name
           in: path
           required: true
-          description: The ID of the DNS server.
+          description: The name of the DNS server.
           schema:
-            type: integer
-            format: int32
+            type: string
+            example: ns1
       requestBody:
         required: true
         content:
@@ -1024,20 +1153,20 @@ paths:
       operationId: delete_zone_dns_config
       description: Removes the association between a zone and a DNS server.
       parameters:
-        - name: zone_id
+        - name: zone_name
           in: path
           required: true
-          description: The ID of the zone.
+          description: The name of the zone.
           schema:
-            type: integer
-            format: int32
-        - name: dns_id
+            type: string
+            example: example.com
+        - name: dns_name
           in: path
           required: true
-          description: The ID of the DNS server.
+          description: The name of the DNS server.
           schema:
-            type: integer
-            format: int32
+            type: string
+            example: ns1
       responses:
         '200':
           description: DNS configuration deleted successfully
@@ -1317,7 +1446,7 @@ components:
         - id
         - log
         - created_at
-        - zone_id
+        - zone_name
       properties:
         id:
           type: integer
@@ -1330,10 +1459,9 @@ components:
           type: string
           format: date-time
           example: '2023-10-01T12:00:00Z'
-        zone_id:
-          type: integer
-          format: int32
-          example: 1
+        zone_name:
+          type: string
+          example: example.com
     GetRecordResponse:
       type: object
       required:
@@ -1361,6 +1489,9 @@ components:
           type: integer
           format: int32
           example: 1
+        zone_name:
+          type: string
+          example: example.com
     CreateRecordRequest:
       type: object
       required:
@@ -1396,7 +1527,8 @@ components:
         - id
         - log
         - created_at
-        - record_id
+        - record_name
+        - record_type
       properties:
         id:
           type: integer
@@ -1404,15 +1536,17 @@ components:
           example: 1
         log:
           type: string
-          example: "[2025-10-01 12:00:00] Record created: id=1, zone_id=1, name=sub, type=A, value=127.0.0.1"
+          example: "[2025-10-01 12:00:00] Record created: id=1, name=sub, type=A, value=127.0.0.1"
         created_at:
           type: string
           format: date-time
           example: '2023-10-01T12:00:00Z'
-        record_id:
-          type: integer
-          format: int32
-          example: 1
+        record_name:
+          type: string
+          example: sub
+        record_type:
+          type: string
+          example: A
     GetDnsResponse:
       type: object
       required:
@@ -1582,13 +1716,12 @@ components:
     CreateZoneDnsConfigRequest:
       type: object
       required:
-        - dns_id
+        - dns_name
         - key_id
       properties:
-        dns_id:
-          type: integer
-          format: int32
-          example: 1
+        dns_name:
+          type: string
+          example: ns1
         key_id:
           type: integer
           format: int32
@@ -1596,13 +1729,12 @@ components:
     UpdateZoneDnsConfigRequest:
       type: object
       required:
-        - dns_id
+        - dns_name
         - key_id
       properties:
-        dns_id:
-          type: integer
-          format: int32
-          example: 1
+        dns_name:
+          type: string
+          example: ns1
         key_id:
           type: integer
           format: int32
@@ -1612,8 +1744,6 @@ components:
       required:
         - dns_id
         - key_id
-        - dns_name
-        - key_name
         - created_at
       properties:
         dns_id:
@@ -1626,11 +1756,33 @@ components:
           example: 1
         dns_name:
           type: string
+          nullable: true
           example: dns1
         key_name:
           type: string
+          nullable: true
           example: rndc-key
         created_at:
           type: string
           format: date-time
           example: '2023-10-01T12:00:00Z'
+    CreateDnsKeyRequest:
+      type: object
+      required:
+        - dns_name
+        - key_name
+      properties:
+        dns_name:
+          type: string
+          example: dns1
+        key_name:
+          type: string
+          example: rndc-key
+    UpdateDnsKeyRequest:
+      type: object
+      required:
+        - key_name
+      properties:
+        key_name:
+          type: string
+          example: rndc-key

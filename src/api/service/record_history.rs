@@ -1,9 +1,6 @@
 use crate::{
     api::error::ApiError,
-    database::{
-        get_record_history_repository, get_record_repository,
-        model::{record::RecordType, record_history::RecordHistory},
-    },
+    database::{get_record_history_repository, model::record_history::RecordHistory},
     log_error,
 };
 
@@ -15,32 +12,10 @@ impl RecordHistoryService {
         name: &str,
         record_type: &str,
     ) -> Result<Vec<RecordHistory>, ApiError> {
-        let record_repository = get_record_repository();
         let record_history_repository = get_record_history_repository();
 
-        // Validate record type
-        let record_type = RecordType::from_str(record_type)
-            .map_err(|_| ApiError::BadRequest(format!("Invalid record type: {}", record_type)))?;
-
-        // Check if the record exists
-        let record = match record_repository
-            .get_by_name_and_type(name, &record_type)
-            .await
-        {
-            Ok(Some(r)) => r,
-            Ok(None) => {
-                return Err(ApiError::NotFound("Record not found".to_string()));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to fetch record".to_string(),
-                ));
-            }
-        };
-
         let record_histories = record_history_repository
-            .get_by_record_id(record.id)
+            .get_by_record_name_and_type(name, record_type)
             .await
             .map_err(|e| {
                 log_error!("Failed to fetch record histories: {}", e);
@@ -48,33 +23,5 @@ impl RecordHistoryService {
             })?;
 
         Ok(record_histories)
-    }
-
-    pub async fn delete_record_history(record_history_id: i32) -> Result<(), ApiError> {
-        let record_history_repository = get_record_history_repository();
-
-        // Check if the record history exists
-        match record_history_repository.get_by_id(record_history_id).await {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                return Err(ApiError::NotFound("Record history not found".to_string()));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch record history: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to fetch record history".to_string(),
-                ));
-            }
-        };
-
-        // Delete the record history
-        if let Err(e) = record_history_repository.delete(record_history_id).await {
-            log_error!("Failed to delete record history: {}", e);
-            return Err(ApiError::InternalServerError(
-                "Failed to delete record history".to_string(),
-            ));
-        };
-
-        Ok(())
     }
 }

@@ -47,6 +47,8 @@ pub struct GetRecordResponse {
     pub ttl: Option<i32>,
     pub priority: Option<i32>,
     pub zone_id: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zone_name: Option<String>,
 }
 impl GetRecordResponse {
     pub fn from_record(record: &Record) -> Self {
@@ -58,6 +60,7 @@ impl GetRecordResponse {
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
+            zone_name: None,
         }
     }
 }
@@ -92,7 +95,7 @@ pub struct GetZoneHistoryResponse {
     pub id: i32,
     pub log: String,
     pub created_at: String,
-    pub zone_id: i32,
+    pub zone_name: String,
 }
 impl GetZoneHistoryResponse {
     pub fn from_zone_history(zone_history: &ZoneHistory) -> Self {
@@ -100,7 +103,7 @@ impl GetZoneHistoryResponse {
             id: zone_history.id,
             log: zone_history.log.clone(),
             created_at: zone_history.created_at.to_string(),
-            zone_id: zone_history.zone_id,
+            zone_name: zone_history.zone_name.clone(),
         }
     }
 }
@@ -110,7 +113,8 @@ pub struct GetRecordHistoryResponse {
     pub id: i32,
     pub log: String,
     pub created_at: String,
-    pub record_id: i32,
+    pub record_name: String,
+    pub record_type: String,
 }
 impl GetRecordHistoryResponse {
     pub fn from_record_history(record_history: &RecordHistory) -> Self {
@@ -118,7 +122,8 @@ impl GetRecordHistoryResponse {
             id: record_history.id,
             log: record_history.log.clone(),
             created_at: record_history.created_at.to_string(),
-            record_id: record_history.record_id,
+            record_name: record_history.record_name.clone(),
+            record_type: record_history.record_type.clone(),
         }
     }
 }
@@ -217,13 +222,13 @@ impl GetZoneDnsConfigResponse {
 
 #[derive(Deserialize, Debug)]
 pub struct CreateZoneDnsConfigRequest {
-    pub dns_id: i32,
+    pub dns_name: String,
     pub key_id: i32,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct UpdateZoneDnsConfigRequest {
-    pub dns_id: i32,
+    pub dns_name: String,
     pub key_id: i32,
 }
 
@@ -231,19 +236,20 @@ pub struct UpdateZoneDnsConfigRequest {
 pub struct GetDnsKeyResponse {
     pub dns_id: i32,
     pub key_id: i32,
-    pub dns_name: String,
-    pub key_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_name: Option<String>,
     pub created_at: String,
 }
 
 impl GetDnsKeyResponse {
-    // TODO: This method needs dns_name and key_name from joined data
     pub fn from_dns_key(dns_key: &crate::database::model::dns_key::DnsKey) -> Self {
         GetDnsKeyResponse {
             dns_id: dns_key.dns_id,
             key_id: dns_key.key_id,
-            dns_name: "".to_string(), // TODO: fetch from dns table
-            key_name: "".to_string(), // TODO: fetch from keys table
+            dns_name: None,
+            key_name: None,
             created_at: dns_key.created_at.to_string(),
         }
     }

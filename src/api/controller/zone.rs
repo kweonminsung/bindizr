@@ -60,7 +60,7 @@ impl ZoneController {
         };
 
         let raw_records = match records_query {
-            Some(true) => match RecordService::get_records(Some(raw_zone.id)).await {
+            Some(true) => match RecordService::get_records(Some(raw_zone.name.clone())).await {
                 Ok(records) => records,
                 Err(err) => return err.into_response(),
             },
@@ -84,7 +84,7 @@ impl ZoneController {
             Err(err) => return err.into_response(),
         };
 
-        let raw_records = match RecordService::get_records(Some(raw_zone.id)).await {
+        let raw_records = match RecordService::get_records(Some(raw_zone.name.clone())).await {
             Ok(records) => records,
             Err(err) => return err.into_response(),
         };

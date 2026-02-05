@@ -35,9 +35,9 @@ impl RecordController {
     }
 
     async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl IntoResponse {
-        let zone_id = query.zone_id;
+        let zone_name = query.zone_name;
 
-        let raw_records = match RecordService::get_records(zone_id).await {
+        let raw_records = match RecordService::get_records(zone_name).await {
             Ok(records) => records,
             Err(err) => return err.into_response(),
         };
@@ -112,7 +112,7 @@ impl RecordController {
 
 #[derive(Debug, Deserialize)]
 struct GetRecordsQuery {
-    zone_id: Option<i32>,
+    zone_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

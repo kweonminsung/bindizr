@@ -1,8 +1,6 @@
 use crate::{
     api::error::ApiError,
-    database::{
-        get_zone_history_repository, get_zone_repository, model::zone_history::ZoneHistory,
-    },
+    database::{get_zone_history_repository, model::zone_history::ZoneHistory},
     log_error,
 };
 
@@ -11,25 +9,10 @@ pub struct ZoneHistoryService;
 
 impl ZoneHistoryService {
     pub async fn get_zone_histories(zone_name: &str) -> Result<Vec<ZoneHistory>, ApiError> {
-        let zone_repository = get_zone_repository();
         let zone_history_repository = get_zone_history_repository();
 
-        // Check if the zone exists
-        let zone = match zone_repository.get_by_name(zone_name).await {
-            Ok(Some(z)) => z,
-            Ok(None) => {
-                return Err(ApiError::NotFound("Zone not found".to_string()));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch zone: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to fetch zone".to_string(),
-                ));
-            }
-        };
-
         let zone_histories = zone_history_repository
-            .get_by_zone_id(zone.id)
+            .get_by_zone_name(zone_name)
             .await
             .map_err(|e| {
                 log_error!("Failed to fetch zone histories: {}", e);
@@ -37,33 +20,5 @@ impl ZoneHistoryService {
             })?;
 
         Ok(zone_histories)
-    }
-
-    pub async fn delete_zone_history(zone_history_id: i32) -> Result<(), ApiError> {
-        let zone_history_repository = get_zone_history_repository();
-
-        // Check if the zone history exists
-        match zone_history_repository.get_by_id(zone_history_id).await {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                return Err(ApiError::NotFound("Zone history not found".to_string()));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch zone history: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to fetch zone history".to_string(),
-                ));
-            }
-        };
-
-        // Delete the zone history
-        if let Err(e) = zone_history_repository.delete(zone_history_id).await {
-            log_error!("Failed to delete zone history: {}", e);
-            return Err(ApiError::InternalServerError(
-                "Failed to delete zone history".to_string(),
-            ));
-        };
-
-        Ok(())
     }
 }
