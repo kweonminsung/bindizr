@@ -1,7 +1,7 @@
 use crate::database::error::DatabaseError;
 use crate::database::{model::dns_instance::DnsInstance, repository::DnsInstanceRepository};
 use async_trait::async_trait;
-use sqlx::{Postgres, Pool};
+use sqlx::{Pool, Postgres};
 
 pub struct PostgresDnsInstanceRepository {
     pool: Pool<Postgres>,

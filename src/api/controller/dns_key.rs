@@ -2,9 +2,7 @@ use crate::api::{
     dto::{CreateDnsKeyRequest, GetDnsKeyResponse, UpdateDnsKeyRequest},
     service::dns_key::DnsKeyService,
 };
-use axum::{
-    extract::Path, http::StatusCode, response::IntoResponse, routing, Json, Router,
-};
+use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse, routing};
 use serde_json::json;
 
 pub struct DnsKeyController;

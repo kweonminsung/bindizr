@@ -22,7 +22,9 @@ impl RecordHistoryService {
             }
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                return Err(ApiError::InternalServerError("Failed to fetch record".to_string()));
+                return Err(ApiError::InternalServerError(
+                    "Failed to fetch record".to_string(),
+                ));
             }
         };
 

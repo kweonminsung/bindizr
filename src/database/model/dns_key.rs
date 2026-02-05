@@ -5,13 +5,13 @@ use sqlx::FromRow;
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct DnsKey {
     pub id: i32,
-    pub name: Option<String>,           // optional name for the DNS key
+    pub name: Option<String>, // optional name for the DNS key
     #[sqlx(try_from = "String")]
-    pub key_type: DnsKeyType,           // DNS key type
+    pub key_type: DnsKeyType, // DNS key type
     #[sqlx(try_from = "String")]
     pub key_algorithm: DnsKeyAlgorithm, // DNS key algorithm
-    pub key_name: String,               // key name
-    pub secret: String,                 // key secret
+    pub key_name: String,     // key name
+    pub secret: String,       // key secret
     pub created_at: DateTime<Utc>,
 }
 

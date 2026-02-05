@@ -9,12 +9,16 @@ impl DnsService {
             Ok(response) => response,
             Err(e) => {
                 log_error!("Failed to get DNS status: {}", e);
-                return Err(ApiError::InternalServerError("Failed to get DNS status".to_string()));
+                return Err(ApiError::InternalServerError(
+                    "Failed to get DNS status".to_string(),
+                ));
             }
         };
 
         if !res.result {
-            return Err(ApiError::InternalServerError("Failed to get DNS status".to_string()));
+            return Err(ApiError::InternalServerError(
+                "Failed to get DNS status".to_string(),
+            ));
         }
 
         match res.text {
@@ -28,12 +32,16 @@ impl DnsService {
             Ok(response) => response,
             Err(e) => {
                 log_error!("Failed to reload DNS: {}", e);
-                return Err(ApiError::InternalServerError("Failed to reload DNS".to_string()));
+                return Err(ApiError::InternalServerError(
+                    "Failed to reload DNS".to_string(),
+                ));
             }
         };
 
         if !res.result {
-            return Err(ApiError::InternalServerError("Failed to reload DNS".to_string()));
+            return Err(ApiError::InternalServerError(
+                "Failed to reload DNS".to_string(),
+            ));
         }
 
         match res.text {

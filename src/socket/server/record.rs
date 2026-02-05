@@ -7,8 +7,7 @@ pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, Stri
     let id = data
         .get("id")
         .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")?
-        as i32;
+        .ok_or("Missing or invalid 'id' field")? as i32;
 
     match RecordService::get_record(id).await {
         Ok(record) => {
@@ -23,7 +22,10 @@ pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, Stri
 }
 
 pub async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let zone_id = data.get("zone_id").and_then(|v| v.as_i64()).map(|v| v as i32);
+    let zone_id = data
+        .get("zone_id")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
 
     let records = if let Some(zone_id) = zone_id {
         RecordService::get_records(Some(zone_id)).await
@@ -33,10 +35,8 @@ pub async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, St
 
     match records {
         Ok(records) => {
-            let response: Vec<GetRecordResponse> = records
-                .iter()
-                .map(GetRecordResponse::from_record)
-                .collect();
+            let response: Vec<GetRecordResponse> =
+                records.iter().map(GetRecordResponse::from_record).collect();
             Ok(DaemonResponse {
                 message: format!("Found {} record(s)", response.len()),
                 data: serde_json::to_value(response).unwrap(),
@@ -66,8 +66,7 @@ pub async fn delete_record(data: &serde_json::Value) -> Result<DaemonResponse, S
     let id = data
         .get("id")
         .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")?
-        as i32;
+        .ok_or("Missing or invalid 'id' field")? as i32;
 
     match RecordService::delete_record(id).await {
         Ok(_) => Ok(DaemonResponse {

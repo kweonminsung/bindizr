@@ -7,8 +7,7 @@ pub async fn get_dns_instance(data: &serde_json::Value) -> Result<DaemonResponse
     let id = data
         .get("id")
         .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")?
-        as i32;
+        .ok_or("Missing or invalid 'id' field")? as i32;
 
     match DnsInstanceService::get_dns_instance(id).await {
         Ok(dns_instance) => {
@@ -58,8 +57,7 @@ pub async fn delete_dns_instance(data: &serde_json::Value) -> Result<DaemonRespo
     let id = data
         .get("id")
         .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")?
-        as i32;
+        .ok_or("Missing or invalid 'id' field")? as i32;
 
     match DnsInstanceService::delete_dns_instance(id).await {
         Ok(_) => Ok(DaemonResponse {

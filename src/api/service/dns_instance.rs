@@ -58,7 +58,7 @@ impl DnsInstanceService {
                 return Err(ApiError::BadRequest(format!(
                     "DNS key with id {} not found",
                     request.rndc_key_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to validate DNS key: {}", e);
@@ -100,7 +100,7 @@ impl DnsInstanceService {
                 return Err(ApiError::NotFound(format!(
                     "DNS instance with id {} not found",
                     id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch DNS instance: {}", e);
@@ -117,7 +117,7 @@ impl DnsInstanceService {
                 return Err(ApiError::BadRequest(format!(
                     "DNS key with id {} not found",
                     request.rndc_key_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to validate DNS key: {}", e);
@@ -152,7 +152,7 @@ impl DnsInstanceService {
                 return Err(ApiError::NotFound(format!(
                     "DNS instance with id {} not found",
                     id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch DNS instance: {}", e);
@@ -163,10 +163,7 @@ impl DnsInstanceService {
         }
 
         // Check if DNS instance is used in zone configurations
-        match zone_dns_config_repository
-            .get_by_dns_instance_id(id)
-            .await
-        {
+        match zone_dns_config_repository.get_by_dns_instance_id(id).await {
             Ok(configs) => {
                 if !configs.is_empty() {
                     return Err(ApiError::BadRequest(
@@ -189,7 +186,9 @@ impl DnsInstanceService {
         })
     }
 
-    pub async fn get_dns_instance_keys(id: i32) -> Result<Vec<crate::database::model::dns_key::DnsKey>, ApiError> {
+    pub async fn get_dns_instance_keys(
+        id: i32,
+    ) -> Result<Vec<crate::database::model::dns_key::DnsKey>, ApiError> {
         let dns_instance_repository = get_dns_instance_repository();
         let dns_key_repository = get_dns_key_repository();
 
@@ -200,7 +199,7 @@ impl DnsInstanceService {
                 return Err(ApiError::NotFound(format!(
                     "DNS instance with id {} not found",
                     id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch DNS instance: {}", e);
@@ -233,7 +232,7 @@ impl DnsInstanceService {
                 return Err(ApiError::NotFound(format!(
                     "DNS instance with id {} not found",
                     id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch DNS instance: {}", e);

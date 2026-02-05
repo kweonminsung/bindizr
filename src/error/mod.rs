@@ -1,9 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    api::validation::ValidationError,
-    config::error::ConfigError,
-    database::error::DatabaseError,
+    api::validation::ValidationError, config::error::ConfigError, database::error::DatabaseError,
     rndc::error::RndcError,
 };
 

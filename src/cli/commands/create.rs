@@ -1,3 +1,6 @@
+use crate::cli::output::{
+    DnsInstanceRow, DnsKeyRow, OutputFormat, RecordRow, ZoneRow, print_output_with_table,
+};
 use crate::socket::client::DaemonSocketClient;
 use crate::socket::dto::DaemonCommandKind;
 use clap::Subcommand;
@@ -19,6 +22,9 @@ pub enum CreateCommand {
         /// RNDC key ID
         #[arg(long)]
         rndc_key_id: i32,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 
     /// Create a DNS key
@@ -38,6 +44,9 @@ pub enum CreateCommand {
         /// Secret
         #[arg(long)]
         secret: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 
     /// Create a zone
@@ -63,6 +72,9 @@ pub enum CreateCommand {
         /// Serial number
         #[arg(long)]
         serial: i32,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 
     /// Create a record
@@ -85,6 +97,9 @@ pub enum CreateCommand {
         /// Priority (for MX records)
         #[arg(long)]
         priority: Option<i32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 }
 
@@ -97,6 +112,7 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
             host,
             rndc_port,
             rndc_key_id,
+            output,
         } => {
             let data = json!({
                 "name": name,
@@ -108,7 +124,12 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
                 .send_command(DaemonCommandKind::CreateDns, Some(data))
                 .await?;
             println!("{}", response.message);
-            println!("{}", serde_json::to_string_pretty(&response.data).unwrap());
+            print_output_with_table(&response.data, output, |data| {
+                vec![
+                    DnsInstanceRow::from_json(data)
+                        .unwrap_or_else(|_| panic!("Failed to parse DNS instance")),
+                ]
+            })?;
         }
         CreateCommand::DnsKey {
             name,
@@ -116,6 +137,7 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
             key_algorithm,
             key_name,
             secret,
+            output,
         } => {
             let data = json!({
                 "name": name,
@@ -128,7 +150,12 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
                 .send_command(DaemonCommandKind::CreateDnsKey, Some(data))
                 .await?;
             println!("{}", response.message);
-            println!("{}", serde_json::to_string_pretty(&response.data).unwrap());
+            print_output_with_table(&response.data, output, |data| {
+                vec![
+                    DnsKeyRow::from_json(data)
+                        .unwrap_or_else(|_| panic!("Failed to parse DNS key")),
+                ]
+            })?;
         }
         CreateCommand::Zone {
             name,
@@ -138,6 +165,7 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
             admin_email,
             ttl,
             serial,
+            output,
         } => {
             let data = json!({
                 "name": name,
@@ -152,7 +180,9 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
                 .send_command(DaemonCommandKind::CreateZone, Some(data))
                 .await?;
             println!("{}", response.message);
-            println!("{}", serde_json::to_string_pretty(&response.data).unwrap());
+            print_output_with_table(&response.data, output, |data| {
+                vec![ZoneRow::from_json(data).unwrap_or_else(|_| panic!("Failed to parse zone"))]
+            })?;
         }
         CreateCommand::Record {
             name,
@@ -161,6 +191,7 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
             zone_id,
             ttl,
             priority,
+            output,
         } => {
             let data = json!({
                 "name": name,
@@ -174,7 +205,11 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
                 .send_command(DaemonCommandKind::CreateRecord, Some(data))
                 .await?;
             println!("{}", response.message);
-            println!("{}", serde_json::to_string_pretty(&response.data).unwrap());
+            print_output_with_table(&response.data, output, |data| {
+                vec![
+                    RecordRow::from_json(data).unwrap_or_else(|_| panic!("Failed to parse record")),
+                ]
+            })?;
         }
     }
 

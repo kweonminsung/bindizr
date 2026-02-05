@@ -4,8 +4,9 @@ use crate::{
         error::ApiError,
     },
     database::{
-        error::DatabaseError, get_dns_instance_repository, get_dns_key_repository,
-        get_zone_dns_config_repository, get_zone_history_repository, get_zone_repository,
+        error::DatabaseError,
+        get_dns_instance_repository, get_dns_key_repository, get_zone_dns_config_repository,
+        get_zone_history_repository, get_zone_repository,
         model::{zone_dns_config::ZoneDnsConfig, zone_history::ZoneHistory},
     },
     log_error,
@@ -27,7 +28,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::NotFound(format!(
                     "Zone with id {} not found",
                     zone_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
@@ -42,9 +43,7 @@ impl ZoneDnsConfigService {
             .await
             .map_err(|e: DatabaseError| {
                 log_error!("Failed to fetch zone DNS configurations: {}", e);
-                ApiError::InternalServerError(
-                    "Failed to fetch zone DNS configurations".to_string(),
-                )
+                ApiError::InternalServerError("Failed to fetch zone DNS configurations".to_string())
             })
     }
 
@@ -64,7 +63,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::NotFound(format!(
                     "Zone with id {} not found",
                     zone_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
@@ -84,7 +83,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::BadRequest(format!(
                     "DNS instance with id {} not found",
                     request.dns_instance_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to validate DNS instance: {}", e);
@@ -101,7 +100,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::BadRequest(format!(
                     "DNS key with id {} not found",
                     request.dns_key_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to validate DNS key: {}", e);
@@ -124,9 +123,7 @@ impl ZoneDnsConfigService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone DNS configuration: {}", e);
-                ApiError::InternalServerError(
-                    "Failed to create zone DNS configuration".to_string(),
-                )
+                ApiError::InternalServerError("Failed to create zone DNS configuration".to_string())
             })?;
 
         // Create zone history
@@ -170,7 +167,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::NotFound(format!(
                     "Zone with id {} not found",
                     zone_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
@@ -185,8 +182,7 @@ impl ZoneDnsConfigService {
             Ok(Some(config)) => {
                 if config.zone_id != zone_id {
                     return Err(ApiError::BadRequest(
-                        "Zone DNS configuration does not belong to the specified zone"
-                            .to_string(),
+                        "Zone DNS configuration does not belong to the specified zone".to_string(),
                     ));
                 }
                 config
@@ -195,7 +191,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::NotFound(format!(
                     "Zone DNS configuration with id {} not found",
                     dns_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone DNS configuration: {}", e);
@@ -215,7 +211,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::BadRequest(format!(
                     "DNS instance with id {} not found",
                     request.dns_instance_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to validate DNS instance: {}", e);
@@ -232,7 +228,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::BadRequest(format!(
                     "DNS key with id {} not found",
                     request.dns_key_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to validate DNS key: {}", e);
@@ -250,9 +246,7 @@ impl ZoneDnsConfigService {
             .await
             .map_err(|e| {
                 log_error!("Failed to update zone DNS configuration: {}", e);
-                ApiError::InternalServerError(
-                    "Failed to update zone DNS configuration".to_string(),
-                )
+                ApiError::InternalServerError("Failed to update zone DNS configuration".to_string())
             })?;
 
         // Create zone history
@@ -290,7 +284,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::NotFound(format!(
                     "Zone with id {} not found",
                     zone_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
@@ -305,8 +299,7 @@ impl ZoneDnsConfigService {
             Ok(Some(config)) => {
                 if config.zone_id != zone_id {
                     return Err(ApiError::BadRequest(
-                        "Zone DNS configuration does not belong to the specified zone"
-                            .to_string(),
+                        "Zone DNS configuration does not belong to the specified zone".to_string(),
                     ));
                 }
             }
@@ -314,7 +307,7 @@ impl ZoneDnsConfigService {
                 return Err(ApiError::NotFound(format!(
                     "Zone DNS configuration with id {} not found",
                     dns_id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone DNS configuration: {}", e);
@@ -329,9 +322,7 @@ impl ZoneDnsConfigService {
             .await
             .map_err(|e| {
                 log_error!("Failed to delete zone DNS configuration: {}", e);
-                ApiError::InternalServerError(
-                    "Failed to delete zone DNS configuration".to_string(),
-                )
+                ApiError::InternalServerError("Failed to delete zone DNS configuration".to_string())
             })
     }
 }

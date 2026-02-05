@@ -4,13 +4,13 @@ pub mod sqlite;
 
 use super::model::{
     api_token::ApiToken,
+    dns_instance::DnsInstance,
+    dns_key::DnsKey,
     record::{Record, RecordType},
     record_history::RecordHistory,
     zone::Zone,
-    zone_history::ZoneHistory,
-    dns_instance::DnsInstance,
-    dns_key::DnsKey,
     zone_dns_config::ZoneDnsConfig,
+    zone_history::ZoneHistory,
 };
 use crate::database::{DatabasePool, error::DatabaseError};
 use async_trait::async_trait;
@@ -94,7 +94,10 @@ pub trait ZoneDnsConfigRepository: Send + Sync {
     async fn create(&self, zone_dns_config: ZoneDnsConfig) -> Result<ZoneDnsConfig, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneDnsConfig>, DatabaseError>;
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError>;
-    async fn get_by_dns_instance_id(&self, dns_instance_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError>;
+    async fn get_by_dns_instance_id(
+        &self,
+        dns_instance_id: i32,
+    ) -> Result<Vec<ZoneDnsConfig>, DatabaseError>;
     async fn update(&self, zone_dns_config: ZoneDnsConfig) -> Result<ZoneDnsConfig, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
@@ -194,9 +197,9 @@ impl RepositoryFactory {
             DatabasePool::PostgreSQL(postgres_pool) => Box::new(
                 postgres::PostgresDnsInstanceRepository::new(postgres_pool.clone()),
             ),
-            DatabasePool::SQLite(sqlite_pool) => {
-                Box::new(sqlite::SqliteDnsInstanceRepository::new(sqlite_pool.clone()))
-            }
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteDnsInstanceRepository::new(sqlite_pool.clone()),
+            ),
         }
     }
 
@@ -214,7 +217,9 @@ impl RepositoryFactory {
         }
     }
 
-    pub fn create_zone_dns_config_repository(pool: &DatabasePool) -> Box<dyn ZoneDnsConfigRepository> {
+    pub fn create_zone_dns_config_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn ZoneDnsConfigRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneDnsConfigRepository::new(mysql_pool.clone()))
@@ -222,9 +227,9 @@ impl RepositoryFactory {
             DatabasePool::PostgreSQL(postgres_pool) => Box::new(
                 postgres::PostgresZoneDnsConfigRepository::new(postgres_pool.clone()),
             ),
-            DatabasePool::SQLite(sqlite_pool) => {
-                Box::new(sqlite::SqliteZoneDnsConfigRepository::new(sqlite_pool.clone()))
-            }
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteZoneDnsConfigRepository::new(sqlite_pool.clone()),
+            ),
         }
     }
 }

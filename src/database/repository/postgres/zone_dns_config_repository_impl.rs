@@ -1,7 +1,7 @@
 use crate::database::error::DatabaseError;
 use crate::database::{model::zone_dns_config::ZoneDnsConfig, repository::ZoneDnsConfigRepository};
 use async_trait::async_trait;
-use sqlx::{Postgres, Pool};
+use sqlx::{Pool, Postgres};
 
 pub struct PostgresZoneDnsConfigRepository {
     pool: Pool<Postgres>,
@@ -15,7 +15,10 @@ impl PostgresZoneDnsConfigRepository {
 
 #[async_trait]
 impl ZoneDnsConfigRepository for PostgresZoneDnsConfigRepository {
-    async fn create(&self, mut zone_dns_config: ZoneDnsConfig) -> Result<ZoneDnsConfig, DatabaseError> {
+    async fn create(
+        &self,
+        mut zone_dns_config: ZoneDnsConfig,
+    ) -> Result<ZoneDnsConfig, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let result = sqlx::query_as::<_, (i32,)>(
@@ -62,7 +65,10 @@ impl ZoneDnsConfigRepository for PostgresZoneDnsConfigRepository {
         Ok(zone_dns_configs)
     }
 
-    async fn get_by_dns_instance_id(&self, dns_instance_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError> {
+    async fn get_by_dns_instance_id(
+        &self,
+        dns_instance_id: i32,
+    ) -> Result<Vec<ZoneDnsConfig>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zone_dns_configs = sqlx::query_as::<_, ZoneDnsConfig>(

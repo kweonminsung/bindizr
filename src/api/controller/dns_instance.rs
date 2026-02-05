@@ -5,9 +5,7 @@ use crate::api::{
     },
     service::dns_instance::DnsInstanceService,
 };
-use axum::{
-    extract::Path, http::StatusCode, response::IntoResponse, routing, Json, Router,
-};
+use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse, routing};
 use serde_json::json;
 
 pub struct DnsInstanceController;
@@ -21,7 +19,10 @@ impl DnsInstanceController {
             .route("/dns/{id}", routing::put(Self::update_dns_instance))
             .route("/dns/{id}", routing::delete(Self::delete_dns_instance))
             .route("/dns/{id}/keys", routing::get(Self::get_dns_instance_keys))
-            .route("/dns/{id}/zones", routing::get(Self::get_dns_instance_zones))
+            .route(
+                "/dns/{id}/zones",
+                routing::get(Self::get_dns_instance_zones),
+            )
     }
 
     async fn get_dns_instances() -> impl IntoResponse {
@@ -85,10 +86,8 @@ impl DnsInstanceController {
     async fn get_dns_instance_keys(Path(id): Path<i32>) -> impl IntoResponse {
         match DnsInstanceService::get_dns_instance_keys(id).await {
             Ok(keys) => {
-                let response: Vec<GetDnsKeyResponse> = keys
-                    .iter()
-                    .map(GetDnsKeyResponse::from_dns_key)
-                    .collect();
+                let response: Vec<GetDnsKeyResponse> =
+                    keys.iter().map(GetDnsKeyResponse::from_dns_key).collect();
                 (StatusCode::OK, Json(response)).into_response()
             }
             Err(err) => err.into_response(),

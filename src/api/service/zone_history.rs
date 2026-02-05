@@ -22,7 +22,9 @@ impl ZoneHistoryService {
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ApiError::InternalServerError("Failed to fetch zone".to_string()));
+                return Err(ApiError::InternalServerError(
+                    "Failed to fetch zone".to_string(),
+                ));
             }
         };
 

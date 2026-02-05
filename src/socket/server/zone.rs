@@ -7,8 +7,7 @@ pub async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String
     let id = data
         .get("id")
         .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")?
-        as i32;
+        .ok_or("Missing or invalid 'id' field")? as i32;
 
     match ZoneService::get_zone(id).await {
         Ok(zone) => {
@@ -56,8 +55,7 @@ pub async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, Str
     let id = data
         .get("id")
         .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")?
-        as i32;
+        .ok_or("Missing or invalid 'id' field")? as i32;
 
     match ZoneService::delete_zone(id).await {
         Ok(_) => Ok(DaemonResponse {

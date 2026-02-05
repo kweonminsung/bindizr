@@ -7,8 +7,7 @@ pub async fn get_dns_key(data: &serde_json::Value) -> Result<DaemonResponse, Str
     let id = data
         .get("id")
         .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")?
-        as i32;
+        .ok_or("Missing or invalid 'id' field")? as i32;
 
     match DnsKeyService::get_dns_key(id).await {
         Ok(dns_key) => {
@@ -58,8 +57,7 @@ pub async fn delete_dns_key(data: &serde_json::Value) -> Result<DaemonResponse, 
     let id = data
         .get("id")
         .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")?
-        as i32;
+        .ok_or("Missing or invalid 'id' field")? as i32;
 
     match DnsKeyService::delete_dns_key(id).await {
         Ok(_) => Ok(DaemonResponse {

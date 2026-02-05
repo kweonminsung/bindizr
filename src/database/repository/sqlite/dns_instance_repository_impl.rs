@@ -1,7 +1,7 @@
 use crate::database::error::DatabaseError;
 use crate::database::{model::dns_instance::DnsInstance, repository::DnsInstanceRepository};
 use async_trait::async_trait;
-use sqlx::{Sqlite, Pool};
+use sqlx::{Pool, Sqlite};
 
 pub struct SqliteDnsInstanceRepository {
     pool: Pool<Sqlite>,

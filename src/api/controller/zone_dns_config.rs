@@ -1,12 +1,8 @@
 use crate::api::{
-    dto::{
-        CreateZoneDnsConfigRequest, GetZoneDnsConfigResponse, UpdateZoneDnsConfigRequest,
-    },
+    dto::{CreateZoneDnsConfigRequest, GetZoneDnsConfigResponse, UpdateZoneDnsConfigRequest},
     service::zone_dns_config::ZoneDnsConfigService,
 };
-use axum::{
-    extract::Path, http::StatusCode, response::IntoResponse, routing, Json, Router,
-};
+use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse, routing};
 use serde_json::json;
 
 pub struct ZoneDnsConfigController;
@@ -71,7 +67,9 @@ impl ZoneDnsConfigController {
         }
     }
 
-    async fn delete_zone_dns_config(Path((zone_id, dns_id)): Path<(i32, i32)>) -> impl IntoResponse {
+    async fn delete_zone_dns_config(
+        Path((zone_id, dns_id)): Path<(i32, i32)>,
+    ) -> impl IntoResponse {
         match ZoneDnsConfigService::delete_zone_dns_config(zone_id, dns_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone DNS configuration deleted successfully" });

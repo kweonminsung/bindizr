@@ -5,12 +5,12 @@ use sqlx::FromRow;
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Record {
     pub id: i32,
-    pub name: String,               // domain name (e.g.: "www.example.com")
+    pub name: String, // domain name (e.g.: "www.example.com")
     #[sqlx(try_from = "String")]
-    pub record_type: RecordType,    // record type
-    pub value: String,              // record value (e.g.: IP address, CNAME, etc.)
-    pub ttl: Option<i32>,           // TTL (seconds)
-    pub priority: Option<i32>,      // priority (for MX and SRV records)
+    pub record_type: RecordType, // record type
+    pub value: String, // record value (e.g.: IP address, CNAME, etc.)
+    pub ttl: Option<i32>, // TTL (seconds)
+    pub priority: Option<i32>, // priority (for MX and SRV records)
     pub created_at: DateTime<Utc>,
     pub zone_id: i32,
 }

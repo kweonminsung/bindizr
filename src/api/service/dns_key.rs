@@ -4,7 +4,8 @@ use crate::{
         error::ApiError,
     },
     database::{
-        error::DatabaseError, get_dns_instance_repository, get_dns_key_repository,
+        error::DatabaseError,
+        get_dns_instance_repository, get_dns_key_repository,
         model::dns_key::{DnsKey, DnsKeyAlgorithm, DnsKeyType},
     },
     log_error,
@@ -49,14 +50,12 @@ impl DnsKeyService {
         let dns_key_repository = get_dns_key_repository();
 
         // Parse key type
-        let key_type = DnsKeyType::from_str(&request.key_type).map_err(|e| {
-            ApiError::BadRequest(format!("Invalid key type: {}", e))
-        })?;
+        let key_type = DnsKeyType::from_str(&request.key_type)
+            .map_err(|e| ApiError::BadRequest(format!("Invalid key type: {}", e)))?;
 
         // Parse key algorithm
-        let key_algorithm = DnsKeyAlgorithm::from_str(&request.key_algorithm).map_err(|e| {
-            ApiError::BadRequest(format!("Invalid key algorithm: {}", e))
-        })?;
+        let key_algorithm = DnsKeyAlgorithm::from_str(&request.key_algorithm)
+            .map_err(|e| ApiError::BadRequest(format!("Invalid key algorithm: {}", e)))?;
 
         let dns_key = DnsKey {
             id: 0,
@@ -87,7 +86,7 @@ impl DnsKeyService {
                 return Err(ApiError::NotFound(format!(
                     "DNS key with id {} not found",
                     id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch DNS key: {}", e);
@@ -98,14 +97,12 @@ impl DnsKeyService {
         };
 
         // Parse key type
-        let key_type = DnsKeyType::from_str(&request.key_type).map_err(|e| {
-            ApiError::BadRequest(format!("Invalid key type: {}", e))
-        })?;
+        let key_type = DnsKeyType::from_str(&request.key_type)
+            .map_err(|e| ApiError::BadRequest(format!("Invalid key type: {}", e)))?;
 
         // Parse key algorithm
-        let key_algorithm = DnsKeyAlgorithm::from_str(&request.key_algorithm).map_err(|e| {
-            ApiError::BadRequest(format!("Invalid key algorithm: {}", e))
-        })?;
+        let key_algorithm = DnsKeyAlgorithm::from_str(&request.key_algorithm)
+            .map_err(|e| ApiError::BadRequest(format!("Invalid key algorithm: {}", e)))?;
 
         dns_key.name = request.name.clone();
         dns_key.key_type = key_type;
@@ -130,7 +127,7 @@ impl DnsKeyService {
                 return Err(ApiError::NotFound(format!(
                     "DNS key with id {} not found",
                     id
-                )))
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch DNS key: {}", e);

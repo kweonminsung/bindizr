@@ -1,7 +1,7 @@
 use crate::database::error::DatabaseError;
 use crate::database::{model::zone_dns_config::ZoneDnsConfig, repository::ZoneDnsConfigRepository};
 use async_trait::async_trait;
-use sqlx::{Sqlite, Pool};
+use sqlx::{Pool, Sqlite};
 
 pub struct SqliteZoneDnsConfigRepository {
     pool: Pool<Sqlite>,
@@ -15,7 +15,10 @@ impl SqliteZoneDnsConfigRepository {
 
 #[async_trait]
 impl ZoneDnsConfigRepository for SqliteZoneDnsConfigRepository {
-    async fn create(&self, mut zone_dns_config: ZoneDnsConfig) -> Result<ZoneDnsConfig, DatabaseError> {
+    async fn create(
+        &self,
+        mut zone_dns_config: ZoneDnsConfig,
+    ) -> Result<ZoneDnsConfig, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let result = sqlx::query(
@@ -61,7 +64,10 @@ impl ZoneDnsConfigRepository for SqliteZoneDnsConfigRepository {
         Ok(zone_dns_configs)
     }
 
-    async fn get_by_dns_instance_id(&self, dns_instance_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError> {
+    async fn get_by_dns_instance_id(
+        &self,
+        dns_instance_id: i32,
+    ) -> Result<Vec<ZoneDnsConfig>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zone_dns_configs = sqlx::query_as::<_, ZoneDnsConfig>(
