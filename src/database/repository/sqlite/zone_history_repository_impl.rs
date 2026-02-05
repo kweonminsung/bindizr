@@ -18,9 +18,9 @@ impl ZoneHistoryRepository for SqliteZoneHistoryRepository {
     async fn create(&self, mut zone_history: ZoneHistory) -> Result<ZoneHistory, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let result = sqlx::query("INSERT INTO zone_history (log, zone_id) VALUES (?, ?)")
+        let result = sqlx::query("INSERT INTO zone_history (log, zone_name) VALUES (?, ?)")
             .bind(&zone_history.log)
-            .bind(zone_history.zone_id)
+            .bind(&zone_history.zone_name)
             .execute(&mut *conn)
             .await?;
 
@@ -32,7 +32,7 @@ impl ZoneHistoryRepository for SqliteZoneHistoryRepository {
         let mut conn = self.pool.acquire().await?;
 
         let zone_history = sqlx::query_as::<_, ZoneHistory>(
-            "SELECT id, log, created_at, zone_id FROM zone_history WHERE id = ?",
+            "SELECT id, log, created_at, zone_name FROM zone_history WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -41,13 +41,13 @@ impl ZoneHistoryRepository for SqliteZoneHistoryRepository {
         Ok(zone_history)
     }
 
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneHistory>, DatabaseError> {
+    async fn get_by_zone_name(&self, zone_name: &str) -> Result<Vec<ZoneHistory>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zone_histories = sqlx::query_as::<_, ZoneHistory>(
-            "SELECT id, log, created_at, zone_id FROM zone_history WHERE zone_id = ? ORDER BY created_at DESC",
+            "SELECT id, log, created_at, zone_name FROM zone_history WHERE zone_name = ? ORDER BY created_at DESC",
         )
-        .bind(zone_id)
+        .bind(zone_name)
         .fetch_all(&mut *conn)
         .await
         ?;

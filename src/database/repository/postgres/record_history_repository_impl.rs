@@ -23,13 +23,14 @@ impl RecordHistoryRepository for PostgresRecordHistoryRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO record_history (log, record_id)
-            VALUES ($1, $2)
+            INSERT INTO record_history (log, record_name, record_type)
+            VALUES ($1, $2, $3)
             RETURNING id
             "#,
         )
         .bind(&record_history.log)
-        .bind(record_history.record_id)
+        .bind(&record_history.record_name)
+        .bind(&record_history.record_type)
         .fetch_one(&mut *conn)
         .await?;
 
@@ -41,7 +42,7 @@ impl RecordHistoryRepository for PostgresRecordHistoryRepository {
         let mut conn = self.pool.acquire().await?;
 
         let record_history = sqlx::query_as::<_, RecordHistory>(
-            "SELECT id, log, created_at, record_id FROM record_history WHERE id = $1",
+            "SELECT id, log, created_at, record_name, record_type FROM record_history WHERE id = $1",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -50,13 +51,18 @@ impl RecordHistoryRepository for PostgresRecordHistoryRepository {
         Ok(record_history)
     }
 
-    async fn get_by_record_id(&self, record_id: i32) -> Result<Vec<RecordHistory>, DatabaseError> {
+    async fn get_by_record_name_and_type(
+        &self,
+        record_name: &str,
+        record_type: &str,
+    ) -> Result<Vec<RecordHistory>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let record_histories = sqlx::query_as::<_, RecordHistory>(
-            "SELECT id, log, created_at, record_id FROM record_history WHERE record_id = $1 ORDER BY created_at DESC"
+            "SELECT id, log, created_at, record_name, record_type FROM record_history WHERE record_name = $1 AND record_type = $2 ORDER BY created_at DESC"
         )
-        .bind(record_id)
+        .bind(record_name)
+        .bind(record_type)
         .fetch_all(&mut *conn)
         .await
         ?;

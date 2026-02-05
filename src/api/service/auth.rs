@@ -13,10 +13,16 @@ impl AuthService {
 
         let stored_token = match api_token_repository.get_by_token(token_str).await {
             Ok(Some(token)) => token,
-            Ok(None) => return Err(ApiError::Unauthorized("Invalid or expired token".to_string())),
+            Ok(None) => {
+                return Err(ApiError::Unauthorized(
+                    "Invalid or expired token".to_string(),
+                ));
+            }
             Err(e) => {
                 log_error!("Failed to validate token: {}", e);
-                return Err(ApiError::InternalServerError("Failed to validate token".to_string()));
+                return Err(ApiError::InternalServerError(
+                    "Failed to validate token".to_string(),
+                ));
             }
         };
 

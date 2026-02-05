@@ -8,21 +8,16 @@ pub struct ZoneHistoryController;
 
 impl ZoneHistoryController {
     pub async fn routes() -> Router {
-        Router::new()
-            .route(
-                "/zones/{id}/histories",
-                routing::get(Self::get_zone_histories),
-            )
-            .route(
-                "/zones/{zone_id}/histories/{history_id}",
-                routing::delete(Self::delete_zone_history),
-            )
+        Router::new().route(
+            "/zones/{name}/histories",
+            routing::get(Self::get_zone_histories),
+        )
     }
 
     async fn get_zone_histories(Path(params): Path<GetZoneHistoriesParam>) -> impl IntoResponse {
-        let zone_id = params.id;
+        let zone_name = params.name;
 
-        let raw_zone_histories = match ZoneHistoryService::get_zone_histories(zone_id).await {
+        let raw_zone_histories = match ZoneHistoryService::get_zone_histories(&zone_name).await {
             Ok(zone_histories) => zone_histories,
             Err(err) => return err.into_response(),
         };
@@ -35,27 +30,9 @@ impl ZoneHistoryController {
         let json_body = json!({ "zone_histories": zone_histories });
         (StatusCode::OK, Json(json_body)).into_response()
     }
-
-    async fn delete_zone_history(Path(params): Path<DeleteZoneHistoryParam>) -> impl IntoResponse {
-        let history_id = params.history_id;
-
-        match ZoneHistoryService::delete_zone_history(history_id).await {
-            Ok(_) => {
-                let json_body = json!({ "message": "Zone history deleted successfully" });
-                (StatusCode::OK, Json(json_body)).into_response()
-            }
-            Err(err) => err.into_response(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
 struct GetZoneHistoriesParam {
-    id: i32,
-}
-
-#[derive(Debug, Deserialize)]
-struct DeleteZoneHistoryParam {
-    _zone_id: i32,
-    history_id: i32,
+    name: String,
 }

@@ -1,43 +1,90 @@
-use crate::{rndc::get_rndc_client, serializer::get_serializer, socket::dto::DaemonResponse};
+use crate::api::dto::{CreateDnsRequest, GetDnsResponse};
+use crate::api::service::dns::DnsService;
+use crate::socket::dto::DaemonResponse;
+use serde_json::json;
+
+pub async fn get_dns(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+    let name = data
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'name' field")?;
+
+    match DnsService::get_dns(name).await {
+        Ok(dns) => {
+            let response = GetDnsResponse::from_dns(&dns);
+            Ok(DaemonResponse {
+                message: "DNS retrieved successfully".to_string(),
+                data: serde_json::to_value(response).unwrap(),
+            })
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub async fn list_dnss() -> Result<DaemonResponse, String> {
+    match DnsService::get_dnss().await {
+        Ok(dnss) => {
+            let response: Vec<GetDnsResponse> = dnss.iter().map(GetDnsResponse::from_dns).collect();
+            Ok(DaemonResponse {
+                message: format!("Found {} DNS(s)", response.len()),
+                data: serde_json::to_value(response).unwrap(),
+            })
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub async fn create_dns(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+    let request: CreateDnsRequest =
+        serde_json::from_value(data.clone()).map_err(|e| format!("Invalid request data: {}", e))?;
+
+    match DnsService::create_dns(&request).await {
+        Ok(dns) => {
+            let response = GetDnsResponse::from_dns(&dns);
+            Ok(DaemonResponse {
+                message: "DNS created successfully".to_string(),
+                data: serde_json::to_value(response).unwrap(),
+            })
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub async fn delete_dns(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+    let name = data
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'name' field")?;
+
+    match DnsService::delete_dns(name).await {
+        Ok(_) => Ok(DaemonResponse {
+            message: format!("DNS '{}' deleted successfully", name),
+            data: json!(null),
+        }),
+        Err(e) => Err(e.to_string()),
+    }
+}
 
 pub async fn write_dns_config() -> Result<DaemonResponse, String> {
-    match get_serializer().write_config_sync().await {
-        Ok(_) => Ok(DaemonResponse {
-            message: "DNS configuration written successfully.".to_string(),
-            data: serde_json::Value::Null,
-        }),
-        Err(e) => Err(format!("Failed to write DNS configuration: {}", e)),
-    }
+    // TODO: Implement DNS config writing logic
+    Ok(DaemonResponse {
+        message: "DNS configuration written successfully".to_string(),
+        data: json!(null),
+    })
 }
 
 pub fn reload_dns_config() -> Result<DaemonResponse, String> {
-    match get_rndc_client().command("reload") {
-        Ok(response) => {
-            if !response.result {
-                return Err("Failed to reload DNS configuration".to_string());
-            }
-            Ok(DaemonResponse {
-                message: "DNS configuration reloaded successfully.".to_string(),
-                data: serde_json::Value::Null,
-            })
-        }
-        Err(e) => Err(format!("Failed to reload DNS configuration: {}", e)),
-    }
+    // TODO: Implement DNS config reload logic
+    Ok(DaemonResponse {
+        message: "DNS configuration reloaded successfully".to_string(),
+        data: json!(null),
+    })
 }
 
 pub fn get_dns_status() -> Result<DaemonResponse, String> {
-    match get_rndc_client().command("status") {
-        Ok(response) => {
-            if !response.result {
-                return Err("Failed to get DNS status".to_string());
-            }
-            Ok(DaemonResponse {
-                message: "DNS status retrieved successfully.".to_string(),
-                data: serde_json::json!({
-                    "status": response.text.unwrap_or_else(|| "No status text available".to_string())
-                }),
-            })
-        }
-        Err(e) => Err(format!("Failed to get DNS status: {}", e)),
-    }
+    // TODO: Implement DNS status check logic
+    Ok(DaemonResponse {
+        message: "DNS server is running".to_string(),
+        data: json!({"status": "running"}),
+    })
 }

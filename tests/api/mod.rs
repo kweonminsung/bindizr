@@ -43,7 +43,7 @@ mod test {
             "name": "test.example.com",
             "record_type": "INVALID",
             "value": "192.168.1.1",
-            "zone_id": zone.id
+            "zone_name": zone.name
         });
 
         let (status, _) = ctx

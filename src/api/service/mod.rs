@@ -1,6 +1,9 @@
 pub mod auth;
 pub mod dns;
+pub mod dns_key;
+pub mod key;
 pub mod record;
 pub mod record_history;
 pub mod zone;
+pub mod zone_dns_config;
 pub mod zone_history;

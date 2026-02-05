@@ -20,13 +20,13 @@ impl ZoneHistoryRepository for PostgresZoneHistoryRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zone_history (log, zone_id)
+            INSERT INTO zone_history (log, zone_name)
             VALUES ($1, $2)
             RETURNING id
             "#,
         )
         .bind(&zone_history.log)
-        .bind(zone_history.zone_id)
+        .bind(&zone_history.zone_name)
         .fetch_one(&mut *conn)
         .await?;
 
@@ -38,7 +38,7 @@ impl ZoneHistoryRepository for PostgresZoneHistoryRepository {
         let mut conn = self.pool.acquire().await?;
 
         let zone_history = sqlx::query_as::<_, ZoneHistory>(
-            "SELECT id, log, created_at, zone_id FROM zone_history WHERE id = $1",
+            "SELECT id, log, created_at, zone_name FROM zone_history WHERE id = $1",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -47,13 +47,13 @@ impl ZoneHistoryRepository for PostgresZoneHistoryRepository {
         Ok(zone_history)
     }
 
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneHistory>, DatabaseError> {
+    async fn get_by_zone_name(&self, zone_name: &str) -> Result<Vec<ZoneHistory>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zone_histories = sqlx::query_as::<_, ZoneHistory>(
-            "SELECT id, log, created_at, zone_id FROM zone_history WHERE zone_id = $1 ORDER BY created_at DESC"
+            "SELECT id, log, created_at, zone_name FROM zone_history WHERE zone_name = $1 ORDER BY created_at DESC"
         )
-        .bind(zone_id)
+        .bind(zone_name)
         .fetch_all(&mut *conn)
         .await
         ?;

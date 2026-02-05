@@ -28,21 +28,17 @@ pub enum RecordType {
     SRV,
     PTR,
 }
-
 impl std::fmt::Display for RecordType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
-
 impl TryFrom<String> for RecordType {
     type Error = String;
-
     fn try_from(s: String) -> Result<Self, Self::Error> {
         RecordType::from_str(&s)
     }
 }
-
 impl RecordType {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, String> {

@@ -1,11 +1,19 @@
 mod api_token_repository_impl;
+mod dns_key_repository_impl;
+mod dns_repository_impl;
+mod key_repository_impl;
 mod record_history_repository_impl;
 mod record_repository_impl;
+mod zone_dns_config_repository_impl;
 mod zone_history_repository_impl;
 mod zone_repository_impl;
 
 pub use api_token_repository_impl::SqliteApiTokenRepository;
+pub use dns_key_repository_impl::SqliteDnsKeyRepository;
+pub use dns_repository_impl::SqliteDnsRepository;
+pub use key_repository_impl::SqliteKeyRepository;
 pub use record_history_repository_impl::SqliteRecordHistoryRepository;
 pub use record_repository_impl::SqliteRecordRepository;
+pub use zone_dns_config_repository_impl::SqliteZoneDnsConfigRepository;
 pub use zone_history_repository_impl::SqliteZoneHistoryRepository;
 pub use zone_repository_impl::SqliteZoneRepository;

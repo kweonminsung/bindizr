@@ -16,32 +16,37 @@ use chrono::Utc;
 pub struct RecordService;
 
 impl RecordService {
-    pub async fn get_records(zone_id: Option<i32>) -> Result<Vec<Record>, ApiError> {
+    pub async fn get_records(zone_name: Option<String>) -> Result<Vec<Record>, ApiError> {
         let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
 
-        match zone_id {
-            Some(id) => {
-                // Check if zone exists
-                match zone_repository.get_by_id(id).await {
-                    Ok(Some(_)) => {}
+        match zone_name {
+            Some(name) => {
+                // Check if zone exists and get zone_id
+                let zone = match zone_repository.get_by_name(&name).await {
+                    Ok(Some(z)) => z,
                     Ok(None) => {
-                        return Err(ApiError::BadRequest("Zone not found".to_string()));
+                        return Err(ApiError::BadRequest(format!(
+                            "Zone with name '{}' not found",
+                            name
+                        )));
                     }
                     Err(e) => {
                         log_error!("Failed to fetch zone: {}", e);
-                        return Err(ApiError::InternalServerError("Failed to fetch zone".to_string()));
+                        return Err(ApiError::InternalServerError(
+                            "Failed to fetch zone".to_string(),
+                        ));
                     }
-                }
+                };
 
                 // Fetch records by zone_id
-                match record_repository.get_by_zone_id(id).await {
+                match record_repository.get_by_zone_id(zone.id).await {
                     Ok(records) => Ok(records),
                     Err(e) => {
-                        log_error!("Failed to fetch records for zone {}: {}", id, e);
+                        log_error!("Failed to fetch records for zone {}: {}", name, e);
                         Err(ApiError::InternalServerError(format!(
                             "Failed to fetch records for zone {}",
-                            id
+                            name
                         )))
                     }
                 }
@@ -61,18 +66,27 @@ impl RecordService {
         }
     }
 
-    pub async fn get_record(record_id: i32) -> Result<Record, ApiError> {
+    pub async fn get_record(name: &str, record_type: &str) -> Result<Record, ApiError> {
         let record_repository = get_record_repository();
 
-        match record_repository.get_by_id(record_id).await {
+        // Validate record type
+        let record_type = RecordType::from_str(record_type)
+            .map_err(|_| ApiError::BadRequest(format!("Invalid record type: {}", record_type)))?;
+
+        match record_repository
+            .get_by_name_and_type(name, &record_type)
+            .await
+        {
             Ok(Some(record)) => Ok(record),
             Ok(None) => Err(ApiError::NotFound(format!(
-                "Record with id {} not found",
-                record_id
+                "Record with name '{}' and type '{}' not found",
+                name, record_type
             ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ApiError::InternalServerError("Failed to fetch record".to_string()))
+                Err(ApiError::InternalServerError(
+                    "Failed to fetch record".to_string(),
+                ))
             }
         }
     }
@@ -110,19 +124,21 @@ impl RecordService {
 
         // Check if zone exists
         let zone = match zone_repository
-            .get_by_id(create_record_request.zone_id)
+            .get_by_name(&create_record_request.zone_name)
             .await
         {
             Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err(ApiError::NotFound(format!(
-                    "Zone with id {} not found",
-                    create_record_request.zone_id
+                    "Zone with name '{}' not found",
+                    create_record_request.zone_name
                 )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ApiError::InternalServerError("Failed to create record".to_string()));
+                return Err(ApiError::InternalServerError(
+                    "Failed to create record".to_string(),
+                ));
             }
         };
 
@@ -141,14 +157,13 @@ impl RecordService {
         }
 
         // CNAME validation
-        let existing_records_in_zone = match record_repository
-            .get_by_zone_id(create_record_request.zone_id)
-            .await
-        {
+        let existing_records_in_zone = match record_repository.get_by_zone_id(zone.id).await {
             Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to check existing records: {}", e);
-                return Err(ApiError::InternalServerError("Failed to create record".to_string()));
+                return Err(ApiError::InternalServerError(
+                    "Failed to create record".to_string(),
+                ));
             }
         };
 
@@ -184,7 +199,7 @@ impl RecordService {
                 value: create_record_request.value.clone(),
                 ttl: create_record_request.ttl,
                 priority: create_record_request.priority,
-                zone_id: create_record_request.zone_id,
+                zone_id: zone.id,
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
@@ -197,12 +212,12 @@ impl RecordService {
         record_history_repository
             .create(RecordHistory {
                 id: 0, // Will be set by the database
-                record_id: created_record.id,
+                record_name: created_record.name.clone(),
+                record_type: create_record_request.record_type.clone(),
                 log: format!(
-                    "[{}] Record created: id={}, zone_id={}, name={}, type={}, value={}",
+                    "[{}] Record created: zone_name={}, name={}, type={}, value={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    created_record.id,
-                    create_record_request.zone_id,
+                    zone.name,
                     create_record_request.name,
                     create_record_request.record_type,
                     create_record_request.value,
@@ -219,38 +234,58 @@ impl RecordService {
     }
 
     pub async fn update_record(
-        record_id: i32,
+        name: &str,
+        record_type_str: &str,
         update_record_request: &CreateRecordRequest,
     ) -> Result<Record, ApiError> {
         let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
         let record_history_repository = get_record_history_repository();
 
+        // Validate old record type
+        let old_record_type = RecordType::from_str(record_type_str).map_err(|_| {
+            ApiError::BadRequest(format!("Invalid record type: {}", record_type_str))
+        })?;
+
         // Check if record exists
-        match record_repository.get_by_id(record_id).await {
-            Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(ApiError::NotFound(format!(
-                "Record with id {} not found",
-                record_id
-            ))),
+        let existing_record = match record_repository
+            .get_by_name_and_type(name, &old_record_type)
+            .await
+        {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return Err(ApiError::NotFound(format!(
+                    "Record with name '{}' and type '{}' not found",
+                    name, record_type_str
+                )));
+            }
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ApiError::InternalServerError("Failed to fetch record".to_string()))
+                return Err(ApiError::InternalServerError(
+                    "Failed to fetch record".to_string(),
+                ));
             }
-        }?;
+        };
+
+        let record_id = existing_record.id;
 
         // Check if zone exists
         let zone = match zone_repository
-            .get_by_id(update_record_request.zone_id)
+            .get_by_name(&update_record_request.zone_name)
             .await
         {
             Ok(Some(zone)) => zone,
             Ok(None) => {
-                return Err(ApiError::BadRequest("Zone not found".to_string()));
+                return Err(ApiError::NotFound(format!(
+                    "Zone with name '{}' not found",
+                    update_record_request.zone_name
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ApiError::InternalServerError("Failed to fetch zone".to_string()));
+                return Err(ApiError::InternalServerError(
+                    "Failed to fetch zone".to_string(),
+                ));
             }
         };
 
@@ -300,13 +335,15 @@ impl RecordService {
             Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to check existing record: {}", e);
-                return Err(ApiError::InternalServerError("Failed to update record".to_string()));
+                return Err(ApiError::InternalServerError(
+                    "Failed to update record".to_string(),
+                ));
             }
         };
 
         let other_records_in_zone: Vec<_> = existing_records
             .into_iter()
-            .filter(|r| r.id != record_id && r.zone_id == update_record_request.zone_id)
+            .filter(|r| r.id != record_id && r.zone_id == zone.id)
             .collect();
 
         if !other_records_in_zone.is_empty() {
@@ -336,7 +373,7 @@ impl RecordService {
                 value: update_record_request.value.clone(),
                 ttl: update_record_request.ttl,
                 priority: update_record_request.priority,
-                zone_id: update_record_request.zone_id,
+                zone_id: zone.id,
                 created_at: Utc::now(), // Will be set by the database
             })
             .await
@@ -349,12 +386,12 @@ impl RecordService {
         record_history_repository
             .create(RecordHistory {
                 id: 0, // Will be set by the database
-                record_id: updated_record.id,
+                record_name: updated_record.name.clone(),
+                record_type: update_record_request.record_type.clone(),
                 log: format!(
-                    "[{}] Record updated: id={}, zone_id={}, name={}, type={}, value={}",
+                    "[{}] Record updated: zone_name={}, name={}, type={}, value={}",
                     Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    updated_record.id,
-                    update_record_request.zone_id,
+                    zone.name,
                     update_record_request.name,
                     update_record_request.record_type,
                     update_record_request.value,
@@ -370,22 +407,60 @@ impl RecordService {
         Ok(updated_record)
     }
 
-    pub async fn delete_record(record_id: i32) -> Result<(), ApiError> {
+    pub async fn delete_record(name: &str, record_type_str: &str) -> Result<(), ApiError> {
+        let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
-        // let record_history_repository = get_record_history_repository();
+        let record_history_repository = get_record_history_repository();
+
+        // Valid record type
+        let record_type = RecordType::from_str(record_type_str).map_err(|_| {
+            ApiError::BadRequest(format!("Invalid record type: {}", record_type_str))
+        })?;
 
         // Check if record exists
-        let existing_record = match record_repository.get_by_id(record_id).await {
-            Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(ApiError::NotFound(format!(
-                "Record with id {} not found",
-                record_id
-            ))),
+        let existing_record = match record_repository
+            .get_by_name_and_type(name, &record_type)
+            .await
+        {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return Err(ApiError::NotFound(format!(
+                    "Record with name '{}' and type '{}' not found",
+                    name, record_type_str
+                )));
+            }
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ApiError::InternalServerError("Failed to fetch record".to_string()))
+                return Err(ApiError::InternalServerError(
+                    "Failed to fetch record".to_string(),
+                ));
             }
-        }?;
+        };
+
+        // Get zone name for history
+        let zone = match zone_repository.get_by_id(existing_record.zone_id).await {
+            Ok(Some(zone)) => zone,
+            Ok(None) => {
+                log_error!(
+                    "Zone with id '{}' not found for record '{}'",
+                    existing_record.zone_id,
+                    name
+                );
+                return Err(ApiError::InternalServerError(
+                    "Failed to fetch zone for record".to_string(),
+                ));
+            }
+            Err(e) => {
+                log_error!("Failed to fetch zone: {}", e);
+                return Err(ApiError::InternalServerError(
+                    "Failed to fetch zone".to_string(),
+                ));
+            }
+        };
+
+        let record_id = existing_record.id;
+        let record_name = existing_record.name.clone();
+        let record_type_str_clone = record_type_str.to_string();
 
         // Prevent deletion of SOA records
         if existing_record.record_type == RecordType::SOA {
@@ -398,6 +473,27 @@ impl RecordService {
             log_error!("Failed to delete record: {}", e);
             ApiError::InternalServerError("Failed to delete record".to_string())
         })?;
+
+        // Create record history
+        record_history_repository
+            .create(RecordHistory {
+                id: 0,
+                record_name: record_name.clone(),
+                record_type: record_type_str_clone.clone(),
+                log: format!(
+                    "[{}] Record deleted: zone_name={}, name={}, type={}",
+                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                    zone.name,
+                    record_name,
+                    record_type_str_clone,
+                ),
+                created_at: Utc::now(),
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create record history: {}", e);
+                ApiError::InternalServerError("Failed to create record history".to_string())
+            })?;
 
         Ok(())
     }
