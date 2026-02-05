@@ -15,19 +15,19 @@ impl ZoneDnsConfigController {
     pub async fn routes() -> Router {
         Router::new()
             .route(
-                "/zones/:zone_id/dns",
+                "/zones/{zone_id}/dns",
                 routing::get(Self::get_zone_dns_configs),
             )
             .route(
-                "/zones/:zone_id/dns",
+                "/zones/{zone_id}/dns",
                 routing::post(Self::create_zone_dns_config),
             )
             .route(
-                "/zones/:zone_id/dns/:dns_id",
+                "/zones/{zone_id}/dns/{dns_id}",
                 routing::put(Self::update_zone_dns_config),
             )
             .route(
-                "/zones/:zone_id/dns/:dns_id",
+                "/zones/{zone_id}/dns/{dns_id}",
                 routing::delete(Self::delete_zone_dns_config),
             )
     }

@@ -17,11 +17,11 @@ impl DnsInstanceController {
         Router::new()
             .route("/dns", routing::get(Self::get_dns_instances))
             .route("/dns", routing::post(Self::create_dns_instance))
-            .route("/dns/:id", routing::get(Self::get_dns_instance))
-            .route("/dns/:id", routing::put(Self::update_dns_instance))
-            .route("/dns/:id", routing::delete(Self::delete_dns_instance))
-            .route("/dns/:id/keys", routing::get(Self::get_dns_instance_keys))
-            .route("/dns/:id/zones", routing::get(Self::get_dns_instance_zones))
+            .route("/dns/{id}", routing::get(Self::get_dns_instance))
+            .route("/dns/{id}", routing::put(Self::update_dns_instance))
+            .route("/dns/{id}", routing::delete(Self::delete_dns_instance))
+            .route("/dns/{id}/keys", routing::get(Self::get_dns_instance_keys))
+            .route("/dns/{id}/zones", routing::get(Self::get_dns_instance_zones))
     }
 
     async fn get_dns_instances() -> impl IntoResponse {

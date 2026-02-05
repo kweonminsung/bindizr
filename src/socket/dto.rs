@@ -10,6 +10,26 @@ pub enum DaemonCommandKind {
     DnsWriteConfig,
     DnsReload,
     DnsStatus,
+    // DNS Instance commands
+    GetDns,
+    ListDns,
+    CreateDns,
+    DeleteDns,
+    // DNS Key commands
+    GetDnsKey,
+    ListDnsKeys,
+    CreateDnsKey,
+    DeleteDnsKey,
+    // Zone commands
+    GetZone,
+    ListZones,
+    CreateZone,
+    DeleteZone,
+    // Record commands
+    GetRecord,
+    ListRecords,
+    CreateRecord,
+    DeleteRecord,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

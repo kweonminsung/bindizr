@@ -1,4 +1,7 @@
+mod create;
+mod delete;
 mod dns;
+mod get;
 mod start;
 mod status;
 mod token;
@@ -37,6 +40,21 @@ pub enum Command {
         #[command(subcommand)]
         subcommand: TokenCommand,
     },
+    /// Get resources
+    Get {
+        #[command(subcommand)]
+        subcommand: get::GetCommand,
+    },
+    /// Create resources
+    Create {
+        #[command(subcommand)]
+        subcommand: create::CreateCommand,
+    },
+    /// Delete resources
+    Delete {
+        #[command(subcommand)]
+        subcommand: delete::DeleteCommand,
+    },
 }
 
 pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
@@ -73,6 +91,9 @@ pub async fn execute() {
         Command::Status => status::handle_command().await,
         Command::Dns { subcommand } => dns::handle_command(subcommand).await,
         Command::Token { subcommand } => token::handle_command(subcommand).await,
+        Command::Get { subcommand } => get::handle_command(subcommand).await,
+        Command::Create { subcommand } => create::handle_command(subcommand).await,
+        Command::Delete { subcommand } => delete::handle_command(subcommand).await,
     } {
         eprintln!("Error: {}", e);
         std::process::exit(1);

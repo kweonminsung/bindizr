@@ -14,9 +14,9 @@ impl DnsKeyController {
         Router::new()
             .route("/keys", routing::get(Self::get_dns_keys))
             .route("/keys", routing::post(Self::create_dns_key))
-            .route("/keys/:id", routing::get(Self::get_dns_key))
-            .route("/keys/:id", routing::put(Self::update_dns_key))
-            .route("/keys/:id", routing::delete(Self::delete_dns_key))
+            .route("/keys/{id}", routing::get(Self::get_dns_key))
+            .route("/keys/{id}", routing::put(Self::update_dns_key))
+            .route("/keys/{id}", routing::delete(Self::delete_dns_key))
     }
 
     async fn get_dns_keys() -> impl IntoResponse {

@@ -1,6 +1,10 @@
 mod dns;
+mod dns_instance;
+mod dns_key;
+mod record;
 mod status;
 mod token;
+mod zone;
 
 use crate::socket::dto::{DaemonCommand, DaemonCommandKind};
 use crate::socket::socket::SOCKET_FILE_PATH;
@@ -19,6 +23,7 @@ async fn handle_client(stream: UnixStream) {
 
         let raw_response = match parsed {
             Ok(cmd) => match cmd.command {
+                // General commands
                 DaemonCommandKind::Status => status::get_status(),
                 DaemonCommandKind::TokenCreate => token::create_token(&cmd.data).await,
                 DaemonCommandKind::TokenList => token::list_tokens().await,
@@ -26,6 +31,26 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::DnsWriteConfig => dns::write_dns_config().await,
                 DaemonCommandKind::DnsReload => dns::reload_dns_config(),
                 DaemonCommandKind::DnsStatus => dns::get_dns_status(),
+                // DNS Instance commands
+                DaemonCommandKind::GetDns => dns_instance::get_dns_instance(&cmd.data).await,
+                DaemonCommandKind::ListDns => dns_instance::list_dns_instances().await,
+                DaemonCommandKind::CreateDns => dns_instance::create_dns_instance(&cmd.data).await,
+                DaemonCommandKind::DeleteDns => dns_instance::delete_dns_instance(&cmd.data).await,
+                // DNS Key commands
+                DaemonCommandKind::GetDnsKey => dns_key::get_dns_key(&cmd.data).await,
+                DaemonCommandKind::ListDnsKeys => dns_key::list_dns_keys().await,
+                DaemonCommandKind::CreateDnsKey => dns_key::create_dns_key(&cmd.data).await,
+                DaemonCommandKind::DeleteDnsKey => dns_key::delete_dns_key(&cmd.data).await,
+                // Zone commands
+                DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
+                DaemonCommandKind::ListZones => zone::list_zones().await,
+                DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
+                DaemonCommandKind::DeleteZone => zone::delete_zone(&cmd.data).await,
+                // Record commands
+                DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
+                DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
+                DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
+                DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
             },
             Err(e) => {
                 log_error!("Failed to parse command: {}", e);

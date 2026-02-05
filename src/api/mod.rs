@@ -2,8 +2,7 @@ pub mod controller;
 pub mod error;
 pub mod service;
 pub mod validation;
-
-mod dto;
+pub mod dto;
 
 use crate::{config, log_error, log_info};
 use controller::ApiController;
