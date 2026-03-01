@@ -1,11 +1,7 @@
-mod dns;
-mod dns_key;
-mod key;
 mod middleware;
 mod record;
 mod record_history;
 mod zone;
-mod zone_dns_config;
 mod zone_history;
 
 use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
@@ -23,10 +19,6 @@ impl ApiController {
             .merge(zone_history::ZoneHistoryController::routes().await)
             .merge(zone::ZoneController::routes().await)
             .merge(record::RecordController::routes().await)
-            .merge(dns::DnsController::routes().await)
-            .merge(key::KeyController::routes().await)
-            .merge(zone_dns_config::ZoneDnsConfigController::routes().await)
-            .merge(dns_key::DnsKeyController::routes().await)
             .route("/", routing::get(ApiController::get_home))
             .fallback(Self::not_found);
 

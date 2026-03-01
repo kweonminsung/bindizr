@@ -15,10 +15,10 @@ file_path = "bindizr.db"       # SQLite database file path
 [database.postgresql]
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
-[bind]
-rndc_server_url = "127.0.0.1:953"    # RNDC server address
-rndc_algorithm = "sha256"            # RNDC authentication algorithm
-rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
+[xfr]
+listen_addr = "0.0.0.0"        # XFR server listen address
+listen_port = 53533            # XFR server listen port (TCP)
+allow_transfer = "127.0.0.1,::1"  # Comma-separated IP addresses allowed to request zone transfers
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

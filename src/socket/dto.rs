@@ -7,19 +7,6 @@ pub enum DaemonCommandKind {
     TokenCreate,
     TokenList,
     TokenDelete,
-    DnsWriteConfig,
-    DnsReload,
-    DnsStatus,
-    // DNS commands
-    GetDns,
-    ListDns,
-    CreateDns,
-    DeleteDns,
-    // Key commands
-    GetKey,
-    ListKeys,
-    CreateKey,
-    DeleteKey,
     // Zone commands
     GetZone,
     ListZones,

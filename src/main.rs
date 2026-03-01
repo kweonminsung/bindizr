@@ -3,9 +3,9 @@ mod cli;
 mod config;
 mod database;
 mod logger;
-mod rndc;
 mod serializer;
 mod socket;
+mod xfr;
 
 #[tokio::main]
 async fn main() {

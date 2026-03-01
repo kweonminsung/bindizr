@@ -1,7 +1,7 @@
 use crate::database::error::DatabaseError;
 use crate::database::{model::zone_history::ZoneHistory, repository::ZoneHistoryRepository};
 use async_trait::async_trait;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Postgres, Pool, Row};
 
 pub struct PostgresZoneHistoryRepository {
     pool: Pool<Postgres>,
@@ -18,19 +18,14 @@ impl ZoneHistoryRepository for PostgresZoneHistoryRepository {
     async fn create(&self, mut zone_history: ZoneHistory) -> Result<ZoneHistory, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let result = sqlx::query(
-            r#"
-            INSERT INTO zone_history (log, zone_name)
-            VALUES ($1, $2)
-            RETURNING id
-            "#,
-        )
-        .bind(&zone_history.log)
-        .bind(&zone_history.zone_name)
-        .fetch_one(&mut *conn)
-        .await?;
+        let result = sqlx::query("INSERT INTO zone_history (log, zone_name) VALUES ($1, $2) RETURNING id")
+            .bind(&zone_history.log)
+            .bind(&zone_history.zone_name)
+            .fetch_one(&mut *conn)
+            .await?;
 
-        zone_history.id = result.get("id");
+        zone_history.id = result.get::<i32, _>(0);
+
         Ok(zone_history)
     }
 
@@ -51,7 +46,7 @@ impl ZoneHistoryRepository for PostgresZoneHistoryRepository {
         let mut conn = self.pool.acquire().await?;
 
         let zone_histories = sqlx::query_as::<_, ZoneHistory>(
-            "SELECT id, log, created_at, zone_name FROM zone_history WHERE zone_name = $1 ORDER BY created_at DESC"
+            "SELECT id, log, created_at, zone_name FROM zone_history WHERE zone_name = $1 ORDER BY created_at DESC",
         )
         .bind(zone_name)
         .fetch_all(&mut *conn)

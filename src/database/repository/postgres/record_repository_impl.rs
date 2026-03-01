@@ -4,7 +4,7 @@ use crate::database::{
     repository::RecordRepository,
 };
 use async_trait::async_trait;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Postgres, Pool, Row};
 
 pub struct PostgresRecordRepository {
     pool: Pool<Postgres>,
@@ -12,7 +12,7 @@ pub struct PostgresRecordRepository {
 
 impl PostgresRecordRepository {
     pub fn new(pool: Pool<Postgres>) -> Self {
-        Self { pool }
+        PostgresRecordRepository { pool }
     }
 }
 
@@ -37,20 +37,19 @@ impl RecordRepository for PostgresRecordRepository {
         .fetch_one(&mut *conn)
         .await?;
 
-        record.id = result.get("id");
+        record.id = result.get::<i32, _>(0);
+
         Ok(record)
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let record = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1"
-        )
-        .bind(id)
-        .fetch_optional(&mut *conn)
-        .await
-        ?;
+        let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&mut *conn)
+            .await
+            ?;
 
         Ok(record)
     }
@@ -58,13 +57,12 @@ impl RecordRepository for PostgresRecordRepository {
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name"
-        )
-        .bind(zone_id)
-        .fetch_all(&mut *conn)
-        .await
-        ?;
+        let records =
+            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name")
+                .bind(zone_id)
+                .fetch_all(&mut *conn)
+                .await
+                ?;
 
         Ok(records)
     }
@@ -76,14 +74,13 @@ impl RecordRepository for PostgresRecordRepository {
     ) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let record = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = $1 AND record_type = $2"
-        )
-        .bind(name)
-        .bind(record_type.to_string())
-        .fetch_optional(&mut *conn)
-        .await
-        ?;
+        let record =
+            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = $1 AND record_type = $2")
+                .bind(name)
+                .bind(record_type.to_string())
+                .fetch_optional(&mut *conn)
+                .await
+                ?;
 
         Ok(record)
     }
@@ -91,13 +88,12 @@ impl RecordRepository for PostgresRecordRepository {
     async fn get_by_name(&self, name: &str) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = $1"
-        )
-        .bind(name)
-        .fetch_all(&mut *conn)
-        .await
-        ?;
+        let records =
+            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = $1")
+                .bind(name)
+                .fetch_all(&mut *conn)
+                .await
+                ?;
 
         Ok(records)
     }
@@ -105,12 +101,10 @@ impl RecordRepository for PostgresRecordRepository {
     async fn get_all(&self) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records ORDER BY name"
-        )
-        .fetch_all(&mut *conn)
-        .await
-        ?;
+        let records = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records ORDER BY name")
+            .fetch_all(&mut *conn)
+            .await
+            ?;
 
         Ok(records)
     }
@@ -120,10 +114,10 @@ impl RecordRepository for PostgresRecordRepository {
 
         sqlx::query(
             r#"
-            UPDATE records 
+            UPDATE records
             SET name = $1, record_type = $2, value = $3, ttl = $4, priority = $5, zone_id = $6
             WHERE id = $7
-            "#,
+        "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
@@ -140,12 +134,10 @@ impl RecordRepository for PostgresRecordRepository {
 
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-
         sqlx::query("DELETE FROM records WHERE id = $1")
             .bind(id)
             .execute(&mut *conn)
             .await?;
-
         Ok(())
     }
 }

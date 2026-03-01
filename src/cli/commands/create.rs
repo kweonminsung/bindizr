@@ -5,41 +5,6 @@ use serde_json::json;
 
 #[derive(Subcommand, Debug)]
 pub enum CreateCommand {
-    /// Create a DNS server
-    Dns {
-        /// Name of the DNS server
-        #[arg(long)]
-        name: String,
-        /// Host address
-        #[arg(long)]
-        host: String,
-        /// RNDC port
-        #[arg(long, default_value = "953")]
-        rndc_port: i32,
-    },
-
-    /// Create a DNS key
-    Key {
-        /// Name of the DNS key
-        #[arg(long)]
-        name: String,
-        /// Key type (RNDC or TSIG)
-        #[arg(
-            long,
-            aliases = ["type"]
-        )]
-        key_type: String,
-        /// Key algorithm
-        #[arg(
-            long,
-            aliases = ["algorithm", "alg"]
-        )]
-        key_algorithm: String,
-        /// Secret
-        #[arg(long)]
-        secret: String,
-    },
-
     /// Create a zone
     Zone {
         /// Zone name
@@ -97,38 +62,6 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
     match subcommand {
-        CreateCommand::Dns {
-            name,
-            host,
-            rndc_port,
-        } => {
-            let data = json!({
-                "name": name,
-                "host": host,
-                "rndc_port": rndc_port,
-            });
-            let response = client
-                .send_command(DaemonCommandKind::CreateDns, Some(data))
-                .await?;
-            println!("{}", response.message);
-        }
-        CreateCommand::Key {
-            name,
-            key_type,
-            key_algorithm,
-            secret,
-        } => {
-            let data = json!({
-                "name": name,
-                "key_type": key_type,
-                "key_algorithm": key_algorithm,
-                "secret": secret,
-            });
-            let response = client
-                .send_command(DaemonCommandKind::CreateKey, Some(data))
-                .await?;
-            println!("{}", response.message);
-        }
         CreateCommand::Zone {
             name,
             primary_ns,

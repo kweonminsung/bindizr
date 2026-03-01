@@ -4,13 +4,9 @@ pub mod sqlite;
 
 use super::model::{
     api_token::ApiToken,
-    dns::Dns,
-    dns_key::DnsKey,
-    key::Key,
     record::{Record, RecordType},
     record_history::RecordHistory,
     zone::Zone,
-    zone_dns_config::ZoneDnsConfig,
     zone_history::ZoneHistory,
 };
 use crate::database::{DatabasePool, error::DatabaseError};
@@ -67,54 +63,6 @@ pub trait RecordHistoryRepository: Send + Sync {
         record_name: &str,
         record_type: &str,
     ) -> Result<Vec<RecordHistory>, DatabaseError>;
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
-}
-
-// Dns Repository Trait
-#[allow(dead_code)]
-#[async_trait]
-pub trait DnsRepository: Send + Sync {
-    async fn create(&self, dns: Dns) -> Result<Dns, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<Dns>, DatabaseError>;
-    async fn get_by_name(&self, name: &str) -> Result<Option<Dns>, DatabaseError>;
-    async fn get_by_host(&self, host: &str) -> Result<Option<Dns>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<Dns>, DatabaseError>;
-    async fn update(&self, dns: Dns) -> Result<Dns, DatabaseError>;
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
-}
-
-// Key Repository Trait
-#[allow(dead_code)]
-#[async_trait]
-pub trait KeyRepository: Send + Sync {
-    async fn create(&self, key: Key) -> Result<Key, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<Key>, DatabaseError>;
-    async fn get_by_name(&self, name: &str) -> Result<Option<Key>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<Key>, DatabaseError>;
-    async fn update(&self, key: Key) -> Result<Key, DatabaseError>;
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
-}
-
-// DnsKey Repository Trait
-#[allow(dead_code)]
-#[async_trait]
-pub trait DnsKeyRepository: Send + Sync {
-    async fn create(&self, dns_key: DnsKey) -> Result<DnsKey, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<DnsKey>, DatabaseError>;
-    async fn get_by_dns_id(&self, dns_id: i32) -> Result<Vec<DnsKey>, DatabaseError>;
-    async fn update(&self, dns_key: DnsKey) -> Result<DnsKey, DatabaseError>;
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
-}
-
-// Zone DNS Config Repository Trait
-#[allow(dead_code)]
-#[async_trait]
-pub trait ZoneDnsConfigRepository: Send + Sync {
-    async fn create(&self, zone_dns_config: ZoneDnsConfig) -> Result<ZoneDnsConfig, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneDnsConfig>, DatabaseError>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError>;
-    async fn get_by_dns_id(&self, dns_id: i32) -> Result<Vec<ZoneDnsConfig>, DatabaseError>;
-    async fn update(&self, zone_dns_config: ZoneDnsConfig) -> Result<ZoneDnsConfig, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
@@ -201,64 +149,6 @@ impl RepositoryFactory {
             ),
             DatabasePool::SQLite(sqlite_pool) => {
                 Box::new(sqlite::SqliteApiTokenRepository::new(sqlite_pool.clone()))
-            }
-        }
-    }
-
-    pub fn create_dns_repository(pool: &DatabasePool) -> Box<dyn DnsRepository> {
-        match pool {
-            DatabasePool::MySQL(mysql_pool) => {
-                Box::new(mysql::MySqlDnsRepository::new(mysql_pool.clone()))
-            }
-            DatabasePool::PostgreSQL(postgres_pool) => {
-                Box::new(postgres::PostgresDnsRepository::new(postgres_pool.clone()))
-            }
-            DatabasePool::SQLite(sqlite_pool) => {
-                Box::new(sqlite::SqliteDnsRepository::new(sqlite_pool.clone()))
-            }
-        }
-    }
-
-    pub fn create_key_repository(pool: &DatabasePool) -> Box<dyn KeyRepository> {
-        match pool {
-            DatabasePool::MySQL(mysql_pool) => {
-                Box::new(mysql::MySqlKeyRepository::new(mysql_pool.clone()))
-            }
-            DatabasePool::PostgreSQL(postgres_pool) => {
-                Box::new(postgres::PostgresKeyRepository::new(postgres_pool.clone()))
-            }
-            DatabasePool::SQLite(sqlite_pool) => {
-                Box::new(sqlite::SqliteKeyRepository::new(sqlite_pool.clone()))
-            }
-        }
-    }
-
-    pub fn create_zone_dns_config_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn ZoneDnsConfigRepository> {
-        match pool {
-            DatabasePool::MySQL(mysql_pool) => {
-                Box::new(mysql::MySqlZoneDnsConfigRepository::new(mysql_pool.clone()))
-            }
-            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
-                postgres::PostgresZoneDnsConfigRepository::new(postgres_pool.clone()),
-            ),
-            DatabasePool::SQLite(sqlite_pool) => Box::new(
-                sqlite::SqliteZoneDnsConfigRepository::new(sqlite_pool.clone()),
-            ),
-        }
-    }
-
-    pub fn create_dns_key_repository(pool: &DatabasePool) -> Box<dyn DnsKeyRepository> {
-        match pool {
-            DatabasePool::MySQL(mysql_pool) => {
-                Box::new(mysql::MySqlDnsKeyRepository::new(mysql_pool.clone()))
-            }
-            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
-                postgres::PostgresDnsKeyRepository::new(postgres_pool.clone()),
-            ),
-            DatabasePool::SQLite(sqlite_pool) => {
-                Box::new(sqlite::SqliteDnsKeyRepository::new(sqlite_pool.clone()))
             }
         }
     }

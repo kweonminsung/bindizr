@@ -3,8 +3,8 @@ mod output;
 
 use crate::{
     api,
-    cli::{commands::dns::DnsCommand, commands::token::TokenCommand},
-    config, database, log_info, logger, rndc, serializer, socket,
+    cli::commands::token::TokenCommand,
+    config, database, log_info, logger, serializer, socket, xfr,
 };
 use clap::{Parser, Subcommand};
 
@@ -25,11 +25,6 @@ pub enum Command {
     },
     /// Show the status of the bindizr service
     Status,
-    /// Manage DNS system
-    Dns {
-        #[command(subcommand)]
-        subcommand: DnsCommand,
-    },
     /// Manage API tokens
     Token {
         #[command(subcommand)]
@@ -64,7 +59,7 @@ pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     logger::initialize();
     database::initialize().await;
-    rndc::initialize();
+    xfr::initialize();
     serializer::initialize();
 
     log_info!("Bindizr is running in foreground mode.");
@@ -84,7 +79,6 @@ pub async fn execute() {
     if let Err(e) = match args.command {
         Command::Start { config } => commands::start::handle_command(config).await,
         Command::Status => commands::status::handle_command().await,
-        Command::Dns { subcommand } => commands::dns::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::Get { subcommand } => commands::get::handle_command(subcommand).await,
         Command::Create { subcommand } => commands::create::handle_command(subcommand).await,
