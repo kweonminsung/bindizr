@@ -17,6 +17,8 @@ pub enum DaemonCommandKind {
     ListRecords,
     CreateRecord,
     DeleteRecord,
+    // Notify commands
+    NotifyZone,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

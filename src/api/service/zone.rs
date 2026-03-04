@@ -2,10 +2,10 @@ use crate::{
     api::{dto::CreateZoneRequest, error::ApiError},
     database::{
         error::DatabaseError,
-        get_zone_history_repository, get_zone_repository,
-        model::{zone::Zone, zone_history::ZoneHistory},
+        get_zone_change_repository, get_zone_history_repository, get_zone_repository,
+        model::{zone::Zone, zone_change::ZoneChange, zone_history::ZoneHistory},
     },
-    log_error,
+    log_error, log_warn, xfr,
 };
 use chrono::Utc;
 
@@ -241,6 +241,69 @@ impl ZoneService {
                 log_error!("Failed to create zone history: {}", e);
                 ApiError::InternalServerError("Failed to create zone history".to_string())
             })?;
+
+        // Record zone changes for IXFR
+        let zone_change_repository = get_zone_change_repository();
+
+        let format_soa = |zone: &Zone| -> String {
+            format!(
+                "{} {} {} {} {} {} {}",
+                zone.primary_ns,
+                zone.admin_email.replace('@', "."),
+                zone.serial,
+                zone.refresh,
+                zone.retry,
+                zone.expire,
+                zone.minimum_ttl
+            )
+        };
+
+        // Delete old SOA record
+        zone_change_repository
+            .create(ZoneChange {
+                id: 0,
+                zone_id,
+                serial: new_serial,
+                operation: "DEL".to_string(),
+                record_name: "@".to_string(),
+                record_type: "SOA".to_string(),
+                record_value: format_soa(&existing_zone),
+                record_ttl: Some(existing_zone.ttl),
+                record_priority: None,
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change (DEL SOA): {}", e);
+                ApiError::InternalServerError("Failed to create zone change".to_string())
+            })?;
+
+        // Add new SOA record
+        zone_change_repository
+            .create(ZoneChange {
+                id: 0,
+                zone_id,
+                serial: new_serial,
+                operation: "ADD".to_string(),
+                record_name: "@".to_string(),
+                record_type: "SOA".to_string(),
+                record_value: format_soa(&updated_zone),
+                record_ttl: Some(updated_zone.ttl),
+                record_priority: None,
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change (ADD SOA): {}", e);
+                ApiError::InternalServerError("Failed to create zone change".to_string())
+            })?;
+
+        // Send NOTIFY to secondary servers
+        if let Err(e) = xfr::notify::send_notify(&updated_zone.name).await {
+            log_warn!(
+                "Failed to send NOTIFY for zone {}: {}",
+                updated_zone.name,
+                e
+            );
+        }
 
         Ok(updated_zone)
     }

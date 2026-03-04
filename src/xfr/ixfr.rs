@@ -26,7 +26,8 @@ pub async fn handle_ixfr(
     // Check if this is a catalog zone request. Fallback to AXFR
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("IXFR: Catalog zone requested, falling back to AXFR");
-        return axfr::handle_axfr(stream, zone_name, query_id, client_ip).await;
+        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
+            .await;
     }
 
     let zone_repo = get_zone_repository();
@@ -43,7 +44,14 @@ pub async fn handle_ixfr(
         Some(s) => s,
         None => {
             log_warn!("IXFR: No client serial provided, falling back to AXFR");
-            return axfr::handle_axfr(stream, zone_name, query_id, client_ip).await;
+            return axfr::handle_axfr_with_qtype(
+                stream,
+                zone_name,
+                query_id,
+                client_ip,
+                Rtype::IXFR,
+            )
+            .await;
         }
     };
 
@@ -73,7 +81,8 @@ pub async fn handle_ixfr(
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr(stream, zone_name, query_id, client_ip).await;
+        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
+            .await;
     }
 
     log_info!(
@@ -83,7 +92,7 @@ pub async fn handle_ixfr(
         current_serial
     );
 
-    send_ixfr_response(stream, zone_name, query_id, &zone, &changes).await?;
+    send_ixfr_response(stream, zone_name, query_id, &zone, client_serial, &changes).await?;
 
     log_info!("IXFR completed for zone {}", zone_name_str);
 
@@ -113,6 +122,7 @@ async fn send_ixfr_response(
     zone_name: &Name<Vec<u8>>,
     query_id: u16,
     zone: &crate::database::model::zone::Zone,
+    client_serial: u32,
     changes: &[delta::ZoneChange],
 ) -> Result<(), XfrError> {
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
@@ -139,7 +149,7 @@ async fn send_ixfr_response(
 
         // Old serial (previous serial or client serial for first change)
         let old_serial = if idx == 0 {
-            serial - 1
+            client_serial
         } else {
             serials[idx - 1]
         };
@@ -149,7 +159,7 @@ async fn send_ixfr_response(
 
         // Add all DEL operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
-            add_change_to_builder(&mut builder, change)?;
+            add_change_to_builder(&mut builder, change, &zone.name)?;
         }
 
         // Add new SOA (addition section marker)
@@ -157,7 +167,7 @@ async fn send_ixfr_response(
 
         // Add all ADD operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
-            add_change_to_builder(&mut builder, change)?;
+            add_change_to_builder(&mut builder, change, &zone.name)?;
         }
     }
 
@@ -173,34 +183,36 @@ async fn send_ixfr_response(
 fn add_change_to_builder(
     builder: &mut wire::DnsMessageBuilder,
     change: &delta::ZoneChange,
+    zone_name: &str,
 ) -> Result<(), XfrError> {
     let ttl = change.record_ttl.unwrap_or(3600) as u32;
+    let owner_name = normalize_change_name(&change.record_name, zone_name);
 
     match change.record_type.as_str() {
         "A" => {
             let addr: std::net::Ipv4Addr = change.record_value.parse().map_err(|_| {
                 XfrError::ProtocolError(format!("Invalid A record: {}", change.record_value))
             })?;
-            builder.add_a_record(&change.record_name, ttl, addr)?;
+            builder.add_a_record(&owner_name, ttl, addr)?;
         }
         "AAAA" => {
             let addr: std::net::Ipv6Addr = change.record_value.parse().map_err(|_| {
                 XfrError::ProtocolError(format!("Invalid AAAA record: {}", change.record_value))
             })?;
-            builder.add_aaaa_record(&change.record_name, ttl, addr)?;
+            builder.add_aaaa_record(&owner_name, ttl, addr)?;
         }
         "CNAME" => {
-            builder.add_cname_record(&change.record_name, ttl, &change.record_value)?;
+            builder.add_cname_record(&owner_name, ttl, &change.record_value)?;
         }
         "MX" => {
             let priority = change.record_priority.unwrap_or(10) as u16;
-            builder.add_mx_record(&change.record_name, ttl, priority, &change.record_value)?;
+            builder.add_mx_record(&owner_name, ttl, priority, &change.record_value)?;
         }
         "NS" => {
-            builder.add_ns_record(&change.record_name, ttl, &change.record_value)?;
+            builder.add_ns_record(&owner_name, ttl, &change.record_value)?;
         }
         "TXT" => {
-            builder.add_txt_record(&change.record_name, ttl, &change.record_value)?;
+            builder.add_txt_record(&owner_name, ttl, &change.record_value)?;
         }
         _ => {
             log_info!("Skipping unsupported record type: {}", change.record_type);
@@ -208,4 +220,50 @@ fn add_change_to_builder(
     }
 
     Ok(())
+}
+
+fn normalize_change_name(name: &str, zone: &str) -> String {
+    if name.ends_with('.') {
+        return name.to_string();
+    }
+
+    let zone_trimmed = zone.trim_end_matches('.');
+    if name == "@" {
+        return format!("{}.", zone_trimmed);
+    }
+
+    let owner_trimmed = name.trim_end_matches('.');
+    let zone_suffix = format!(".{}", zone_trimmed.to_ascii_lowercase());
+    let owner_lower = owner_trimmed.to_ascii_lowercase();
+    if owner_lower == zone_trimmed.to_ascii_lowercase() || owner_lower.ends_with(&zone_suffix) {
+        return format!("{}.", owner_trimmed);
+    }
+
+    format!("{}.{}.", owner_trimmed, zone_trimmed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_change_name;
+
+    #[test]
+    fn normalize_relative_name() {
+        assert_eq!(
+            normalize_change_name("www", "example.com"),
+            "www.example.com."
+        );
+    }
+
+    #[test]
+    fn normalize_apex_name() {
+        assert_eq!(normalize_change_name("@", "example.com."), "example.com.");
+    }
+
+    #[test]
+    fn keep_fqdn_name() {
+        assert_eq!(
+            normalize_change_name("api.example.com.", "example.com"),
+            "api.example.com."
+        );
+    }
 }

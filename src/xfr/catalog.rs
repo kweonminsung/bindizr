@@ -56,11 +56,20 @@ pub async fn handle_catalog_axfr(
     zone_name: &Name<Vec<u8>>,
     query_id: u16,
 ) -> Result<(), XfrError> {
+    handle_catalog_axfr_with_qtype(stream, zone_name, query_id, Rtype::AXFR).await
+}
+
+pub async fn handle_catalog_axfr_with_qtype(
+    stream: &mut TcpStream,
+    zone_name: &Name<Vec<u8>>,
+    query_id: u16,
+    response_qtype: Rtype,
+) -> Result<(), XfrError> {
     log_info!("AXFR request for catalog zone: {}", CATALOG_ZONE_NAME);
 
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;
 
-    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::AXFR);
+    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
     builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
 
     builder.add_catalog_ns(&catalog_zone)?;

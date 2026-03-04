@@ -15,6 +15,27 @@ impl PostgresZoneChangeRepository {
 
 #[async_trait]
 impl ZoneChangeRepository for PostgresZoneChangeRepository {
+    async fn create(&self, zone_change: ZoneChange) -> Result<ZoneChange, DatabaseError> {
+        sqlx::query_as::<_, ZoneChange>(
+            r#"
+            INSERT INTO zone_changes (zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
+            "#
+        )
+        .bind(zone_change.zone_id)
+        .bind(zone_change.serial)
+        .bind(&zone_change.operation)
+        .bind(&zone_change.record_name)
+        .bind(&zone_change.record_type)
+        .bind(&zone_change.record_value)
+        .bind(zone_change.record_ttl)
+        .bind(zone_change.record_priority)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
     async fn get_changes_between_serials(
         &self,
         zone_id: i32,

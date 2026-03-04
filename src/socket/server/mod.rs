@@ -1,3 +1,4 @@
+mod notify;
 mod record;
 mod status;
 mod token;
@@ -35,6 +36,8 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
+                // Notify commands
+                DaemonCommandKind::NotifyZone => notify::handle_notify_zone(cmd.data).await,
             },
 
             Err(e) => {

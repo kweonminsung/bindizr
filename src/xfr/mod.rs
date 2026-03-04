@@ -3,6 +3,7 @@ pub mod catalog;
 pub mod delta;
 pub mod error;
 pub mod ixfr;
+pub mod notify;
 pub mod server;
 pub mod wire;
 

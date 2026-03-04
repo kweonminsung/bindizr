@@ -14,6 +14,18 @@ pub async fn handle_axfr(
     query_id: u16,
     client_ip: IpAddr,
 ) -> Result<(), XfrError> {
+    handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::AXFR).await
+}
+
+/// Handle AXFR payload with a specific response question type.
+/// IXFR fallback should keep QTYPE=IXFR to match the original query.
+pub async fn handle_axfr_with_qtype(
+    stream: &mut TcpStream,
+    zone_name: &Name<Vec<u8>>,
+    query_id: u16,
+    client_ip: IpAddr,
+    response_qtype: Rtype,
+) -> Result<(), XfrError> {
     log_info!(
         "AXFR request for zone {:?} from {}",
         zone_name.to_string(),
@@ -25,7 +37,12 @@ pub async fn handle_axfr(
 
     // Check if this is a catalog zone request
     if catalog::is_catalog_zone(zone_name_str) {
-        return catalog::handle_catalog_axfr(stream, zone_name, query_id).await;
+        return if response_qtype == Rtype::AXFR {
+            catalog::handle_catalog_axfr(stream, zone_name, query_id).await
+        } else {
+            catalog::handle_catalog_axfr_with_qtype(stream, zone_name, query_id, response_qtype)
+                .await
+        };
     }
 
     let zone_repo = get_zone_repository();
@@ -49,7 +66,7 @@ pub async fn handle_axfr(
     );
 
     // Build and send AXFR response
-    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::AXFR);
+    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
 
     // Add initial SOA record
     builder.add_soa(&zone, zone.serial as u32)?;

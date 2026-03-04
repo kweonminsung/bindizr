@@ -1,15 +1,30 @@
 use crate::{
     api::{dto::CreateRecordRequest, error::ApiError},
     database::{
-        get_record_history_repository, get_record_repository, get_zone_repository,
+        get_record_history_repository, get_record_repository, get_zone_change_repository,
+        get_zone_repository,
         model::{
             record::{Record, RecordType},
             record_history::RecordHistory,
+            zone_change::ZoneChange,
         },
     },
-    log_error,
+    log_error, log_warn, xfr,
 };
 use chrono::Utc;
+
+/// Generate next serial number in YYYYMMDDNN format
+fn generate_serial(current_serial: i32) -> i32 {
+    let now = Utc::now();
+    let date_prefix = now.format("%Y%m%d").to_string().parse::<i32>().unwrap();
+    let base_serial = date_prefix * 100;
+
+    if current_serial / 100 == date_prefix {
+        current_serial + 1
+    } else {
+        base_serial
+    }
+}
 
 /// Convert name to FQDN by adding trailing dot
 fn to_fqdn(name: &str) -> String {
@@ -162,9 +177,8 @@ impl RecordService {
 
         // Prevent manual creation of A/AAAA records for the primary NS host.
         let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
-        if (record_type == RecordType::A && create_record_request.name == primary_ns_relative_name)
-            || (record_type == RecordType::AAAA
-                && create_record_request.name == primary_ns_relative_name)
+        if (record_type == RecordType::A || record_type == RecordType::AAAA)
+            && create_record_request.name == primary_ns_relative_name
         {
             return Err(ApiError::BadRequest(
                 "Cannot manually create A/AAAA records for the primary NS host".to_string(),
@@ -245,6 +259,44 @@ impl RecordService {
                 ApiError::InternalServerError("Failed to create record history".to_string())
             })?;
 
+        // Increment zone serial so IXFR consumers can detect this change
+        let new_serial = generate_serial(zone.serial);
+        zone_repository
+            .update(crate::database::model::zone::Zone {
+                serial: new_serial,
+                ..zone.clone()
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to update zone serial: {}", e);
+                ApiError::InternalServerError("Failed to update zone serial".to_string())
+            })?;
+
+        // Record zone change for IXFR
+        let zone_change_repository = get_zone_change_repository();
+        zone_change_repository
+            .create(ZoneChange {
+                id: 0,
+                zone_id: zone.id,
+                serial: new_serial,
+                operation: "ADD".to_string(),
+                record_name: created_record.name.clone(),
+                record_type: create_record_request.record_type.clone(),
+                record_value: create_record_request.value.clone(),
+                record_ttl: create_record_request.ttl,
+                record_priority: create_record_request.priority,
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change: {}", e);
+                ApiError::InternalServerError("Failed to create zone change".to_string())
+            })?;
+
+        // Send NOTIFY to secondary servers
+        if let Err(e) = xfr::notify::send_notify(&zone.name).await {
+            log_warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
+        }
+
         Ok(created_record)
     }
 
@@ -284,17 +336,13 @@ impl RecordService {
 
         let record_id = existing_record.id;
 
-        // Check if zone exists
-        let zone = match zone_repository
-            .get_by_name(&update_record_request.zone_name)
-            .await
-        {
+        // Load authoritative zone from the existing record to avoid cross-zone mismatches.
+        let zone = match zone_repository.get_by_id(existing_record.zone_id).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
-                return Err(ApiError::NotFound(format!(
-                    "Zone with name '{}' not found",
-                    update_record_request.zone_name
-                )));
+                return Err(ApiError::InternalServerError(
+                    "Failed to fetch zone".to_string(),
+                ));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
@@ -303,6 +351,13 @@ impl RecordService {
                 ));
             }
         };
+
+        if zone.name != update_record_request.zone_name {
+            return Err(ApiError::BadRequest(format!(
+                "Record belongs to zone '{}', but request zone is '{}'",
+                zone.name, update_record_request.zone_name
+            )));
+        }
 
         // Validate record type
         let record_type =
@@ -330,9 +385,8 @@ impl RecordService {
 
         // Prevent manual update of A/AAAA records for the primary NS host.
         let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
-        if (record_type == RecordType::A && update_record_request.name == primary_ns_relative_name)
-            || (record_type == RecordType::AAAA
-                && update_record_request.name == primary_ns_relative_name)
+        if (record_type == RecordType::A || record_type == RecordType::AAAA)
+            && update_record_request.name == primary_ns_relative_name
         {
             return Err(ApiError::BadRequest(
                 "Cannot manually update A/AAAA records for the primary NS host".to_string(),
@@ -415,6 +469,65 @@ impl RecordService {
                 log_error!("Failed to create record history: {}", e);
                 ApiError::InternalServerError("Failed to create record history".to_string())
             })?;
+
+        // Increment zone serial so IXFR consumers can detect this change
+        let new_serial = generate_serial(zone.serial);
+        zone_repository
+            .update(crate::database::model::zone::Zone {
+                serial: new_serial,
+                ..zone.clone()
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to update zone serial: {}", e);
+                ApiError::InternalServerError("Failed to update zone serial".to_string())
+            })?;
+
+        // Record zone changes for IXFR
+        let zone_change_repository = get_zone_change_repository();
+
+        // Delete old record
+        zone_change_repository
+            .create(ZoneChange {
+                id: 0,
+                zone_id: zone.id,
+                serial: new_serial,
+                operation: "DEL".to_string(),
+                record_name: existing_record.name.clone(),
+                record_type: existing_record.record_type.to_string(),
+                record_value: existing_record.value.clone(),
+                record_ttl: existing_record.ttl,
+                record_priority: existing_record.priority,
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change (DEL): {}", e);
+                ApiError::InternalServerError("Failed to create zone change".to_string())
+            })?;
+
+        // Add new record
+        zone_change_repository
+            .create(ZoneChange {
+                id: 0,
+                zone_id: zone.id,
+                serial: new_serial,
+                operation: "ADD".to_string(),
+                record_name: updated_record.name.clone(),
+                record_type: update_record_request.record_type.clone(),
+                record_value: update_record_request.value.clone(),
+                record_ttl: update_record_request.ttl,
+                record_priority: update_record_request.priority,
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change (ADD): {}", e);
+                ApiError::InternalServerError("Failed to create zone change".to_string())
+            })?;
+
+        // Send NOTIFY to secondary servers
+        if let Err(e) = xfr::notify::send_notify(&zone.name).await {
+            log_warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
+        }
 
         Ok(updated_record)
     }
@@ -506,6 +619,44 @@ impl RecordService {
                 log_error!("Failed to create record history: {}", e);
                 ApiError::InternalServerError("Failed to create record history".to_string())
             })?;
+
+        // Increment zone serial so IXFR consumers can detect this change
+        let new_serial = generate_serial(zone.serial);
+        zone_repository
+            .update(crate::database::model::zone::Zone {
+                serial: new_serial,
+                ..zone.clone()
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to update zone serial: {}", e);
+                ApiError::InternalServerError("Failed to update zone serial".to_string())
+            })?;
+
+        // Record zone change for IXFR
+        let zone_change_repository = get_zone_change_repository();
+        zone_change_repository
+            .create(ZoneChange {
+                id: 0,
+                zone_id: zone.id,
+                serial: new_serial,
+                operation: "DEL".to_string(),
+                record_name: existing_record.name.clone(),
+                record_type: existing_record.record_type.to_string(),
+                record_value: existing_record.value.clone(),
+                record_ttl: existing_record.ttl,
+                record_priority: existing_record.priority,
+            })
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change: {}", e);
+                ApiError::InternalServerError("Failed to create zone change".to_string())
+            })?;
+
+        // Send NOTIFY to secondary servers
+        if let Err(e) = xfr::notify::send_notify(&zone.name).await {
+            log_warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
+        }
 
         Ok(())
     }

@@ -1,5 +1,6 @@
 use crate::database::model::{
-    record::Record, record_history::RecordHistory, zone::Zone, zone_history::ZoneHistory,
+    dns_server::DnsServer, record::Record, record_history::RecordHistory, zone::Zone,
+    zone_history::ZoneHistory,
 };
 use serde::{Deserialize, Serialize};
 
@@ -125,4 +126,40 @@ impl GetRecordHistoryResponse {
             record_type: record_history.record_type.clone(),
         }
     }
+}
+
+// DNS Server DTOs
+#[derive(Serialize, Debug)]
+pub struct GetDnsServerResponse {
+    pub id: i32,
+    pub ip_address: String,
+    pub port: i32,
+    pub created_at: String,
+}
+impl GetDnsServerResponse {
+    pub fn from_dns_server(dns_server: &DnsServer) -> Self {
+        GetDnsServerResponse {
+            id: dns_server.id,
+            ip_address: dns_server.ip_address.clone(),
+            port: dns_server.port,
+            created_at: dns_server.created_at.to_string(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CreateDnsServerRequest {
+    pub ip_address: String,
+    #[serde(default = "default_dns_port")]
+    pub port: i32,
+}
+
+fn default_dns_port() -> i32 {
+    53
+}
+
+#[derive(Deserialize, Debug)]
+pub struct UpdateDnsServerRequest {
+    pub ip_address: Option<String>,
+    pub port: Option<i32>,
 }

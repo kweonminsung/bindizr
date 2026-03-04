@@ -1,4 +1,5 @@
 mod api_token_repository_impl;
+mod dns_server_repository_impl;
 mod record_history_repository_impl;
 mod record_repository_impl;
 mod zone_change_repository_impl;
@@ -6,6 +7,7 @@ mod zone_history_repository_impl;
 mod zone_repository_impl;
 
 pub use api_token_repository_impl::SqliteApiTokenRepository;
+pub use dns_server_repository_impl::SqliteDnsServerRepository;
 pub use record_history_repository_impl::SqliteRecordHistoryRepository;
 pub use record_repository_impl::SqliteRecordRepository;
 pub use zone_change_repository_impl::SqliteZoneChangeRepository;

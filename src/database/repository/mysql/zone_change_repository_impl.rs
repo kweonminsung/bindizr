@@ -15,6 +15,40 @@ impl MySqlZoneChangeRepository {
 
 #[async_trait]
 impl ZoneChangeRepository for MySqlZoneChangeRepository {
+    async fn create(&self, zone_change: ZoneChange) -> Result<ZoneChange, DatabaseError> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO zone_changes (zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(zone_change.zone_id)
+        .bind(zone_change.serial)
+        .bind(&zone_change.operation)
+        .bind(&zone_change.record_name)
+        .bind(&zone_change.record_type)
+        .bind(&zone_change.record_value)
+        .bind(zone_change.record_ttl)
+        .bind(zone_change.record_priority)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        let id = result.last_insert_id() as i32;
+
+        sqlx::query_as::<_, ZoneChange>(
+            r#"
+            SELECT id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
+            FROM zone_changes
+            WHERE id = ?
+            "#
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
     async fn get_changes_between_serials(
         &self,
         zone_id: i32,

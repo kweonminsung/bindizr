@@ -2,7 +2,9 @@ mod commands;
 mod output;
 
 use crate::{
-    api, cli::commands::token::TokenCommand, config, database, log_info, logger, socket, xfr,
+    api,
+    cli::commands::{notify::NotifyCommand, token::TokenCommand},
+    config, database, log_info, logger, socket, xfr,
 };
 use clap::{Parser, Subcommand};
 
@@ -43,6 +45,11 @@ pub enum Command {
         #[command(subcommand)]
         subcommand: commands::delete::DeleteCommand,
     },
+    /// Send NOTIFY to secondary servers
+    Notify {
+        #[command(subcommand)]
+        subcommand: NotifyCommand,
+    },
 }
 
 pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
@@ -80,6 +87,7 @@ pub async fn execute() {
         Command::Get { subcommand } => commands::get::handle_command(subcommand).await,
         Command::Create { subcommand } => commands::create::handle_command(subcommand).await,
         Command::Delete { subcommand } => commands::delete::handle_command(subcommand).await,
+        Command::Notify { subcommand } => commands::notify::handle_notify(&subcommand).await,
     } {
         eprintln!("Error: {}", e);
         std::process::exit(1);

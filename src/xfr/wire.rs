@@ -311,22 +311,133 @@ pub fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
 
     // For IXFR, try to extract SOA from authority section (client serial)
     let client_serial = if qtype == Rtype::IXFR {
-        message.authority().ok().and_then(|mut auth| {
-            auth.next().and_then(|record| {
-                record.ok().and_then(|r| {
-                    if r.rtype() == Rtype::SOA {
-                        Some(0)
-                    } else {
-                        None
-                    }
-                })
-            })
-        })
+        extract_ixfr_serial_from_query(data)
     } else {
         None
     };
 
     Ok((qname, qtype, client_serial, query_id))
+}
+
+fn extract_ixfr_serial_from_query(data: &[u8]) -> Option<u32> {
+    if data.len() < 12 {
+        return None;
+    }
+
+    let qdcount = u16::from_be_bytes([data[4], data[5]]) as usize;
+    let ancount = u16::from_be_bytes([data[6], data[7]]) as usize;
+    let nscount = u16::from_be_bytes([data[8], data[9]]) as usize;
+
+    let mut pos = 12usize;
+
+    // Skip questions
+    for _ in 0..qdcount {
+        let qname_len = skip_name(data, pos)?;
+        pos = pos.checked_add(qname_len + 4)?;
+        if pos > data.len() {
+            return None;
+        }
+    }
+
+    // Skip answers
+    for _ in 0..ancount {
+        pos = skip_rr(data, pos)?;
+    }
+
+    // Inspect authority records for SOA
+    for _ in 0..nscount {
+        let name_len = skip_name(data, pos)?;
+        pos = pos.checked_add(name_len)?;
+        if pos.checked_add(10)? > data.len() {
+            return None;
+        }
+
+        let rtype = u16::from_be_bytes([data[pos], data[pos + 1]]);
+        let rdlen = u16::from_be_bytes([data[pos + 8], data[pos + 9]]) as usize;
+        let rdata_start = pos + 10;
+        let rdata_end = rdata_start.checked_add(rdlen)?;
+        if rdata_end > data.len() {
+            return None;
+        }
+
+        // SOA
+        if rtype == 6 {
+            let mname_len = skip_name(data, rdata_start)?;
+            let rname_pos = rdata_start.checked_add(mname_len)?;
+            let rname_len = skip_name(data, rname_pos)?;
+            let serial_pos = rname_pos.checked_add(rname_len)?;
+            if serial_pos.checked_add(4)? <= rdata_end {
+                return Some(u32::from_be_bytes([
+                    data[serial_pos],
+                    data[serial_pos + 1],
+                    data[serial_pos + 2],
+                    data[serial_pos + 3],
+                ]));
+            }
+            return None;
+        }
+
+        pos = rdata_end;
+    }
+
+    None
+}
+
+fn skip_rr(data: &[u8], pos: usize) -> Option<usize> {
+    let name_len = skip_name(data, pos)?;
+    let header_pos = pos.checked_add(name_len)?;
+    if header_pos.checked_add(10)? > data.len() {
+        return None;
+    }
+    let rdlen = u16::from_be_bytes([data[header_pos + 8], data[header_pos + 9]]) as usize;
+    let next = header_pos.checked_add(10 + rdlen)?;
+    if next > data.len() {
+        return None;
+    }
+    Some(next)
+}
+
+fn skip_name(data: &[u8], start: usize) -> Option<usize> {
+    if start >= data.len() {
+        return None;
+    }
+
+    let mut pos = start;
+    let mut consumed = 0usize;
+    let mut guard = 0usize;
+
+    loop {
+        if pos >= data.len() || guard > data.len() {
+            return None;
+        }
+        guard += 1;
+
+        let len = data[pos];
+        if len & 0xC0 == 0xC0 {
+            if pos + 1 >= data.len() {
+                return None;
+            }
+            consumed = consumed.checked_add(2)?;
+            return Some(consumed);
+        }
+
+        if len == 0 {
+            consumed = consumed.checked_add(1)?;
+            return Some(consumed);
+        }
+
+        let label_len = len as usize;
+        if label_len > 63 {
+            return None;
+        }
+
+        if pos.checked_add(1 + label_len)? > data.len() {
+            return None;
+        }
+
+        pos += 1 + label_len;
+        consumed = consumed.checked_add(1 + label_len)?;
+    }
 }
 
 pub fn encode_tcp_message(message: &[u8]) -> Vec<u8> {

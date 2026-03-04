@@ -4,6 +4,7 @@ pub mod sqlite;
 
 use super::model::{
     api_token::ApiToken,
+    dns_server::DnsServer,
     record::{Record, RecordType},
     record_history::RecordHistory,
     zone::Zone,
@@ -70,6 +71,7 @@ pub trait RecordHistoryRepository: Send + Sync {
 // Zone Change Repository Trait
 #[async_trait]
 pub trait ZoneChangeRepository: Send + Sync {
+    async fn create(&self, zone_change: ZoneChange) -> Result<ZoneChange, DatabaseError>;
     async fn get_changes_between_serials(
         &self,
         zone_id: i32,
@@ -86,6 +88,16 @@ pub trait ApiTokenRepository: Send + Sync {
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
+// DNS Server Repository Trait
+#[async_trait]
+pub trait DnsServerRepository: Send + Sync {
+    async fn get_all(&self) -> Result<Vec<DnsServer>, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<DnsServer>, DatabaseError>;
+    async fn create(&self, dns_server: DnsServer) -> Result<DnsServer, DatabaseError>;
+    async fn update(&self, dns_server: DnsServer) -> Result<DnsServer, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
@@ -175,6 +187,20 @@ impl RepositoryFactory {
             ),
             DatabasePool::SQLite(sqlite_pool) => {
                 Box::new(sqlite::SqliteZoneChangeRepository::new(sqlite_pool.clone()))
+            }
+        }
+    }
+
+    pub fn create_dns_server_repository(pool: &DatabasePool) -> Box<dyn DnsServerRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlDnsServerRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresDnsServerRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteDnsServerRepository::new(sqlite_pool.clone()))
             }
         }
     }

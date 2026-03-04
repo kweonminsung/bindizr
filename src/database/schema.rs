@@ -73,6 +73,14 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             last_used_at DATETIME
         );
         "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dns_servers (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            ip_address VARCHAR(255) NOT NULL UNIQUE,
+            port INT NOT NULL DEFAULT 53,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
     ]
 }
 
@@ -151,6 +159,14 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             last_used_at TIMESTAMP
         );
         "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dns_servers (
+            id SERIAL PRIMARY KEY,
+            ip_address VARCHAR(255) NOT NULL UNIQUE,
+            port INTEGER NOT NULL DEFAULT 53,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
     ]
 }
 
@@ -227,6 +243,14 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             expires_at DATETIME,
             last_used_at DATETIME
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dns_servers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip_address TEXT NOT NULL UNIQUE,
+            port INTEGER NOT NULL DEFAULT 53,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
     ]

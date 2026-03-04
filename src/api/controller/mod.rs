@@ -1,3 +1,4 @@
+mod dns_server;
 mod middleware;
 mod record;
 mod record_history;
@@ -15,6 +16,7 @@ pub struct ApiController;
 impl ApiController {
     pub async fn routes() -> Router {
         let mut router = Router::new()
+            .merge(dns_server::DnsServerController::routes().await)
             .merge(record_history::RecordHistoryController::routes().await)
             .merge(zone_history::ZoneHistoryController::routes().await)
             .merge(zone::ZoneController::routes().await)
