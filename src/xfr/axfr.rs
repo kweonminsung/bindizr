@@ -1,13 +1,13 @@
-use super::{error::XfrError, wire};
+use super::{catalog, error::XfrError, wire};
 use crate::{
     database::{get_record_repository, get_zone_repository},
     log_info,
 };
-use domain::base::{iana::Rtype, Name};
+use domain::base::{Name, iana::Rtype};
 use std::net::IpAddr;
 use tokio::net::TcpStream;
 
-/// Handle AXFR (Full Zone Transfer) request
+/// Handle AXFR
 pub async fn handle_axfr(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -20,11 +20,14 @@ pub async fn handle_axfr(
         client_ip
     );
 
-    // Convert zone name to string
     let zone_name_str = zone_name.to_string();
     let zone_name_str = zone_name_str.trim_end_matches('.');
 
-    // Get zone from database
+    // Check if this is a catalog zone request
+    if catalog::is_catalog_zone(zone_name_str) {
+        return catalog::handle_catalog_axfr(stream, zone_name, query_id).await;
+    }
+
     let zone_repo = get_zone_repository();
     let zone = zone_repo
         .get_by_name(zone_name_str)
@@ -32,7 +35,6 @@ pub async fn handle_axfr(
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
-    // Get all records for the zone
     let record_repo = get_record_repository();
     let records = record_repo
         .get_by_zone_id(zone.id)
@@ -46,26 +48,22 @@ pub async fn handle_axfr(
         zone.serial
     );
 
-    // Build DNS AXFR response message
+    // Build and send AXFR response
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::AXFR);
 
-    // AXFR format:
-    // 1. SOA record (start marker)
-    // 2. All zone records
-    // 3. SOA record (end marker)
-
-    // Add SOA at the beginning
+    // Add initial SOA record
     builder.add_soa(&zone, zone.serial as u32)?;
+
+    // Add primary NS record for the zone
+    builder.add_ns_record(&zone.name, zone.ttl as u32, &zone.primary_ns)?;
 
     // Add all records
     for record in &records {
-        builder.add_record(record)?;
+        builder.add_record(record, &zone.name)?;
     }
 
-    // Add SOA at the end (same as beginning)
+    // Add final SOA record to indicate end of transfer
     builder.add_soa(&zone, zone.serial as u32)?;
-
-    // Build and send message
     let message = builder.build();
     wire::write_tcp_message(stream, &message).await?;
 

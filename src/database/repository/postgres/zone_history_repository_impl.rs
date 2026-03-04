@@ -1,7 +1,7 @@
 use crate::database::error::DatabaseError;
 use crate::database::{model::zone_history::ZoneHistory, repository::ZoneHistoryRepository};
 use async_trait::async_trait;
-use sqlx::{Postgres, Pool, Row};
+use sqlx::{Pool, Postgres, Row};
 
 pub struct PostgresZoneHistoryRepository {
     pool: Pool<Postgres>,
@@ -18,11 +18,12 @@ impl ZoneHistoryRepository for PostgresZoneHistoryRepository {
     async fn create(&self, mut zone_history: ZoneHistory) -> Result<ZoneHistory, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let result = sqlx::query("INSERT INTO zone_history (log, zone_name) VALUES ($1, $2) RETURNING id")
-            .bind(&zone_history.log)
-            .bind(&zone_history.zone_name)
-            .fetch_one(&mut *conn)
-            .await?;
+        let result =
+            sqlx::query("INSERT INTO zone_history (log, zone_name) VALUES ($1, $2) RETURNING id")
+                .bind(&zone_history.log)
+                .bind(&zone_history.zone_name)
+                .fetch_one(&mut *conn)
+                .await?;
 
         zone_history.id = result.get::<i32, _>(0);
 

@@ -1,11 +1,11 @@
-use super::{axfr, delta, error::XfrError, wire};
+use super::{axfr, catalog, delta, error::XfrError, wire};
 use crate::{database::get_zone_repository, log_info, log_warn};
-use domain::base::{iana::Rtype, Name};
+use domain::base::{Name, iana::Rtype};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use tokio::net::TcpStream;
 
-/// Handle IXFR (Incremental Zone Transfer) request
+/// Handle IXFR
 pub async fn handle_ixfr(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -20,11 +20,15 @@ pub async fn handle_ixfr(
         client_serial
     );
 
-    // Convert zone name to string
     let zone_name_str = zone_name.to_string();
     let zone_name_str = zone_name_str.trim_end_matches('.');
 
-    // Get zone from database
+    // Check if this is a catalog zone request. Fallback to AXFR
+    if catalog::is_catalog_zone(zone_name_str) {
+        log_info!("IXFR: Catalog zone requested, falling back to AXFR");
+        return axfr::handle_axfr(stream, zone_name, query_id, client_ip).await;
+    }
+
     let zone_repo = get_zone_repository();
     let zone = zone_repo
         .get_by_name(zone_name_str)
@@ -79,7 +83,6 @@ pub async fn handle_ixfr(
         current_serial
     );
 
-    // Build IXFR response message
     send_ixfr_response(stream, zone_name, query_id, &zone, &changes).await?;
 
     log_info!("IXFR completed for zone {}", zone_name_str);
@@ -95,13 +98,12 @@ async fn send_up_to_date_response(
     zone: &crate::database::model::zone::Zone,
 ) -> Result<(), XfrError> {
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
-    
-    // Single SOA indicates client is up-to-date
+
     builder.add_soa(zone, zone.serial as u32)?;
-    
+
     let message = builder.build();
     wire::write_tcp_message(stream, &message).await?;
-    
+
     Ok(())
 }
 
@@ -115,16 +117,7 @@ async fn send_ixfr_response(
 ) -> Result<(), XfrError> {
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
 
-    // IXFR format:
-    // 1. Current SOA (new)
-    // 2. For each serial change:
-    //    a. Old SOA (deletion section marker)
-    //    b. Deleted records
-    //    c. New SOA (addition section marker)
-    //    d. Added records
-    // 3. Current SOA (end marker)
-
-    // Add current SOA at the beginning
+    // Add initial SOA record
     builder.add_soa(zone, zone.serial as u32)?;
 
     // Group changes by serial
@@ -143,7 +136,7 @@ async fn send_ixfr_response(
     // Process each serial in order
     for (idx, &serial) in serials.iter().enumerate() {
         let serial_changes = &changes_by_serial[&serial];
-        
+
         // Old serial (previous serial or client serial for first change)
         let old_serial = if idx == 0 {
             serial - 1
@@ -168,10 +161,8 @@ async fn send_ixfr_response(
         }
     }
 
-    // Add current SOA at the end
+    // Add final SOA record to indicate end of transfer
     builder.add_soa(zone, zone.serial as u32)?;
-
-    // Build and send message
     let message = builder.build();
     wire::write_tcp_message(stream, &message).await?;
 
@@ -184,20 +175,18 @@ fn add_change_to_builder(
     change: &delta::ZoneChange,
 ) -> Result<(), XfrError> {
     let ttl = change.record_ttl.unwrap_or(3600) as u32;
-    
+
     match change.record_type.as_str() {
         "A" => {
-            let addr: std::net::Ipv4Addr = change
-                .record_value
-                .parse()
-                .map_err(|_| XfrError::ProtocolError(format!("Invalid A record: {}", change.record_value)))?;
+            let addr: std::net::Ipv4Addr = change.record_value.parse().map_err(|_| {
+                XfrError::ProtocolError(format!("Invalid A record: {}", change.record_value))
+            })?;
             builder.add_a_record(&change.record_name, ttl, addr)?;
         }
         "AAAA" => {
-            let addr: std::net::Ipv6Addr = change
-                .record_value
-                .parse()
-                .map_err(|_| XfrError::ProtocolError(format!("Invalid AAAA record: {}", change.record_value)))?;
+            let addr: std::net::Ipv6Addr = change.record_value.parse().map_err(|_| {
+                XfrError::ProtocolError(format!("Invalid AAAA record: {}", change.record_value))
+            })?;
             builder.add_aaaa_record(&change.record_name, ttl, addr)?;
         }
         "CNAME" => {
@@ -214,10 +203,9 @@ fn add_change_to_builder(
             builder.add_txt_record(&change.record_name, ttl, &change.record_value)?;
         }
         _ => {
-            // Skip unsupported record types
             log_info!("Skipping unsupported record type: {}", change.record_type);
         }
     }
-    
+
     Ok(())
 }

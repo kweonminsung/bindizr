@@ -116,3 +116,33 @@ where
         std::process::exit(1);
     })
 }
+
+pub fn get_config_optional<T: 'static + FromStr>(key: &str) -> Option<T>
+where
+    <T as FromStr>::Err: std::fmt::Display,
+{
+    let cfg = CONFIG.get().expect("Configuration not initialized");
+
+    let value = match cfg.get::<config::Value>(key) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    let value_str = value.into_string().unwrap_or_else(|e| {
+        eprintln!(
+            "Failed to convert configuration value for key '{}' to string: {}",
+            key, e
+        );
+        std::process::exit(1);
+    });
+
+    Some(value_str.parse::<T>().unwrap_or_else(|e| {
+        eprintln!(
+            "Failed to parse configuration for '{}'. Expected type: {}. Error: {}",
+            key,
+            type_name::<T>(),
+            e
+        );
+        std::process::exit(1);
+    }))
+}

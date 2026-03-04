@@ -4,7 +4,7 @@ use crate::database::{
     repository::RecordRepository,
 };
 use async_trait::async_trait;
-use sqlx::{Postgres, Pool, Row};
+use sqlx::{Pool, Postgres, Row};
 
 pub struct PostgresRecordRepository {
     pool: Pool<Postgres>,

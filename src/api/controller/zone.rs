@@ -1,9 +1,7 @@
-use crate::{
-    api::{
-        controller::middleware::body_parser::JsonBody,
-        dto::{CreateZoneRequest, GetRecordResponse, GetZoneResponse},
-        service::{record::RecordService, zone::ZoneService},
-    },
+use crate::api::{
+    controller::middleware::body_parser::JsonBody,
+    dto::{CreateZoneRequest, GetRecordResponse, GetZoneResponse},
+    service::{record::RecordService, zone::ZoneService},
 };
 use axum::{
     Json, Router,

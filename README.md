@@ -183,8 +183,8 @@ Add the following configuration, adjusting values to match your environment:
 
 ```toml
 [api]
-host = "127.0.0.1"             # HTTP API host
-port = 3000                    # HTTP API port
+listen_addr = "127.0.0.1"      # HTTP API listen address
+listen_port = 3000             # HTTP API listen port
 require_authentication = true  # Enable API authentication (true/false)
 
 [database]
@@ -203,6 +203,11 @@ server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL se
 rndc_server_url = "127.0.0.1:953"    # RNDC server address
 rndc_algorithm = "sha256"            # RNDC authentication algorithm
 rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
+
+[xfr]
+listen_addr = "0.0.0.0"              # XFR server listen address
+listen_port = 53533                  # XFR server listen port (TCP)
+allow_transfer = "127.0.0.1,::1"     # Comma-separated IP ACL for XFR
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

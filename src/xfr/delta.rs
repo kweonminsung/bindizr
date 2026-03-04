@@ -19,7 +19,7 @@ pub async fn get_zone_changes(
     to_serial: u32,
 ) -> Result<Vec<ZoneChange>, XfrError> {
     let repo = get_zone_change_repository();
-    
+
     let changes = repo
         .get_changes_between_serials(zone_id, from_serial as i32, to_serial as i32)
         .await

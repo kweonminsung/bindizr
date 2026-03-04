@@ -160,17 +160,14 @@ impl RecordService {
             }
         };
 
-        // Prevent manual creation of records related to primary_ns
+        // Prevent manual creation of A/AAAA records for the primary NS host.
         let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
-        if (record_type == RecordType::NS && create_record_request.name == "@")
-            || (record_type == RecordType::A
-                && create_record_request.name == primary_ns_relative_name)
+        if (record_type == RecordType::A && create_record_request.name == primary_ns_relative_name)
             || (record_type == RecordType::AAAA
                 && create_record_request.name == primary_ns_relative_name)
         {
             return Err(ApiError::BadRequest(
-                "Cannot manually create records that are automatically generated for the primary NS"
-                    .to_string(),
+                "Cannot manually create A/AAAA records for the primary NS host".to_string(),
             ));
         }
 
@@ -331,17 +328,14 @@ impl RecordService {
             ));
         }
 
-        // Prevent manual update of records related to primary_ns
+        // Prevent manual update of A/AAAA records for the primary NS host.
         let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
-        if (record_type == RecordType::NS && update_record_request.name == "@")
-            || (record_type == RecordType::A
-                && update_record_request.name == primary_ns_relative_name)
+        if (record_type == RecordType::A && update_record_request.name == primary_ns_relative_name)
             || (record_type == RecordType::AAAA
                 && update_record_request.name == primary_ns_relative_name)
         {
             return Err(ApiError::BadRequest(
-                "Cannot manually update records that are automatically generated for the primary NS"
-                    .to_string(),
+                "Cannot manually update A/AAAA records for the primary NS host".to_string(),
             ));
         }
 

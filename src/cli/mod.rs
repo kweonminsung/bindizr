@@ -2,9 +2,7 @@ mod commands;
 mod output;
 
 use crate::{
-    api,
-    cli::commands::token::TokenCommand,
-    config, database, log_info, logger, socket, xfr,
+    api, cli::commands::token::TokenCommand, config, database, log_info, logger, socket, xfr,
 };
 use clap::{Parser, Subcommand};
 

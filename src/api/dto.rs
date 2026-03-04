@@ -1,6 +1,5 @@
 use crate::database::model::{
-    record::Record, record_history::RecordHistory, zone::Zone,
-    zone_history::ZoneHistory,
+    record::Record, record_history::RecordHistory, zone::Zone, zone_history::ZoneHistory,
 };
 use serde::{Deserialize, Serialize};
 
@@ -73,7 +72,7 @@ pub struct CreateZoneRequest {
     pub primary_ns_ipv6: Option<String>,
     pub admin_email: String,
     pub ttl: i32,
-    pub serial: i32,
+    pub serial: Option<i32>, // Optional: auto-generated if not provided
     pub refresh: Option<i32>,
     pub retry: Option<i32>,
     pub expire: Option<i32>,

@@ -1,7 +1,7 @@
 use crate::database::error::DatabaseError;
 use crate::database::{model::record_history::RecordHistory, repository::RecordHistoryRepository};
 use async_trait::async_trait;
-use sqlx::{Postgres, Pool, Row};
+use sqlx::{Pool, Postgres, Row};
 
 pub struct PostgresRecordHistoryRepository {
     pool: Pool<Postgres>,

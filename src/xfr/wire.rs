@@ -1,11 +1,10 @@
 use super::error::XfrError;
 use crate::database::model::{record::Record, zone::Zone};
-use domain::base::{iana::Rtype, Message, Name, ToName};
+use domain::base::{Message, Name, ToName, iana::Rtype};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub const DNS_TCP_MAX_SIZE: usize = 65535;
 
-/// DNS message builder for zone transfers
 pub struct DnsMessageBuilder {
     query_id: u16,
     qname: Vec<u8>,
@@ -30,7 +29,7 @@ impl DnsMessageBuilder {
         // MNAME
         encode_domain_name(&zone.primary_ns, &mut rdata)?;
 
-        // RNAME (admin email with @ replaced by .)
+        // RNAME
         let rname = zone.admin_email.replace('@', ".");
         encode_domain_name(&rname, &mut rdata)?;
 
@@ -99,9 +98,8 @@ impl DnsMessageBuilder {
     pub fn add_txt_record(&mut self, name: &str, ttl: u32, text: &str) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
         let text_bytes = text.as_bytes();
-        
+
         // TXT records are stored as length-prefixed strings
-        // Split into 255-byte chunks if needed
         let mut offset = 0;
         while offset < text_bytes.len() {
             let chunk_len = (text_bytes.len() - offset).min(255);
@@ -109,46 +107,74 @@ impl DnsMessageBuilder {
             rdata.extend_from_slice(&text_bytes[offset..offset + chunk_len]);
             offset += chunk_len;
         }
-        
+
         self.add_answer_raw(name, 16, ttl, &rdata)?;
         Ok(())
     }
 
+    /// Add PTR record
+    pub fn add_ptr_record(&mut self, name: &str, ttl: u32, target: &str) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+        encode_domain_name(target, &mut rdata)?;
+        self.add_answer_raw(name, 12, ttl, &rdata)?;
+        Ok(())
+    }
+
+    /// Add NS record for catalog zone. NS should be "invalid."
+    pub fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), XfrError> {
+        let owner_name = ensure_fqdn(&zone.name);
+        self.add_ns_record(&owner_name, zone.ttl as u32, "invalid")?;
+        Ok(())
+    }
+
+    /// Add version record for catalog zone
+    pub fn add_catalog_version(&mut self, zone: &Zone) -> Result<(), XfrError> {
+        let version_name = format!("version.{}.", zone.name.trim_end_matches('.'));
+        self.add_txt_record(&version_name, zone.ttl as u32, "2")?;
+        Ok(())
+    }
+
+    /// Add PTR record for catalog zone member
+    pub fn add_catalog_ptr(&mut self, zone: &Zone, member_zone: &str) -> Result<(), XfrError> {
+        let member_id = super::catalog::zone_name_to_member_id(member_zone);
+        let ptr_name = format!("{}.zones.{}.", member_id, zone.name.trim_end_matches('.'));
+        let ptr_target = ensure_fqdn(member_zone);
+        self.add_ptr_record(&ptr_name, zone.ttl as u32, &ptr_target)?;
+        Ok(())
+    }
+
     /// Add a record from database Record model
-    pub fn add_record(&mut self, record: &Record) -> Result<(), XfrError> {
+    pub fn add_record(&mut self, record: &Record, zone_name: &str) -> Result<(), XfrError> {
         let ttl = record.ttl.unwrap_or(3600) as u32;
-        
+        let owner_name = normalize_name(&record.name, zone_name);
+
         match record.record_type.as_str() {
             "A" => {
-                let addr: Ipv4Addr = record
-                    .value
-                    .parse()
-                    .map_err(|_| XfrError::ProtocolError(format!("Invalid A record: {}", record.value)))?;
-                self.add_a_record(&record.name, ttl, addr)?;
+                let addr: Ipv4Addr = record.value.parse().map_err(|_| {
+                    XfrError::ProtocolError(format!("Invalid A record: {}", record.value))
+                })?;
+                self.add_a_record(&owner_name, ttl, addr)?;
             }
             "AAAA" => {
-                let addr: Ipv6Addr = record
-                    .value
-                    .parse()
-                    .map_err(|_| XfrError::ProtocolError(format!("Invalid AAAA record: {}", record.value)))?;
-                self.add_aaaa_record(&record.name, ttl, addr)?;
+                let addr: Ipv6Addr = record.value.parse().map_err(|_| {
+                    XfrError::ProtocolError(format!("Invalid AAAA record: {}", record.value))
+                })?;
+                self.add_aaaa_record(&owner_name, ttl, addr)?;
             }
             "CNAME" => {
-                self.add_cname_record(&record.name, ttl, &record.value)?;
+                self.add_cname_record(&owner_name, ttl, &record.value)?;
             }
             "MX" => {
                 let priority = record.priority.unwrap_or(10) as u16;
-                self.add_mx_record(&record.name, ttl, priority, &record.value)?;
+                self.add_mx_record(&owner_name, ttl, priority, &record.value)?;
             }
             "NS" => {
-                self.add_ns_record(&record.name, ttl, &record.value)?;
+                self.add_ns_record(&owner_name, ttl, &record.value)?;
             }
             "TXT" => {
-                self.add_txt_record(&record.name, ttl, &record.value)?;
+                self.add_txt_record(&owner_name, ttl, &record.value)?;
             }
-            _ => {
-                // Skip unsupported record types
-            }
+            _ => {}
         }
         Ok(())
     }
@@ -212,12 +238,39 @@ impl DnsMessageBuilder {
     }
 }
 
-/// Encode domain name to DNS wire format
+fn ensure_fqdn(name: &str) -> String {
+    if name.ends_with('.') {
+        name.to_string()
+    } else {
+        format!("{}.", name)
+    }
+}
+
+fn normalize_name(name: &str, zone: &str) -> String {
+    if name.ends_with('.') {
+        return name.to_string();
+    }
+
+    let zone_trimmed = zone.trim_end_matches('.');
+    if name == "@" {
+        return format!("{}.", zone_trimmed);
+    }
+
+    let owner_trimmed = name.trim_end_matches('.');
+    let zone_suffix = format!(".{}", zone_trimmed.to_ascii_lowercase());
+    let owner_lower = owner_trimmed.to_ascii_lowercase();
+
+    if owner_lower == zone_trimmed.to_ascii_lowercase() || owner_lower.ends_with(&zone_suffix) {
+        return format!("{}.", owner_trimmed);
+    }
+
+    format!("{}.{}.", owner_trimmed, zone_trimmed)
+}
+
 fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError> {
     let name = name.trim_end_matches('.');
-    
+
     if name.is_empty() {
-        // Root domain
         buf.push(0);
         return Ok(());
     }
@@ -235,11 +288,10 @@ fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError> {
         buf.push(label.len() as u8);
         buf.extend_from_slice(label.as_bytes());
     }
-    buf.push(0); // Terminate with zero-length label
+    buf.push(0);
     Ok(())
 }
 
-/// Type alias for parse_query result
 type ParseQueryResult = (Name<Vec<u8>>, Rtype, Option<u32>, u16);
 
 /// Parse a DNS query message from bytes
@@ -259,22 +311,17 @@ pub fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
 
     // For IXFR, try to extract SOA from authority section (client serial)
     let client_serial = if qtype == Rtype::IXFR {
-        message
-            .authority()
-            .ok()
-            .and_then(|mut auth| {
-                auth.next().and_then(|record| {
-                    record.ok().and_then(|r| {
-                        if r.rtype() == Rtype::SOA {
-                            // Parse SOA to get serial
-                            // This is simplified; in production, properly parse SOA RDATA
-                            Some(0) // Placeholder
-                        } else {
-                            None
-                        }
-                    })
+        message.authority().ok().and_then(|mut auth| {
+            auth.next().and_then(|record| {
+                record.ok().and_then(|r| {
+                    if r.rtype() == Rtype::SOA {
+                        Some(0)
+                    } else {
+                        None
+                    }
                 })
             })
+        })
     } else {
         None
     };
@@ -282,7 +329,6 @@ pub fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
     Ok((qname, qtype, client_serial, query_id))
 }
 
-/// Encode message to TCP length-prefixed format
 pub fn encode_tcp_message(message: &[u8]) -> Vec<u8> {
     let len = message.len() as u16;
     let mut result = Vec::with_capacity(2 + message.len());
@@ -291,7 +337,6 @@ pub fn encode_tcp_message(message: &[u8]) -> Vec<u8> {
     result
 }
 
-/// Read a length-prefixed TCP DNS message
 pub async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     reader: &mut R,
 ) -> Result<Vec<u8>, XfrError> {
@@ -319,7 +364,6 @@ pub async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     Ok(message_buf)
 }
 
-/// Write a length-prefixed TCP DNS message
 pub async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
     writer: &mut W,
     message: &[u8],
@@ -332,4 +376,32 @@ pub async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
     writer.flush().await.map_err(XfrError::IoError)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_name;
+
+    #[test]
+    fn test_normalize_name_relative() {
+        assert_eq!(normalize_name("sub", "example.com"), "sub.example.com.");
+    }
+
+    #[test]
+    fn test_normalize_name_zone_qualified() {
+        assert_eq!(
+            normalize_name("www.example.com", "example.com."),
+            "www.example.com."
+        );
+        assert_eq!(
+            normalize_name("example.com", "example.com."),
+            "example.com."
+        );
+    }
+
+    #[test]
+    fn test_normalize_name_fqdn_and_apex() {
+        assert_eq!(normalize_name("sub.", "example.com."), "sub.");
+        assert_eq!(normalize_name("@", "example.com."), "example.com.");
+    }
 }

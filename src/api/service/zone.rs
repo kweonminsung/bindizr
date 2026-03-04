@@ -9,6 +9,26 @@ use crate::{
 };
 use chrono::Utc;
 
+/// Generate next serial number in YYYYMMDDNN format
+fn generate_serial(current_serial: Option<i32>) -> i32 {
+    let now = Utc::now();
+    let date_prefix = now.format("%Y%m%d").to_string().parse::<i32>().unwrap();
+    let base_serial = date_prefix * 100;
+
+    match current_serial {
+        Some(serial) => {
+            // If same day, increment NN part
+            if serial / 100 == date_prefix {
+                serial + 1
+            } else {
+                // New day, reset to NN=00
+                base_serial
+            }
+        }
+        None => base_serial,
+    }
+}
+
 #[derive(Clone)]
 pub struct ZoneService;
 
@@ -70,6 +90,12 @@ impl ZoneService {
             }
         };
 
+        // Generate serial if not provided
+        let serial = match create_zone_request.serial {
+            Some(s) => s,
+            None => generate_serial(None),
+        };
+
         // Create zone
         let created_zone = zone_repository
             .create(Zone {
@@ -80,7 +106,7 @@ impl ZoneService {
                 primary_ns_ipv6: create_zone_request.primary_ns_ipv6.clone(),
                 admin_email: create_zone_request.admin_email.clone(),
                 ttl: create_zone_request.ttl,
-                serial: create_zone_request.serial,
+                serial,
                 refresh: create_zone_request.refresh.unwrap_or(86400),
                 retry: create_zone_request.retry.unwrap_or(7200),
                 expire: create_zone_request.expire.unwrap_or(3_600_000),
@@ -131,8 +157,8 @@ impl ZoneService {
         }
 
         // Check if zone exists
-        let zone_id = match zone_repository.get_by_name(zone_name).await {
-            Ok(Some(zone)) => zone.id,
+        let existing_zone = match zone_repository.get_by_name(zone_name).await {
+            Ok(Some(zone)) => zone,
             Ok(None) => {
                 log_error!("Zone with name '{}' not found", zone_name);
                 return Err(ApiError::NotFound(format!(
@@ -147,6 +173,7 @@ impl ZoneService {
                 ));
             }
         };
+        let zone_id = existing_zone.id;
 
         // Check if zone with the new name already exists (if name is being changed)
         if zone_name != update_zone_request.name {
@@ -167,6 +194,12 @@ impl ZoneService {
             };
         }
 
+        // Auto-increment serial if not provided, or use existing if no change
+        let new_serial = match update_zone_request.serial {
+            Some(s) => s,
+            None => generate_serial(Some(existing_zone.serial)),
+        };
+
         // Update zone
         let updated_zone = zone_repository
             .update(Zone {
@@ -177,7 +210,7 @@ impl ZoneService {
                 primary_ns_ipv6: update_zone_request.primary_ns_ipv6.clone(),
                 admin_email: update_zone_request.admin_email.clone(),
                 ttl: update_zone_request.ttl,
-                serial: update_zone_request.serial,
+                serial: new_serial,
                 refresh: update_zone_request.refresh.unwrap_or(86400),
                 retry: update_zone_request.retry.unwrap_or(7200),
                 expire: update_zone_request.expire.unwrap_or(3_600_000),

@@ -25,7 +25,7 @@ impl XfrServer {
             listen_port,
         );
 
-        // Load allow_transfer as comma-separated string
+        // Load ACL
         let allow_transfer_str = config::get_config::<String>("xfr.allow_transfer");
         let allow_transfer: Vec<IpAddr> = allow_transfer_str
             .split(',')
@@ -51,8 +51,7 @@ impl XfrServer {
                 Ok((stream, client_addr)) => {
                     let allow_transfer = self.allow_transfer.clone();
                     tokio::spawn(async move {
-                        if let Err(e) =
-                            handle_connection(stream, client_addr, allow_transfer).await
+                        if let Err(e) = handle_connection(stream, client_addr, allow_transfer).await
                         {
                             log_error!("XFR connection error from {}: {}", client_addr, e);
                         }

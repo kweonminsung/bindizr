@@ -61,12 +61,13 @@ impl log::Log for Logger {
                 format!("{}: {}\n", record.level(), record.args())
             };
 
-            print!("{}", log_message);
+            // Use stderr for logging to avoid interfering with stdout
+            eprint!("{}", log_message);
         }
     }
 
     fn flush(&self) {
-        let _ = io::stdout().flush();
+        let _ = io::stderr().flush();
     }
 }
 

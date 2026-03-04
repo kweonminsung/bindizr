@@ -18,7 +18,6 @@ async fn test_zone_crud_operations() {
         "primary_ns_ipv6": "2001:db8::1",
         "admin_email": "admin@test.com",
         "ttl": 3600,
-        "serial": 2023010101,
         "refresh": 7200,
         "retry": 3600,
         "expire": 604800,
@@ -53,7 +52,6 @@ async fn test_zone_crud_operations() {
         "primary_ns_ipv6": "2001:db8::2",
         "admin_email": "admin@updated-test.com",
         "ttl": 7200,
-        "serial": 2023010102,
         "refresh": 14400,
         "retry": 7200,
         "expire": 1209600,
@@ -89,8 +87,7 @@ async fn test_zone_crud_operations() {
         "primary_ns": "ns1.ip-only.com",
         "primary_ns_ip": "10.0.0.3",
         "admin_email": "admin@ip-only.com",
-        "ttl": 3600,
-        "serial": 2023010101
+        "ttl": 3600
     });
     let (status, _) = ctx
         .make_request("POST", "/zones", Some(create_zone_ip_only))
@@ -103,8 +100,7 @@ async fn test_zone_crud_operations() {
         "primary_ns": "ns1.ipv6-only.com",
         "primary_ns_ipv6": "2001:db8::3",
         "admin_email": "admin@ipv6-only.com",
-        "ttl": 3600,
-        "serial": 2023010101
+        "ttl": 3600
     });
     let (status, _) = ctx
         .make_request("POST", "/zones", Some(create_zone_ipv6_only))
@@ -116,8 +112,7 @@ async fn test_zone_crud_operations() {
         "name": "no-ip.com",
         "primary_ns": "ns1.no-ip.com",
         "admin_email": "admin@no-ip.com",
-        "ttl": 3600,
-        "serial": 2023010101
+        "ttl": 3600
     });
     let (status, _) = ctx
         .make_request("POST", "/zones", Some(create_zone_no_ip))

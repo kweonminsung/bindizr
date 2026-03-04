@@ -265,7 +265,7 @@ async fn test_prevent_default_records_creation() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
-    // Try to create an NS record (should fail)
+    // NS records should be creatable and stored in DB.
     let ns_record_request = serde_json::json!({
         "name": "@",
         "record_type": "NS",
@@ -276,9 +276,9 @@ async fn test_prevent_default_records_creation() {
     let (status, _) = ctx
         .make_request("POST", "/records", Some(ns_record_request))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CREATED);
 
-    // Try to create an A record to A type for the primary_ns (should fail)
+    // A/AAAA records for the primary NS host should remain protected.
     let a_record_request = serde_json::json!({
         "name": "ns1",
         "record_type": "A",
@@ -298,28 +298,7 @@ async fn test_prevent_updating_to_default_records() {
     let zone = ctx.create_test_zone().await;
     let record = ctx.create_test_record(zone.id).await;
 
-    // Try to update an existing record to NS type with name "@" (should fail)
-    let update_ns_request = serde_json::json!({
-        "name": "@",
-        "record_type": "NS",
-        "value": "ns1.example.com",
-        "ttl": 3600,
-        "zone_name": zone.name
-    });
-    let (status, _) = ctx
-        .make_request(
-            "PUT",
-            &format!(
-                "/records/{}/{}",
-                record.name,
-                record.record_type.to_string()
-            ),
-            Some(update_ns_request),
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    // Try to update an existing record to A type for the primary_ns (should fail)
+    // A/AAAA records for the primary NS host should remain protected.
     let update_a_request = serde_json::json!({
         "name": "ns1",
         "record_type": "A",
@@ -339,4 +318,25 @@ async fn test_prevent_updating_to_default_records() {
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // NS records should be updatable and stored in DB.
+    let update_ns_request = serde_json::json!({
+        "name": "@",
+        "record_type": "NS",
+        "value": "ns1.example.com",
+        "ttl": 3600,
+        "zone_name": zone.name
+    });
+    let (status, _) = ctx
+        .make_request(
+            "PUT",
+            &format!(
+                "/records/{}/{}",
+                record.name,
+                record.record_type.to_string()
+            ),
+            Some(update_ns_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
 }

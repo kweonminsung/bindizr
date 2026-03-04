@@ -1,7 +1,7 @@
 
 [api]
-host = "127.0.0.1"
-port = 3000
+listen_addr = "127.0.0.1"
+listen_port = 3000
 require_authentication = false
 
 [database]
@@ -16,10 +16,10 @@ file_path = "file::memory:?cache=shared"
 [database.postgresql]
 server_url = ""
 
-[bind]
-rndc_server_url = "127.0.0.1:953"
-rndc_algorithm = "sha256"
-rndc_secret_key = "YmluZGl6cg=="  # This is "test" base64-encoded
+[xfr]
+listen_addr = "127.0.0.1"
+listen_port = 53533
+allow_transfer = "127.0.0.1,::1"
 
 [logging]
 log_level = "debug"

@@ -1,6 +1,6 @@
 [api]
-host = "127.0.0.1"             # HTTP API host
-port = 3000                    # HTTP API port
+listen_addr = "127.0.0.1"      # HTTP API listen address
+listen_port = 3000             # HTTP API listen port
 require_authentication = true  # Enable API authentication (true/false)
 
 [database]

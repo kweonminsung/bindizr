@@ -1,7 +1,7 @@
 use crate::database::error::DatabaseError;
 use crate::database::{model::zone_change::ZoneChange, repository::ZoneChangeRepository};
 use async_trait::async_trait;
-use sqlx::{Postgres, Pool};
+use sqlx::{Pool, Postgres};
 
 pub struct PostgresZoneChangeRepository {
     pool: Pool<Postgres>,

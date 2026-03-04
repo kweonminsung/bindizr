@@ -1,6 +1,4 @@
-use crate::cli::output::{
-    OutputFormat, RecordRow, ZoneRow, print_output_with_table,
-};
+use crate::cli::output::{OutputFormat, RecordRow, ZoneRow, print_output_with_table};
 use crate::socket::client::DaemonSocketClient;
 use crate::socket::dto::DaemonCommandKind;
 use clap::Subcommand;
