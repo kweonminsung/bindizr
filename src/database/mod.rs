@@ -217,3 +217,8 @@ pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_api_token_repository(pool)
 }
+
+pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_zone_change_repository(pool)
+}

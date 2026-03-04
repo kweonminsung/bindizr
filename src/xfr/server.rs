@@ -10,6 +10,12 @@ pub struct XfrServer {
     allow_transfer: Vec<IpAddr>,
 }
 
+impl Default for XfrServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl XfrServer {
     pub fn new() -> Self {
         let listen_addr_str = config::get_config::<String>("xfr.listen_addr");
@@ -36,7 +42,7 @@ impl XfrServer {
     pub async fn start(&self) -> Result<(), XfrError> {
         let listener = TcpListener::bind(self.listen_addr)
             .await
-            .map_err(|e| XfrError::IoError(e))?;
+            .map_err(XfrError::IoError)?;
 
         log_info!("XFR server listening on {}", self.listen_addr);
 
@@ -109,8 +115,4 @@ async fn handle_connection(
     }
 
     Ok(())
-}
-
-pub async fn initialize() {
-    log_info!("XFR server initialized");
 }

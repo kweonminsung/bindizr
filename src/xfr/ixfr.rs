@@ -1,12 +1,11 @@
 use super::{axfr, delta, error::XfrError, wire};
 use crate::{database::get_zone_repository, log_info, log_warn};
-use domain::base::{
-    iana::{Rcode, Rtype}, Name,
-};
+use domain::base::{iana::Rtype, Name};
+use std::collections::HashMap;
 use std::net::IpAddr;
 use tokio::net::TcpStream;
 
-/// Handle IXFR request
+/// Handle IXFR (Incremental Zone Transfer) request
 pub async fn handle_ixfr(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -44,10 +43,10 @@ pub async fn handle_ixfr(
         }
     };
 
-    // If client is up-to-date, send empty response with SOA
+    // If client is up-to-date, send single SOA response
     if client_serial == current_serial {
         log_info!("IXFR: Client is up-to-date (serial={})", current_serial);
-        return send_up_to_date_response(stream, zone_name, query_id).await;
+        return send_up_to_date_response(stream, zone_name, query_id, &zone).await;
     }
 
     // If client is ahead, this is an error
@@ -60,7 +59,7 @@ pub async fn handle_ixfr(
         return Err(XfrError::SerialMismatch(client_serial, current_serial));
     }
 
-    // Try to get changes
+    // Try to get changes from zone_changes table
     let changes = delta::get_zone_changes(zone.id, client_serial, current_serial).await?;
 
     // If no changes available, fallback to AXFR
@@ -80,49 +79,145 @@ pub async fn handle_ixfr(
         current_serial
     );
 
-    // Build IXFR response (simplified)
-    let response = build_simple_response(query_id, zone_name, Rcode::NOERROR)?;
-    wire::write_tcp_message(stream, &response).await?;
+    // Build IXFR response message
+    send_ixfr_response(stream, zone_name, query_id, &zone, &changes).await?;
 
     log_info!("IXFR completed for zone {}", zone_name_str);
 
     Ok(())
 }
 
+/// Send response when client is up-to-date (single SOA)
 async fn send_up_to_date_response(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
     query_id: u16,
+    zone: &crate::database::model::zone::Zone,
 ) -> Result<(), XfrError> {
-    // Send minimal response
-    let response = build_simple_response(query_id, zone_name, Rcode::NOERROR)?;
-    wire::write_tcp_message(stream, &response).await?;
+    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
+    
+    // Single SOA indicates client is up-to-date
+    builder.add_soa(zone, zone.serial as u32)?;
+    
+    let message = builder.build();
+    wire::write_tcp_message(stream, &message).await?;
+    
+    Ok(())
+}
+
+/// Send IXFR response with incremental changes
+async fn send_ixfr_response(
+    stream: &mut TcpStream,
+    zone_name: &Name<Vec<u8>>,
+    query_id: u16,
+    zone: &crate::database::model::zone::Zone,
+    changes: &[delta::ZoneChange],
+) -> Result<(), XfrError> {
+    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
+
+    // IXFR format:
+    // 1. Current SOA (new)
+    // 2. For each serial change:
+    //    a. Old SOA (deletion section marker)
+    //    b. Deleted records
+    //    c. New SOA (addition section marker)
+    //    d. Added records
+    // 3. Current SOA (end marker)
+
+    // Add current SOA at the beginning
+    builder.add_soa(zone, zone.serial as u32)?;
+
+    // Group changes by serial
+    let mut changes_by_serial: HashMap<u32, Vec<&delta::ZoneChange>> = HashMap::new();
+    for change in changes {
+        changes_by_serial
+            .entry(change.serial)
+            .or_default()
+            .push(change);
+    }
+
+    // Get sorted serials
+    let mut serials: Vec<u32> = changes_by_serial.keys().copied().collect();
+    serials.sort();
+
+    // Process each serial in order
+    for (idx, &serial) in serials.iter().enumerate() {
+        let serial_changes = &changes_by_serial[&serial];
+        
+        // Old serial (previous serial or client serial for first change)
+        let old_serial = if idx == 0 {
+            serial - 1
+        } else {
+            serials[idx - 1]
+        };
+
+        // Add old SOA (deletion section marker)
+        builder.add_soa(zone, old_serial)?;
+
+        // Add all DEL operations for this serial
+        for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
+            add_change_to_builder(&mut builder, change)?;
+        }
+
+        // Add new SOA (addition section marker)
+        builder.add_soa(zone, serial)?;
+
+        // Add all ADD operations for this serial
+        for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
+            add_change_to_builder(&mut builder, change)?;
+        }
+    }
+
+    // Add current SOA at the end
+    builder.add_soa(zone, zone.serial as u32)?;
+
+    // Build and send message
+    let message = builder.build();
+    wire::write_tcp_message(stream, &message).await?;
 
     Ok(())
 }
 
-fn build_simple_response(
-    query_id: u16,
-    zone_name: &Name<Vec<u8>>,
-    rcode: Rcode,
-) -> Result<Vec<u8>, XfrError> {
-    // Build a minimal DNS response
-    let mut response = Vec::new();
-
-    // DNS Header (12 bytes)
-    response.extend_from_slice(&query_id.to_be_bytes()); // ID
-    response.push(0x84); // QR=1, Opcode=0, AA=1, TC=0, RD=0
-    response.push(rcode.to_int()); // RA=0, Z=0, RCODE
-    response.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT=1
-    response.extend_from_slice(&0u16.to_be_bytes()); // ANCOUNT=0
-    response.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT=0
-    response.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT=0
-
-    // Question section
-    let zone_bytes = zone_name.as_slice();
-    response.extend_from_slice(&zone_bytes);
-    response.extend_from_slice(&(Rtype::IXFR.to_int() as u16).to_be_bytes()); // QTYPE
-    response.extend_from_slice(&1u16.to_be_bytes()); // QCLASS (IN)
-
-    Ok(response)
+/// Add a zone change record to the message builder
+fn add_change_to_builder(
+    builder: &mut wire::DnsMessageBuilder,
+    change: &delta::ZoneChange,
+) -> Result<(), XfrError> {
+    let ttl = change.record_ttl.unwrap_or(3600) as u32;
+    
+    match change.record_type.as_str() {
+        "A" => {
+            let addr: std::net::Ipv4Addr = change
+                .record_value
+                .parse()
+                .map_err(|_| XfrError::ProtocolError(format!("Invalid A record: {}", change.record_value)))?;
+            builder.add_a_record(&change.record_name, ttl, addr)?;
+        }
+        "AAAA" => {
+            let addr: std::net::Ipv6Addr = change
+                .record_value
+                .parse()
+                .map_err(|_| XfrError::ProtocolError(format!("Invalid AAAA record: {}", change.record_value)))?;
+            builder.add_aaaa_record(&change.record_name, ttl, addr)?;
+        }
+        "CNAME" => {
+            builder.add_cname_record(&change.record_name, ttl, &change.record_value)?;
+        }
+        "MX" => {
+            let priority = change.record_priority.unwrap_or(10) as u16;
+            builder.add_mx_record(&change.record_name, ttl, priority, &change.record_value)?;
+        }
+        "NS" => {
+            builder.add_ns_record(&change.record_name, ttl, &change.record_value)?;
+        }
+        "TXT" => {
+            builder.add_txt_record(&change.record_name, ttl, &change.record_value)?;
+        }
+        _ => {
+            // Skip unsupported record types
+            log_info!("Skipping unsupported record type: {}", change.record_type);
+        }
+    }
+    
+    Ok(())
 }

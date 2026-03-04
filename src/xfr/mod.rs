@@ -5,11 +5,16 @@ pub mod ixfr;
 pub mod server;
 pub mod wire;
 
-pub use error::XfrError;
-pub use server::XfrServer;
+use server::XfrServer;
 
-use crate::log_info;
-
-pub fn initialize() {
-    log_info!("XFR module initialized");
+/// Initialize and start XFR server in background
+pub async fn initialize() {
+    let xfr_server = XfrServer::new();
+    
+    // Spawn XFR server in background task
+    tokio::spawn(async move {
+        if let Err(e) = xfr_server.start().await {
+            eprintln!("XFR server error: {}", e);
+        }
+    });
 }

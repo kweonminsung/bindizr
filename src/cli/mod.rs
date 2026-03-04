@@ -4,7 +4,7 @@ mod output;
 use crate::{
     api,
     cli::commands::token::TokenCommand,
-    config, database, log_info, logger, serializer, socket, xfr,
+    config, database, log_info, logger, socket, xfr,
 };
 use clap::{Parser, Subcommand};
 
@@ -59,8 +59,7 @@ pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     logger::initialize();
     database::initialize().await;
-    xfr::initialize();
-    serializer::initialize();
+    xfr::initialize().await;
 
     log_info!("Bindizr is running in foreground mode.");
     log_info!("For production use, please run bindizr as a systemd service:");

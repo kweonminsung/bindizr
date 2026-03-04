@@ -7,6 +7,7 @@ use super::model::{
     record::{Record, RecordType},
     record_history::RecordHistory,
     zone::Zone,
+    zone_change::ZoneChange,
     zone_history::ZoneHistory,
 };
 use crate::database::{DatabasePool, error::DatabaseError};
@@ -64,6 +65,17 @@ pub trait RecordHistoryRepository: Send + Sync {
         record_type: &str,
     ) -> Result<Vec<RecordHistory>, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
+// Zone Change Repository Trait
+#[async_trait]
+pub trait ZoneChangeRepository: Send + Sync {
+    async fn get_changes_between_serials(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneChange>, DatabaseError>;
 }
 
 // API Token Repository Trait
@@ -149,6 +161,20 @@ impl RepositoryFactory {
             ),
             DatabasePool::SQLite(sqlite_pool) => {
                 Box::new(sqlite::SqliteApiTokenRepository::new(sqlite_pool.clone()))
+            }
+        }
+    }
+
+    pub fn create_zone_change_repository(pool: &DatabasePool) -> Box<dyn ZoneChangeRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlZoneChangeRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresZoneChangeRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteZoneChangeRepository::new(sqlite_pool.clone()))
             }
         }
     }

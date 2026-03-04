@@ -4,13 +4,11 @@ use crate::{
         dto::{CreateZoneRequest, GetRecordResponse, GetZoneResponse},
         service::{record::RecordService, zone::ZoneService},
     },
-    serializer::Serializer,
 };
 use axum::{
     Json, Router,
-    body::Body,
     extract::{Path, Query},
-    http::{Response, StatusCode, header},
+    http::StatusCode,
     response::IntoResponse,
     routing,
 };
@@ -24,10 +22,6 @@ impl ZoneController {
         Router::new()
             .route("/zones", routing::get(Self::get_zones))
             .route("/zones/{name}", routing::get(Self::get_zone))
-            .route(
-                "/zones/{name}/rendered",
-                routing::get(Self::get_zone_rendered),
-            )
             .route("/zones", routing::post(Self::create_zone))
             .route("/zones/{name}", routing::put(Self::update_zone))
             .route("/zones/{name}", routing::delete(Self::delete_zone))
@@ -74,28 +68,6 @@ impl ZoneController {
         let zone = GetZoneResponse::from_zone(&raw_zone);
         let json_body = json!({ "zone": zone, "records": records });
         (StatusCode::OK, Json(json_body)).into_response()
-    }
-
-    async fn get_zone_rendered(Path(params): Path<GetZoneParam>) -> impl IntoResponse {
-        let zone_name = params.name;
-
-        let raw_zone = match ZoneService::get_zone(&zone_name).await {
-            Ok(zone) => zone,
-            Err(err) => return err.into_response(),
-        };
-
-        let raw_records = match RecordService::get_records(Some(raw_zone.name.clone())).await {
-            Ok(records) => records,
-            Err(err) => return err.into_response(),
-        };
-
-        let zone_str = Serializer::serialize_zone(&raw_zone, &raw_records);
-        Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/plain")
-            .body(Body::from(zone_str))
-            .unwrap()
-            .into_response()
     }
 
     async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> impl IntoResponse {

@@ -8,6 +8,7 @@ use once_cell::sync::OnceCell;
 use std::{any::type_name, collections::HashMap, path::PathBuf, str::FromStr};
 
 // Config file path
+#[allow(dead_code)]
 pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";
 pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 

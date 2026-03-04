@@ -8,9 +8,27 @@ use crate::{
         },
     },
     log_error,
-    serializer::utils::{to_fqdn, to_relative_domain},
 };
 use chrono::Utc;
+
+/// Convert name to FQDN by adding trailing dot
+fn to_fqdn(name: &str) -> String {
+    name.trim_end_matches('.').to_string() + "."
+}
+
+/// Convert FQDN to relative domain name within a zone
+fn to_relative_domain(fqdn: &str, zone_name: &str) -> String {
+    let normalized_zone = to_fqdn(zone_name);
+
+    if fqdn == normalized_zone {
+        "@".to_string()
+    } else if fqdn.ends_with(&normalized_zone) {
+        let relative_part = &fqdn[..fqdn.len() - normalized_zone.len()];
+        relative_part.trim_end_matches('.').to_string()
+    } else {
+        fqdn.trim_end_matches('.').to_string()
+    }
+}
 
 #[derive(Clone)]
 pub struct RecordService;

@@ -23,6 +23,7 @@ pub enum XfrError {
     #[error("Serial mismatch: client={0}, current={1}")]
     SerialMismatch(u32, u32),
 
+    #[allow(dead_code)]
     #[error("No history available for IXFR")]
     NoHistoryAvailable,
 }

@@ -3,7 +3,6 @@ mod cli;
 mod config;
 mod database;
 mod logger;
-mod serializer;
 mod socket;
 mod xfr;
 

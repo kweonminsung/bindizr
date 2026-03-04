@@ -13,7 +13,6 @@ use bindizr::{
             zone::Zone,
         },
     },
-    serializer,
 };
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
@@ -31,7 +30,6 @@ impl TestContext {
         // Initialize components (skip if already initialized)
         config::initialize(Some(config_path));
         database::initialize().await;
-        serializer::initialize();
 
         // Get database pool
         let db_pool = match database::get_pool() {

@@ -1,13 +1,249 @@
 use super::error::XfrError;
-use domain::base::{
-    iana::Rtype,
-    Message, Name, ToName,
-};
+use crate::database::model::{record::Record, zone::Zone};
+use domain::base::{iana::Rtype, Message, Name, ToName};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub const DNS_TCP_MAX_SIZE: usize = 65535;
 
+/// DNS message builder for zone transfers
+pub struct DnsMessageBuilder {
+    query_id: u16,
+    qname: Vec<u8>,
+    qtype: u16,
+    answers: Vec<Vec<u8>>,
+}
+
+impl DnsMessageBuilder {
+    pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
+        Self {
+            query_id,
+            qname: qname.as_slice().to_vec(),
+            qtype: qtype.to_int(),
+            answers: Vec::new(),
+        }
+    }
+
+    /// Add SOA record
+    pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+
+        // MNAME
+        encode_domain_name(&zone.primary_ns, &mut rdata)?;
+
+        // RNAME (admin email with @ replaced by .)
+        let rname = zone.admin_email.replace('@', ".");
+        encode_domain_name(&rname, &mut rdata)?;
+
+        // SERIAL, REFRESH, RETRY, EXPIRE, MINIMUM
+        rdata.extend_from_slice(&serial.to_be_bytes());
+        rdata.extend_from_slice(&(zone.refresh as u32).to_be_bytes());
+        rdata.extend_from_slice(&(zone.retry as u32).to_be_bytes());
+        rdata.extend_from_slice(&(zone.expire as u32).to_be_bytes());
+        rdata.extend_from_slice(&(zone.minimum_ttl as u32).to_be_bytes());
+
+        self.add_answer_raw(&zone.name, 6, zone.ttl as u32, &rdata)?;
+        Ok(())
+    }
+
+    /// Add A record
+    pub fn add_a_record(&mut self, name: &str, ttl: u32, addr: Ipv4Addr) -> Result<(), XfrError> {
+        let rdata = addr.octets().to_vec();
+        self.add_answer_raw(name, 1, ttl, &rdata)?;
+        Ok(())
+    }
+
+    /// Add AAAA record
+    pub fn add_aaaa_record(
+        &mut self,
+        name: &str,
+        ttl: u32,
+        addr: Ipv6Addr,
+    ) -> Result<(), XfrError> {
+        let rdata = addr.octets().to_vec();
+        self.add_answer_raw(name, 28, ttl, &rdata)?;
+        Ok(())
+    }
+
+    /// Add CNAME record
+    pub fn add_cname_record(&mut self, name: &str, ttl: u32, target: &str) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+        encode_domain_name(target, &mut rdata)?;
+        self.add_answer_raw(name, 5, ttl, &rdata)?;
+        Ok(())
+    }
+
+    /// Add MX record
+    pub fn add_mx_record(
+        &mut self,
+        name: &str,
+        ttl: u32,
+        priority: u16,
+        target: &str,
+    ) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+        rdata.extend_from_slice(&priority.to_be_bytes());
+        encode_domain_name(target, &mut rdata)?;
+        self.add_answer_raw(name, 15, ttl, &rdata)?;
+        Ok(())
+    }
+
+    /// Add NS record
+    pub fn add_ns_record(&mut self, name: &str, ttl: u32, target: &str) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+        encode_domain_name(target, &mut rdata)?;
+        self.add_answer_raw(name, 2, ttl, &rdata)?;
+        Ok(())
+    }
+
+    /// Add TXT record
+    pub fn add_txt_record(&mut self, name: &str, ttl: u32, text: &str) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+        let text_bytes = text.as_bytes();
+        
+        // TXT records are stored as length-prefixed strings
+        // Split into 255-byte chunks if needed
+        let mut offset = 0;
+        while offset < text_bytes.len() {
+            let chunk_len = (text_bytes.len() - offset).min(255);
+            rdata.push(chunk_len as u8);
+            rdata.extend_from_slice(&text_bytes[offset..offset + chunk_len]);
+            offset += chunk_len;
+        }
+        
+        self.add_answer_raw(name, 16, ttl, &rdata)?;
+        Ok(())
+    }
+
+    /// Add a record from database Record model
+    pub fn add_record(&mut self, record: &Record) -> Result<(), XfrError> {
+        let ttl = record.ttl.unwrap_or(3600) as u32;
+        
+        match record.record_type.as_str() {
+            "A" => {
+                let addr: Ipv4Addr = record
+                    .value
+                    .parse()
+                    .map_err(|_| XfrError::ProtocolError(format!("Invalid A record: {}", record.value)))?;
+                self.add_a_record(&record.name, ttl, addr)?;
+            }
+            "AAAA" => {
+                let addr: Ipv6Addr = record
+                    .value
+                    .parse()
+                    .map_err(|_| XfrError::ProtocolError(format!("Invalid AAAA record: {}", record.value)))?;
+                self.add_aaaa_record(&record.name, ttl, addr)?;
+            }
+            "CNAME" => {
+                self.add_cname_record(&record.name, ttl, &record.value)?;
+            }
+            "MX" => {
+                let priority = record.priority.unwrap_or(10) as u16;
+                self.add_mx_record(&record.name, ttl, priority, &record.value)?;
+            }
+            "NS" => {
+                self.add_ns_record(&record.name, ttl, &record.value)?;
+            }
+            "TXT" => {
+                self.add_txt_record(&record.name, ttl, &record.value)?;
+            }
+            _ => {
+                // Skip unsupported record types
+            }
+        }
+        Ok(())
+    }
+
+    /// Add raw answer record
+    fn add_answer_raw(
+        &mut self,
+        name: &str,
+        rtype: u16,
+        ttl: u32,
+        rdata: &[u8],
+    ) -> Result<(), XfrError> {
+        let mut answer = Vec::new();
+
+        // NAME
+        encode_domain_name(name, &mut answer)?;
+
+        // TYPE
+        answer.extend_from_slice(&rtype.to_be_bytes());
+
+        // CLASS (IN = 1)
+        answer.extend_from_slice(&1u16.to_be_bytes());
+
+        // TTL
+        answer.extend_from_slice(&ttl.to_be_bytes());
+
+        // RDLENGTH
+        answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+
+        // RDATA
+        answer.extend_from_slice(rdata);
+
+        self.answers.push(answer);
+        Ok(())
+    }
+
+    /// Build final DNS message
+    pub fn build(self) -> Vec<u8> {
+        let mut message = Vec::new();
+
+        // Header (12 bytes)
+        message.extend_from_slice(&self.query_id.to_be_bytes()); // ID
+        message.push(0x84); // QR=1, Opcode=0, AA=1, TC=0, RD=0
+        message.push(0x00); // RA=0, Z=0, RCODE=0 (NOERROR)
+        message.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT=1
+        message.extend_from_slice(&(self.answers.len() as u16).to_be_bytes()); // ANCOUNT
+        message.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT=0
+        message.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT=0
+
+        // Question section
+        message.extend_from_slice(&self.qname);
+        message.extend_from_slice(&self.qtype.to_be_bytes()); // QTYPE
+        message.extend_from_slice(&1u16.to_be_bytes()); // QCLASS (IN)
+
+        // Answer section
+        for answer in &self.answers {
+            message.extend_from_slice(answer);
+        }
+
+        message
+    }
+}
+
+/// Encode domain name to DNS wire format
+fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError> {
+    let name = name.trim_end_matches('.');
+    
+    if name.is_empty() {
+        // Root domain
+        buf.push(0);
+        return Ok(());
+    }
+
+    for label in name.split('.') {
+        if label.is_empty() {
+            continue;
+        }
+        if label.len() > 63 {
+            return Err(XfrError::ProtocolError(format!(
+                "Label too long: {}",
+                label
+            )));
+        }
+        buf.push(label.len() as u8);
+        buf.extend_from_slice(label.as_bytes());
+    }
+    buf.push(0); // Terminate with zero-length label
+    Ok(())
+}
+
+/// Type alias for parse_query result
+type ParseQueryResult = (Name<Vec<u8>>, Rtype, Option<u32>, u16);
+
 /// Parse a DNS query message from bytes
-pub fn parse_query(data: &[u8]) -> Result<(Name<Vec<u8>>, Rtype, Option<u32>, u16), XfrError> {
+pub fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
     let message = Message::from_octets(data)
         .map_err(|e| XfrError::ProtocolError(format!("Failed to parse DNS message: {}", e)))?;
 
@@ -59,13 +295,11 @@ pub fn encode_tcp_message(message: &[u8]) -> Vec<u8> {
 pub async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     reader: &mut R,
 ) -> Result<Vec<u8>, XfrError> {
-    use tokio::io::AsyncReadExt;
-
     let mut len_buf = [0u8; 2];
     reader
         .read_exact(&mut len_buf)
         .await
-        .map_err(|e| XfrError::IoError(e))?;
+        .map_err(XfrError::IoError)?;
 
     let len = u16::from_be_bytes(len_buf) as usize;
 
@@ -80,7 +314,7 @@ pub async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     reader
         .read_exact(&mut message_buf)
         .await
-        .map_err(|e| XfrError::IoError(e))?;
+        .map_err(XfrError::IoError)?;
 
     Ok(message_buf)
 }
@@ -90,14 +324,12 @@ pub async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
     writer: &mut W,
     message: &[u8],
 ) -> Result<(), XfrError> {
-    use tokio::io::AsyncWriteExt;
-
     let encoded = encode_tcp_message(message);
     writer
         .write_all(&encoded)
         .await
-        .map_err(|e| XfrError::IoError(e))?;
-    writer.flush().await.map_err(|e| XfrError::IoError(e))?;
+        .map_err(XfrError::IoError)?;
+    writer.flush().await.map_err(XfrError::IoError)?;
 
     Ok(())
 }

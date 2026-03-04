@@ -126,26 +126,6 @@ async fn test_zone_crud_operations() {
 }
 
 #[tokio::test]
-async fn test_zone_rendered_output() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-    let _record = ctx.create_test_record(zone.id).await;
-
-    // Test GET /zones/{name}/rendered
-    let (status, body) = ctx
-        .make_request("GET", &format!("/zones/{}/rendered", zone.name), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
-    // Should return rendered zone file content
-    let content = body.as_str().unwrap();
-    assert!(content.contains("example.com"));
-    assert!(content.contains("SOA"));
-    assert!(content.contains("NS"));
-    assert!(content.contains("www.example.com"));
-}
-
-#[tokio::test]
 async fn test_zone_history() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
