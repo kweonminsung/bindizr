@@ -1,8 +1,7 @@
 use crate::{
     api::{dto::CreateRecordRequest, error::ApiError},
     database::{
-        get_record_repository, get_zone_change_repository,
-        get_zone_repository,
+        get_record_repository, get_zone_change_repository, get_zone_repository,
         model::{
             record::{Record, RecordType},
             zone_change::ZoneChange,
@@ -242,8 +241,12 @@ impl RecordService {
             create_record_request.name,
             create_record_request.record_type,
             create_record_request.value,
-            create_record_request.ttl.map_or("null".to_string(), |v| v.to_string()),
-            create_record_request.priority.map_or("null".to_string(), |v| v.to_string()),
+            create_record_request
+                .ttl
+                .map_or("null".to_string(), |v| v.to_string()),
+            create_record_request
+                .priority
+                .map_or("null".to_string(), |v| v.to_string()),
             created_record.id
         );
 
@@ -443,8 +446,12 @@ impl RecordService {
             update_record_request.record_type,
             existing_record.value,
             update_record_request.value,
-            update_record_request.ttl.map_or("null".to_string(), |v| v.to_string()),
-            update_record_request.priority.map_or("null".to_string(), |v| v.to_string()),
+            update_record_request
+                .ttl
+                .map_or("null".to_string(), |v| v.to_string()),
+            update_record_request
+                .priority
+                .map_or("null".to_string(), |v| v.to_string()),
             updated_record.id
         );
 

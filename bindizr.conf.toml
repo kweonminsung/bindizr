@@ -17,7 +17,7 @@ server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL se
 
 [xfr]
 listen_addr = "0.0.0.0"        # XFR server listen address
-listen_port = 53533            # XFR server listen port (TCP)
+listen_port = 53            # XFR server listen port (TCP)
 secondary_servers = ""         # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53") for NOTIFY
 
 [logging]

@@ -1,9 +1,5 @@
 use super::error::XfrError;
-use crate::{
-    config,
-    database::get_zone_repository,
-    log_error, log_info,
-};
+use crate::{config, database::get_zone_repository, log_error, log_info};
 use domain::base::{
     Name, Rtype, StaticCompressor,
     iana::{Opcode, Rcode},

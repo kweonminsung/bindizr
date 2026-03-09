@@ -63,7 +63,8 @@ impl XfrServer {
                 Ok((stream, client_addr)) => {
                     let secondary_servers = self.secondary_servers.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(stream, client_addr, secondary_servers).await
+                        if let Err(e) =
+                            handle_connection(stream, client_addr, secondary_servers).await
                         {
                             log_error!("XFR connection error from {}: {}", client_addr, e);
                         }
@@ -88,7 +89,10 @@ async fn handle_connection(
 
     // Check if client is in secondary servers list
     if !secondary_servers.is_empty() && !secondary_servers.contains(&client_ip) {
-        log_warn!("XFR request denied from {} (not a configured secondary server)", client_ip);
+        log_warn!(
+            "XFR request denied from {} (not a configured secondary server)",
+            client_ip
+        );
         return Err(XfrError::AccessDenied(format!(
             "IP {} not allowed",
             client_ip

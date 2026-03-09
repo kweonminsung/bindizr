@@ -1,6 +1,4 @@
-use crate::database::model::{
-    record::Record, zone::Zone,
-};
+use crate::database::model::{record::Record, zone::Zone};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug)]
