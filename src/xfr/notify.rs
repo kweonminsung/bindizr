@@ -1,6 +1,7 @@
 use super::error::XfrError;
 use crate::{
-    database::{get_dns_server_repository, get_zone_repository},
+    config,
+    database::get_zone_repository,
     log_error, log_info,
 };
 use domain::base::{
@@ -8,7 +9,7 @@ use domain::base::{
     iana::{Opcode, Rcode},
     message_builder::MessageBuilder,
 };
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 
 /// Send DNS NOTIFY to all configured DNS servers for a zone
@@ -23,21 +24,39 @@ pub async fn send_notify(zone_name: &str) -> Result<(), XfrError> {
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;
 
-    // Get all DNS servers from dns_servers table
-    let dns_server_repo = get_dns_server_repository();
-    let dns_servers = dns_server_repo
-        .get_all()
-        .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
+    // Get secondary servers from config (comma-separated list)
+    let secondary_servers_str: String = config::get_config("xfr.secondary_servers");
+    if secondary_servers_str.is_empty() {
+        log_info!("No secondary DNS servers configured");
+        return Ok(());
+    }
 
-    if dns_servers.is_empty() {
-        log_info!("No DNS servers configured");
+    // Parse secondary servers list (format: "ip:port,ip:port,...")
+    let server_addresses: Vec<SocketAddr> = secondary_servers_str
+        .split(',')
+        .filter_map(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            match trimmed.parse::<SocketAddr>() {
+                Ok(addr) => Some(addr),
+                Err(e) => {
+                    log_error!("Invalid server address '{}': {}", trimmed, e);
+                    None
+                }
+            }
+        })
+        .collect();
+
+    if server_addresses.is_empty() {
+        log_info!("No valid secondary DNS servers found in config");
         return Ok(());
     }
 
     log_info!(
-        "Sending NOTIFY to {} DNS server(s) for zone {}",
-        dns_servers.len(),
+        "Sending NOTIFY to {} secondary DNS server(s) for zone {}",
+        server_addresses.len(),
         zone_name
     );
 
@@ -46,18 +65,8 @@ pub async fn send_notify(zone_name: &str) -> Result<(), XfrError> {
     let qname = Name::from_octets(zone_name_bytes)
         .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
 
-    // Send NOTIFY to each DNS server
-    for dns_server in dns_servers {
-        let server_ip: IpAddr = match dns_server.ip_address.parse() {
-            Ok(ip) => ip,
-            Err(e) => {
-                log_error!("Invalid IP address {}: {}", dns_server.ip_address, e);
-                continue;
-            }
-        };
-
-        let server_addr = SocketAddr::new(server_ip, dns_server.port as u16);
-
+    // Send NOTIFY to each secondary DNS server
+    for server_addr in server_addresses {
         match send_notify_to_server(&qname, server_addr).await {
             Ok(()) => {
                 log_info!("NOTIFY sent successfully to {}", server_addr);

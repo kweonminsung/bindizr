@@ -18,7 +18,7 @@ server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL se
 [xfr]
 listen_addr = "0.0.0.0"        # XFR server listen address
 listen_port = 53533            # XFR server listen port (TCP)
-allow_transfer = "127.0.0.1,::1"  # Comma-separated IP addresses allowed to request zone transfers
+secondary_servers = ""         # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53") for NOTIFY
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

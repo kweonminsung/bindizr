@@ -203,16 +203,6 @@ pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
     repository::RepositoryFactory::create_record_repository(pool)
 }
 
-pub fn get_zone_history_repository() -> Box<dyn repository::ZoneHistoryRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_zone_history_repository(pool)
-}
-
-pub fn get_record_history_repository() -> Box<dyn repository::RecordHistoryRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_record_history_repository(pool)
-}
-
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_api_token_repository(pool)
@@ -221,9 +211,4 @@ pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
 pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_change_repository(pool)
-}
-
-pub fn get_dns_server_repository() -> Box<dyn repository::DnsServerRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_dns_server_repository(pool)
 }

@@ -7,7 +7,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 pub struct XfrServer {
     listen_addr: SocketAddr,
-    allow_transfer: Vec<IpAddr>,
+    secondary_servers: Vec<IpAddr>,
 }
 
 impl Default for XfrServer {
@@ -25,17 +25,29 @@ impl XfrServer {
             listen_port,
         );
 
-        // Load ACL
-        let allow_transfer_str = config::get_config::<String>("xfr.allow_transfer");
-        let allow_transfer: Vec<IpAddr> = allow_transfer_str
+        // Load secondary servers from config and extract IPs for ACL
+        let secondary_servers_str = config::get_config::<String>("xfr.secondary_servers");
+        let secondary_servers: Vec<IpAddr> = secondary_servers_str
             .split(',')
-            .map(|s| s.trim())
-            .filter_map(|s| IpAddr::from_str(s).ok())
+            .filter_map(|s| {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    return None;
+                }
+                // Parse as SocketAddr and extract IP
+                match trimmed.parse::<SocketAddr>() {
+                    Ok(addr) => Some(addr.ip()),
+                    Err(_) => {
+                        // Try parsing as IP address only
+                        trimmed.parse::<IpAddr>().ok()
+                    }
+                }
+            })
             .collect();
 
         Self {
             listen_addr,
-            allow_transfer,
+            secondary_servers,
         }
     }
 
@@ -49,9 +61,9 @@ impl XfrServer {
         loop {
             match listener.accept().await {
                 Ok((stream, client_addr)) => {
-                    let allow_transfer = self.allow_transfer.clone();
+                    let secondary_servers = self.secondary_servers.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(stream, client_addr, allow_transfer).await
+                        if let Err(e) = handle_connection(stream, client_addr, secondary_servers).await
                         {
                             log_error!("XFR connection error from {}: {}", client_addr, e);
                         }
@@ -68,15 +80,15 @@ impl XfrServer {
 async fn handle_connection(
     mut stream: TcpStream,
     client_addr: SocketAddr,
-    allow_transfer: Vec<IpAddr>,
+    secondary_servers: Vec<IpAddr>,
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
 
     log_info!("XFR connection from {}", client_addr);
 
-    // Check ACL
-    if !allow_transfer.is_empty() && !allow_transfer.contains(&client_ip) {
-        log_warn!("XFR request denied from {} (not in ACL)", client_ip);
+    // Check if client is in secondary servers list
+    if !secondary_servers.is_empty() && !secondary_servers.contains(&client_ip) {
+        log_warn!("XFR request denied from {} (not a configured secondary server)", client_ip);
         return Err(XfrError::AccessDenied(format!(
             "IP {} not allowed",
             client_ip

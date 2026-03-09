@@ -19,7 +19,8 @@ server_url = ""
 [xfr]
 listen_addr = "127.0.0.1"
 listen_port = 53533
-allow_transfer = "127.0.0.1,::1"
+secondary_servers = ""
+
 
 [logging]
 log_level = "debug"

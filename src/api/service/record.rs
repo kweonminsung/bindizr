@@ -1,15 +1,14 @@
 use crate::{
     api::{dto::CreateRecordRequest, error::ApiError},
     database::{
-        get_record_history_repository, get_record_repository, get_zone_change_repository,
+        get_record_repository, get_zone_change_repository,
         get_zone_repository,
         model::{
             record::{Record, RecordType},
-            record_history::RecordHistory,
             zone_change::ZoneChange,
         },
     },
-    log_error, log_warn, xfr,
+    log_error, log_info, log_warn, xfr,
 };
 use chrono::Utc;
 
@@ -129,7 +128,6 @@ impl RecordService {
     ) -> Result<Record, ApiError> {
         let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
-        let record_history_repository = get_record_history_repository();
 
         // Validate record type
         let record_type =
@@ -237,27 +235,17 @@ impl RecordService {
                 ApiError::InternalServerError("Failed to create record".to_string())
             })?;
 
-        // Create record history
-        record_history_repository
-            .create(RecordHistory {
-                id: 0, // Will be set by the database
-                record_name: created_record.name.clone(),
-                record_type: create_record_request.record_type.clone(),
-                log: format!(
-                    "[{}] Record created: zone_name={}, name={}, type={}, value={}",
-                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    zone.name,
-                    create_record_request.name,
-                    create_record_request.record_type,
-                    create_record_request.value,
-                ),
-                created_at: Utc::now(), // Will be set by the database
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create record history: {}", e);
-                ApiError::InternalServerError("Failed to create record history".to_string())
-            })?;
+        // Log record creation
+        log_info!(
+            "event=record_create zone={} name={} type={} value={} ttl={} priority={} record_id={}",
+            zone.name,
+            create_record_request.name,
+            create_record_request.record_type,
+            create_record_request.value,
+            create_record_request.ttl.map_or("null".to_string(), |v| v.to_string()),
+            create_record_request.priority.map_or("null".to_string(), |v| v.to_string()),
+            created_record.id
+        );
 
         // Increment zone serial so IXFR consumers can detect this change
         let new_serial = generate_serial(zone.serial);
@@ -307,7 +295,6 @@ impl RecordService {
     ) -> Result<Record, ApiError> {
         let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
-        let record_history_repository = get_record_history_repository();
 
         // Validate old record type
         let old_record_type = RecordType::from_str(record_type_str).map_err(|_| {
@@ -448,27 +435,18 @@ impl RecordService {
                 ApiError::InternalServerError("Failed to update record".to_string())
             })?;
 
-        // Create record history
-        record_history_repository
-            .create(RecordHistory {
-                id: 0, // Will be set by the database
-                record_name: updated_record.name.clone(),
-                record_type: update_record_request.record_type.clone(),
-                log: format!(
-                    "[{}] Record updated: zone_name={}, name={}, type={}, value={}",
-                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    zone.name,
-                    update_record_request.name,
-                    update_record_request.record_type,
-                    update_record_request.value,
-                ),
-                created_at: Utc::now(), // Will be set by the database
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create record history: {}", e);
-                ApiError::InternalServerError("Failed to create record history".to_string())
-            })?;
+        // Log record update
+        log_info!(
+            "event=record_update zone={} name={} type={} old_value={} new_value={} ttl={} priority={} record_id={}",
+            zone.name,
+            update_record_request.name,
+            update_record_request.record_type,
+            existing_record.value,
+            update_record_request.value,
+            update_record_request.ttl.map_or("null".to_string(), |v| v.to_string()),
+            update_record_request.priority.map_or("null".to_string(), |v| v.to_string()),
+            updated_record.id
+        );
 
         // Increment zone serial so IXFR consumers can detect this change
         let new_serial = generate_serial(zone.serial);
@@ -535,7 +513,6 @@ impl RecordService {
     pub async fn delete_record(name: &str, record_type_str: &str) -> Result<(), ApiError> {
         let zone_repository = get_zone_repository();
         let record_repository = get_record_repository();
-        let record_history_repository = get_record_history_repository();
 
         // Valid record type
         let record_type = RecordType::from_str(record_type_str).map_err(|_| {
@@ -599,26 +576,15 @@ impl RecordService {
             ApiError::InternalServerError("Failed to delete record".to_string())
         })?;
 
-        // Create record history
-        record_history_repository
-            .create(RecordHistory {
-                id: 0,
-                record_name: record_name.clone(),
-                record_type: record_type_str_clone.clone(),
-                log: format!(
-                    "[{}] Record deleted: zone_name={}, name={}, type={}",
-                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    zone.name,
-                    record_name,
-                    record_type_str_clone,
-                ),
-                created_at: Utc::now(),
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create record history: {}", e);
-                ApiError::InternalServerError("Failed to create record history".to_string())
-            })?;
+        // Log record deletion
+        log_info!(
+            "event=record_delete zone={} name={} type={} value={} record_id={}",
+            zone.name,
+            record_name,
+            record_type_str_clone,
+            existing_record.value,
+            existing_record.id
+        );
 
         // Increment zone serial so IXFR consumers can detect this change
         let new_serial = generate_serial(zone.serial);

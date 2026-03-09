@@ -207,7 +207,6 @@ rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
 [xfr]
 listen_addr = "0.0.0.0"              # XFR server listen address
 listen_port = 53533                  # XFR server listen port (TCP)
-allow_transfer = "127.0.0.1,::1"     # Comma-separated IP ACL for XFR
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

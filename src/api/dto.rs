@@ -1,6 +1,5 @@
 use crate::database::model::{
-    dns_server::DnsServer, record::Record, record_history::RecordHistory, zone::Zone,
-    zone_history::ZoneHistory,
+    record::Record, zone::Zone,
 };
 use serde::{Deserialize, Serialize};
 
@@ -88,78 +87,4 @@ pub struct CreateRecordRequest {
     pub ttl: Option<i32>,
     pub priority: Option<i32>,
     pub zone_name: String,
-}
-
-#[derive(Serialize, Debug)]
-pub struct GetZoneHistoryResponse {
-    pub id: i32,
-    pub log: String,
-    pub created_at: String,
-    pub zone_name: String,
-}
-impl GetZoneHistoryResponse {
-    pub fn from_zone_history(zone_history: &ZoneHistory) -> Self {
-        GetZoneHistoryResponse {
-            id: zone_history.id,
-            log: zone_history.log.clone(),
-            created_at: zone_history.created_at.to_string(),
-            zone_name: zone_history.zone_name.clone(),
-        }
-    }
-}
-
-#[derive(Serialize, Debug)]
-pub struct GetRecordHistoryResponse {
-    pub id: i32,
-    pub log: String,
-    pub created_at: String,
-    pub record_name: String,
-    pub record_type: String,
-}
-impl GetRecordHistoryResponse {
-    pub fn from_record_history(record_history: &RecordHistory) -> Self {
-        GetRecordHistoryResponse {
-            id: record_history.id,
-            log: record_history.log.clone(),
-            created_at: record_history.created_at.to_string(),
-            record_name: record_history.record_name.clone(),
-            record_type: record_history.record_type.clone(),
-        }
-    }
-}
-
-// DNS Server DTOs
-#[derive(Serialize, Debug)]
-pub struct GetDnsServerResponse {
-    pub id: i32,
-    pub ip_address: String,
-    pub port: i32,
-    pub created_at: String,
-}
-impl GetDnsServerResponse {
-    pub fn from_dns_server(dns_server: &DnsServer) -> Self {
-        GetDnsServerResponse {
-            id: dns_server.id,
-            ip_address: dns_server.ip_address.clone(),
-            port: dns_server.port,
-            created_at: dns_server.created_at.to_string(),
-        }
-    }
-}
-
-#[derive(Deserialize, Debug)]
-pub struct CreateDnsServerRequest {
-    pub ip_address: String,
-    #[serde(default = "default_dns_port")]
-    pub port: i32,
-}
-
-fn default_dns_port() -> i32 {
-    53
-}
-
-#[derive(Deserialize, Debug)]
-pub struct UpdateDnsServerRequest {
-    pub ip_address: Option<String>,
-    pub port: Option<i32>,
 }

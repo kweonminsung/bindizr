@@ -2,10 +2,10 @@ use crate::{
     api::{dto::CreateZoneRequest, error::ApiError},
     database::{
         error::DatabaseError,
-        get_zone_change_repository, get_zone_history_repository, get_zone_repository,
-        model::{zone::Zone, zone_change::ZoneChange, zone_history::ZoneHistory},
+        get_zone_change_repository, get_zone_repository,
+        model::{zone::Zone, zone_change::ZoneChange},
     },
-    log_error, log_warn, xfr,
+    log_error, log_info, log_warn, xfr,
 };
 use chrono::Utc;
 
@@ -62,7 +62,6 @@ impl ZoneService {
 
     pub async fn create_zone(create_zone_request: &CreateZoneRequest) -> Result<Zone, ApiError> {
         let zone_repository = get_zone_repository();
-        let zone_history_repository = get_zone_history_repository();
 
         // Validate that at least one of primary_ns_ip or primary_ns_ipv6 is present
         if create_zone_request.primary_ns_ip.is_none()
@@ -119,23 +118,15 @@ impl ZoneService {
                 ApiError::InternalServerError("Failed to create zone".to_string())
             })?;
 
-        // Create zone history
-        zone_history_repository
-            .create(ZoneHistory {
-                id: 0, // Will be set by the database
-                log: format!(
-                    "[{}] Zone created: name={}",
-                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    created_zone.name,
-                ),
-                zone_name: created_zone.name.clone(),
-                created_at: Utc::now(), // Will be set by the database
-            })
-            .await
-            .map_err(|e: DatabaseError| {
-                log_error!("Failed to create zone history: {}", e);
-                ApiError::InternalServerError("Failed to create zone history".to_string())
-            })?;
+        // Log zone creation (structured logging)
+        log_info!(
+            "event=zone_create zone={} primary_ns={} admin_email={} serial={} zone_id={}",
+            created_zone.name,
+            created_zone.primary_ns,
+            created_zone.admin_email,
+            created_zone.serial,
+            created_zone.id
+        );
 
         Ok(created_zone)
     }
@@ -145,7 +136,6 @@ impl ZoneService {
         update_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, ApiError> {
         let zone_repository = get_zone_repository();
-        let zone_history_repository = get_zone_history_repository();
 
         // Validate that at least one of primary_ns_ip or primary_ns_ipv6 is present
         if update_zone_request.primary_ns_ip.is_none()
@@ -223,24 +213,14 @@ impl ZoneService {
                 ApiError::InternalServerError("Failed to update zone".to_string())
             })?;
 
-        // Create zone history
-        zone_history_repository
-            .create(ZoneHistory {
-                id: 0, // Will be set by the database
-                log: format!(
-                    "[{}] Zone updated: previous_name={}, new_name={}",
-                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    zone_name,
-                    update_zone_request.name,
-                ),
-                zone_name: update_zone_request.name.clone(),
-                created_at: Utc::now(), // Will be set by the database
-            })
-            .await
-            .map_err(|e: DatabaseError| {
-                log_error!("Failed to create zone history: {}", e);
-                ApiError::InternalServerError("Failed to create zone history".to_string())
-            })?;
+        // Log zone update (structured logging)
+        log_info!(
+            "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",
+            update_zone_request.name,
+            zone_name,
+            new_serial,
+            updated_zone.id
+        );
 
         // Record zone changes for IXFR
         let zone_change_repository = get_zone_change_repository();
@@ -310,7 +290,6 @@ impl ZoneService {
 
     pub async fn delete_zone(zone_name: &str) -> Result<(), ApiError> {
         let zone_repository = get_zone_repository();
-        let zone_history_repository = get_zone_history_repository();
 
         // Check if zone exists and get its ID
         let zone = match zone_repository.get_by_name(zone_name).await {
@@ -342,23 +321,12 @@ impl ZoneService {
                 ApiError::InternalServerError("Failed to delete zone".to_string())
             })?;
 
-        // Create zone history
-        zone_history_repository
-            .create(ZoneHistory {
-                id: 0,
-                log: format!(
-                    "[{}] Zone deleted: name={}",
-                    Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                    zone_name_clone,
-                ),
-                zone_name: zone_name_clone,
-                created_at: Utc::now(),
-            })
-            .await
-            .map_err(|e: DatabaseError| {
-                log_error!("Failed to create zone history: {}", e);
-                ApiError::InternalServerError("Failed to create zone history".to_string())
-            })?;
+        // Log zone deletion (structured logging)
+        log_info!(
+            "event=zone_delete zone={} zone_id={}",
+            zone_name_clone,
+            zone_id
+        );
 
         Ok(())
     }

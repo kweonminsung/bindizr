@@ -1,15 +1,9 @@
 mod api_token_repository_impl;
-mod dns_server_repository_impl;
-mod record_history_repository_impl;
 mod record_repository_impl;
 mod zone_change_repository_impl;
-mod zone_history_repository_impl;
 mod zone_repository_impl;
 
 pub use api_token_repository_impl::PostgresApiTokenRepository;
-pub use dns_server_repository_impl::PostgresDnsServerRepository;
-pub use record_history_repository_impl::PostgresRecordHistoryRepository;
 pub use record_repository_impl::PostgresRecordRepository;
 pub use zone_change_repository_impl::PostgresZoneChangeRepository;
-pub use zone_history_repository_impl::PostgresZoneHistoryRepository;
 pub use zone_repository_impl::PostgresZoneRepository;
