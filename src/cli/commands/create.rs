@@ -25,9 +25,9 @@ pub enum CreateCommand {
         /// TTL
         #[arg(long)]
         ttl: i32,
-        /// Serial number
+        /// Serial number (optional, auto-generated if not provided)
         #[arg(long)]
-        serial: i32,
+        serial: Option<i32>,
     },
 
     /// Create a record

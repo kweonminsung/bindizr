@@ -17,10 +17,12 @@ fn generate_serial(current_serial: i32) -> i32 {
     let date_prefix = now.format("%Y%m%d").to_string().parse::<i32>().unwrap();
     let base_serial = date_prefix * 100;
 
-    if current_serial / 100 == date_prefix {
-        current_serial + 1
-    } else {
+    if base_serial > current_serial {
+        // Today's base is ahead of current serial: reset to today's base
         base_serial
+    } else {
+        // Current serial is already at or past today's base: just increment
+        current_serial + 1
     }
 }
 
@@ -284,7 +286,7 @@ impl RecordService {
             })?;
 
         // Send NOTIFY to secondary servers
-        if let Err(e) = xfr::notify::send_notify(&zone.name).await {
+        if let Err(e) = xfr::notify::send_notify(Some(&zone.name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
         }
 
@@ -510,7 +512,7 @@ impl RecordService {
             })?;
 
         // Send NOTIFY to secondary servers
-        if let Err(e) = xfr::notify::send_notify(&zone.name).await {
+        if let Err(e) = xfr::notify::send_notify(Some(&zone.name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
         }
 
@@ -627,7 +629,7 @@ impl RecordService {
             })?;
 
         // Send NOTIFY to secondary servers
-        if let Err(e) = xfr::notify::send_notify(&zone.name).await {
+        if let Err(e) = xfr::notify::send_notify(Some(&zone.name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
         }
 

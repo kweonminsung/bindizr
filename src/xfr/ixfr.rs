@@ -85,9 +85,49 @@ pub async fn handle_ixfr(
             .await;
     }
 
+    // Group changes by serial to check for serial chain continuity
+    let mut serials_in_changes: Vec<u32> = changes.iter().map(|c| c.serial).collect();
+    serials_in_changes.sort_unstable();
+    serials_in_changes.dedup();
+
+    // Verify serial chain is continuous (RFC 1995 requirement)
+    let mut expected_serial = client_serial + 1;
+    for &serial in &serials_in_changes {
+        if serial != expected_serial {
+            log_warn!(
+                "IXFR: Serial chain broken (expected {}, got {}), falling back to AXFR",
+                expected_serial,
+                serial
+            );
+            return axfr::handle_axfr_with_qtype(
+                stream,
+                zone_name,
+                query_id,
+                client_ip,
+                Rtype::IXFR,
+            )
+            .await;
+        }
+        expected_serial += 1;
+    }
+
+    // Verify the last serial in changes matches current (or is close enough)
+    if let Some(&last_serial) = serials_in_changes.last()
+        && last_serial != current_serial
+    {
+        log_warn!(
+            "IXFR: Last change serial {} != current serial {}, falling back to AXFR",
+            last_serial,
+            current_serial
+        );
+        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
+            .await;
+    }
+
     log_info!(
-        "IXFR: Sending {} changes from serial {} to {}",
+        "IXFR: Sending {} changes across {} serial steps from {} to {}",
         changes.len(),
+        serials_in_changes.len(),
         client_serial,
         current_serial
     );

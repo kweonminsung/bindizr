@@ -143,6 +143,30 @@ impl DnsMessageBuilder {
         Ok(())
     }
 
+    /// Add primaries record for catalog zone member (specifies which primary server the member zone should use)
+    /// Add RFC 9432 primaries record for catalog zone member
+    pub fn add_catalog_primaries(
+        &mut self,
+        zone: &Zone,
+        member_zone: &str,
+        primary_ip: &str,
+    ) -> Result<(), XfrError> {
+        let member_id = super::catalog::zone_name_to_member_id(member_zone);
+        let primaries_name = format!(
+            "1.primaries.{}.zones.{}.",
+            member_id,
+            zone.name.trim_end_matches('.')
+        );
+
+        if let Ok(addr) = primary_ip.parse::<std::net::Ipv4Addr>() {
+            self.add_a_record(&primaries_name, zone.ttl as u32, addr)?;
+        } else if let Ok(addr) = primary_ip.parse::<std::net::Ipv6Addr>() {
+            self.add_aaaa_record(&primaries_name, zone.ttl as u32, addr)?;
+        }
+
+        Ok(())
+    }
+
     /// Add a record from database Record model
     pub fn add_record(&mut self, record: &Record, zone_name: &str) -> Result<(), XfrError> {
         let ttl = record.ttl.unwrap_or(3600) as u32;
@@ -267,7 +291,7 @@ fn normalize_name(name: &str, zone: &str) -> String {
     format!("{}.{}.", owner_trimmed, zone_trimmed)
 }
 
-fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError> {
+pub fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError> {
     let name = name.trim_end_matches('.');
 
     if name.is_empty() {

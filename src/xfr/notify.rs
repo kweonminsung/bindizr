@@ -1,4 +1,4 @@
-use super::error::XfrError;
+use super::{error::XfrError, wire};
 use crate::{config, database::get_zone_repository, log_error, log_info};
 use domain::base::{
     Name, Rtype, StaticCompressor,
@@ -9,7 +9,43 @@ use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 
 /// Send DNS NOTIFY to all configured DNS servers for a zone
-pub async fn send_notify(zone_name: &str) -> Result<(), XfrError> {
+/// If zone_name is None, sends NOTIFY for all zones
+pub async fn send_notify(zone_name: Option<&str>) -> Result<(), XfrError> {
+    match zone_name {
+        Some(name) => send_notify_for_zone(name).await,
+        None => send_notify_for_all_zones().await,
+    }
+}
+
+/// Send DNS NOTIFY for all zones
+async fn send_notify_for_all_zones() -> Result<(), XfrError> {
+    log_info!("Sending NOTIFY for all zones");
+
+    let zone_repo = get_zone_repository();
+    let zones = zone_repo
+        .get_all()
+        .await
+        .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
+
+    if zones.is_empty() {
+        log_info!("No zones found");
+        return Ok(());
+    }
+
+    log_info!("Found {} zone(s) to notify", zones.len());
+
+    for zone in zones {
+        log_info!("Processing NOTIFY for zone: {}", zone.name);
+        if let Err(e) = send_notify_for_zone(&zone.name).await {
+            log_error!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
+        }
+    }
+
+    Ok(())
+}
+
+/// Send DNS NOTIFY to all configured DNS servers for a specific zone
+async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
 
     // Verify zone exists
@@ -21,7 +57,7 @@ pub async fn send_notify(zone_name: &str) -> Result<(), XfrError> {
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;
 
     // Get secondary servers from config (comma-separated list)
-    let secondary_servers_str: String = config::get_config("xfr.secondary_servers");
+    let secondary_servers_str: String = config::get_config("xfr.secondary_addrs");
     if secondary_servers_str.is_empty() {
         log_info!("No secondary DNS servers configured");
         return Ok(());
@@ -56,8 +92,9 @@ pub async fn send_notify(zone_name: &str) -> Result<(), XfrError> {
         zone_name
     );
 
-    // Parse zone name
-    let zone_name_bytes = zone_name.as_bytes().to_vec();
+    // Parse zone name - encode to DNS wire format
+    let mut zone_name_bytes = Vec::new();
+    wire::encode_domain_name(zone_name, &mut zone_name_bytes)?;
     let qname = Name::from_octets(zone_name_bytes)
         .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
 
@@ -84,18 +121,31 @@ async fn send_notify_to_server(
     // Build NOTIFY message
     let notify_message = build_notify_message(zone_name)?;
 
-    // Bind to any available port
-    let socket = UdpSocket::bind("0.0.0.0:0")
+    // Bind to appropriate address based on target
+    let bind_addr = if server_addr.is_ipv4() {
+        "0.0.0.0:0"
+    } else {
+        "[::]:0"
+    };
+
+    let socket = UdpSocket::bind(bind_addr)
         .await
         .map_err(XfrError::IoError)?;
 
-    // Send NOTIFY
-    socket
-        .send_to(&notify_message, server_addr)
-        .await
-        .map_err(XfrError::IoError)?;
+    // Send NOTIFY with timeout
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        socket.send_to(&notify_message, server_addr),
+    )
+    .await
+    .map_err(|_| XfrError::ProtocolError("NOTIFY send timeout".to_string()))?
+    .map_err(XfrError::IoError)?;
 
-    log_info!("NOTIFY message sent to {}", server_addr);
+    log_info!(
+        "NOTIFY message sent to {} ({} bytes)",
+        server_addr,
+        notify_message.len()
+    );
 
     Ok(())
 }

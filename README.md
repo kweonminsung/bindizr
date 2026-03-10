@@ -118,6 +118,7 @@ Update your main BIND configuration file (`$BIND_CONF_FILE`) by adding the follo
 # Configure catalog zone support
 cat <<EOF | sudo tee -a "$BIND_CONF_FILE"
 options {
+    ixfr-from-differences yes;
     catalog-zones {
         zone "catalog.bind" {
             default-primaries { 127.0.0.1 port 53; };
@@ -132,6 +133,7 @@ zone "catalog.bind" {
     type secondary;
     primaries { 127.0.0.1 port 53; };
     file "$BIND_CACHE_DIR/catalog.bind.zone";
+    ixfr-from-differences yes;
 };
 EOF
 ```
@@ -158,8 +160,10 @@ $ vim /etc/bindizr/bindizr.conf.toml # or use any text editor you prefer
 Add the following configuration, adjusting values to match your environment:
 
 ```toml
+listen_addr = "127.0.0.1"         # Common listen address for all services
+advertised_addr = "127.0.0.1"    # Advertised address for catalog zone primary (external IP/hostname)
+
 [api]
-listen_addr = "127.0.0.1"      # HTTP API listen address
 listen_port = 3000             # HTTP API listen port
 require_authentication = true  # Enable API authentication (true/false)
 
@@ -176,9 +180,8 @@ file_path = "bindizr.db"       # SQLite database file path
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
 [xfr]
-listen_addr = "0.0.0.0"              # XFR server listen address
 listen_port = 53                  # XFR server listen port (TCP)
-secondary_servers = ""               # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
+secondary_addrs = ""                 # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

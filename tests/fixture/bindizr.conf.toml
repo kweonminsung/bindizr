@@ -16,10 +16,12 @@ file_path = "file::memory:?cache=shared"
 [database.postgresql]
 server_url = ""
 
-[xfr]
 listen_addr = "127.0.0.1"
-listen_port = 53
-secondary_servers = ""
+advertised_addr = "127.0.0.1"
+
+[xfr]
+listen_port = 53533
+secondary_addrs = ""
 
 
 [logging]

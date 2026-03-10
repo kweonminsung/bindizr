@@ -1,5 +1,7 @@
+listen_addr = "127.0.0.1"         # Common listen address for all services
+advertised_addr = "127.0.0.1"    # Advertised address for catalog zone primary (external IP/hostname)
+
 [api]
-listen_addr = "127.0.0.1"      # HTTP API listen address
 listen_port = 3000             # HTTP API listen port
 require_authentication = true  # Enable API authentication (true/false)
 
@@ -16,9 +18,8 @@ file_path = "bindizr.db"       # SQLite database file path
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
 [xfr]
-listen_addr = "0.0.0.0"        # XFR server listen address
 listen_port = 53            # XFR server listen port (TCP)
-secondary_servers = ""         # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53") for NOTIFY
+secondary_addrs = ""           # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53") for NOTIFY
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

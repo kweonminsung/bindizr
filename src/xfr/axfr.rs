@@ -32,17 +32,18 @@ pub async fn handle_axfr_with_qtype(
         client_ip
     );
 
-    let zone_name_str = zone_name.to_string();
-    let zone_name_str = zone_name_str.trim_end_matches('.');
+    let zone_name_owned = zone_name.to_string();
+    let zone_name_str = zone_name_owned.trim_end_matches('.');
 
     // Check if this is a catalog zone request
     if catalog::is_catalog_zone(zone_name_str) {
-        return if response_qtype == Rtype::AXFR {
-            catalog::handle_catalog_axfr(stream, zone_name, query_id).await
-        } else {
-            catalog::handle_catalog_axfr_with_qtype(stream, zone_name, query_id, response_qtype)
-                .await
-        };
+        return catalog::handle_catalog_axfr_with_qtype(
+            stream,
+            zone_name,
+            query_id,
+            response_qtype,
+        )
+        .await;
     }
 
     let zone_repo = get_zone_repository();
@@ -89,6 +90,52 @@ pub async fn handle_axfr_with_qtype(
         zone_name_str,
         records.len()
     );
+
+    Ok(())
+}
+
+/// Handle SOA query
+pub async fn handle_soa(
+    stream: &mut TcpStream,
+    zone_name: &Name<Vec<u8>>,
+    query_id: u16,
+    client_ip: IpAddr,
+) -> Result<(), XfrError> {
+    log_info!(
+        "SOA query for zone {:?} from {}",
+        zone_name.to_string(),
+        client_ip
+    );
+
+    let zone_name_owned = zone_name.to_string();
+    let zone_name_str = zone_name_owned.trim_end_matches('.');
+
+    // Check if this is a catalog zone request
+    if catalog::is_catalog_zone(zone_name_str) {
+        return catalog::handle_catalog_soa(stream, zone_name, query_id).await;
+    }
+
+    let zone_repo = get_zone_repository();
+    let zone = zone_repo
+        .get_by_name(zone_name_str)
+        .await
+        .map_err(|e| XfrError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
+
+    log_info!(
+        "SOA response: zone {} serial={}",
+        zone_name_str,
+        zone.serial
+    );
+
+    // Build and send SOA response
+    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::SOA);
+    builder.add_soa(&zone, zone.serial as u32)?;
+
+    let message = builder.build();
+    wire::write_tcp_message(stream, &message).await?;
+
+    log_info!("SOA response sent for zone {}", zone_name_str);
 
     Ok(())
 }

@@ -35,13 +35,13 @@ pub async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
         primary_ns: "invalid".to_string(),
         primary_ns_ip: None,
         primary_ns_ipv6: None,
-        admin_email: "admin.bindizr".to_string(),
+        admin_email: "invalid".to_string(),
         ttl: 3600,
         serial: generate_catalog_serial(&all_zones),
         refresh: 3600,
-        retry: 3600,
-        expire: 604800,
-        minimum_ttl: 3600,
+        retry: 600,
+        expire: 86400,
+        minimum_ttl: 60,
         created_at: Utc::now(),
     };
 
@@ -50,13 +50,6 @@ pub async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
 
 fn generate_catalog_serial(zones: &[Zone]) -> i32 {
     zones.iter().map(|z| z.serial).max().unwrap_or(1)
-}
-pub async fn handle_catalog_axfr(
-    stream: &mut TcpStream,
-    zone_name: &Name<Vec<u8>>,
-    query_id: u16,
-) -> Result<(), XfrError> {
-    handle_catalog_axfr_with_qtype(stream, zone_name, query_id, Rtype::AXFR).await
 }
 
 pub async fn handle_catalog_axfr_with_qtype(
@@ -74,8 +67,13 @@ pub async fn handle_catalog_axfr_with_qtype(
 
     builder.add_catalog_ns(&catalog_zone)?;
     builder.add_catalog_version(&catalog_zone)?;
+
+    let primary_ip = crate::config::get_config_optional::<String>("advertised_addr")
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+
     for zone_name in &member_zones {
         builder.add_catalog_ptr(&catalog_zone, zone_name)?;
+        builder.add_catalog_primaries(&catalog_zone, zone_name, &primary_ip)?;
     }
 
     builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
@@ -97,6 +95,27 @@ pub fn is_catalog_zone(zone_name: &str) -> bool {
 
 pub fn zone_name_to_member_id(zone_name: &str) -> String {
     zone_name.replace('.', "-")
+}
+
+/// Handle SOA query for catalog zone
+pub async fn handle_catalog_soa(
+    stream: &mut TcpStream,
+    zone_name: &Name<Vec<u8>>,
+    query_id: u16,
+) -> Result<(), XfrError> {
+    log_info!("SOA query for catalog zone: {}", CATALOG_ZONE_NAME);
+
+    let (catalog_zone, _member_zones) = generate_catalog_zone().await?;
+
+    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::SOA);
+    builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
+
+    let message = builder.build();
+    wire::write_tcp_message(stream, &message).await?;
+
+    log_info!("Catalog SOA response sent: serial {}", catalog_zone.serial);
+
+    Ok(())
 }
 #[cfg(test)]
 mod tests {

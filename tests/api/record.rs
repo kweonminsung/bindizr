@@ -126,11 +126,7 @@ async fn test_record_history() {
     let (status, body) = ctx
         .make_request(
             "GET",
-            &format!(
-                "/records/{}/{}/histories",
-                record.name,
-                record.record_type.to_string()
-            ),
+            &format!("/records/{}/{}/histories", record.name, record.record_type),
             None,
         )
         .await;
@@ -309,11 +305,7 @@ async fn test_prevent_updating_to_default_records() {
     let (status, _) = ctx
         .make_request(
             "PUT",
-            &format!(
-                "/records/{}/{}",
-                record.name,
-                record.record_type.to_string()
-            ),
+            &format!("/records/{}/{}", record.name, record.record_type),
             Some(update_a_request),
         )
         .await;
@@ -330,11 +322,7 @@ async fn test_prevent_updating_to_default_records() {
     let (status, _) = ctx
         .make_request(
             "PUT",
-            &format!(
-                "/records/{}/{}",
-                record.name,
-                record.record_type.to_string()
-            ),
+            &format!("/records/{}/{}", record.name, record.record_type),
             Some(update_ns_request),
         )
         .await;

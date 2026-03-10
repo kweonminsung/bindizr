@@ -18,7 +18,7 @@ impl Default for XfrServer {
 
 impl XfrServer {
     pub fn new() -> Self {
-        let listen_addr_str = config::get_config::<String>("xfr.listen_addr");
+        let listen_addr_str = config::get_config::<String>("listen_addr");
         let listen_port = config::get_config::<u16>("xfr.listen_port");
         let listen_addr = SocketAddr::new(
             IpAddr::from_str(&listen_addr_str).expect("Invalid XFR listen address"),
@@ -26,7 +26,7 @@ impl XfrServer {
         );
 
         // Load secondary servers from config and extract IPs for ACL
-        let secondary_servers_str = config::get_config::<String>("xfr.secondary_servers");
+        let secondary_servers_str = config::get_config::<String>("xfr.secondary_addrs");
         let secondary_servers: Vec<IpAddr> = secondary_servers_str
             .split(',')
             .filter_map(|s| {
@@ -114,6 +114,9 @@ async fn handle_connection(
 
     // Dispatch based on query type
     match qtype {
+        Rtype::SOA => {
+            axfr::handle_soa(&mut stream, &zone_name, query_id, client_ip).await?;
+        }
         Rtype::AXFR => {
             axfr::handle_axfr(&mut stream, &zone_name, query_id, client_ip).await?;
         }
