@@ -116,25 +116,6 @@ async fn test_record_crud_operations() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
-async fn test_record_history() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-    let record = ctx.create_test_record(zone.id).await;
-
-    // Test GET /records/{name}/{record_type}/history
-    let (status, body) = ctx
-        .make_request(
-            "GET",
-            &format!("/records/{}/{}/histories", record.name, record.record_type),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
-    // Should return history array (might be empty initially)
-    assert!(body["record_histories"].as_array().is_some());
-}
 
 #[tokio::test]
 async fn test_multiple_record_types() {

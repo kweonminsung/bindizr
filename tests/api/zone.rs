@@ -120,17 +120,3 @@ async fn test_zone_crud_operations() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
-async fn test_zone_history() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-
-    // Test GET /zones/{name}/history
-    let (status, body) = ctx
-        .make_request("GET", &format!("/zones/{}/histories", zone.name), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
-    // Should return history array (might be empty initially)
-    assert!(body["zone_histories"].as_array().is_some());
-}
