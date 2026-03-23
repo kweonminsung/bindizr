@@ -16,10 +16,11 @@ pub struct ZoneChange {
 pub struct ZoneSnapshot {
     pub primary_ns: String,
     pub admin_email: String,
+    pub ttl: i32,
     pub refresh: i32,
     pub retry: i32,
     pub expire: i32,
-    pub minimum: i32,
+    pub minimum_ttl: i32,
     pub serial: u32,
 }
 
@@ -67,10 +68,11 @@ pub async fn get_zone_snapshot(
     Ok(snapshot.map(|s| ZoneSnapshot {
         primary_ns: s.primary_ns,
         admin_email: s.admin_email,
+        ttl: s.ttl,
         refresh: s.refresh,
         retry: s.retry,
         expire: s.expire,
-        minimum: s.minimum,
+        minimum_ttl: s.minimum_ttl,
         serial: s.serial as u32,
     }))
 }

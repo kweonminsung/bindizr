@@ -38,10 +38,11 @@ async fn save_zone_snapshot(zone: &Zone, serial: i32) -> Result<(), ApiError> {
             serial,
             primary_ns: zone.primary_ns.clone(),
             admin_email: zone.admin_email.replace('@', "."),
+            ttl: zone.ttl,
             refresh: zone.refresh,
             retry: zone.retry,
             expire: zone.expire,
-            minimum: zone.minimum_ttl,
+            minimum_ttl: zone.minimum_ttl,
             created_at: Utc::now(),
         })
         .await

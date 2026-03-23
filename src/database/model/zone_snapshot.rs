@@ -8,9 +8,10 @@ pub struct ZoneSnapshot {
     pub serial: i32,
     pub primary_ns: String,
     pub admin_email: String,
+    pub ttl: i32,
     pub refresh: i32,
     pub retry: i32,
     pub expire: i32,
-    pub minimum: i32,
+    pub minimum_ttl: i32,
     pub created_at: DateTime<Utc>,
 }

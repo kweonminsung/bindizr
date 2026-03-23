@@ -18,27 +18,29 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
     async fn upsert(&self, snapshot: ZoneSnapshot) -> Result<ZoneSnapshot, DatabaseError> {
         sqlx::query_as::<_, ZoneSnapshot>(
             r#"
-            INSERT INTO zone_soa_history (zone_id, serial, primary_ns, admin_email, refresh, retry, expire, minimum)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO zone_soa_history (zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (zone_id, serial)
             DO UPDATE SET
                 primary_ns = EXCLUDED.primary_ns,
                 admin_email = EXCLUDED.admin_email,
+                ttl = EXCLUDED.ttl,
                 refresh = EXCLUDED.refresh,
                 retry = EXCLUDED.retry,
                 expire = EXCLUDED.expire,
-                minimum = EXCLUDED.minimum
-            RETURNING id, zone_id, serial, primary_ns, admin_email, refresh, retry, expire, minimum, created_at
+                minimum_ttl = EXCLUDED.minimum_ttl
+            RETURNING id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
             "#,
         )
         .bind(snapshot.zone_id)
         .bind(snapshot.serial)
         .bind(&snapshot.primary_ns)
         .bind(&snapshot.admin_email)
+        .bind(snapshot.ttl)
         .bind(snapshot.refresh)
         .bind(snapshot.retry)
         .bind(snapshot.expire)
-        .bind(snapshot.minimum)
+        .bind(snapshot.minimum_ttl)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
@@ -51,7 +53,7 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
     ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
         sqlx::query_as::<_, ZoneSnapshot>(
             r#"
-            SELECT id, zone_id, serial, primary_ns, admin_email, refresh, retry, expire, minimum, created_at
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
             FROM zone_soa_history
             WHERE zone_id = $1 AND serial = $2
             "#,

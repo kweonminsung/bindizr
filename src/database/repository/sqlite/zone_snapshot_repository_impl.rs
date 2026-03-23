@@ -18,33 +18,35 @@ impl ZoneSnapshotRepository for SqliteZoneSnapshotRepository {
     async fn upsert(&self, snapshot: ZoneSnapshot) -> Result<ZoneSnapshot, DatabaseError> {
         sqlx::query(
             r#"
-            INSERT INTO zone_soa_history (zone_id, serial, primary_ns, admin_email, refresh, retry, expire, minimum)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zone_soa_history (zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(zone_id, serial)
             DO UPDATE SET
                 primary_ns = excluded.primary_ns,
                 admin_email = excluded.admin_email,
+                ttl = excluded.ttl,
                 refresh = excluded.refresh,
                 retry = excluded.retry,
                 expire = excluded.expire,
-                minimum = excluded.minimum
+                minimum_ttl = excluded.minimum_ttl
             "#,
         )
         .bind(snapshot.zone_id)
         .bind(snapshot.serial)
         .bind(&snapshot.primary_ns)
         .bind(&snapshot.admin_email)
+        .bind(snapshot.ttl)
         .bind(snapshot.refresh)
         .bind(snapshot.retry)
         .bind(snapshot.expire)
-        .bind(snapshot.minimum)
+        .bind(snapshot.minimum_ttl)
         .execute(&self.pool)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
         sqlx::query_as::<_, ZoneSnapshot>(
             r#"
-            SELECT id, zone_id, serial, primary_ns, admin_email, refresh, retry, expire, minimum, created_at
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
             FROM zone_soa_history
             WHERE zone_id = ? AND serial = ?
             "#,
@@ -63,7 +65,7 @@ impl ZoneSnapshotRepository for SqliteZoneSnapshotRepository {
     ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
         sqlx::query_as::<_, ZoneSnapshot>(
             r#"
-            SELECT id, zone_id, serial, primary_ns, admin_email, refresh, retry, expire, minimum, created_at
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
             FROM zone_soa_history
             WHERE zone_id = ? AND serial = ?
             "#,

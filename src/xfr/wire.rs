@@ -58,11 +58,11 @@ impl DnsMessageBuilder {
         rdata.extend_from_slice(&(soa.refresh as u32).to_be_bytes());
         rdata.extend_from_slice(&(soa.retry as u32).to_be_bytes());
         rdata.extend_from_slice(&(soa.expire as u32).to_be_bytes());
-        rdata.extend_from_slice(&(soa.minimum as u32).to_be_bytes());
+        rdata.extend_from_slice(&(soa.minimum_ttl as u32).to_be_bytes());
 
         // IXFR SOA owner should be the transfer QNAME.
         let wire_qname = self.qname.clone();
-        self.add_answer_raw_wire_name(&wire_qname, 6, soa.minimum as u32, &rdata)?;
+        self.add_answer_raw_wire_name(&wire_qname, 6, soa.ttl as u32, &rdata)?;
         Ok(())
     }
 
