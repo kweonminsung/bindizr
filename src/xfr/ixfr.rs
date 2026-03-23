@@ -58,7 +58,21 @@ pub async fn handle_ixfr(
     // If client is up-to-date, send single SOA response
     if client_serial == current_serial {
         log_info!("IXFR: Client is up-to-date (serial={})", current_serial);
-        return send_up_to_date_response(stream, zone_name, query_id, &zone).await;
+        let current_soa = match delta::get_zone_snapshot(zone.id, current_serial).await? {
+            Some(snapshot) => snapshot,
+            None => {
+                log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
+                return axfr::handle_axfr_with_qtype(
+                    stream,
+                    zone_name,
+                    query_id,
+                    client_ip,
+                    Rtype::IXFR,
+                )
+                .await;
+            }
+        };
+        return send_up_to_date_response(stream, zone_name, query_id, &current_soa).await;
     }
 
     // If client is ahead, this is an error
@@ -85,18 +99,17 @@ pub async fn handle_ixfr(
             .await;
     }
 
-    // Group changes by serial to check for serial chain continuity
+    // Group changes by serial to validate monotonic serial progression
     let mut serials_in_changes: Vec<u32> = changes.iter().map(|c| c.serial).collect();
     serials_in_changes.sort_unstable();
     serials_in_changes.dedup();
 
-    // Verify serial chain is continuous (RFC 1995 requirement)
-    let mut expected_serial = client_serial + 1;
+    let mut previous_serial = client_serial;
     for &serial in &serials_in_changes {
-        if serial != expected_serial {
+        if serial <= previous_serial {
             log_warn!(
-                "IXFR: Serial chain broken (expected {}, got {}), falling back to AXFR",
-                expected_serial,
+                "IXFR: Non-monotonic serial chain (previous {}, got {}), falling back to AXFR",
+                previous_serial,
                 serial
             );
             return axfr::handle_axfr_with_qtype(
@@ -108,10 +121,10 @@ pub async fn handle_ixfr(
             )
             .await;
         }
-        expected_serial += 1;
+        previous_serial = serial;
     }
 
-    // Verify the last serial in changes matches current (or is close enough)
+    // Verify the last serial in changes matches current serial
     if let Some(&last_serial) = serials_in_changes.last()
         && last_serial != current_serial
     {
@@ -124,6 +137,62 @@ pub async fn handle_ixfr(
             .await;
     }
 
+    let mut snapshots_by_serial: HashMap<u32, delta::ZoneSnapshot> = HashMap::new();
+    snapshots_by_serial.reserve(serials_in_changes.len() + 1);
+
+    let mut required_snapshot_serials = serials_in_changes.clone();
+    required_snapshot_serials.push(client_serial);
+    required_snapshot_serials.sort_unstable();
+    required_snapshot_serials.dedup();
+
+    for serial in required_snapshot_serials {
+        match delta::get_zone_snapshot(zone.id, serial).await? {
+            Some(snapshot) => {
+                snapshots_by_serial.insert(serial, snapshot);
+            }
+            None => {
+                log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
+                return axfr::handle_axfr_with_qtype(
+                    stream,
+                    zone_name,
+                    query_id,
+                    client_ip,
+                    Rtype::IXFR,
+                )
+                .await;
+            }
+        }
+    }
+
+    // Validate snapshot chain to ensure old/new SOA can be formed for each serial delta.
+    for (idx, &serial) in serials_in_changes.iter().enumerate() {
+        let old_serial = if idx == 0 {
+            client_serial
+        } else {
+            serials_in_changes[idx - 1]
+        };
+
+        if !snapshots_by_serial.contains_key(&old_serial)
+            || !snapshots_by_serial.contains_key(&serial)
+        {
+            log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
+            return axfr::handle_axfr_with_qtype(
+                stream,
+                zone_name,
+                query_id,
+                client_ip,
+                Rtype::IXFR,
+            )
+            .await;
+        }
+    }
+
+    if !snapshots_by_serial.contains_key(&current_serial) {
+        log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
+        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
+            .await;
+    }
+
     log_info!(
         "IXFR: Sending {} changes across {} serial steps from {} to {}",
         changes.len(),
@@ -132,7 +201,16 @@ pub async fn handle_ixfr(
         current_serial
     );
 
-    send_ixfr_response(stream, zone_name, query_id, &zone, client_serial, &changes).await?;
+    send_ixfr_response(
+        stream,
+        zone_name,
+        query_id,
+        &zone,
+        client_serial,
+        &changes,
+        &snapshots_by_serial,
+    )
+    .await?;
 
     log_info!("IXFR completed for zone {}", zone_name_str);
 
@@ -144,11 +222,11 @@ async fn send_up_to_date_response(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
     query_id: u16,
-    zone: &crate::database::model::zone::Zone,
+    current_soa: &delta::ZoneSnapshot,
 ) -> Result<(), XfrError> {
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
 
-    builder.add_soa(zone, zone.serial as u32)?;
+    builder.add_soa_from_snapshot(current_soa)?;
 
     let message = builder.build();
     wire::write_tcp_message(stream, &message).await?;
@@ -164,11 +242,17 @@ async fn send_ixfr_response(
     zone: &crate::database::model::zone::Zone,
     client_serial: u32,
     changes: &[delta::ZoneChange],
+    snapshots_by_serial: &HashMap<u32, delta::ZoneSnapshot>,
 ) -> Result<(), XfrError> {
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
 
     // Add initial SOA record
-    builder.add_soa(zone, zone.serial as u32)?;
+    let current_snapshot = snapshots_by_serial
+        .get(&(zone.serial as u32))
+        .ok_or_else(|| {
+            XfrError::ProtocolError("Missing current serial SOA snapshot for IXFR".to_string())
+        })?;
+    builder.add_soa_from_snapshot(current_snapshot)?;
 
     // Group changes by serial
     let mut changes_by_serial: HashMap<u32, Vec<&delta::ZoneChange>> = HashMap::new();
@@ -195,7 +279,13 @@ async fn send_ixfr_response(
         };
 
         // Add old SOA (deletion section marker)
-        builder.add_soa(zone, old_serial)?;
+        let old_soa = snapshots_by_serial.get(&old_serial).ok_or_else(|| {
+            XfrError::ProtocolError(format!(
+                "Missing old SOA snapshot for serial {}",
+                old_serial
+            ))
+        })?;
+        builder.add_soa_from_snapshot(old_soa)?;
 
         // Add all DEL operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
@@ -203,7 +293,10 @@ async fn send_ixfr_response(
         }
 
         // Add new SOA (addition section marker)
-        builder.add_soa(zone, serial)?;
+        let new_soa = snapshots_by_serial.get(&serial).ok_or_else(|| {
+            XfrError::ProtocolError(format!("Missing new SOA snapshot for serial {}", serial))
+        })?;
+        builder.add_soa_from_snapshot(new_soa)?;
 
         // Add all ADD operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
@@ -212,7 +305,7 @@ async fn send_ixfr_response(
     }
 
     // Add final SOA record to indicate end of transfer
-    builder.add_soa(zone, zone.serial as u32)?;
+    builder.add_soa_from_snapshot(current_snapshot)?;
     let message = builder.build();
     wire::write_tcp_message(stream, &message).await?;
 

@@ -47,6 +47,22 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS zone_soa_history (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            zone_id INT NOT NULL,
+            serial INT NOT NULL,
+            primary_ns TEXT NOT NULL,
+            admin_email TEXT NOT NULL,
+            refresh INT NOT NULL,
+            retry INT NOT NULL,
+            expire INT NOT NULL,
+            minimum INT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_zone_serial (zone_id, serial),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS api_tokens (
             id INT PRIMARY KEY AUTO_INCREMENT,
             token VARCHAR(64) UNIQUE NOT NULL,
@@ -105,7 +121,25 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
+        "#,
+        r#"
         CREATE INDEX IF NOT EXISTS idx_zone_serial ON zone_changes(zone_id, serial);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_soa_history (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            serial INTEGER NOT NULL,
+            primary_ns TEXT NOT NULL,
+            admin_email TEXT NOT NULL,
+            refresh INTEGER NOT NULL,
+            retry INTEGER NOT NULL,
+            expire INTEGER NOT NULL,
+            minimum INTEGER NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(zone_id, serial),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS api_tokens (
@@ -169,6 +203,22 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
         "#,
         r#"
         CREATE INDEX IF NOT EXISTS idx_zone_serial ON zone_changes(zone_id, serial);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_soa_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            zone_id INTEGER NOT NULL,
+            serial INTEGER NOT NULL,
+            primary_ns TEXT NOT NULL,
+            admin_email TEXT NOT NULL,
+            refresh INTEGER NOT NULL,
+            retry INTEGER NOT NULL,
+            expire INTEGER NOT NULL,
+            minimum INTEGER NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(zone_id, serial),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS api_tokens (

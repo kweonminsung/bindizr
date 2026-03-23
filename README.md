@@ -215,7 +215,7 @@ $ bindizr start -c <FILE>
 $ bindizr status
 
 # Send NOTIFY to secondary DNS servers for a zone
-$ bindizr notify <ZONE_NAME>
+$ bindizr notify zone <ZONE_NAME>
 
 # Show help information
 $ bindizr --help

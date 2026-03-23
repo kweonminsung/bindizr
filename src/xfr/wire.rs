@@ -26,12 +26,12 @@ impl DnsMessageBuilder {
     pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
 
-        // MNAME
+        // Primary NS
         encode_domain_name(&zone.primary_ns, &mut rdata)?;
 
-        // RNAME
-        let rname = zone.admin_email.replace('@', ".");
-        encode_domain_name(&rname, &mut rdata)?;
+        // Admin email in DNS SOA mailbox format
+        let admin_email = zone.admin_email.replace('@', ".");
+        encode_domain_name(&admin_email, &mut rdata)?;
 
         // SERIAL, REFRESH, RETRY, EXPIRE, MINIMUM
         rdata.extend_from_slice(&serial.to_be_bytes());
@@ -41,6 +41,28 @@ impl DnsMessageBuilder {
         rdata.extend_from_slice(&(zone.minimum_ttl as u32).to_be_bytes());
 
         self.add_answer_raw(&zone.name, 6, zone.ttl as u32, &rdata)?;
+        Ok(())
+    }
+
+    /// Add SOA from a serial-specific snapshot.
+    pub fn add_soa_from_snapshot(
+        &mut self,
+        soa: &super::delta::ZoneSnapshot,
+    ) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+
+        encode_domain_name(&soa.primary_ns, &mut rdata)?;
+        encode_domain_name(&soa.admin_email, &mut rdata)?;
+
+        rdata.extend_from_slice(&soa.serial.to_be_bytes());
+        rdata.extend_from_slice(&(soa.refresh as u32).to_be_bytes());
+        rdata.extend_from_slice(&(soa.retry as u32).to_be_bytes());
+        rdata.extend_from_slice(&(soa.expire as u32).to_be_bytes());
+        rdata.extend_from_slice(&(soa.minimum as u32).to_be_bytes());
+
+        // IXFR SOA owner should be the transfer QNAME.
+        let wire_qname = self.qname.clone();
+        self.add_answer_raw_wire_name(&wire_qname, 6, soa.minimum as u32, &rdata)?;
         Ok(())
     }
 
@@ -229,6 +251,26 @@ impl DnsMessageBuilder {
         answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
 
         // RDATA
+        answer.extend_from_slice(rdata);
+
+        self.answers.push(answer);
+        Ok(())
+    }
+
+    fn add_answer_raw_wire_name(
+        &mut self,
+        wire_name: &[u8],
+        rtype: u16,
+        ttl: u32,
+        rdata: &[u8],
+    ) -> Result<(), XfrError> {
+        let mut answer = Vec::new();
+
+        answer.extend_from_slice(wire_name);
+        answer.extend_from_slice(&rtype.to_be_bytes());
+        answer.extend_from_slice(&1u16.to_be_bytes());
+        answer.extend_from_slice(&ttl.to_be_bytes());
+        answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
         answer.extend_from_slice(rdata);
 
         self.answers.push(answer);

@@ -7,6 +7,7 @@ use super::model::{
     record::{Record, RecordType},
     zone::Zone,
     zone_change::ZoneChange,
+    zone_snapshot::ZoneSnapshot,
 };
 use crate::database::{DatabasePool, error::DatabaseError};
 use async_trait::async_trait;
@@ -51,6 +52,16 @@ pub trait ZoneChangeRepository: Send + Sync {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
+}
+
+#[async_trait]
+pub trait ZoneSnapshotRepository: Send + Sync {
+    async fn upsert(&self, snapshot: ZoneSnapshot) -> Result<ZoneSnapshot, DatabaseError>;
+    async fn get_by_zone_and_serial(
+        &self,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
 }
 
 // API Token Repository Trait
@@ -121,6 +132,20 @@ impl RepositoryFactory {
             DatabasePool::SQLite(sqlite_pool) => {
                 Box::new(sqlite::SqliteZoneChangeRepository::new(sqlite_pool.clone()))
             }
+        }
+    }
+
+    pub fn create_zone_snapshot_repository(pool: &DatabasePool) -> Box<dyn ZoneSnapshotRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlZoneSnapshotRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresZoneSnapshotRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteZoneSnapshotRepository::new(sqlite_pool.clone()),
+            ),
         }
     }
 }

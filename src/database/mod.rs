@@ -212,3 +212,8 @@ pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository>
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_change_repository(pool)
 }
+
+pub fn get_zone_snapshot_repository() -> Box<dyn repository::ZoneSnapshotRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_zone_snapshot_repository(pool)
+}

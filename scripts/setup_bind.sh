@@ -17,7 +17,7 @@ else
 fi
 
 HOST="127.0.0.1"
-PORT="5353"
+PORT="53"
 
 ##################################
 # 1. Clean up previous broken syntax

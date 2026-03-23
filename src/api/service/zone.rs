@@ -2,8 +2,8 @@ use crate::{
     api::{dto::CreateZoneRequest, error::ApiError},
     database::{
         error::DatabaseError,
-        get_zone_change_repository, get_zone_repository,
-        model::{zone::Zone, zone_change::ZoneChange},
+        get_zone_change_repository, get_zone_repository, get_zone_snapshot_repository,
+        model::{zone::Zone, zone_change::ZoneChange, zone_snapshot::ZoneSnapshot},
     },
     log_error, log_info, log_warn, xfr,
 };
@@ -27,6 +27,30 @@ fn generate_serial(current_serial: Option<i32>) -> i32 {
         }
         None => base_serial,
     }
+}
+
+async fn save_zone_snapshot(zone: &Zone, serial: i32) -> Result<(), ApiError> {
+    let zone_snapshot_repository = get_zone_snapshot_repository();
+    zone_snapshot_repository
+        .upsert(ZoneSnapshot {
+            id: 0,
+            zone_id: zone.id,
+            serial,
+            primary_ns: zone.primary_ns.clone(),
+            admin_email: zone.admin_email.replace('@', "."),
+            refresh: zone.refresh,
+            retry: zone.retry,
+            expire: zone.expire,
+            minimum: zone.minimum_ttl,
+            created_at: Utc::now(),
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to save SOA snapshot: {}", e);
+            ApiError::InternalServerError("Failed to save SOA snapshot".to_string())
+        })?;
+
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -127,6 +151,8 @@ impl ZoneService {
             created_zone.serial,
             created_zone.id
         );
+
+        save_zone_snapshot(&created_zone, created_zone.serial).await?;
 
         Ok(created_zone)
     }
@@ -275,6 +301,8 @@ impl ZoneService {
                 log_error!("Failed to create zone change (ADD SOA): {}", e);
                 ApiError::InternalServerError("Failed to create zone change".to_string())
             })?;
+
+        save_zone_snapshot(&updated_zone, new_serial).await?;
 
         // Send NOTIFY to secondary servers
         if let Err(e) = xfr::notify::send_notify(Some(&updated_zone.name)).await {

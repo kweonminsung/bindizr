@@ -1,5 +1,5 @@
 use super::error::XfrError;
-use crate::database::get_zone_change_repository;
+use crate::database::{get_zone_change_repository, get_zone_snapshot_repository};
 
 #[derive(Debug, Clone)]
 pub struct ZoneChange {
@@ -10,6 +10,17 @@ pub struct ZoneChange {
     pub record_value: String,
     pub record_ttl: Option<i32>,
     pub record_priority: Option<i32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZoneSnapshot {
+    pub primary_ns: String,
+    pub admin_email: String,
+    pub refresh: i32,
+    pub retry: i32,
+    pub expire: i32,
+    pub minimum: i32,
+    pub serial: u32,
 }
 
 /// Get zone changes between two serials for IXFR
@@ -40,4 +51,26 @@ pub async fn get_zone_changes(
         .collect();
 
     Ok(xfr_changes)
+}
+
+pub async fn get_zone_snapshot(
+    zone_id: i32,
+    serial: u32,
+) -> Result<Option<ZoneSnapshot>, XfrError> {
+    let repo = get_zone_snapshot_repository();
+
+    let snapshot = repo
+        .get_by_zone_and_serial(zone_id, serial as i32)
+        .await
+        .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
+
+    Ok(snapshot.map(|s| ZoneSnapshot {
+        primary_ns: s.primary_ns,
+        admin_email: s.admin_email,
+        refresh: s.refresh,
+        retry: s.retry,
+        expire: s.expire,
+        minimum: s.minimum,
+        serial: s.serial as u32,
+    }))
 }
