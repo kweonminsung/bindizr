@@ -117,30 +117,6 @@ async fn test_record_crud_operations() {
 }
 
 #[tokio::test]
-async fn test_record_history() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-    let record = ctx.create_test_record(zone.id).await;
-
-    // Test GET /records/{name}/{record_type}/history
-    let (status, body) = ctx
-        .make_request(
-            "GET",
-            &format!(
-                "/records/{}/{}/histories",
-                record.name,
-                record.record_type.to_string()
-            ),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
-    // Should return history array (might be empty initially)
-    assert!(body["record_histories"].as_array().is_some());
-}
-
-#[tokio::test]
 async fn test_multiple_record_types() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
@@ -255,87 +231,6 @@ async fn test_cname_validation() {
             "PUT",
             &format!("/records/{}/{}", cname_record_name, cname_record_type),
             Some(update_cname_request),
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn test_prevent_default_records_creation() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-
-    // Try to create an NS record (should fail)
-    let ns_record_request = serde_json::json!({
-        "name": "@",
-        "record_type": "NS",
-        "value": "ns1.example.com",
-        "ttl": 3600,
-        "zone_name": zone.name
-    });
-    let (status, _) = ctx
-        .make_request("POST", "/records", Some(ns_record_request))
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    // Try to create an A record to A type for the primary_ns (should fail)
-    let a_record_request = serde_json::json!({
-        "name": "ns1",
-        "record_type": "A",
-        "value": "1.1.1.1",
-        "ttl": 3600,
-        "zone_name": zone.name
-    });
-    let (status, _) = ctx
-        .make_request("POST", "/records", Some(a_record_request))
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn test_prevent_updating_to_default_records() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-    let record = ctx.create_test_record(zone.id).await;
-
-    // Try to update an existing record to NS type with name "@" (should fail)
-    let update_ns_request = serde_json::json!({
-        "name": "@",
-        "record_type": "NS",
-        "value": "ns1.example.com",
-        "ttl": 3600,
-        "zone_name": zone.name
-    });
-    let (status, _) = ctx
-        .make_request(
-            "PUT",
-            &format!(
-                "/records/{}/{}",
-                record.name,
-                record.record_type.to_string()
-            ),
-            Some(update_ns_request),
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    // Try to update an existing record to A type for the primary_ns (should fail)
-    let update_a_request = serde_json::json!({
-        "name": "ns1",
-        "record_type": "A",
-        "value": "1.1.1.1",
-        "ttl": 3600,
-        "zone_name": zone.name
-    });
-    let (status, _) = ctx
-        .make_request(
-            "PUT",
-            &format!(
-                "/records/{}/{}",
-                record.name,
-                record.record_type.to_string()
-            ),
-            Some(update_a_request),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

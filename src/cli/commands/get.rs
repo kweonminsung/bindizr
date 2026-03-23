@@ -1,6 +1,4 @@
-use crate::cli::output::{
-    DnsRow, KeyRow, OutputFormat, RecordRow, ZoneRow, print_output_with_table,
-};
+use crate::cli::output::{OutputFormat, RecordRow, ZoneRow, print_output_with_table};
 use crate::socket::client::DaemonSocketClient;
 use crate::socket::dto::DaemonCommandKind;
 use clap::Subcommand;
@@ -8,27 +6,6 @@ use serde_json::json;
 
 #[derive(Subcommand, Debug)]
 pub enum GetCommand {
-    /// Get DNS servers
-    Dns {
-        /// The name of the DNS server (optional)
-        name: Option<String>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
-    },
-
-    /// Get keys
-    #[command(
-        aliases = ["key"]
-    )]
-    Keys {
-        /// The name of the key (optional)
-        name: Option<String>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
-    },
-
     /// Get zones
     #[command(
         aliases = ["zone"]
@@ -65,48 +42,6 @@ pub async fn handle_command(subcommand: GetCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
     match subcommand {
-        GetCommand::Dns { name, output } => {
-            let response = if let Some(name) = name {
-                client
-                    .send_command(DaemonCommandKind::GetDns, Some(json!({ "name": name })))
-                    .await?
-            } else {
-                client
-                    .send_command(DaemonCommandKind::ListDns, None)
-                    .await?
-            };
-
-            print_output_with_table(&response.data, output, |data| {
-                if let Some(arr) = data.as_array() {
-                    arr.iter()
-                        .filter_map(|v| DnsRow::from_json(v).ok())
-                        .collect()
-                } else {
-                    vec![DnsRow::from_json(data).unwrap_or_else(|_| panic!("Failed to parse DNS"))]
-                }
-            })?;
-        }
-        GetCommand::Keys { name, output } => {
-            let response = if let Some(name) = name {
-                client
-                    .send_command(DaemonCommandKind::GetKey, Some(json!({ "name": name })))
-                    .await?
-            } else {
-                client
-                    .send_command(DaemonCommandKind::ListKeys, None)
-                    .await?
-            };
-
-            print_output_with_table(&response.data, output, |data| {
-                if let Some(arr) = data.as_array() {
-                    arr.iter()
-                        .filter_map(|v| KeyRow::from_json(v).ok())
-                        .collect()
-                } else {
-                    vec![KeyRow::from_json(data).unwrap_or_else(|_| panic!("Failed to parse key"))]
-                }
-            })?;
-        }
         GetCommand::Zones { name, output } => {
             let response = if let Some(name) = name {
                 client

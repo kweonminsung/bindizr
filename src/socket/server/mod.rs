@@ -1,5 +1,4 @@
-mod dns;
-mod key;
+mod notify;
 mod record;
 mod status;
 mod token;
@@ -27,19 +26,6 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::TokenCreate => token::create_token(&cmd.data).await,
                 DaemonCommandKind::TokenList => token::list_tokens().await,
                 DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
-                DaemonCommandKind::DnsWriteConfig => dns::write_dns_config().await,
-                DaemonCommandKind::DnsReload => dns::reload_dns_config(),
-                DaemonCommandKind::DnsStatus => dns::get_dns_status(),
-                // DNS commands
-                DaemonCommandKind::GetDns => dns::get_dns(&cmd.data).await,
-                DaemonCommandKind::ListDns => dns::list_dnss().await,
-                DaemonCommandKind::CreateDns => dns::create_dns(&cmd.data).await,
-                DaemonCommandKind::DeleteDns => dns::delete_dns(&cmd.data).await,
-                // Key commands
-                DaemonCommandKind::GetKey => key::get_key(&cmd.data).await,
-                DaemonCommandKind::ListKeys => key::list_keys().await,
-                DaemonCommandKind::CreateKey => key::create_key(&cmd.data).await,
-                DaemonCommandKind::DeleteKey => key::delete_key(&cmd.data).await,
                 // Zone commands
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones().await,
@@ -50,7 +36,10 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
+                // Notify commands
+                DaemonCommandKind::NotifyZone => notify::handle_notify_zone(cmd.data).await,
             },
+
             Err(e) => {
                 log_error!("Failed to parse command: {}", e);
                 Err("Failed to parse command".to_string())

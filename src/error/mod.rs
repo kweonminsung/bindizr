@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::{
     api::validation::ValidationError, config::error::ConfigError, database::error::DatabaseError,
-    rndc::error::RndcError,
+    xfr::error::XfrError,
 };
 
 /// Top-level error type
@@ -14,8 +14,8 @@ pub enum BindizrError {
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
 
-    #[error("RNDC error: {0}")]
-    Rndc(#[from] RndcError),
+    #[error("XFR error: {0}")]
+    Xfr(#[from] XfrError),
 
     #[error("Validation error: {0}")]
     Validation(#[from] ValidationError),

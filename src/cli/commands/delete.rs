@@ -5,12 +5,6 @@ use serde_json::json;
 
 #[derive(Subcommand, Debug)]
 pub enum DeleteCommand {
-    /// Delete a DNS server
-    Dns {
-        /// The name of the DNS server
-        name: String,
-    },
-
     /// Delete a zone
     Zone {
         /// The name of the zone
@@ -27,24 +21,12 @@ pub enum DeleteCommand {
         )]
         record_type: String,
     },
-
-    /// Delete a key
-    Key {
-        /// The name of the key
-        name: String,
-    },
 }
 
 pub async fn handle_command(subcommand: DeleteCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
     match subcommand {
-        DeleteCommand::Dns { name } => {
-            let response = client
-                .send_command(DaemonCommandKind::DeleteDns, Some(json!({ "name": name })))
-                .await?;
-            println!("{}", response.message);
-        }
         DeleteCommand::Zone { name } => {
             let response = client
                 .send_command(DaemonCommandKind::DeleteZone, Some(json!({ "name": name })))
@@ -57,12 +39,6 @@ pub async fn handle_command(subcommand: DeleteCommand) -> Result<(), String> {
                     DaemonCommandKind::DeleteRecord,
                     Some(json!({ "name": name, "record_type": record_type })),
                 )
-                .await?;
-            println!("{}", response.message);
-        }
-        DeleteCommand::Key { name } => {
-            let response = client
-                .send_command(DaemonCommandKind::DeleteKey, Some(json!({ "name": name })))
                 .await?;
             println!("{}", response.message);
         }

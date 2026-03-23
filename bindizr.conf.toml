@@ -1,6 +1,7 @@
+listen_addr = "127.0.0.1"         # Common listen address for all services
+
 [api]
-host = "127.0.0.1"             # HTTP API host
-port = 3000                    # HTTP API port
+listen_port = 3000             # HTTP API listen port
 require_authentication = true  # Enable API authentication (true/false)
 
 [database]
@@ -15,10 +16,9 @@ file_path = "bindizr.db"       # SQLite database file path
 [database.postgresql]
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
-[bind]
-rndc_server_url = "127.0.0.1:953"    # RNDC server address
-rndc_algorithm = "sha256"            # RNDC authentication algorithm
-rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
+[xfr]
+listen_port = 53            # XFR server listen port (TCP)
+secondary_addrs = ""           # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53") for NOTIFY
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

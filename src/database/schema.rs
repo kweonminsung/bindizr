@@ -5,8 +5,6 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             id INT PRIMARY KEY AUTO_INCREMENT,
             name VARCHAR(255) UNIQUE NOT NULL,
             primary_ns VARCHAR(255) NOT NULL,
-            primary_ns_ip VARCHAR(255),
-            primary_ns_ipv6 VARCHAR(255),
             admin_email VARCHAR(255) NOT NULL,
             ttl INT NOT NULL,
             serial INT NOT NULL,
@@ -31,20 +29,36 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS zone_history (
+        CREATE TABLE IF NOT EXISTS zone_changes (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            log TEXT NOT NULL,
+            zone_id INT NOT NULL,
+            serial INT NOT NULL,
+            operation VARCHAR(10) NOT NULL,
+            record_name VARCHAR(255) NOT NULL,
+            record_type VARCHAR(50) NOT NULL,
+            record_value TEXT NOT NULL,
+            record_ttl INT,
+            record_priority INT,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            zone_name VARCHAR(255) NOT NULL
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            INDEX idx_zone_serial (zone_id, serial)
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS record_history (
+        CREATE TABLE IF NOT EXISTS zone_soa_history (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            log TEXT NOT NULL,
+            zone_id INT NOT NULL,
+            serial INT NOT NULL,
+            primary_ns TEXT NOT NULL,
+            admin_email TEXT NOT NULL,
+            ttl INT NOT NULL,
+            refresh INT NOT NULL,
+            retry INT NOT NULL,
+            expire INT NOT NULL,
+            minimum_ttl INT NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            record_name VARCHAR(255) NOT NULL,
-            record_type VARCHAR(50) NOT NULL
+            UNIQUE KEY uq_zone_serial (zone_id, serial),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
         r#"
@@ -57,48 +71,6 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             last_used_at DATETIME
         );
         "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS keys (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(255) UNIQUE NOT NULL,
-            key_type VARCHAR(50) NOT NULL,
-            key_algorithm VARCHAR(50) NOT NULL,
-            secret TEXT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS dnss (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(255) UNIQUE NOT NULL,
-            host VARCHAR(255) NOT NULL,
-            rndc_port INT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS dns_keys (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            dns_id INT NOT NULL,
-            key_id INT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (dns_id) REFERENCES dnss(id) ON DELETE CASCADE,
-            FOREIGN KEY (key_id) REFERENCES keys(id) ON DELETE RESTRICT,
-            UNIQUE (dns_id)
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS zone_dns_config (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            zone_id INT NOT NULL,
-            dns_id INT NOT NULL,
-            key_id INT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            FOREIGN KEY (dns_id) REFERENCES dnss(id) ON DELETE CASCADE,
-            FOREIGN KEY (key_id) REFERENCES keys(id) ON DELETE RESTRICT
-        );
-        "#,
     ]
 }
 
@@ -109,8 +81,6 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) UNIQUE NOT NULL,
             primary_ns VARCHAR(255) NOT NULL,
-            primary_ns_ip VARCHAR(255),
-            primary_ns_ipv6 VARCHAR(255),
             admin_email VARCHAR(255) NOT NULL,
             ttl INTEGER NOT NULL,
             serial INTEGER NOT NULL,
@@ -135,20 +105,38 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS zone_history (
+        CREATE TABLE IF NOT EXISTS zone_changes (
             id SERIAL PRIMARY KEY,
-            log TEXT NOT NULL,
+            zone_id INTEGER NOT NULL,
+            serial INTEGER NOT NULL,
+            operation VARCHAR(10) NOT NULL,
+            record_name VARCHAR(255) NOT NULL,
+            record_type VARCHAR(50) NOT NULL,
+            record_value TEXT NOT NULL,
+            record_ttl INTEGER,
+            record_priority INTEGER,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            zone_name VARCHAR(255) NOT NULL
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS record_history (
+        CREATE INDEX IF NOT EXISTS idx_zone_serial ON zone_changes(zone_id, serial);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_soa_history (
             id SERIAL PRIMARY KEY,
-            log TEXT NOT NULL,
+            zone_id INTEGER NOT NULL,
+            serial INTEGER NOT NULL,
+            primary_ns TEXT NOT NULL,
+            admin_email TEXT NOT NULL,
+            ttl INTEGER NOT NULL,
+            refresh INTEGER NOT NULL,
+            retry INTEGER NOT NULL,
+            expire INTEGER NOT NULL,
+            minimum_ttl INTEGER NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            record_name VARCHAR(255) NOT NULL,
-            record_type VARCHAR(50) NOT NULL
+            UNIQUE(zone_id, serial),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
         r#"
@@ -161,48 +149,6 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             last_used_at TIMESTAMP
         );
         "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS keys (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
-            key_type VARCHAR(50) NOT NULL,
-            key_algorithm VARCHAR(50) NOT NULL,
-            secret TEXT NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS dnss (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL,
-            host VARCHAR(255) NOT NULL,
-            rndc_port INTEGER NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS dns_keys (
-            id SERIAL PRIMARY KEY,
-            dns_id INTEGER NOT NULL,
-            key_id INTEGER NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (dns_id) REFERENCES dnss(id) ON DELETE CASCADE,
-            FOREIGN KEY (key_id) REFERENCES keys(id) ON DELETE RESTRICT,
-            UNIQUE (dns_id)
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS zone_dns_config (
-            id SERIAL PRIMARY KEY,
-            zone_id INTEGER NOT NULL,
-            dns_id INTEGER NOT NULL,
-            key_id INTEGER NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            FOREIGN KEY (dns_id) REFERENCES dnss(id) ON DELETE CASCADE,
-            FOREIGN KEY (key_id) REFERENCES keys(id) ON DELETE RESTRICT
-        );
-        "#,
     ]
 }
 
@@ -213,8 +159,6 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             primary_ns TEXT NOT NULL,
-            primary_ns_ip TEXT,
-            primary_ns_ipv6 TEXT,
             admin_email TEXT NOT NULL,
             ttl INTEGER NOT NULL,
             serial INTEGER NOT NULL,
@@ -239,20 +183,38 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS zone_history (
+        CREATE TABLE IF NOT EXISTS zone_changes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            log TEXT NOT NULL,
+            zone_id INTEGER NOT NULL,
+            serial INTEGER NOT NULL,
+            operation TEXT NOT NULL,
+            record_name TEXT NOT NULL,
+            record_type TEXT NOT NULL,
+            record_value TEXT NOT NULL,
+            record_ttl INTEGER,
+            record_priority INTEGER,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            zone_name TEXT NOT NULL
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS record_history (
+        CREATE INDEX IF NOT EXISTS idx_zone_serial ON zone_changes(zone_id, serial);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_soa_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            log TEXT NOT NULL,
+            zone_id INTEGER NOT NULL,
+            serial INTEGER NOT NULL,
+            primary_ns TEXT NOT NULL,
+            admin_email TEXT NOT NULL,
+            ttl INTEGER NOT NULL,
+            refresh INTEGER NOT NULL,
+            retry INTEGER NOT NULL,
+            expire INTEGER NOT NULL,
+            minimum_ttl INTEGER NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            record_name TEXT NOT NULL,
-            record_type TEXT NOT NULL
+            UNIQUE(zone_id, serial),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
         r#"
@@ -263,48 +225,6 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             expires_at DATETIME,
             last_used_at DATETIME
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS keys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            key_type TEXT NOT NULL,
-            key_algorithm TEXT NOT NULL,
-            secret TEXT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS dnss (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            host TEXT NOT NULL,
-            rndc_port INTEGER NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS dns_keys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dns_id INTEGER NOT NULL,
-            key_id INTEGER NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (dns_id) REFERENCES dnss(id) ON DELETE CASCADE,
-            FOREIGN KEY (key_id) REFERENCES keys(id) ON DELETE RESTRICT,
-            UNIQUE (dns_id)
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS zone_dns_config (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            zone_id INTEGER NOT NULL,
-            dns_id INTEGER NOT NULL,
-            key_id INTEGER NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            FOREIGN KEY (dns_id) REFERENCES dnss(id) ON DELETE CASCADE,
-            FOREIGN KEY (key_id) REFERENCES keys(id) ON DELETE RESTRICT
         );
         "#,
     ]

@@ -19,15 +19,17 @@ DNS Synchronization Service for BIND9
 </p>
 </div>
 
+**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND9 secondary servers via AXFR/IXFR using DNS Catalog Zones.
+
 ## Concepts
 
-**Bindizr** is a Rust-based daemon and HTTP API that synchronizes DNS records between bind9 and a database (MySQL, PostgreSQL, or SQLite).
+- **Control Plane**: Manage DNS zones and records through HTTP API or CLI commands. All changes are stored in the database (MySQL, PostgreSQL, or SQLite).
 
-- It reads and writes zone configurations from a bind config directory.
+- **XFR Server**: Built-in AXFR (full zone transfer) and IXFR (incremental zone transfer) server that serves zone data to secondary DNS servers. SOA serial numbers are automatically incremented on each change.
 
-- Changes made via HTTP API are stored in the database and written to zone files.
+- **Catalog Zones**: Bindizr uses DNS Catalog Zones (RFC 9432) to automatically propagate zone configuration to BIND9 secondary servers. When you create or delete a zone via the API/CLI, BIND9 automatically discovers and configures it without manual intervention.
 
-- After updates, bindizr sends RNDC commands to bind9 to reload zone data.
+- **Secondary DNS Servers**: Standard BIND9 (or any RFC-compliant DNS server) instances configured as secondaries. They automatically discover zones through the catalog zone, pull zone updates from Bindizr's XFR server via zone transfer, and respond to DNS queries from clients.
 
 <br>
 
@@ -41,14 +43,11 @@ DNS Synchronization Service for BIND9
 ```bash
 $ sudo apt-get update
 $ sudo apt-get install sudo ufw dnsutils bind9
-$ sudo ufw allow 953/tcp
 ```
 
 #### Red Hat (Fedora, CentOS, etc.)
 ```bash
 $ sudo yum install bind bind-utils
-$ sudo firewall-cmd --add-port=953/tcp --permanent
-$ sudo firewall-cmd --reload
 ```
 
 ### 2. Download Bindizr and Install
@@ -80,17 +79,17 @@ $ sudo rpm -i bindizr_0.1.0_amd64.rpm
 $ bindizr
 ```
 
-### 3. Configure RNDC and BIND
+### 3. Configure BIND as Secondary with Catalog Zone
 
-We provide two methods for configuring BIND and RNDC: a recommended automated script and a manual setup.
+We provide two methods for configuring BIND: a recommended automated script and a manual setup.
 
 #### Recommended: Automated Setup Script
 
-This script automatically detects your BIND configuration directory, generates an RNDC key if needed, and updates your `named.conf` file.
+This script automatically detects your BIND configuration directory and configures BIND to use Bindizr's catalog zone for automatic zone discovery.
 
 ```bash
 # Download and run the setup script
-$ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/scripts/setup_bind_rndc.sh | sudo bash
+$ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/scripts/setup_bind.sh | sudo bash
 
 # Restart bind service
 $ sudo systemctl restart bind9  # For Debian-based systems
@@ -105,62 +104,41 @@ First, set variables for your BIND configuration. The paths vary depending on yo
 - **For Debian-based systems (e.g., Ubuntu):**
   ```bash
   $ BIND_CONF_FILE=/etc/bind/named.conf
-  $ RNDC_KEY_FILE=/etc/bind/rndc.key
+  $ BIND_CACHE_DIR=/var/cache/bind
   ```
 - **For Red Hat-based systems (e.g., Fedora, CentOS):**
   ```bash
   $ BIND_CONF_FILE=/etc/named.conf
-  $ RNDC_KEY_FILE=/etc/rndc.key
+  $ BIND_CACHE_DIR=/var/named/slaves
   ```
 
-Next, create the necessary directories and files.
+Update your main BIND configuration file (`$BIND_CONF_FILE`) by adding the following:
+
 ```bash
-$ sudo mkdir -p "/etc/bindizr/zones"
-$ sudo touch "/etc/bindizr/zones/named.conf"
-```
-
-Now, generate the RNDC configuration and key using the variable:
-```bash
-# Generate RNDC configuration and key
-$ sudo rndc-confgen -a
-
-# View the generated key (example below)
-$ cat $RNDC_KEY_FILE
-
-# Output:
-key "rndc-key" {
-    algorithm hmac-sha256;  # The algorithm used for RNDC authentication (must match on both sides)
-    secret "RNDC_SECRET_KEY";  # Shared secret key (base64 encrypted)
+# Configure catalog zone support
+cat <<EOF | sudo tee -a "$BIND_CONF_FILE"
+options {
+    ixfr-from-differences yes;
+    catalog-zones {
+        zone "catalog.bind" {
+            default-primaries { 127.0.0.1 port 53; };
+        };
+    };
 };
-```
+EOF
 
-Now, update your main BIND configuration file (`$BIND_CONF_FILE`) by adding the following lines. This ensures that BIND loads both the Bindizr configuration and the RNDC key.
-
-```bash
-# Append the include statements to named.conf
-echo "
-include \"/etc/bindizr/zones/named.conf\";
-include \"$RNDC_KEY_FILE\";
-" | sudo tee -a "$BIND_CONF_FILE"
-```
-
-You also need to add a `controls` block to allow `rndc` to connect. If you don't have one, add the following:
-```
-controls {
-    # Listens on all interfaces (0.0.0.0) using port 953 (default RNDC port)
-    # Adjust IP and port as needed for your environment.
-    inet 0.0.0.0 port 953
-        allow { any; } keys { "rndc-key"; };
-
-    # For example, to restrict RNDC to localhost only:
-    # inet 127.0.0.1 port 953
-    #     allow { 127.0.0.1; } keys { "rndc-key"; };
-
-    # Or to allow only specific internal network:
-    # inet 192.168.1.10 port 953
-    #     allow { 192.168.1.0/24; } keys { "rndc-key"; };
+# Add catalog zone as secondary
+cat <<EOF | sudo tee -a "$BIND_CONF_FILE"
+zone "catalog.bind" {
+    type secondary;
+    primaries { 127.0.0.1 port 53; };
+    file "$BIND_CACHE_DIR/catalog.bind.zone";
+    ixfr-from-differences yes;
 };
+EOF
 ```
+
+**Note**: The `catalog.bind` zone automatically manages all zones created in Bindizr. When you create a new zone via the API or CLI, BIND will automatically configure it as a secondary zone without requiring manual configuration.
 
 After saving the changes, restart the BIND service:
 ```bash
@@ -182,9 +160,10 @@ $ vim /etc/bindizr/bindizr.conf.toml # or use any text editor you prefer
 Add the following configuration, adjusting values to match your environment:
 
 ```toml
+listen_addr = "127.0.0.1"         # Common listen address for all services
+
 [api]
-host = "127.0.0.1"             # HTTP API host
-port = 3000                    # HTTP API port
+listen_port = 3000             # HTTP API listen port
 require_authentication = true  # Enable API authentication (true/false)
 
 [database]
@@ -199,10 +178,9 @@ file_path = "bindizr.db"       # SQLite database file path
 [database.postgresql]
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
-[bind]
-rndc_server_url = "127.0.0.1:953"    # RNDC server address
-rndc_algorithm = "sha256"            # RNDC authentication algorithm
-rndc_secret_key = "RNDC_SECRET_KEY"  # RNDC secret key
+[xfr]
+listen_port = 53                  # XFR server listen port (TCP)
+secondary_addrs = ""                 # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace
@@ -235,11 +213,8 @@ $ bindizr start -c <FILE>
 # Check the current status of bindizr service
 $ bindizr status
 
-# Overwrite DNS configuration file
-$ bindizr dns write
-
-# Reload DNS configuration
-$ bindizr dns reload
+# Send NOTIFY to secondary DNS servers for a zone
+$ bindizr notify zone <ZONE_NAME>
 
 # Show help information
 $ bindizr --help
@@ -286,7 +261,6 @@ This project relies on the following core dependencies:
 
 - [`axum`](https://docs.rs/axum/latest/axum/) – A web application framework for building fast and modular APIs in Rust.
 - [`sqlx`](https://docs.rs/sqlx/latest/sqlx/) - An async, pure Rust SQL crate featuring compile-time checked queries without a DSL.
-- [`rndc`](https://crates.io/crates/rndc) – A library for interacting with BIND's Remote Name Daemon Control (RNDC) protocol.
 
 
 

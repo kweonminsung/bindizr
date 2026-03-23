@@ -1,12 +1,12 @@
 [package]
 name = "bindizr"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 edition = "2024"
 authors = ["kweonminsung"]
 description = "DNS Synchronization Service for BIND9"
 repository = "https://github.com/kweonminsung/bindizr"
 license = "Apache-2.0"
-keywords = ["DNS", "BIND9", "CLI", "RNDC", "Rust"]
+keywords = ["DNS", "BIND9", "CLI", "XFR"]
 
 [lib]
 name = "bindizr"
@@ -41,7 +41,7 @@ sqlx = { version = "0.8", features = [
     "sqlite",
     "chrono",
 ] }
-rndc = "0.1.4"
+domain = "0.10"
 rand = "0.9"
 sha2 = "0.10"
 hex = "0.4"
