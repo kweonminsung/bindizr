@@ -6,14 +6,7 @@ use axum::{
 use bindizr::{
     api::controller::ApiController,
     config,
-    database::{
-        self, DatabasePool,
-        model::{
-            record::{Record, RecordType},
-            zone::Zone,
-        },
-    },
-    serializer,
+    database::{self, DatabasePool, model::zone::Zone},
 };
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
@@ -31,7 +24,6 @@ impl TestContext {
         // Initialize components (skip if already initialized)
         config::initialize(Some(config_path));
         database::initialize().await;
-        serializer::initialize();
 
         // Get database pool
         let db_pool = match database::get_pool() {
@@ -63,8 +55,6 @@ impl TestContext {
             id: 0, // Will be set by database
             name: "example.com".to_string(),
             primary_ns: "ns1.example.com".to_string(),
-            primary_ns_ip: Some("192.168.1.1".to_string()),
-            primary_ns_ipv6: Some("2001:db8::1".to_string()),
             admin_email: "admin@example.com".to_string(),
             ttl: 3600,
             serial: 2023010101,
@@ -77,14 +67,12 @@ impl TestContext {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zones (name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(&zone.name)
         .bind(&zone.primary_ns)
-        .bind(&zone.primary_ns_ip)
-        .bind(&zone.primary_ns_ipv6)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
         .bind(zone.serial)
@@ -92,7 +80,7 @@ impl TestContext {
         .bind(zone.retry)
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
-        .bind(&zone.created_at)
+        .bind(zone.created_at)
         .execute(&self.db_pool)
         .await
         .expect("Failed to insert test zone");
@@ -102,41 +90,6 @@ impl TestContext {
         Zone {
             id: zone_id,
             ..zone
-        }
-    }
-
-    pub async fn create_test_record(&self, zone_id: i32) -> Record {
-        let record = Record {
-            id: 0, // Will be set by database
-            name: "www.example.com".to_string(),
-            record_type: RecordType::A,
-            value: "192.168.1.100".to_string(),
-            ttl: Some(3600),
-            priority: None,
-            created_at: chrono::Utc::now(),
-            zone_id,
-        };
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO records (name, record_type, value, ttl, priority, created_at, zone_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&record.name)
-        .bind(record.record_type.to_string())
-        .bind(&record.value)
-        .bind(record.ttl)
-        .bind(record.priority)
-        .bind(&record.created_at)
-        .bind(record.zone_id)
-        .execute(&self.db_pool)
-        .await
-        .expect("Failed to insert test record");
-
-        Record {
-            id: result.last_insert_rowid() as i32,
-            ..record
         }
     }
 

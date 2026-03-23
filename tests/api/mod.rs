@@ -1,4 +1,3 @@
-mod dns;
 mod record;
 mod zone;
 
@@ -20,13 +19,13 @@ mod test {
     async fn test_error_handling() {
         let ctx = TestContext::new().await;
 
-        // Test 400 for non-existent zone
+        // Test 404 for non-existent zone
         let (status, _) = ctx.make_request("GET", "/zones/99999", None).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, StatusCode::NOT_FOUND);
 
-        // Test 400 for non-existent record
+        // Test 404 for non-existent record
         let (status, _) = ctx.make_request("GET", "/records/99999", None).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, StatusCode::NOT_FOUND);
 
         // Test invalid JSON for zone creation
         let invalid_json = serde_json::json!({
@@ -43,7 +42,7 @@ mod test {
             "name": "test.example.com",
             "record_type": "INVALID",
             "value": "192.168.1.1",
-            "zone_id": zone.id
+            "zone_name": zone.name
         });
 
         let (status, _) = ctx

@@ -2,6 +2,7 @@ use crate::{config, log_error, log_info};
 use sqlx::{MySql, Pool, Postgres, Sqlite, sqlite::SqlitePoolOptions};
 use std::sync::OnceLock;
 
+pub mod error;
 pub mod model;
 pub mod repository;
 mod schema;
@@ -202,17 +203,17 @@ pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
     repository::RepositoryFactory::create_record_repository(pool)
 }
 
-pub fn get_zone_history_repository() -> Box<dyn repository::ZoneHistoryRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_zone_history_repository(pool)
-}
-
-pub fn get_record_history_repository() -> Box<dyn repository::RecordHistoryRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_record_history_repository(pool)
-}
-
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_api_token_repository(pool)
+}
+
+pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_zone_change_repository(pool)
+}
+
+pub fn get_zone_snapshot_repository() -> Box<dyn repository::ZoneSnapshotRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_zone_snapshot_repository(pool)
 }

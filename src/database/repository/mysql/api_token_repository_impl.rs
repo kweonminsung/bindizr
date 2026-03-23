@@ -1,3 +1,4 @@
+use crate::database::error::DatabaseError;
 use crate::database::{model::api_token::ApiToken, repository::ApiTokenRepository};
 use async_trait::async_trait;
 use sqlx::{MySql, Pool};
@@ -14,8 +15,8 @@ impl MySqlApiTokenRepository {
 
 #[async_trait]
 impl ApiTokenRepository for MySqlApiTokenRepository {
-    async fn create(&self, mut token: ApiToken) -> Result<ApiToken, String> {
-        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+    async fn create(&self, mut token: ApiToken) -> Result<ApiToken, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
 
         let result = sqlx::query(
             r#"
@@ -27,16 +28,15 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         .bind(&token.description)
         .bind(token.expires_at)
         .execute(&mut *conn)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
 
         token.id = result.last_insert_id() as i32;
 
         Ok(token)
     }
 
-    async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, String> {
-        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+    async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
 
         let row = sqlx::query_as::<_, ApiToken>(
             "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?"
@@ -44,13 +44,13 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         .bind(id)
         .fetch_optional(&mut *conn)
         .await
-        .map_err(|e| e.to_string())?;
+        ?;
 
         Ok(row)
     }
 
-    async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, String> {
-        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+    async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
 
         let row = sqlx::query_as::<_, ApiToken>(
             "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens WHERE token = ?"
@@ -58,26 +58,26 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         .bind(token)
         .fetch_optional(&mut *conn)
         .await
-        .map_err(|e| e.to_string())?;
+        ?;
 
         Ok(row)
     }
 
-    async fn get_all(&self) -> Result<Vec<ApiToken>, String> {
-        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+    async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
 
         let rows = sqlx::query_as::<_, ApiToken>(
             "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC"
         )
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| e.to_string())?;
+        ?;
 
         Ok(rows)
     }
 
-    async fn update(&self, token: ApiToken) -> Result<ApiToken, String> {
-        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+    async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
 
         sqlx::query(
             r#"
@@ -91,20 +91,18 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         .bind(token.last_used_at)
         .bind(token.id)
         .execute(&mut *conn)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
 
         Ok(token)
     }
 
-    async fn delete(&self, id: i32) -> Result<(), String> {
-        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
 
         sqlx::query("DELETE FROM api_tokens WHERE id = ?")
             .bind(id)
             .execute(&mut *conn)
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
 
         Ok(())
     }

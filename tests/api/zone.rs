@@ -13,12 +13,9 @@ async fn test_zone_crud_operations() {
     // Test POST /zones (create)
     let create_zone_request = serde_json::json!({
         "name": "test.com",
-        "primary_ns": "ns1.test.com",
-        "primary_ns_ip": "10.0.0.1",
-        "primary_ns_ipv6": "2001:db8::1",
+        "primary_ns": "ns1.external-dns.net",
         "admin_email": "admin@test.com",
         "ttl": 3600,
-        "serial": 2023010101,
         "refresh": 7200,
         "retry": 3600,
         "expire": 604800,
@@ -30,12 +27,12 @@ async fn test_zone_crud_operations() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let zone_id = body["zone"]["id"].as_i64().unwrap();
-    assert_eq!(body["zone"]["name"], "test.com");
+    let zone_name = body["zone"]["name"].as_str().unwrap();
+    assert_eq!(zone_name, "test.com");
 
-    // Test GET /zones/{id}
+    // Test GET /zones/{name}
     let (status, body) = ctx
-        .make_request("GET", &format!("/zones/{}", zone_id), None)
+        .make_request("GET", &format!("/zones/{}", zone_name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["zone"]["name"], "test.com");
@@ -45,15 +42,12 @@ async fn test_zone_crud_operations() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["zones"].as_array().unwrap().len(), 1);
 
-    // Test PUT /zones/{id} (update)
+    // Test PUT /zones/{name} (update)
     let update_zone_request = serde_json::json!({
         "name": "updated-test.com",
-        "primary_ns": "ns1.updated-test.com",
-        "primary_ns_ip": "10.0.0.2",
-        "primary_ns_ipv6": "2001:db8::2",
+        "primary_ns": "ns2.external-dns.net",
         "admin_email": "admin@updated-test.com",
         "ttl": 7200,
-        "serial": 2023010102,
         "refresh": 14400,
         "retry": 7200,
         "expire": 1209600,
@@ -63,98 +57,35 @@ async fn test_zone_crud_operations() {
     let (status, body) = ctx
         .make_request(
             "PUT",
-            &format!("/zones/{}", zone_id),
+            &format!("/zones/{}", zone_name),
             Some(update_zone_request),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["zone"]["name"], "updated-test.com");
+    let updated_zone_name = body["zone"]["name"].as_str().unwrap();
+    assert_eq!(updated_zone_name, "updated-test.com");
 
-    // Test DELETE /zones/{id}
+    // Test DELETE /zones/{name}
     let (status, _) = ctx
-        .make_request("DELETE", &format!("/zones/{}", zone_id), None)
+        .make_request("DELETE", &format!("/zones/{}", updated_zone_name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     // Verify deletion
     let (status, _) = ctx
-        .make_request("GET", &format!("/zones/{}", zone_id), None)
+        .make_request("GET", &format!("/zones/{}", updated_zone_name), None)
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
-    // Test creating a zone with only primary_ns_ip
-    let create_zone_ip_only = serde_json::json!({
-        "name": "ip-only.com",
-        "primary_ns": "ns1.ip-only.com",
-        "primary_ns_ip": "10.0.0.3",
-        "admin_email": "admin@ip-only.com",
-        "ttl": 3600,
-        "serial": 2023010101
-    });
-    let (status, _) = ctx
-        .make_request("POST", "/zones", Some(create_zone_ip_only))
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-
-    // Test creating a zone with only primary_ns_ipv6
-    let create_zone_ipv6_only = serde_json::json!({
-        "name": "ipv6-only.com",
-        "primary_ns": "ns1.ipv6-only.com",
-        "primary_ns_ipv6": "2001:db8::3",
-        "admin_email": "admin@ipv6-only.com",
-        "ttl": 3600,
-        "serial": 2023010101
-    });
-    let (status, _) = ctx
-        .make_request("POST", "/zones", Some(create_zone_ipv6_only))
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-
-    // Test creating a zone with neither primary_ns_ip nor primary_ns_ipv6 (should fail)
+    // Test creating a zone
     let create_zone_no_ip = serde_json::json!({
         "name": "no-ip.com",
-        "primary_ns": "ns1.no-ip.com",
+        "primary_ns": "ns3.external-dns.net",
         "admin_email": "admin@no-ip.com",
-        "ttl": 3600,
-        "serial": 2023010101
+        "ttl": 3600
     });
     let (status, _) = ctx
         .make_request("POST", "/zones", Some(create_zone_no_ip))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn test_zone_rendered_output() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-    let _record = ctx.create_test_record(zone.id).await;
-
-    // Test GET /zones/{id}/rendered
-    let (status, body) = ctx
-        .make_request("GET", &format!("/zones/{}/rendered", zone.id), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
-    // Should return rendered zone file content
-    let content = body.as_str().unwrap();
-    assert!(content.contains("example.com"));
-    assert!(content.contains("SOA"));
-    assert!(content.contains("NS"));
-    assert!(content.contains("www.example.com"));
-}
-
-#[tokio::test]
-async fn test_zone_history() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-
-    // Test GET /zones/{id}/history
-    let (status, body) = ctx
-        .make_request("GET", &format!("/zones/{}/histories", zone.id), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
-    // Should return history array (might be empty initially)
-    assert!(body["zone_histories"].as_array().is_some());
+    assert_eq!(status, StatusCode::CREATED);
 }

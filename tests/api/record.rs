@@ -8,7 +8,7 @@ async fn test_record_crud_operations() {
 
     // Test GET /records (should have NS record)
     let (status, _) = ctx
-        .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
+        .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
@@ -18,20 +18,25 @@ async fn test_record_crud_operations() {
         "record_type": "A",
         "value": "192.168.1.200",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, body) = ctx
         .make_request("POST", "/records", Some(create_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let record_id = body["record"]["id"].as_i64().unwrap();
-    assert_eq!(body["record"]["name"], "api");
-    assert_eq!(body["record"]["record_type"], "A");
+    let record_name = body["record"]["name"].as_str().unwrap();
+    let record_type = body["record"]["record_type"].as_str().unwrap();
+    assert_eq!(record_name, "api");
+    assert_eq!(record_type, "A");
 
-    // Test GET /records/{id}
+    // Test GET /records/{name}/{record_type}
     let (status, body) = ctx
-        .make_request("GET", &format!("/records/{}", record_id), None)
+        .make_request(
+            "GET",
+            &format!("/records/{}/{}", record_name, record_type),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["record"]["name"], "api");
@@ -42,7 +47,7 @@ async fn test_record_crud_operations() {
         "record_type": "A",
         "value": "192.168.1.201",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(duplicate_record_request))
@@ -55,7 +60,7 @@ async fn test_record_crud_operations() {
         "record_type": "TXT",
         "value": "some text",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(different_type_record_request))
@@ -64,58 +69,51 @@ async fn test_record_crud_operations() {
 
     // Test GET /records (with data)
     let (status, body) = ctx
-        .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
+        .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["records"].as_array().unwrap().len(), 3);
 
-    // Test PUT /records/{id} (update)
+    // Test PUT /records/{name}/{record_type} (update)
     let update_record_request = serde_json::json!({
         "name": "api-updated",
         "record_type": "A",
         "value": "192.168.1.201",
         "ttl": 3600,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
 
     let (status, body) = ctx
         .make_request(
             "PUT",
-            &format!("/records/{}", record_id),
+            &format!("/records/{}/{}", record_name, record_type),
             Some(update_record_request),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["record"]["name"], "api-updated");
+    let updated_name = body["record"]["name"].as_str().unwrap();
+    assert_eq!(updated_name, "api-updated");
     assert_eq!(body["record"]["value"], "192.168.1.201");
 
-    // Test DELETE /records/{id}
+    // Test DELETE /records/{name}/{record_type}
     let (status, _) = ctx
-        .make_request("DELETE", &format!("/records/{}", record_id), None)
+        .make_request(
+            "DELETE",
+            &format!("/records/{}/{}", updated_name, record_type),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
 
     // Verify deletion
     let (status, _) = ctx
-        .make_request("GET", &format!("/records/{}", record_id), None)
+        .make_request(
+            "GET",
+            &format!("/records/{}/{}", updated_name, record_type),
+            None,
+        )
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn test_record_history() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-    let record = ctx.create_test_record(zone.id).await;
-
-    // Test GET /records/{id}/history
-    let (status, body) = ctx
-        .make_request("GET", &format!("/records/{}/histories", record.id), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
-    // Should return history array (might be empty initially)
-    assert!(body["record_histories"].as_array().is_some());
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -138,7 +136,7 @@ async fn test_multiple_record_types() {
             "value": value,
             "ttl": 3600,
             "priority": priority,
-            "zone_id": zone.id
+            "zone_name": zone.name
         });
 
         let (status, body) = ctx
@@ -155,7 +153,7 @@ async fn test_multiple_record_types() {
 
     // Verify all records were created
     let (status, body) = ctx
-        .make_request("GET", &format!("/records?zone_id={}", zone.id), None)
+        .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["records"].as_array().unwrap().len(), 5);
@@ -172,7 +170,7 @@ async fn test_cname_validation() {
         "record_type": "A",
         "value": "1.1.1.1",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(a_record_request))
@@ -185,7 +183,7 @@ async fn test_cname_validation() {
         "record_type": "CNAME",
         "value": "other.example.com",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(cname_record_request))
@@ -198,13 +196,14 @@ async fn test_cname_validation() {
         "record_type": "CNAME",
         "value": "another.example.com",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, body) = ctx
         .make_request("POST", "/records", Some(cname_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let cname_record_id = body["record"]["id"].as_i64().unwrap();
+    let cname_record_name = body["record"]["name"].as_str().unwrap();
+    let cname_record_type = body["record"]["record_type"].as_str().unwrap();
 
     // Try to create an A record with the same name as the CNAME (should fail)
     let a_record_request = serde_json::json!({
@@ -212,7 +211,7 @@ async fn test_cname_validation() {
         "record_type": "A",
         "value": "2.2.2.2",
         "ttl": 1800,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request("POST", "/records", Some(a_record_request))
@@ -225,87 +224,13 @@ async fn test_cname_validation() {
         "record_type": "CNAME",
         "value": "updated.example.com",
         "ttl": 3600,
-        "zone_id": zone.id
+        "zone_name": zone.name
     });
     let (status, _) = ctx
         .make_request(
             "PUT",
-            &format!("/records/{}", cname_record_id),
+            &format!("/records/{}/{}", cname_record_name, cname_record_type),
             Some(update_cname_request),
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-
-#[tokio::test]
-async fn test_prevent_default_records_creation() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-
-    // Try to create an NS record (should fail)
-    let ns_record_request = serde_json::json!({
-        "name": "@",
-        "record_type": "NS",
-        "value": "ns1.example.com",
-        "ttl": 3600,
-        "zone_id": zone.id
-    });
-    let (status, _) = ctx
-        .make_request("POST", "/records", Some(ns_record_request))
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    // Try to create an A record to A type for the primary_ns (should fail)
-    let a_record_request = serde_json::json!({
-        "name": "ns1",
-        "record_type": "A",
-        "value": "1.1.1.1",
-        "ttl": 3600,
-        "zone_id": zone.id
-    });
-    let (status, _) = ctx
-        .make_request("POST", "/records", Some(a_record_request))
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn test_prevent_updating_to_default_records() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-    let record = ctx.create_test_record(zone.id).await;
-
-    // Try to update an existing record to NS type with name "@" (should fail)
-    let update_ns_request = serde_json::json!({
-        "name": "@",
-        "record_type": "NS",
-        "value": "ns1.example.com",
-        "ttl": 3600,
-        "zone_id": zone.id
-    });
-    let (status, _) = ctx
-        .make_request(
-            "PUT",
-            &format!("/records/{}", record.id),
-            Some(update_ns_request),
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    // Try to update an existing record to A type for the primary_ns (should fail)
-    let update_a_request = serde_json::json!({
-        "name": "ns1",
-        "record_type": "A",
-        "value": "1.1.1.1",
-        "ttl": 3600,
-        "zone_id": zone.id
-    });
-    let (status, _) = ctx
-        .make_request(
-            "PUT",
-            &format!("/records/{}", record.id),
-            Some(update_a_request),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

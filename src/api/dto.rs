@@ -1,6 +1,4 @@
-use crate::database::model::{
-    record::Record, record_history::RecordHistory, zone::Zone, zone_history::ZoneHistory,
-};
+use crate::database::model::{record::Record, zone::Zone};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug)]
@@ -8,8 +6,6 @@ pub struct GetZoneResponse {
     pub id: i32,
     pub name: String,
     pub primary_ns: String,
-    pub primary_ns_ip: Option<String>,
-    pub primary_ns_ipv6: Option<String>,
     pub admin_email: String,
     pub ttl: i32,
     pub serial: Option<i32>,
@@ -24,8 +20,6 @@ impl GetZoneResponse {
             id: zone.id,
             name: zone.name.clone(),
             primary_ns: zone.primary_ns.clone(),
-            primary_ns_ip: zone.primary_ns_ip.clone(),
-            primary_ns_ipv6: zone.primary_ns_ipv6.clone(),
             admin_email: zone.admin_email.clone(),
             ttl: zone.ttl,
             serial: Some(zone.serial),
@@ -46,6 +40,8 @@ pub struct GetRecordResponse {
     pub ttl: Option<i32>,
     pub priority: Option<i32>,
     pub zone_id: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zone_name: Option<String>,
 }
 impl GetRecordResponse {
     pub fn from_record(record: &Record) -> Self {
@@ -57,6 +53,7 @@ impl GetRecordResponse {
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
+            zone_name: None,
         }
     }
 }
@@ -65,11 +62,9 @@ impl GetRecordResponse {
 pub struct CreateZoneRequest {
     pub name: String,
     pub primary_ns: String,
-    pub primary_ns_ip: Option<String>,
-    pub primary_ns_ipv6: Option<String>,
     pub admin_email: String,
     pub ttl: i32,
-    pub serial: i32,
+    pub serial: Option<i32>, // Optional: auto-generated if not provided
     pub refresh: Option<i32>,
     pub retry: Option<i32>,
     pub expire: Option<i32>,
@@ -83,41 +78,5 @@ pub struct CreateRecordRequest {
     pub value: String,
     pub ttl: Option<i32>,
     pub priority: Option<i32>,
-    pub zone_id: i32,
-}
-
-#[derive(Serialize, Debug)]
-pub struct GetZoneHistoryResponse {
-    pub id: i32,
-    pub log: String,
-    pub created_at: String,
-    pub zone_id: i32,
-}
-impl GetZoneHistoryResponse {
-    pub fn from_zone_history(zone_history: &ZoneHistory) -> Self {
-        GetZoneHistoryResponse {
-            id: zone_history.id,
-            log: zone_history.log.clone(),
-            created_at: zone_history.created_at.to_string(),
-            zone_id: zone_history.zone_id,
-        }
-    }
-}
-
-#[derive(Serialize, Debug)]
-pub struct GetRecordHistoryResponse {
-    pub id: i32,
-    pub log: String,
-    pub created_at: String,
-    pub record_id: i32,
-}
-impl GetRecordHistoryResponse {
-    pub fn from_record_history(record_history: &RecordHistory) -> Self {
-        GetRecordHistoryResponse {
-            id: record_history.id,
-            log: record_history.log.clone(),
-            created_at: record_history.created_at.to_string(),
-            record_id: record_history.record_id,
-        }
-    }
+    pub zone_name: String,
 }

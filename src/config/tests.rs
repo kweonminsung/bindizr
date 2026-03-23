@@ -39,7 +39,7 @@ fn test_get_config_string() {
 
 #[test]
 fn test_get_config_numeric() {
-    let (dir, config_path) = create_temp_config_file("[test]\nint_value = 42\nfloat_value = 3.14");
+    let (dir, config_path) = create_temp_config_file("[test]\nint_value = 42\nfloat_value = 3.15");
 
     // Create a config instance directly for testing
     let config = Config::builder()
@@ -53,7 +53,7 @@ fn test_get_config_numeric() {
 
     // Test float value retrieval
     let float_value: f64 = config.get("test.float_value").unwrap();
-    assert_eq!(float_value, 3.14);
+    assert!((float_value - 3.15).abs() < f64::EPSILON);
 
     // Keep dir alive until the end of the test
     drop(dir);
@@ -84,7 +84,7 @@ fn test_get_config_boolean() {
 #[test]
 fn test_config_value_to_json() {
     let (dir, config_path) = create_temp_config_file(
-        "[test]\nstring_value = \"hello\"\nint_value = 42\nfloat_value = 3.14\nbool_value = true",
+        "[test]\nstring_value = \"hello\"\nint_value = 42\nfloat_value = 3.15\nbool_value = true",
     );
 
     // Create a config instance directly for testing
@@ -106,7 +106,7 @@ fn test_config_value_to_json() {
     // Check the JSON values
     assert_eq!(json_map["string_value"], "hello");
     assert_eq!(json_map["int_value"], 42);
-    assert_eq!(json_map["float_value"], 3.14);
+    assert!((json_map["float_value"].as_f64().unwrap() - 3.15).abs() < f64::EPSILON);
     assert_eq!(json_map["bool_value"], true);
 
     // Keep dir alive until the end of the test

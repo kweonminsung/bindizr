@@ -1,11 +1,14 @@
 #[cfg(test)]
 mod tests;
 
+pub mod error;
+
 use config::{Config, File, FileFormat, Source, ValueKind};
 use once_cell::sync::OnceCell;
 use std::{any::type_name, collections::HashMap, path::PathBuf, str::FromStr};
 
 // Config file path
+#[allow(dead_code)]
 pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";
 pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
@@ -112,4 +115,34 @@ where
         );
         std::process::exit(1);
     })
+}
+
+pub fn get_config_optional<T: 'static + FromStr>(key: &str) -> Option<T>
+where
+    <T as FromStr>::Err: std::fmt::Display,
+{
+    let cfg = CONFIG.get().expect("Configuration not initialized");
+
+    let value = match cfg.get::<config::Value>(key) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    let value_str = value.into_string().unwrap_or_else(|e| {
+        eprintln!(
+            "Failed to convert configuration value for key '{}' to string: {}",
+            key, e
+        );
+        std::process::exit(1);
+    });
+
+    Some(value_str.parse::<T>().unwrap_or_else(|e| {
+        eprintln!(
+            "Failed to parse configuration for '{}'. Expected type: {}. Error: {}",
+            key,
+            type_name::<T>(),
+            e
+        );
+        std::process::exit(1);
+    }))
 }
