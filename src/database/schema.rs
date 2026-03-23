@@ -166,6 +166,8 @@ pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
+        "#,
+        r#"
         CREATE INDEX IF NOT EXISTS idx_zone_serial ON zone_changes(zone_id, serial);
         "#,
         r#"

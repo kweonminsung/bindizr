@@ -116,7 +116,6 @@ async fn test_record_crud_operations() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-
 #[tokio::test]
 async fn test_multiple_record_types() {
     let ctx = TestContext::new().await;
