@@ -161,7 +161,6 @@ Add the following configuration, adjusting values to match your environment:
 
 ```toml
 listen_addr = "127.0.0.1"         # Common listen address for all services
-advertised_addr = "127.0.0.1"    # Advertised address for catalog zone primary (external IP/hostname)
 
 [api]
 listen_port = 3000             # HTTP API listen port

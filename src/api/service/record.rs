@@ -47,6 +47,30 @@ fn to_relative_domain(fqdn: &str, zone_name: &str) -> String {
     }
 }
 
+fn is_apex_name(name: &str, zone_name: &str) -> bool {
+    name == "@" || to_fqdn(name).eq_ignore_ascii_case(&to_fqdn(zone_name))
+}
+
+fn is_in_bailiwick(name: &str, zone_name: &str) -> bool {
+    to_fqdn(name)
+        .to_ascii_lowercase()
+        .ends_with(&to_fqdn(zone_name).to_ascii_lowercase())
+}
+
+fn has_glue_records_for(
+    records: &[Record],
+    host_relative_name: &str,
+    except_id: Option<i32>,
+) -> bool {
+    records.iter().any(|r| {
+        if except_id.is_some() && except_id == Some(r.id) {
+            return false;
+        }
+        r.name.eq_ignore_ascii_case(host_relative_name)
+            && (r.record_type == RecordType::A || r.record_type == RecordType::AAAA)
+    })
+}
+
 async fn save_zone_snapshot(
     zone: &crate::database::model::zone::Zone,
     serial: i32,
@@ -204,16 +228,6 @@ impl RecordService {
             }
         };
 
-        // Prevent manual creation of A/AAAA records for the primary NS host.
-        let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
-        if (record_type == RecordType::A || record_type == RecordType::AAAA)
-            && create_record_request.name == primary_ns_relative_name
-        {
-            return Err(ApiError::BadRequest(
-                "Cannot manually create A/AAAA records for the primary NS host".to_string(),
-            ));
-        }
-
         // CNAME validation
         let existing_records_in_zone = match record_repository.get_by_zone_id(zone.id).await {
             Ok(records) => records,
@@ -245,6 +259,25 @@ impl RecordService {
                     "A CNAME record with name '{}' already exists in this zone",
                     create_record_request.name
                 )));
+            }
+        }
+
+        if record_type == RecordType::NS {
+            if !is_apex_name(&create_record_request.name, &zone.name) {
+                return Err(ApiError::BadRequest(
+                    "NS records must use apex owner name '@'".to_string(),
+                ));
+            }
+
+            if is_in_bailiwick(&create_record_request.value, &zone.name) {
+                let ns_host_relative =
+                    to_relative_domain(&to_fqdn(&create_record_request.value), &zone.name);
+                if !has_glue_records_for(&existing_records_in_zone, &ns_host_relative, None) {
+                    return Err(ApiError::BadRequest(format!(
+                        "In-bailiwick NS '{}' requires A/AAAA glue record '{}'",
+                        create_record_request.value, ns_host_relative
+                    )));
+                }
             }
         }
 
@@ -407,16 +440,6 @@ impl RecordService {
             ));
         }
 
-        // Prevent manual update of A/AAAA records for the primary NS host.
-        let primary_ns_relative_name = to_relative_domain(&to_fqdn(&zone.primary_ns), &zone.name);
-        if (record_type == RecordType::A || record_type == RecordType::AAAA)
-            && update_record_request.name == primary_ns_relative_name
-        {
-            return Err(ApiError::BadRequest(
-                "Cannot manually update A/AAAA records for the primary NS host".to_string(),
-            ));
-        }
-
         // CNAME validation
         let existing_records = match record_repository
             .get_by_name(&update_record_request.name)
@@ -451,6 +474,51 @@ impl RecordService {
                     "A CNAME record with name '{}' already exists in this zone",
                     update_record_request.name
                 )));
+            }
+        }
+
+        let zone_records = match record_repository.get_by_zone_id(zone.id).await {
+            Ok(records) => records,
+            Err(e) => {
+                log_error!("Failed to load zone records: {}", e);
+                return Err(ApiError::InternalServerError(
+                    "Failed to update record".to_string(),
+                ));
+            }
+        };
+
+        if existing_record.record_type == RecordType::NS
+            && is_apex_name(&existing_record.name, &zone.name)
+            && to_fqdn(&existing_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns))
+        {
+            let still_primary = record_type == RecordType::NS
+                && is_apex_name(&update_record_request.name, &zone.name)
+                && to_fqdn(&update_record_request.value)
+                    .eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns));
+
+            if !still_primary {
+                return Err(ApiError::BadRequest(
+                    "Cannot modify the NS record referenced by zone primary_ns".to_string(),
+                ));
+            }
+        }
+
+        if record_type == RecordType::NS {
+            if !is_apex_name(&update_record_request.name, &zone.name) {
+                return Err(ApiError::BadRequest(
+                    "NS records must use apex owner name '@'".to_string(),
+                ));
+            }
+
+            if is_in_bailiwick(&update_record_request.value, &zone.name) {
+                let ns_host_relative =
+                    to_relative_domain(&to_fqdn(&update_record_request.value), &zone.name);
+                if !has_glue_records_for(&zone_records, &ns_host_relative, Some(record_id)) {
+                    return Err(ApiError::BadRequest(format!(
+                        "In-bailiwick NS '{}' requires A/AAAA glue record '{}'",
+                        update_record_request.value, ns_host_relative
+                    )));
+                }
             }
         }
 
@@ -611,6 +679,51 @@ impl RecordService {
         if existing_record.record_type == RecordType::SOA {
             log_error!("Cannot delete SOA record");
             return Err(ApiError::BadRequest("Cannot delete SOA record".to_string()));
+        }
+
+        if existing_record.record_type == RecordType::NS
+            && is_apex_name(&existing_record.name, &zone.name)
+            && to_fqdn(&existing_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns))
+        {
+            return Err(ApiError::BadRequest(
+                "Cannot delete NS record referenced by zone primary_ns".to_string(),
+            ));
+        }
+
+        if existing_record.record_type == RecordType::A
+            || existing_record.record_type == RecordType::AAAA
+        {
+            let zone_records = match record_repository.get_by_zone_id(zone.id).await {
+                Ok(records) => records,
+                Err(e) => {
+                    log_error!("Failed to load zone records: {}", e);
+                    return Err(ApiError::InternalServerError(
+                        "Failed to delete record".to_string(),
+                    ));
+                }
+            };
+
+            let impacted_ns = zone_records.iter().filter(|r| {
+                r.record_type == RecordType::NS
+                    && is_apex_name(&r.name, &zone.name)
+                    && is_in_bailiwick(&r.value, &zone.name)
+            });
+
+            for ns in impacted_ns {
+                let required_host = to_relative_domain(&to_fqdn(&ns.value), &zone.name);
+                if required_host.eq_ignore_ascii_case(&existing_record.name)
+                    && !has_glue_records_for(
+                        &zone_records,
+                        &required_host,
+                        Some(existing_record.id),
+                    )
+                {
+                    return Err(ApiError::BadRequest(format!(
+                        "Cannot remove last glue record '{}' required by NS '{}'",
+                        required_host, ns.value
+                    )));
+                }
+            }
         }
 
         // Delete record

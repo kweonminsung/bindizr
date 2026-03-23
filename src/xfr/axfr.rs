@@ -72,9 +72,6 @@ pub async fn handle_axfr_with_qtype(
     // Add initial SOA record
     builder.add_soa(&zone, zone.serial as u32)?;
 
-    // Add primary NS record for the zone
-    builder.add_ns_record(&zone.name, zone.ttl as u32, &zone.primary_ns)?;
-
     // Add all records
     for record in &records {
         builder.add_record(record, &zone.name)?;

@@ -6,8 +6,6 @@ pub struct GetZoneResponse {
     pub id: i32,
     pub name: String,
     pub primary_ns: String,
-    pub primary_ns_ip: Option<String>,
-    pub primary_ns_ipv6: Option<String>,
     pub admin_email: String,
     pub ttl: i32,
     pub serial: Option<i32>,
@@ -22,8 +20,6 @@ impl GetZoneResponse {
             id: zone.id,
             name: zone.name.clone(),
             primary_ns: zone.primary_ns.clone(),
-            primary_ns_ip: zone.primary_ns_ip.clone(),
-            primary_ns_ipv6: zone.primary_ns_ipv6.clone(),
             admin_email: zone.admin_email.clone(),
             ttl: zone.ttl,
             serial: Some(zone.serial),
@@ -66,8 +62,6 @@ impl GetRecordResponse {
 pub struct CreateZoneRequest {
     pub name: String,
     pub primary_ns: String,
-    pub primary_ns_ip: Option<String>,
-    pub primary_ns_ipv6: Option<String>,
     pub admin_email: String,
     pub ttl: i32,
     pub serial: Option<i32>, // Optional: auto-generated if not provided

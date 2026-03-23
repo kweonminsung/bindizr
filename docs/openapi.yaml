@@ -385,8 +385,6 @@ components:
         - id
         - name
         - primary_ns
-        - primary_ns_ip
-        - primary_ns_ipv6
         - admin_email
         - ttl
         - refresh
@@ -404,14 +402,6 @@ components:
         primary_ns:
           type: string
           example: ns1.example.com
-        primary_ns_ip:
-          type: string
-          format: ipv4
-          example: 127.0.0.1
-        primary_ns_ipv6:
-          type: string
-          format: ipv6
-          example: "::1"
         admin_email:
           type: string
           format: email
@@ -447,9 +437,6 @@ components:
         - primary_ns
         - admin_email
         - ttl
-      anyOf:
-        - required: [primary_ns_ip]
-        - required: [primary_ns_ipv6]
       properties:
         name:
           type: string
@@ -457,14 +444,6 @@ components:
         primary_ns:
           type: string
           example: ns1.example.com
-        primary_ns_ip:
-          type: string
-          format: ipv4
-          example: 127.0.0.1
-        primary_ns_ipv6:
-          type: string
-          format: ipv6
-          example: "::1"
         admin_email:
           type: string
           format: email

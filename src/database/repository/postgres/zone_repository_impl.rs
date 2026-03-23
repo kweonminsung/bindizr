@@ -20,15 +20,13 @@ impl ZoneRepository for PostgresZoneRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            INSERT INTO zones (name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id
             "#,
         )
         .bind(&zone.name)
         .bind(&zone.primary_ns)
-        .bind(&zone.primary_ns_ip)
-        .bind(&zone.primary_ns_ipv6)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
         .bind(zone.serial)
@@ -47,7 +45,7 @@ impl ZoneRepository for PostgresZoneRepository {
     async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1")
             .bind(id)
             .fetch_optional(&mut *conn)
             .await?;
@@ -58,7 +56,7 @@ impl ZoneRepository for PostgresZoneRepository {
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await?;
@@ -69,7 +67,7 @@ impl ZoneRepository for PostgresZoneRepository {
     async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, primary_ns_ip, primary_ns_ipv6, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await?;
 
@@ -82,15 +80,13 @@ impl ZoneRepository for PostgresZoneRepository {
         sqlx::query(
             r#"
             UPDATE zones 
-            SET name = $1, primary_ns = $2, primary_ns_ip = $3, primary_ns_ipv6 = $4, admin_email = $5, 
-                ttl = $6, serial = $7, refresh = $8, retry = $9, expire = $10, minimum_ttl = $11
-            WHERE id = $12
+            SET name = $1, primary_ns = $2, admin_email = $3,
+                ttl = $4, serial = $5, refresh = $6, retry = $7, expire = $8, minimum_ttl = $9
+            WHERE id = $10
             "#,
         )
         .bind(&zone.name)
         .bind(&zone.primary_ns)
-        .bind(&zone.primary_ns_ip)
-        .bind(&zone.primary_ns_ipv6)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
         .bind(zone.serial)

@@ -33,8 +33,6 @@ pub async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
         id: 0, // Virtual zone ID
         name: CATALOG_ZONE_NAME.to_string(),
         primary_ns: "invalid".to_string(),
-        primary_ns_ip: None,
-        primary_ns_ipv6: None,
         admin_email: "invalid".to_string(),
         ttl: 3600,
         serial: generate_catalog_serial(&all_zones),
@@ -68,12 +66,8 @@ pub async fn handle_catalog_axfr_with_qtype(
     builder.add_catalog_ns(&catalog_zone)?;
     builder.add_catalog_version(&catalog_zone)?;
 
-    let primary_ip = crate::config::get_config_optional::<String>("advertised_addr")
-        .unwrap_or_else(|| "127.0.0.1".to_string());
-
     for zone_name in &member_zones {
         builder.add_catalog_ptr(&catalog_zone, zone_name)?;
-        builder.add_catalog_primaries(&catalog_zone, zone_name, &primary_ip)?;
     }
 
     builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
@@ -142,8 +136,6 @@ mod tests {
                 id: 1,
                 name: "example.com".to_string(),
                 primary_ns: "ns1.example.com".to_string(),
-                primary_ns_ip: None,
-                primary_ns_ipv6: None,
                 admin_email: "admin.example.com".to_string(),
                 ttl: 3600,
                 serial: 100,
@@ -157,8 +149,6 @@ mod tests {
                 id: 2,
                 name: "test.com".to_string(),
                 primary_ns: "ns1.test.com".to_string(),
-                primary_ns_ip: None,
-                primary_ns_ipv6: None,
                 admin_email: "admin.test.com".to_string(),
                 ttl: 3600,
                 serial: 200,

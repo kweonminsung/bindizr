@@ -78,11 +78,12 @@ pub async fn handle_ixfr(
     // If client is ahead, this is an error
     if client_serial > current_serial {
         log_warn!(
-            "IXFR: Client serial {} > current serial {}",
+            "IXFR: Client serial {} > current serial {}, falling back to AXFR",
             client_serial,
             current_serial
         );
-        return Err(XfrError::SerialMismatch(client_serial, current_serial));
+        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
+            .await;
     }
 
     // Try to get changes from zone_changes table

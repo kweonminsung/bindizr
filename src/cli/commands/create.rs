@@ -13,12 +13,6 @@ pub enum CreateCommand {
         /// Primary nameserver
         #[arg(long)]
         primary_ns: String,
-        /// Primary nameserver IPv4
-        #[arg(long)]
-        primary_ns_ip: Option<String>,
-        /// Primary nameserver IPv6
-        #[arg(long)]
-        primary_ns_ipv6: Option<String>,
         /// Admin email
         #[arg(long)]
         admin_email: String,
@@ -65,8 +59,6 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
         CreateCommand::Zone {
             name,
             primary_ns,
-            primary_ns_ip,
-            primary_ns_ipv6,
             admin_email,
             ttl,
             serial,
@@ -74,8 +66,6 @@ pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
             let data = json!({
                 "name": name,
                 "primary_ns": primary_ns,
-                "primary_ns_ip": primary_ns_ip,
-                "primary_ns_ipv6": primary_ns_ipv6,
                 "admin_email": admin_email,
                 "ttl": ttl,
                 "serial": serial,

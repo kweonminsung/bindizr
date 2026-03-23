@@ -1,3 +1,4 @@
+listen_addr = "127.0.0.1"
 
 [api]
 listen_addr = "127.0.0.1"
@@ -16,13 +17,9 @@ file_path = "file::memory:?cache=shared"
 [database.postgresql]
 server_url = ""
 
-listen_addr = "127.0.0.1"
-advertised_addr = "127.0.0.1"
-
 [xfr]
 listen_port = 53
 secondary_addrs = "127.0.0.1"
-
 
 [logging]
 log_level = "debug"

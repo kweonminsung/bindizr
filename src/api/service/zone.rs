@@ -2,8 +2,14 @@ use crate::{
     api::{dto::CreateZoneRequest, error::ApiError},
     database::{
         error::DatabaseError,
-        get_zone_change_repository, get_zone_repository, get_zone_snapshot_repository,
-        model::{zone::Zone, zone_change::ZoneChange, zone_snapshot::ZoneSnapshot},
+        get_record_repository, get_zone_change_repository, get_zone_repository,
+        get_zone_snapshot_repository,
+        model::{
+            record::{Record, RecordType},
+            zone::Zone,
+            zone_change::ZoneChange,
+            zone_snapshot::ZoneSnapshot,
+        },
     },
     log_error, log_info, log_warn, xfr,
 };
@@ -27,6 +33,36 @@ fn generate_serial(current_serial: Option<i32>) -> i32 {
         }
         None => base_serial,
     }
+}
+
+fn to_fqdn(name: &str) -> String {
+    name.trim_end_matches('.').to_string() + "."
+}
+
+fn to_relative_domain(fqdn: &str, zone_name: &str) -> String {
+    let normalized_zone = to_fqdn(zone_name);
+
+    if fqdn == normalized_zone {
+        "@".to_string()
+    } else if fqdn.ends_with(&normalized_zone) {
+        let relative_part = &fqdn[..fqdn.len() - normalized_zone.len()];
+        relative_part.trim_end_matches('.').to_string()
+    } else {
+        fqdn.trim_end_matches('.').to_string()
+    }
+}
+
+fn is_in_bailiwick(name: &str, zone_name: &str) -> bool {
+    to_fqdn(name)
+        .to_ascii_lowercase()
+        .ends_with(&to_fqdn(zone_name).to_ascii_lowercase())
+}
+
+fn has_glue(records: &[Record], host_name: &str) -> bool {
+    records.iter().any(|r| {
+        r.name.eq_ignore_ascii_case(host_name)
+            && (r.record_type == RecordType::A || r.record_type == RecordType::AAAA)
+    })
 }
 
 async fn save_zone_snapshot(zone: &Zone, serial: i32) -> Result<(), ApiError> {
@@ -87,15 +123,7 @@ impl ZoneService {
 
     pub async fn create_zone(create_zone_request: &CreateZoneRequest) -> Result<Zone, ApiError> {
         let zone_repository = get_zone_repository();
-
-        // Validate that at least one of primary_ns_ip or primary_ns_ipv6 is present
-        if create_zone_request.primary_ns_ip.is_none()
-            && create_zone_request.primary_ns_ipv6.is_none()
-        {
-            return Err(ApiError::BadRequest(
-                "At least one of primary_ns_ip or primary_ns_ipv6 must be provided".to_string(),
-            ));
-        }
+        let record_repository = get_record_repository();
 
         // Check if zone already exists
         match zone_repository.get_by_name(&create_zone_request.name).await {
@@ -126,8 +154,6 @@ impl ZoneService {
                 id: 0, // Will be set by the database
                 name: create_zone_request.name.clone(),
                 primary_ns: create_zone_request.primary_ns.clone(),
-                primary_ns_ip: create_zone_request.primary_ns_ip.clone(),
-                primary_ns_ipv6: create_zone_request.primary_ns_ipv6.clone(),
                 admin_email: create_zone_request.admin_email.clone(),
                 ttl: create_zone_request.ttl,
                 serial,
@@ -153,6 +179,26 @@ impl ZoneService {
             created_zone.id
         );
 
+        // Keep zones.primary_ns aligned with at least one apex NS record in records table.
+        let primary_ns_apex_record = Record {
+            id: 0,
+            name: "@".to_string(),
+            record_type: RecordType::NS,
+            value: create_zone_request.primary_ns.clone(),
+            ttl: Some(create_zone_request.ttl),
+            priority: None,
+            zone_id: created_zone.id,
+            created_at: Utc::now(),
+        };
+
+        record_repository
+            .create(primary_ns_apex_record)
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create primary NS record: {}", e);
+                ApiError::InternalServerError("Failed to create primary NS record".to_string())
+            })?;
+
         save_zone_snapshot(&created_zone, created_zone.serial).await?;
 
         Ok(created_zone)
@@ -163,15 +209,7 @@ impl ZoneService {
         update_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, ApiError> {
         let zone_repository = get_zone_repository();
-
-        // Validate that at least one of primary_ns_ip or primary_ns_ipv6 is present
-        if update_zone_request.primary_ns_ip.is_none()
-            && update_zone_request.primary_ns_ipv6.is_none()
-        {
-            return Err(ApiError::BadRequest(
-                "At least one of primary_ns_ip or primary_ns_ipv6 must be provided".to_string(),
-            ));
-        }
+        let record_repository = get_record_repository();
 
         // Check if zone exists
         let existing_zone = match zone_repository.get_by_name(zone_name).await {
@@ -217,14 +255,33 @@ impl ZoneService {
             None => generate_serial(Some(existing_zone.serial)),
         };
 
+        let zone_records = record_repository
+            .get_by_zone_id(zone_id)
+            .await
+            .map_err(|e| {
+                log_error!("Failed to fetch zone records: {}", e);
+                ApiError::InternalServerError("Failed to update zone".to_string())
+            })?;
+
+        if is_in_bailiwick(&update_zone_request.primary_ns, &update_zone_request.name) {
+            let relative = to_relative_domain(
+                &to_fqdn(&update_zone_request.primary_ns),
+                &update_zone_request.name,
+            );
+            if !has_glue(&zone_records, &relative) {
+                return Err(ApiError::BadRequest(format!(
+                    "Primary NS '{}' is in-bailiwick and requires at least one A/AAAA glue record for '{}'",
+                    update_zone_request.primary_ns, relative
+                )));
+            }
+        }
+
         // Update zone
         let updated_zone = zone_repository
             .update(Zone {
                 id: zone_id,
                 name: update_zone_request.name.clone(),
                 primary_ns: update_zone_request.primary_ns.clone(),
-                primary_ns_ip: update_zone_request.primary_ns_ip.clone(),
-                primary_ns_ipv6: update_zone_request.primary_ns_ipv6.clone(),
                 admin_email: update_zone_request.admin_email.clone(),
                 ttl: update_zone_request.ttl,
                 serial: new_serial,
@@ -251,6 +308,53 @@ impl ZoneService {
 
         // Record zone changes for IXFR
         let zone_change_repository = get_zone_change_repository();
+
+        let has_primary_ns = zone_records.iter().any(|r| {
+            r.record_type == RecordType::NS
+                && r.name == "@"
+                && to_fqdn(&r.value).eq_ignore_ascii_case(&to_fqdn(&updated_zone.primary_ns))
+        });
+
+        if !has_primary_ns {
+            let primary_ns_record = Record {
+                id: 0,
+                name: "@".to_string(),
+                record_type: RecordType::NS,
+                value: updated_zone.primary_ns.clone(),
+                ttl: Some(updated_zone.ttl),
+                priority: None,
+                zone_id,
+                created_at: Utc::now(),
+            };
+
+            record_repository
+                .create(primary_ns_record)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to create primary NS record during update: {}", e);
+                    ApiError::InternalServerError(
+                        "Failed to keep primary NS consistency".to_string(),
+                    )
+                })?;
+
+            zone_change_repository
+                .create(ZoneChange {
+                    id: 0,
+                    zone_id,
+                    serial: new_serial,
+                    operation: "ADD".to_string(),
+                    record_name: "@".to_string(),
+                    record_type: "NS".to_string(),
+                    record_value: updated_zone.primary_ns.clone(),
+                    record_ttl: Some(updated_zone.ttl),
+                    record_priority: None,
+                })
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to create zone change (ADD NS): {}", e);
+                    ApiError::InternalServerError("Failed to create zone change".to_string())
+                })?;
+        }
 
         let format_soa = |zone: &Zone| -> String {
             format!(
