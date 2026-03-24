@@ -178,9 +178,10 @@ file_path = "bindizr.db"       # SQLite database file path
 [database.postgresql]
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
-[xfr]
-listen_port = 53                  # XFR server listen port (TCP)
-secondary_addrs = ""                 # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
+[dns]
+listen_port = 53                  # DNS server listen port (UDP and TCP)
+secondary_addrs = ""              # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
+nsupdate_allowed_ips = ""         # Comma-separated list of IPs allowed to perform nsupdate (e.g., "192.168.1.2,192.168.1.3")
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

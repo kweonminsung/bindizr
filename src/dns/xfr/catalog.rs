@@ -91,26 +91,6 @@ pub fn zone_name_to_member_id(zone_name: &str) -> String {
     zone_name.replace('.', "-")
 }
 
-/// Handle SOA query for catalog zone
-pub async fn handle_catalog_soa(
-    stream: &mut TcpStream,
-    zone_name: &Name<Vec<u8>>,
-    query_id: u16,
-) -> Result<(), XfrError> {
-    log_info!("SOA query for catalog zone: {}", CATALOG_ZONE_NAME);
-
-    let (catalog_zone, _member_zones) = generate_catalog_zone().await?;
-
-    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::SOA);
-    builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
-
-    let message = builder.build();
-    wire::write_tcp_message(stream, &message).await?;
-
-    log_info!("Catalog SOA response sent: serial {}", catalog_zone.serial);
-
-    Ok(())
-}
 #[cfg(test)]
 mod tests {
     use super::*;

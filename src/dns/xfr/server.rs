@@ -5,7 +5,7 @@ use std::net::{IpAddr, SocketAddr};
 use tokio::net::TcpStream;
 
 pub fn secondary_servers_from_config() -> Vec<IpAddr> {
-    let secondary_servers_str = config::get_config::<String>("xfr.secondary_addrs");
+    let secondary_servers_str = config::get_config::<String>("dns.secondary_addrs");
     secondary_servers_str
         .split(',')
         .filter_map(|s| {
@@ -23,7 +23,7 @@ pub fn secondary_servers_from_config() -> Vec<IpAddr> {
 }
 
 pub fn is_xfr_query_type(qtype: Rtype) -> bool {
-    matches!(qtype, Rtype::SOA | Rtype::AXFR | Rtype::IXFR)
+    matches!(qtype, Rtype::AXFR | Rtype::IXFR)
 }
 
 pub async fn handle_tcp_query(
@@ -36,7 +36,7 @@ pub async fn handle_tcp_query(
 
     validate_secondary_acl(client_ip, secondary_servers)?;
 
-    let (zone_name, qtype, client_serial, query_id) = wire::parse_query(&query_data)?;
+    let (zone_name, qtype, client_serial, query_id) = wire::parse_query(query_data)?;
 
     log_info!(
         "XFR TCP query: zone={:?}, qtype={:?}, from={}",
@@ -46,9 +46,6 @@ pub async fn handle_tcp_query(
     );
 
     match qtype {
-        Rtype::SOA => {
-            axfr::handle_soa(stream, &zone_name, query_id, client_ip).await?;
-        }
         Rtype::AXFR => {
             axfr::handle_axfr(stream, &zone_name, query_id, client_ip).await?;
         }

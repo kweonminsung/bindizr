@@ -16,9 +16,10 @@ file_path = "file::memory:?cache=shared"
 [database.postgresql]
 server_url = ""
 
-[xfr]
+[dns]
 listen_port = 53
 secondary_addrs = "127.0.0.1"
+nsupdate_allowed_ips = "127.0.0.1"
 
 [logging]
 log_level = "debug"

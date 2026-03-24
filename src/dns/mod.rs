@@ -1,7 +1,9 @@
 pub mod nsupdate;
+pub mod soa;
 pub mod xfr;
 
 use crate::{config, log_error, log_info, log_warn};
+use domain::base::iana::Rtype;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -10,7 +12,7 @@ pub async fn initialize() {
     xfr::initialize().await;
 
     let listen_addr_str = config::get_config::<String>("listen_addr");
-    let listen_port = config::get_config::<u16>("xfr.listen_port");
+    let listen_port = config::get_config::<u16>("dns.listen_port");
     let listen_addr = SocketAddr::new(
         IpAddr::from_str(&listen_addr_str).expect("Invalid DNS listen address"),
         listen_port,
@@ -32,7 +34,10 @@ pub async fn initialize() {
     });
 }
 
-async fn run_tcp_server(listen_addr: SocketAddr, secondary_servers: Vec<IpAddr>) -> Result<(), String> {
+async fn run_tcp_server(
+    listen_addr: SocketAddr,
+    secondary_servers: Vec<IpAddr>,
+) -> Result<(), String> {
     let listener = TcpListener::bind(listen_addr)
         .await
         .map_err(|e| format!("Failed to bind DNS TCP listener on {}: {}", listen_addr, e))?;
@@ -70,8 +75,7 @@ async fn handle_tcp_connection(
         return Ok(());
     }
 
-    let (_zone_name, qtype, _client_serial, _query_id) = match xfr::wire::parse_query(&query_data)
-    {
+    let (_zone_name, qtype, _client_serial, _query_id) = match xfr::wire::parse_query(&query_data) {
         Ok(parsed) => parsed,
         Err(e) => {
             log_warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);
@@ -79,7 +83,11 @@ async fn handle_tcp_connection(
         }
     };
 
-    if xfr::server::is_xfr_query_type(qtype) {
+    if qtype == Rtype::SOA {
+        soa::handle_tcp_soa(&mut stream, client_addr, &secondary_servers, &query_data)
+            .await
+            .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
+    } else if xfr::server::is_xfr_query_type(qtype) {
         xfr::server::handle_tcp_query(&mut stream, client_addr, &secondary_servers, &query_data)
             .await
             .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
@@ -94,7 +102,10 @@ async fn handle_tcp_connection(
     Ok(())
 }
 
-async fn run_udp_server(listen_addr: SocketAddr, secondary_servers: Vec<IpAddr>) -> Result<(), String> {
+async fn run_udp_server(
+    listen_addr: SocketAddr,
+    secondary_servers: Vec<IpAddr>,
+) -> Result<(), String> {
     let socket = UdpSocket::bind(listen_addr)
         .await
         .map_err(|e| format!("Failed to bind DNS UDP socket on {}: {}", listen_addr, e))?;
@@ -121,16 +132,26 @@ async fn run_udp_server(listen_addr: SocketAddr, secondary_servers: Vec<IpAddr>)
             continue;
         }
 
-        let (_zone_name, qtype, _client_serial, _query_id) = match xfr::wire::parse_query(query_data)
-        {
-            Ok(parsed) => parsed,
-            Err(_) => {
-                continue;
+        let (_zone_name, qtype, _client_serial, _query_id) =
+            match xfr::wire::parse_query(query_data) {
+                Ok(parsed) => parsed,
+                Err(_) => {
+                    continue;
+                }
+            };
+
+        if qtype == Rtype::SOA {
+            if let Err(e) =
+                soa::handle_udp_soa(&socket, client_addr, &secondary_servers, query_data).await
+            {
+                log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
             }
-        };
+            continue;
+        }
 
         if xfr::server::is_xfr_query_type(qtype)
-            && let Err(e) = xfr::server::handle_udp_query(client_addr, &secondary_servers, query_data).await
+            && let Err(e) =
+                xfr::server::handle_udp_query(client_addr, &secondary_servers, query_data).await
         {
             log_warn!("Failed to handle XFR UDP query from {}: {}", client_addr, e);
         }

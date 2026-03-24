@@ -1,0 +1,121 @@
+mod parser;
+mod update;
+
+use crate::{log_info, log_warn};
+use std::net::SocketAddr;
+use tokio::net::{TcpStream, UdpSocket};
+
+const DNS_HEADER_LEN: usize = 12;
+const DNS_OPCODE_UPDATE: u8 = 5;
+
+const RCODE_NOERROR: u8 = 0;
+const RCODE_FORMERR: u8 = 1;
+const RCODE_SERVFAIL: u8 = 2;
+const RCODE_NOTIMP: u8 = 4;
+const RCODE_REFUSED: u8 = 5;
+const RCODE_NOTZONE: u8 = 10;
+
+pub fn is_nsupdate(message: &[u8]) -> bool {
+    if message.len() < DNS_HEADER_LEN {
+        return false;
+    }
+
+    let opcode = (message[2] >> 3) & 0x0f;
+    opcode == DNS_OPCODE_UPDATE
+}
+
+pub async fn handle_tcp_nsupdate(
+    stream: &mut TcpStream,
+    query_data: &[u8],
+    client_addr: SocketAddr,
+) -> Result<(), String> {
+    log_info!("NSUPDATE TCP request from {}", client_addr);
+
+    let rcode = handle_nsupdate_request(query_data, client_addr).await;
+    let response = build_response(query_data, rcode)
+        .ok_or_else(|| "Failed to build NSUPDATE TCP response".to_string())?;
+
+    super::xfr::wire::write_tcp_message(stream, &response)
+        .await
+        .map_err(|e| format!("Failed to write NSUPDATE TCP response: {}", e))
+}
+
+pub async fn handle_udp_nsupdate(
+    socket: &UdpSocket,
+    query_data: &[u8],
+    client_addr: SocketAddr,
+) -> Result<(), String> {
+    log_info!("NSUPDATE UDP request from {}", client_addr);
+
+    let rcode = handle_nsupdate_request(query_data, client_addr).await;
+    let response = match build_response(query_data, rcode) {
+        Some(resp) => resp,
+        None => {
+            log_warn!("Ignored malformed NSUPDATE packet from {}", client_addr);
+            return Ok(());
+        }
+    };
+
+    socket
+        .send_to(&response, client_addr)
+        .await
+        .map_err(|e| format!("Failed to write NSUPDATE UDP response: {}", e))?;
+
+    Ok(())
+}
+
+async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> u8 {
+    let parsed = match parser::parse_update_request(query_data) {
+        Ok(req) => req,
+        Err(e) => {
+            log_warn!("NSUPDATE parse error from {}: {}", client_addr, e);
+            return RCODE_FORMERR;
+        }
+    };
+
+    match update::apply_update(parsed, client_addr).await {
+        Ok(update::UpdateResult::Applied { changed }) => {
+            log_info!(
+                "NSUPDATE applied from {} (changed={})",
+                client_addr,
+                changed
+            );
+            RCODE_NOERROR
+        }
+        Err(update::UpdateError::Refused(msg)) => {
+            log_warn!("NSUPDATE refused from {}: {}", client_addr, msg);
+            RCODE_REFUSED
+        }
+        Err(update::UpdateError::NotZone(msg)) => {
+            log_warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
+            RCODE_NOTZONE
+        }
+        Err(update::UpdateError::NotImplemented(msg)) => {
+            log_warn!("NSUPDATE not implemented from {}: {}", client_addr, msg);
+            RCODE_NOTIMP
+        }
+        Err(update::UpdateError::Internal(msg)) => {
+            log_warn!("NSUPDATE internal error from {}: {}", client_addr, msg);
+            RCODE_SERVFAIL
+        }
+    }
+}
+
+fn build_response(query_data: &[u8], rcode: u8) -> Option<Vec<u8>> {
+    if query_data.len() < DNS_HEADER_LEN {
+        return None;
+    }
+
+    let mut response = vec![0u8; DNS_HEADER_LEN];
+
+    response[0] = query_data[0];
+    response[1] = query_data[1];
+
+    let opcode_bits = query_data[2] & 0x78;
+    let rd_bit = query_data[2] & 0x01;
+
+    response[2] = 0x80 | opcode_bits | rd_bit;
+    response[3] = (query_data[3] & 0xF0) | (rcode & 0x0F);
+
+    Some(response)
+}
