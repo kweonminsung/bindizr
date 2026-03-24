@@ -1,5 +1,5 @@
 use crate::api::dto::{CreateZoneRequest, GetZoneResponse};
-use crate::api::service::zone::ZoneService;
+use crate::service::zone::ZoneService;
 use crate::socket::dto::DaemonResponse;
 use serde_json::json;
 

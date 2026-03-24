@@ -2,9 +2,10 @@ mod api;
 mod cli;
 mod config;
 mod database;
+mod dns;
 mod logger;
+mod service;
 mod socket;
-mod xfr;
 
 #[tokio::main]
 async fn main() {

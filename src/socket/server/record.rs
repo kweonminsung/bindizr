@@ -1,6 +1,5 @@
 use crate::api::dto::{CreateRecordRequest, GetRecordResponse};
-use crate::api::service::record::RecordService;
-use crate::database::get_zone_repository;
+use crate::service::{record::RecordService, repository::RepositoryService};
 use crate::socket::dto::DaemonResponse;
 use serde_json::json;
 
@@ -16,9 +15,7 @@ pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, Stri
 
     match RecordService::get_record(name, record_type).await {
         Ok(record) => {
-            let zone_repository = get_zone_repository();
-            let zone_name = zone_repository
-                .get_by_id(record.zone_id)
+            let zone_name = RepositoryService::get_zone_by_id(record.zone_id)
                 .await
                 .ok()
                 .flatten()
@@ -50,12 +47,10 @@ pub async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, St
 
     match records {
         Ok(records) => {
-            let zone_repository = get_zone_repository();
             let mut response: Vec<GetRecordResponse> = Vec::new();
 
             for record in records.iter() {
-                let zone_name = zone_repository
-                    .get_by_id(record.zone_id)
+                let zone_name = RepositoryService::get_zone_by_id(record.zone_id)
                     .await
                     .ok()
                     .flatten()
@@ -82,9 +77,7 @@ pub async fn create_record(data: &serde_json::Value) -> Result<DaemonResponse, S
 
     match RecordService::create_record(&request).await {
         Ok(record) => {
-            let zone_repository = get_zone_repository();
-            let zone_name = zone_repository
-                .get_by_id(record.zone_id)
+            let zone_name = RepositoryService::get_zone_by_id(record.zone_id)
                 .await
                 .ok()
                 .flatten()
