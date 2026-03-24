@@ -21,7 +21,7 @@ pub struct ZoneRow {
     pub admin_email: String,
     #[tabled(rename = "TTL")]
     pub ttl: i32,
-    #[tabled(rename = "SERIAL", display_with = "display_option_i32")]
+    #[tabled(rename = "SERIAL", display = "display_option_i32")]
     #[serde(default)]
     pub serial: Option<i32>,
 }
@@ -37,10 +37,10 @@ pub struct RecordRow {
     pub record_type: String,
     #[tabled(rename = "VALUE")]
     pub value: String,
-    #[tabled(rename = "TTL", display_with = "display_option_i32")]
+    #[tabled(rename = "TTL", display = "display_option_i32")]
     #[serde(default)]
     pub ttl: Option<i32>,
-    #[tabled(rename = "PRIORITY", display_with = "display_option_i32")]
+    #[tabled(rename = "PRIORITY", display = "display_option_i32")]
     #[serde(default)]
     pub priority: Option<i32>,
     #[tabled(rename = "ZONE")]
