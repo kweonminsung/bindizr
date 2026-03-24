@@ -46,3 +46,16 @@ impl IntoResponse for ApiError {
         (status, body).into_response()
     }
 }
+
+impl From<crate::service::error::ServiceError> for ApiError {
+    fn from(value: crate::service::error::ServiceError) -> Self {
+        match value {
+            crate::service::error::ServiceError::BadRequest(msg) => ApiError::BadRequest(msg),
+            crate::service::error::ServiceError::NotFound(msg) => ApiError::NotFound(msg),
+            crate::service::error::ServiceError::Unauthorized(msg) => ApiError::Unauthorized(msg),
+            crate::service::error::ServiceError::Internal(msg) => {
+                ApiError::InternalServerError(msg)
+            }
+        }
+    }
+}

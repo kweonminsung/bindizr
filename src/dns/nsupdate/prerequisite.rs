@@ -5,22 +5,21 @@ use super::{
         normalize_owner_name, rr_to_record_value, rr_type_to_record_type,
     },
 };
-use crate::database::{
-    get_record_repository,
-    model::{record::Record, zone::Zone},
+use crate::{
+    database::model::{record::Record, zone::Zone},
+    service::repository::RepositoryService,
 };
 
 pub(super) async fn evaluate_prerequisites(
     zone: &Zone,
     prerequisites: &[PrerequisiteRecord],
+    query_data: &[u8],
 ) -> Result<(), UpdateError> {
     if prerequisites.is_empty() {
         return Ok(());
     }
 
-    let record_repo = get_record_repository();
-    let zone_records = record_repo
-        .get_by_zone_id(zone.id)
+    let zone_records = RepositoryService::get_records_by_zone_id(zone.id)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
 
@@ -96,14 +95,17 @@ pub(super) async fn evaluate_prerequisites(
                     ));
                 }
 
-                let (target_type, target_value, target_priority) =
-                    rr_to_record_value(&UpdateRecord {
+                let (target_type, target_value, target_priority) = rr_to_record_value(
+                    &UpdateRecord {
                         name: rr.name.clone(),
                         rr_type: rr.rr_type,
                         class: rr.class,
                         ttl: rr.ttl,
                         rdata: rr.rdata.clone(),
-                    })?;
+                        rdata_start: rr.rdata_start,
+                    },
+                    query_data,
+                )?;
 
                 let exists = zone_records.iter().any(|record| {
                     record.name.eq_ignore_ascii_case(&relative)

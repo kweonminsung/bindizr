@@ -5,4 +5,5 @@ pub mod database;
 pub mod dns;
 pub mod error;
 pub mod logger;
+pub mod service;
 pub mod socket;

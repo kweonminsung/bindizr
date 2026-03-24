@@ -1,15 +1,13 @@
 use crate::{
-    api::{dto::CreateRecordRequest, error::ApiError},
-    database::{
-        get_record_repository, get_zone_change_repository, get_zone_repository,
-        get_zone_snapshot_repository,
-        model::{
-            record::{Record, RecordType},
-            zone_change::ZoneChange,
-            zone_snapshot::ZoneSnapshot,
-        },
+    api::dto::CreateRecordRequest,
+    database::model::{
+        record::{Record, RecordType},
+        zone::Zone,
+        zone_change::ZoneChange,
+        zone_snapshot::ZoneSnapshot,
     },
     dns, log_error, log_info, log_warn,
+    service::{error::ServiceError, repository::RepositoryService},
 };
 use chrono::Utc;
 
@@ -71,30 +69,119 @@ fn has_glue_records_for(
     })
 }
 
+pub async fn find_identical_record_in_zone(
+    zone_id: i32,
+    name: &str,
+    record_type: &RecordType,
+    value: &str,
+    priority: Option<i32>,
+) -> Result<Option<Record>, ServiceError> {
+    let zone_records = RepositoryService::get_records_by_zone_id(zone_id)
+        .await
+        .map_err(|e| {
+            log_error!("Failed to load zone records: {}", e);
+            ServiceError::Internal("Failed to load zone records".to_string())
+        })?;
+
+    Ok(zone_records.into_iter().find(|r| {
+        r.name.eq_ignore_ascii_case(name)
+            && &r.record_type == record_type
+            && r.value.eq_ignore_ascii_case(value)
+            && r.priority == priority
+    }))
+}
+
+pub async fn validate_nsupdate_add_constraints(
+    zone: &Zone,
+    owner_name: &str,
+    record_type: &RecordType,
+    value: &str,
+) -> Result<(), ServiceError> {
+    let zone_records = RepositoryService::get_records_by_zone_id(zone.id)
+        .await
+        .map_err(|e| {
+            log_error!("Failed to load zone records: {}", e);
+            ServiceError::Internal("Failed to load zone records".to_string())
+        })?;
+
+    if *record_type == RecordType::SOA {
+        return Err(ServiceError::BadRequest(
+            "Cannot create SOA record manually".to_string(),
+        ));
+    }
+
+    if *record_type == RecordType::CNAME && owner_name == "@" {
+        return Err(ServiceError::BadRequest(
+            "CNAME record cannot have '@' as name".to_string(),
+        ));
+    }
+
+    let existing_records_with_name: Vec<_> = zone_records
+        .iter()
+        .filter(|r| r.name.eq_ignore_ascii_case(owner_name))
+        .collect();
+
+    if !existing_records_with_name.is_empty() {
+        if *record_type == RecordType::CNAME {
+            return Err(ServiceError::BadRequest(format!(
+                "A record with name '{}' already exists in this zone, so CNAME cannot be used",
+                owner_name
+            )));
+        }
+        if existing_records_with_name
+            .iter()
+            .any(|r| r.record_type == RecordType::CNAME)
+        {
+            return Err(ServiceError::BadRequest(format!(
+                "A CNAME record with name '{}' already exists in this zone",
+                owner_name
+            )));
+        }
+    }
+
+    if *record_type == RecordType::NS {
+        if !is_apex_name(owner_name, &zone.name) {
+            return Err(ServiceError::BadRequest(
+                "NS records must use apex owner name '@'".to_string(),
+            ));
+        }
+
+        if is_in_bailiwick(value, &zone.name) {
+            let ns_host_relative = to_relative_domain(&to_fqdn(value), &zone.name);
+            if !has_glue_records_for(&zone_records, &ns_host_relative, None) {
+                return Err(ServiceError::BadRequest(format!(
+                    "In-bailiwick NS '{}' requires A/AAAA glue record '{}'",
+                    value, ns_host_relative
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn save_zone_snapshot(
     zone: &crate::database::model::zone::Zone,
     serial: i32,
-) -> Result<(), ApiError> {
-    let zone_snapshot_repository = get_zone_snapshot_repository();
-    zone_snapshot_repository
-        .upsert(ZoneSnapshot {
-            id: 0,
-            zone_id: zone.id,
-            serial,
-            primary_ns: zone.primary_ns.clone(),
-            admin_email: zone.admin_email.replace('@', "."),
-            ttl: zone.ttl,
-            refresh: zone.refresh,
-            retry: zone.retry,
-            expire: zone.expire,
-            minimum_ttl: zone.minimum_ttl,
-            created_at: Utc::now(),
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to save SOA snapshot: {}", e);
-            ApiError::InternalServerError("Failed to save SOA snapshot".to_string())
-        })?;
+) -> Result<(), ServiceError> {
+    RepositoryService::upsert_zone_snapshot(ZoneSnapshot {
+        id: 0,
+        zone_id: zone.id,
+        serial,
+        primary_ns: zone.primary_ns.clone(),
+        admin_email: zone.admin_email.replace('@', "."),
+        ttl: zone.ttl,
+        refresh: zone.refresh,
+        retry: zone.retry,
+        expire: zone.expire,
+        minimum_ttl: zone.minimum_ttl,
+        created_at: Utc::now(),
+    })
+    .await
+    .map_err(|e| {
+        log_error!("Failed to save SOA snapshot: {}", e);
+        ServiceError::Internal("Failed to save SOA snapshot".to_string())
+    })?;
 
     Ok(())
 }
@@ -103,35 +190,30 @@ async fn save_zone_snapshot(
 pub struct RecordService;
 
 impl RecordService {
-    pub async fn get_records(zone_name: Option<String>) -> Result<Vec<Record>, ApiError> {
-        let zone_repository = get_zone_repository();
-        let record_repository = get_record_repository();
-
+    pub async fn get_records(zone_name: Option<String>) -> Result<Vec<Record>, ServiceError> {
         match zone_name {
             Some(name) => {
                 // Check if zone exists and get zone_id
-                let zone = match zone_repository.get_by_name(&name).await {
+                let zone = match RepositoryService::get_zone_by_name(&name).await {
                     Ok(Some(z)) => z,
                     Ok(None) => {
-                        return Err(ApiError::BadRequest(format!(
+                        return Err(ServiceError::BadRequest(format!(
                             "Zone with name '{}' not found",
                             name
                         )));
                     }
                     Err(e) => {
                         log_error!("Failed to fetch zone: {}", e);
-                        return Err(ApiError::InternalServerError(
-                            "Failed to fetch zone".to_string(),
-                        ));
+                        return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
                     }
                 };
 
                 // Fetch records by zone_id
-                match record_repository.get_by_zone_id(zone.id).await {
+                match RepositoryService::get_records_by_zone_id(zone.id).await {
                     Ok(records) => Ok(records),
                     Err(e) => {
                         log_error!("Failed to fetch records for zone {}: {}", name, e);
-                        Err(ApiError::InternalServerError(format!(
+                        Err(ServiceError::Internal(format!(
                             "Failed to fetch records for zone {}",
                             name
                         )))
@@ -140,11 +222,11 @@ impl RecordService {
             }
             None => {
                 // Fetch all records
-                match record_repository.get_all().await {
+                match RepositoryService::get_all_records().await {
                     Ok(records) => Ok(records),
                     Err(e) => {
                         log_error!("Failed to fetch all records: {}", e);
-                        Err(ApiError::InternalServerError(
+                        Err(ServiceError::Internal(
                             "Failed to fetch all records".to_string(),
                         ))
                     }
@@ -153,41 +235,32 @@ impl RecordService {
         }
     }
 
-    pub async fn get_record(name: &str, record_type: &str) -> Result<Record, ApiError> {
-        let record_repository = get_record_repository();
-
+    pub async fn get_record(name: &str, record_type: &str) -> Result<Record, ServiceError> {
         // Validate record type
-        let record_type = RecordType::from_str(record_type)
-            .map_err(|_| ApiError::BadRequest(format!("Invalid record type: {}", record_type)))?;
+        let record_type = RecordType::from_str(record_type).map_err(|_| {
+            ServiceError::BadRequest(format!("Invalid record type: {}", record_type))
+        })?;
 
-        match record_repository
-            .get_by_name_and_type(name, &record_type)
-            .await
-        {
+        match RepositoryService::get_record_by_name_and_type(name, &record_type).await {
             Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(ApiError::NotFound(format!(
+            Ok(None) => Err(ServiceError::NotFound(format!(
                 "Record with name '{}' and type '{}' not found",
                 name, record_type
             ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ApiError::InternalServerError(
-                    "Failed to fetch record".to_string(),
-                ))
+                Err(ServiceError::Internal("Failed to fetch record".to_string()))
             }
         }
     }
 
     pub async fn create_record(
         create_record_request: &CreateRecordRequest,
-    ) -> Result<Record, ApiError> {
-        let zone_repository = get_zone_repository();
-        let record_repository = get_record_repository();
-
+    ) -> Result<Record, ServiceError> {
         // Validate record type
         let record_type =
             RecordType::from_str(&create_record_request.record_type).map_err(|_| {
-                ApiError::BadRequest(format!(
+                ServiceError::BadRequest(format!(
                     "Invalid record type: {}",
                     create_record_request.record_type
                 ))
@@ -195,7 +268,7 @@ impl RecordService {
 
         // CNAME validation for '@' name
         if record_type == RecordType::CNAME && create_record_request.name == "@" {
-            return Err(ApiError::BadRequest(
+            return Err(ServiceError::BadRequest(
                 "CNAME record cannot have '@' as name".to_string(),
             ));
         }
@@ -203,41 +276,40 @@ impl RecordService {
         // SOA validation
         if record_type == RecordType::SOA {
             log_error!("Cannot create SOA record manually");
-            return Err(ApiError::BadRequest(
+            return Err(ServiceError::BadRequest(
                 "Cannot create SOA record manually".to_string(),
             ));
         }
 
         // Check if zone exists
-        let zone = match zone_repository
-            .get_by_name(&create_record_request.zone_name)
-            .await
+        let zone = match RepositoryService::get_zone_by_name(&create_record_request.zone_name).await
         {
             Ok(Some(zone)) => zone,
             Ok(None) => {
-                return Err(ApiError::NotFound(format!(
+                return Err(ServiceError::NotFound(format!(
                     "Zone with name '{}' not found",
                     create_record_request.zone_name
                 )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ApiError::InternalServerError(
+                return Err(ServiceError::Internal(
                     "Failed to create record".to_string(),
                 ));
             }
         };
 
         // CNAME validation
-        let existing_records_in_zone = match record_repository.get_by_zone_id(zone.id).await {
-            Ok(records) => records,
-            Err(e) => {
-                log_error!("Failed to check existing records: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to create record".to_string(),
-                ));
-            }
-        };
+        let existing_records_in_zone =
+            match RepositoryService::get_records_by_zone_id(zone.id).await {
+                Ok(records) => records,
+                Err(e) => {
+                    log_error!("Failed to check existing records: {}", e);
+                    return Err(ServiceError::Internal(
+                        "Failed to create record".to_string(),
+                    ));
+                }
+            };
 
         let existing_records_with_name: Vec<_> = existing_records_in_zone
             .iter()
@@ -246,7 +318,7 @@ impl RecordService {
 
         if !existing_records_with_name.is_empty() {
             if record_type == RecordType::CNAME {
-                return Err(ApiError::BadRequest(format!(
+                return Err(ServiceError::BadRequest(format!(
                     "A record with name '{}' already exists in this zone, so CNAME cannot be used",
                     create_record_request.name
                 )));
@@ -255,7 +327,7 @@ impl RecordService {
                 .iter()
                 .any(|r| r.record_type == RecordType::CNAME)
             {
-                return Err(ApiError::BadRequest(format!(
+                return Err(ServiceError::BadRequest(format!(
                     "A CNAME record with name '{}' already exists in this zone",
                     create_record_request.name
                 )));
@@ -264,7 +336,7 @@ impl RecordService {
 
         if record_type == RecordType::NS {
             if !is_apex_name(&create_record_request.name, &zone.name) {
-                return Err(ApiError::BadRequest(
+                return Err(ServiceError::BadRequest(
                     "NS records must use apex owner name '@'".to_string(),
                 ));
             }
@@ -273,7 +345,7 @@ impl RecordService {
                 let ns_host_relative =
                     to_relative_domain(&to_fqdn(&create_record_request.value), &zone.name);
                 if !has_glue_records_for(&existing_records_in_zone, &ns_host_relative, None) {
-                    return Err(ApiError::BadRequest(format!(
+                    return Err(ServiceError::BadRequest(format!(
                         "In-bailiwick NS '{}' requires A/AAAA glue record '{}'",
                         create_record_request.value, ns_host_relative
                     )));
@@ -282,22 +354,21 @@ impl RecordService {
         }
 
         // Create record
-        let created_record = record_repository
-            .create(Record {
-                id: 0, // Will be set by the database
-                name: create_record_request.name.clone(),
-                record_type,
-                value: create_record_request.value.clone(),
-                ttl: create_record_request.ttl,
-                priority: create_record_request.priority,
-                zone_id: zone.id,
-                created_at: Utc::now(), // Will be set by the database
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create record: {}", e);
-                ApiError::InternalServerError("Failed to create record".to_string())
-            })?;
+        let created_record = RepositoryService::create_record(Record {
+            id: 0, // Will be set by the database
+            name: create_record_request.name.clone(),
+            record_type,
+            value: create_record_request.value.clone(),
+            ttl: create_record_request.ttl,
+            priority: create_record_request.priority,
+            zone_id: zone.id,
+            created_at: Utc::now(), // Will be set by the database
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to create record: {}", e);
+            ServiceError::Internal("Failed to create record".to_string())
+        })?;
 
         // Log record creation
         log_info!(
@@ -317,36 +388,33 @@ impl RecordService {
 
         // Increment zone serial so IXFR consumers can detect this change
         let new_serial = generate_serial(zone.serial);
-        zone_repository
-            .update(crate::database::model::zone::Zone {
-                serial: new_serial,
-                ..zone.clone()
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
-                ApiError::InternalServerError("Failed to update zone serial".to_string())
-            })?;
+        RepositoryService::update_zone(crate::database::model::zone::Zone {
+            serial: new_serial,
+            ..zone.clone()
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to update zone serial: {}", e);
+            ServiceError::Internal("Failed to update zone serial".to_string())
+        })?;
 
         // Record zone change for IXFR
-        let zone_change_repository = get_zone_change_repository();
-        zone_change_repository
-            .create(ZoneChange {
-                id: 0,
-                zone_id: zone.id,
-                serial: new_serial,
-                operation: "ADD".to_string(),
-                record_name: created_record.name.clone(),
-                record_type: create_record_request.record_type.clone(),
-                record_value: create_record_request.value.clone(),
-                record_ttl: create_record_request.ttl,
-                record_priority: create_record_request.priority,
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change: {}", e);
-                ApiError::InternalServerError("Failed to create zone change".to_string())
-            })?;
+        RepositoryService::create_zone_change(ZoneChange {
+            id: 0,
+            zone_id: zone.id,
+            serial: new_serial,
+            operation: "ADD".to_string(),
+            record_name: created_record.name.clone(),
+            record_type: create_record_request.record_type.clone(),
+            record_value: create_record_request.value.clone(),
+            record_ttl: create_record_request.ttl,
+            record_priority: create_record_request.priority,
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to create zone change: {}", e);
+            ServiceError::Internal("Failed to create zone change".to_string())
+        })?;
 
         save_zone_snapshot(&zone, new_serial).await?;
 
@@ -362,55 +430,44 @@ impl RecordService {
         name: &str,
         record_type_str: &str,
         update_record_request: &CreateRecordRequest,
-    ) -> Result<Record, ApiError> {
-        let zone_repository = get_zone_repository();
-        let record_repository = get_record_repository();
-
+    ) -> Result<Record, ServiceError> {
         // Validate old record type
         let old_record_type = RecordType::from_str(record_type_str).map_err(|_| {
-            ApiError::BadRequest(format!("Invalid record type: {}", record_type_str))
+            ServiceError::BadRequest(format!("Invalid record type: {}", record_type_str))
         })?;
 
         // Check if record exists
-        let existing_record = match record_repository
-            .get_by_name_and_type(name, &old_record_type)
-            .await
-        {
-            Ok(Some(record)) => record,
-            Ok(None) => {
-                return Err(ApiError::NotFound(format!(
-                    "Record with name '{}' and type '{}' not found",
-                    name, record_type_str
-                )));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to fetch record".to_string(),
-                ));
-            }
-        };
+        let existing_record =
+            match RepositoryService::get_record_by_name_and_type(name, &old_record_type).await {
+                Ok(Some(record)) => record,
+                Ok(None) => {
+                    return Err(ServiceError::NotFound(format!(
+                        "Record with name '{}' and type '{}' not found",
+                        name, record_type_str
+                    )));
+                }
+                Err(e) => {
+                    log_error!("Failed to fetch record: {}", e);
+                    return Err(ServiceError::Internal("Failed to fetch record".to_string()));
+                }
+            };
 
         let record_id = existing_record.id;
 
         // Load authoritative zone from the existing record to avoid cross-zone mismatches.
-        let zone = match zone_repository.get_by_id(existing_record.zone_id).await {
+        let zone = match RepositoryService::get_zone_by_id(existing_record.zone_id).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
-                return Err(ApiError::InternalServerError(
-                    "Failed to fetch zone".to_string(),
-                ));
+                return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to fetch zone".to_string(),
-                ));
+                return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
             }
         };
 
         if zone.name != update_record_request.zone_name {
-            return Err(ApiError::BadRequest(format!(
+            return Err(ServiceError::BadRequest(format!(
                 "Record belongs to zone '{}', but request zone is '{}'",
                 zone.name, update_record_request.zone_name
             )));
@@ -419,7 +476,7 @@ impl RecordService {
         // Validate record type
         let record_type =
             RecordType::from_str(&update_record_request.record_type).map_err(|_| {
-                ApiError::BadRequest(format!(
+                ServiceError::BadRequest(format!(
                     "Invalid record type: {}",
                     update_record_request.record_type
                 ))
@@ -427,7 +484,7 @@ impl RecordService {
 
         // CNAME validation for '@' name
         if record_type == RecordType::CNAME && update_record_request.name == "@" {
-            return Err(ApiError::BadRequest(
+            return Err(ServiceError::BadRequest(
                 "CNAME record cannot have '@' as name".to_string(),
             ));
         }
@@ -435,24 +492,22 @@ impl RecordService {
         // SOA validation
         if record_type == RecordType::SOA {
             log_error!("Cannot update to SOA record type");
-            return Err(ApiError::BadRequest(
+            return Err(ServiceError::BadRequest(
                 "Cannot update to SOA record type".to_string(),
             ));
         }
 
         // CNAME validation
-        let existing_records = match record_repository
-            .get_by_name(&update_record_request.name)
-            .await
-        {
-            Ok(records) => records,
-            Err(e) => {
-                log_error!("Failed to check existing record: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to update record".to_string(),
-                ));
-            }
-        };
+        let existing_records =
+            match RepositoryService::get_records_by_name(&update_record_request.name).await {
+                Ok(records) => records,
+                Err(e) => {
+                    log_error!("Failed to check existing record: {}", e);
+                    return Err(ServiceError::Internal(
+                        "Failed to update record".to_string(),
+                    ));
+                }
+            };
 
         let other_records_in_zone: Vec<_> = existing_records
             .into_iter()
@@ -461,7 +516,7 @@ impl RecordService {
 
         if !other_records_in_zone.is_empty() {
             if record_type == RecordType::CNAME {
-                return Err(ApiError::BadRequest(format!(
+                return Err(ServiceError::BadRequest(format!(
                     "A record with name '{}' already exists in this zone, so CNAME cannot be used",
                     update_record_request.name
                 )));
@@ -470,18 +525,18 @@ impl RecordService {
                 .iter()
                 .any(|r| r.record_type == RecordType::CNAME)
             {
-                return Err(ApiError::BadRequest(format!(
+                return Err(ServiceError::BadRequest(format!(
                     "A CNAME record with name '{}' already exists in this zone",
                     update_record_request.name
                 )));
             }
         }
 
-        let zone_records = match record_repository.get_by_zone_id(zone.id).await {
+        let zone_records = match RepositoryService::get_records_by_zone_id(zone.id).await {
             Ok(records) => records,
             Err(e) => {
                 log_error!("Failed to load zone records: {}", e);
-                return Err(ApiError::InternalServerError(
+                return Err(ServiceError::Internal(
                     "Failed to update record".to_string(),
                 ));
             }
@@ -497,7 +552,7 @@ impl RecordService {
                     .eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns));
 
             if !still_primary {
-                return Err(ApiError::BadRequest(
+                return Err(ServiceError::BadRequest(
                     "Cannot modify the NS record referenced by zone primary_ns".to_string(),
                 ));
             }
@@ -505,7 +560,7 @@ impl RecordService {
 
         if record_type == RecordType::NS {
             if !is_apex_name(&update_record_request.name, &zone.name) {
-                return Err(ApiError::BadRequest(
+                return Err(ServiceError::BadRequest(
                     "NS records must use apex owner name '@'".to_string(),
                 ));
             }
@@ -514,7 +569,7 @@ impl RecordService {
                 let ns_host_relative =
                     to_relative_domain(&to_fqdn(&update_record_request.value), &zone.name);
                 if !has_glue_records_for(&zone_records, &ns_host_relative, Some(record_id)) {
-                    return Err(ApiError::BadRequest(format!(
+                    return Err(ServiceError::BadRequest(format!(
                         "In-bailiwick NS '{}' requires A/AAAA glue record '{}'",
                         update_record_request.value, ns_host_relative
                     )));
@@ -523,22 +578,21 @@ impl RecordService {
         }
 
         // Update record
-        let updated_record = record_repository
-            .update(Record {
-                id: record_id,
-                name: update_record_request.name.clone(),
-                record_type,
-                value: update_record_request.value.clone(),
-                ttl: update_record_request.ttl,
-                priority: update_record_request.priority,
-                zone_id: zone.id,
-                created_at: Utc::now(), // Will be set by the database
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update record: {}", e);
-                ApiError::InternalServerError("Failed to update record".to_string())
-            })?;
+        let updated_record = RepositoryService::update_record(Record {
+            id: record_id,
+            name: update_record_request.name.clone(),
+            record_type,
+            value: update_record_request.value.clone(),
+            ttl: update_record_request.ttl,
+            priority: update_record_request.priority,
+            zone_id: zone.id,
+            created_at: Utc::now(), // Will be set by the database
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to update record: {}", e);
+            ServiceError::Internal("Failed to update record".to_string())
+        })?;
 
         // Log record update
         log_info!(
@@ -559,57 +613,53 @@ impl RecordService {
 
         // Increment zone serial so IXFR consumers can detect this change
         let new_serial = generate_serial(zone.serial);
-        zone_repository
-            .update(crate::database::model::zone::Zone {
-                serial: new_serial,
-                ..zone.clone()
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
-                ApiError::InternalServerError("Failed to update zone serial".to_string())
-            })?;
+        RepositoryService::update_zone(crate::database::model::zone::Zone {
+            serial: new_serial,
+            ..zone.clone()
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to update zone serial: {}", e);
+            ServiceError::Internal("Failed to update zone serial".to_string())
+        })?;
 
         // Record zone changes for IXFR
-        let zone_change_repository = get_zone_change_repository();
 
         // Delete old record
-        zone_change_repository
-            .create(ZoneChange {
-                id: 0,
-                zone_id: zone.id,
-                serial: new_serial,
-                operation: "DEL".to_string(),
-                record_name: existing_record.name.clone(),
-                record_type: existing_record.record_type.to_string(),
-                record_value: existing_record.value.clone(),
-                record_ttl: existing_record.ttl,
-                record_priority: existing_record.priority,
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change (DEL): {}", e);
-                ApiError::InternalServerError("Failed to create zone change".to_string())
-            })?;
+        RepositoryService::create_zone_change(ZoneChange {
+            id: 0,
+            zone_id: zone.id,
+            serial: new_serial,
+            operation: "DEL".to_string(),
+            record_name: existing_record.name.clone(),
+            record_type: existing_record.record_type.to_string(),
+            record_value: existing_record.value.clone(),
+            record_ttl: existing_record.ttl,
+            record_priority: existing_record.priority,
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to create zone change (DEL): {}", e);
+            ServiceError::Internal("Failed to create zone change".to_string())
+        })?;
 
         // Add new record
-        zone_change_repository
-            .create(ZoneChange {
-                id: 0,
-                zone_id: zone.id,
-                serial: new_serial,
-                operation: "ADD".to_string(),
-                record_name: updated_record.name.clone(),
-                record_type: update_record_request.record_type.clone(),
-                record_value: update_record_request.value.clone(),
-                record_ttl: update_record_request.ttl,
-                record_priority: update_record_request.priority,
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change (ADD): {}", e);
-                ApiError::InternalServerError("Failed to create zone change".to_string())
-            })?;
+        RepositoryService::create_zone_change(ZoneChange {
+            id: 0,
+            zone_id: zone.id,
+            serial: new_serial,
+            operation: "ADD".to_string(),
+            record_name: updated_record.name.clone(),
+            record_type: update_record_request.record_type.clone(),
+            record_value: update_record_request.value.clone(),
+            record_ttl: update_record_request.ttl,
+            record_priority: update_record_request.priority,
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to create zone change (ADD): {}", e);
+            ServiceError::Internal("Failed to create zone change".to_string())
+        })?;
 
         save_zone_snapshot(&zone, new_serial).await?;
 
@@ -621,37 +671,30 @@ impl RecordService {
         Ok(updated_record)
     }
 
-    pub async fn delete_record(name: &str, record_type_str: &str) -> Result<(), ApiError> {
-        let zone_repository = get_zone_repository();
-        let record_repository = get_record_repository();
-
+    pub async fn delete_record(name: &str, record_type_str: &str) -> Result<(), ServiceError> {
         // Valid record type
         let record_type = RecordType::from_str(record_type_str).map_err(|_| {
-            ApiError::BadRequest(format!("Invalid record type: {}", record_type_str))
+            ServiceError::BadRequest(format!("Invalid record type: {}", record_type_str))
         })?;
 
         // Check if record exists
-        let existing_record = match record_repository
-            .get_by_name_and_type(name, &record_type)
-            .await
-        {
-            Ok(Some(record)) => record,
-            Ok(None) => {
-                return Err(ApiError::NotFound(format!(
-                    "Record with name '{}' and type '{}' not found",
-                    name, record_type_str
-                )));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to fetch record".to_string(),
-                ));
-            }
-        };
+        let existing_record =
+            match RepositoryService::get_record_by_name_and_type(name, &record_type).await {
+                Ok(Some(record)) => record,
+                Ok(None) => {
+                    return Err(ServiceError::NotFound(format!(
+                        "Record with name '{}' and type '{}' not found",
+                        name, record_type_str
+                    )));
+                }
+                Err(e) => {
+                    log_error!("Failed to fetch record: {}", e);
+                    return Err(ServiceError::Internal("Failed to fetch record".to_string()));
+                }
+            };
 
         // Get zone name for history
-        let zone = match zone_repository.get_by_id(existing_record.zone_id).await {
+        let zone = match RepositoryService::get_zone_by_id(existing_record.zone_id).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
                 log_error!(
@@ -659,15 +702,13 @@ impl RecordService {
                     existing_record.zone_id,
                     name
                 );
-                return Err(ApiError::InternalServerError(
+                return Err(ServiceError::Internal(
                     "Failed to fetch zone for record".to_string(),
                 ));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ApiError::InternalServerError(
-                    "Failed to fetch zone".to_string(),
-                ));
+                return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
             }
         };
 
@@ -678,14 +719,16 @@ impl RecordService {
         // Prevent deletion of SOA records
         if existing_record.record_type == RecordType::SOA {
             log_error!("Cannot delete SOA record");
-            return Err(ApiError::BadRequest("Cannot delete SOA record".to_string()));
+            return Err(ServiceError::BadRequest(
+                "Cannot delete SOA record".to_string(),
+            ));
         }
 
         if existing_record.record_type == RecordType::NS
             && is_apex_name(&existing_record.name, &zone.name)
             && to_fqdn(&existing_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns))
         {
-            return Err(ApiError::BadRequest(
+            return Err(ServiceError::BadRequest(
                 "Cannot delete NS record referenced by zone primary_ns".to_string(),
             ));
         }
@@ -693,11 +736,11 @@ impl RecordService {
         if existing_record.record_type == RecordType::A
             || existing_record.record_type == RecordType::AAAA
         {
-            let zone_records = match record_repository.get_by_zone_id(zone.id).await {
+            let zone_records = match RepositoryService::get_records_by_zone_id(zone.id).await {
                 Ok(records) => records,
                 Err(e) => {
                     log_error!("Failed to load zone records: {}", e);
-                    return Err(ApiError::InternalServerError(
+                    return Err(ServiceError::Internal(
                         "Failed to delete record".to_string(),
                     ));
                 }
@@ -718,7 +761,7 @@ impl RecordService {
                         Some(existing_record.id),
                     )
                 {
-                    return Err(ApiError::BadRequest(format!(
+                    return Err(ServiceError::BadRequest(format!(
                         "Cannot remove last glue record '{}' required by NS '{}'",
                         required_host, ns.value
                     )));
@@ -727,10 +770,12 @@ impl RecordService {
         }
 
         // Delete record
-        record_repository.delete(record_id).await.map_err(|e| {
-            log_error!("Failed to delete record: {}", e);
-            ApiError::InternalServerError("Failed to delete record".to_string())
-        })?;
+        RepositoryService::delete_record(record_id)
+            .await
+            .map_err(|e| {
+                log_error!("Failed to delete record: {}", e);
+                ServiceError::Internal("Failed to delete record".to_string())
+            })?;
 
         // Log record deletion
         log_info!(
@@ -744,36 +789,33 @@ impl RecordService {
 
         // Increment zone serial so IXFR consumers can detect this change
         let new_serial = generate_serial(zone.serial);
-        zone_repository
-            .update(crate::database::model::zone::Zone {
-                serial: new_serial,
-                ..zone.clone()
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
-                ApiError::InternalServerError("Failed to update zone serial".to_string())
-            })?;
+        RepositoryService::update_zone(crate::database::model::zone::Zone {
+            serial: new_serial,
+            ..zone.clone()
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to update zone serial: {}", e);
+            ServiceError::Internal("Failed to update zone serial".to_string())
+        })?;
 
         // Record zone change for IXFR
-        let zone_change_repository = get_zone_change_repository();
-        zone_change_repository
-            .create(ZoneChange {
-                id: 0,
-                zone_id: zone.id,
-                serial: new_serial,
-                operation: "DEL".to_string(),
-                record_name: existing_record.name.clone(),
-                record_type: existing_record.record_type.to_string(),
-                record_value: existing_record.value.clone(),
-                record_ttl: existing_record.ttl,
-                record_priority: existing_record.priority,
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change: {}", e);
-                ApiError::InternalServerError("Failed to create zone change".to_string())
-            })?;
+        RepositoryService::create_zone_change(ZoneChange {
+            id: 0,
+            zone_id: zone.id,
+            serial: new_serial,
+            operation: "DEL".to_string(),
+            record_name: existing_record.name.clone(),
+            record_type: existing_record.record_type.to_string(),
+            record_value: existing_record.value.clone(),
+            record_ttl: existing_record.ttl,
+            record_priority: existing_record.priority,
+        })
+        .await
+        .map_err(|e| {
+            log_error!("Failed to create zone change: {}", e);
+            ServiceError::Internal("Failed to create zone change".to_string())
+        })?;
 
         save_zone_snapshot(&zone, new_serial).await?;
 

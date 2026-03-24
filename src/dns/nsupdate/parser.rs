@@ -20,6 +20,7 @@ pub struct PrerequisiteRecord {
     pub class: u16,
     pub ttl: u32,
     pub rdata: Vec<u8>,
+    pub rdata_start: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +30,7 @@ pub struct UpdateRecord {
     pub class: u16,
     pub ttl: u32,
     pub rdata: Vec<u8>,
+    pub rdata_start: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +117,7 @@ pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
             class: rr.class,
             ttl: rr.ttl,
             rdata: rr.rdata,
+            rdata_start: rr.rdata_start,
         });
         pos = next;
     }
@@ -174,6 +177,7 @@ fn parse_rr(data: &[u8], pos: usize) -> Result<(UpdateRecord, usize), ParseError
             class,
             ttl,
             rdata: data[rdata_start..rdata_end].to_vec(),
+            rdata_start,
         },
         rdata_end,
     ))
@@ -340,9 +344,17 @@ fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError>
     Ok((name, consumed))
 }
 
-pub fn decode_name_from_rdata(rdata: &[u8]) -> Result<String, ParseError> {
-    let (name, consumed) = decode_name(rdata, 0)?;
-    if consumed != rdata.len() {
+pub fn decode_name_from_rdata(
+    message: &[u8],
+    rdata_start: usize,
+    rdata_len: usize,
+) -> Result<String, ParseError> {
+    if rdata_start + rdata_len > message.len() {
+        return Err(ParseError::InvalidName);
+    }
+
+    let (name, consumed) = decode_name(message, rdata_start)?;
+    if consumed != rdata_len {
         return Err(ParseError::InvalidName);
     }
     Ok(name)
@@ -367,4 +379,34 @@ pub fn decode_txt_from_rdata(rdata: &[u8]) -> Result<String, ParseError> {
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ParseError, decode_name_from_rdata};
+
+    #[test]
+    fn decode_name_from_rdata_handles_compression_pointer() {
+        let mut message = Vec::new();
+        message.extend_from_slice(&[
+            3, b'w', b'w', b'w', 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o',
+            b'm', 0,
+        ]);
+
+        let target_offset = 5usize;
+        let rdata_start = message.len();
+        let ptr_hi = 0xC0 | ((target_offset >> 8) as u8 & 0x3F);
+        let ptr_lo = (target_offset & 0xFF) as u8;
+        message.extend_from_slice(&[ptr_hi, ptr_lo]);
+
+        let decoded = decode_name_from_rdata(&message, rdata_start, 2).unwrap();
+        assert_eq!(decoded, "example.com.");
+    }
+
+    #[test]
+    fn decode_name_from_rdata_rejects_trailing_bytes() {
+        let message = [1, b'a', 0, 0];
+        let err = decode_name_from_rdata(&message, 0, message.len()).unwrap_err();
+        assert!(matches!(err, ParseError::InvalidName));
+    }
 }

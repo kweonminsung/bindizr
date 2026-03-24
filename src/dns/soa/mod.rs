@@ -1,6 +1,6 @@
-use crate::database::get_zone_repository;
 use crate::dns::acl;
 use crate::dns::xfr::{catalog, error::XfrError, wire};
+use crate::service::repository::RepositoryService;
 use crate::{log_info, log_warn};
 use domain::base::iana::Rtype;
 use std::net::{IpAddr, SocketAddr};
@@ -63,9 +63,7 @@ async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<
         return Ok(builder.build());
     }
 
-    let zone_repo = get_zone_repository();
-    let zone = zone_repo
-        .get_by_name(zone_name_str)
+    let zone = RepositoryService::get_zone_by_name(zone_name_str)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;

@@ -4,6 +4,7 @@ mod config;
 mod database;
 mod dns;
 mod logger;
+mod service;
 mod socket;
 
 #[tokio::main]

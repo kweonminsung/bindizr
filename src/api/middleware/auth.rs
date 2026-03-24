@@ -1,5 +1,5 @@
-use crate::api::service::auth::AuthService;
 use crate::log_debug;
+use crate::service::auth::AuthService;
 use axum::Json;
 use axum::body::Body;
 use axum::http::header::AUTHORIZATION;
@@ -11,7 +11,6 @@ use axum::{
 use serde_json::json;
 
 pub async fn auth_middleware(mut req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
-    // Extract Authorization header
     let auth_header = match req.headers().get(AUTHORIZATION) {
         Some(header) => header,
         None => {
@@ -19,7 +18,6 @@ pub async fn auth_middleware(mut req: Request<Body>, next: Next) -> Result<Respo
         }
     };
 
-    // Extract Bearer token
     let auth_str = match auth_header.to_str() {
         Ok(s) => s,
         Err(_) => return Ok(unauthorized("Invalid authorization header")),
@@ -31,7 +29,6 @@ pub async fn auth_middleware(mut req: Request<Body>, next: Next) -> Result<Respo
 
     let token = &auth_str[7..];
 
-    // Validate token
     match AuthService::validate_token(token).await {
         Ok(api_token) => {
             req.extensions_mut().insert(api_token);

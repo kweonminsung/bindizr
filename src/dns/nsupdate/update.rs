@@ -1,16 +1,14 @@
 use super::parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata};
 use crate::{
-    database::{
-        get_record_repository, get_zone_change_repository, get_zone_repository,
-        get_zone_snapshot_repository,
-        model::{
-            record::{Record, RecordType},
-            zone::Zone,
-            zone_change::ZoneChange,
-            zone_snapshot::ZoneSnapshot,
-        },
+    database::model::{
+        record::{Record, RecordType},
+        zone::Zone,
+        zone_change::ZoneChange,
+        zone_snapshot::ZoneSnapshot,
     },
     dns, log_error, log_info,
+    service::record::{find_identical_record_in_zone, validate_nsupdate_add_constraints},
+    service::repository::RepositoryService,
 };
 use chrono::Utc;
 use std::net::SocketAddr;
@@ -57,19 +55,17 @@ pub async fn apply_update(
         ));
     }
 
-    let zone_repo = get_zone_repository();
-    let zone = zone_repo
-        .get_by_name(zone_name)
+    let zone = RepositoryService::get_zone_by_name(zone_name)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
         .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
 
-    super::prerequisite::evaluate_prerequisites(&zone, &request.prerequisites).await?;
+    super::prerequisite::evaluate_prerequisites(&zone, &request.prerequisites, query_data).await?;
 
     let mut changed = false;
 
     for update in &request.updates {
-        let this_changed = apply_single_update(&zone, update).await?;
+        let this_changed = apply_single_update(&zone, update, query_data).await?;
         changed = changed || this_changed;
     }
 
@@ -91,13 +87,17 @@ pub async fn apply_update(
     Ok(UpdateResult::Applied { changed })
 }
 
-async fn apply_single_update(zone: &Zone, update: &UpdateRecord) -> Result<bool, UpdateError> {
+async fn apply_single_update(
+    zone: &Zone,
+    update: &UpdateRecord,
+    query_data: &[u8],
+) -> Result<bool, UpdateError> {
     let owner_name = normalize_owner_name(&update.name, &zone.name)?;
 
     match update.class {
-        CLASS_IN => add_record(zone, &owner_name, update).await,
-        CLASS_ANY => delete_records(zone, &owner_name, update, true).await,
-        CLASS_NONE => delete_records(zone, &owner_name, update, false).await,
+        CLASS_IN => add_record(zone, &owner_name, update, query_data).await,
+        CLASS_ANY => delete_records(zone, &owner_name, update, true, query_data).await,
+        CLASS_NONE => delete_records(zone, &owner_name, update, false, query_data).await,
         class => Err(UpdateError::Refused(format!(
             "unsupported update class: {}",
             class
@@ -109,25 +109,36 @@ async fn add_record(
     zone: &Zone,
     owner_name: &str,
     update: &UpdateRecord,
+    query_data: &[u8],
 ) -> Result<bool, UpdateError> {
-    let (record_type, value, priority) = rr_to_record_value(update)?;
+    let (record_type, value, priority) = rr_to_record_value(update, query_data)?;
 
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
 
-    let record_repo = get_record_repository();
-    let created = record_repo
-        .create(Record {
-            id: 0,
-            name: relative_name.clone(),
-            record_type: record_type.clone(),
-            value: value.clone(),
-            ttl: Some(update.ttl as i32),
-            priority,
-            zone_id: zone.id,
-            created_at: Utc::now(),
-        })
+    validate_nsupdate_add_constraints(zone, &relative_name, &record_type, &value)
         .await
-        .map_err(|e| UpdateError::Internal(format!("failed to create record: {}", e)))?;
+        .map_err(|e| UpdateError::Refused(e.to_string()))?;
+
+    if find_identical_record_in_zone(zone.id, &relative_name, &record_type, &value, priority)
+        .await
+        .map_err(|e| UpdateError::Internal(e.to_string()))?
+        .is_some()
+    {
+        return Ok(false);
+    }
+
+    let created = RepositoryService::create_record(Record {
+        id: 0,
+        name: relative_name.clone(),
+        record_type: record_type.clone(),
+        value: value.clone(),
+        ttl: Some(update.ttl as i32),
+        priority,
+        zone_id: zone.id,
+        created_at: Utc::now(),
+    })
+    .await
+    .map_err(|e| UpdateError::Internal(format!("failed to create record: {}", e)))?;
 
     log_zone_change(
         zone.id,
@@ -148,12 +159,10 @@ async fn delete_records(
     owner_name: &str,
     update: &UpdateRecord,
     is_rrset_delete: bool,
+    query_data: &[u8],
 ) -> Result<bool, UpdateError> {
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
-    let record_repo = get_record_repository();
-
-    let zone_records = record_repo
-        .get_by_zone_id(zone.id)
+    let zone_records = RepositoryService::get_records_by_zone_id(zone.id)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
 
@@ -166,7 +175,7 @@ async fn delete_records(
     let (target_value, target_priority) = if is_rrset_delete || update.rdata.is_empty() {
         (None, None)
     } else {
-        let (_, value, priority) = rr_to_record_value(update)?;
+        let (_, value, priority) = rr_to_record_value(update, query_data)?;
         (Some(value), priority)
     };
 
@@ -206,8 +215,7 @@ async fn delete_records(
     }
 
     for record in &matched {
-        record_repo
-            .delete(record.id)
+        RepositoryService::delete_record(record.id)
             .await
             .map_err(|e| UpdateError::Internal(format!("failed to delete record: {}", e)))?;
 
@@ -228,6 +236,7 @@ async fn delete_records(
 
 pub(super) fn rr_to_record_value(
     update: &UpdateRecord,
+    message: &[u8],
 ) -> Result<(RecordType, String, Option<i32>), UpdateError> {
     match update.rr_type {
         TYPE_A => {
@@ -256,19 +265,19 @@ pub(super) fn rr_to_record_value(
         }
         TYPE_CNAME => Ok((
             RecordType::CNAME,
-            decode_name_from_rdata(&update.rdata)
+            decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
                 .map_err(|e| UpdateError::Refused(format!("invalid CNAME rdata: {}", e)))?,
             None,
         )),
         TYPE_NS => Ok((
             RecordType::NS,
-            decode_name_from_rdata(&update.rdata)
+            decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
                 .map_err(|e| UpdateError::Refused(format!("invalid NS rdata: {}", e)))?,
             None,
         )),
         TYPE_PTR => Ok((
             RecordType::PTR,
-            decode_name_from_rdata(&update.rdata)
+            decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
                 .map_err(|e| UpdateError::Refused(format!("invalid PTR rdata: {}", e)))?,
             None,
         )),
@@ -284,8 +293,9 @@ pub(super) fn rr_to_record_value(
             }
 
             let priority = i32::from(u16::from_be_bytes([update.rdata[0], update.rdata[1]]));
-            let host = decode_name_from_rdata(&update.rdata[2..])
-                .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
+            let host =
+                decode_name_from_rdata(message, update.rdata_start + 2, update.rdata.len() - 2)
+                    .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
             Ok((RecordType::MX, host, Some(priority)))
         }
         _ => Err(UpdateError::Refused(format!(
@@ -373,16 +383,14 @@ fn trim_dot(name: &str) -> &str {
 }
 
 async fn bump_zone_serial(zone: &Zone) -> Result<i32, UpdateError> {
-    let zone_repo = get_zone_repository();
     let new_serial = generate_serial(zone.serial);
 
-    zone_repo
-        .update(Zone {
-            serial: new_serial,
-            ..zone.clone()
-        })
-        .await
-        .map_err(|e| UpdateError::Internal(format!("failed to update zone serial: {}", e)))?;
+    RepositoryService::update_zone(Zone {
+        serial: new_serial,
+        ..zone.clone()
+    })
+    .await
+    .map_err(|e| UpdateError::Internal(format!("failed to update zone serial: {}", e)))?;
 
     Ok(new_serial)
 }
@@ -400,24 +408,21 @@ fn generate_serial(current_serial: i32) -> i32 {
 }
 
 async fn save_zone_snapshot(zone: &Zone, serial: i32) -> Result<(), UpdateError> {
-    let zone_snapshot_repository = get_zone_snapshot_repository();
-
-    zone_snapshot_repository
-        .upsert(ZoneSnapshot {
-            id: 0,
-            zone_id: zone.id,
-            serial,
-            primary_ns: zone.primary_ns.clone(),
-            admin_email: zone.admin_email.replace('@', "."),
-            ttl: zone.ttl,
-            refresh: zone.refresh,
-            retry: zone.retry,
-            expire: zone.expire,
-            minimum_ttl: zone.minimum_ttl,
-            created_at: Utc::now(),
-        })
-        .await
-        .map_err(|e| UpdateError::Internal(format!("failed to save zone snapshot: {}", e)))?;
+    RepositoryService::upsert_zone_snapshot(ZoneSnapshot {
+        id: 0,
+        zone_id: zone.id,
+        serial,
+        primary_ns: zone.primary_ns.clone(),
+        admin_email: zone.admin_email.replace('@', "."),
+        ttl: zone.ttl,
+        refresh: zone.refresh,
+        retry: zone.retry,
+        expire: zone.expire,
+        minimum_ttl: zone.minimum_ttl,
+        created_at: Utc::now(),
+    })
+    .await
+    .map_err(|e| UpdateError::Internal(format!("failed to save zone snapshot: {}", e)))?;
 
     Ok(())
 }
@@ -431,30 +436,26 @@ async fn log_zone_change(
     ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Result<(), UpdateError> {
-    let zone_repo = get_zone_repository();
-    let zone = zone_repo
-        .get_by_id(zone_id)
+    let zone = RepositoryService::get_zone_by_id(zone_id)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load zone for change: {}", e)))?
         .ok_or_else(|| UpdateError::Internal(format!("zone {} not found", zone_id)))?;
 
     let serial = generate_serial(zone.serial);
 
-    let change_repo = get_zone_change_repository();
-    change_repo
-        .create(ZoneChange {
-            id: 0,
-            zone_id,
-            serial,
-            operation: operation.to_string(),
-            record_name: name.to_string(),
-            record_type: record_type.to_string(),
-            record_value: value.to_string(),
-            record_ttl: ttl,
-            record_priority: priority,
-        })
-        .await
-        .map_err(|e| UpdateError::Internal(format!("failed to log zone change: {}", e)))?;
+    RepositoryService::create_zone_change(ZoneChange {
+        id: 0,
+        zone_id,
+        serial,
+        operation: operation.to_string(),
+        record_name: name.to_string(),
+        record_type: record_type.to_string(),
+        record_value: value.to_string(),
+        record_ttl: ttl,
+        record_priority: priority,
+    })
+    .await
+    .map_err(|e| UpdateError::Internal(format!("failed to log zone change: {}", e)))?;
 
     Ok(())
 }

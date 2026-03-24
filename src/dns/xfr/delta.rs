@@ -1,5 +1,5 @@
 use super::error::XfrError;
-use crate::database::{get_zone_change_repository, get_zone_snapshot_repository};
+use crate::service::repository::RepositoryService;
 
 #[derive(Debug, Clone)]
 pub struct ZoneChange {
@@ -30,12 +30,13 @@ pub async fn get_zone_changes(
     from_serial: u32,
     to_serial: u32,
 ) -> Result<Vec<ZoneChange>, XfrError> {
-    let repo = get_zone_change_repository();
-
-    let changes = repo
-        .get_changes_between_serials(zone_id, from_serial as i32, to_serial as i32)
-        .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
+    let changes = RepositoryService::get_zone_changes_between_serials(
+        zone_id,
+        from_serial as i32,
+        to_serial as i32,
+    )
+    .await
+    .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
 
     // Convert database model to XFR ZoneChange
     let xfr_changes = changes
@@ -58,10 +59,7 @@ pub async fn get_zone_snapshot(
     zone_id: i32,
     serial: u32,
 ) -> Result<Option<ZoneSnapshot>, XfrError> {
-    let repo = get_zone_snapshot_repository();
-
-    let snapshot = repo
-        .get_by_zone_and_serial(zone_id, serial as i32)
+    let snapshot = RepositoryService::get_zone_snapshot_by_serial(zone_id, serial as i32)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
 

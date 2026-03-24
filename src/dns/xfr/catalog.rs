@@ -1,8 +1,5 @@
 use super::{error::XfrError, wire};
-use crate::{
-    database::{get_zone_repository, model::zone::Zone},
-    log_info,
-};
+use crate::{database::model::zone::Zone, log_info, service::repository::RepositoryService};
 use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;
@@ -13,9 +10,7 @@ pub const CATALOG_ZONE_NAME: &str = "catalog.bind";
 pub async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
     log_info!("Generating catalog zone: {}", CATALOG_ZONE_NAME);
 
-    let zone_repo = get_zone_repository();
-    let all_zones = zone_repo
-        .get_all()
+    let all_zones = RepositoryService::get_all_zones()
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
 

@@ -1,8 +1,9 @@
 use crate::api::{
-    controller::middleware::body_parser::JsonBody,
     dto::{CreateRecordRequest, GetRecordResponse},
-    service::record::RecordService,
+    error::ApiError,
+    middleware::body_parser::JsonBody,
 };
+use crate::service::record::RecordService;
 use axum::{
     Json, Router,
     extract::{Path, Query},
@@ -13,9 +14,9 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-pub struct RecordController;
+pub struct RecordApi;
 
-impl RecordController {
+impl RecordApi {
     pub async fn routes() -> Router {
         Router::new()
             .route("/records", routing::get(Self::get_records))
@@ -39,7 +40,7 @@ impl RecordController {
 
         let raw_records = match RecordService::get_records(zone_name).await {
             Ok(records) => records,
-            Err(err) => return err.into_response(),
+            Err(err) => return ApiError::from(err).into_response(),
         };
 
         let records = raw_records
@@ -57,7 +58,7 @@ impl RecordController {
 
         let raw_record = match RecordService::get_record(&name, &record_type).await {
             Ok(record) => record,
-            Err(err) => return err.into_response(),
+            Err(err) => return ApiError::from(err).into_response(),
         };
 
         let record = GetRecordResponse::from_record(&raw_record);
@@ -69,7 +70,7 @@ impl RecordController {
     async fn create_record(JsonBody(body): JsonBody<CreateRecordRequest>) -> impl IntoResponse {
         let raw_record = match RecordService::create_record(&body).await {
             Ok(record) => record,
-            Err(err) => return err.into_response(),
+            Err(err) => return ApiError::from(err).into_response(),
         };
 
         let record = GetRecordResponse::from_record(&raw_record);
@@ -87,7 +88,7 @@ impl RecordController {
 
         let raw_record = match RecordService::update_record(&name, &record_type, &body).await {
             Ok(record) => record,
-            Err(err) => return err.into_response(),
+            Err(err) => return ApiError::from(err).into_response(),
         };
 
         let record = GetRecordResponse::from_record(&raw_record);
@@ -105,7 +106,7 @@ impl RecordController {
                 let json_body = json!({ "message": "Record deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()
             }
-            Err(err) => err.into_response(),
+            Err(err) => ApiError::from(err).into_response(),
         }
     }
 }

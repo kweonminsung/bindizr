@@ -1,8 +1,9 @@
 use crate::api::{
-    controller::middleware::body_parser::JsonBody,
     dto::{CreateZoneRequest, GetRecordResponse, GetZoneResponse},
-    service::{record::RecordService, zone::ZoneService},
+    error::ApiError,
+    middleware::body_parser::JsonBody,
 };
+use crate::service::{record::RecordService, zone::ZoneService};
 use axum::{
     Json, Router,
     extract::{Path, Query},
@@ -13,9 +14,9 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-pub struct ZoneController;
+pub struct ZoneApi;
 
-impl ZoneController {
+impl ZoneApi {
     pub async fn routes() -> Router {
         Router::new()
             .route("/zones", routing::get(Self::get_zones))
@@ -35,7 +36,7 @@ impl ZoneController {
                 let json_body = json!({ "zones": zones });
                 (StatusCode::OK, Json(json_body)).into_response()
             }
-            Err(err) => err.into_response(),
+            Err(err) => ApiError::from(err).into_response(),
         }
     }
 
@@ -48,13 +49,13 @@ impl ZoneController {
 
         let raw_zone = match ZoneService::get_zone(&zone_name).await {
             Ok(zone) => zone,
-            Err(err) => return err.into_response(),
+            Err(err) => return ApiError::from(err).into_response(),
         };
 
         let raw_records = match records_query {
             Some(true) => match RecordService::get_records(Some(raw_zone.name.clone())).await {
                 Ok(records) => records,
-                Err(err) => return err.into_response(),
+                Err(err) => return ApiError::from(err).into_response(),
             },
             _ => vec![],
         };
@@ -75,7 +76,7 @@ impl ZoneController {
                 let json_body = json!({ "zone": zone });
                 (StatusCode::CREATED, Json(json_body)).into_response()
             }
-            Err(err) => err.into_response(),
+            Err(err) => ApiError::from(err).into_response(),
         }
     }
 
@@ -91,7 +92,7 @@ impl ZoneController {
                 let json_body = json!({ "zone": zone });
                 (StatusCode::OK, Json(json_body)).into_response()
             }
-            Err(err) => err.into_response(),
+            Err(err) => ApiError::from(err).into_response(),
         }
     }
 
@@ -103,7 +104,7 @@ impl ZoneController {
                 let json_body = json!({ "message": "Zone deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()
             }
-            Err(err) => err.into_response(),
+            Err(err) => ApiError::from(err).into_response(),
         }
     }
 }

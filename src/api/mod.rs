@@ -1,11 +1,13 @@
-pub mod controller;
 pub mod dto;
 pub mod error;
-pub mod service;
+pub mod middleware;
+pub mod record;
+pub mod router;
 pub mod validation;
+pub mod zone;
 
 use crate::{config, log_error, log_info};
-use controller::ApiController;
+use router::ApiRouter;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
@@ -31,7 +33,7 @@ pub async fn initialize() -> Result<(), String> {
 
     // Spawn API server in background
     tokio::spawn(async move {
-        if let Err(e) = axum::serve(listener, ApiController::routes().await).await {
+        if let Err(e) = axum::serve(listener, ApiRouter::routes().await).await {
             log_error!("API server error: {:?}", e);
         }
     });

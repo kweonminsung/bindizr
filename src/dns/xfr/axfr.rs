@@ -1,8 +1,5 @@
 use super::{catalog, error::XfrError, wire};
-use crate::{
-    database::{get_record_repository, get_zone_repository},
-    log_info,
-};
+use crate::{log_info, service::repository::RepositoryService};
 use domain::base::{Name, iana::Rtype};
 use std::net::IpAddr;
 use tokio::net::TcpStream;
@@ -46,16 +43,12 @@ pub async fn handle_axfr_with_qtype(
         .await;
     }
 
-    let zone_repo = get_zone_repository();
-    let zone = zone_repo
-        .get_by_name(zone_name_str)
+    let zone = RepositoryService::get_zone_by_name(zone_name_str)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
-    let record_repo = get_record_repository();
-    let records = record_repo
-        .get_by_zone_id(zone.id)
+    let records = RepositoryService::get_records_by_zone_id(zone.id)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
 
