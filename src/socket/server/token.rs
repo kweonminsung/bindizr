@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use rand::{Rng, distr::Alphanumeric};
+use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 use crate::{
