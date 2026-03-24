@@ -11,7 +11,7 @@ use crate::{
             zone_snapshot::ZoneSnapshot,
         },
     },
-    log_error, log_info, log_warn, xfr,
+    dns, log_error, log_info, log_warn,
 };
 use chrono::Utc;
 
@@ -410,7 +410,7 @@ impl ZoneService {
         save_zone_snapshot(&updated_zone, new_serial).await?;
 
         // Send NOTIFY to secondary servers
-        if let Err(e) = xfr::notify::send_notify(Some(&updated_zone.name)).await {
+        if let Err(e) = dns::xfr::notify::send_notify(Some(&updated_zone.name)).await {
             log_warn!(
                 "Failed to send NOTIFY for zone {}: {}",
                 updated_zone.name,

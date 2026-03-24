@@ -7,20 +7,11 @@ pub mod notify;
 pub mod server;
 pub mod wire;
 
-use crate::{log_error, log_info, log_warn};
+use crate::{log_info, log_warn};
 use catalog::generate_catalog_zone;
-use server::XfrServer;
 
 pub async fn initialize() {
     ensure_catalog_zone().await;
-
-    let xfr_server = XfrServer::new();
-
-    tokio::spawn(async move {
-        if let Err(e) = xfr_server.start().await {
-            log_error!("XFR server error: {}", e);
-        }
-    });
 }
 
 async fn ensure_catalog_zone() {
