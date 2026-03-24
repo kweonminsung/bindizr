@@ -1,6 +1,5 @@
 use super::parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata};
 use crate::{
-    config,
     database::{
         get_record_repository, get_zone_change_repository, get_zone_repository,
         get_zone_snapshot_repository,
@@ -11,7 +10,8 @@ use crate::{
             zone_snapshot::ZoneSnapshot,
         },
     },
-    dns, log_error, log_info,
+    dns::{self, acl},
+    log_error, log_info,
 };
 use chrono::Utc;
 use std::net::{IpAddr, SocketAddr};
@@ -378,32 +378,9 @@ fn trim_dot(name: &str) -> &str {
 }
 
 fn validate_acl(client_ip: IpAddr) -> Result<(), UpdateError> {
-    let allowed_ips_str = config::get_config::<String>("dns.nsupdate_allowed_ips");
+    let allowed_ips = acl::nsupdate_allowed_ips_from_config();
 
-    if allowed_ips_str.trim().is_empty() {
-        return Ok(());
-    }
-
-    let allowed_ips: Vec<IpAddr> = allowed_ips_str
-        .split(',')
-        .filter_map(|s| {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-
-            match trimmed.parse::<SocketAddr>() {
-                Ok(addr) => Some(addr.ip()),
-                Err(_) => trimmed.parse::<IpAddr>().ok(),
-            }
-        })
-        .collect();
-
-    if allowed_ips.is_empty() {
-        return Ok(());
-    }
-
-    if allowed_ips.contains(&client_ip) {
+    if acl::is_client_allowed(client_ip, &allowed_ips) {
         Ok(())
     } else {
         Err(UpdateError::Refused(format!(

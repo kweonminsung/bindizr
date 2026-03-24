@@ -1,4 +1,5 @@
 use crate::database::get_zone_repository;
+use crate::dns::acl;
 use crate::dns::xfr::{catalog, error::XfrError, wire};
 use crate::{log_info, log_warn};
 use domain::base::iana::Rtype;
@@ -84,7 +85,7 @@ async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<
 }
 
 fn validate_secondary_acl(client_ip: IpAddr, secondary_servers: &[IpAddr]) -> Result<(), XfrError> {
-    if !secondary_servers.is_empty() && !secondary_servers.contains(&client_ip) {
+    if !acl::is_client_allowed(client_ip, secondary_servers) {
         log_warn!(
             "SOA request denied from {} (not a configured secondary server)",
             client_ip
