@@ -118,21 +118,84 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
     }
 }
 
+/// Returns the exclusive end offset of the first question/zone section within `message`,
+/// measured from the start of the message buffer, or `None` if the message is malformed.
+fn zone_section_end(message: &[u8]) -> Option<usize> {
+    let mut offset = DNS_HEADER_LEN;
+
+    // Parse QNAME: sequence of labels terminated by a zero-length label or
+    // a two-byte compression pointer (top two bits set).
+    loop {
+        if offset >= message.len() {
+            return None;
+        }
+
+        let len = message[offset];
+
+        if (len & 0xC0) == 0xC0 {
+            // Compression pointer – two bytes, name ends here.
+            if offset + 1 >= message.len() {
+                return None;
+            }
+            offset += 2;
+            break;
+        }
+
+        if len == 0 {
+            // End of QNAME.
+            offset += 1;
+            break;
+        }
+
+        // Regular label.
+        offset += 1 + len as usize;
+        if offset > message.len() {
+            return None;
+        }
+    }
+
+    // QTYPE (2 bytes) + QCLASS (2 bytes).
+    if offset + 4 > message.len() {
+        return None;
+    }
+
+    Some(offset + 4)
+}
+
 fn build_response(query_data: &[u8], rcode: u8) -> Option<Vec<u8>> {
     if query_data.len() < DNS_HEADER_LEN {
         return None;
     }
 
-    let mut response = vec![0u8; DNS_HEADER_LEN];
-
-    response[0] = query_data[0];
-    response[1] = query_data[1];
-
     let opcode_bits = query_data[2] & 0x78;
     let rd_bit = query_data[2] & 0x01;
 
+    let qdcount = u16::from_be_bytes([query_data[4], query_data[5]]);
+    let zone_end = if qdcount > 0 {
+        zone_section_end(query_data)
+    } else {
+        None
+    };
+
+    let response_size = zone_end.unwrap_or(DNS_HEADER_LEN);
+    let mut response = vec![0u8; response_size];
+
+    // Transaction ID.
+    response[0] = query_data[0];
+    response[1] = query_data[1];
+
+    // QR=1, preserve opcode and RD bit.
     response[2] = 0x80 | opcode_bits | rd_bit;
+    // Preserve upper flag nibble, set RCODE in lower nibble.
     response[3] = (query_data[3] & 0xF0) | (rcode & 0x0F);
+
+    if let Some(end) = zone_end {
+        // QDCOUNT=1; ANCOUNT/NSCOUNT/ARCOUNT remain 0.
+        response[4] = 0x00;
+        response[5] = 0x01;
+        // Copy the zone/question section verbatim from the query.
+        response[DNS_HEADER_LEN..end].copy_from_slice(&query_data[DNS_HEADER_LEN..end]);
+    }
 
     Some(response)
 }
