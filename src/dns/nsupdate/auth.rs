@@ -63,7 +63,7 @@ pub(super) fn validate_tsig(
         ));
     }
 
-    let key_bytes = decode_tsig_secret(&secret);
+    let key_bytes = decode_tsig_secret(&secret)?;
     let signed_data = build_tsig_signed_data(query_data, tsig)?;
 
     let mut mac = HmacSha256::new_from_slice(&key_bytes)
@@ -75,11 +75,20 @@ pub(super) fn validate_tsig(
     Ok(())
 }
 
-fn decode_tsig_secret(raw: &str) -> Vec<u8> {
-    match base64::engine::general_purpose::STANDARD.decode(raw) {
-        Ok(bytes) if !bytes.is_empty() => bytes,
-        _ => raw.as_bytes().to_vec(),
+fn decode_tsig_secret(raw: &str) -> Result<Vec<u8>, UpdateError> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(raw)
+        .map_err(|e| {
+            UpdateError::Internal(format!("dns.nsupdate_tsig_key must be valid base64: {}", e))
+        })?;
+
+    if bytes.is_empty() {
+        return Err(UpdateError::Internal(
+            "dns.nsupdate_tsig_key must not decode to an empty key".to_string(),
+        ));
     }
+
+    Ok(bytes)
 }
 
 fn build_tsig_signed_data(query_data: &[u8], tsig: &TsigRecord) -> Result<Vec<u8>, UpdateError> {

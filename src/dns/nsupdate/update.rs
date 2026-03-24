@@ -98,9 +98,7 @@ async fn apply_single_update(
 
     match update.class {
         CLASS_IN => add_record(zone, &owner_name, update, query_data, new_serial).await,
-        CLASS_ANY => {
-            delete_records(zone, &owner_name, update, true, query_data, new_serial).await
-        }
+        CLASS_ANY => delete_records(zone, &owner_name, update, true, query_data, new_serial).await,
         CLASS_NONE => {
             delete_records(zone, &owner_name, update, false, query_data, new_serial).await
         }
