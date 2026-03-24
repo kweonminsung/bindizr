@@ -118,13 +118,11 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
     }
 }
 
-/// Returns the exclusive end offset of the first question/zone section within `message`,
-/// measured from the start of the message buffer, or `None` if the message is malformed.
+/// Returns the end offset of the first question (zone) section, or None if the message is invalid
 fn zone_section_end(message: &[u8]) -> Option<usize> {
     let mut offset = DNS_HEADER_LEN;
 
-    // Parse QNAME: sequence of labels terminated by a zero-length label or
-    // a two-byte compression pointer (top two bits set).
+    // Parse QNAME: labels ending with 0 or a compression pointer (2 bytes)
     loop {
         if offset >= message.len() {
             return None;
