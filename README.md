@@ -31,6 +31,8 @@ DNS Synchronization Service for BIND9
 
 - **Secondary DNS Servers**: Standard BIND9 (or any RFC-compliant DNS server) instances configured as secondaries. They automatically discover zones through the catalog zone, pull zone updates from Bindizr's XFR server via zone transfer, and respond to DNS queries from clients.
 
+- **nsupdate (Dynamic Update)**: Supports RFC 2136-style DNS dynamic updates via nsupdate.
+
 <br>
 
 &nbsp;<img src="public/concepts.png" width="462px">
@@ -219,6 +221,19 @@ $ bindizr notify zone <ZONE_NAME>
 
 # Show help information
 $ bindizr --help
+```
+
+### nsupdate (Dynamic Update)
+
+Bindizr supports RFC 2136-style dynamic updates through the DNS listener.
+
+```bash
+$ nsupdate <<EOF
+server 127.0.0.1 53
+zone example.com
+update add sub.example.com. 300 A 1.2.3.4
+send
+EOF
 ```
 
 ### Token Management
