@@ -10,15 +10,14 @@ use crate::{
             zone_snapshot::ZoneSnapshot,
         },
     },
-    dns::{self, acl},
-    log_error, log_info,
+    dns, log_error, log_info,
 };
 use chrono::Utc;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 
-const CLASS_IN: u16 = 1;
-const CLASS_NONE: u16 = 254;
-const CLASS_ANY: u16 = 255;
+pub(super) const CLASS_IN: u16 = 1;
+pub(super) const CLASS_NONE: u16 = 254;
+pub(super) const CLASS_ANY: u16 = 255;
 
 const TYPE_A: u16 = 1;
 const TYPE_NS: u16 = 2;
@@ -27,13 +26,16 @@ const TYPE_PTR: u16 = 12;
 const TYPE_MX: u16 = 15;
 const TYPE_TXT: u16 = 16;
 const TYPE_AAAA: u16 = 28;
-const TYPE_ANY: u16 = 255;
+pub(super) const TYPE_ANY: u16 = 255;
 
 #[derive(Debug)]
 pub enum UpdateError {
     Refused(String),
+    YxDomain(String),
+    YxRrset(String),
+    NxDomain(String),
+    NxRrset(String),
     NotZone(String),
-    NotImplemented(String),
     Internal(String),
 }
 
@@ -43,9 +45,10 @@ pub enum UpdateResult {
 
 pub async fn apply_update(
     request: UpdateRequest,
+    query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<UpdateResult, UpdateError> {
-    validate_acl(client_addr.ip())?;
+    super::auth::validate_tsig(&request, query_data, client_addr)?;
 
     let zone_name = trim_dot(&request.zone_name);
     if zone_name.is_empty() {
@@ -60,6 +63,8 @@ pub async fn apply_update(
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
         .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
+
+    super::prerequisite::evaluate_prerequisites(&zone, &request.prerequisites).await?;
 
     let mut changed = false;
 
@@ -93,7 +98,7 @@ async fn apply_single_update(zone: &Zone, update: &UpdateRecord) -> Result<bool,
         CLASS_IN => add_record(zone, &owner_name, update).await,
         CLASS_ANY => delete_records(zone, &owner_name, update, true).await,
         CLASS_NONE => delete_records(zone, &owner_name, update, false).await,
-        class => Err(UpdateError::NotImplemented(format!(
+        class => Err(UpdateError::Refused(format!(
             "unsupported update class: {}",
             class
         ))),
@@ -106,12 +111,6 @@ async fn add_record(
     update: &UpdateRecord,
 ) -> Result<bool, UpdateError> {
     let (record_type, value, priority) = rr_to_record_value(update)?;
-
-    if record_type == RecordType::SOA {
-        return Err(UpdateError::NotImplemented(
-            "SOA updates are not supported".to_string(),
-        ));
-    }
 
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
 
@@ -227,15 +226,13 @@ async fn delete_records(
     Ok(true)
 }
 
-fn rr_to_record_value(
+pub(super) fn rr_to_record_value(
     update: &UpdateRecord,
 ) -> Result<(RecordType, String, Option<i32>), UpdateError> {
     match update.rr_type {
         TYPE_A => {
             if update.rdata.len() != 4 {
-                return Err(UpdateError::NotImplemented(
-                    "invalid A rdata length".to_string(),
-                ));
+                return Err(UpdateError::Refused("invalid A rdata length".to_string()));
             }
             let value = std::net::Ipv4Addr::new(
                 update.rdata[0],
@@ -248,7 +245,7 @@ fn rr_to_record_value(
         }
         TYPE_AAAA => {
             if update.rdata.len() != 16 {
-                return Err(UpdateError::NotImplemented(
+                return Err(UpdateError::Refused(
                     "invalid AAAA rdata length".to_string(),
                 ));
             }
@@ -260,47 +257,45 @@ fn rr_to_record_value(
         TYPE_CNAME => Ok((
             RecordType::CNAME,
             decode_name_from_rdata(&update.rdata)
-                .map_err(|e| UpdateError::NotImplemented(format!("invalid CNAME rdata: {}", e)))?,
+                .map_err(|e| UpdateError::Refused(format!("invalid CNAME rdata: {}", e)))?,
             None,
         )),
         TYPE_NS => Ok((
             RecordType::NS,
             decode_name_from_rdata(&update.rdata)
-                .map_err(|e| UpdateError::NotImplemented(format!("invalid NS rdata: {}", e)))?,
+                .map_err(|e| UpdateError::Refused(format!("invalid NS rdata: {}", e)))?,
             None,
         )),
         TYPE_PTR => Ok((
             RecordType::PTR,
             decode_name_from_rdata(&update.rdata)
-                .map_err(|e| UpdateError::NotImplemented(format!("invalid PTR rdata: {}", e)))?,
+                .map_err(|e| UpdateError::Refused(format!("invalid PTR rdata: {}", e)))?,
             None,
         )),
         TYPE_TXT => Ok((
             RecordType::TXT,
             decode_txt_from_rdata(&update.rdata)
-                .map_err(|e| UpdateError::NotImplemented(format!("invalid TXT rdata: {}", e)))?,
+                .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?,
             None,
         )),
         TYPE_MX => {
             if update.rdata.len() < 3 {
-                return Err(UpdateError::NotImplemented(
-                    "invalid MX rdata length".to_string(),
-                ));
+                return Err(UpdateError::Refused("invalid MX rdata length".to_string()));
             }
 
             let priority = i32::from(u16::from_be_bytes([update.rdata[0], update.rdata[1]]));
             let host = decode_name_from_rdata(&update.rdata[2..])
-                .map_err(|e| UpdateError::NotImplemented(format!("invalid MX rdata: {}", e)))?;
+                .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
             Ok((RecordType::MX, host, Some(priority)))
         }
-        _ => Err(UpdateError::NotImplemented(format!(
+        _ => Err(UpdateError::Refused(format!(
             "unsupported rr type: {}",
             update.rr_type
         ))),
     }
 }
 
-fn rr_type_to_record_type(rr_type: u16) -> Result<RecordType, UpdateError> {
+pub(super) fn rr_type_to_record_type(rr_type: u16) -> Result<RecordType, UpdateError> {
     match rr_type {
         TYPE_A => Ok(RecordType::A),
         TYPE_AAAA => Ok(RecordType::AAAA),
@@ -309,14 +304,14 @@ fn rr_type_to_record_type(rr_type: u16) -> Result<RecordType, UpdateError> {
         TYPE_TXT => Ok(RecordType::TXT),
         TYPE_NS => Ok(RecordType::NS),
         TYPE_PTR => Ok(RecordType::PTR),
-        _ => Err(UpdateError::NotImplemented(format!(
+        _ => Err(UpdateError::Refused(format!(
             "unsupported rr type: {}",
             rr_type
         ))),
     }
 }
 
-fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String, UpdateError> {
+pub(super) fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String, UpdateError> {
     let normalized_zone = to_fqdn(zone_name);
     let normalized_zone_no_dot = trim_dot(&normalized_zone).to_ascii_lowercase();
 
@@ -342,7 +337,7 @@ fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String, UpdateErr
     )))
 }
 
-fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<String, UpdateError> {
+pub(super) fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<String, UpdateError> {
     let owner = to_fqdn(owner);
     let zone = to_fqdn(zone_name);
 
@@ -375,19 +370,6 @@ fn to_fqdn(name: &str) -> String {
 
 fn trim_dot(name: &str) -> &str {
     name.trim_end_matches('.')
-}
-
-fn validate_acl(client_ip: IpAddr) -> Result<(), UpdateError> {
-    let allowed_ips = acl::nsupdate_allowed_ips_from_config();
-
-    if acl::is_client_allowed(client_ip, &allowed_ips) {
-        Ok(())
-    } else {
-        Err(UpdateError::Refused(format!(
-            "IP {} not allowed",
-            client_ip
-        )))
-    }
 }
 
 async fn bump_zone_serial(zone: &Zone) -> Result<i32, UpdateError> {

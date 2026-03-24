@@ -44,6 +44,8 @@ sqlx = { version = "0.8", features = [
 domain = "0.11"
 rand = "0.10"
 sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
 hex = "0.4"
 thiserror = "2.0.18"
 

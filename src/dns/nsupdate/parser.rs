@@ -2,11 +2,24 @@ use std::fmt;
 
 const DNS_HEADER_LEN: usize = 12;
 const CLASS_IN: u16 = 1;
+const CLASS_ANY: u16 = 255;
+const TSIG_TYPE: u16 = 250;
 
 #[derive(Debug, Clone)]
 pub struct UpdateRequest {
     pub zone_name: String,
+    pub prerequisites: Vec<PrerequisiteRecord>,
     pub updates: Vec<UpdateRecord>,
+    pub tsig: Option<TsigRecord>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PrerequisiteRecord {
+    pub name: String,
+    pub rr_type: u16,
+    pub class: u16,
+    pub ttl: u32,
+    pub rdata: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -18,6 +31,20 @@ pub struct UpdateRecord {
     pub rdata: Vec<u8>,
 }
 
+#[derive(Debug, Clone)]
+pub struct TsigRecord {
+    pub name: String,
+    pub algorithm: String,
+    pub time_signed: u64,
+    pub fudge: u16,
+    pub mac: Vec<u8>,
+    pub original_id: u16,
+    pub error: u16,
+    pub other_data: Vec<u8>,
+    pub rr_start: usize,
+    pub rr_end: usize,
+}
+
 #[derive(Debug)]
 pub enum ParseError {
     TooShort,
@@ -26,6 +53,7 @@ pub enum ParseError {
     InvalidZoneSection,
     InvalidName,
     InvalidRr,
+    InvalidTsig,
 }
 
 impl fmt::Display for ParseError {
@@ -37,6 +65,7 @@ impl fmt::Display for ParseError {
             ParseError::InvalidZoneSection => write!(f, "Invalid DNS UPDATE zone section"),
             ParseError::InvalidName => write!(f, "Invalid compressed domain name"),
             ParseError::InvalidRr => write!(f, "Invalid resource record in UPDATE section"),
+            ParseError::InvalidTsig => write!(f, "Invalid TSIG resource record"),
         }
     }
 }
@@ -77,8 +106,17 @@ pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
         return Err(ParseError::InvalidZoneSection);
     }
 
+    let mut prerequisites = Vec::with_capacity(ancount);
     for _ in 0..ancount {
-        pos = skip_rr(data, pos)?;
+        let (rr, next) = parse_rr(data, pos)?;
+        prerequisites.push(PrerequisiteRecord {
+            name: rr.name,
+            rr_type: rr.rr_type,
+            class: rr.class,
+            ttl: rr.ttl,
+            rdata: rr.rdata,
+        });
+        pos = next;
     }
 
     let mut updates = Vec::with_capacity(nscount);
@@ -88,11 +126,26 @@ pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
         pos = next;
     }
 
-    for _ in 0..arcount {
-        pos = skip_rr(data, pos)?;
+    let tsig = match arcount {
+        0 => None,
+        1 => {
+            let (record, next) = parse_tsig_rr(data, pos)?;
+            pos = next;
+            Some(record)
+        }
+        _ => return Err(ParseError::InvalidHeader),
+    };
+
+    if pos != data.len() {
+        return Err(ParseError::InvalidHeader);
     }
 
-    Ok(UpdateRequest { zone_name, updates })
+    Ok(UpdateRequest {
+        zone_name,
+        prerequisites,
+        updates,
+        tsig,
+    })
 }
 
 fn parse_rr(data: &[u8], pos: usize) -> Result<(UpdateRecord, usize), ParseError> {
@@ -126,22 +179,89 @@ fn parse_rr(data: &[u8], pos: usize) -> Result<(UpdateRecord, usize), ParseError
     ))
 }
 
-fn skip_rr(data: &[u8], pos: usize) -> Result<usize, ParseError> {
-    let (_name, name_len) = decode_name(data, pos)?;
+fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseError> {
+    let rr_start = pos;
+    let (name, name_len) = decode_name(data, pos)?;
     let hdr = pos + name_len;
 
     if hdr + 10 > data.len() {
-        return Err(ParseError::InvalidRr);
+        return Err(ParseError::InvalidTsig);
     }
 
+    let rr_type = u16::from_be_bytes([data[hdr], data[hdr + 1]]);
+    let class = u16::from_be_bytes([data[hdr + 2], data[hdr + 3]]);
+    let ttl = u32::from_be_bytes([data[hdr + 4], data[hdr + 5], data[hdr + 6], data[hdr + 7]]);
     let rdlen = u16::from_be_bytes([data[hdr + 8], data[hdr + 9]]) as usize;
-    let next = hdr + 10 + rdlen;
 
-    if next > data.len() {
-        return Err(ParseError::InvalidRr);
+    if rr_type != TSIG_TYPE || class != CLASS_ANY || ttl != 0 {
+        return Err(ParseError::InvalidTsig);
     }
 
-    Ok(next)
+    let rdata_start = hdr + 10;
+    let rdata_end = rdata_start + rdlen;
+    if rdata_end > data.len() {
+        return Err(ParseError::InvalidTsig);
+    }
+
+    let mut p = rdata_start;
+    let (algorithm, algo_len) = decode_name(data, p).map_err(|_| ParseError::InvalidTsig)?;
+    p += algo_len;
+
+    if p + 6 + 2 + 2 > rdata_end {
+        return Err(ParseError::InvalidTsig);
+    }
+
+    let time_signed = ((data[p] as u64) << 40)
+        | ((data[p + 1] as u64) << 32)
+        | ((data[p + 2] as u64) << 24)
+        | ((data[p + 3] as u64) << 16)
+        | ((data[p + 4] as u64) << 8)
+        | data[p + 5] as u64;
+    p += 6;
+
+    let fudge = u16::from_be_bytes([data[p], data[p + 1]]);
+    p += 2;
+
+    let mac_size = u16::from_be_bytes([data[p], data[p + 1]]) as usize;
+    p += 2;
+
+    if p + mac_size + 2 + 2 + 2 > rdata_end {
+        return Err(ParseError::InvalidTsig);
+    }
+
+    let mac = data[p..p + mac_size].to_vec();
+    p += mac_size;
+
+    let original_id = u16::from_be_bytes([data[p], data[p + 1]]);
+    p += 2;
+
+    let error = u16::from_be_bytes([data[p], data[p + 1]]);
+    p += 2;
+
+    let other_len = u16::from_be_bytes([data[p], data[p + 1]]) as usize;
+    p += 2;
+
+    if p + other_len != rdata_end {
+        return Err(ParseError::InvalidTsig);
+    }
+
+    let other_data = data[p..p + other_len].to_vec();
+
+    Ok((
+        TsigRecord {
+            name,
+            algorithm,
+            time_signed,
+            fudge,
+            mac,
+            original_id,
+            error,
+            other_data,
+            rr_start,
+            rr_end: rdata_end,
+        },
+        rdata_end,
+    ))
 }
 
 fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError> {

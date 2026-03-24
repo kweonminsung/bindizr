@@ -1,4 +1,6 @@
+mod auth;
 mod parser;
+mod prerequisite;
 mod update;
 
 use crate::{log_info, log_warn};
@@ -11,8 +13,11 @@ const DNS_OPCODE_UPDATE: u8 = 5;
 const RCODE_NOERROR: u8 = 0;
 const RCODE_FORMERR: u8 = 1;
 const RCODE_SERVFAIL: u8 = 2;
-const RCODE_NOTIMP: u8 = 4;
+const RCODE_NXDOMAIN: u8 = 3;
 const RCODE_REFUSED: u8 = 5;
+const RCODE_YXDOMAIN: u8 = 6;
+const RCODE_YXRRSET: u8 = 7;
+const RCODE_NXRRSET: u8 = 8;
 const RCODE_NOTZONE: u8 = 10;
 
 pub fn is_nsupdate(message: &[u8]) -> bool {
@@ -73,7 +78,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         }
     };
 
-    match update::apply_update(parsed, client_addr).await {
+    match update::apply_update(parsed, query_data, client_addr).await {
         Ok(update::UpdateResult::Applied { changed }) => {
             log_info!(
                 "NSUPDATE applied from {} (changed={})",
@@ -86,13 +91,25 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
             log_warn!("NSUPDATE refused from {}: {}", client_addr, msg);
             RCODE_REFUSED
         }
+        Err(update::UpdateError::YxDomain(msg)) => {
+            log_warn!("NSUPDATE yxdomain from {}: {}", client_addr, msg);
+            RCODE_YXDOMAIN
+        }
+        Err(update::UpdateError::YxRrset(msg)) => {
+            log_warn!("NSUPDATE yxrrset from {}: {}", client_addr, msg);
+            RCODE_YXRRSET
+        }
+        Err(update::UpdateError::NxDomain(msg)) => {
+            log_warn!("NSUPDATE nxdomain from {}: {}", client_addr, msg);
+            RCODE_NXDOMAIN
+        }
+        Err(update::UpdateError::NxRrset(msg)) => {
+            log_warn!("NSUPDATE nxrrset from {}: {}", client_addr, msg);
+            RCODE_NXRRSET
+        }
         Err(update::UpdateError::NotZone(msg)) => {
             log_warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
             RCODE_NOTZONE
-        }
-        Err(update::UpdateError::NotImplemented(msg)) => {
-            log_warn!("NSUPDATE not implemented from {}: {}", client_addr, msg);
-            RCODE_NOTIMP
         }
         Err(update::UpdateError::Internal(msg)) => {
             log_warn!("NSUPDATE internal error from {}: {}", client_addr, msg);
