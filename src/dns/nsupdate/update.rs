@@ -63,14 +63,15 @@ pub async fn apply_update(
     super::prerequisite::evaluate_prerequisites(&zone, &request.prerequisites, query_data).await?;
 
     let mut changed = false;
+    let new_serial = generate_serial(zone.serial);
 
     for update in &request.updates {
-        let this_changed = apply_single_update(&zone, update, query_data).await?;
+        let this_changed = apply_single_update(&zone, update, query_data, new_serial).await?;
         changed = changed || this_changed;
     }
 
     if changed {
-        let new_serial = bump_zone_serial(&zone).await?;
+        bump_zone_serial(&zone, new_serial).await?;
         save_zone_snapshot(&zone, new_serial).await?;
 
         if let Err(e) = dns::xfr::notify::send_notify(Some(&zone.name)).await {
@@ -91,13 +92,18 @@ async fn apply_single_update(
     zone: &Zone,
     update: &UpdateRecord,
     query_data: &[u8],
+    new_serial: i32,
 ) -> Result<bool, UpdateError> {
     let owner_name = normalize_owner_name(&update.name, &zone.name)?;
 
     match update.class {
-        CLASS_IN => add_record(zone, &owner_name, update, query_data).await,
-        CLASS_ANY => delete_records(zone, &owner_name, update, true, query_data).await,
-        CLASS_NONE => delete_records(zone, &owner_name, update, false, query_data).await,
+        CLASS_IN => add_record(zone, &owner_name, update, query_data, new_serial).await,
+        CLASS_ANY => {
+            delete_records(zone, &owner_name, update, true, query_data, new_serial).await
+        }
+        CLASS_NONE => {
+            delete_records(zone, &owner_name, update, false, query_data, new_serial).await
+        }
         class => Err(UpdateError::Refused(format!(
             "unsupported update class: {}",
             class
@@ -110,6 +116,7 @@ async fn add_record(
     owner_name: &str,
     update: &UpdateRecord,
     query_data: &[u8],
+    new_serial: i32,
 ) -> Result<bool, UpdateError> {
     let (record_type, value, priority) = rr_to_record_value(update, query_data)?;
 
@@ -127,12 +134,22 @@ async fn add_record(
         return Ok(false);
     }
 
+    let ttl = if update.ttl > i32::MAX as u32 {
+        return Err(UpdateError::Refused(format!(
+            "TTL value {} exceeds maximum allowed value ({})",
+            update.ttl,
+            i32::MAX
+        )));
+    } else {
+        update.ttl as i32
+    };
+
     let created = RepositoryService::create_record(Record {
         id: 0,
         name: relative_name.clone(),
         record_type: record_type.clone(),
         value: value.clone(),
-        ttl: Some(update.ttl as i32),
+        ttl: Some(ttl),
         priority,
         zone_id: zone.id,
         created_at: Utc::now(),
@@ -142,6 +159,7 @@ async fn add_record(
 
     log_zone_change(
         zone.id,
+        new_serial,
         "ADD",
         &created.name,
         &record_type,
@@ -160,6 +178,7 @@ async fn delete_records(
     update: &UpdateRecord,
     is_rrset_delete: bool,
     query_data: &[u8],
+    new_serial: i32,
 ) -> Result<bool, UpdateError> {
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
     let zone_records = RepositoryService::get_records_by_zone_id(zone.id)
@@ -221,6 +240,7 @@ async fn delete_records(
 
         log_zone_change(
             zone.id,
+            new_serial,
             "DEL",
             &record.name,
             &record.record_type,
@@ -382,9 +402,7 @@ fn trim_dot(name: &str) -> &str {
     name.trim_end_matches('.')
 }
 
-async fn bump_zone_serial(zone: &Zone) -> Result<i32, UpdateError> {
-    let new_serial = generate_serial(zone.serial);
-
+async fn bump_zone_serial(zone: &Zone, new_serial: i32) -> Result<(), UpdateError> {
     RepositoryService::update_zone(Zone {
         serial: new_serial,
         ..zone.clone()
@@ -392,7 +410,7 @@ async fn bump_zone_serial(zone: &Zone) -> Result<i32, UpdateError> {
     .await
     .map_err(|e| UpdateError::Internal(format!("failed to update zone serial: {}", e)))?;
 
-    Ok(new_serial)
+    Ok(())
 }
 
 fn generate_serial(current_serial: i32) -> i32 {
@@ -429,6 +447,7 @@ async fn save_zone_snapshot(zone: &Zone, serial: i32) -> Result<(), UpdateError>
 
 async fn log_zone_change(
     zone_id: i32,
+    serial: i32,
     operation: &str,
     name: &str,
     record_type: &RecordType,
@@ -436,13 +455,6 @@ async fn log_zone_change(
     ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Result<(), UpdateError> {
-    let zone = RepositoryService::get_zone_by_id(zone_id)
-        .await
-        .map_err(|e| UpdateError::Internal(format!("failed to load zone for change: {}", e)))?
-        .ok_or_else(|| UpdateError::Internal(format!("zone {} not found", zone_id)))?;
-
-    let serial = generate_serial(zone.serial);
-
     RepositoryService::create_zone_change(ZoneChange {
         id: 0,
         zone_id,
