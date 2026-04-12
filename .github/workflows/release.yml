@@ -41,7 +41,7 @@ jobs:
           ./scripts/build_packages.sh
 
       - name: Create Release and Upload Assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             bindizr_*.deb
