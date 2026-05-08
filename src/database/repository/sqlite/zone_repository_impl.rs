@@ -1,5 +1,8 @@
 use crate::database::error::DatabaseError;
-use crate::database::{model::zone::Zone, repository::ZoneRepository};
+use crate::database::{
+    model::zone::Zone,
+    repository::{RepositoryTx, RepositoryTxKind, ZoneRepository},
+};
 use async_trait::async_trait;
 use sqlx::{Pool, Sqlite};
 
@@ -34,6 +37,42 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .execute(&mut *conn)
+        .await?;
+
+        zone.id = result.last_insert_rowid() as i32;
+        Ok(zone)
+    }
+
+    async fn create_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        mut zone: Zone,
+    ) -> Result<Zone, DatabaseError> {
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO zones (name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&zone.name)
+        .bind(&zone.primary_ns)
+        .bind(&zone.admin_email)
+        .bind(zone.ttl)
+        .bind(zone.serial)
+        .bind(zone.refresh)
+        .bind(zone.retry)
+        .bind(zone.expire)
+        .bind(zone.minimum_ttl)
+        .execute(&mut **sqlite_tx)
         .await?;
 
         zone.id = result.last_insert_rowid() as i32;
@@ -99,6 +138,44 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(zone)
     }
 
+    async fn update_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone: Zone,
+    ) -> Result<Zone, DatabaseError> {
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query(
+            r#"
+            UPDATE zones 
+            SET name = ?, primary_ns = ?, admin_email = ?,
+                ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&zone.name)
+        .bind(&zone.primary_ns)
+        .bind(&zone.admin_email)
+        .bind(zone.ttl)
+        .bind(zone.serial)
+        .bind(zone.refresh)
+        .bind(zone.retry)
+        .bind(zone.expire)
+        .bind(zone.minimum_ttl)
+        .bind(zone.id)
+        .execute(&mut **sqlite_tx)
+        .await?;
+
+        Ok(zone)
+    }
+
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -107,6 +184,23 @@ impl ZoneRepository for SqliteZoneRepository {
             .execute(&mut *conn)
             .await?;
 
+        Ok(())
+    }
+
+    async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query("DELETE FROM zones WHERE id = ?")
+            .bind(id)
+            .execute(&mut **sqlite_tx)
+            .await?;
         Ok(())
     }
 }

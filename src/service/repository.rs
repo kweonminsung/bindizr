@@ -10,11 +10,22 @@ use crate::database::{
     },
 };
 
+use crate::database::repository as db_repository;
+
+pub use crate::database::repository::RepositoryTx;
+
 use super::error::ServiceError;
 
 pub struct RepositoryService;
 
+#[allow(dead_code)]
 impl RepositoryService {
+    pub async fn begin_transaction() -> Result<RepositoryTx<'static>, ServiceError> {
+        db_repository::begin_transaction()
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to begin transaction: {}", e)))
+    }
+
     pub async fn get_zone_by_name(name: &str) -> Result<Option<Zone>, ServiceError> {
         get_zone_repository()
             .get_by_name(name)
@@ -64,6 +75,15 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }
 
+    pub async fn get_records_by_zone_id_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<Vec<Record>, ServiceError> {
+        tx.get_records_by_zone_id(zone_id)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
+    }
+
     pub async fn create_record(record: Record) -> Result<Record, ServiceError> {
         get_record_repository()
             .create(record)
@@ -71,9 +91,27 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to create record: {}", e)))
     }
 
+    pub async fn create_record_tx(
+        tx: &mut RepositoryTx<'_>,
+        record: Record,
+    ) -> Result<Record, ServiceError> {
+        tx.create_record(record)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to create record: {}", e)))
+    }
+
     pub async fn update_record(record: Record) -> Result<Record, ServiceError> {
         get_record_repository()
             .update(record)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to update record: {}", e)))
+    }
+
+    pub async fn update_record_tx(
+        tx: &mut RepositoryTx<'_>,
+        record: Record,
+    ) -> Result<Record, ServiceError> {
+        tx.update_record(record)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to update record: {}", e)))
     }
@@ -109,9 +147,27 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to delete record: {}", e)))
     }
 
+    pub async fn delete_record_tx(
+        tx: &mut RepositoryTx<'_>,
+        record_id: i32,
+    ) -> Result<(), ServiceError> {
+        tx.delete_record(record_id)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to delete record: {}", e)))
+    }
+
     pub async fn create_zone_change(change: ZoneChange) -> Result<ZoneChange, ServiceError> {
         get_zone_change_repository()
             .create(change)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to create zone change: {}", e)))
+    }
+
+    pub async fn create_zone_change_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_change: ZoneChange,
+    ) -> Result<ZoneChange, ServiceError> {
+        tx.create_zone_change(zone_change)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to create zone change: {}", e)))
     }
@@ -134,6 +190,42 @@ impl RepositoryService {
             .upsert(snapshot)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to save snapshot: {}", e)))
+    }
+
+    pub async fn upsert_zone_snapshot_tx(
+        tx: &mut RepositoryTx<'_>,
+        snapshot: ZoneSnapshot,
+    ) -> Result<ZoneSnapshot, ServiceError> {
+        tx.upsert_zone_snapshot(snapshot)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to save snapshot: {}", e)))
+    }
+
+    pub async fn create_zone_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: Zone,
+    ) -> Result<Zone, ServiceError> {
+        tx.create_zone(zone)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to create zone: {}", e)))
+    }
+
+    pub async fn update_zone_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: Zone,
+    ) -> Result<Zone, ServiceError> {
+        tx.update_zone(zone)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to update zone: {}", e)))
+    }
+
+    pub async fn delete_zone_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), ServiceError> {
+        tx.delete_zone(zone_id)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to delete zone: {}", e)))
     }
 
     pub async fn get_zone_snapshot_by_serial(

@@ -7,7 +7,10 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     dns, log_error, log_info, log_warn,
-    service::{error::ServiceError, repository::RepositoryService},
+    service::{
+        error::ServiceError,
+        repository::{RepositoryService, RepositoryTx},
+    },
 };
 use chrono::Utc;
 
@@ -69,14 +72,15 @@ fn has_glue_records_for(
     })
 }
 
-pub async fn find_identical_record_in_zone(
+pub async fn find_identical_record_in_zone_tx(
+    tx: &mut RepositoryTx<'_>,
     zone_id: i32,
     name: &str,
     record_type: &RecordType,
     value: &str,
     priority: Option<i32>,
 ) -> Result<Option<Record>, ServiceError> {
-    let zone_records = RepositoryService::get_records_by_zone_id(zone_id)
+    let zone_records = RepositoryService::get_records_by_zone_id_tx(tx, zone_id)
         .await
         .map_err(|e| {
             log_error!("Failed to load zone records: {}", e);
@@ -91,13 +95,14 @@ pub async fn find_identical_record_in_zone(
     }))
 }
 
-pub async fn validate_nsupdate_add_constraints(
+pub async fn validate_nsupdate_add_constraints_tx(
+    tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     owner_name: &str,
     record_type: &RecordType,
     value: &str,
 ) -> Result<(), ServiceError> {
-    let zone_records = RepositoryService::get_records_by_zone_id(zone.id)
+    let zone_records = RepositoryService::get_records_by_zone_id_tx(tx, zone.id)
         .await
         .map_err(|e| {
             log_error!("Failed to load zone records: {}", e);
@@ -160,23 +165,27 @@ pub async fn validate_nsupdate_add_constraints(
     Ok(())
 }
 
-async fn save_zone_snapshot(
+async fn save_zone_snapshot_tx(
+    tx: &mut RepositoryTx<'_>,
     zone: &crate::database::model::zone::Zone,
     serial: i32,
 ) -> Result<(), ServiceError> {
-    RepositoryService::upsert_zone_snapshot(ZoneSnapshot {
-        id: 0,
-        zone_id: zone.id,
-        serial,
-        primary_ns: zone.primary_ns.clone(),
-        admin_email: zone.admin_email.replace('@', "."),
-        ttl: zone.ttl,
-        refresh: zone.refresh,
-        retry: zone.retry,
-        expire: zone.expire,
-        minimum_ttl: zone.minimum_ttl,
-        created_at: Utc::now(),
-    })
+    RepositoryService::upsert_zone_snapshot_tx(
+        tx,
+        ZoneSnapshot {
+            id: 0,
+            zone_id: zone.id,
+            serial,
+            primary_ns: zone.primary_ns.clone(),
+            admin_email: zone.admin_email.replace('@', "."),
+            ttl: zone.ttl,
+            refresh: zone.refresh,
+            retry: zone.retry,
+            expire: zone.expire,
+            minimum_ttl: zone.minimum_ttl,
+            created_at: Utc::now(),
+        },
+    )
     .await
     .map_err(|e| {
         log_error!("Failed to save SOA snapshot: {}", e);
@@ -354,23 +363,92 @@ impl RecordService {
         }
 
         // Create record
-        let created_record = RepositoryService::create_record(Record {
-            id: 0, // Will be set by the database
-            name: create_record_request.name.clone(),
-            record_type,
-            value: create_record_request.value.clone(),
-            ttl: create_record_request.ttl,
-            priority: create_record_request.priority,
-            zone_id: zone.id,
-            created_at: Utc::now(), // Will be set by the database
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to create record: {}", e);
+        let mut tx = RepositoryService::begin_transaction().await.map_err(|e| {
+            log_error!("Failed to begin transaction: {}", e);
             ServiceError::Internal("Failed to create record".to_string())
         })?;
 
-        // Log record creation
+        let new_serial = generate_serial(zone.serial);
+
+        let apply_result = async {
+            let created_record = RepositoryService::create_record_tx(
+                &mut tx,
+                Record {
+                    id: 0, // Will be set by the database
+                    name: create_record_request.name.clone(),
+                    record_type,
+                    value: create_record_request.value.clone(),
+                    ttl: create_record_request.ttl,
+                    priority: create_record_request.priority,
+                    zone_id: zone.id,
+                    created_at: Utc::now(), // Will be set by the database
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create record: {}", e);
+                ServiceError::Internal("Failed to create record".to_string())
+            })?;
+
+            // Increment zone serial so IXFR consumers can detect this change
+            RepositoryService::update_zone_tx(
+                &mut tx,
+                crate::database::model::zone::Zone {
+                    serial: new_serial,
+                    ..zone.clone()
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to update zone serial: {}", e);
+                ServiceError::Internal("Failed to update zone serial".to_string())
+            })?;
+
+            // Record zone change for IXFR
+            RepositoryService::create_zone_change_tx(
+                &mut tx,
+                ZoneChange {
+                    id: 0,
+                    zone_id: zone.id,
+                    serial: new_serial,
+                    operation: "ADD".to_string(),
+                    record_name: created_record.name.clone(),
+                    record_type: create_record_request.record_type.clone(),
+                    record_value: create_record_request.value.clone(),
+                    record_ttl: create_record_request.ttl,
+                    record_priority: create_record_request.priority,
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change: {}", e);
+                ServiceError::Internal("Failed to create zone change".to_string())
+            })?;
+
+            save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+
+            Ok::<Record, ServiceError>(created_record)
+        }
+        .await;
+
+        let created_record = match apply_result {
+            Ok(record) => {
+                tx.commit().await.map_err(|e| {
+                    log_error!("Failed to commit transaction: {}", e);
+                    ServiceError::Internal("Failed to create record".to_string())
+                })?;
+                record
+            }
+            Err(err) => {
+                tx.rollback().await.map_err(|e| {
+                    log_error!("Failed to rollback transaction: {}", e);
+                    ServiceError::Internal("Failed to create record".to_string())
+                })?;
+                return Err(err);
+            }
+        };
+
+        // Log record creation after commit
         log_info!(
             "event=record_create zone={} name={} type={} value={} ttl={} priority={} record_id={}",
             zone.name,
@@ -385,38 +463,6 @@ impl RecordService {
                 .map_or("null".to_string(), |v| v.to_string()),
             created_record.id
         );
-
-        // Increment zone serial so IXFR consumers can detect this change
-        let new_serial = generate_serial(zone.serial);
-        RepositoryService::update_zone(crate::database::model::zone::Zone {
-            serial: new_serial,
-            ..zone.clone()
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to update zone serial: {}", e);
-            ServiceError::Internal("Failed to update zone serial".to_string())
-        })?;
-
-        // Record zone change for IXFR
-        RepositoryService::create_zone_change(ZoneChange {
-            id: 0,
-            zone_id: zone.id,
-            serial: new_serial,
-            operation: "ADD".to_string(),
-            record_name: created_record.name.clone(),
-            record_type: create_record_request.record_type.clone(),
-            record_value: create_record_request.value.clone(),
-            record_ttl: create_record_request.ttl,
-            record_priority: create_record_request.priority,
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to create zone change: {}", e);
-            ServiceError::Internal("Failed to create zone change".to_string())
-        })?;
-
-        save_zone_snapshot(&zone, new_serial).await?;
 
         // Send NOTIFY to secondary servers
         if let Err(e) = dns::xfr::notify::send_notify(Some(&zone.name)).await {
@@ -578,23 +624,115 @@ impl RecordService {
         }
 
         // Update record
-        let updated_record = RepositoryService::update_record(Record {
-            id: record_id,
-            name: update_record_request.name.clone(),
-            record_type,
-            value: update_record_request.value.clone(),
-            ttl: update_record_request.ttl,
-            priority: update_record_request.priority,
-            zone_id: zone.id,
-            created_at: Utc::now(), // Will be set by the database
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to update record: {}", e);
+        let mut tx = RepositoryService::begin_transaction().await.map_err(|e| {
+            log_error!("Failed to begin transaction: {}", e);
             ServiceError::Internal("Failed to update record".to_string())
         })?;
 
-        // Log record update
+        let new_serial = generate_serial(zone.serial);
+
+        let apply_result = async {
+            let updated_record = RepositoryService::update_record_tx(
+                &mut tx,
+                Record {
+                    id: record_id,
+                    name: update_record_request.name.clone(),
+                    record_type,
+                    value: update_record_request.value.clone(),
+                    ttl: update_record_request.ttl,
+                    priority: update_record_request.priority,
+                    zone_id: zone.id,
+                    created_at: Utc::now(), // Will be set by the database
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to update record: {}", e);
+                ServiceError::Internal("Failed to update record".to_string())
+            })?;
+
+            // Increment zone serial so IXFR consumers can detect this change
+            RepositoryService::update_zone_tx(
+                &mut tx,
+                crate::database::model::zone::Zone {
+                    serial: new_serial,
+                    ..zone.clone()
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to update zone serial: {}", e);
+                ServiceError::Internal("Failed to update zone serial".to_string())
+            })?;
+
+            // Record zone changes for IXFR
+
+            // Delete old record
+            RepositoryService::create_zone_change_tx(
+                &mut tx,
+                ZoneChange {
+                    id: 0,
+                    zone_id: zone.id,
+                    serial: new_serial,
+                    operation: "DEL".to_string(),
+                    record_name: existing_record.name.clone(),
+                    record_type: existing_record.record_type.to_string(),
+                    record_value: existing_record.value.clone(),
+                    record_ttl: existing_record.ttl,
+                    record_priority: existing_record.priority,
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change (DEL): {}", e);
+                ServiceError::Internal("Failed to create zone change".to_string())
+            })?;
+
+            // Add new record
+            RepositoryService::create_zone_change_tx(
+                &mut tx,
+                ZoneChange {
+                    id: 0,
+                    zone_id: zone.id,
+                    serial: new_serial,
+                    operation: "ADD".to_string(),
+                    record_name: updated_record.name.clone(),
+                    record_type: update_record_request.record_type.clone(),
+                    record_value: update_record_request.value.clone(),
+                    record_ttl: update_record_request.ttl,
+                    record_priority: update_record_request.priority,
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change (ADD): {}", e);
+                ServiceError::Internal("Failed to create zone change".to_string())
+            })?;
+
+            save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+
+            Ok::<Record, ServiceError>(updated_record)
+        }
+        .await;
+
+        let updated_record = match apply_result {
+            Ok(record) => {
+                tx.commit().await.map_err(|e| {
+                    log_error!("Failed to commit transaction: {}", e);
+                    ServiceError::Internal("Failed to update record".to_string())
+                })?;
+                record
+            }
+            Err(err) => {
+                tx.rollback().await.map_err(|e| {
+                    log_error!("Failed to rollback transaction: {}", e);
+                    ServiceError::Internal("Failed to update record".to_string())
+                })?;
+                return Err(err);
+            }
+        };
+
+        // Log record update after commit
         log_info!(
             "event=record_update zone={} name={} type={} old_value={} new_value={} ttl={} priority={} record_id={}",
             zone.name,
@@ -610,58 +748,6 @@ impl RecordService {
                 .map_or("null".to_string(), |v| v.to_string()),
             updated_record.id
         );
-
-        // Increment zone serial so IXFR consumers can detect this change
-        let new_serial = generate_serial(zone.serial);
-        RepositoryService::update_zone(crate::database::model::zone::Zone {
-            serial: new_serial,
-            ..zone.clone()
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to update zone serial: {}", e);
-            ServiceError::Internal("Failed to update zone serial".to_string())
-        })?;
-
-        // Record zone changes for IXFR
-
-        // Delete old record
-        RepositoryService::create_zone_change(ZoneChange {
-            id: 0,
-            zone_id: zone.id,
-            serial: new_serial,
-            operation: "DEL".to_string(),
-            record_name: existing_record.name.clone(),
-            record_type: existing_record.record_type.to_string(),
-            record_value: existing_record.value.clone(),
-            record_ttl: existing_record.ttl,
-            record_priority: existing_record.priority,
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to create zone change (DEL): {}", e);
-            ServiceError::Internal("Failed to create zone change".to_string())
-        })?;
-
-        // Add new record
-        RepositoryService::create_zone_change(ZoneChange {
-            id: 0,
-            zone_id: zone.id,
-            serial: new_serial,
-            operation: "ADD".to_string(),
-            record_name: updated_record.name.clone(),
-            record_type: update_record_request.record_type.clone(),
-            record_value: update_record_request.value.clone(),
-            record_ttl: update_record_request.ttl,
-            record_priority: update_record_request.priority,
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to create zone change (ADD): {}", e);
-            ServiceError::Internal("Failed to create zone change".to_string())
-        })?;
-
-        save_zone_snapshot(&zone, new_serial).await?;
 
         // Send NOTIFY to secondary servers
         if let Err(e) = dns::xfr::notify::send_notify(Some(&zone.name)).await {
@@ -770,14 +856,79 @@ impl RecordService {
         }
 
         // Delete record
-        RepositoryService::delete_record(record_id)
+        let mut tx = RepositoryService::begin_transaction().await.map_err(|e| {
+            log_error!("Failed to begin transaction: {}", e);
+            ServiceError::Internal("Failed to delete record".to_string())
+        })?;
+
+        let new_serial = generate_serial(zone.serial);
+
+        let apply_result = async {
+            RepositoryService::delete_record_tx(&mut tx, record_id)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to delete record: {}", e);
+                    ServiceError::Internal("Failed to delete record".to_string())
+                })?;
+
+            // Increment zone serial so IXFR consumers can detect this change
+            RepositoryService::update_zone_tx(
+                &mut tx,
+                crate::database::model::zone::Zone {
+                    serial: new_serial,
+                    ..zone.clone()
+                },
+            )
             .await
             .map_err(|e| {
-                log_error!("Failed to delete record: {}", e);
-                ServiceError::Internal("Failed to delete record".to_string())
+                log_error!("Failed to update zone serial: {}", e);
+                ServiceError::Internal("Failed to update zone serial".to_string())
             })?;
 
-        // Log record deletion
+            // Record zone change for IXFR
+            RepositoryService::create_zone_change_tx(
+                &mut tx,
+                ZoneChange {
+                    id: 0,
+                    zone_id: zone.id,
+                    serial: new_serial,
+                    operation: "DEL".to_string(),
+                    record_name: existing_record.name.clone(),
+                    record_type: existing_record.record_type.to_string(),
+                    record_value: existing_record.value.clone(),
+                    record_ttl: existing_record.ttl,
+                    record_priority: existing_record.priority,
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change: {}", e);
+                ServiceError::Internal("Failed to create zone change".to_string())
+            })?;
+
+            save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+
+            Ok::<(), ServiceError>(())
+        }
+        .await;
+
+        match apply_result {
+            Ok(()) => {
+                tx.commit().await.map_err(|e| {
+                    log_error!("Failed to commit transaction: {}", e);
+                    ServiceError::Internal("Failed to delete record".to_string())
+                })?;
+            }
+            Err(err) => {
+                tx.rollback().await.map_err(|e| {
+                    log_error!("Failed to rollback transaction: {}", e);
+                    ServiceError::Internal("Failed to delete record".to_string())
+                })?;
+                return Err(err);
+            }
+        };
+
+        // Log record deletion after commit
         log_info!(
             "event=record_delete zone={} name={} type={} value={} record_id={}",
             zone.name,
@@ -786,38 +937,6 @@ impl RecordService {
             existing_record.value,
             existing_record.id
         );
-
-        // Increment zone serial so IXFR consumers can detect this change
-        let new_serial = generate_serial(zone.serial);
-        RepositoryService::update_zone(crate::database::model::zone::Zone {
-            serial: new_serial,
-            ..zone.clone()
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to update zone serial: {}", e);
-            ServiceError::Internal("Failed to update zone serial".to_string())
-        })?;
-
-        // Record zone change for IXFR
-        RepositoryService::create_zone_change(ZoneChange {
-            id: 0,
-            zone_id: zone.id,
-            serial: new_serial,
-            operation: "DEL".to_string(),
-            record_name: existing_record.name.clone(),
-            record_type: existing_record.record_type.to_string(),
-            record_value: existing_record.value.clone(),
-            record_ttl: existing_record.ttl,
-            record_priority: existing_record.priority,
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to create zone change: {}", e);
-            ServiceError::Internal("Failed to create zone change".to_string())
-        })?;
-
-        save_zone_snapshot(&zone, new_serial).await?;
 
         // Send NOTIFY to secondary servers
         if let Err(e) = dns::xfr::notify::send_notify(Some(&zone.name)).await {

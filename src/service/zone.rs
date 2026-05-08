@@ -7,7 +7,10 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     dns, log_error, log_info, log_warn,
-    service::{error::ServiceError, repository::RepositoryService},
+    service::{
+        error::ServiceError,
+        repository::{RepositoryService, RepositoryTx},
+    },
 };
 use chrono::Utc;
 
@@ -61,20 +64,27 @@ fn has_glue(records: &[Record], host_name: &str) -> bool {
     })
 }
 
-async fn save_zone_snapshot(zone: &Zone, serial: i32) -> Result<(), ServiceError> {
-    RepositoryService::upsert_zone_snapshot(ZoneSnapshot {
-        id: 0,
-        zone_id: zone.id,
-        serial,
-        primary_ns: zone.primary_ns.clone(),
-        admin_email: zone.admin_email.replace('@', "."),
-        ttl: zone.ttl,
-        refresh: zone.refresh,
-        retry: zone.retry,
-        expire: zone.expire,
-        minimum_ttl: zone.minimum_ttl,
-        created_at: Utc::now(),
-    })
+async fn save_zone_snapshot_tx(
+    tx: &mut RepositoryTx<'_>,
+    zone: &Zone,
+    serial: i32,
+) -> Result<(), ServiceError> {
+    RepositoryService::upsert_zone_snapshot_tx(
+        tx,
+        ZoneSnapshot {
+            id: 0,
+            zone_id: zone.id,
+            serial,
+            primary_ns: zone.primary_ns.clone(),
+            admin_email: zone.admin_email.replace('@', "."),
+            ttl: zone.ttl,
+            refresh: zone.refresh,
+            retry: zone.retry,
+            expire: zone.expire,
+            minimum_ttl: zone.minimum_ttl,
+            created_at: Utc::now(),
+        },
+    )
     .await
     .map_err(|e| {
         log_error!("Failed to save SOA snapshot: {}", e);
@@ -134,26 +144,77 @@ impl ZoneService {
         };
 
         // Create zone
-        let created_zone = RepositoryService::create_zone(Zone {
-            id: 0, // Will be set by the database
-            name: create_zone_request.name.clone(),
-            primary_ns: create_zone_request.primary_ns.clone(),
-            admin_email: create_zone_request.admin_email.clone(),
-            ttl: create_zone_request.ttl,
-            serial,
-            refresh: create_zone_request.refresh.unwrap_or(86400),
-            retry: create_zone_request.retry.unwrap_or(7200),
-            expire: create_zone_request.expire.unwrap_or(3_600_000),
-            minimum_ttl: create_zone_request.minimum_ttl.unwrap_or(86400),
-            created_at: Utc::now(), // Will be set by the database
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to create zone: {}", e);
+        let mut tx = RepositoryService::begin_transaction().await.map_err(|e| {
+            log_error!("Failed to begin transaction: {}", e);
             ServiceError::Internal("Failed to create zone".to_string())
         })?;
 
-        // Log zone creation (structured logging)
+        let apply_result = async {
+            let created_zone = RepositoryService::create_zone_tx(
+                &mut tx,
+                Zone {
+                    id: 0, // Will be set by the database
+                    name: create_zone_request.name.clone(),
+                    primary_ns: create_zone_request.primary_ns.clone(),
+                    admin_email: create_zone_request.admin_email.clone(),
+                    ttl: create_zone_request.ttl,
+                    serial,
+                    refresh: create_zone_request.refresh.unwrap_or(86400),
+                    retry: create_zone_request.retry.unwrap_or(7200),
+                    expire: create_zone_request.expire.unwrap_or(3_600_000),
+                    minimum_ttl: create_zone_request.minimum_ttl.unwrap_or(86400),
+                    created_at: Utc::now(), // Will be set by the database
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone: {}", e);
+                ServiceError::Internal("Failed to create zone".to_string())
+            })?;
+
+            // Keep zones.primary_ns aligned with at least one apex NS record in records table.
+            let primary_ns_apex_record = Record {
+                id: 0,
+                name: "@".to_string(),
+                record_type: RecordType::NS,
+                value: create_zone_request.primary_ns.clone(),
+                ttl: Some(create_zone_request.ttl),
+                priority: None,
+                zone_id: created_zone.id,
+                created_at: Utc::now(),
+            };
+
+            RepositoryService::create_record_tx(&mut tx, primary_ns_apex_record)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to create primary NS record: {}", e);
+                    ServiceError::Internal("Failed to create primary NS record".to_string())
+                })?;
+
+            save_zone_snapshot_tx(&mut tx, &created_zone, created_zone.serial).await?;
+
+            Ok::<Zone, ServiceError>(created_zone)
+        }
+        .await;
+
+        let created_zone = match apply_result {
+            Ok(zone) => {
+                tx.commit().await.map_err(|e| {
+                    log_error!("Failed to commit transaction: {}", e);
+                    ServiceError::Internal("Failed to create zone".to_string())
+                })?;
+                zone
+            }
+            Err(err) => {
+                tx.rollback().await.map_err(|e| {
+                    log_error!("Failed to rollback transaction: {}", e);
+                    ServiceError::Internal("Failed to create zone".to_string())
+                })?;
+                return Err(err);
+            }
+        };
+
+        // Log zone creation after commit (structured logging)
         log_info!(
             "event=zone_create zone={} primary_ns={} admin_email={} serial={} zone_id={}",
             created_zone.name,
@@ -162,27 +223,6 @@ impl ZoneService {
             created_zone.serial,
             created_zone.id
         );
-
-        // Keep zones.primary_ns aligned with at least one apex NS record in records table.
-        let primary_ns_apex_record = Record {
-            id: 0,
-            name: "@".to_string(),
-            record_type: RecordType::NS,
-            value: create_zone_request.primary_ns.clone(),
-            ttl: Some(create_zone_request.ttl),
-            priority: None,
-            zone_id: created_zone.id,
-            created_at: Utc::now(),
-        };
-
-        RepositoryService::create_record(primary_ns_apex_record)
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create primary NS record: {}", e);
-                ServiceError::Internal("Failed to create primary NS record".to_string())
-            })?;
-
-        save_zone_snapshot(&created_zone, created_zone.serial).await?;
 
         Ok(created_zone)
     }
@@ -252,26 +292,161 @@ impl ZoneService {
         }
 
         // Update zone
-        let updated_zone = RepositoryService::update_zone(Zone {
-            id: zone_id,
-            name: update_zone_request.name.clone(),
-            primary_ns: update_zone_request.primary_ns.clone(),
-            admin_email: update_zone_request.admin_email.clone(),
-            ttl: update_zone_request.ttl,
-            serial: new_serial,
-            refresh: update_zone_request.refresh.unwrap_or(86400),
-            retry: update_zone_request.retry.unwrap_or(7200),
-            expire: update_zone_request.expire.unwrap_or(3_600_000),
-            minimum_ttl: update_zone_request.minimum_ttl.unwrap_or(86400),
-            created_at: Utc::now(), // Will be set by the database
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to update zone: {}", e);
+        let mut tx = RepositoryService::begin_transaction().await.map_err(|e| {
+            log_error!("Failed to begin transaction: {}", e);
             ServiceError::Internal("Failed to update zone".to_string())
         })?;
 
-        // Log zone update (structured logging)
+        let apply_result = async {
+            let updated_zone = RepositoryService::update_zone_tx(
+                &mut tx,
+                Zone {
+                    id: zone_id,
+                    name: update_zone_request.name.clone(),
+                    primary_ns: update_zone_request.primary_ns.clone(),
+                    admin_email: update_zone_request.admin_email.clone(),
+                    ttl: update_zone_request.ttl,
+                    serial: new_serial,
+                    refresh: update_zone_request.refresh.unwrap_or(86400),
+                    retry: update_zone_request.retry.unwrap_or(7200),
+                    expire: update_zone_request.expire.unwrap_or(3_600_000),
+                    minimum_ttl: update_zone_request.minimum_ttl.unwrap_or(86400),
+                    created_at: Utc::now(), // Will be set by the database
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to update zone: {}", e);
+                ServiceError::Internal("Failed to update zone".to_string())
+            })?;
+
+            // Record zone changes for IXFR
+
+            let has_primary_ns = zone_records.iter().any(|r| {
+                r.record_type == RecordType::NS
+                    && r.name == "@"
+                    && to_fqdn(&r.value).eq_ignore_ascii_case(&to_fqdn(&updated_zone.primary_ns))
+            });
+
+            if !has_primary_ns {
+                let primary_ns_record = Record {
+                    id: 0,
+                    name: "@".to_string(),
+                    record_type: RecordType::NS,
+                    value: updated_zone.primary_ns.clone(),
+                    ttl: Some(updated_zone.ttl),
+                    priority: None,
+                    zone_id,
+                    created_at: Utc::now(),
+                };
+
+                RepositoryService::create_record_tx(&mut tx, primary_ns_record)
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to create primary NS record during update: {}", e);
+                        ServiceError::Internal("Failed to keep primary NS consistency".to_string())
+                    })?;
+
+                RepositoryService::create_zone_change_tx(
+                    &mut tx,
+                    ZoneChange {
+                        id: 0,
+                        zone_id,
+                        serial: new_serial,
+                        operation: "ADD".to_string(),
+                        record_name: "@".to_string(),
+                        record_type: "NS".to_string(),
+                        record_value: updated_zone.primary_ns.clone(),
+                        record_ttl: Some(updated_zone.ttl),
+                        record_priority: None,
+                    },
+                )
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to create zone change (ADD NS): {}", e);
+                    ServiceError::Internal("Failed to create zone change".to_string())
+                })?;
+            }
+
+            let format_soa = |zone: &Zone| -> String {
+                format!(
+                    "{} {} {} {} {} {} {}",
+                    zone.primary_ns,
+                    zone.admin_email.replace('@', "."),
+                    zone.serial,
+                    zone.refresh,
+                    zone.retry,
+                    zone.expire,
+                    zone.minimum_ttl
+                )
+            };
+
+            // Delete old SOA record
+            RepositoryService::create_zone_change_tx(
+                &mut tx,
+                ZoneChange {
+                    id: 0,
+                    zone_id,
+                    serial: new_serial,
+                    operation: "DEL".to_string(),
+                    record_name: "@".to_string(),
+                    record_type: "SOA".to_string(),
+                    record_value: format_soa(&existing_zone),
+                    record_ttl: Some(existing_zone.ttl),
+                    record_priority: None,
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change (DEL SOA): {}", e);
+                ServiceError::Internal("Failed to create zone change".to_string())
+            })?;
+
+            // Add new SOA record
+            RepositoryService::create_zone_change_tx(
+                &mut tx,
+                ZoneChange {
+                    id: 0,
+                    zone_id,
+                    serial: new_serial,
+                    operation: "ADD".to_string(),
+                    record_name: "@".to_string(),
+                    record_type: "SOA".to_string(),
+                    record_value: format_soa(&updated_zone),
+                    record_ttl: Some(updated_zone.ttl),
+                    record_priority: None,
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create zone change (ADD SOA): {}", e);
+                ServiceError::Internal("Failed to create zone change".to_string())
+            })?;
+
+            save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
+
+            Ok::<Zone, ServiceError>(updated_zone)
+        }
+        .await;
+
+        let updated_zone = match apply_result {
+            Ok(zone) => {
+                tx.commit().await.map_err(|e| {
+                    log_error!("Failed to commit transaction: {}", e);
+                    ServiceError::Internal("Failed to update zone".to_string())
+                })?;
+                zone
+            }
+            Err(err) => {
+                tx.rollback().await.map_err(|e| {
+                    log_error!("Failed to rollback transaction: {}", e);
+                    ServiceError::Internal("Failed to update zone".to_string())
+                })?;
+                return Err(err);
+            }
+        };
+
+        // Log zone update after commit (structured logging)
         log_info!(
             "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",
             update_zone_request.name,
@@ -279,102 +454,6 @@ impl ZoneService {
             new_serial,
             updated_zone.id
         );
-
-        // Record zone changes for IXFR
-
-        let has_primary_ns = zone_records.iter().any(|r| {
-            r.record_type == RecordType::NS
-                && r.name == "@"
-                && to_fqdn(&r.value).eq_ignore_ascii_case(&to_fqdn(&updated_zone.primary_ns))
-        });
-
-        if !has_primary_ns {
-            let primary_ns_record = Record {
-                id: 0,
-                name: "@".to_string(),
-                record_type: RecordType::NS,
-                value: updated_zone.primary_ns.clone(),
-                ttl: Some(updated_zone.ttl),
-                priority: None,
-                zone_id,
-                created_at: Utc::now(),
-            };
-
-            RepositoryService::create_record(primary_ns_record)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to create primary NS record during update: {}", e);
-                    ServiceError::Internal("Failed to keep primary NS consistency".to_string())
-                })?;
-
-            RepositoryService::create_zone_change(ZoneChange {
-                id: 0,
-                zone_id,
-                serial: new_serial,
-                operation: "ADD".to_string(),
-                record_name: "@".to_string(),
-                record_type: "NS".to_string(),
-                record_value: updated_zone.primary_ns.clone(),
-                record_ttl: Some(updated_zone.ttl),
-                record_priority: None,
-            })
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change (ADD NS): {}", e);
-                ServiceError::Internal("Failed to create zone change".to_string())
-            })?;
-        }
-
-        let format_soa = |zone: &Zone| -> String {
-            format!(
-                "{} {} {} {} {} {} {}",
-                zone.primary_ns,
-                zone.admin_email.replace('@', "."),
-                zone.serial,
-                zone.refresh,
-                zone.retry,
-                zone.expire,
-                zone.minimum_ttl
-            )
-        };
-
-        // Delete old SOA record
-        RepositoryService::create_zone_change(ZoneChange {
-            id: 0,
-            zone_id,
-            serial: new_serial,
-            operation: "DEL".to_string(),
-            record_name: "@".to_string(),
-            record_type: "SOA".to_string(),
-            record_value: format_soa(&existing_zone),
-            record_ttl: Some(existing_zone.ttl),
-            record_priority: None,
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to create zone change (DEL SOA): {}", e);
-            ServiceError::Internal("Failed to create zone change".to_string())
-        })?;
-
-        // Add new SOA record
-        RepositoryService::create_zone_change(ZoneChange {
-            id: 0,
-            zone_id,
-            serial: new_serial,
-            operation: "ADD".to_string(),
-            record_name: "@".to_string(),
-            record_type: "SOA".to_string(),
-            record_value: format_soa(&updated_zone),
-            record_ttl: Some(updated_zone.ttl),
-            record_priority: None,
-        })
-        .await
-        .map_err(|e| {
-            log_error!("Failed to create zone change (ADD SOA): {}", e);
-            ServiceError::Internal("Failed to create zone change".to_string())
-        })?;
-
-        save_zone_snapshot(&updated_zone, new_serial).await?;
 
         // Send NOTIFY to secondary servers
         if let Err(e) = dns::xfr::notify::send_notify(Some(&updated_zone.name)).await {
@@ -409,12 +488,39 @@ impl ZoneService {
         let zone_name_clone = zone.name.clone();
 
         // Delete zone
-        RepositoryService::delete_zone(zone_id).await.map_err(|e| {
-            log_error!("Failed to delete zone: {}", e);
+        let mut tx = RepositoryService::begin_transaction().await.map_err(|e| {
+            log_error!("Failed to begin transaction: {}", e);
             ServiceError::Internal("Failed to delete zone".to_string())
         })?;
 
-        // Log zone deletion (structured logging)
+        let apply_result = async {
+            RepositoryService::delete_zone_tx(&mut tx, zone_id)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to delete zone: {}", e);
+                    ServiceError::Internal("Failed to delete zone".to_string())
+                })?;
+            Ok::<(), ServiceError>(())
+        }
+        .await;
+
+        match apply_result {
+            Ok(()) => {
+                tx.commit().await.map_err(|e| {
+                    log_error!("Failed to commit transaction: {}", e);
+                    ServiceError::Internal("Failed to delete zone".to_string())
+                })?;
+            }
+            Err(err) => {
+                tx.rollback().await.map_err(|e| {
+                    log_error!("Failed to rollback transaction: {}", e);
+                    ServiceError::Internal("Failed to delete zone".to_string())
+                })?;
+                return Err(err);
+            }
+        };
+
+        // Log zone deletion after commit (structured logging)
         log_info!(
             "event=zone_delete zone={} zone_id={}",
             zone_name_clone,
