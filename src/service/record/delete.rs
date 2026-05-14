@@ -17,20 +17,28 @@ impl RecordService {
         })?;
 
         // Check if record exists
-        let existing_record =
-            match RepositoryService::get_record_by_name_and_type(name, &record_type).await {
-                Ok(Some(record)) => record,
-                Ok(None) => {
-                    return Err(ServiceError::NotFound(format!(
-                        "Record with name '{}' and type '{}' not found",
-                        name, record_type_str
-                    )));
-                }
-                Err(e) => {
-                    log_error!("Failed to fetch record: {}", e);
-                    return Err(ServiceError::Internal("Failed to fetch record".to_string()));
-                }
-            };
+        let existing_record = match RepositoryService::get_record(
+            None,
+            name,
+            &record_type,
+            None,
+            None,
+            false,
+        )
+        .await
+        {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return Err(ServiceError::NotFound(format!(
+                    "Record with name '{}' and type '{}' not found",
+                    name, record_type_str
+                )));
+            }
+            Err(e) => {
+                log_error!("Failed to fetch record: {}", e);
+                return Err(ServiceError::Internal("Failed to fetch record".to_string()));
+            }
+        };
 
         // Get zone name for history
         let zone = match RepositoryService::get_zone_by_id(existing_record.zone_id).await {

@@ -30,29 +30,14 @@ impl RecordService {
             ServiceError::BadRequest(format!("Invalid record type: {}", record_type_str))
         })?;
 
-        // Check if record exists
-        let existing_record =
-            match RepositoryService::get_record_by_name_and_type(name, &old_record_type).await {
-                Ok(Some(record)) => record,
-                Ok(None) => {
-                    return Err(ServiceError::NotFound(format!(
-                        "Record with name '{}' and type '{}' not found",
-                        name, record_type_str
-                    )));
-                }
-                Err(e) => {
-                    log_error!("Failed to fetch record: {}", e);
-                    return Err(ServiceError::Internal("Failed to fetch record".to_string()));
-                }
-            };
-
-        let record_id = existing_record.id;
-
-        // Load authoritative zone from the existing record to avoid cross-zone mismatches.
-        let zone = match RepositoryService::get_zone_by_id(existing_record.zone_id).await {
+        let zone = match RepositoryService::get_zone_by_name(&update_record_request.zone_name).await
+        {
             Ok(Some(zone)) => zone,
             Ok(None) => {
-                return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
+                return Err(ServiceError::NotFound(format!(
+                    "Zone with name '{}' not found",
+                    update_record_request.zone_name
+                )));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
@@ -60,12 +45,31 @@ impl RecordService {
             }
         };
 
-        if zone.name != update_record_request.zone_name {
-            return Err(ServiceError::BadRequest(format!(
-                "Record belongs to zone '{}', but request zone is '{}'",
-                zone.name, update_record_request.zone_name
-            )));
-        }
+        // Check if record exists in the requested zone.
+        let existing_record = match RepositoryService::get_record(
+            Some(zone.id),
+            name,
+            &old_record_type,
+            None,
+            None,
+            false,
+        )
+        .await
+        {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return Err(ServiceError::NotFound(format!(
+                    "Record with name '{}' and type '{}' not found",
+                    name, record_type_str
+                )));
+            }
+            Err(e) => {
+                log_error!("Failed to fetch record: {}", e);
+                return Err(ServiceError::Internal("Failed to fetch record".to_string()));
+            }
+        };
+
+        let record_id = existing_record.id;
 
         // Validate record type
         let record_type =

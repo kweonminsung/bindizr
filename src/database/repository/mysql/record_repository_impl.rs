@@ -123,35 +123,86 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(records)
     }
 
-    async fn get_by_name_and_type(
+    async fn get(
         &self,
+        zone_id: Option<i32>,
         name: &str,
         record_type: &RecordType,
+        value: Option<&str>,
+        priority: Option<i32>,
+        match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let record =
-            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = ? AND record_type = ?")
-                .bind(name)
-                .bind(record_type.to_string())
-                .fetch_optional(&mut *conn)
-                .await
-                ?;
+        let record = sqlx::query_as::<_, Record>(
+            r#"
+            SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
+            FROM records
+            WHERE (? IS NULL OR zone_id = ?)
+              AND LOWER(name) = LOWER(?)
+              AND record_type = ?
+              AND (? IS NULL OR LOWER(value) = LOWER(?))
+              AND (? = 0 OR priority = ? OR (priority IS NULL AND ? IS NULL))
+            "#,
+        )
+        .bind(zone_id)
+        .bind(zone_id)
+        .bind(name)
+        .bind(record_type.to_string())
+        .bind(value)
+        .bind(value)
+        .bind(if match_priority { 1 } else { 0 })
+        .bind(priority)
+        .bind(priority)
+        .fetch_optional(&mut *conn)
+        .await?;
 
         Ok(record)
     }
 
-    async fn get_by_name(&self, name: &str) -> Result<Vec<Record>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+    async fn get_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: Option<i32>,
+        name: &str,
+        record_type: &RecordType,
+        value: Option<&str>,
+        priority: Option<i32>,
+        match_priority: bool,
+    ) -> Result<Option<Record>, DatabaseError> {
+        let mysql_tx = match &mut tx.0 {
+            RepositoryTxKind::MySQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected MySQL)".to_string(),
+                ));
+            }
+        };
 
-        let records =
-            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = ?")
-                .bind(name)
-                .fetch_all(&mut *conn)
-                .await
-                ?;
+        let record = sqlx::query_as::<_, Record>(
+            r#"
+            SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
+            FROM records
+            WHERE (? IS NULL OR zone_id = ?)
+              AND LOWER(name) = LOWER(?)
+              AND record_type = ?
+              AND (? IS NULL OR LOWER(value) = LOWER(?))
+              AND (? = 0 OR priority = ? OR (priority IS NULL AND ? IS NULL))
+            "#,
+        )
+        .bind(zone_id)
+        .bind(zone_id)
+        .bind(name)
+        .bind(record_type.to_string())
+        .bind(value)
+        .bind(value)
+        .bind(if match_priority { 1 } else { 0 })
+        .bind(priority)
+        .bind(priority)
+        .fetch_optional(&mut **mysql_tx)
+        .await?;
 
-        Ok(records)
+        Ok(record)
     }
 
     async fn get_all(&self) -> Result<Vec<Record>, DatabaseError> {

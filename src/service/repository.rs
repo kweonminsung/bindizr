@@ -157,21 +157,32 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }
 
-    pub async fn get_record_by_name_and_type(
+    pub async fn get_record(
+        zone_id: Option<i32>,
         name: &str,
         record_type: &RecordType,
+        value: Option<&str>,
+        priority: Option<i32>,
+        match_priority: bool,
     ) -> Result<Option<Record>, ServiceError> {
         get_record_repository()
-            .get_by_name_and_type(name, record_type)
+            .get(zone_id, name, record_type, value, priority, match_priority)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load record: {}", e)))
     }
 
-    pub async fn get_records_by_name(name: &str) -> Result<Vec<Record>, ServiceError> {
-        get_record_repository()
-            .get_by_name(name)
+    pub async fn get_record_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: Option<i32>,
+        name: &str,
+        record_type: &RecordType,
+        value: Option<&str>,
+        priority: Option<i32>,
+        match_priority: bool,
+    ) -> Result<Option<Record>, ServiceError> {
+        tx.get_record(zone_id, name, record_type, value, priority, match_priority)
             .await
-            .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
+            .map_err(|e| ServiceError::Internal(format!("failed to load record: {}", e)))
     }
 
     pub async fn delete_record(record_id: i32) -> Result<(), ServiceError> {

@@ -88,6 +88,28 @@ impl<'a> RepositoryTx<'a> {
             .await
     }
 
+    pub async fn get_record(
+        &mut self,
+        zone_id: Option<i32>,
+        name: &str,
+        record_type: &RecordType,
+        value: Option<&str>,
+        priority: Option<i32>,
+        match_priority: bool,
+    ) -> Result<Option<Record>, DatabaseError> {
+        get_record_repository()
+            .get_tx(
+                self,
+                zone_id,
+                name,
+                record_type,
+                value,
+                priority,
+                match_priority,
+            )
+            .await
+    }
+
     pub async fn create_record(&mut self, record: Record) -> Result<Record, DatabaseError> {
         get_record_repository().create_tx(self, record).await
     }
@@ -165,12 +187,25 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_by_name_and_type(
+    async fn get(
         &self,
+        zone_id: Option<i32>,
         name: &str,
         record_type: &RecordType,
+        value: Option<&str>,
+        priority: Option<i32>,
+        match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError>;
-    async fn get_by_name(&self, name: &str) -> Result<Vec<Record>, DatabaseError>;
+    async fn get_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: Option<i32>,
+        name: &str,
+        record_type: &RecordType,
+        value: Option<&str>,
+        priority: Option<i32>,
+        match_priority: bool,
+    ) -> Result<Option<Record>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<Record>, DatabaseError>;
     async fn update(&self, record: Record) -> Result<Record, DatabaseError>;
     async fn update_tx(

@@ -58,7 +58,7 @@ impl RecordService {
             ServiceError::BadRequest(format!("Invalid record type: {}", record_type))
         })?;
 
-        match RepositoryService::get_record_by_name_and_type(name, &record_type).await {
+        match RepositoryService::get_record(None, name, &record_type, None, None, false).await {
             Ok(Some(record)) => Ok(record),
             Ok(None) => Err(ServiceError::NotFound(format!(
                 "Record with name '{}' and type '{}' not found",

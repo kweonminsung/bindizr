@@ -7,10 +7,7 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     dns, log_error, log_info,
-    service::record::{
-        find_identical_record_in_zone_tx, validate_record_add_constraints_tx,
-        validate_record_delete_constraints,
-    },
+    service::record::{validate_record_add_constraints_tx, validate_record_delete_constraints},
     service::repository::{RepositoryService, RepositoryTx},
 };
 use chrono::Utc;
@@ -158,10 +155,18 @@ async fn add_record(
         .await
         .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
-    if find_identical_record_in_zone_tx(tx, zone.id, &relative_name, &record_type, &value, priority)
-        .await
-        .map_err(|e| UpdateError::Internal(e.to_string()))?
-        .is_some()
+    if RepositoryService::get_record_tx(
+        tx,
+        Some(zone.id),
+        &relative_name,
+        &record_type,
+        Some(&value),
+        priority,
+        true,
+    )
+    .await
+    .map_err(|e| UpdateError::Internal(e.to_string()))?
+    .is_some()
     {
         return Ok(false);
     }

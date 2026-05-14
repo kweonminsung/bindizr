@@ -125,35 +125,86 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(records)
     }
 
-    async fn get_by_name_and_type(
+    async fn get(
         &self,
+        zone_id: Option<i32>,
         name: &str,
         record_type: &RecordType,
+        value: Option<&str>,
+        priority: Option<i32>,
+        match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let record =
-            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = $1 AND record_type = $2")
-                .bind(name)
-                .bind(record_type.to_string())
-                .fetch_optional(&mut *conn)
-                .await
-                ?;
+        let record = sqlx::query_as::<_, Record>(
+            r#"
+            SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
+            FROM records
+            WHERE ($1::INT4 IS NULL OR zone_id = $2)
+              AND LOWER(name) = LOWER($3)
+              AND record_type = $4
+              AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))
+              AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
+            "#,
+        )
+        .bind(zone_id)
+        .bind(zone_id)
+        .bind(name)
+        .bind(record_type.to_string())
+        .bind(value)
+        .bind(value)
+        .bind(if match_priority { 1 } else { 0 })
+        .bind(priority)
+        .bind(priority)
+        .fetch_optional(&mut *conn)
+        .await?;
 
         Ok(record)
     }
 
-    async fn get_by_name(&self, name: &str) -> Result<Vec<Record>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+    async fn get_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: Option<i32>,
+        name: &str,
+        record_type: &RecordType,
+        value: Option<&str>,
+        priority: Option<i32>,
+        match_priority: bool,
+    ) -> Result<Option<Record>, DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
 
-        let records =
-            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE name = $1")
-                .bind(name)
-                .fetch_all(&mut *conn)
-                .await
-                ?;
+        let record = sqlx::query_as::<_, Record>(
+            r#"
+            SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
+            FROM records
+            WHERE ($1::INT4 IS NULL OR zone_id = $2)
+              AND LOWER(name) = LOWER($3)
+              AND record_type = $4
+              AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))
+              AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
+            "#,
+        )
+        .bind(zone_id)
+        .bind(zone_id)
+        .bind(name)
+        .bind(record_type.to_string())
+        .bind(value)
+        .bind(value)
+        .bind(if match_priority { 1 } else { 0 })
+        .bind(priority)
+        .bind(priority)
+        .fetch_optional(&mut **postgres_tx)
+        .await?;
 
-        Ok(records)
+        Ok(record)
     }
 
     async fn get_all(&self) -> Result<Vec<Record>, DatabaseError> {

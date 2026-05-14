@@ -12,29 +12,6 @@ use crate::{
 };
 use std::collections::HashSet;
 
-pub async fn find_identical_record_in_zone_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone_id: i32,
-    name: &str,
-    record_type: &RecordType,
-    value: &str,
-    priority: Option<i32>,
-) -> Result<Option<Record>, ServiceError> {
-    let zone_records = RepositoryService::get_records_by_zone_id_tx(tx, zone_id)
-        .await
-        .map_err(|e| {
-            log_error!("Failed to load zone records: {}", e);
-            ServiceError::Internal("Failed to load zone records".to_string())
-        })?;
-
-    Ok(zone_records.into_iter().find(|r| {
-        r.name.eq_ignore_ascii_case(name)
-            && &r.record_type == record_type
-            && r.value.eq_ignore_ascii_case(value)
-            && r.priority == priority
-    }))
-}
-
 pub fn validate_glue_invariants(zone: &Zone, records: &[Record]) -> Result<(), ServiceError> {
     let remaining_in_bailiwick_apex_ns = records.iter().filter(|r| {
         r.record_type == RecordType::NS
