@@ -63,9 +63,9 @@ pub async fn apply_update(
     super::prerequisite::evaluate_prerequisites(&zone, &request.prerequisites, query_data).await?;
     let new_serial = generate_serial(zone.serial);
 
-    let mut tx = RepositoryService::begin_transaction().await.map_err(|e| {
-        UpdateError::Internal(format!("failed to begin NSUPDATE transaction: {}", e))
-    })?;
+    let mut tx = RepositoryService::begin_tx("failed to begin NSUPDATE transaction")
+        .await
+        .map_err(|e| UpdateError::Internal(e.to_string()))?;
 
     let apply_result = async {
         let mut changed = false;

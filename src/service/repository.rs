@@ -22,12 +22,6 @@ pub struct RepositoryService;
 
 #[allow(dead_code)]
 impl RepositoryService {
-    pub async fn begin_transaction() -> Result<RepositoryTx<'static>, ServiceError> {
-        db_repository::begin_transaction()
-            .await
-            .map_err(|e| ServiceError::Internal(format!("failed to begin transaction: {}", e)))
-    }
-
     pub async fn begin_tx(
         internal_msg: &'static str,
     ) -> Result<RepositoryTx<'static>, ServiceError> {
