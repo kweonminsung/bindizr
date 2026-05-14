@@ -15,7 +15,14 @@ pub async fn handle_tcp_soa(
     let client_ip = client_addr.ip();
     validate_secondary_acl(client_ip, secondary_servers)?;
 
-    let response = build_soa_response(query_data, client_ip).await?;
+    let response = match build_soa_response(query_data, client_ip).await {
+        Ok(response) => response,
+        Err(XfrError::ZoneNotFound(_)) => {
+            let (zone_name, qtype, _client_serial, query_id) = wire::parse_query(query_data)?;
+            wire::build_error_response(query_id, &zone_name, qtype, wire::RCODE_NOTAUTH)
+        }
+        Err(err) => return Err(err),
+    };
     wire::write_tcp_message(stream, &response).await?;
 
     Ok(())
@@ -30,7 +37,14 @@ pub async fn handle_udp_soa(
     let client_ip = client_addr.ip();
     validate_secondary_acl(client_ip, secondary_servers)?;
 
-    let response = build_soa_response(query_data, client_ip).await?;
+    let response = match build_soa_response(query_data, client_ip).await {
+        Ok(response) => response,
+        Err(XfrError::ZoneNotFound(_)) => {
+            let (zone_name, qtype, _client_serial, query_id) = wire::parse_query(query_data)?;
+            wire::build_error_response(query_id, &zone_name, qtype, wire::RCODE_NOTAUTH)
+        }
+        Err(err) => return Err(err),
+    };
     socket.send_to(&response, client_addr).await?;
 
     Ok(())

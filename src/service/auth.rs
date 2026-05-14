@@ -1,13 +1,14 @@
 use crate::{database::model::api_token::ApiToken, log_error, service::error::ServiceError};
 use chrono::Utc;
 
-use super::repository::RepositoryService;
+use super::{repository::RepositoryService, token::hash_token};
 
 pub struct AuthService;
 
 impl AuthService {
     pub async fn validate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
-        let stored_token = match RepositoryService::get_api_token_by_token(token_str).await {
+        let token_hash = hash_token(token_str);
+        let stored_token = match RepositoryService::get_api_token_by_token(&token_hash).await {
             Ok(Some(token)) => token,
             Ok(None) => {
                 return Err(ServiceError::Unauthorized(

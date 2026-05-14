@@ -97,11 +97,8 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
     }
 
     println!("API Tokens:");
-    println!(
-        "{:<5} {:<40} {:<20} {:<20}",
-        "ID", "TOKEN", "DESCRIPTION", "EXPIRES AT"
-    );
-    println!("{}", "-".repeat(85));
+    println!("{:<5} {:<20} {:<20}", "ID", "DESCRIPTION", "EXPIRES AT");
+    println!("{}", "-".repeat(50));
 
     for token in tokens {
         let desc = token.description.unwrap_or_else(|| "-".to_string());
@@ -110,10 +107,7 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "Never".to_string());
 
-        println!(
-            "{:<5} {:<40} {:<20} {:<20}",
-            token.id, token.token, desc, expires
-        );
+        println!("{:<5} {:<20} {:<20}", token.id, desc, expires);
     }
 
     Ok(())

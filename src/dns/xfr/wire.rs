@@ -4,6 +4,7 @@ use domain::base::{Message, Name, ToName, iana::Rtype};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub const DNS_TCP_MAX_SIZE: usize = 65535;
+pub const RCODE_NOTAUTH: u8 = 9;
 
 pub struct DnsMessageBuilder {
     query_id: u16,
@@ -278,6 +279,29 @@ impl DnsMessageBuilder {
 
         message
     }
+}
+
+pub fn build_error_response(
+    query_id: u16,
+    qname: &Name<Vec<u8>>,
+    qtype: Rtype,
+    rcode: u8,
+) -> Vec<u8> {
+    let mut message = Vec::new();
+
+    message.extend_from_slice(&query_id.to_be_bytes());
+    message.push(0x80); // QR=1, Opcode=0, AA=0, TC=0, RD=0
+    message.push(rcode & 0x0f);
+    message.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT=1
+    message.extend_from_slice(&0u16.to_be_bytes()); // ANCOUNT=0
+    message.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT=0
+    message.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT=0
+
+    message.extend_from_slice(qname.as_slice());
+    message.extend_from_slice(&qtype.to_int().to_be_bytes());
+    message.extend_from_slice(&1u16.to_be_bytes()); // QCLASS=IN
+
+    message
 }
 
 fn ensure_fqdn(name: &str) -> String {

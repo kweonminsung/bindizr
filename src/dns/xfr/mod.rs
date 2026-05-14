@@ -55,12 +55,10 @@ pub async fn handle_tcp_query(
         client_ip
     );
 
-    match qtype {
-        Rtype::AXFR => {
-            axfr::handle_axfr(stream, &zone_name, query_id, client_ip).await?;
-        }
+    let result = match qtype {
+        Rtype::AXFR => axfr::handle_axfr(stream, &zone_name, query_id, client_ip).await,
         Rtype::IXFR => {
-            ixfr::handle_ixfr(stream, &zone_name, query_id, client_serial, client_ip).await?;
+            ixfr::handle_ixfr(stream, &zone_name, query_id, client_serial, client_ip).await
         }
         _ => {
             log_warn!("Unsupported query type: {:?}", qtype);
@@ -69,6 +67,17 @@ pub async fn handle_tcp_query(
                 qtype
             )));
         }
+    };
+
+    if let Err(err) = result {
+        if matches!(err, XfrError::ZoneNotFound(_)) {
+            let response =
+                wire::build_error_response(query_id, &zone_name, qtype, wire::RCODE_NOTAUTH);
+            wire::write_tcp_message(stream, &response).await?;
+            return Ok(());
+        }
+
+        return Err(err);
     }
 
     Ok(())

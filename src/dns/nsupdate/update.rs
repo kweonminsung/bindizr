@@ -7,8 +7,11 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     dns, log_error, log_info,
-    service::record::{validate_record_add_constraints_tx, validate_record_delete_constraints},
-    service::repository::{RepositoryService, RepositoryTx},
+    service::{
+        record::{validate_record_add_constraints_tx, validate_record_delete_constraints},
+        repository::{RepositoryService, RepositoryTx},
+        utils::generate_serial,
+    },
 };
 use chrono::Utc;
 use std::net::SocketAddr;
@@ -61,7 +64,7 @@ pub async fn apply_update(
         .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
 
     super::prerequisite::evaluate_prerequisites(&zone, &request.prerequisites, query_data).await?;
-    let new_serial = generate_serial(zone.serial);
+    let new_serial = generate_serial(Some(zone.serial));
 
     let mut tx = RepositoryService::begin_tx("failed to begin NSUPDATE transaction")
         .await
@@ -424,15 +427,16 @@ pub(super) fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<Strin
 
     let owner_lower = owner.to_ascii_lowercase();
     let zone_lower = zone.to_ascii_lowercase();
+    let zone_suffix = format!(".{}", zone_lower);
 
-    if !owner_lower.ends_with(&zone_lower) {
+    if !owner_lower.ends_with(&zone_suffix) {
         return Err(UpdateError::NotZone(format!(
             "owner '{}' is outside zone '{}'",
             owner, zone
         )));
     }
 
-    let rel_len = owner.len() - zone.len();
+    let rel_len = owner.len() - zone.len() - 1;
     let rel = owner[..rel_len].trim_end_matches('.');
     Ok(rel.to_string())
 }
@@ -465,18 +469,6 @@ async fn bump_zone_serial(
     .map_err(|e| UpdateError::Internal(format!("failed to update zone serial: {}", e)))?;
 
     Ok(())
-}
-
-fn generate_serial(current_serial: i32) -> i32 {
-    let now = Utc::now();
-    let date_prefix = now.format("%Y%m%d").to_string().parse::<i32>().unwrap_or(0);
-    let base_serial = date_prefix * 100;
-
-    if base_serial > current_serial {
-        base_serial
-    } else {
-        current_serial + 1
-    }
 }
 
 async fn save_zone_snapshot(
@@ -535,4 +527,27 @@ async fn log_zone_change(
     .map_err(|e| UpdateError::Internal(format!("failed to log zone change: {}", e)))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UpdateError, absolute_to_relative};
+
+    #[test]
+    fn absolute_to_relative_accepts_apex() {
+        let relative = absolute_to_relative("example.com.", "example.com.").unwrap();
+        assert_eq!(relative, "@");
+    }
+
+    #[test]
+    fn absolute_to_relative_accepts_subdomain_at_label_boundary() {
+        let relative = absolute_to_relative("www.example.com.", "example.com.").unwrap();
+        assert_eq!(relative, "www");
+    }
+
+    #[test]
+    fn absolute_to_relative_rejects_partial_suffix_match() {
+        let err = absolute_to_relative("aexample.com.", "example.com.").unwrap_err();
+        assert!(matches!(err, UpdateError::NotZone(_)));
+    }
 }

@@ -3,6 +3,7 @@ use std::fmt;
 const DNS_HEADER_LEN: usize = 12;
 const CLASS_IN: u16 = 1;
 const CLASS_ANY: u16 = 255;
+const TYPE_SOA: u16 = 6;
 const TSIG_TYPE: u16 = 250;
 
 #[derive(Debug, Clone)]
@@ -100,11 +101,11 @@ pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
         return Err(ParseError::InvalidZoneSection);
     }
 
-    let _ztype = u16::from_be_bytes([data[pos], data[pos + 1]]);
+    let ztype = u16::from_be_bytes([data[pos], data[pos + 1]]);
     let zclass = u16::from_be_bytes([data[pos + 2], data[pos + 3]]);
     pos += 4;
 
-    if zclass != CLASS_IN {
+    if ztype != TYPE_SOA || zclass != CLASS_IN {
         return Err(ParseError::InvalidZoneSection);
     }
 
@@ -383,7 +384,23 @@ pub fn decode_txt_from_rdata(rdata: &[u8]) -> Result<String, ParseError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ParseError, decode_name_from_rdata};
+    use super::{ParseError, decode_name_from_rdata, parse_update_request};
+
+    fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
+        let mut message = Vec::new();
+        message.extend_from_slice(&[
+            0x12, 0x34, // ID
+            0x28, 0x00, // Opcode UPDATE
+            0x00, 0x01, // ZOCOUNT
+            0x00, 0x00, // PRCOUNT
+            0x00, 0x00, // UPCOUNT
+            0x00, 0x00, // ADCOUNT
+            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00,
+        ]);
+        message.extend_from_slice(&ztype.to_be_bytes());
+        message.extend_from_slice(&1u16.to_be_bytes());
+        message
+    }
 
     #[test]
     fn decode_name_from_rdata_handles_compression_pointer() {
@@ -408,5 +425,19 @@ mod tests {
         let message = [1, b'a', 0, 0];
         let err = decode_name_from_rdata(&message, 0, message.len()).unwrap_err();
         assert!(matches!(err, ParseError::InvalidName));
+    }
+
+    #[test]
+    fn parse_update_request_rejects_non_soa_zone_type() {
+        let message = minimal_update_with_ztype(1);
+        let err = parse_update_request(&message).unwrap_err();
+        assert!(matches!(err, ParseError::InvalidZoneSection));
+    }
+
+    #[test]
+    fn parse_update_request_accepts_soa_zone_type() {
+        let message = minimal_update_with_ztype(6);
+        let request = parse_update_request(&message).unwrap();
+        assert_eq!(request.zone_name, "example.com.");
     }
 }
