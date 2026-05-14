@@ -3,8 +3,8 @@ pub fn to_sqlite_url(file_path: &str) -> Result<String, String> {
         return Err("File path cannot be empty".to_string());
     }
 
-    // If the path is for an in-memory database or already has a scheme, use it directly.
-    if file_path.starts_with("file:") || file_path.starts_with("sqlite:") {
+    // Keep existing sqlite URL
+    if file_path.starts_with("sqlite:") {
         return Ok(file_path.to_string());
     }
 
@@ -40,7 +40,7 @@ mod tests {
         // Test with in-memory database URL
         let result = to_sqlite_url("file::memory:?cache=shared");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "file::memory:?cache=shared");
+        assert_eq!(result.unwrap(), "sqlite:file::memory:?cache=shared");
 
         // Test with existing sqlite scheme
         let result = to_sqlite_url("sqlite:my_database.db");

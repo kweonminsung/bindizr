@@ -7,7 +7,10 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     dns, log_error, log_info,
-    service::record::{find_identical_record_in_zone_tx, validate_nsupdate_add_constraints_tx},
+    service::record::{
+        find_identical_record_in_zone_tx, validate_record_add_constraints_tx,
+        validate_record_delete_constraints,
+    },
     service::repository::{RepositoryService, RepositoryTx},
 };
 use chrono::Utc;
@@ -151,7 +154,7 @@ async fn add_record(
 
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
 
-    validate_nsupdate_add_constraints_tx(tx, zone, &relative_name, &record_type, &value)
+    validate_record_add_constraints_tx(tx, zone, &relative_name, &record_type, &value, None)
         .await
         .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
@@ -233,7 +236,7 @@ async fn delete_records(
     };
 
     let mut matched: Vec<Record> = Vec::new();
-    for record in zone_records {
+    for record in &zone_records {
         if !record.name.eq_ignore_ascii_case(&relative_name) {
             continue;
         }
@@ -260,12 +263,16 @@ async fn delete_records(
             continue;
         }
 
-        matched.push(record);
+        matched.push(record.clone());
     }
 
     if matched.is_empty() {
         return Ok(false);
     }
+
+    // Validate delete constraints
+    validate_record_delete_constraints(zone, &zone_records, &matched)
+        .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
     for record in &matched {
         RepositoryService::delete_record_tx(tx, record.id)

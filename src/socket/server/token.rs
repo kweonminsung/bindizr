@@ -37,13 +37,17 @@ pub async fn list_tokens() -> Result<DaemonResponse, String> {
 }
 
 pub async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let token_id = data.get("id").and_then(|v| v.as_i64());
+    let token_id_i64 = data
+        .get("id")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| "Token ID is required".to_string())?;
 
-    if token_id.is_none() {
-        return Err("Token ID is required".to_string());
+    let token_id =
+        i32::try_from(token_id_i64).map_err(|_| "Token ID is out of range".to_string())?;
+
+    if token_id < 0 {
+        return Err("Token ID must be non-negative".to_string());
     }
-
-    let token_id = token_id.unwrap() as i32;
 
     TokenService::delete_token(token_id)
         .await

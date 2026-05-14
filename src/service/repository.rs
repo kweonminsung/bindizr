@@ -10,6 +10,8 @@ use crate::database::{
     },
 };
 
+use crate::log_error;
+
 use crate::database::repository as db_repository;
 
 pub use crate::database::repository::RepositoryTx;
@@ -24,6 +26,38 @@ impl RepositoryService {
         db_repository::begin_transaction()
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to begin transaction: {}", e)))
+    }
+
+    pub async fn begin_tx(
+        internal_msg: &'static str,
+    ) -> Result<RepositoryTx<'static>, ServiceError> {
+        db_repository::begin_transaction().await.map_err(|e| {
+            log_error!("Failed to begin transaction: {}", e);
+            ServiceError::Internal(internal_msg.to_string())
+        })
+    }
+
+    pub async fn finish_tx<T>(
+        tx: RepositoryTx<'static>,
+        apply_result: Result<T, ServiceError>,
+        internal_msg: &'static str,
+    ) -> Result<T, ServiceError> {
+        match apply_result {
+            Ok(value) => {
+                tx.commit().await.map_err(|e| {
+                    log_error!("Failed to commit transaction: {}", e);
+                    ServiceError::Internal(internal_msg.to_string())
+                })?;
+                Ok(value)
+            }
+            Err(err) => {
+                tx.rollback().await.map_err(|e| {
+                    log_error!("Failed to rollback transaction: {}", e);
+                    ServiceError::Internal(internal_msg.to_string())
+                })?;
+                Err(err)
+            }
+        }
     }
 
     pub async fn get_zone_by_name(name: &str) -> Result<Option<Zone>, ServiceError> {
