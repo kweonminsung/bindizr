@@ -130,15 +130,8 @@ pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
         pos = next;
     }
 
-    let tsig = match arcount {
-        0 => None,
-        1 => {
-            let (record, next) = parse_tsig_rr(data, pos)?;
-            pos = next;
-            Some(record)
-        }
-        _ => return Err(ParseError::InvalidHeader),
-    };
+    let (tsig, next) = parse_additional_section(data, pos, arcount)?;
+    pos = next;
 
     if pos != data.len() {
         return Err(ParseError::InvalidHeader);
@@ -182,6 +175,43 @@ fn parse_rr(data: &[u8], pos: usize) -> Result<(UpdateRecord, usize), ParseError
         },
         rdata_end,
     ))
+}
+
+fn parse_additional_section(
+    data: &[u8],
+    mut pos: usize,
+    count: usize,
+) -> Result<(Option<TsigRecord>, usize), ParseError> {
+    let mut tsig = None;
+
+    for index in 0..count {
+        let rr_type = peek_rr_type(data, pos)?;
+        if rr_type == TSIG_TYPE {
+            if tsig.is_some() || index + 1 != count {
+                return Err(ParseError::InvalidTsig);
+            }
+
+            let (record, next) = parse_tsig_rr(data, pos)?;
+            tsig = Some(record);
+            pos = next;
+        } else {
+            let (_, next) = parse_rr(data, pos)?;
+            pos = next;
+        }
+    }
+
+    Ok((tsig, pos))
+}
+
+fn peek_rr_type(data: &[u8], pos: usize) -> Result<u16, ParseError> {
+    let (_, name_len) = decode_name(data, pos)?;
+    let hdr = pos + name_len;
+
+    if hdr + 10 > data.len() {
+        return Err(ParseError::InvalidRr);
+    }
+
+    Ok(u16::from_be_bytes([data[hdr], data[hdr + 1]]))
 }
 
 fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseError> {
@@ -402,6 +432,42 @@ mod tests {
         message
     }
 
+    fn set_arcount(message: &mut [u8], arcount: u16) {
+        message[10..12].copy_from_slice(&arcount.to_be_bytes());
+    }
+
+    fn append_opt_rr(message: &mut Vec<u8>) {
+        message.extend_from_slice(&[
+            0x00, // Root owner name
+            0x00, 0x29, // TYPE OPT
+            0x04, 0xd0, // UDP payload size
+            0x00, 0x00, 0x00, 0x00, // Extended RCODE, version, flags
+            0x00, 0x00, // RDLEN
+        ]);
+    }
+
+    fn append_tsig_rr(message: &mut Vec<u8>) {
+        let mut rdata = Vec::new();
+        rdata.extend_from_slice(&[
+            0x0b, b'h', b'm', b'a', b'c', b'-', b's', b'h', b'a', b'2', b'5', b'6', 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x01, // Time signed
+            0x01, 0x2c, // Fudge
+            0x00, 0x00, // MAC size
+            0x12, 0x34, // Original ID
+            0x00, 0x00, // Error
+            0x00, 0x00, // Other len
+        ]);
+
+        message.extend_from_slice(&[
+            0x03, b'k', b'e', b'y', 0x00, // Owner name
+            0x00, 0xfa, // TYPE TSIG
+            0x00, 0xff, // CLASS ANY
+            0x00, 0x00, 0x00, 0x00, // TTL
+        ]);
+        message.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+        message.extend_from_slice(&rdata);
+    }
+
     #[test]
     fn decode_name_from_rdata_handles_compression_pointer() {
         let mut message = Vec::new();
@@ -439,5 +505,39 @@ mod tests {
         let message = minimal_update_with_ztype(6);
         let request = parse_update_request(&message).unwrap();
         assert_eq!(request.zone_name, "example.com.");
+    }
+
+    #[test]
+    fn parse_update_request_accepts_opt_additional_without_tsig() {
+        let mut message = minimal_update_with_ztype(6);
+        set_arcount(&mut message, 1);
+        append_opt_rr(&mut message);
+
+        let request = parse_update_request(&message).unwrap();
+        assert!(request.tsig.is_none());
+    }
+
+    #[test]
+    fn parse_update_request_accepts_opt_before_tsig() {
+        let mut message = minimal_update_with_ztype(6);
+        set_arcount(&mut message, 2);
+        append_opt_rr(&mut message);
+        append_tsig_rr(&mut message);
+
+        let request = parse_update_request(&message).unwrap();
+        let tsig = request.tsig.unwrap();
+        assert_eq!(tsig.name, "key.");
+        assert_eq!(tsig.algorithm, "hmac-sha256.");
+    }
+
+    #[test]
+    fn parse_update_request_rejects_tsig_before_other_additional_rrs() {
+        let mut message = minimal_update_with_ztype(6);
+        set_arcount(&mut message, 2);
+        append_tsig_rr(&mut message);
+        append_opt_rr(&mut message);
+
+        let err = parse_update_request(&message).unwrap_err();
+        assert!(matches!(err, ParseError::InvalidTsig));
     }
 }
