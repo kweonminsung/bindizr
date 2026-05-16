@@ -47,7 +47,7 @@ impl ZoneApi {
         let zone_name = params.name;
         let records_query = query.records;
 
-        let raw_zone = match ZoneService::get(&zone_name).await {
+        let raw_zone = match ZoneService::get_by_name(&zone_name).await {
             Ok(zone) => zone,
             Err(err) => return ApiError::from(err).into_response(),
         };

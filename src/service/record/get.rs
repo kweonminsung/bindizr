@@ -84,28 +84,12 @@ impl RecordService {
         }
     }
 
-    pub async fn get(
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Record, ServiceError> {
-        match RepositoryService::get_record(
-            zone_id,
-            name,
-            record_type,
-            value,
-            priority,
-            match_priority,
-        )
-        .await
-        {
+    pub async fn get_by_id(record_id: i32) -> Result<Record, ServiceError> {
+        match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => Ok(record),
             Ok(None) => Err(ServiceError::NotFound(format!(
-                "Record with name '{}' and type '{}' not found",
-                name, record_type
+                "Record with id '{}' not found",
+                record_id
             ))),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);

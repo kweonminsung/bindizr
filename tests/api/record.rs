@@ -28,19 +28,13 @@ async fn test_record_crud_operations() {
 
     let record_name = body["record"]["name"].as_str().unwrap();
     let record_type = body["record"]["record_type"].as_str().unwrap();
+    let record_id = body["record"]["id"].as_i64().unwrap();
     assert_eq!(record_name, "api");
     assert_eq!(record_type, "A");
 
-    // Test GET /records/{name}/{record_type}
+    // Test GET /records/{record_id}
     let (status, body) = ctx
-        .make_request(
-            "GET",
-            &format!(
-                "/records/{}/{}?zone_name={}",
-                record_name, record_type, zone.name
-            ),
-            None,
-        )
+        .make_request("GET", &format!("/records/{}", record_id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["record"]["name"], "api");
@@ -78,52 +72,35 @@ async fn test_record_crud_operations() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["records"].as_array().unwrap().len(), 3);
 
-    // Test PUT /records/{name}/{record_type} (update)
+    // Test PUT /records/{record_id} (update)
     let update_record_request = serde_json::json!({
         "name": "api-updated",
         "record_type": "A",
-        "value": "192.168.1.201",
+        "value": "192.168.1.202",
         "ttl": 3600
     });
 
     let (status, body) = ctx
         .make_request(
             "PUT",
-            &format!(
-                "/records/{}/{}?zone_name={}",
-                record_name, record_type, zone.name
-            ),
+            &format!("/records/{}", record_id),
             Some(update_record_request),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     let updated_name = body["record"]["name"].as_str().unwrap();
     assert_eq!(updated_name, "api-updated");
-    assert_eq!(body["record"]["value"], "192.168.1.201");
+    assert_eq!(body["record"]["value"], "192.168.1.202");
 
-    // Test DELETE /records/{name}/{record_type}
+    // Test DELETE /records/{record_id}
     let (status, _) = ctx
-        .make_request(
-            "DELETE",
-            &format!(
-                "/records/{}/{}?zone_name={}",
-                updated_name, record_type, zone.name
-            ),
-            None,
-        )
+        .make_request("DELETE", &format!("/records/{}", record_id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     // Verify deletion
     let (status, _) = ctx
-        .make_request(
-            "GET",
-            &format!(
-                "/records/{}/{}?zone_name={}",
-                updated_name, record_type, zone.name
-            ),
-            None,
-        )
+        .make_request("GET", &format!("/records/{}", record_id), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -153,6 +130,7 @@ async fn test_single_record_operations_are_scoped_by_zone() {
     .await
     .expect("Failed to insert second test zone");
 
+    let mut second_record_id = None;
     for (zone_name, value) in [
         (first_zone.name.as_str(), "192.0.2.10"),
         (second_zone_name, "192.0.2.20"),
@@ -165,47 +143,46 @@ async fn test_single_record_operations_are_scoped_by_zone() {
             "zone_name": zone_name
         });
 
-        let (status, _) = ctx
+        let (status, body) = ctx
             .make_request("POST", "/records", Some(create_record_request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
+        if zone_name == second_zone_name {
+            second_record_id = Some(body["record"]["id"].as_i64().unwrap());
+        }
     }
 
+    let second_record_id = second_record_id.unwrap();
+
     let (status, body) = ctx
-        .make_request(
-            "GET",
-            &format!("/records/shared/A?zone_name={}", second_zone_name),
-            None,
-        )
+        .make_request("GET", &format!("/records/{}", second_record_id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["record"]["value"], "192.0.2.20");
 
     let (status, _) = ctx
-        .make_request(
-            "DELETE",
-            &format!("/records/shared/A?zone_name={}", second_zone_name),
-            None,
-        )
+        .make_request("DELETE", &format!("/records/{}", second_record_id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, body) = ctx
         .make_request(
             "GET",
-            &format!("/records/shared/A?zone_name={}", first_zone.name),
+            &format!("/records?zone_name={}", first_zone.name),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["record"]["value"], "192.0.2.10");
+    assert!(
+        body["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|record| record["name"] == "shared" && record["value"] == "192.0.2.10")
+    );
 
     let (status, _) = ctx
-        .make_request(
-            "GET",
-            &format!("/records/shared/A?zone_name={}", second_zone_name),
-            None,
-        )
+        .make_request("GET", &format!("/records/{}", second_record_id), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -332,8 +309,7 @@ async fn test_cname_validation() {
         .make_request("POST", "/records", Some(cname_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let cname_record_name = body["record"]["name"].as_str().unwrap();
-    let cname_record_type = body["record"]["record_type"].as_str().unwrap();
+    let cname_record_id = body["record"]["id"].as_i64().unwrap();
 
     // Try to create an A record with the same name as the CNAME (should fail)
     let a_record_request = serde_json::json!({
@@ -358,10 +334,7 @@ async fn test_cname_validation() {
     let (status, _) = ctx
         .make_request(
             "PUT",
-            &format!(
-                "/records/{}/{}?zone_name={}",
-                cname_record_name, cname_record_type, zone.name
-            ),
+            &format!("/records/{}", cname_record_id),
             Some(update_cname_request),
         )
         .await;

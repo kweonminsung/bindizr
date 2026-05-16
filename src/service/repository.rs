@@ -164,6 +164,13 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }
 
+    pub async fn get_record_by_id(record_id: i32) -> Result<Option<Record>, ServiceError> {
+        get_record_repository()
+            .get_by_id(record_id)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load record: {}", e)))
+    }
+
     pub async fn get_record(
         zone_id: Option<i32>,
         name: &str,

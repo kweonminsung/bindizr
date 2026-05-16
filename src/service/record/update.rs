@@ -14,52 +14,35 @@ use crate::{
 use super::{RecordService, validation::validate_record_update_constraints};
 
 impl RecordService {
-    pub async fn update(
-        zone_name: &str,
-        name: &str,
-        record_type_str: &str,
+    pub async fn update_by_id(
+        record_id: i32,
         update_record_request: &UpdateRecordRequest,
     ) -> Result<Record, ServiceError> {
-        // Validate old record type
-        let old_record_type = record_type_str.parse::<RecordType>().map_err(|_| {
-            ServiceError::BadRequest(format!("Invalid record type: {}", record_type_str))
-        })?;
-
-        let zone = match RepositoryService::get_zone_by_name(zone_name).await {
-            Ok(Some(zone)) => zone,
-            Ok(None) => {
-                return Err(ServiceError::NotFound(format!(
-                    "Zone with name '{}' not found",
-                    zone_name
-                )));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch zone: {}", e);
-                return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
-            }
-        };
-
-        // Check if record exists in the requested zone.
-        let existing_record = match RepositoryService::get_record(
-            Some(zone.id),
-            name,
-            &old_record_type,
-            None,
-            None,
-            false,
-        )
-        .await
-        {
+        let existing_record = match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => record,
             Ok(None) => {
                 return Err(ServiceError::NotFound(format!(
-                    "Record with name '{}' and type '{}' not found",
-                    name, record_type_str
+                    "Record with id '{}' not found",
+                    record_id
                 )));
             }
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
                 return Err(ServiceError::Internal("Failed to fetch record".to_string()));
+            }
+        };
+
+        let zone = match RepositoryService::get_zone_by_id(existing_record.zone_id).await {
+            Ok(Some(zone)) => zone,
+            Ok(None) => {
+                return Err(ServiceError::NotFound(format!(
+                    "Zone with id '{}' not found",
+                    existing_record.zone_id
+                )));
+            }
+            Err(e) => {
+                log_error!("Failed to fetch zone: {}", e);
+                return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
             }
         };
 

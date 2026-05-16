@@ -38,7 +38,7 @@ impl ZoneService {
         })
     }
 
-    pub async fn get(zone_name: &str) -> Result<Zone, ServiceError> {
+    pub async fn get_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
         match RepositoryService::get_zone_by_name(zone_name).await {
             Ok(Some(zone)) => Ok(zone),
             Ok(None) => Err(ServiceError::NotFound(format!(

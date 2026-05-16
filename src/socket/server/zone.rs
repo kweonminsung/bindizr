@@ -9,7 +9,7 @@ pub async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String
         .and_then(|v| v.as_str())
         .ok_or("Missing or invalid 'name' field")?;
 
-    match ZoneService::get(name).await {
+    match ZoneService::get_by_name(name).await {
         Ok(zone) => {
             let response = GetZoneResponse::from_zone(&zone);
             Ok(DaemonResponse {

@@ -3,10 +3,7 @@ use crate::api::{
     error::ApiError,
     middleware::body_parser::JsonBody,
 };
-use crate::database::model::record::RecordType;
-use crate::service::error::ServiceError;
 use crate::service::record::RecordService;
-use crate::service::zone::ZoneService;
 use axum::{
     Json, Router,
     extract::{Path, Query},
@@ -23,19 +20,10 @@ impl RecordApi {
     pub async fn routes() -> Router {
         Router::new()
             .route("/records", routing::get(Self::get_records))
-            .route(
-                "/records/{name}/{record_type}",
-                routing::get(Self::get_record),
-            )
+            .route("/records/{record_id}", routing::get(Self::get_record))
             .route("/records", routing::post(Self::create_record))
-            .route(
-                "/records/{name}/{record_type}",
-                routing::put(Self::update_record),
-            )
-            .route(
-                "/records/{name}/{record_type}",
-                routing::delete(Self::delete_record),
-            )
+            .route("/records/{record_id}", routing::put(Self::update_record))
+            .route("/records/{record_id}", routing::delete(Self::delete_record))
     }
 
     async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl IntoResponse {
@@ -55,41 +43,11 @@ impl RecordApi {
         (StatusCode::OK, Json(json_body)).into_response()
     }
 
-    async fn get_record(
-        Path(params): Path<GetRecordParam>,
-        Query(query): Query<RecordZoneQuery>,
-    ) -> impl IntoResponse {
-        let name = params.name;
-        let record_type = match params.record_type.parse::<RecordType>() {
-            Ok(record_type) => record_type,
-            Err(_) => {
-                return ApiError::from(ServiceError::BadRequest(format!(
-                    "Invalid record type: {}",
-                    params.record_type
-                )))
-                .into_response();
-            }
-        };
-        let zone_name = match query.zone_name {
-            Some(zone_name) => zone_name,
-            None => {
-                return ApiError::from(ServiceError::BadRequest(
-                    "zone_name is required".to_string(),
-                ))
-                .into_response();
-            }
-        };
-
-        let zone = match ZoneService::get(&zone_name).await {
-            Ok(zone) => zone,
+    async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
+        let raw_record = match RecordService::get_by_id(params.record_id).await {
+            Ok(record) => record,
             Err(err) => return ApiError::from(err).into_response(),
         };
-
-        let raw_record =
-            match RecordService::get(Some(zone.id), &name, &record_type, None, None, false).await {
-                Ok(record) => record,
-                Err(err) => return ApiError::from(err).into_response(),
-            };
 
         let record = GetRecordResponse::from_record(&raw_record);
 
@@ -111,22 +69,9 @@ impl RecordApi {
 
     async fn update_record(
         Path(params): Path<UpdateRecordParam>,
-        Query(query): Query<RecordZoneQuery>,
         Json(body): Json<UpdateRecordRequest>,
     ) -> impl IntoResponse {
-        let name = params.name;
-        let record_type = params.record_type;
-        let zone_name = match query.zone_name {
-            Some(zone_name) => zone_name,
-            None => {
-                return ApiError::from(ServiceError::BadRequest(
-                    "zone_name is required".to_string(),
-                ))
-                .into_response();
-            }
-        };
-
-        let raw_record = match RecordService::update(&zone_name, &name, &record_type, &body).await {
+        let raw_record = match RecordService::update_by_id(params.record_id, &body).await {
             Ok(record) => record,
             Err(err) => return ApiError::from(err).into_response(),
         };
@@ -137,23 +82,8 @@ impl RecordApi {
         (StatusCode::OK, Json(json_body)).into_response()
     }
 
-    async fn delete_record(
-        Path(params): Path<DeleteRecordParam>,
-        Query(query): Query<RecordZoneQuery>,
-    ) -> impl IntoResponse {
-        let name = params.name;
-        let record_type = params.record_type;
-        let zone_name = match query.zone_name {
-            Some(zone_name) => zone_name,
-            None => {
-                return ApiError::from(ServiceError::BadRequest(
-                    "zone_name is required".to_string(),
-                ))
-                .into_response();
-            }
-        };
-
-        match RecordService::delete(&zone_name, &name, &record_type).await {
+    async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl IntoResponse {
+        match RecordService::delete_by_id(params.record_id).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Record deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()
@@ -169,24 +99,16 @@ struct GetRecordsQuery {
 }
 
 #[derive(Debug, Deserialize)]
-struct RecordZoneQuery {
-    zone_name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
 struct GetRecordParam {
-    name: String,
-    record_type: String,
+    record_id: i32,
 }
 
 #[derive(Debug, Deserialize)]
 struct UpdateRecordParam {
-    name: String,
-    record_type: String,
+    record_id: i32,
 }
 
 #[derive(Debug, Deserialize)]
 struct DeleteRecordParam {
-    name: String,
-    record_type: String,
+    record_id: i32,
 }
