@@ -13,20 +13,20 @@ pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, Stri
         .get("record_type")
         .and_then(|v| v.as_str())
         .ok_or("Missing or invalid 'record_type' field")?;
+    let zone_name = data
+        .get("zone_name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'zone_name' field")?;
     let record_type = RecordType::from_str(record_type)
         .map_err(|_| format!("Invalid record type: {}", record_type))?;
+    let zone = ZoneService::get(zone_name)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    match RecordService::get(None, name, &record_type, None, None, false).await {
+    match RecordService::get(Some(zone.id), name, &record_type, None, None, false).await {
         Ok(record) => {
-            let zone_name = ZoneService::find_by_id(record.zone_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|z| z.name)
-                .unwrap_or_default();
-
             let mut response = GetRecordResponse::from_record(&record);
-            response.zone_name = Some(zone_name);
+            response.zone_name = Some(zone.name);
             Ok(DaemonResponse {
                 message: "Record retrieved successfully".to_string(),
                 data: serde_json::to_value(response).unwrap(),
@@ -107,8 +107,12 @@ pub async fn delete_record(data: &serde_json::Value) -> Result<DaemonResponse, S
         .get("record_type")
         .and_then(|v| v.as_str())
         .ok_or("Missing or invalid 'record_type' field")?;
+    let zone_name = data
+        .get("zone_name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'zone_name' field")?;
 
-    match RecordService::delete(name, record_type).await {
+    match RecordService::delete(zone_name, name, record_type).await {
         Ok(_) => Ok(DaemonResponse {
             message: format!("Record '{}' ({}) deleted successfully", name, record_type),
             data: json!(null),

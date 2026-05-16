@@ -34,7 +34,10 @@ async fn test_record_crud_operations() {
     let (status, body) = ctx
         .make_request(
             "GET",
-            &format!("/records/{}/{}", record_name, record_type),
+            &format!(
+                "/records/{}/{}?zone_name={}",
+                record_name, record_type, zone.name
+            ),
             None,
         )
         .await;
@@ -79,14 +82,16 @@ async fn test_record_crud_operations() {
         "name": "api-updated",
         "record_type": "A",
         "value": "192.168.1.201",
-        "ttl": 3600,
-        "zone_name": zone.name
+        "ttl": 3600
     });
 
     let (status, body) = ctx
         .make_request(
             "PUT",
-            &format!("/records/{}/{}", record_name, record_type),
+            &format!(
+                "/records/{}/{}?zone_name={}",
+                record_name, record_type, zone.name
+            ),
             Some(update_record_request),
         )
         .await;
@@ -99,7 +104,10 @@ async fn test_record_crud_operations() {
     let (status, _) = ctx
         .make_request(
             "DELETE",
-            &format!("/records/{}/{}", updated_name, record_type),
+            &format!(
+                "/records/{}/{}?zone_name={}",
+                updated_name, record_type, zone.name
+            ),
             None,
         )
         .await;
@@ -109,7 +117,92 @@ async fn test_record_crud_operations() {
     let (status, _) = ctx
         .make_request(
             "GET",
-            &format!("/records/{}/{}", updated_name, record_type),
+            &format!(
+                "/records/{}/{}?zone_name={}",
+                updated_name, record_type, zone.name
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_single_record_operations_are_scoped_by_zone() {
+    let ctx = TestContext::new().await;
+    let first_zone = ctx.create_test_zone().await;
+    let second_zone_name = "example.net";
+
+    sqlx::query(
+        r#"
+        INSERT INTO zones (name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(second_zone_name)
+    .bind("ns1.example.net")
+    .bind("admin@example.net")
+    .bind(3600)
+    .bind(2023010101)
+    .bind(7200)
+    .bind(3600)
+    .bind(604800)
+    .bind(86400)
+    .execute(&ctx.db_pool)
+    .await
+    .expect("Failed to insert second test zone");
+
+    for (zone_name, value) in [
+        (first_zone.name.as_str(), "192.0.2.10"),
+        (second_zone_name, "192.0.2.20"),
+    ] {
+        let create_record_request = serde_json::json!({
+            "name": "shared",
+            "record_type": "A",
+            "value": value,
+            "ttl": 1800,
+            "zone_name": zone_name
+        });
+
+        let (status, _) = ctx
+            .make_request("POST", "/records", Some(create_record_request))
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    let (status, body) = ctx
+        .make_request(
+            "GET",
+            &format!("/records/shared/A?zone_name={}", second_zone_name),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["record"]["value"], "192.0.2.20");
+
+    let (status, _) = ctx
+        .make_request(
+            "DELETE",
+            &format!("/records/shared/A?zone_name={}", second_zone_name),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = ctx
+        .make_request(
+            "GET",
+            &format!("/records/shared/A?zone_name={}", first_zone.name),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["record"]["value"], "192.0.2.10");
+
+    let (status, _) = ctx
+        .make_request(
+            "GET",
+            &format!("/records/shared/A?zone_name={}", second_zone_name),
             None,
         )
         .await;
@@ -223,13 +316,15 @@ async fn test_cname_validation() {
         "name": "test",
         "record_type": "CNAME",
         "value": "updated.example.com",
-        "ttl": 3600,
-        "zone_name": zone.name
+        "ttl": 3600
     });
     let (status, _) = ctx
         .make_request(
             "PUT",
-            &format!("/records/{}/{}", cname_record_name, cname_record_type),
+            &format!(
+                "/records/{}/{}?zone_name={}",
+                cname_record_name, cname_record_type, zone.name
+            ),
             Some(update_cname_request),
         )
         .await;

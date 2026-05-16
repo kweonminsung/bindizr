@@ -1,11 +1,12 @@
 use crate::api::{
-    dto::{CreateRecordRequest, GetRecordResponse},
+    dto::{CreateRecordRequest, GetRecordResponse, UpdateRecordRequest},
     error::ApiError,
     middleware::body_parser::JsonBody,
 };
 use crate::database::model::record::RecordType;
 use crate::service::error::ServiceError;
 use crate::service::record::RecordService;
+use crate::service::zone::ZoneService;
 use axum::{
     Json, Router,
     extract::{Path, Query},
@@ -54,7 +55,10 @@ impl RecordApi {
         (StatusCode::OK, Json(json_body)).into_response()
     }
 
-    async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
+    async fn get_record(
+        Path(params): Path<GetRecordParam>,
+        Query(query): Query<RecordZoneQuery>,
+    ) -> impl IntoResponse {
         let name = params.name;
         let record_type = match RecordType::from_str(&params.record_type) {
             Ok(record_type) => record_type,
@@ -66,9 +70,23 @@ impl RecordApi {
                 .into_response();
             }
         };
+        let zone_name = match query.zone_name {
+            Some(zone_name) => zone_name,
+            None => {
+                return ApiError::from(ServiceError::BadRequest(
+                    "zone_name is required".to_string(),
+                ))
+                .into_response();
+            }
+        };
+
+        let zone = match ZoneService::get(&zone_name).await {
+            Ok(zone) => zone,
+            Err(err) => return ApiError::from(err).into_response(),
+        };
 
         let raw_record =
-            match RecordService::get(None, &name, &record_type, None, None, false).await {
+            match RecordService::get(Some(zone.id), &name, &record_type, None, None, false).await {
                 Ok(record) => record,
                 Err(err) => return ApiError::from(err).into_response(),
             };
@@ -93,12 +111,22 @@ impl RecordApi {
 
     async fn update_record(
         Path(params): Path<UpdateRecordParam>,
-        Json(body): Json<CreateRecordRequest>,
+        Query(query): Query<RecordZoneQuery>,
+        Json(body): Json<UpdateRecordRequest>,
     ) -> impl IntoResponse {
         let name = params.name;
         let record_type = params.record_type;
+        let zone_name = match query.zone_name {
+            Some(zone_name) => zone_name,
+            None => {
+                return ApiError::from(ServiceError::BadRequest(
+                    "zone_name is required".to_string(),
+                ))
+                .into_response();
+            }
+        };
 
-        let raw_record = match RecordService::update(&name, &record_type, &body).await {
+        let raw_record = match RecordService::update(&zone_name, &name, &record_type, &body).await {
             Ok(record) => record,
             Err(err) => return ApiError::from(err).into_response(),
         };
@@ -109,11 +137,23 @@ impl RecordApi {
         (StatusCode::OK, Json(json_body)).into_response()
     }
 
-    async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl IntoResponse {
+    async fn delete_record(
+        Path(params): Path<DeleteRecordParam>,
+        Query(query): Query<RecordZoneQuery>,
+    ) -> impl IntoResponse {
         let name = params.name;
         let record_type = params.record_type;
+        let zone_name = match query.zone_name {
+            Some(zone_name) => zone_name,
+            None => {
+                return ApiError::from(ServiceError::BadRequest(
+                    "zone_name is required".to_string(),
+                ))
+                .into_response();
+            }
+        };
 
-        match RecordService::delete(&name, &record_type).await {
+        match RecordService::delete(&zone_name, &name, &record_type).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Record deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()
@@ -125,6 +165,11 @@ impl RecordApi {
 
 #[derive(Debug, Deserialize)]
 struct GetRecordsQuery {
+    zone_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordZoneQuery {
     zone_name: Option<String>,
 }
 

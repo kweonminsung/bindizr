@@ -80,3 +80,12 @@ pub struct CreateRecordRequest {
     pub priority: Option<i32>,
     pub zone_name: String,
 }
+
+#[derive(Deserialize, Debug)]
+pub struct UpdateRecordRequest {
+    pub name: String,
+    pub record_type: String,
+    pub value: String,
+    pub ttl: Option<i32>,
+    pub priority: Option<i32>,
+}

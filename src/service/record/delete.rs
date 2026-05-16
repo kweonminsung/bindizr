@@ -17,15 +17,33 @@ impl RecordService {
         RepositoryService::delete_record_tx(tx, record_id).await
     }
 
-    pub async fn delete(name: &str, record_type_str: &str) -> Result<(), ServiceError> {
+    pub async fn delete(
+        zone_name: &str,
+        name: &str,
+        record_type_str: &str,
+    ) -> Result<(), ServiceError> {
         // Valid record type
         let record_type = RecordType::from_str(record_type_str).map_err(|_| {
             ServiceError::BadRequest(format!("Invalid record type: {}", record_type_str))
         })?;
 
-        // Check if record exists
+        let zone = match RepositoryService::get_zone_by_name(zone_name).await {
+            Ok(Some(zone)) => zone,
+            Ok(None) => {
+                return Err(ServiceError::NotFound(format!(
+                    "Zone with name '{}' not found",
+                    zone_name
+                )));
+            }
+            Err(e) => {
+                log_error!("Failed to fetch zone: {}", e);
+                return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
+            }
+        };
+
+        // Check if record exists in the requested zone.
         let existing_record = match RepositoryService::get_record(
-            None,
+            Some(zone.id),
             name,
             &record_type,
             None,
@@ -44,25 +62,6 @@ impl RecordService {
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
                 return Err(ServiceError::Internal("Failed to fetch record".to_string()));
-            }
-        };
-
-        // Get zone name for history
-        let zone = match RepositoryService::get_zone_by_id(existing_record.zone_id).await {
-            Ok(Some(zone)) => zone,
-            Ok(None) => {
-                log_error!(
-                    "Zone with id '{}' not found for record '{}'",
-                    existing_record.zone_id,
-                    name
-                );
-                return Err(ServiceError::Internal(
-                    "Failed to fetch zone for record".to_string(),
-                ));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch zone: {}", e);
-                return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
             }
         };
 

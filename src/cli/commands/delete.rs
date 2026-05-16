@@ -20,6 +20,9 @@ pub enum DeleteCommand {
             aliases = ["type"]
         )]
         record_type: String,
+        /// The zone name
+        #[arg(short, long)]
+        zone: String,
     },
 }
 
@@ -33,11 +36,15 @@ pub async fn handle_command(subcommand: DeleteCommand) -> Result<(), String> {
                 .await?;
             println!("{}", response.message);
         }
-        DeleteCommand::Record { name, record_type } => {
+        DeleteCommand::Record {
+            name,
+            record_type,
+            zone,
+        } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::DeleteRecord,
-                    Some(json!({ "name": name, "record_type": record_type })),
+                    Some(json!({ "name": name, "record_type": record_type, "zone_name": zone })),
                 )
                 .await?;
             println!("{}", response.message);

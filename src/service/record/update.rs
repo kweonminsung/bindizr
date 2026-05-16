@@ -1,5 +1,5 @@
 use crate::{
-    api::dto::CreateRecordRequest,
+    api::dto::UpdateRecordRequest,
     database::model::{
         record::{Record, RecordType},
         zone_change::ZoneChange,
@@ -16,22 +16,22 @@ use super::{RecordService, validation::validate_record_update_constraints};
 
 impl RecordService {
     pub async fn update(
+        zone_name: &str,
         name: &str,
         record_type_str: &str,
-        update_record_request: &CreateRecordRequest,
+        update_record_request: &UpdateRecordRequest,
     ) -> Result<Record, ServiceError> {
         // Validate old record type
         let old_record_type = RecordType::from_str(record_type_str).map_err(|_| {
             ServiceError::BadRequest(format!("Invalid record type: {}", record_type_str))
         })?;
 
-        let zone = match RepositoryService::get_zone_by_name(&update_record_request.zone_name).await
-        {
+        let zone = match RepositoryService::get_zone_by_name(zone_name).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err(ServiceError::NotFound(format!(
                     "Zone with name '{}' not found",
-                    update_record_request.zone_name
+                    zone_name
                 )));
             }
             Err(e) => {

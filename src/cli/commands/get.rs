@@ -74,10 +74,11 @@ pub async fn handle_command(subcommand: GetCommand) -> Result<(), String> {
             let response = if let Some(name) = name {
                 let record_type =
                     record_type.ok_or("record_type is required when name is provided")?;
+                let zone_name = zone.ok_or("zone is required when name is provided")?;
                 client
                     .send_command(
                         DaemonCommandKind::GetRecord,
-                        Some(json!({ "name": name, "record_type": record_type })),
+                        Some(json!({ "name": name, "record_type": record_type, "zone_name": zone_name })),
                     )
                     .await?
             } else if let Some(zone_name) = zone {
