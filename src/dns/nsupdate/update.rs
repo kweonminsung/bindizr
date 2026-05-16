@@ -233,6 +233,8 @@ async fn delete_records(
     query_data: &[u8],
     new_serial: i32,
 ) -> Result<bool, UpdateError> {
+    validate_delete_update_shape(update, is_rrset_delete)?;
+
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
     let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id)
         .await
@@ -310,6 +312,39 @@ async fn delete_records(
     }
 
     Ok(true)
+}
+
+fn validate_delete_update_shape(
+    update: &UpdateRecord,
+    is_rrset_delete: bool,
+) -> Result<(), UpdateError> {
+    if update.ttl != 0 {
+        return Err(UpdateError::Refused(
+            "delete update TTL must be 0".to_string(),
+        ));
+    }
+
+    if is_rrset_delete {
+        if !update.rdata.is_empty() {
+            return Err(UpdateError::Refused(
+                "ANY-class delete must have empty rdata".to_string(),
+            ));
+        }
+    } else {
+        if update.rr_type == TYPE_ANY {
+            return Err(UpdateError::Refused(
+                "NONE-class delete must specify rrtype".to_string(),
+            ));
+        }
+
+        if update.rdata.is_empty() {
+            return Err(UpdateError::Refused(
+                "NONE-class delete must specify rdata".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 pub(super) fn rr_to_record_value(
@@ -524,7 +559,11 @@ async fn log_zone_change(
 
 #[cfg(test)]
 mod tests {
-    use super::{UpdateError, absolute_to_relative};
+    use super::{
+        CLASS_ANY, CLASS_NONE, TYPE_A, TYPE_ANY, UpdateError, absolute_to_relative,
+        validate_delete_update_shape,
+    };
+    use crate::dns::nsupdate::parser::UpdateRecord;
 
     #[test]
     fn absolute_to_relative_accepts_apex() {
@@ -542,5 +581,62 @@ mod tests {
     fn absolute_to_relative_rejects_partial_suffix_match() {
         let err = absolute_to_relative("aexample.com.", "example.com.").unwrap_err();
         assert!(matches!(err, UpdateError::NotZone(_)));
+    }
+
+    #[test]
+    fn validate_delete_update_shape_accepts_any_class_rrset_delete() {
+        let update = update_record(TYPE_A, CLASS_ANY, 0, Vec::new());
+
+        validate_delete_update_shape(&update, true).unwrap();
+    }
+
+    #[test]
+    fn validate_delete_update_shape_accepts_none_class_exact_delete() {
+        let update = update_record(TYPE_A, CLASS_NONE, 0, vec![192, 0, 2, 1]);
+
+        validate_delete_update_shape(&update, false).unwrap();
+    }
+
+    #[test]
+    fn validate_delete_update_shape_rejects_delete_with_nonzero_ttl() {
+        let update = update_record(TYPE_A, CLASS_ANY, 60, Vec::new());
+        let err = validate_delete_update_shape(&update, true).unwrap_err();
+
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+
+    #[test]
+    fn validate_delete_update_shape_rejects_any_class_delete_with_rdata() {
+        let update = update_record(TYPE_A, CLASS_ANY, 0, vec![192, 0, 2, 1]);
+        let err = validate_delete_update_shape(&update, true).unwrap_err();
+
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+
+    #[test]
+    fn validate_delete_update_shape_rejects_none_class_delete_without_rdata() {
+        let update = update_record(TYPE_A, CLASS_NONE, 0, Vec::new());
+        let err = validate_delete_update_shape(&update, false).unwrap_err();
+
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+
+    #[test]
+    fn validate_delete_update_shape_rejects_none_class_delete_with_type_any() {
+        let update = update_record(TYPE_ANY, CLASS_NONE, 0, vec![192, 0, 2, 1]);
+        let err = validate_delete_update_shape(&update, false).unwrap_err();
+
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+
+    fn update_record(rr_type: u16, class: u16, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
+        UpdateRecord {
+            name: "www.example.com.".to_string(),
+            rr_type,
+            class,
+            ttl,
+            rdata,
+            rdata_start: 0,
+        }
     }
 }
