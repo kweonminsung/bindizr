@@ -1,6 +1,7 @@
 use crate::{
     database::model::{zone::Zone, zone_change::ZoneChange},
     log_error,
+    service::RepositoryTx,
     service::{error::ServiceError, repository::RepositoryService},
 };
 
@@ -9,6 +10,13 @@ use super::ZoneService;
 impl ZoneService {
     pub async fn find(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
         RepositoryService::get_zone_by_name(zone_name).await
+    }
+
+    pub(crate) async fn find_for_update_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_name: &str,
+    ) -> Result<Option<Zone>, ServiceError> {
+        RepositoryService::get_zone_by_name_for_update_tx(tx, zone_name).await
     }
 
     pub async fn find_by_id(zone_id: i32) -> Result<Option<Zone>, ServiceError> {

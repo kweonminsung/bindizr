@@ -92,7 +92,11 @@ fn decode_tsig_secret(raw: &str) -> Result<Vec<u8>, UpdateError> {
 }
 
 fn build_tsig_signed_data(query_data: &[u8], tsig: &TsigRecord) -> Result<Vec<u8>, UpdateError> {
-    if query_data.len() < 12 || tsig.rr_end > query_data.len() || tsig.rr_start >= tsig.rr_end {
+    if query_data.len() < 12
+        || tsig.rr_start < 12
+        || tsig.rr_end > query_data.len()
+        || tsig.rr_start >= tsig.rr_end
+    {
         return Err(UpdateError::Refused("invalid TSIG envelope".to_string()));
     }
 

@@ -7,10 +7,11 @@ use super::{
 };
 use crate::{
     database::model::{record::Record, zone::Zone},
-    service::record::RecordService,
+    service::{RepositoryTx, record::RecordService},
 };
 
-pub(super) async fn evaluate_prerequisites(
+pub(super) async fn evaluate_prerequisites_tx(
+    tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     prerequisites: &[PrerequisiteRecord],
     query_data: &[u8],
@@ -19,10 +20,19 @@ pub(super) async fn evaluate_prerequisites(
         return Ok(());
     }
 
-    let zone_records = RecordService::list_by_zone_id(zone.id)
+    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
 
+    evaluate_prerequisites_against_records(zone, prerequisites, query_data, &zone_records)
+}
+
+fn evaluate_prerequisites_against_records(
+    zone: &Zone,
+    prerequisites: &[PrerequisiteRecord],
+    query_data: &[u8],
+    zone_records: &[Record],
+) -> Result<(), UpdateError> {
     for rr in prerequisites {
         if rr.ttl != 0 {
             return Err(UpdateError::Refused(
@@ -32,7 +42,7 @@ pub(super) async fn evaluate_prerequisites(
 
         let owner = normalize_owner_name(&rr.name, &zone.name)?;
         let relative = absolute_to_relative(&owner, &zone.name)?;
-        let owner_exists = is_owner_existing(&relative, &zone_records);
+        let owner_exists = is_owner_existing(&relative, zone_records);
 
         match rr.class {
             CLASS_ANY => {

@@ -61,6 +61,16 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load zone: {}", e)))
     }
 
+    pub async fn get_zone_by_name_for_update_tx(
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+    ) -> Result<Option<Zone>, ServiceError> {
+        get_zone_repository()
+            .get_by_name_for_update_tx(tx, name)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load zone: {}", e)))
+    }
+
     pub async fn get_zone_by_id(id: i32) -> Result<Option<Zone>, ServiceError> {
         get_zone_repository()
             .get_by_id(id)
@@ -107,7 +117,8 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, ServiceError> {
-        tx.get_records_by_zone_id(zone_id)
+        get_record_repository()
+            .get_by_zone_id_tx(tx, zone_id)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }
@@ -123,7 +134,8 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, ServiceError> {
-        tx.create_record(record)
+        get_record_repository()
+            .create_tx(tx, record)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to create record: {}", e)))
     }
@@ -139,7 +151,8 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, ServiceError> {
-        tx.update_record(record)
+        get_record_repository()
+            .update_tx(tx, record)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to update record: {}", e)))
     }
@@ -174,7 +187,16 @@ impl RepositoryService {
         priority: Option<i32>,
         match_priority: bool,
     ) -> Result<Option<Record>, ServiceError> {
-        tx.get_record(zone_id, name, record_type, value, priority, match_priority)
+        get_record_repository()
+            .get_tx(
+                tx,
+                zone_id,
+                name,
+                record_type,
+                value,
+                priority,
+                match_priority,
+            )
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load record: {}", e)))
     }
@@ -190,7 +212,8 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         record_id: i32,
     ) -> Result<(), ServiceError> {
-        tx.delete_record(record_id)
+        get_record_repository()
+            .delete_tx(tx, record_id)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to delete record: {}", e)))
     }
@@ -206,7 +229,8 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         zone_change: ZoneChange,
     ) -> Result<ZoneChange, ServiceError> {
-        tx.create_zone_change(zone_change)
+        get_zone_change_repository()
+            .create_tx(tx, zone_change)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to create zone change: {}", e)))
     }
@@ -235,7 +259,8 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         snapshot: ZoneSnapshot,
     ) -> Result<ZoneSnapshot, ServiceError> {
-        tx.upsert_zone_snapshot(snapshot)
+        get_zone_snapshot_repository()
+            .upsert_tx(tx, snapshot)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to save snapshot: {}", e)))
     }
@@ -244,7 +269,8 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         zone: Zone,
     ) -> Result<Zone, ServiceError> {
-        tx.create_zone(zone)
+        get_zone_repository()
+            .create_tx(tx, zone)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to create zone: {}", e)))
     }
@@ -253,7 +279,8 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         zone: Zone,
     ) -> Result<Zone, ServiceError> {
-        tx.update_zone(zone)
+        get_zone_repository()
+            .update_tx(tx, zone)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to update zone: {}", e)))
     }
@@ -262,7 +289,8 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<(), ServiceError> {
-        tx.delete_zone(zone_id)
+        get_zone_repository()
+            .delete_tx(tx, zone_id)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to delete zone: {}", e)))
     }

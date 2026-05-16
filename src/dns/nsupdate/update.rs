@@ -60,19 +60,25 @@ pub async fn apply_update(
         ));
     }
 
-    let zone = ZoneService::find(zone_name)
-        .await
-        .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
-        .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
-
-    super::prerequisite::evaluate_prerequisites(&zone, &request.prerequisites, query_data).await?;
-    let new_serial = generate_serial(Some(zone.serial));
-
     let mut tx = service::begin_tx("failed to begin NSUPDATE transaction")
         .await
         .map_err(|e| UpdateError::Internal(e.to_string()))?;
 
     let apply_result = async {
+        let zone = ZoneService::find_for_update_tx(&mut tx, zone_name)
+            .await
+            .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
+            .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
+
+        super::prerequisite::evaluate_prerequisites_tx(
+            &mut tx,
+            &zone,
+            &request.prerequisites,
+            query_data,
+        )
+        .await?;
+
+        let new_serial = generate_serial(Some(zone.serial));
         let mut changed = false;
 
         for update in &request.updates {
@@ -86,16 +92,16 @@ pub async fn apply_update(
             save_zone_snapshot(&mut tx, &zone, new_serial).await?;
         }
 
-        Ok::<bool, UpdateError>(changed)
+        Ok::<(bool, Zone, i32), UpdateError>((changed, zone, new_serial))
     }
     .await;
 
-    let changed = match apply_result {
-        Ok(changed) => {
+    let (changed, zone, new_serial) = match apply_result {
+        Ok(result) => {
             tx.commit().await.map_err(|e| {
                 UpdateError::Internal(format!("failed to commit NSUPDATE transaction: {}", e))
             })?;
-            changed
+            result
         }
         Err(err) => {
             tx.rollback().await.map_err(|e| {

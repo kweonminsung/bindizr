@@ -9,10 +9,7 @@ use super::model::{
     zone_change::ZoneChange,
     zone_snapshot::ZoneSnapshot,
 };
-use crate::database::{
-    DatabasePool, error::DatabaseError, get_pool, get_record_repository,
-    get_zone_change_repository, get_zone_repository, get_zone_snapshot_repository,
-};
+use crate::database::{DatabasePool, error::DatabaseError, get_pool};
 use async_trait::async_trait;
 use sqlx::{MySql, Postgres, Sqlite};
 
@@ -78,79 +75,6 @@ impl<'a> RepositoryTx<'a> {
                 .map_err(|e| DatabaseError::TransactionFailed(e.to_string())),
         }
     }
-
-    pub async fn get_records_by_zone_id(
-        &mut self,
-        zone_id: i32,
-    ) -> Result<Vec<Record>, DatabaseError> {
-        get_record_repository()
-            .get_by_zone_id_tx(self, zone_id)
-            .await
-    }
-
-    pub async fn get_record(
-        &mut self,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, DatabaseError> {
-        get_record_repository()
-            .get_tx(
-                self,
-                zone_id,
-                name,
-                record_type,
-                value,
-                priority,
-                match_priority,
-            )
-            .await
-    }
-
-    pub async fn create_record(&mut self, record: Record) -> Result<Record, DatabaseError> {
-        get_record_repository().create_tx(self, record).await
-    }
-
-    pub async fn update_record(&mut self, record: Record) -> Result<Record, DatabaseError> {
-        get_record_repository().update_tx(self, record).await
-    }
-
-    pub async fn delete_record(&mut self, record_id: i32) -> Result<(), DatabaseError> {
-        get_record_repository().delete_tx(self, record_id).await
-    }
-
-    pub async fn create_zone_change(
-        &mut self,
-        zone_change: ZoneChange,
-    ) -> Result<ZoneChange, DatabaseError> {
-        get_zone_change_repository()
-            .create_tx(self, zone_change)
-            .await
-    }
-
-    pub async fn upsert_zone_snapshot(
-        &mut self,
-        snapshot: ZoneSnapshot,
-    ) -> Result<ZoneSnapshot, DatabaseError> {
-        get_zone_snapshot_repository()
-            .upsert_tx(self, snapshot)
-            .await
-    }
-
-    pub async fn create_zone(&mut self, zone: Zone) -> Result<Zone, DatabaseError> {
-        get_zone_repository().create_tx(self, zone).await
-    }
-
-    pub async fn update_zone(&mut self, zone: Zone) -> Result<Zone, DatabaseError> {
-        get_zone_repository().update_tx(self, zone).await
-    }
-
-    pub async fn delete_zone(&mut self, zone_id: i32) -> Result<(), DatabaseError> {
-        get_zone_repository().delete_tx(self, zone_id).await
-    }
 }
 
 // Zone Repository Trait
@@ -162,6 +86,11 @@ pub trait ZoneRepository: Send + Sync {
     -> Result<Zone, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError>;
+    async fn get_by_name_for_update_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+    ) -> Result<Option<Zone>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError>;
     async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)

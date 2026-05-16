@@ -104,6 +104,30 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zone)
     }
 
+    async fn get_by_name_for_update_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+    ) -> Result<Option<Zone>, DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        let zone = sqlx::query_as::<_, Zone>(
+            "SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1 FOR UPDATE",
+        )
+        .bind(name)
+        .fetch_optional(&mut **postgres_tx)
+        .await?;
+
+        Ok(zone)
+    }
+
     async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
