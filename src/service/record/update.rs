@@ -6,21 +6,16 @@ use crate::{
     },
     dns, log_error, log_info, log_warn,
     service::{
-        error::ServiceError,
-        repository::RepositoryService,
-        utils::{generate_serial, is_apex_name, to_fqdn},
+        error::ServiceError, repository::RepositoryService, utils::generate_serial,
         zone::snapshot::save_zone_snapshot_tx,
     },
 };
 use chrono::Utc;
 
-use super::{
-    RecordService,
-    validation::{validate_glue_invariants, validate_record_add_constraints},
-};
+use super::{RecordService, validation::validate_record_update_constraints};
 
 impl RecordService {
-    pub async fn update_record(
+    pub async fn update(
         name: &str,
         record_type_str: &str,
         update_record_request: &CreateRecordRequest,
@@ -80,14 +75,6 @@ impl RecordService {
                 ))
             })?;
 
-        // Preserve previous API semantics for SOA update attempts.
-        if record_type == RecordType::SOA {
-            log_error!("Cannot update to SOA record type");
-            return Err(ServiceError::BadRequest(
-                "Cannot update to SOA record type".to_string(),
-            ));
-        }
-
         let zone_records = match RepositoryService::get_records_by_zone_id(zone.id).await {
             Ok(records) => records,
             Err(e) => {
@@ -98,19 +85,6 @@ impl RecordService {
             }
         };
 
-        // Note: HTTP update has one extra invariant (primary_ns NS immutability) checked below.
-        // The rest of the DNS integrity checks are shared with NSUPDATE.
-        validate_record_add_constraints(
-            &zone,
-            &zone_records,
-            &update_record_request.name,
-            &record_type,
-            &update_record_request.value,
-            Some(record_id),
-        )?;
-
-        // Updating a record is effectively DEL(old) + ADD(new). Ensure the resulting zone doesn't
-        // lose mandatory glue for any remaining in-bailiwick apex NS records.
         let candidate_updated = Record {
             id: record_id,
             name: update_record_request.name.clone(),
@@ -122,36 +96,12 @@ impl RecordService {
             created_at: existing_record.created_at,
         };
 
-        let records_after_update: Vec<Record> = zone_records
-            .iter()
-            .map(|r| {
-                if r.id == record_id {
-                    candidate_updated.clone()
-                } else {
-                    r.clone()
-                }
-            })
-            .collect();
-
-        validate_glue_invariants(&zone, &records_after_update)?;
-
-        if existing_record.record_type == RecordType::NS
-            && is_apex_name(&existing_record.name, &zone.name)
-            && to_fqdn(&existing_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns))
-        {
-            let still_primary = record_type == RecordType::NS
-                && is_apex_name(&update_record_request.name, &zone.name)
-                && to_fqdn(&update_record_request.value)
-                    .eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns));
-
-            if !still_primary {
-                return Err(ServiceError::BadRequest(
-                    "Cannot modify the NS record referenced by zone primary_ns".to_string(),
-                ));
-            }
-        }
-
-        // NS constraints are already covered by validate_record_add_constraints.
+        validate_record_update_constraints(
+            &zone,
+            &zone_records,
+            &existing_record,
+            &candidate_updated,
+        )?;
 
         // Update record
         let mut tx = RepositoryService::begin_tx("Failed to update record").await?;

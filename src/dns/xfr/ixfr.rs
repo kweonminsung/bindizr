@@ -1,5 +1,5 @@
 use super::{axfr, catalog, delta, error::XfrError, wire};
-use crate::{log_info, log_warn, service::repository::RepositoryService};
+use crate::{log_info, log_warn, service::zone::ZoneService};
 use domain::base::{Name, iana::Rtype};
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -30,7 +30,7 @@ pub async fn handle_ixfr(
             .await;
     }
 
-    let zone = RepositoryService::get_zone_by_name(zone_name_str)
+    let zone = ZoneService::find(zone_name_str)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;

@@ -117,7 +117,7 @@ impl ZoneSnapshotRepository for SqliteZoneSnapshotRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn get_by_zone_and_serial(
+    async fn get_by_zone_id_and_serial(
         &self,
         zone_id: i32,
         serial: i32,

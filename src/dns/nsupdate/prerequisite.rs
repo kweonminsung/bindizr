@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     database::model::{record::Record, zone::Zone},
-    service::repository::RepositoryService,
+    service::record::RecordService,
 };
 
 pub(super) async fn evaluate_prerequisites(
@@ -19,7 +19,7 @@ pub(super) async fn evaluate_prerequisites(
         return Ok(());
     }
 
-    let zone_records = RepositoryService::get_records_by_zone_id(zone.id)
+    let zone_records = RecordService::list_by_zone_id(zone.id)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
 

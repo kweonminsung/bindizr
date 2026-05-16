@@ -4,16 +4,19 @@ use serde_json::json;
 
 use crate::log_error;
 
+// Custom extractor for JSON body with error handling
 #[derive(FromRequest)]
 #[from_request(via(axum::Json), rejection(ApiError))]
 pub struct JsonBody<T>(pub T);
 
+// Custom API error type for handling JSON extraction errors
 #[derive(Debug)]
 pub struct ApiError {
     code: StatusCode,
     message: String,
 }
 
+// Implement conversion from JsonRejection to ApiError
 impl From<JsonRejection> for ApiError {
     fn from(rejection: JsonRejection) -> Self {
         let code = match rejection {

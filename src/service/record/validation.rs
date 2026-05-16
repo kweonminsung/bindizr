@@ -134,6 +134,60 @@ pub fn validate_record_delete_constraints(
     validate_glue_invariants(zone, &remaining_records)
 }
 
+pub fn validate_record_update_constraints(
+    zone: &Zone,
+    zone_records: &[Record],
+    existing_record: &Record,
+    updated_record: &Record,
+) -> Result<(), ServiceError> {
+    // Preserve previous API semantics for SOA update attempts.
+    if updated_record.record_type == RecordType::SOA {
+        log_error!("Cannot update to SOA record type");
+        return Err(ServiceError::BadRequest(
+            "Cannot update to SOA record type".to_string(),
+        ));
+    }
+
+    validate_record_add_constraints(
+        zone,
+        zone_records,
+        &updated_record.name,
+        &updated_record.record_type,
+        &updated_record.value,
+        Some(existing_record.id),
+    )?;
+
+    let records_after_update: Vec<Record> = zone_records
+        .iter()
+        .map(|record| {
+            if record.id == existing_record.id {
+                updated_record.clone()
+            } else {
+                record.clone()
+            }
+        })
+        .collect();
+
+    validate_glue_invariants(zone, &records_after_update)?;
+
+    if existing_record.record_type == RecordType::NS
+        && is_apex_name(&existing_record.name, &zone.name)
+        && to_fqdn(&existing_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns))
+    {
+        let still_primary = updated_record.record_type == RecordType::NS
+            && is_apex_name(&updated_record.name, &zone.name)
+            && to_fqdn(&updated_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns));
+
+        if !still_primary {
+            return Err(ServiceError::BadRequest(
+                "Cannot modify the NS record referenced by zone primary_ns".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn validate_record_add_constraints_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,

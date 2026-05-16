@@ -2,7 +2,7 @@ use crate::{
     database::model::record::RecordType,
     dns, log_error, log_info, log_warn,
     service::{
-        error::ServiceError, repository::RepositoryService, utils::generate_serial,
+        RepositoryTx, error::ServiceError, repository::RepositoryService, utils::generate_serial,
         zone::snapshot::save_zone_snapshot_tx,
     },
 };
@@ -10,7 +10,14 @@ use crate::{
 use super::{RecordService, validation::validate_record_delete_constraints};
 
 impl RecordService {
-    pub async fn delete_record(name: &str, record_type_str: &str) -> Result<(), ServiceError> {
+    pub(crate) async fn delete_tx(
+        tx: &mut RepositoryTx<'_>,
+        record_id: i32,
+    ) -> Result<(), ServiceError> {
+        RepositoryService::delete_record_tx(tx, record_id).await
+    }
+
+    pub async fn delete(name: &str, record_type_str: &str) -> Result<(), ServiceError> {
         // Valid record type
         let record_type = RecordType::from_str(record_type_str).map_err(|_| {
             ServiceError::BadRequest(format!("Invalid record type: {}", record_type_str))

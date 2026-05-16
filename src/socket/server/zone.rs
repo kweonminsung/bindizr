@@ -9,7 +9,7 @@ pub async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String
         .and_then(|v| v.as_str())
         .ok_or("Missing or invalid 'name' field")?;
 
-    match ZoneService::get_zone(name).await {
+    match ZoneService::get(name).await {
         Ok(zone) => {
             let response = GetZoneResponse::from_zone(&zone);
             Ok(DaemonResponse {
@@ -22,7 +22,7 @@ pub async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String
 }
 
 pub async fn list_zones() -> Result<DaemonResponse, String> {
-    match ZoneService::get_zones().await {
+    match ZoneService::list().await {
         Ok(zones) => {
             let response: Vec<GetZoneResponse> =
                 zones.iter().map(GetZoneResponse::from_zone).collect();
@@ -39,7 +39,7 @@ pub async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, Str
     let request: CreateZoneRequest =
         serde_json::from_value(data.clone()).map_err(|e| format!("Invalid request data: {}", e))?;
 
-    match ZoneService::create_zone(&request).await {
+    match ZoneService::create(&request).await {
         Ok(zone) => {
             let response = GetZoneResponse::from_zone(&zone);
             Ok(DaemonResponse {
@@ -57,7 +57,7 @@ pub async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, Str
         .and_then(|v| v.as_str())
         .ok_or("Missing or invalid 'name' field")?;
 
-    match ZoneService::delete_zone(name).await {
+    match ZoneService::delete(name).await {
         Ok(_) => Ok(DaemonResponse {
             message: format!("Zone '{}' deleted successfully", name),
             data: json!(null),

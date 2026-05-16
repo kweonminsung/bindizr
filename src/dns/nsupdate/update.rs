@@ -4,13 +4,15 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
         zone_change::ZoneChange,
-        zone_snapshot::ZoneSnapshot,
     },
-    dns, log_error, log_info,
+    dns, log_error, log_info, service,
     service::{
-        record::{validate_record_add_constraints_tx, validate_record_delete_constraints},
-        repository::{RepositoryService, RepositoryTx},
+        RepositoryTx,
+        record::{
+            RecordService, validate_record_add_constraints_tx, validate_record_delete_constraints,
+        },
         utils::generate_serial,
+        zone::{ZoneService, snapshot::save_zone_snapshot_tx},
     },
 };
 use chrono::Utc;
@@ -58,7 +60,7 @@ pub async fn apply_update(
         ));
     }
 
-    let zone = RepositoryService::get_zone_by_name(zone_name)
+    let zone = ZoneService::find(zone_name)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
         .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
@@ -66,7 +68,7 @@ pub async fn apply_update(
     super::prerequisite::evaluate_prerequisites(&zone, &request.prerequisites, query_data).await?;
     let new_serial = generate_serial(Some(zone.serial));
 
-    let mut tx = RepositoryService::begin_tx("failed to begin NSUPDATE transaction")
+    let mut tx = service::begin_tx("failed to begin NSUPDATE transaction")
         .await
         .map_err(|e| UpdateError::Internal(e.to_string()))?;
 
@@ -158,7 +160,7 @@ async fn add_record(
         .await
         .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
-    if RepositoryService::get_record_tx(
+    if RecordService::find_tx(
         tx,
         Some(zone.id),
         &relative_name,
@@ -184,7 +186,7 @@ async fn add_record(
         update.ttl as i32
     };
 
-    let created = RepositoryService::create_record_tx(
+    let created = RecordService::create_tx(
         tx,
         Record {
             id: 0,
@@ -226,7 +228,7 @@ async fn delete_records(
     new_serial: i32,
 ) -> Result<bool, UpdateError> {
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
-    let zone_records = RepositoryService::get_records_by_zone_id_tx(tx, zone.id)
+    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
 
@@ -283,7 +285,7 @@ async fn delete_records(
         .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
     for record in &matched {
-        RepositoryService::delete_record_tx(tx, record.id)
+        RecordService::delete_tx(tx, record.id)
             .await
             .map_err(|e| UpdateError::Internal(format!("failed to delete record: {}", e)))?;
 
@@ -458,7 +460,7 @@ async fn bump_zone_serial(
     zone: &Zone,
     new_serial: i32,
 ) -> Result<(), UpdateError> {
-    RepositoryService::update_zone_tx(
+    ZoneService::update_tx(
         tx,
         Zone {
             serial: new_serial,
@@ -476,24 +478,9 @@ async fn save_zone_snapshot(
     zone: &Zone,
     serial: i32,
 ) -> Result<(), UpdateError> {
-    RepositoryService::upsert_zone_snapshot_tx(
-        tx,
-        ZoneSnapshot {
-            id: 0,
-            zone_id: zone.id,
-            serial,
-            primary_ns: zone.primary_ns.clone(),
-            admin_email: zone.admin_email.replace('@', "."),
-            ttl: zone.ttl,
-            refresh: zone.refresh,
-            retry: zone.retry,
-            expire: zone.expire,
-            minimum_ttl: zone.minimum_ttl,
-            created_at: Utc::now(),
-        },
-    )
-    .await
-    .map_err(|e| UpdateError::Internal(format!("failed to save zone snapshot: {}", e)))?;
+    save_zone_snapshot_tx(tx, zone, serial)
+        .await
+        .map_err(|e| UpdateError::Internal(format!("failed to save zone snapshot: {}", e)))?;
 
     Ok(())
 }
@@ -509,7 +496,7 @@ async fn log_zone_change(
     ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Result<(), UpdateError> {
-    RepositoryService::create_zone_change_tx(
+    ZoneService::create_change_tx(
         tx,
         ZoneChange {
             id: 0,

@@ -15,9 +15,7 @@ use chrono::Utc;
 use super::ZoneService;
 
 impl ZoneService {
-    pub async fn create_zone(
-        create_zone_request: &CreateZoneRequest,
-    ) -> Result<Zone, ServiceError> {
+    pub async fn create(create_zone_request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
         // Check if zone already exists
         match RepositoryService::get_zone_by_name(&create_zone_request.name).await {
             Ok(Some(_)) => {

@@ -6,7 +6,7 @@ use crate::{
 use super::ZoneService;
 
 impl ZoneService {
-    pub async fn delete_zone(zone_name: &str) -> Result<(), ServiceError> {
+    pub async fn delete(zone_name: &str) -> Result<(), ServiceError> {
         // Check if zone exists and get its ID
         let zone = match RepositoryService::get_zone_by_name(zone_name).await {
             Ok(Some(z)) => z,

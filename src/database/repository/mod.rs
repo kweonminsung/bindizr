@@ -244,7 +244,7 @@ pub trait ZoneSnapshotRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         snapshot: ZoneSnapshot,
     ) -> Result<ZoneSnapshot, DatabaseError>;
-    async fn get_by_zone_and_serial(
+    async fn get_by_zone_id_and_serial(
         &self,
         zone_id: i32,
         serial: i32,

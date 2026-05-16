@@ -117,7 +117,7 @@ async fn run_udp_server(
 
     log_info!("DNS UDP server listening on {}", listen_addr);
 
-    let mut buf = [0u8; 65535];
+    let mut buf = vec![0u8; 65535];
 
     loop {
         let (len, client_addr) = match socket.recv_from(&mut buf).await {

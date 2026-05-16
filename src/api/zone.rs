@@ -27,7 +27,7 @@ impl ZoneApi {
     }
 
     async fn get_zones() -> impl IntoResponse {
-        match ZoneService::get_zones().await {
+        match ZoneService::list().await {
             Ok(zones) => {
                 let zones = zones
                     .iter()
@@ -47,13 +47,13 @@ impl ZoneApi {
         let zone_name = params.name;
         let records_query = query.records;
 
-        let raw_zone = match ZoneService::get_zone(&zone_name).await {
+        let raw_zone = match ZoneService::get(&zone_name).await {
             Ok(zone) => zone,
             Err(err) => return ApiError::from(err).into_response(),
         };
 
         let raw_records = match records_query {
-            Some(true) => match RecordService::get_records(Some(raw_zone.name.clone())).await {
+            Some(true) => match RecordService::list(Some(raw_zone.name.clone())).await {
                 Ok(records) => records,
                 Err(err) => return ApiError::from(err).into_response(),
             },
@@ -70,7 +70,7 @@ impl ZoneApi {
     }
 
     async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> impl IntoResponse {
-        match ZoneService::create_zone(&body).await {
+        match ZoneService::create(&body).await {
             Ok(zone) => {
                 let zone = GetZoneResponse::from_zone(&zone);
                 let json_body = json!({ "zone": zone });
@@ -86,7 +86,7 @@ impl ZoneApi {
     ) -> impl IntoResponse {
         let zone_name = params.name;
 
-        match ZoneService::update_zone(&zone_name, &body).await {
+        match ZoneService::update(&zone_name, &body).await {
             Ok(zone) => {
                 let zone = GetZoneResponse::from_zone(&zone);
                 let json_body = json!({ "zone": zone });
@@ -99,7 +99,7 @@ impl ZoneApi {
     async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl IntoResponse {
         let zone_name = params.name;
 
-        match ZoneService::delete_zone(&zone_name).await {
+        match ZoneService::delete(&zone_name).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Zone deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()

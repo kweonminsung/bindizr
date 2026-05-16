@@ -1,10 +1,7 @@
 use crate::{
     database::model::{zone::Zone, zone_snapshot::ZoneSnapshot},
     log_error,
-    service::{
-        error::ServiceError,
-        repository::{RepositoryService, RepositoryTx},
-    },
+    service::{RepositoryTx, error::ServiceError, repository::RepositoryService},
 };
 use chrono::Utc;
 
@@ -37,4 +34,11 @@ pub async fn save_zone_snapshot_tx(
     })?;
 
     Ok(())
+}
+
+pub async fn get_by_serial(
+    zone_id: i32,
+    serial: i32,
+) -> Result<Option<ZoneSnapshot>, ServiceError> {
+    RepositoryService::get_zone_snapshot_by_serial(zone_id, serial).await
 }

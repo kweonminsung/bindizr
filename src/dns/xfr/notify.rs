@@ -1,5 +1,5 @@
 use super::{error::XfrError, wire};
-use crate::{config, log_error, log_info, service::repository::RepositoryService};
+use crate::{config, log_error, log_info, service::zone::ZoneService};
 use domain::base::{
     Name, Rtype, StaticCompressor,
     iana::{Opcode, Rcode},
@@ -21,7 +21,7 @@ pub async fn send_notify(zone_name: Option<&str>) -> Result<(), XfrError> {
 async fn send_notify_for_all_zones() -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for all zones");
 
-    let zones = RepositoryService::get_all_zones()
+    let zones = ZoneService::list()
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
 
@@ -47,7 +47,7 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
 
     // Verify zone exists
-    RepositoryService::get_zone_by_name(zone_name)
+    ZoneService::find(zone_name)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;

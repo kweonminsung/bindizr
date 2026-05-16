@@ -1,6 +1,6 @@
 mod create;
 mod delete;
-mod read;
+mod get;
 pub mod snapshot;
 mod update;
 

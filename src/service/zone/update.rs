@@ -7,6 +7,7 @@ use crate::{
     },
     dns, log_error, log_info, log_warn,
     service::{
+        RepositoryTx,
         error::ServiceError,
         repository::RepositoryService,
         utils::{
@@ -20,7 +21,21 @@ use chrono::Utc;
 use super::ZoneService;
 
 impl ZoneService {
-    pub async fn update_zone(
+    pub(crate) async fn update_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: Zone,
+    ) -> Result<Zone, ServiceError> {
+        RepositoryService::update_zone_tx(tx, zone).await
+    }
+
+    pub(crate) async fn create_change_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_change: ZoneChange,
+    ) -> Result<ZoneChange, ServiceError> {
+        RepositoryService::create_zone_change_tx(tx, zone_change).await
+    }
+
+    pub async fn update(
         zone_name: &str,
         update_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {

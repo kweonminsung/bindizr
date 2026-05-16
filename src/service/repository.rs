@@ -272,7 +272,7 @@ impl RepositoryService {
         serial: i32,
     ) -> Result<Option<ZoneSnapshot>, ServiceError> {
         get_zone_snapshot_repository()
-            .get_by_zone_and_serial(zone_id, serial)
+            .get_by_zone_id_and_serial(zone_id, serial)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load snapshot: {}", e)))
     }

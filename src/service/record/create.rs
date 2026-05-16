@@ -6,7 +6,7 @@ use crate::{
     },
     dns, log_error, log_info, log_warn,
     service::{
-        error::ServiceError, repository::RepositoryService, utils::generate_serial,
+        RepositoryTx, error::ServiceError, repository::RepositoryService, utils::generate_serial,
         zone::snapshot::save_zone_snapshot_tx,
     },
 };
@@ -15,7 +15,14 @@ use chrono::Utc;
 use super::{RecordService, validation::validate_record_add_constraints};
 
 impl RecordService {
-    pub async fn create_record(
+    pub(crate) async fn create_tx(
+        tx: &mut RepositoryTx<'_>,
+        record: Record,
+    ) -> Result<Record, ServiceError> {
+        RepositoryService::create_record_tx(tx, record).await
+    }
+
+    pub async fn create(
         create_record_request: &CreateRecordRequest,
     ) -> Result<Record, ServiceError> {
         // Validate record type

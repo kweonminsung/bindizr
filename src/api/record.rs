@@ -3,6 +3,8 @@ use crate::api::{
     error::ApiError,
     middleware::body_parser::JsonBody,
 };
+use crate::database::model::record::RecordType;
+use crate::service::error::ServiceError;
 use crate::service::record::RecordService;
 use axum::{
     Json, Router,
@@ -38,7 +40,7 @@ impl RecordApi {
     async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl IntoResponse {
         let zone_name = query.zone_name;
 
-        let raw_records = match RecordService::get_records(zone_name).await {
+        let raw_records = match RecordService::list(zone_name).await {
             Ok(records) => records,
             Err(err) => return ApiError::from(err).into_response(),
         };
@@ -54,12 +56,22 @@ impl RecordApi {
 
     async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
         let name = params.name;
-        let record_type = params.record_type;
-
-        let raw_record = match RecordService::get_record(&name, &record_type).await {
-            Ok(record) => record,
-            Err(err) => return ApiError::from(err).into_response(),
+        let record_type = match RecordType::from_str(&params.record_type) {
+            Ok(record_type) => record_type,
+            Err(_) => {
+                return ApiError::from(ServiceError::BadRequest(format!(
+                    "Invalid record type: {}",
+                    params.record_type
+                )))
+                .into_response();
+            }
         };
+
+        let raw_record =
+            match RecordService::get(None, &name, &record_type, None, None, false).await {
+                Ok(record) => record,
+                Err(err) => return ApiError::from(err).into_response(),
+            };
 
         let record = GetRecordResponse::from_record(&raw_record);
 
@@ -68,7 +80,7 @@ impl RecordApi {
     }
 
     async fn create_record(JsonBody(body): JsonBody<CreateRecordRequest>) -> impl IntoResponse {
-        let raw_record = match RecordService::create_record(&body).await {
+        let raw_record = match RecordService::create(&body).await {
             Ok(record) => record,
             Err(err) => return ApiError::from(err).into_response(),
         };
@@ -86,7 +98,7 @@ impl RecordApi {
         let name = params.name;
         let record_type = params.record_type;
 
-        let raw_record = match RecordService::update_record(&name, &record_type, &body).await {
+        let raw_record = match RecordService::update(&name, &record_type, &body).await {
             Ok(record) => record,
             Err(err) => return ApiError::from(err).into_response(),
         };
@@ -101,7 +113,7 @@ impl RecordApi {
         let name = params.name;
         let record_type = params.record_type;
 
-        match RecordService::delete_record(&name, &record_type).await {
+        match RecordService::delete(&name, &record_type).await {
             Ok(_) => {
                 let json_body = json!({ "message": "Record deleted successfully" });
                 (StatusCode::OK, Json(json_body)).into_response()
