@@ -169,12 +169,10 @@ impl RecordService {
 
         // Log record update after commit
         log_info!(
-            "event=record_update zone={} name={} type={} old_value={} new_value={} ttl={} priority={} record_id={}",
+            "event=record_update zone={} name={} type={} ttl={} priority={} record_id={}",
             zone.name,
             update_record_request.name,
             update_record_request.record_type,
-            existing_record.value,
-            update_record_request.value,
             update_record_request
                 .ttl
                 .map_or("null".to_string(), |v| v.to_string()),

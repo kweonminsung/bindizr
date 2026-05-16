@@ -145,11 +145,10 @@ impl RecordService {
 
         // Log record creation after commit
         log_info!(
-            "event=record_create zone={} name={} type={} value={} ttl={} priority={} record_id={}",
+            "event=record_create zone={} name={} type={} ttl={} priority={} record_id={}",
             zone.name,
             create_record_request.name,
             create_record_request.record_type,
-            create_record_request.value,
             create_record_request
                 .ttl
                 .map_or("null".to_string(), |v| v.to_string()),

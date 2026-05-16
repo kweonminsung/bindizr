@@ -123,11 +123,10 @@ impl RecordService {
 
         // Log record deletion after commit
         log_info!(
-            "event=record_delete zone={} name={} type={} value={} record_id={}",
+            "event=record_delete zone={} name={} type={} record_id={}",
             zone.name,
             record_name,
             record_type_str,
-            existing_record.value,
             existing_record.id
         );
 
