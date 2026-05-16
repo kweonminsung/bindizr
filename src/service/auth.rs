@@ -25,7 +25,7 @@ impl AuthService {
 
         // Check if the token is expired
         if let Some(expires_at) = &stored_token.expires_at
-            && Utc::now() > *expires_at
+            && Utc::now() >= *expires_at
         {
             return Err(ServiceError::Unauthorized("Token has expired".to_string()));
         }

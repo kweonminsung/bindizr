@@ -10,7 +10,6 @@ use crate::{
         zone::snapshot::save_zone_snapshot_tx,
     },
 };
-use chrono::Utc;
 
 use super::{RecordService, validation::validate_record_update_constraints};
 
@@ -22,7 +21,7 @@ impl RecordService {
         update_record_request: &UpdateRecordRequest,
     ) -> Result<Record, ServiceError> {
         // Validate old record type
-        let old_record_type = RecordType::from_str(record_type_str).map_err(|_| {
+        let old_record_type = record_type_str.parse::<RecordType>().map_err(|_| {
             ServiceError::BadRequest(format!("Invalid record type: {}", record_type_str))
         })?;
 
@@ -67,8 +66,10 @@ impl RecordService {
         let record_id = existing_record.id;
 
         // Validate record type
-        let record_type =
-            RecordType::from_str(&update_record_request.record_type).map_err(|_| {
+        let record_type = update_record_request
+            .record_type
+            .parse::<RecordType>()
+            .map_err(|_| {
                 ServiceError::BadRequest(format!(
                     "Invalid record type: {}",
                     update_record_request.record_type
@@ -109,24 +110,12 @@ impl RecordService {
         let new_serial = generate_serial(Some(zone.serial));
 
         let apply_result = async {
-            let updated_record = RepositoryService::update_record_tx(
-                &mut tx,
-                Record {
-                    id: record_id,
-                    name: update_record_request.name.clone(),
-                    record_type,
-                    value: update_record_request.value.clone(),
-                    ttl: update_record_request.ttl,
-                    priority: update_record_request.priority,
-                    zone_id: zone.id,
-                    created_at: Utc::now(), // Will be set by the database
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update record: {}", e);
-                ServiceError::Internal("Failed to update record".to_string())
-            })?;
+            let updated_record = RepositoryService::update_record_tx(&mut tx, candidate_updated)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to update record: {}", e);
+                    ServiceError::Internal("Failed to update record".to_string())
+                })?;
 
             // Increment zone serial so IXFR consumers can detect this change
             RepositoryService::update_zone_tx(

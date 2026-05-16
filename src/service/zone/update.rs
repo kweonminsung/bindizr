@@ -116,7 +116,7 @@ impl ZoneService {
                     retry: update_zone_request.retry.unwrap_or(7200),
                     expire: update_zone_request.expire.unwrap_or(3_600_000),
                     minimum_ttl: update_zone_request.minimum_ttl.unwrap_or(86400),
-                    created_at: Utc::now(), // Will be set by the database
+                    created_at: existing_zone.created_at,
                 },
             )
             .await

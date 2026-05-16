@@ -31,7 +31,7 @@ pub fn to_relative_domain(fqdn: &str, zone_name: &str) -> String {
     let fqdn_lower = fqdn.to_ascii_lowercase();
     let zone_lower = zone.to_ascii_lowercase();
 
-    if fqdn_lower.ends_with(&zone_lower) {
+    if is_same_or_subdomain_fqdn(&fqdn_lower, &zone_lower) {
         let relative_part = &fqdn[..fqdn.len() - zone.len()];
         relative_part.trim_end_matches('.').to_string()
     } else {
@@ -41,9 +41,14 @@ pub fn to_relative_domain(fqdn: &str, zone_name: &str) -> String {
 
 /// Check if a given name is within the bailiwick of a zone.
 pub fn is_in_bailiwick(name: &str, zone_name: &str) -> bool {
-    to_fqdn(name)
-        .to_ascii_lowercase()
-        .ends_with(&to_fqdn(zone_name).to_ascii_lowercase())
+    let name = to_fqdn(name).to_ascii_lowercase();
+    let zone = to_fqdn(zone_name).to_ascii_lowercase();
+
+    is_same_or_subdomain_fqdn(&name, &zone)
+}
+
+fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
+    name == zone || name.ends_with(&format!(".{}", zone))
 }
 
 pub fn is_apex_name(name: &str, zone_name: &str) -> bool {
@@ -64,4 +69,31 @@ pub fn has_glue_records_for(
         r.name.eq_ignore_ascii_case(host_relative_name)
             && (r.record_type == RecordType::A || r.record_type == RecordType::AAAA)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_in_bailiwick, to_relative_domain};
+
+    #[test]
+    fn is_in_bailiwick_accepts_apex_and_subdomain() {
+        assert!(is_in_bailiwick("example.com.", "example.com."));
+        assert!(is_in_bailiwick("ns.example.com.", "example.com."));
+    }
+
+    #[test]
+    fn is_in_bailiwick_rejects_sibling_suffix_match() {
+        assert!(!is_in_bailiwick("notexample.com.", "example.com."));
+        assert!(!is_in_bailiwick("ns.notexample.com.", "example.com."));
+    }
+
+    #[test]
+    fn to_relative_domain_converts_only_zone_apex_and_subdomains() {
+        assert_eq!(to_relative_domain("example.com.", "example.com."), "@");
+        assert_eq!(to_relative_domain("ns.example.com.", "example.com."), "ns");
+        assert_eq!(
+            to_relative_domain("notexample.com.", "example.com."),
+            "notexample.com"
+        );
+    }
 }

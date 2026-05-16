@@ -26,8 +26,10 @@ impl RecordService {
         create_record_request: &CreateRecordRequest,
     ) -> Result<Record, ServiceError> {
         // Validate record type
-        let record_type =
-            RecordType::from_str(&create_record_request.record_type).map_err(|_| {
+        let record_type = create_record_request
+            .record_type
+            .parse::<RecordType>()
+            .map_err(|_| {
                 ServiceError::BadRequest(format!(
                     "Invalid record type: {}",
                     create_record_request.record_type

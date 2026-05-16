@@ -93,10 +93,9 @@ impl ZoneService {
 
         // Log zone creation after commit (structured logging)
         log_info!(
-            "event=zone_create zone={} primary_ns={} admin_email={} serial={} zone_id={}",
+            "event=zone_create zone={} primary_ns={} serial={} zone_id={}",
             created_zone.name,
             created_zone.primary_ns,
-            created_zone.admin_email,
             created_zone.serial,
             created_zone.id
         );

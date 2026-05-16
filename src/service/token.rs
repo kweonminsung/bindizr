@@ -19,6 +19,8 @@ impl TokenService {
         description: Option<&str>,
         expires_in_days: Option<i64>,
     ) -> Result<ApiToken, ServiceError> {
+        validate_expires_in_days(expires_in_days)?;
+
         let raw_token: String = rand::rng()
             .sample_iter(Alphanumeric)
             .take(32)
@@ -58,5 +60,38 @@ impl TokenService {
         }
 
         RepositoryService::delete_api_token(token_id).await
+    }
+}
+
+fn validate_expires_in_days(expires_in_days: Option<i64>) -> Result<(), ServiceError> {
+    if let Some(days) = expires_in_days
+        && days <= 0
+    {
+        return Err(ServiceError::BadRequest(
+            "expires_in_days must be greater than 0".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_expires_in_days;
+    use crate::service::error::ServiceError;
+
+    #[test]
+    fn validate_expires_in_days_accepts_none_and_positive_values() {
+        validate_expires_in_days(None).unwrap();
+        validate_expires_in_days(Some(1)).unwrap();
+    }
+
+    #[test]
+    fn validate_expires_in_days_rejects_non_positive_values() {
+        let zero = validate_expires_in_days(Some(0)).unwrap_err();
+        let negative = validate_expires_in_days(Some(-1)).unwrap_err();
+
+        assert!(matches!(zero, ServiceError::BadRequest(_)));
+        assert!(matches!(negative, ServiceError::BadRequest(_)));
     }
 }

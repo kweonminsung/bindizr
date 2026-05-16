@@ -17,7 +17,8 @@ pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, Stri
         .get("zone_name")
         .and_then(|v| v.as_str())
         .ok_or("Missing or invalid 'zone_name' field")?;
-    let record_type = RecordType::from_str(record_type)
+    let record_type = record_type
+        .parse::<RecordType>()
         .map_err(|_| format!("Invalid record type: {}", record_type))?;
     let zone = ZoneService::get(zone_name)
         .await

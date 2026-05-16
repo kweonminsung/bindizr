@@ -23,7 +23,7 @@ impl RecordService {
         record_type_str: &str,
     ) -> Result<(), ServiceError> {
         // Valid record type
-        let record_type = RecordType::from_str(record_type_str).map_err(|_| {
+        let record_type = record_type_str.parse::<RecordType>().map_err(|_| {
             ServiceError::BadRequest(format!("Invalid record type: {}", record_type_str))
         })?;
 

@@ -36,12 +36,14 @@ impl std::fmt::Display for RecordType {
 impl TryFrom<String> for RecordType {
     type Error = String;
     fn try_from(s: String) -> Result<Self, Self::Error> {
-        RecordType::from_str(&s)
+        s.parse()
     }
 }
-impl RecordType {
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Result<Self, String> {
+
+impl std::str::FromStr for RecordType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "A" => Ok(RecordType::A),
             "AAAA" => Ok(RecordType::AAAA),
@@ -55,7 +57,9 @@ impl RecordType {
             _ => Err(format!("Invalid record type: {}", s)),
         }
     }
+}
 
+impl RecordType {
     pub fn as_str(&self) -> &str {
         match self {
             RecordType::A => "A",

@@ -60,7 +60,7 @@ impl RecordApi {
         Query(query): Query<RecordZoneQuery>,
     ) -> impl IntoResponse {
         let name = params.name;
-        let record_type = match RecordType::from_str(&params.record_type) {
+        let record_type = match params.record_type.parse::<RecordType>() {
             Ok(record_type) => record_type,
             Err(_) => {
                 return ApiError::from(ServiceError::BadRequest(format!(
