@@ -1,5 +1,6 @@
 use crate::common::TestContext;
 use axum::http::StatusCode;
+use bindizr::{database::get_record_repository, database::model::record::RecordType};
 
 #[tokio::test]
 async fn test_record_crud_operations() {
@@ -207,6 +208,42 @@ async fn test_single_record_operations_are_scoped_by_zone() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_record_value_matching_is_case_sensitive() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+
+    for value in ["Token=ABC", "Token=abc"] {
+        let create_record_request = serde_json::json!({
+            "name": "case-sensitive",
+            "record_type": "TXT",
+            "value": value,
+            "ttl": 1800,
+            "zone_name": zone.name
+        });
+
+        let (status, _) = ctx
+            .make_request("POST", "/records", Some(create_record_request))
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    let record = get_record_repository()
+        .get(
+            Some(zone.id),
+            "case-sensitive",
+            &RecordType::TXT,
+            Some("Token=abc"),
+            None,
+            false,
+        )
+        .await
+        .expect("Failed to query record")
+        .expect("Expected case-sensitive record match");
+
+    assert_eq!(record.value, "Token=abc");
 }
 
 #[tokio::test]

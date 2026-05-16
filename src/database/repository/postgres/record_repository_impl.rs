@@ -143,7 +143,7 @@ impl RecordRepository for PostgresRecordRepository {
             WHERE ($1::INT4 IS NULL OR zone_id = $2)
               AND LOWER(name) = LOWER($3)
               AND record_type = $4
-              AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))
+              AND ($5::TEXT IS NULL OR value = $6)
               AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
             "#,
         )
@@ -188,7 +188,7 @@ impl RecordRepository for PostgresRecordRepository {
             WHERE ($1::INT4 IS NULL OR zone_id = $2)
               AND LOWER(name) = LOWER($3)
               AND record_type = $4
-              AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))
+              AND ($5::TEXT IS NULL OR value = $6)
               AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
             "#,
         )

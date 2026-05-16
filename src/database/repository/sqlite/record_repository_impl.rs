@@ -140,7 +140,7 @@ impl RecordRepository for SqliteRecordRepository {
             WHERE (? IS NULL OR zone_id = ?)
               AND LOWER(name) = LOWER(?)
               AND record_type = ?
-              AND (? IS NULL OR LOWER(value) = LOWER(?))
+              AND (? IS NULL OR value = ?)
               AND (? = 0 OR priority = ? OR (priority IS NULL AND ? IS NULL))
             "#,
         )
@@ -185,7 +185,7 @@ impl RecordRepository for SqliteRecordRepository {
             WHERE (? IS NULL OR zone_id = ?)
               AND LOWER(name) = LOWER(?)
               AND record_type = ?
-              AND (? IS NULL OR LOWER(value) = LOWER(?))
+              AND (? IS NULL OR value = ?)
               AND (? = 0 OR priority = ? OR (priority IS NULL AND ? IS NULL))
             "#,
         )
