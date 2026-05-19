@@ -322,7 +322,7 @@ fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError>
             }
 
             let ptr = (((len as u16 & 0x3F) << 8) | data[pos + 1] as u16) as usize;
-            if ptr >= data.len() {
+            if ptr >= pos {
                 return Err(ParseError::InvalidName);
             }
 
@@ -484,6 +484,27 @@ mod tests {
 
         let decoded = decode_name_from_rdata(&message, rdata_start, 2).unwrap();
         assert_eq!(decoded, "example.com.");
+    }
+
+    #[test]
+    fn decode_name_from_rdata_rejects_forward_compression_pointer() {
+        let message = [
+            0xC0, 0x02, // Pointer to the root label after this pointer
+            0x00,
+        ];
+
+        let err = decode_name_from_rdata(&message, 0, 2).unwrap_err();
+        assert!(matches!(err, ParseError::InvalidName));
+    }
+
+    #[test]
+    fn decode_name_from_rdata_rejects_self_compression_pointer() {
+        let message = [
+            0xC0, 0x00, // Pointer to itself
+        ];
+
+        let err = decode_name_from_rdata(&message, 0, 2).unwrap_err();
+        assert!(matches!(err, ParseError::InvalidName));
     }
 
     #[test]
