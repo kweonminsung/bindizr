@@ -93,6 +93,28 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
+    async fn get_by_id_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+    ) -> Result<Option<Zone>, DatabaseError> {
+        let mysql_tx = match &mut tx.0 {
+            RepositoryTxKind::MySQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected MySQL)".to_string(),
+                ));
+            }
+        };
+
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = ? FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut **mysql_tx)
+            .await?;
+
+        Ok(zone)
+    }
+
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -105,7 +127,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
-    async fn get_by_name_for_update_tx(
+    async fn get_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,

@@ -88,6 +88,28 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(record)
     }
 
+    async fn get_by_id_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+    ) -> Result<Option<Record>, DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut **postgres_tx)
+            .await?;
+
+        Ok(record)
+    }
+
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -116,7 +138,7 @@ impl RecordRepository for PostgresRecordRepository {
         };
 
         let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name",
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name FOR UPDATE",
         )
         .bind(zone_id)
         .fetch_all(&mut **postgres_tx)
@@ -190,6 +212,7 @@ impl RecordRepository for PostgresRecordRepository {
               AND record_type = $4
               AND ($5::TEXT IS NULL OR value = $6)
               AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
+            FOR UPDATE
             "#,
         )
         .bind(zone_id)

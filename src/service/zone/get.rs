@@ -12,11 +12,11 @@ impl ZoneService {
         RepositoryService::get_zone_by_name(zone_name).await
     }
 
-    pub(crate) async fn find_for_update_tx(
+    pub(crate) async fn find_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
     ) -> Result<Option<Zone>, ServiceError> {
-        RepositoryService::get_zone_by_name_for_update_tx(tx, zone_name).await
+        RepositoryService::get_zone_by_name_tx(tx, zone_name).await
     }
 
     pub async fn find_by_id(zone_id: i32) -> Result<Option<Zone>, ServiceError> {

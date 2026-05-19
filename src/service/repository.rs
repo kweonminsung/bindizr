@@ -61,12 +61,12 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load zone: {}", e)))
     }
 
-    pub async fn get_zone_by_name_for_update_tx(
+    pub async fn get_zone_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         name: &str,
     ) -> Result<Option<Zone>, ServiceError> {
         get_zone_repository()
-            .get_by_name_for_update_tx(tx, name)
+            .get_by_name_tx(tx, name)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load zone: {}", e)))
     }
@@ -74,6 +74,16 @@ impl RepositoryService {
     pub async fn get_zone_by_id(id: i32) -> Result<Option<Zone>, ServiceError> {
         get_zone_repository()
             .get_by_id(id)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load zone: {}", e)))
+    }
+
+    pub async fn get_zone_by_id_tx(
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+    ) -> Result<Option<Zone>, ServiceError> {
+        get_zone_repository()
+            .get_by_id_tx(tx, id)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load zone: {}", e)))
     }
@@ -167,6 +177,16 @@ impl RepositoryService {
     pub async fn get_record_by_id(record_id: i32) -> Result<Option<Record>, ServiceError> {
         get_record_repository()
             .get_by_id(record_id)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load record: {}", e)))
+    }
+
+    pub async fn get_record_by_id_tx(
+        tx: &mut RepositoryTx<'_>,
+        record_id: i32,
+    ) -> Result<Option<Record>, ServiceError> {
+        get_record_repository()
+            .get_by_id_tx(tx, record_id)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load record: {}", e)))
     }

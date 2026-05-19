@@ -86,6 +86,28 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
+    async fn get_by_id_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+    ) -> Result<Option<Record>, DatabaseError> {
+        let mysql_tx = match &mut tx.0 {
+            RepositoryTxKind::MySQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected MySQL)".to_string(),
+                ));
+            }
+        };
+
+        let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ? FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut **mysql_tx)
+            .await?;
+
+        Ok(record)
+    }
+
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -114,7 +136,7 @@ impl RecordRepository for MySqlRecordRepository {
         };
 
         let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name",
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name FOR UPDATE",
         )
         .bind(zone_id)
         .fetch_all(&mut **mysql_tx)
@@ -188,6 +210,7 @@ impl RecordRepository for MySqlRecordRepository {
               AND record_type = ?
               AND (? IS NULL OR BINARY value = BINARY ?)
               AND (? = 0 OR priority = ? OR (priority IS NULL AND ? IS NULL))
+            FOR UPDATE
             "#,
         )
         .bind(zone_id)

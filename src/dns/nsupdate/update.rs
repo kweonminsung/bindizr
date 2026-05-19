@@ -65,7 +65,7 @@ pub async fn apply_update(
         .map_err(|e| UpdateError::Internal(e.to_string()))?;
 
     let apply_result = async {
-        let zone = ZoneService::find_for_update_tx(&mut tx, zone_name)
+        let zone = ZoneService::find_tx(&mut tx, zone_name)
             .await
             .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
             .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
@@ -266,7 +266,7 @@ async fn delete_records(
         }
 
         if let Some(ref value) = target_value
-            && !record.value.eq_ignore_ascii_case(value)
+            && !record_value_matches(&record.record_type, &record.value, value)
         {
             continue;
         }
@@ -312,6 +312,15 @@ async fn delete_records(
     }
 
     Ok(true)
+}
+
+fn record_value_matches(record_type: &RecordType, stored_value: &str, target_value: &str) -> bool {
+    match record_type {
+        RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX => {
+            stored_value.eq_ignore_ascii_case(target_value)
+        }
+        _ => stored_value == target_value,
+    }
 }
 
 fn validate_delete_update_shape(
@@ -561,8 +570,9 @@ async fn log_zone_change(
 mod tests {
     use super::{
         CLASS_ANY, CLASS_NONE, TYPE_A, TYPE_ANY, UpdateError, absolute_to_relative,
-        validate_delete_update_shape,
+        record_value_matches, validate_delete_update_shape,
     };
+    use crate::database::model::record::RecordType;
     use crate::dns::nsupdate::parser::UpdateRecord;
 
     #[test]
@@ -627,6 +637,26 @@ mod tests {
         let err = validate_delete_update_shape(&update, false).unwrap_err();
 
         assert!(matches!(err, UpdateError::Refused(_)));
+    }
+
+    #[test]
+    fn record_value_matches_is_case_sensitive_for_txt() {
+        assert!(record_value_matches(&RecordType::TXT, "Hello", "Hello"));
+        assert!(!record_value_matches(&RecordType::TXT, "Hello", "hello"));
+    }
+
+    #[test]
+    fn record_value_matches_ignores_case_for_name_like_values() {
+        assert!(record_value_matches(
+            &RecordType::NS,
+            "Ns1.Example.Com.",
+            "ns1.example.com."
+        ));
+        assert!(record_value_matches(
+            &RecordType::MX,
+            "Mail.Example.Com.",
+            "mail.example.com."
+        ));
     }
 
     fn update_record(rr_type: u16, class: u16, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {

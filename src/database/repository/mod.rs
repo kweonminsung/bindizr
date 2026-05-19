@@ -34,7 +34,7 @@ pub async fn begin_transaction() -> Result<RepositoryTx<'static>, DatabaseError>
             .map(|tx| RepositoryTx(RepositoryTxKind::PostgreSQL(tx)))
             .map_err(|e| DatabaseError::TransactionFailed(e.to_string())),
         DatabasePool::SQLite(pool) => pool
-            .begin()
+            .begin_with("BEGIN IMMEDIATE")
             .await
             .map(|tx| RepositoryTx(RepositoryTxKind::SQLite(tx)))
             .map_err(|e| DatabaseError::TransactionFailed(e.to_string())),
@@ -85,8 +85,13 @@ pub trait ZoneRepository: Send + Sync {
     async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, DatabaseError>;
+    async fn get_by_id_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+    ) -> Result<Option<Zone>, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError>;
-    async fn get_by_name_for_update_tx(
+    async fn get_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
@@ -110,6 +115,11 @@ pub trait RecordRepository: Send + Sync {
         record: Record,
     ) -> Result<Record, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
+    async fn get_by_id_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+    ) -> Result<Option<Record>, DatabaseError>;
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     async fn get_by_zone_id_tx(
         &self,

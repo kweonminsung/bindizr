@@ -36,50 +36,53 @@ impl RecordService {
                 ))
             })?;
 
-        // Check if zone exists
-        let zone = match RepositoryService::get_zone_by_name(&create_record_request.zone_name).await
-        {
-            Ok(Some(zone)) => zone,
-            Ok(None) => {
-                return Err(ServiceError::NotFound(format!(
-                    "Zone with name '{}' not found",
-                    create_record_request.zone_name
-                )));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch zone: {}", e);
-                return Err(ServiceError::Internal(
-                    "Failed to create record".to_string(),
-                ));
-            }
-        };
+        let mut tx = RepositoryService::begin_tx("Failed to create record").await?;
 
-        let existing_records_in_zone =
-            match RepositoryService::get_records_by_zone_id(zone.id).await {
-                Ok(records) => records,
+        let apply_result = async {
+            let zone = match RepositoryService::get_zone_by_name_tx(
+                &mut tx,
+                &create_record_request.zone_name,
+            )
+            .await
+            {
+                Ok(Some(zone)) => zone,
+                Ok(None) => {
+                    return Err(ServiceError::NotFound(format!(
+                        "Zone with name '{}' not found",
+                        create_record_request.zone_name
+                    )));
+                }
                 Err(e) => {
-                    log_error!("Failed to check existing records: {}", e);
+                    log_error!("Failed to fetch zone: {}", e);
                     return Err(ServiceError::Internal(
                         "Failed to create record".to_string(),
                     ));
                 }
             };
 
-        validate_record_add_constraints(
-            &zone,
-            &existing_records_in_zone,
-            &create_record_request.name,
-            &record_type,
-            &create_record_request.value,
-            None,
-        )?;
+            let existing_records_in_zone =
+                match RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await {
+                    Ok(records) => records,
+                    Err(e) => {
+                        log_error!("Failed to check existing records: {}", e);
+                        return Err(ServiceError::Internal(
+                            "Failed to create record".to_string(),
+                        ));
+                    }
+                };
 
-        // Create record
-        let mut tx = RepositoryService::begin_tx("Failed to create record").await?;
+            validate_record_add_constraints(
+                &zone,
+                &existing_records_in_zone,
+                &create_record_request.name,
+                &record_type,
+                &create_record_request.value,
+                None,
+            )?;
 
-        let new_serial = generate_serial(Some(zone.serial));
+            let new_serial = generate_serial(Some(zone.serial));
+            let zone_name = zone.name.clone();
 
-        let apply_result = async {
             let created_record = RepositoryService::create_record_tx(
                 &mut tx,
                 Record {
@@ -136,17 +139,17 @@ impl RecordService {
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
-            Ok::<Record, ServiceError>(created_record)
+            Ok::<(Record, String), ServiceError>((created_record, zone_name))
         }
         .await;
 
-        let created_record =
+        let (created_record, zone_name) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create record").await?;
 
         // Log record creation after commit
         log_info!(
             "event=record_create zone={} name={} type={} ttl={} priority={} record_id={}",
-            zone.name,
+            zone_name,
             create_record_request.name,
             create_record_request.record_type,
             create_record_request
@@ -159,8 +162,8 @@ impl RecordService {
         );
 
         // Send NOTIFY to secondary servers
-        if let Err(e) = dns::xfr::notify::send_notify(Some(&zone.name)).await {
-            log_warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
+        if let Err(e) = dns::xfr::notify::send_notify(Some(&zone_name)).await {
+            log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
         Ok(created_record)
