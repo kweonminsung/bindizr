@@ -1,6 +1,6 @@
 use crate::common::TestContext;
 use axum::http::StatusCode;
-use bindizr::{database::get_record_repository, database::model::record::RecordType};
+use bindizr::{database::get_record_repository, database::model::record::RecordType, dns};
 
 #[tokio::test]
 async fn test_record_crud_operations() {
@@ -212,7 +212,7 @@ async fn test_record_value_matching_is_case_sensitive() {
             Some(zone.id),
             "case-sensitive",
             &RecordType::TXT,
-            Some("Token=abc"),
+            Some(&dns::txt::encode_txt_segments(["Token=abc"]).unwrap()),
             None,
             false,
         )
@@ -220,7 +220,30 @@ async fn test_record_value_matching_is_case_sensitive() {
         .expect("Failed to query record")
         .expect("Expected case-sensitive record match");
 
-    assert_eq!(record.value, "Token=abc");
+    assert_eq!(
+        dns::txt::decode_raw_txt_value(&record.value),
+        Some(serde_json::json!("Token=abc"))
+    );
+}
+
+#[tokio::test]
+async fn test_txt_record_value_accepts_segment_array() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+
+    let create_record_request = serde_json::json!({
+        "name": "segmented",
+        "record_type": "TXT",
+        "value": ["a", "bc"],
+        "ttl": 1800,
+        "zone_name": zone.name
+    });
+
+    let (status, body) = ctx
+        .make_request("POST", "/records", Some(create_record_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["record"]["value"], serde_json::json!(["a", "bc"]));
 }
 
 #[tokio::test]

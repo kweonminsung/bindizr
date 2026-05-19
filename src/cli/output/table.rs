@@ -8,6 +8,27 @@ fn display_option_i32(opt: &Option<i32>) -> String {
         None => "-".to_string(),
     }
 }
+
+// deserialize record value, which can be a string or an array of strings
+fn deserialize_record_value<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value {
+        serde_json::Value::String(value) => value,
+        serde_json::Value::Array(values) => values
+            .into_iter()
+            .map(|value| match value {
+                serde_json::Value::String(value) => value,
+                other => other.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(""),
+        other => other.to_string(),
+    })
+}
+
 /// Table row for zone display
 #[derive(Debug, Deserialize, Tabled)]
 pub struct ZoneRow {
@@ -36,6 +57,7 @@ pub struct RecordRow {
     #[tabled(rename = "TYPE")]
     pub record_type: String,
     #[tabled(rename = "VALUE")]
+    #[serde(deserialize_with = "deserialize_record_value")]
     pub value: String,
     #[tabled(rename = "TTL", display = "display_option_i32")]
     #[serde(default)]

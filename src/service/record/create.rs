@@ -35,6 +35,10 @@ impl RecordService {
                     create_record_request.record_type
                 ))
             })?;
+        let record_value = create_record_request
+            .value
+            .to_storage_value(&record_type)
+            .map_err(ServiceError::BadRequest)?;
 
         let mut tx = RepositoryService::begin_tx("Failed to create record").await?;
 
@@ -76,7 +80,7 @@ impl RecordService {
                 &existing_records_in_zone,
                 &create_record_request.name,
                 &record_type,
-                &create_record_request.value,
+                &record_value,
                 None,
             )?;
 
@@ -89,7 +93,7 @@ impl RecordService {
                     id: 0, // Will be set by the database
                     name: create_record_request.name.clone(),
                     record_type,
-                    value: create_record_request.value.clone(),
+                    value: record_value.clone(),
                     ttl: create_record_request.ttl,
                     priority: create_record_request.priority,
                     zone_id: zone.id,
@@ -126,7 +130,7 @@ impl RecordService {
                     operation: "ADD".to_string(),
                     record_name: created_record.name.clone(),
                     record_type: create_record_request.record_type.clone(),
-                    record_value: create_record_request.value.clone(),
+                    record_value: created_record.value.clone(),
                     record_ttl: create_record_request.ttl,
                     record_priority: create_record_request.priority,
                 },

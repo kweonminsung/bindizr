@@ -1,5 +1,8 @@
 use super::error::XfrError;
-use crate::database::model::{record::Record, zone::Zone};
+use crate::{
+    database::model::{record::Record, zone::Zone},
+    dns,
+};
 use domain::base::{Message, Name, ToName, iana::Rtype};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -119,6 +122,11 @@ impl DnsMessageBuilder {
 
     /// Add TXT record
     pub fn add_txt_record(&mut self, name: &str, ttl: u32, text: &str) -> Result<(), XfrError> {
+        if let Some(rdata) = dns::txt::decode_raw_txt_rdata(text) {
+            self.add_answer_raw(name, 16, ttl, &rdata)?;
+            return Ok(());
+        }
+
         let mut rdata = Vec::new();
         let text_bytes = text.as_bytes();
 

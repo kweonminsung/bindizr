@@ -314,7 +314,11 @@ async fn delete_records(
     Ok(true)
 }
 
-fn record_value_matches(record_type: &RecordType, stored_value: &str, target_value: &str) -> bool {
+pub(super) fn record_value_matches(
+    record_type: &RecordType,
+    stored_value: &str,
+    target_value: &str,
+) -> bool {
     match record_type {
         RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX => {
             stored_value.eq_ignore_ascii_case(target_value)
@@ -403,12 +407,15 @@ pub(super) fn rr_to_record_value(
                 .map_err(|e| UpdateError::Refused(format!("invalid PTR rdata: {}", e)))?,
             None,
         )),
-        TYPE_TXT => Ok((
-            RecordType::TXT,
+        TYPE_TXT => {
             decode_txt_from_rdata(&update.rdata)
-                .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?,
-            None,
-        )),
+                .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?;
+            Ok((
+                RecordType::TXT,
+                dns::txt::encode_raw_txt_rdata(&update.rdata),
+                None,
+            ))
+        }
         TYPE_MX => {
             if update.rdata.len() < 3 {
                 return Err(UpdateError::Refused("invalid MX rdata length".to_string()));
@@ -569,8 +576,9 @@ async fn log_zone_change(
 #[cfg(test)]
 mod tests {
     use super::{
-        CLASS_ANY, CLASS_NONE, TYPE_A, TYPE_ANY, UpdateError, absolute_to_relative,
-        record_value_matches, validate_delete_update_shape,
+        CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_A, TYPE_ANY, TYPE_TXT, UpdateError,
+        absolute_to_relative, record_value_matches, rr_to_record_value,
+        validate_delete_update_shape,
     };
     use crate::database::model::record::RecordType;
     use crate::dns::nsupdate::parser::UpdateRecord;
@@ -643,6 +651,41 @@ mod tests {
     fn record_value_matches_is_case_sensitive_for_txt() {
         assert!(record_value_matches(&RecordType::TXT, "Hello", "Hello"));
         assert!(!record_value_matches(&RecordType::TXT, "Hello", "hello"));
+    }
+
+    #[test]
+    fn rr_to_record_value_preserves_txt_character_string_boundaries() {
+        let first = UpdateRecord {
+            name: "txt.example.com.".to_string(),
+            rr_type: TYPE_TXT,
+            class: CLASS_IN,
+            ttl: 300,
+            rdata: vec![2, b'a', b'b', 1, b'c'],
+            rdata_start: 0,
+        };
+        let second = UpdateRecord {
+            name: "txt.example.com.".to_string(),
+            rr_type: TYPE_TXT,
+            class: CLASS_IN,
+            ttl: 300,
+            rdata: vec![1, b'a', 2, b'b', b'c'],
+            rdata_start: 0,
+        };
+
+        let (_, first_value, _) = rr_to_record_value(&first, &first.rdata).unwrap();
+        let (_, second_value, _) = rr_to_record_value(&second, &second.rdata).unwrap();
+
+        assert_ne!(first_value, second_value);
+        assert!(record_value_matches(
+            &RecordType::TXT,
+            &first_value,
+            &first_value
+        ));
+        assert!(!record_value_matches(
+            &RecordType::TXT,
+            &first_value,
+            &second_value
+        ));
     }
 
     #[test]

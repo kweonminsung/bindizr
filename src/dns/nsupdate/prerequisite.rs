@@ -2,7 +2,7 @@ use super::{
     parser::{PrerequisiteRecord, UpdateRecord},
     update::{
         CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY, UpdateError, absolute_to_relative,
-        normalize_owner_name, rr_to_record_value, rr_type_to_record_type,
+        normalize_owner_name, record_value_matches, rr_to_record_value, rr_type_to_record_type,
     },
 };
 use crate::{
@@ -120,7 +120,7 @@ fn evaluate_prerequisites_against_records(
                 let exists = zone_records.iter().any(|record| {
                     record.name.eq_ignore_ascii_case(&relative)
                         && record.record_type == target_type
-                        && record.value.eq_ignore_ascii_case(&target_value)
+                        && record_value_matches(&record.record_type, &record.value, &target_value)
                         && record.priority == target_priority
                 });
 

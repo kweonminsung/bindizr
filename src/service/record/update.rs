@@ -73,6 +73,10 @@ impl RecordService {
                         update_record_request.record_type
                     ))
                 })?;
+            let record_value = update_record_request
+                .value
+                .to_storage_value(&record_type)
+                .map_err(ServiceError::BadRequest)?;
 
             let zone_records =
                 match RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await {
@@ -89,7 +93,7 @@ impl RecordService {
                 id: existing_record.id,
                 name: update_record_request.name.clone(),
                 record_type: record_type.clone(),
-                value: update_record_request.value.clone(),
+                value: record_value,
                 ttl: update_record_request.ttl,
                 priority: update_record_request.priority,
                 zone_id: zone.id,

@@ -1,6 +1,7 @@
 pub mod acl;
 pub mod nsupdate;
 pub mod soa;
+pub mod txt;
 pub mod xfr;
 
 use crate::{config, log_error, log_info, log_warn};
