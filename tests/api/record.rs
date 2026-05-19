@@ -224,6 +224,40 @@ async fn test_record_value_matching_is_case_sensitive() {
 }
 
 #[tokio::test]
+async fn test_name_like_record_value_matching_is_case_insensitive() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+
+    let create_record_request = serde_json::json!({
+        "name": "alias",
+        "record_type": "CNAME",
+        "value": "Target.Example.Com.",
+        "ttl": 1800,
+        "zone_name": zone.name
+    });
+
+    let (status, _) = ctx
+        .make_request("POST", "/records", Some(create_record_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let record = get_record_repository()
+        .get(
+            Some(zone.id),
+            "alias",
+            &RecordType::CNAME,
+            Some("target.example.com."),
+            None,
+            false,
+        )
+        .await
+        .expect("Failed to query record")
+        .expect("Expected case-insensitive record match");
+
+    assert_eq!(record.value, "Target.Example.Com.");
+}
+
+#[tokio::test]
 async fn test_multiple_record_types() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;

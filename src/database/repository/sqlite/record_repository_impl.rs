@@ -154,29 +154,36 @@ impl RecordRepository for SqliteRecordRepository {
         match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
+        let value_filter = if is_name_like_value(record_type) {
+            "AND (? IS NULL OR LOWER(value) = LOWER(?))"
+        } else {
+            "AND (? IS NULL OR value = ?)"
+        };
 
-        let record = sqlx::query_as::<_, Record>(
+        let query = format!(
             r#"
             SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
             FROM records
             WHERE (? IS NULL OR zone_id = ?)
               AND LOWER(name) = LOWER(?)
               AND record_type = ?
-              AND (? IS NULL OR value = ?)
+              {value_filter}
               AND (? = 0 OR priority = ? OR (priority IS NULL AND ? IS NULL))
-            "#,
-        )
-        .bind(zone_id)
-        .bind(zone_id)
-        .bind(name)
-        .bind(record_type.to_string())
-        .bind(value)
-        .bind(value)
-        .bind(if match_priority { 1 } else { 0 })
-        .bind(priority)
-        .bind(priority)
-        .fetch_optional(&mut *conn)
-        .await?;
+            "#
+        );
+
+        let record = sqlx::query_as::<_, Record>(&query)
+            .bind(zone_id)
+            .bind(zone_id)
+            .bind(name)
+            .bind(record_type.to_string())
+            .bind(value)
+            .bind(value)
+            .bind(if match_priority { 1 } else { 0 })
+            .bind(priority)
+            .bind(priority)
+            .fetch_optional(&mut *conn)
+            .await?;
 
         Ok(record)
     }
@@ -199,29 +206,36 @@ impl RecordRepository for SqliteRecordRepository {
                 ));
             }
         };
+        let value_filter = if is_name_like_value(record_type) {
+            "AND (? IS NULL OR LOWER(value) = LOWER(?))"
+        } else {
+            "AND (? IS NULL OR value = ?)"
+        };
 
-        let record = sqlx::query_as::<_, Record>(
+        let query = format!(
             r#"
             SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
             FROM records
             WHERE (? IS NULL OR zone_id = ?)
               AND LOWER(name) = LOWER(?)
               AND record_type = ?
-              AND (? IS NULL OR value = ?)
+              {value_filter}
               AND (? = 0 OR priority = ? OR (priority IS NULL AND ? IS NULL))
-            "#,
-        )
-        .bind(zone_id)
-        .bind(zone_id)
-        .bind(name)
-        .bind(record_type.to_string())
-        .bind(value)
-        .bind(value)
-        .bind(if match_priority { 1 } else { 0 })
-        .bind(priority)
-        .bind(priority)
-        .fetch_optional(&mut **sqlite_tx)
-        .await?;
+            "#
+        );
+
+        let record = sqlx::query_as::<_, Record>(&query)
+            .bind(zone_id)
+            .bind(zone_id)
+            .bind(name)
+            .bind(record_type.to_string())
+            .bind(value)
+            .bind(value)
+            .bind(if match_priority { 1 } else { 0 })
+            .bind(priority)
+            .bind(priority)
+            .fetch_optional(&mut **sqlite_tx)
+            .await?;
 
         Ok(record)
     }
@@ -321,4 +335,11 @@ impl RecordRepository for SqliteRecordRepository {
             .await?;
         Ok(())
     }
+}
+
+fn is_name_like_value(record_type: &RecordType) -> bool {
+    matches!(
+        record_type,
+        RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX
+    )
 }

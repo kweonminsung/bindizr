@@ -157,29 +157,36 @@ impl RecordRepository for PostgresRecordRepository {
         match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
+        let value_filter = if is_name_like_value(record_type) {
+            "AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))"
+        } else {
+            "AND ($5::TEXT IS NULL OR value = $6)"
+        };
 
-        let record = sqlx::query_as::<_, Record>(
+        let query = format!(
             r#"
             SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
             FROM records
             WHERE ($1::INT4 IS NULL OR zone_id = $2)
               AND LOWER(name) = LOWER($3)
               AND record_type = $4
-              AND ($5::TEXT IS NULL OR value = $6)
+              {value_filter}
               AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
-            "#,
-        )
-        .bind(zone_id)
-        .bind(zone_id)
-        .bind(name)
-        .bind(record_type.to_string())
-        .bind(value)
-        .bind(value)
-        .bind(if match_priority { 1 } else { 0 })
-        .bind(priority)
-        .bind(priority)
-        .fetch_optional(&mut *conn)
-        .await?;
+            "#
+        );
+
+        let record = sqlx::query_as::<_, Record>(&query)
+            .bind(zone_id)
+            .bind(zone_id)
+            .bind(name)
+            .bind(record_type.to_string())
+            .bind(value)
+            .bind(value)
+            .bind(if match_priority { 1 } else { 0 })
+            .bind(priority)
+            .bind(priority)
+            .fetch_optional(&mut *conn)
+            .await?;
 
         Ok(record)
     }
@@ -202,30 +209,37 @@ impl RecordRepository for PostgresRecordRepository {
                 ));
             }
         };
+        let value_filter = if is_name_like_value(record_type) {
+            "AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))"
+        } else {
+            "AND ($5::TEXT IS NULL OR value = $6)"
+        };
 
-        let record = sqlx::query_as::<_, Record>(
+        let query = format!(
             r#"
             SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
             FROM records
             WHERE ($1::INT4 IS NULL OR zone_id = $2)
               AND LOWER(name) = LOWER($3)
               AND record_type = $4
-              AND ($5::TEXT IS NULL OR value = $6)
+              {value_filter}
               AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
             FOR UPDATE
-            "#,
-        )
-        .bind(zone_id)
-        .bind(zone_id)
-        .bind(name)
-        .bind(record_type.to_string())
-        .bind(value)
-        .bind(value)
-        .bind(if match_priority { 1 } else { 0 })
-        .bind(priority)
-        .bind(priority)
-        .fetch_optional(&mut **postgres_tx)
-        .await?;
+            "#
+        );
+
+        let record = sqlx::query_as::<_, Record>(&query)
+            .bind(zone_id)
+            .bind(zone_id)
+            .bind(name)
+            .bind(record_type.to_string())
+            .bind(value)
+            .bind(value)
+            .bind(if match_priority { 1 } else { 0 })
+            .bind(priority)
+            .bind(priority)
+            .fetch_optional(&mut **postgres_tx)
+            .await?;
 
         Ok(record)
     }
@@ -323,4 +337,11 @@ impl RecordRepository for PostgresRecordRepository {
             .await?;
         Ok(())
     }
+}
+
+fn is_name_like_value(record_type: &RecordType) -> bool {
+    matches!(
+        record_type,
+        RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX
+    )
 }
