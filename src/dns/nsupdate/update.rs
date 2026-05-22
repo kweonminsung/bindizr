@@ -104,9 +104,9 @@ pub async fn apply_update(
             result
         }
         Err(err) => {
-            tx.rollback().await.map_err(|e| {
-                UpdateError::Internal(format!("failed to rollback NSUPDATE transaction: {}", e))
-            })?;
+            if let Err(e) = tx.rollback().await {
+                log_error!("failed to rollback NSUPDATE transaction: {}", e);
+            }
             return Err(err);
         }
     };

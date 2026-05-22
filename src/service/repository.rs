@@ -45,10 +45,9 @@ impl RepositoryService {
                 Ok(value)
             }
             Err(err) => {
-                tx.rollback().await.map_err(|e| {
+                if let Err(e) = tx.rollback().await {
                     log_error!("Failed to rollback transaction: {}", e);
-                    ServiceError::Internal(internal_msg.to_string())
-                })?;
+                }
                 Err(err)
             }
         }
