@@ -1,7 +1,6 @@
-use crate::dns::acl;
 use crate::dns::xfr::{catalog, error::XfrError, wire};
+use crate::log_info;
 use crate::service::zone::ZoneService;
-use crate::{log_info, log_warn};
 use domain::base::iana::Rtype;
 use std::net::{IpAddr, SocketAddr};
 use tokio::net::{TcpStream, UdpSocket};
@@ -9,11 +8,10 @@ use tokio::net::{TcpStream, UdpSocket};
 pub async fn handle_tcp_soa(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
-    secondary_servers: &[IpAddr],
+    _secondary_servers: &[IpAddr],
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
-    validate_secondary_acl(client_ip, secondary_servers)?;
 
     let response = match build_soa_response(query_data, client_ip).await {
         Ok(response) => response,
@@ -31,11 +29,10 @@ pub async fn handle_tcp_soa(
 pub async fn handle_udp_soa(
     socket: &UdpSocket,
     client_addr: SocketAddr,
-    secondary_servers: &[IpAddr],
+    _secondary_servers: &[IpAddr],
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
-    validate_secondary_acl(client_ip, secondary_servers)?;
 
     let response = match build_soa_response(query_data, client_ip).await {
         Ok(response) => response,
@@ -94,19 +91,4 @@ async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<
     log_info!("SOA response sent for zone {}", zone_name_str);
 
     Ok(builder.build())
-}
-
-fn validate_secondary_acl(client_ip: IpAddr, secondary_servers: &[IpAddr]) -> Result<(), XfrError> {
-    if !acl::is_client_allowed(client_ip, secondary_servers) {
-        log_warn!(
-            "SOA request denied from {} (not a configured secondary server)",
-            client_ip
-        );
-        return Err(XfrError::AccessDenied(format!(
-            "IP {} not allowed",
-            client_ip
-        )));
-    }
-
-    Ok(())
 }
