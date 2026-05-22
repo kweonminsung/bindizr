@@ -63,7 +63,7 @@ pub fn validate_record_add_constraints(
     if !existing_records_with_name.is_empty() {
         if *record_type == RecordType::CNAME {
             return Err(ServiceError::BadRequest(format!(
-                "A record with name '{}' already exists in this zone, so CNAME cannot be used",
+                "Another record with name '{}' already exists in this zone, so CNAME cannot be used",
                 owner_name
             )));
         }

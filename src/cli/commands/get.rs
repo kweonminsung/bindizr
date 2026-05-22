@@ -224,7 +224,7 @@ fn filter_records(
         matches_string(item, "zone_name", zone)
             && matches_string(item, "name", name)
             && matches_string(item, "record_type", record_type)
-            && matches_string(item, "value", value)
+            && matches_record_value(item, value)
             && matches_i64(item, "ttl", ttl)
             && matches_i64(item, "priority", priority)
     })
@@ -251,10 +251,75 @@ fn matches_string(item: &serde_json::Value, key: &str, expected: Option<&str>) -
     })
 }
 
+fn matches_record_value(item: &serde_json::Value, expected: Option<&str>) -> bool {
+    expected.is_none_or(|expected| match item.get("value") {
+        Some(serde_json::Value::String(actual)) => actual.eq_ignore_ascii_case(expected),
+        Some(serde_json::Value::Array(values)) => {
+            let segments = values
+                .iter()
+                .map(|value| value.as_str())
+                .collect::<Option<Vec<_>>>();
+            segments.is_some_and(|segments| {
+                segments
+                    .iter()
+                    .any(|segment| segment.eq_ignore_ascii_case(expected))
+                    || segments.join("").eq_ignore_ascii_case(expected)
+            })
+        }
+        _ => false,
+    })
+}
+
 fn matches_i64(item: &serde_json::Value, key: &str, expected: Option<i64>) -> bool {
     expected.is_none_or(|expected| {
         item.get(key)
             .and_then(|value| value.as_i64())
             .is_some_and(|actual| actual == expected)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::filter_records;
+    use serde_json::json;
+
+    #[test]
+    fn filter_records_matches_txt_value_array_segment() {
+        let data = json!([
+            {"record_type": "TXT", "value": ["v=spf1 ", "include:example.net"], "ttl": 300},
+            {"record_type": "TXT", "value": ["other"], "ttl": 300}
+        ]);
+
+        let filtered = filter_records(
+            data,
+            None,
+            None,
+            None,
+            Some("include:example.net"),
+            None,
+            None,
+        );
+
+        assert_eq!(filtered.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn filter_records_matches_txt_value_array_joined_segments() {
+        let data = json!([
+            {"record_type": "TXT", "value": ["v=spf1 ", "include:example.net"], "ttl": 300},
+            {"record_type": "TXT", "value": ["other"], "ttl": 300}
+        ]);
+
+        let filtered = filter_records(
+            data,
+            None,
+            None,
+            None,
+            Some("v=spf1 include:example.net"),
+            None,
+            None,
+        );
+
+        assert_eq!(filtered.as_array().unwrap().len(), 1);
+    }
 }
