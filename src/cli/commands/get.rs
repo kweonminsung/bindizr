@@ -252,8 +252,13 @@ fn matches_string(item: &serde_json::Value, key: &str, expected: Option<&str>) -
 }
 
 fn matches_record_value(item: &serde_json::Value, expected: Option<&str>) -> bool {
+    let ignore_case = item
+        .get("record_type")
+        .and_then(|value| value.as_str())
+        .is_some_and(is_name_like_record_type);
+
     expected.is_none_or(|expected| match item.get("value") {
-        Some(serde_json::Value::String(actual)) => actual.eq_ignore_ascii_case(expected),
+        Some(serde_json::Value::String(actual)) => values_equal(actual, expected, ignore_case),
         Some(serde_json::Value::Array(values)) => {
             let segments = values
                 .iter()
@@ -262,12 +267,27 @@ fn matches_record_value(item: &serde_json::Value, expected: Option<&str>) -> boo
             segments.is_some_and(|segments| {
                 segments
                     .iter()
-                    .any(|segment| segment.eq_ignore_ascii_case(expected))
-                    || segments.join("").eq_ignore_ascii_case(expected)
+                    .any(|segment| values_equal(segment, expected, ignore_case))
+                    || values_equal(&segments.join(""), expected, ignore_case)
             })
         }
         _ => false,
     })
+}
+
+fn is_name_like_record_type(record_type: &str) -> bool {
+    matches!(
+        record_type.to_ascii_uppercase().as_str(),
+        "CNAME" | "NS" | "PTR" | "MX"
+    )
+}
+
+fn values_equal(actual: &str, expected: &str, ignore_case: bool) -> bool {
+    if ignore_case {
+        actual.eq_ignore_ascii_case(expected)
+    } else {
+        actual == expected
+    }
 }
 
 fn matches_i64(item: &serde_json::Value, key: &str, expected: Option<i64>) -> bool {
@@ -321,5 +341,41 @@ mod tests {
         );
 
         assert_eq!(filtered.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn filter_records_matches_txt_values_case_sensitively() {
+        let data = json!([
+            {"record_type": "TXT", "value": "Token=abc", "ttl": 300},
+            {"record_type": "TXT", "value": "token=abc", "ttl": 300}
+        ]);
+
+        let filtered = filter_records(data, None, None, None, Some("token=abc"), None, None);
+
+        let records = filtered.as_array().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["value"], "token=abc");
+    }
+
+    #[test]
+    fn filter_records_matches_name_like_values_case_insensitively() {
+        let data = json!([
+            {"record_type": "CNAME", "value": "Target.Example.Com.", "ttl": 300},
+            {"record_type": "TXT", "value": "Target.Example.Com.", "ttl": 300}
+        ]);
+
+        let filtered = filter_records(
+            data,
+            None,
+            None,
+            None,
+            Some("target.example.com."),
+            None,
+            None,
+        );
+
+        let records = filtered.as_array().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["record_type"], "CNAME");
     }
 }
