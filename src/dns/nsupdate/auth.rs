@@ -113,10 +113,10 @@ fn build_tsig_signed_data(query_data: &[u8], tsig: &TsigRecord) -> Result<Vec<u8
     message[10..12].copy_from_slice(&new_arcount.to_be_bytes());
 
     let mut out = message;
-    out.extend_from_slice(&encode_name_canonical(&tsig.name)?);
+    out.extend_from_slice(&tsig.name_canonical);
     out.extend_from_slice(&255u16.to_be_bytes());
     out.extend_from_slice(&0u32.to_be_bytes());
-    out.extend_from_slice(&encode_name_canonical(&tsig.algorithm)?);
+    out.extend_from_slice(&tsig.algorithm_canonical);
     out.push(((tsig.time_signed >> 40) & 0xff) as u8);
     out.push(((tsig.time_signed >> 32) & 0xff) as u8);
     out.push(((tsig.time_signed >> 24) & 0xff) as u8);
@@ -127,26 +127,6 @@ fn build_tsig_signed_data(query_data: &[u8], tsig: &TsigRecord) -> Result<Vec<u8
     out.extend_from_slice(&tsig.error.to_be_bytes());
     out.extend_from_slice(&(tsig.other_data.len() as u16).to_be_bytes());
     out.extend_from_slice(&tsig.other_data);
-
-    Ok(out)
-}
-
-fn encode_name_canonical(name: &str) -> Result<Vec<u8>, UpdateError> {
-    if name == "." {
-        return Ok(vec![0]);
-    }
-
-    let mut out = Vec::new();
-    for label in name.trim_end_matches('.').split('.') {
-        if label.is_empty() || label.len() > 63 {
-            return Err(UpdateError::Refused(
-                "invalid TSIG owner/algorithm name".to_string(),
-            ));
-        }
-        out.push(label.len() as u8);
-        out.extend_from_slice(label.to_ascii_lowercase().as_bytes());
-    }
-    out.push(0);
 
     Ok(out)
 }

@@ -6,9 +6,14 @@ pub mod xfr;
 
 use crate::{config, log_error, log_info, log_warn};
 use domain::base::iana::Rtype;
+use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
+use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::time::timeout;
+
+const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 enum QueryRoute {
     Nsupdate,
@@ -75,21 +80,48 @@ async fn handle_tcp_connection(
     client_addr: SocketAddr,
     secondary_servers: Vec<IpAddr>,
 ) -> Result<(), String> {
-    let query_data = xfr::wire::read_tcp_message(&mut stream)
-        .await
-        .map_err(|e| format!("Failed to read DNS TCP message: {}", e))?;
+    loop {
+        let query_data = match timeout(TCP_IDLE_TIMEOUT, xfr::wire::read_tcp_message(&mut stream))
+            .await
+        {
+            Ok(Ok(query_data)) => query_data,
+            Ok(Err(xfr::error::XfrError::IoError(e))) if e.kind() == ErrorKind::UnexpectedEof => {
+                break;
+            }
+            Ok(Err(e)) => return Err(format!("Failed to read DNS TCP message: {}", e)),
+            Err(_) => {
+                log_info!(
+                    "Closing idle DNS TCP connection from {} after {:?}",
+                    client_addr,
+                    TCP_IDLE_TIMEOUT
+                );
+                break;
+            }
+        };
 
-    match classify_query_route(&query_data) {
+        handle_tcp_query(&mut stream, client_addr, &secondary_servers, &query_data).await?;
+    }
+
+    Ok(())
+}
+
+async fn handle_tcp_query(
+    stream: &mut TcpStream,
+    client_addr: SocketAddr,
+    secondary_servers: &[IpAddr],
+    query_data: &[u8],
+) -> Result<(), String> {
+    match classify_query_route(query_data) {
         Ok(QueryRoute::Nsupdate) => {
-            nsupdate::handle_tcp_nsupdate(&mut stream, &query_data, client_addr).await?;
+            nsupdate::handle_tcp_nsupdate(stream, query_data, client_addr).await?;
         }
         Ok(QueryRoute::Soa) => {
-            soa::handle_tcp_soa(&mut stream, client_addr, &secondary_servers, &query_data)
+            soa::handle_tcp_soa(stream, client_addr, secondary_servers, query_data)
                 .await
                 .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
         }
         Ok(QueryRoute::Xfr) => {
-            xfr::handle_tcp_query(&mut stream, client_addr, &secondary_servers, &query_data)
+            xfr::handle_tcp_query(stream, client_addr, secondary_servers, query_data)
                 .await
                 .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
         }

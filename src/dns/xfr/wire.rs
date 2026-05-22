@@ -526,10 +526,24 @@ pub async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     reader: &mut R,
 ) -> Result<Vec<u8>, XfrError> {
     let mut len_buf = [0u8; 2];
-    reader
-        .read_exact(&mut len_buf)
+    if reader
+        .read(&mut len_buf[..1])
         .await
-        .map_err(XfrError::IoError)?;
+        .map_err(XfrError::IoError)?
+        == 0
+    {
+        return Err(XfrError::IoError(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "connection closed",
+        )));
+    }
+    reader.read_exact(&mut len_buf[1..]).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            XfrError::ProtocolError("Incomplete DNS TCP length prefix".to_string())
+        } else {
+            XfrError::IoError(e)
+        }
+    })?;
 
     let len = u16::from_be_bytes(len_buf) as usize;
 
@@ -541,10 +555,16 @@ pub async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     }
 
     let mut message_buf = vec![0u8; len];
-    reader
-        .read_exact(&mut message_buf)
-        .await
-        .map_err(XfrError::IoError)?;
+    reader.read_exact(&mut message_buf).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+            XfrError::ProtocolError(format!(
+                "Incomplete DNS TCP message: expected {} bytes",
+                len
+            ))
+        } else {
+            XfrError::IoError(e)
+        }
+    })?;
 
     Ok(message_buf)
 }

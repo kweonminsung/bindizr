@@ -36,8 +36,11 @@ pub struct UpdateRecord {
 
 #[derive(Debug, Clone)]
 pub struct TsigRecord {
+    #[allow(dead_code)]
     pub name: String,
+    pub name_canonical: Vec<u8>,
     pub algorithm: String,
+    pub algorithm_canonical: Vec<u8>,
     pub time_signed: u64,
     pub fudge: u16,
     pub mac: Vec<u8>,
@@ -217,6 +220,11 @@ fn peek_rr_type(data: &[u8], pos: usize) -> Result<u16, ParseError> {
 fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseError> {
     let rr_start = pos;
     let (name, name_len) = decode_name(data, pos)?;
+    let (name_canonical, canonical_name_len) =
+        decode_name_canonical(data, pos).map_err(|_| ParseError::InvalidTsig)?;
+    if canonical_name_len != name_len {
+        return Err(ParseError::InvalidTsig);
+    }
     let hdr = pos + name_len;
 
     if hdr + 10 > data.len() {
@@ -240,6 +248,11 @@ fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseEr
 
     let mut p = rdata_start;
     let (algorithm, algo_len) = decode_name(data, p).map_err(|_| ParseError::InvalidTsig)?;
+    let (algorithm_canonical, canonical_algo_len) =
+        decode_name_canonical(data, p).map_err(|_| ParseError::InvalidTsig)?;
+    if canonical_algo_len != algo_len {
+        return Err(ParseError::InvalidTsig);
+    }
     p += algo_len;
 
     if p + 6 + 2 + 2 > rdata_end {
@@ -285,7 +298,9 @@ fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseEr
     Ok((
         TsigRecord {
             name,
+            name_canonical,
             algorithm,
+            algorithm_canonical,
             time_signed,
             fudge,
             mac,
@@ -297,6 +312,78 @@ fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseEr
         },
         rdata_end,
     ))
+}
+
+fn decode_name_canonical(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), ParseError> {
+    if start >= data.len() {
+        return Err(ParseError::InvalidName);
+    }
+
+    let mut out = Vec::new();
+    let mut pos = start;
+    let mut consumed = 0usize;
+    let mut jumped = false;
+    let mut jumps = 0usize;
+
+    loop {
+        if pos >= data.len() {
+            return Err(ParseError::InvalidName);
+        }
+
+        let len = data[pos];
+        if len & 0xC0 == 0xC0 {
+            if pos + 1 >= data.len() {
+                return Err(ParseError::InvalidName);
+            }
+
+            let ptr = (((len as u16 & 0x3F) << 8) | data[pos + 1] as u16) as usize;
+            if ptr >= pos {
+                return Err(ParseError::InvalidName);
+            }
+
+            if !jumped {
+                consumed += 2;
+                jumped = true;
+            }
+
+            pos = ptr;
+            jumps += 1;
+            if jumps > data.len() {
+                return Err(ParseError::InvalidName);
+            }
+            continue;
+        }
+
+        if len == 0 {
+            out.push(0);
+            if !jumped {
+                consumed += 1;
+            }
+            break;
+        }
+
+        let label_len = len as usize;
+        let label_start = pos + 1;
+        let label_end = label_start + label_len;
+
+        if label_end > data.len() || label_len > 63 {
+            return Err(ParseError::InvalidName);
+        }
+
+        out.push(len);
+        out.extend(
+            data[label_start..label_end]
+                .iter()
+                .map(u8::to_ascii_lowercase),
+        );
+
+        if !jumped {
+            consumed += 1 + label_len;
+        }
+        pos = label_end;
+    }
+
+    Ok((out, consumed))
 }
 
 fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError> {
@@ -468,6 +555,28 @@ mod tests {
         message.extend_from_slice(&rdata);
     }
 
+    fn append_tsig_rr_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
+        let mut rdata = Vec::new();
+        rdata.extend_from_slice(&[
+            0x0b, b'h', b'm', b'a', b'c', b'-', b's', b'h', b'a', b'2', b'5', b'6', 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x01, // Time signed
+            0x01, 0x2c, // Fudge
+            0x00, 0x00, // MAC size
+            0x12, 0x34, // Original ID
+            0x00, 0x00, // Error
+            0x00, 0x00, // Other len
+        ]);
+
+        message.extend_from_slice(owner);
+        message.extend_from_slice(&[
+            0x00, 0xfa, // TYPE TSIG
+            0x00, 0xff, // CLASS ANY
+            0x00, 0x00, 0x00, 0x00, // TTL
+        ]);
+        message.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+        message.extend_from_slice(&rdata);
+    }
+
     #[test]
     fn decode_name_from_rdata_handles_compression_pointer() {
         let mut message = Vec::new();
@@ -549,6 +658,28 @@ mod tests {
         let tsig = request.tsig.unwrap();
         assert_eq!(tsig.name, "key.");
         assert_eq!(tsig.algorithm, "hmac-sha256.");
+    }
+
+    #[test]
+    fn parse_update_request_preserves_tsig_canonical_owner_labels() {
+        let mut message = minimal_update_with_ztype(6);
+        set_arcount(&mut message, 1);
+        append_tsig_rr_with_owner(
+            &mut message,
+            &[
+                0x0c, b'K', b'e', b'y', b'.', b'W', b'i', b't', b'h', b'.', b'D', b'o', b't', 0x00,
+            ],
+        );
+
+        let request = parse_update_request(&message).unwrap();
+        let tsig = request.tsig.unwrap();
+        assert_eq!(tsig.name, "Key.With.Dot.");
+        assert_eq!(
+            tsig.name_canonical,
+            vec![
+                0x0c, b'k', b'e', b'y', b'.', b'w', b'i', b't', b'h', b'.', b'd', b'o', b't', 0x00
+            ]
+        );
     }
 
     #[test]
