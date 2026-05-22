@@ -4,7 +4,7 @@ use crate::database::{
     repository::{RecordRepository, RepositoryTx, RepositoryTxKind},
 };
 use async_trait::async_trait;
-use sqlx::{Pool, Sqlite};
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 pub struct SqliteRecordRepository {
     pool: Pool<Sqlite>,
@@ -172,7 +172,7 @@ impl RecordRepository for SqliteRecordRepository {
             "#
         );
 
-        let record = sqlx::query_as::<_, Record>(&query)
+        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
             .bind(zone_id)
             .bind(zone_id)
             .bind(name)
@@ -224,7 +224,7 @@ impl RecordRepository for SqliteRecordRepository {
             "#
         );
 
-        let record = sqlx::query_as::<_, Record>(&query)
+        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
             .bind(zone_id)
             .bind(zone_id)
             .bind(name)

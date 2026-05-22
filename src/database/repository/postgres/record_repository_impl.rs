@@ -4,7 +4,7 @@ use crate::database::{
     repository::{RecordRepository, RepositoryTx, RepositoryTxKind},
 };
 use async_trait::async_trait;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 pub struct PostgresRecordRepository {
     pool: Pool<Postgres>,
@@ -175,7 +175,7 @@ impl RecordRepository for PostgresRecordRepository {
             "#
         );
 
-        let record = sqlx::query_as::<_, Record>(&query)
+        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
             .bind(zone_id)
             .bind(zone_id)
             .bind(name)
@@ -228,7 +228,7 @@ impl RecordRepository for PostgresRecordRepository {
             "#
         );
 
-        let record = sqlx::query_as::<_, Record>(&query)
+        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
             .bind(zone_id)
             .bind(zone_id)
             .bind(name)

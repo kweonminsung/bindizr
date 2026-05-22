@@ -4,7 +4,7 @@ use crate::database::{
     repository::{RecordRepository, RepositoryTx, RepositoryTxKind},
 };
 use async_trait::async_trait;
-use sqlx::{MySql, Pool};
+use sqlx::{AssertSqlSafe, MySql, Pool};
 
 pub struct MySqlRecordRepository {
     pool: Pool<MySql>,
@@ -173,7 +173,7 @@ impl RecordRepository for MySqlRecordRepository {
             "#
         );
 
-        let record = sqlx::query_as::<_, Record>(&query)
+        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
             .bind(zone_id)
             .bind(zone_id)
             .bind(name)
@@ -226,7 +226,7 @@ impl RecordRepository for MySqlRecordRepository {
             "#
         );
 
-        let record = sqlx::query_as::<_, Record>(&query)
+        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
             .bind(zone_id)
             .bind(zone_id)
             .bind(name)
