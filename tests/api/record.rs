@@ -247,6 +247,55 @@ async fn test_txt_record_value_accepts_segment_array() {
 }
 
 #[tokio::test]
+async fn test_txt_record_value_rejects_empty_segment_array() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+
+    let create_record_request = serde_json::json!({
+        "name": "empty-segment-list",
+        "record_type": "TXT",
+        "value": [],
+        "ttl": 1800,
+        "zone_name": zone.name
+    });
+
+    let (status, body) = ctx
+        .make_request("POST", "/records", Some(create_record_request))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("TXT record must contain at least one character-string")
+    );
+}
+
+#[tokio::test]
+async fn test_txt_record_string_value_auto_splits_when_longer_than_dns_character_string() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+    let value = "a".repeat(300);
+
+    let create_record_request = serde_json::json!({
+        "name": "long-txt",
+        "record_type": "TXT",
+        "value": value,
+        "ttl": 1800,
+        "zone_name": zone.name
+    });
+
+    let (status, body) = ctx
+        .make_request("POST", "/records", Some(create_record_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(
+        body["record"]["value"],
+        serde_json::json!(["a".repeat(255), "a".repeat(45)])
+    );
+}
+
+#[tokio::test]
 async fn test_name_like_record_value_matching_is_case_insensitive() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;

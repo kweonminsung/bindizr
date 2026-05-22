@@ -84,7 +84,7 @@ impl RecordValueRequest {
     pub fn to_storage_value(&self, record_type: &RecordType) -> Result<String, String> {
         match (record_type, self) {
             (RecordType::TXT, RecordValueRequest::String(value)) => {
-                dns::txt::encode_txt_segments([value.as_str()])
+                Ok(dns::txt::encode_txt_string(value))
             }
             (RecordType::TXT, RecordValueRequest::Segments(segments)) => {
                 dns::txt::encode_txt_segments(segments.iter().map(String::as_str))
