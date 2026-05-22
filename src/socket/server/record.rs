@@ -10,6 +10,9 @@ pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, Stri
         .ok_or("Missing or invalid 'id' field")?;
     let record_id =
         i32::try_from(record_id_i64).map_err(|_| "Record ID is out of range".to_string())?;
+    if record_id < 0 {
+        return Err("Record ID must be non-negative".to_string());
+    }
 
     match RecordService::get_by_id(record_id).await {
         Ok(record) => {
@@ -97,6 +100,9 @@ pub async fn delete_record(data: &serde_json::Value) -> Result<DaemonResponse, S
         .ok_or("Missing or invalid 'id' field")?;
     let record_id =
         i32::try_from(record_id_i64).map_err(|_| "Record ID is out of range".to_string())?;
+    if record_id < 0 {
+        return Err("Record ID must be non-negative".to_string());
+    }
 
     match RecordService::delete_by_id(record_id).await {
         Ok(_) => Ok(DaemonResponse {
