@@ -1,6 +1,6 @@
 use super::{
     parser::{TsigRecord, UpdateRequest},
-    update::UpdateError,
+    update::{TsigErrorResponse, UpdateError},
 };
 use crate::config;
 use base64::Engine;
@@ -12,6 +12,10 @@ use std::{
 };
 
 type HmacSha256 = Hmac<Sha256>;
+
+const TSIG_ERROR_BADSIG: u16 = 16;
+const TSIG_ERROR_BADKEY: u16 = 17;
+const TSIG_ERROR_BADTIME: u16 = 18;
 
 pub(super) fn validate_tsig(
     request: &UpdateRequest,
@@ -34,22 +38,13 @@ pub(super) fn validate_tsig(
 
     let algorithm = tsig.algorithm.trim_end_matches('.').to_ascii_lowercase();
     if algorithm != "hmac-sha256" && algorithm != "hmac-sha256.sig-alg.reg.int" {
-        return Err(UpdateError::Refused(format!(
-            "unsupported TSIG algorithm: {}",
-            tsig.algorithm
-        )));
-    }
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| UpdateError::Internal(format!("system time error: {}", e)))?
-        .as_secs();
-    let skew = now.abs_diff(tsig.time_signed);
-    if skew > u64::from(tsig.fudge) {
-        return Err(UpdateError::Refused(format!(
-            "TSIG time skew too large: {}s (fudge={})",
-            skew, tsig.fudge
-        )));
+        return Err(tsig_notauth(
+            format!("unsupported TSIG algorithm: {}", tsig.algorithm),
+            tsig,
+            TSIG_ERROR_BADKEY,
+            tsig.time_signed,
+            Vec::new(),
+        ));
     }
 
     if query_data.len() < 12 {
@@ -58,8 +53,12 @@ pub(super) fn validate_tsig(
 
     let expected_id = u16::from_be_bytes([query_data[0], query_data[1]]);
     if tsig.original_id != expected_id {
-        return Err(UpdateError::Refused(
+        return Err(tsig_notauth(
             "TSIG original id mismatch".to_string(),
+            tsig,
+            TSIG_ERROR_BADSIG,
+            tsig.time_signed,
+            Vec::new(),
         ));
     }
 
@@ -69,10 +68,64 @@ pub(super) fn validate_tsig(
     let mut mac = HmacSha256::new_from_slice(&key_bytes)
         .map_err(|e| UpdateError::Internal(format!("invalid TSIG key: {}", e)))?;
     mac.update(&signed_data);
-    mac.verify_slice(&tsig.mac)
-        .map_err(|_| UpdateError::Refused("TSIG MAC verification failed".to_string()))?;
+    mac.verify_slice(&tsig.mac).map_err(|_| {
+        tsig_notauth(
+            "TSIG MAC verification failed".to_string(),
+            tsig,
+            TSIG_ERROR_BADSIG,
+            tsig.time_signed,
+            Vec::new(),
+        )
+    })?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| UpdateError::Internal(format!("system time error: {}", e)))?
+        .as_secs();
+    let skew = now.abs_diff(tsig.time_signed);
+    if skew > u64::from(tsig.fudge) {
+        return Err(tsig_notauth(
+            format!("TSIG time skew too large: {}s (fudge={})", skew, tsig.fudge),
+            tsig,
+            TSIG_ERROR_BADTIME,
+            now,
+            encode_u48(now),
+        ));
+    }
 
     Ok(())
+}
+
+fn tsig_notauth(
+    msg: String,
+    tsig: &TsigRecord,
+    error: u16,
+    time_signed: u64,
+    other_data: Vec<u8>,
+) -> UpdateError {
+    UpdateError::NotAuth {
+        msg,
+        tsig: Some(TsigErrorResponse {
+            name_canonical: tsig.name_canonical.clone(),
+            algorithm_canonical: tsig.algorithm_canonical.clone(),
+            original_id: tsig.original_id,
+            time_signed,
+            fudge: tsig.fudge,
+            error,
+            other_data,
+        }),
+    }
+}
+
+fn encode_u48(value: u64) -> Vec<u8> {
+    vec![
+        ((value >> 40) & 0xff) as u8,
+        ((value >> 32) & 0xff) as u8,
+        ((value >> 24) & 0xff) as u8,
+        ((value >> 16) & 0xff) as u8,
+        ((value >> 8) & 0xff) as u8,
+        (value & 0xff) as u8,
+    ]
 }
 
 fn decode_tsig_secret(raw: &str) -> Result<Vec<u8>, UpdateError> {

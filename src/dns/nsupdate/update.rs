@@ -34,12 +34,27 @@ pub(super) const TYPE_ANY: u16 = 255;
 #[derive(Debug)]
 pub enum UpdateError {
     Refused(String),
+    NotAuth {
+        msg: String,
+        tsig: Option<TsigErrorResponse>,
+    },
     YxDomain(String),
     YxRrset(String),
     NxDomain(String),
     NxRrset(String),
     NotZone(String),
     Internal(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct TsigErrorResponse {
+    pub name_canonical: Vec<u8>,
+    pub algorithm_canonical: Vec<u8>,
+    pub original_id: u16,
+    pub time_signed: u64,
+    pub fudge: u16,
+    pub error: u16,
+    pub other_data: Vec<u8>,
 }
 
 pub enum UpdateResult {
