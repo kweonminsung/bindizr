@@ -1,5 +1,5 @@
+use crate::dns;
 use crate::socket::dto::DaemonResponse;
-use crate::xfr;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -19,7 +19,7 @@ pub async fn handle_notify_zone(data: serde_json::Value) -> Result<DaemonRespons
         }
     };
 
-    match xfr::notify::send_notify(request.zone_name.as_deref()).await {
+    match dns::xfr::notify::send_notify(request.zone_name.as_deref()).await {
         Ok(()) => Ok(DaemonResponse {
             message: match request.zone_name {
                 Some(ref name) => format!("NOTIFY sent successfully for zone: {}", name),

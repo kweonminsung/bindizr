@@ -60,10 +60,10 @@ jobs:
           fi
 
       - name: Create GitHub Release and Upload Assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.version }}
-          name: Release ${{ github.event.inputs.version }}
+          name: ${{ github.event.inputs.version }}
           prerelease: ${{ github.event.inputs.prerelease }}
           files: |
             bindizr_*.deb

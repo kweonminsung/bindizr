@@ -1,5 +1,8 @@
 use crate::database::error::DatabaseError;
-use crate::database::{model::zone_snapshot::ZoneSnapshot, repository::ZoneSnapshotRepository};
+use crate::database::{
+    model::zone_snapshot::ZoneSnapshot,
+    repository::{RepositoryTx, RepositoryTxKind, ZoneSnapshotRepository},
+};
 use async_trait::async_trait;
 use sqlx::{Pool, Postgres};
 
@@ -46,7 +49,51 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn get_by_zone_and_serial(
+    async fn upsert_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        snapshot: ZoneSnapshot,
+    ) -> Result<ZoneSnapshot, DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            INSERT INTO zone_soa_history (zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (zone_id, serial)
+            DO UPDATE SET
+                primary_ns = EXCLUDED.primary_ns,
+                admin_email = EXCLUDED.admin_email,
+                ttl = EXCLUDED.ttl,
+                refresh = EXCLUDED.refresh,
+                retry = EXCLUDED.retry,
+                expire = EXCLUDED.expire,
+                minimum_ttl = EXCLUDED.minimum_ttl
+            RETURNING id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            "#,
+        )
+        .bind(snapshot.zone_id)
+        .bind(snapshot.serial)
+        .bind(&snapshot.primary_ns)
+        .bind(&snapshot.admin_email)
+        .bind(snapshot.ttl)
+        .bind(snapshot.refresh)
+        .bind(snapshot.retry)
+        .bind(snapshot.expire)
+        .bind(snapshot.minimum_ttl)
+        .fetch_one(&mut **postgres_tx)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn get_by_zone_id_and_serial(
         &self,
         zone_id: i32,
         serial: i32,

@@ -4,7 +4,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use bindizr::{
-    api::controller::ApiController,
+    api::router::ApiRouter,
     config,
     database::{self, DatabasePool, model::zone::Zone},
 };
@@ -42,7 +42,7 @@ impl TestContext {
             .expect("Failed to clear zones table");
 
         // Create API router
-        let api_router = ApiController::routes().await;
+        let api_router = ApiRouter::routes().await;
 
         Self {
             api_router,

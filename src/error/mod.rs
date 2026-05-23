@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::{
     api::validation::ValidationError, config::error::ConfigError, database::error::DatabaseError,
-    xfr::error::XfrError,
+    dns::xfr::error::XfrError,
 };
 
 /// Top-level error type

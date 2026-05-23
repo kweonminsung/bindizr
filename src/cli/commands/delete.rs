@@ -13,13 +13,8 @@ pub enum DeleteCommand {
 
     /// Delete a record
     Record {
-        /// The name of the record
-        name: String,
-        /// The record type
-        #[arg(long,
-            aliases = ["type"]
-        )]
-        record_type: String,
+        /// The record ID
+        record_id: i32,
     },
 }
 
@@ -33,11 +28,11 @@ pub async fn handle_command(subcommand: DeleteCommand) -> Result<(), String> {
                 .await?;
             println!("{}", response.message);
         }
-        DeleteCommand::Record { name, record_type } => {
+        DeleteCommand::Record { record_id } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::DeleteRecord,
-                    Some(json!({ "name": name, "record_type": record_type })),
+                    Some(json!({ "id": record_id })),
                 )
                 .await?;
             println!("{}", response.message);

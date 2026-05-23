@@ -1,5 +1,8 @@
 use crate::database::error::DatabaseError;
-use crate::database::{model::zone_change::ZoneChange, repository::ZoneChangeRepository};
+use crate::database::{
+    model::zone_change::ZoneChange,
+    repository::{RepositoryTx, RepositoryTxKind, ZoneChangeRepository},
+};
 use async_trait::async_trait;
 use sqlx::{Pool, Postgres};
 
@@ -32,6 +35,40 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         .bind(zone_change.record_ttl)
         .bind(zone_change.record_priority)
         .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn create_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_change: ZoneChange,
+    ) -> Result<ZoneChange, DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query_as::<_, ZoneChange>(
+            r#"
+            INSERT INTO zone_changes (zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
+            "#,
+        )
+        .bind(zone_change.zone_id)
+        .bind(zone_change.serial)
+        .bind(&zone_change.operation)
+        .bind(&zone_change.record_name)
+        .bind(&zone_change.record_type)
+        .bind(&zone_change.record_value)
+        .bind(zone_change.record_ttl)
+        .bind(zone_change.record_priority)
+        .fetch_one(&mut **postgres_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }

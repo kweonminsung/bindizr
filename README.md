@@ -31,6 +31,8 @@ DNS Synchronization Service for BIND9
 
 - **Secondary DNS Servers**: Standard BIND9 (or any RFC-compliant DNS server) instances configured as secondaries. They automatically discover zones through the catalog zone, pull zone updates from Bindizr's XFR server via zone transfer, and respond to DNS queries from clients.
 
+- **nsupdate (Dynamic Update)**: Supports RFC 2136-style DNS dynamic updates via nsupdate.
+
 <br>
 
 &nbsp;<img src="public/concepts.png" width="462px">
@@ -178,9 +180,10 @@ file_path = "bindizr.db"       # SQLite database file path
 [database.postgresql]
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
-[xfr]
-listen_port = 53                  # XFR server listen port (TCP)
-secondary_addrs = ""                 # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
+[dns]
+listen_port = 53                  # DNS server listen port (UDP and TCP)
+secondary_addrs = ""              # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
+nsupdate_tsig_key = ""            # Shared TSIG secret for nsupdate authentication (empty to disable, base64 recommended)
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace
@@ -218,6 +221,19 @@ $ bindizr notify zone <ZONE_NAME>
 
 # Show help information
 $ bindizr --help
+```
+
+### nsupdate (Dynamic Update)
+
+Bindizr supports RFC 2136-style dynamic updates through the DNS listener.
+
+```bash
+$ nsupdate <<EOF
+server 127.0.0.1 53
+zone example.com
+update add sub.example.com. 300 A 1.2.3.4
+send
+EOF
 ```
 
 ### Token Management
