@@ -7,18 +7,29 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use utoipa::ToSchema;
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct GetZoneResponse {
+    #[schema(example = 1)]
     pub id: i32,
+    #[schema(example = "example.com")]
     pub name: String,
+    #[schema(example = "ns1.example.com")]
     pub primary_ns: String,
+    #[schema(example = "admin@example.com")]
     pub admin_email: String,
+    #[schema(example = 3600)]
     pub ttl: i32,
+    #[schema(example = 2025100101)]
     pub serial: Option<i32>,
+    #[schema(example = 7200)]
     pub refresh: i32,
+    #[schema(example = 3600)]
     pub retry: i32,
+    #[schema(example = 604800)]
     pub expire: i32,
+    #[schema(example = 3600)]
     pub minimum_ttl: i32,
 }
 impl GetZoneResponse {
@@ -38,16 +49,24 @@ impl GetZoneResponse {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct GetRecordResponse {
+    #[schema(example = 1)]
     pub id: i32,
+    #[schema(example = "sub")]
     pub name: String,
+    #[schema(example = "A")]
     pub record_type: String,
+    #[schema(value_type = serde_json::Value, example = json!("192.168.1.100"))]
     pub value: Value,
+    #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    #[schema(example = 10)]
     pub priority: Option<i32>,
+    #[schema(example = 1)]
     pub zone_id: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "example.com")]
     pub zone_name: Option<String>,
 }
 impl GetRecordResponse {
@@ -73,10 +92,12 @@ fn record_response_value(record: &Record) -> Value {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(untagged)]
 pub enum RecordValueRequest {
+    #[schema(example = "192.168.1.100")]
     String(String),
+    #[schema(example = json!(["hello", "world"]))]
     Segments(Vec<String>),
 }
 
@@ -97,34 +118,97 @@ impl RecordValueRequest {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema)]
 pub struct CreateZoneRequest {
+    #[schema(example = "example.com")]
     pub name: String,
+    #[schema(example = "ns1.example.com")]
     pub primary_ns: String,
+    #[schema(example = "admin@example.com")]
     pub admin_email: String,
+    #[schema(example = 3600)]
     pub ttl: i32,
+    #[schema(example = 2025100101)]
     pub serial: Option<i32>, // Optional: auto-generated if not provided
+    #[schema(example = 7200)]
     pub refresh: Option<i32>,
+    #[schema(example = 3600)]
     pub retry: Option<i32>,
+    #[schema(example = 604800)]
     pub expire: Option<i32>,
+    #[schema(example = 3600)]
     pub minimum_ttl: Option<i32>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema)]
 pub struct CreateRecordRequest {
+    #[schema(example = "sub")]
     pub name: String,
+    #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
+    #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    #[schema(example = 10)]
     pub priority: Option<i32>,
+    #[schema(example = "example.com")]
     pub zone_name: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema)]
 pub struct UpdateRecordRequest {
+    #[schema(example = "sub")]
     pub name: String,
+    #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
+    #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    #[schema(example = 10)]
     pub priority: Option<i32>,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+#[allow(dead_code)]
+pub struct ZoneListResponse {
+    pub zones: Vec<GetZoneResponse>,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+#[allow(dead_code)]
+pub struct ZoneDetailResponse {
+    pub zone: GetZoneResponse,
+    pub records: Vec<GetRecordResponse>,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+#[allow(dead_code)]
+pub struct ZoneResponse {
+    pub zone: GetZoneResponse,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+#[allow(dead_code)]
+pub struct RecordListResponse {
+    pub records: Vec<GetRecordResponse>,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+#[allow(dead_code)]
+pub struct RecordResponse {
+    pub record: GetRecordResponse,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+#[allow(dead_code)]
+pub struct MessageResponse {
+    #[schema(example = "Record deleted successfully")]
+    pub message: String,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+#[allow(dead_code)]
+pub struct ErrorResponse {
+    #[schema(example = "Bad request: invalid input data")]
+    pub error: String,
 }
