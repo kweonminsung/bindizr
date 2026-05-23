@@ -110,6 +110,7 @@ pub(crate) async fn get_zone(
             (status = 201, description = "DNS zone created successfully", body = ZoneResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -138,12 +139,13 @@ pub(crate) async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> 
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 pub(crate) async fn update_zone(
     Path(params): Path<UpdateZoneParam>,
-    Json(body): Json<CreateZoneRequest>,
+    JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> impl IntoResponse {
     let zone_name = params.name;
 

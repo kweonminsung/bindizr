@@ -57,7 +57,7 @@ pub struct GetRecordResponse {
     pub name: String,
     #[schema(example = "A")]
     pub record_type: String,
-    #[schema(value_type = serde_json::Value, example = json!("192.168.1.100"))]
+    #[schema(value_type = RecordValueRequest, example = json!("192.168.1.100"))]
     pub value: Value,
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
@@ -202,7 +202,7 @@ pub struct RecordResponse {
 #[derive(Serialize, Debug, ToSchema)]
 #[allow(dead_code)]
 pub struct MessageResponse {
-    #[schema(example = "Record deleted successfully")]
+    #[schema(example = "Deleted successfully")]
     pub message: String,
 }
 

@@ -38,7 +38,7 @@ impl From<JsonRejection> for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let payload = json!({
-            "message": self.message,
+            "error": self.message,
         });
 
         (self.code, axum::Json(payload)).into_response()

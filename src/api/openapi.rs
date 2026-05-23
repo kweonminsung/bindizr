@@ -41,7 +41,6 @@ use super::dto::{
         ZoneResponse
     )),
     modifiers(&SecurityAddon),
-    security(("bearer_auth" = [])),
     tags(
         (name = "Zone", description = "Manage DNS zones including creation, update, deletion, and retrieval."),
         (name = "Record", description = "Manage DNS records including creation, update, deletion, and retrieval.")

@@ -58,14 +58,23 @@ impl ApiRouter {
     }
 
     #[cfg(debug_assertions)]
-    async fn openapi_yaml() -> impl IntoResponse {
-        (
-            StatusCode::OK,
-            [(CONTENT_TYPE, "application/yaml; charset=utf-8")],
-            ApiDoc::openapi()
-                .to_yaml()
-                .expect("failed to generate OpenAPI YAML"),
-        )
+    async fn openapi_yaml() -> axum::response::Response {
+        match ApiDoc::openapi().to_yaml() {
+            Ok(openapi_yaml) => (
+                StatusCode::OK,
+                [(CONTENT_TYPE, "application/yaml; charset=utf-8")],
+                openapi_yaml,
+            )
+                .into_response(),
+            Err(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "failed to generate OpenAPI YAML",
+                    "details": err.to_string(),
+                })),
+            )
+                .into_response(),
+        }
     }
 
     async fn not_found() -> impl IntoResponse {
