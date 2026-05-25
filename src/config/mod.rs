@@ -13,7 +13,6 @@ use std::{fmt, net::IpAddr, path::PathBuf};
 pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";
 pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
-static CONFIG: OnceCell<Config> = OnceCell::new();
 static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -36,9 +35,11 @@ pub struct ApiConfig {
 pub struct DatabaseConfig {
     #[serde(rename = "type")]
     pub database_type: DatabaseType,
+    #[serde(default)]
     pub mysql: MysqlConfig,
+    #[serde(default)]
     pub sqlite: SqliteConfig,
-    #[serde(alias = "postgres")]
+    #[serde(alias = "postgres", default)]
     pub postgresql: PostgresqlConfig,
 }
 
@@ -61,17 +62,17 @@ impl fmt::Display for DatabaseType {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct MysqlConfig {
     pub server_url: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SqliteConfig {
     pub file_path: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct PostgresqlConfig {
     pub server_url: String,
 }
@@ -123,9 +124,8 @@ pub fn initialize(conf_file_path: Option<&str>) {
     println!("Initializing configuration from file: {}", conf_file_path);
 
     let cfg = load_raw_config(conf_file_path).unwrap_or_else(|err| exit_config_error(err));
-    let bindizr_config = parse_bindizr_config(&cfg).unwrap_or_else(|err| exit_config_error(err));
+    let bindizr_config = parse_bindizr_config(cfg).unwrap_or_else(|err| exit_config_error(err));
 
-    CONFIG.get_or_init(|| cfg);
     BINDIZR_CONFIG.get_or_init(|| bindizr_config);
 }
 
@@ -141,9 +141,8 @@ fn load_raw_config(conf_file_path: &str) -> Result<Config, String> {
         })
 }
 
-fn parse_bindizr_config(cfg: &Config) -> Result<BindizrConfig, String> {
+fn parse_bindizr_config(cfg: Config) -> Result<BindizrConfig, String> {
     let bindizr_config = cfg
-        .clone()
         .try_deserialize::<BindizrConfig>()
         .map_err(|e| format!("Invalid Bindizr configuration: {}", e))?;
 
@@ -173,7 +172,6 @@ fn exit_config_error(message: String) -> ! {
     std::process::exit(1);
 }
 
-#[allow(dead_code)]
 pub fn get_bindizr_config() -> &'static BindizrConfig {
     BINDIZR_CONFIG.get().expect("Configuration not initialized")
 }

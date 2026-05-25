@@ -118,7 +118,7 @@ log_level = "debug"
         .build()
         .unwrap();
 
-    let parsed = parse_bindizr_config(&config).unwrap();
+    let parsed = parse_bindizr_config(config).unwrap();
 
     assert_eq!(parsed.listen_addr.to_string(), "127.0.0.1");
     assert!(matches!(
@@ -166,9 +166,52 @@ log_level = "debug"
         .build()
         .unwrap();
 
-    let parsed = parse_bindizr_config(&config).unwrap();
+    let parsed = parse_bindizr_config(config).unwrap();
 
     assert_eq!(parsed.dns.nsupdate_tsig_key, "");
+
+    drop(dir);
+}
+
+#[test]
+fn test_parse_bindizr_config_defaults_unselected_database_sections() {
+    let (dir, config_path) = create_temp_config_file(
+        r#"
+listen_addr = "127.0.0.1"
+
+[api]
+listen_port = 3000
+require_authentication = false
+
+[database]
+type = "sqlite"
+
+[database.sqlite]
+file_path = "file::memory:?cache=shared"
+
+[dns]
+listen_port = 53
+secondary_addrs = "127.0.0.1:53"
+nsupdate_tsig_key = ""
+
+[logging]
+log_level = "debug"
+"#,
+    );
+
+    let config = Config::builder()
+        .add_source(File::new(&config_path, FileFormat::Toml))
+        .build()
+        .unwrap();
+
+    let parsed = parse_bindizr_config(config).unwrap();
+
+    assert_eq!(
+        parsed.database.sqlite.file_path,
+        "file::memory:?cache=shared"
+    );
+    assert_eq!(parsed.database.mysql.server_url, "");
+    assert_eq!(parsed.database.postgresql.server_url, "");
 
     drop(dir);
 }
@@ -210,7 +253,7 @@ log_level = "debug"
         .build()
         .unwrap();
 
-    let err = parse_bindizr_config(&config).unwrap_err();
+    let err = parse_bindizr_config(config).unwrap_err();
 
     assert!(err.contains("Invalid Bindizr configuration"));
 
@@ -254,7 +297,7 @@ log_level = "debug"
         .build()
         .unwrap();
 
-    let err = parse_bindizr_config(&config).unwrap_err();
+    let err = parse_bindizr_config(config).unwrap_err();
 
     assert!(err.contains("database.mysql.server_url must not be empty"));
 

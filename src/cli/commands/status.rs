@@ -85,10 +85,6 @@ pub async fn handle_command() -> Result<(), String> {
         "  \x1b[33m{:<22}\x1b[0m = {}",
         "secondary_addrs", status.config.dns.secondary_addrs
     );
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "nsupdate_tsig_key", status.config.dns.nsupdate_tsig_key
-    );
     println!();
 
     println!("\x1b[36m[logging]\x1b[0m");
