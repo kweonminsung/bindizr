@@ -2,7 +2,7 @@ use crate::{config, log_warn};
 use std::net::{IpAddr, SocketAddr};
 
 pub fn secondary_servers_from_config() -> Vec<IpAddr> {
-    parse_ip_list_with_socket_fallback(&config::get_config::<String>("dns.secondary_addrs"))
+    parse_ip_list_with_socket_fallback(&config::get_bindizr_config().dns.secondary_addrs)
 }
 
 pub fn is_client_allowed(client_ip: IpAddr, allowed_ips: &[IpAddr]) -> bool {

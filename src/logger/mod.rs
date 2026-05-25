@@ -72,15 +72,12 @@ impl log::Log for Logger {
 }
 
 pub fn initialize() {
-    let log_level = match config::get_config::<String>("logging.log_level")
-        .to_lowercase()
-        .as_str()
-    {
-        "error" => Level::Error,
-        "warn" => Level::Warn,
-        "debug" => Level::Debug,
-        "trace" => Level::Trace,
-        _ => Level::Info,
+    let log_level = match config::get_bindizr_config().logging.log_level {
+        config::LogLevel::Error => Level::Error,
+        config::LogLevel::Warn => Level::Warn,
+        config::LogLevel::Debug => Level::Debug,
+        config::LogLevel::Trace => Level::Trace,
+        config::LogLevel::Info => Level::Info,
     };
 
     let logger = Logger { log_level };

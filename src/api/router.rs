@@ -21,7 +21,7 @@ impl ApiRouter {
             .merge(RecordApi::routes().await)
             .route("/", routing::get(ApiRouter::get_home));
 
-        if config::get_config::<bool>("api.require_authentication") {
+        if config::get_bindizr_config().api.require_authentication {
             api_router = api_router.layer(axum::middleware::from_fn(
                 super::middleware::auth::auth_middleware,
             ));
