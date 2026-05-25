@@ -68,6 +68,10 @@ pub fn decode_raw_txt_rdata(value: &str) -> Option<Vec<u8>> {
 
 pub fn decode_raw_txt_value(value: &str) -> Option<DecodedTxtValue> {
     let rdata = decode_raw_txt_rdata(value)?;
+    if rdata.is_empty() {
+        return None;
+    }
+
     let mut pos = 0usize;
     let mut segments = Vec::new();
 
@@ -129,6 +133,13 @@ mod tests {
             super::encode_txt_segments(std::iter::empty()).unwrap_err(),
             "TXT record must contain at least one character-string"
         );
+    }
+
+    #[test]
+    fn txt_value_rejects_zero_segment_rdata() {
+        let encoded = encode_raw_txt_rdata(&[]);
+
+        assert_eq!(super::decode_raw_txt_value(&encoded), None);
     }
 
     #[test]

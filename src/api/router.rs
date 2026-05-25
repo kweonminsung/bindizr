@@ -66,8 +66,7 @@ impl ApiRouter {
             Err(err) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
-                    "error": "failed to generate OpenAPI YAML",
-                    "details": err.to_string(),
+                    "error": format!("failed to generate OpenAPI YAML: {err}"),
                 })),
             )
                 .into_response(),
