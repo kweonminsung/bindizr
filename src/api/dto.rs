@@ -6,7 +6,6 @@ use crate::{
     dns,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use utoipa::ToSchema;
 
 #[derive(Serialize, Debug, ToSchema)]
@@ -57,8 +56,8 @@ pub struct GetRecordResponse {
     pub name: String,
     #[schema(example = "A")]
     pub record_type: String,
-    #[schema(value_type = RecordValueRequest, example = json!("192.168.1.100"))]
-    pub value: Value,
+    #[schema(example = "192.168.1.100")]
+    pub value: RecordValueRequest,
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
     #[schema(example = 10)]
@@ -84,15 +83,21 @@ impl GetRecordResponse {
     }
 }
 
-fn record_response_value(record: &Record) -> Value {
+fn record_response_value(record: &Record) -> RecordValueRequest {
     if record.record_type == RecordType::TXT {
-        dns::txt::decode_raw_txt_value(&record.value).unwrap_or_else(|| json!(record.value))
+        match dns::txt::decode_raw_txt_value(&record.value) {
+            Some(dns::txt::DecodedTxtValue::String(value)) => RecordValueRequest::String(value),
+            Some(dns::txt::DecodedTxtValue::Segments(segments)) => {
+                RecordValueRequest::Segments(segments)
+            }
+            None => RecordValueRequest::String(record.value.clone()),
+        }
     } else {
-        json!(record.value)
+        RecordValueRequest::String(record.value.clone())
     }
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(untagged)]
 pub enum RecordValueRequest {
     #[schema(example = "192.168.1.100")]

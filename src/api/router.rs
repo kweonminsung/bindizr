@@ -1,9 +1,6 @@
-use axum::{
-    Json, Router,
-    http::{StatusCode, header::CONTENT_TYPE},
-    response::IntoResponse,
-    routing,
-};
+#[cfg(debug_assertions)]
+use axum::http::header::CONTENT_TYPE;
+use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
 use serde_json::json;
 use tower_http::cors::CorsLayer;
 #[cfg(debug_assertions)]

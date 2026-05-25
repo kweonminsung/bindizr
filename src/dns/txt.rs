@@ -1,7 +1,12 @@
 use base64::Engine;
-use serde_json::{Value, json};
 
 const RAW_TXT_RDATA_PREFIX: &str = "bindizr:txt-rdata:v1:";
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DecodedTxtValue {
+    String(String),
+    Segments(Vec<String>),
+}
 
 pub fn encode_raw_txt_rdata(rdata: &[u8]) -> String {
     format!(
@@ -61,7 +66,7 @@ pub fn decode_raw_txt_rdata(value: &str) -> Option<Vec<u8>> {
         .filter(|rdata| is_valid_txt_rdata(rdata))
 }
 
-pub fn decode_raw_txt_value(value: &str) -> Option<Value> {
+pub fn decode_raw_txt_value(value: &str) -> Option<DecodedTxtValue> {
     let rdata = decode_raw_txt_rdata(value)?;
     let mut pos = 0usize;
     let mut segments = Vec::new();
@@ -75,8 +80,8 @@ pub fn decode_raw_txt_value(value: &str) -> Option<Value> {
     }
 
     match segments.as_slice() {
-        [single] => Some(json!(single)),
-        _ => Some(json!(segments)),
+        [single] => Some(DecodedTxtValue::String(single.clone())),
+        _ => Some(DecodedTxtValue::Segments(segments)),
     }
 }
 
@@ -96,7 +101,6 @@ fn is_valid_txt_rdata(rdata: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{decode_raw_txt_rdata, encode_raw_txt_rdata};
-    use serde_json::json;
 
     #[test]
     fn raw_txt_rdata_round_trips() {
@@ -112,7 +116,10 @@ mod tests {
 
         assert_eq!(
             super::decode_raw_txt_value(&encoded),
-            Some(json!(["a", "bc"]))
+            Some(super::DecodedTxtValue::Segments(vec![
+                "a".to_string(),
+                "bc".to_string()
+            ]))
         );
     }
 
@@ -129,7 +136,10 @@ mod tests {
         let encoded = super::encode_txt_segments([""]).unwrap();
 
         assert_eq!(decode_raw_txt_rdata(&encoded), Some(vec![0]));
-        assert_eq!(super::decode_raw_txt_value(&encoded), Some(json!("")));
+        assert_eq!(
+            super::decode_raw_txt_value(&encoded),
+            Some(super::DecodedTxtValue::String(String::new()))
+        );
     }
 
     #[test]
@@ -150,7 +160,10 @@ mod tests {
         );
         assert_eq!(
             super::decode_raw_txt_value(&encoded),
-            Some(json!(["a".repeat(255), "a".repeat(45)]))
+            Some(super::DecodedTxtValue::Segments(vec![
+                "a".repeat(255),
+                "a".repeat(45)
+            ]))
         );
     }
 
@@ -161,7 +174,10 @@ mod tests {
 
         assert_eq!(
             super::decode_raw_txt_value(&encoded),
-            Some(json!(["a".repeat(254), "é"]))
+            Some(super::DecodedTxtValue::Segments(vec![
+                "a".repeat(254),
+                "é".to_string()
+            ]))
         );
     }
 

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use utoipa::{
     Modify, OpenApi,
     openapi::security::{Http, HttpAuthScheme, SecurityScheme},
@@ -47,7 +45,7 @@ use super::dto::{
     ),
     info(
         title = "Bindizr HTTP API",
-        version = "1.0.0",
+        version = env!("CARGO_PKG_VERSION"),
         description = "This is the API documentation for Bindizr",
         contact(email = "kevin136583@gmail.com"),
         license(name = "Apache 2.0", url = "http://www.apache.org/licenses/LICENSE-2.0.html")

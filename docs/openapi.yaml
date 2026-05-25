@@ -7,7 +7,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 1.0.0
+  version: 0.1.0-beta.3
 paths:
   /records:
     get:
@@ -67,6 +67,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
           content:
             application/json:
               schema:
@@ -156,6 +162,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
           content:
             application/json:
               schema:
@@ -259,6 +271,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
           content:
@@ -348,6 +366,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
           content:
             application/json:
               schema:
@@ -518,7 +542,8 @@ components:
           - 'null'
           format: int32
           example: 3600
-        value: {}
+        value:
+          $ref: '#/components/schemas/RecordValueRequest'
         zone_id:
           type: integer
           format: int32
@@ -587,7 +612,7 @@ components:
       properties:
         message:
           type: string
-          example: Record deleted successfully
+          example: Deleted successfully
     RecordListResponse:
       type: object
       required:
@@ -673,8 +698,6 @@ components:
     bearer_auth:
       type: http
       scheme: bearer
-security:
-- bearer_auth: []
 tags:
 - name: Zone
   description: Manage DNS zones including creation, update, deletion, and retrieval.

@@ -222,7 +222,7 @@ async fn test_record_value_matching_is_case_sensitive() {
 
     assert_eq!(
         dns::txt::decode_raw_txt_value(&record.value),
-        Some(serde_json::json!("Token=abc"))
+        Some(dns::txt::DecodedTxtValue::String("Token=abc".to_string()))
     );
 }
 

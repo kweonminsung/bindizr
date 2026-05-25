@@ -1,6 +1,7 @@
 pub mod dto;
 pub mod error;
 pub mod middleware;
+#[cfg(debug_assertions)]
 pub mod openapi;
 pub mod record;
 pub mod router;
