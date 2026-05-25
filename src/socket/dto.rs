@@ -1,3 +1,4 @@
+use crate::config::BindizrConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -35,7 +36,7 @@ pub struct DaemonResponse {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DaemonStatusResponse {
-    pub pid: Option<i32>,
+    pub pid: Option<u32>,
     pub version: String,
-    pub config_map: serde_json::Value,
+    pub config: BindizrConfig,
 }
