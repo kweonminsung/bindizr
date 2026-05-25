@@ -9,6 +9,8 @@ WorkingDirectory=/etc/bindizr
 Restart=on-failure
 RestartPreventExitStatus=1
 RestartSec=5
+RuntimeDirectory=bindizr
+RuntimeDirectoryMode=0755
 StandardOutput=journal
 StandardError=journal
 

@@ -8,6 +8,9 @@ use crate::socket::dto::{DaemonCommand, DaemonCommandKind};
 use crate::socket::socket::SOCKET_FILE_PATH;
 use crate::{log_error, log_info};
 use serde_json::json;
+use std::io;
+use std::os::unix::fs::FileTypeExt;
+use std::path::Path;
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -59,22 +62,9 @@ async fn handle_client(stream: UnixStream) {
 }
 
 pub async fn initialize() -> Result<(), String> {
-    if fs::metadata(SOCKET_FILE_PATH).await.is_ok() {
-        match UnixStream::connect(SOCKET_FILE_PATH).await {
-            Ok(_) => {
-                return Err("Bindizr is already running.".to_string());
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
-                // Socket file exists but no process is listening, so we can safely remove it.
-                if let Err(e) = fs::remove_file(SOCKET_FILE_PATH).await {
-                    return Err(format!("Failed to remove stale socket file: {}", e));
-                }
-            }
-            Err(e) => {
-                return Err(format!("Failed to check socket status: {}", e));
-            }
-        }
-    }
+    prepare_socket_path(SOCKET_FILE_PATH)
+        .await
+        .map_err(|e| format!("Failed to prepare Unix socket path: {}", e))?;
 
     let listener = UnixListener::bind(SOCKET_FILE_PATH)
         .map_err(|e| format!("Failed to bind Unix socket: {}", e))?;
@@ -99,10 +89,110 @@ pub async fn initialize() -> Result<(), String> {
     Ok(())
 }
 
+async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
+    if let Some(parent) = Path::new(socket_path).parent() {
+        fs::create_dir_all(parent).await?;
+    }
+
+    match fs::symlink_metadata(socket_path).await {
+        Ok(metadata) => {
+            if !metadata.file_type().is_socket() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!(
+                        "socket path exists and is not a Unix socket: {}",
+                        socket_path
+                    ),
+                ));
+            }
+
+            match UnixStream::connect(socket_path).await {
+                Ok(_) => Err(io::Error::new(
+                    io::ErrorKind::AddrInUse,
+                    "Bindizr is already running.",
+                )),
+                // Socket file exists but no process is listening, so it is safe to remove.
+                Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {
+                    fs::remove_file(socket_path).await
+                }
+                // Socket disappeared after metadata lookup, so there is nothing to remove.
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 fn json_response_error(msg: &str) -> String {
     json!({
         "message": msg,
         "data": null
     })
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn prepare_socket_path_creates_parent_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket_path = dir.path().join("run").join("bindizr.sock");
+        let socket_path = socket_path.to_str().unwrap();
+
+        prepare_socket_path(socket_path).await.unwrap();
+
+        assert!(Path::new(socket_path).parent().unwrap().exists());
+    }
+
+    #[tokio::test]
+    async fn prepare_socket_path_removes_stale_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket_path = dir.path().join("bindizr.sock");
+        let socket_path = socket_path.to_str().unwrap();
+        let listener = match UnixListener::bind(socket_path) {
+            Ok(listener) => listener,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return,
+            Err(e) => panic!("failed to bind test socket: {}", e),
+        };
+        drop(listener);
+
+        prepare_socket_path(socket_path).await.unwrap();
+
+        assert!(!std::path::Path::new(socket_path).exists());
+    }
+
+    #[tokio::test]
+    async fn prepare_socket_path_rejects_active_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket_path = dir.path().join("bindizr.sock");
+        let socket_path = socket_path.to_str().unwrap();
+        let listener = match UnixListener::bind(socket_path) {
+            Ok(listener) => listener,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return,
+            Err(e) => panic!("failed to bind test socket: {}", e),
+        };
+
+        let err = prepare_socket_path(socket_path).await.unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::AddrInUse);
+        assert!(std::path::Path::new(socket_path).exists());
+        drop(listener);
+    }
+
+    #[tokio::test]
+    async fn prepare_socket_path_rejects_non_socket_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket_path = dir.path().join("bindizr.sock");
+        let socket_path = socket_path.to_str().unwrap();
+        std::fs::write(socket_path, "not a socket").unwrap();
+
+        let err = prepare_socket_path(socket_path).await.unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert!(std::path::Path::new(socket_path).exists());
+    }
 }

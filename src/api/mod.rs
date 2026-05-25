@@ -1,6 +1,8 @@
 pub mod dto;
 pub mod error;
 pub mod middleware;
+#[cfg(debug_assertions)]
+pub mod openapi;
 pub mod record;
 pub mod router;
 pub mod validation;
@@ -12,17 +14,8 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
 pub async fn initialize() -> Result<(), String> {
-    let listen_addr = config::get_config::<String>("listen_addr");
-    let listen_port = config::get_config_optional::<u16>("api.listen_port")
-        .unwrap_or_else(|| config::get_config::<u16>("api.port"));
-    let ip_addr = listen_addr.parse::<std::net::IpAddr>().map_err(|e| {
-        format!(
-            "Invalid API listen address configuration: {}. Error: {:?}",
-            listen_addr, e
-        )
-    })?;
-
-    let addr = SocketAddr::from((ip_addr, listen_port));
+    let bindizr_config = config::get_bindizr_config();
+    let addr = SocketAddr::from((bindizr_config.listen_addr, bindizr_config.api.listen_port));
 
     let listener = TcpListener::bind(addr).await.unwrap_or_else(|e| {
         log_error!("Failed to bind to address {}: {:?}", addr, e);

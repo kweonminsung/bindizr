@@ -24,38 +24,27 @@ pub enum DatabaseType {
     SQLite,
 }
 
-impl DatabaseType {
-    fn from_str(s: &str) -> Result<Self, String> {
-        match s.to_lowercase().as_str() {
-            "mysql" => Ok(DatabaseType::MySQL),
-            "postgresql" | "postgres" | "pg" => Ok(DatabaseType::PostgreSQL),
-            "sqlite" => Ok(DatabaseType::SQLite),
-            _ => Err(format!("Unsupported database type: {}", s)),
-        }
-    }
-}
-
 pub async fn initialize() {
     if is_initialized() {
         return;
     }
 
-    let database_type_str = config::get_config::<String>("database.type");
-    let database_type = DatabaseType::from_str(&database_type_str).unwrap_or_else(|e| {
-        log_error!("{}", e);
-        std::process::exit(1);
-    });
+    let bindizr_config = config::get_bindizr_config();
+
+    let database_type = match bindizr_config.database.database_type {
+        config::DatabaseType::Mysql => DatabaseType::MySQL,
+        config::DatabaseType::Postgresql => DatabaseType::PostgreSQL,
+        config::DatabaseType::Sqlite => DatabaseType::SQLite,
+    };
 
     let database_url = match database_type {
-        DatabaseType::MySQL => config::get_config::<String>("database.mysql.server_url"),
-        DatabaseType::PostgreSQL => config::get_config::<String>("database.postgres.server_url"),
-        DatabaseType::SQLite => {
-            utils::to_sqlite_url(&config::get_config::<String>("database.sqlite.file_path"))
-                .unwrap_or_else(|e| {
-                    log_error!("{}", e);
-                    std::process::exit(1);
-                })
-        }
+        DatabaseType::MySQL => bindizr_config.database.mysql.server_url.clone(),
+        DatabaseType::PostgreSQL => bindizr_config.database.postgresql.server_url.clone(),
+        DatabaseType::SQLite => utils::to_sqlite_url(&bindizr_config.database.sqlite.file_path)
+            .unwrap_or_else(|e| {
+                log_error!("{}", e);
+                std::process::exit(1);
+            }),
     };
 
     let pool = match database_type {

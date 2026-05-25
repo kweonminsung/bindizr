@@ -1,1 +1,1 @@
-pub const SOCKET_FILE_PATH: &str = "/tmp/bindizr.sock";
+pub const SOCKET_FILE_PATH: &str = "/run/bindizr/bindizr.sock";
