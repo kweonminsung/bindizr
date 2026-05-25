@@ -10,6 +10,7 @@ use crate::{log_error, log_info};
 use serde_json::json;
 use std::io;
 use std::os::unix::fs::FileTypeExt;
+use std::path::Path;
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -89,6 +90,10 @@ pub async fn initialize() -> Result<(), String> {
 }
 
 async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
+    if let Some(parent) = Path::new(socket_path).parent() {
+        fs::create_dir_all(parent).await?;
+    }
+
     match fs::symlink_metadata(socket_path).await {
         Ok(metadata) => {
             if !metadata.file_type().is_socket() {
@@ -129,6 +134,17 @@ fn json_response_error(msg: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn prepare_socket_path_creates_parent_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket_path = dir.path().join("run").join("bindizr.sock");
+        let socket_path = socket_path.to_str().unwrap();
+
+        prepare_socket_path(socket_path).await.unwrap();
+
+        assert!(Path::new(socket_path).parent().unwrap().exists());
+    }
 
     #[tokio::test]
     async fn prepare_socket_path_removes_stale_socket() {
