@@ -30,25 +30,67 @@ pub async fn handle_command() -> Result<(), String> {
     println!("Version: {}", status.version);
 
     println!("Loaded Configurations:");
-    if let serde_json::Value::Object(sections) = status.config_map {
-        for (section, value) in sections {
-            println!("\x1b[36m[{}]\x1b[0m", section);
+    println!("\x1b[36m[root]\x1b[0m");
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "listen_addr", status.config.listen_addr
+    );
+    println!();
 
-            match value {
-                serde_json::Value::Object(table) => {
-                    for (k, v) in table {
-                        println!("  \x1b[33m{:<22}\x1b[0m = {}", k, v);
-                    }
-                }
-                other => {
-                    println!("  \x1b[33m<value>\x1b[0m = {}", other);
-                }
-            }
+    println!("\x1b[36m[api]\x1b[0m");
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "listen_port", status.config.api.listen_port
+    );
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "require_authentication", status.config.api.require_authentication
+    );
+    println!();
 
-            println!();
-        }
-    } else {
-        println!("\n\x1b[31mFailed to collect configuration\x1b[0m");
-    }
+    println!("\x1b[36m[database]\x1b[0m");
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "type", status.config.database.database_type
+    );
+    println!();
+
+    println!("\x1b[36m[database.mysql]\x1b[0m");
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "server_url", status.config.database.mysql.server_url
+    );
+    println!();
+
+    println!("\x1b[36m[database.sqlite]\x1b[0m");
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "file_path", status.config.database.sqlite.file_path
+    );
+    println!();
+
+    println!("\x1b[36m[database.postgresql]\x1b[0m");
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "server_url", status.config.database.postgresql.server_url
+    );
+    println!();
+
+    println!("\x1b[36m[dns]\x1b[0m");
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "listen_port", status.config.dns.listen_port
+    );
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "secondary_addrs", status.config.dns.secondary_addrs
+    );
+    println!();
+
+    println!("\x1b[36m[logging]\x1b[0m");
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "log_level", status.config.logging.log_level
+    );
     Ok(())
 }

@@ -22,8 +22,9 @@ pub(super) fn validate_tsig(
     query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<(), UpdateError> {
-    let secret = config::get_config_optional::<String>("dns.nsupdate_tsig_key")
-        .unwrap_or_default()
+    let secret = config::get_bindizr_config()
+        .dns
+        .nsupdate_tsig_key
         .trim()
         .to_string();
 

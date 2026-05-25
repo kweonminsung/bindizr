@@ -8,7 +8,6 @@ use crate::{config, log_error, log_info, log_warn};
 use domain::base::iana::Rtype;
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr};
-use std::str::FromStr;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::time::timeout;
@@ -25,12 +24,8 @@ enum QueryRoute {
 pub async fn initialize() {
     xfr::initialize().await;
 
-    let listen_addr_str = config::get_config::<String>("listen_addr");
-    let listen_port = config::get_config::<u16>("dns.listen_port");
-    let listen_addr = SocketAddr::new(
-        IpAddr::from_str(&listen_addr_str).expect("Invalid DNS listen address"),
-        listen_port,
-    );
+    let bindizr_config = config::get_bindizr_config();
+    let listen_addr = SocketAddr::new(bindizr_config.listen_addr, bindizr_config.dns.listen_port);
 
     let secondary_servers = acl::secondary_servers_from_config();
     let tcp_secondary_servers = secondary_servers.clone();
