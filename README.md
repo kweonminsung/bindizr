@@ -276,6 +276,7 @@ $ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/zones
 This project relies on the following core dependencies:
 
 - [`axum`](https://docs.rs/axum/latest/axum/) – A web application framework for building fast and modular APIs in Rust.
+- [`utoipa`](https://docs.rs/utoipa/latest/utoipa/) - Compile-time OpenAPI generation for Rust APIs.
 - [`sqlx`](https://docs.rs/sqlx/latest/sqlx/) - An async, pure Rust SQL crate featuring compile-time checked queries without a DSL.
 
 
