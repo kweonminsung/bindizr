@@ -91,17 +91,26 @@ pub async fn initialize() -> Result<(), String> {
 async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     match fs::symlink_metadata(socket_path).await {
         Ok(metadata) => {
-            if metadata.file_type().is_socket() {
-                // Socket file exists before bind, so treat it as stale and remove it.
-                fs::remove_file(socket_path).await
-            } else {
-                Err(io::Error::new(
+            if !metadata.file_type().is_socket() {
+                return Err(io::Error::new(
                     io::ErrorKind::AlreadyExists,
                     format!(
                         "socket path exists and is not a Unix socket: {}",
                         socket_path
                     ),
-                ))
+                ));
+            }
+
+            match UnixStream::connect(socket_path).await {
+                Ok(_) => Err(io::Error::new(
+                    io::ErrorKind::AddrInUse,
+                    "Bindizr is already running.",
+                )),
+                Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {
+                    // Socket file exists but no process is listening, so it is safe to remove.
+                    fs::remove_file(socket_path).await
+                }
+                Err(e) => Err(e),
             }
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -136,6 +145,24 @@ mod tests {
         prepare_socket_path(socket_path).await.unwrap();
 
         assert!(!std::path::Path::new(socket_path).exists());
+    }
+
+    #[tokio::test]
+    async fn prepare_socket_path_rejects_active_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket_path = dir.path().join("bindizr.sock");
+        let socket_path = socket_path.to_str().unwrap();
+        let listener = match UnixListener::bind(socket_path) {
+            Ok(listener) => listener,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return,
+            Err(e) => panic!("failed to bind test socket: {}", e),
+        };
+
+        let err = prepare_socket_path(socket_path).await.unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::AddrInUse);
+        assert!(std::path::Path::new(socket_path).exists());
+        drop(listener);
     }
 
     #[tokio::test]
