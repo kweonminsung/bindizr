@@ -115,7 +115,7 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
                 Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {
                     fs::remove_file(socket_path).await
                 }
-                // Socket file exists but we don't have permission to connect, so we assume it's stale and try to remove it.
+                // Socket disappeared after metadata lookup, so there is nothing to remove.
                 Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
                 Err(e) => Err(e),
             }
