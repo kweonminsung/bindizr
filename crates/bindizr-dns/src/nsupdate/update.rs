@@ -1,11 +1,12 @@
 use super::parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata};
 use crate::{
-    database::model::{
+    log_error, log_info,
+    model::{
         record::{Record, RecordType},
         zone::Zone,
         zone_change::ZoneChange,
     },
-    log_error, log_info, service,
+    service,
     service::{
         RepositoryTx,
         record::{
@@ -596,7 +597,7 @@ mod tests {
         absolute_to_relative, record_value_matches, rr_to_record_value,
         validate_delete_update_shape,
     };
-    use crate::database::model::record::RecordType;
+    use crate::model::record::RecordType;
     use crate::nsupdate::parser::UpdateRecord;
 
     #[test]

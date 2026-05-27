@@ -1,5 +1,5 @@
 use super::{error::XfrError, wire};
-use crate::{database::model::zone::Zone, log_info, service::zone::ZoneService};
+use crate::{log_info, model::zone::Zone, service::zone::ZoneService};
 use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;

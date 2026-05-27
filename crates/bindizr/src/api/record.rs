@@ -1,10 +1,10 @@
 use crate::api::{
-    dto::{
+    error::ApiError,
+    middleware::body_parser::JsonBody,
+    types::{
         CreateRecordRequest, ErrorResponse, GetRecordResponse, MessageResponse, RecordListResponse,
         RecordResponse, UpdateRecordRequest,
     },
-    error::ApiError,
-    middleware::body_parser::JsonBody,
 };
 use crate::service::record::RecordService;
 use axum::{

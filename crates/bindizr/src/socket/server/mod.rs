@@ -4,8 +4,8 @@ mod status;
 mod token;
 mod zone;
 
-use crate::socket::dto::{DaemonCommand, DaemonCommandKind};
 use crate::socket::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
+use crate::socket::types::{DaemonCommand, DaemonCommandKind};
 use crate::{log_error, log_info, log_warn};
 use serde_json::json;
 use std::io;

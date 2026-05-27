@@ -1,6 +1,6 @@
 use crate::common::TestContext;
 use axum::http::StatusCode;
-use bindizr::{database::get_record_repository, database::model::record::RecordType, dns};
+use bindizr::{database::get_record_repository, dns, model::record::RecordType};
 
 #[tokio::test]
 async fn test_record_crud_operations() {

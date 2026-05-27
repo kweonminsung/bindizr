@@ -1,6 +1,6 @@
 use crate::socket::{
-    dto::{DaemonCommand, DaemonCommandKind, DaemonResponse},
     socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
+    types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},

@@ -1,6 +1,6 @@
 use super::error::XfrError;
 use crate::{
-    database::model::{record::Record, zone::Zone},
+    model::{record::Record, zone::Zone},
     txt,
 };
 use domain::base::{Message, Name, ToName, iana::Rtype};

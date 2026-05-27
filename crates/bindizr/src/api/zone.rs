@@ -1,10 +1,10 @@
 use crate::api::{
-    dto::{
+    error::ApiError,
+    middleware::body_parser::JsonBody,
+    types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, MessageResponse,
         ZoneDetailResponse, ZoneListResponse, ZoneResponse,
     },
-    error::ApiError,
-    middleware::body_parser::JsonBody,
 };
 use crate::service::{record::RecordService, zone::ZoneService};
 use axum::{

@@ -1,7 +1,7 @@
 use crate::{
     log_error,
     service::{error::ServiceError, token::TokenService},
-    socket::dto::DaemonResponse,
+    socket::types::DaemonResponse,
 };
 
 pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {

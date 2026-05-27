@@ -6,7 +6,7 @@ use super::{
     },
 };
 use crate::{
-    database::model::{record::Record, zone::Zone},
+    model::{record::Record, zone::Zone},
     service::{RepositoryTx, record::RecordService},
 };
 

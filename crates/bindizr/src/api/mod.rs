@@ -1,10 +1,10 @@
-pub(crate) mod dto;
 pub(crate) mod error;
 pub(crate) mod middleware;
 #[cfg(debug_assertions)]
 pub(crate) mod openapi;
 pub(crate) mod record;
 pub(crate) mod router;
+pub(crate) mod types;
 pub(crate) mod validation;
 pub(crate) mod zone;
 

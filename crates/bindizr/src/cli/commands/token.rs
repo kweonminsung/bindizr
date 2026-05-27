@@ -1,7 +1,7 @@
 use crate::{
-    database::model::api_token::ApiToken,
     log_debug,
-    socket::{client::DaemonSocketClient, dto::DaemonCommandKind},
+    model::api_token::ApiToken,
+    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
 use clap::Subcommand;
 use serde_json::json;

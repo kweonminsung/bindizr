@@ -1,4 +1,4 @@
-use crate::socket::{client::DaemonSocketClient, dto::DaemonCommandKind};
+use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 use clap::Subcommand;
 use serde_json::json;
 
