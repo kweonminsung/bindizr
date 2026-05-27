@@ -2,7 +2,7 @@ use super::error::XfrError;
 use crate::service::zone::{ZoneService, snapshot};
 
 #[derive(Debug, Clone)]
-pub struct ZoneChange {
+pub(crate) struct ZoneChange {
     pub serial: u32,
     pub operation: String, // "ADD" or "DEL"
     pub record_name: String,
@@ -13,7 +13,7 @@ pub struct ZoneChange {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZoneSnapshot {
+pub(crate) struct ZoneSnapshot {
     pub primary_ns: String,
     pub admin_email: String,
     pub ttl: i32,
@@ -25,7 +25,7 @@ pub struct ZoneSnapshot {
 }
 
 /// Get zone changes between two serials for IXFR
-pub async fn get_zone_changes(
+pub(crate) async fn get_zone_changes(
     zone_id: i32,
     from_serial: u32,
     to_serial: u32,
@@ -52,7 +52,7 @@ pub async fn get_zone_changes(
     Ok(xfr_changes)
 }
 
-pub async fn get_zone_snapshot(
+pub(crate) async fn get_zone_snapshot(
     zone_id: i32,
     serial: u32,
 ) -> Result<Option<ZoneSnapshot>, XfrError> {

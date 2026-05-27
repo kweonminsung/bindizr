@@ -3,7 +3,7 @@ use crate::service::{record::RecordService, zone::ZoneService};
 use crate::socket::dto::DaemonResponse;
 use serde_json::json;
 
-pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let record_id_i64 = data
         .get("id")
         .and_then(|v| v.as_i64())
@@ -31,7 +31,7 @@ pub async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, Stri
     }
 }
 
-pub async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let zone_name = data
         .get("zone_name")
         .and_then(|v| v.as_str())
@@ -69,7 +69,7 @@ pub async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, St
     }
 }
 
-pub async fn create_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn create_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let request: CreateRecordRequest =
         serde_json::from_value(data.clone()).map_err(|e| format!("Invalid request data: {}", e))?;
 
@@ -93,7 +93,7 @@ pub async fn create_record(data: &serde_json::Value) -> Result<DaemonResponse, S
     }
 }
 
-pub async fn delete_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn delete_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let record_id_i64 = data
         .get("id")
         .and_then(|v| v.as_i64())

@@ -61,7 +61,7 @@ async fn handle_client(stream: UnixStream) {
     }
 }
 
-pub async fn initialize() -> Result<(), String> {
+pub(crate) async fn initialize() -> Result<(), String> {
     let (socket_path, listener) = bind_daemon_socket().await?;
 
     log_info!("Daemon socket server listening on {}", socket_path);

@@ -3,7 +3,7 @@ use clap::Subcommand;
 use serde_json::json;
 
 #[derive(Subcommand, Debug)]
-pub enum NotifyCommand {
+pub(crate) enum NotifyCommand {
     /// Send NOTIFY messages to secondary servers for a zone
     Zone {
         /// Zone name to notify (optional: if not specified, notifies all zones)
@@ -11,7 +11,7 @@ pub enum NotifyCommand {
     },
 }
 
-pub async fn handle_notify(subcommand: &NotifyCommand) -> Result<(), String> {
+pub(crate) async fn handle_notify(subcommand: &NotifyCommand) -> Result<(), String> {
     match subcommand {
         NotifyCommand::Zone { zone_name } => notify_zone(zone_name.as_deref()).await,
     }

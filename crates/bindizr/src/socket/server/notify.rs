@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct NotifyZoneRequest {
+pub(super) struct NotifyZoneRequest {
     pub zone_name: Option<String>,
 }
 
-pub async fn handle_notify_zone(data: serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn handle_notify_zone(data: serde_json::Value) -> Result<DaemonResponse, String> {
     let request: NotifyZoneRequest = match serde_json::from_value(data) {
         Ok(req) => req,
         Err(e) => {

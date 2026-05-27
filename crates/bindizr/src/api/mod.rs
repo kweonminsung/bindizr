@@ -1,19 +1,19 @@
-pub mod dto;
-pub mod error;
-pub mod middleware;
+pub(crate) mod dto;
+pub(crate) mod error;
+pub(crate) mod middleware;
 #[cfg(debug_assertions)]
-pub mod openapi;
-pub mod record;
-pub mod router;
-pub mod validation;
-pub mod zone;
+pub(crate) mod openapi;
+pub(crate) mod record;
+pub(crate) mod router;
+pub(crate) mod validation;
+pub(crate) mod zone;
 
 use crate::{config, log_error, log_info};
 use router::ApiRouter;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
-pub async fn initialize() -> Result<(), String> {
+pub(crate) async fn initialize() -> Result<(), String> {
     let bindizr_config = config::get_bindizr_config();
     let addr = SocketAddr::from((bindizr_config.listen_addr, bindizr_config.api.listen_port));
 

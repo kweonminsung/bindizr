@@ -1,4 +1,4 @@
-pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
+pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (
@@ -74,7 +74,7 @@ pub fn get_mysql_table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
-pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
+pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (
@@ -152,7 +152,7 @@ pub fn get_postgres_table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
-pub fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
+pub(super) fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (

@@ -1,5 +1,5 @@
-pub mod client;
-pub mod dto;
-pub mod server;
+pub(crate) mod client;
+pub(crate) mod dto;
+pub(crate) mod server;
 #[allow(clippy::module_inception)]
-pub mod socket;
+pub(crate) mod socket;

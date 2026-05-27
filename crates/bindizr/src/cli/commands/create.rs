@@ -4,7 +4,7 @@ use clap::Subcommand;
 use serde_json::json;
 
 #[derive(Subcommand, Debug)]
-pub enum CreateCommand {
+pub(crate) enum CreateCommand {
     /// Create a zone
     Zone {
         /// Zone name
@@ -52,7 +52,7 @@ pub enum CreateCommand {
     },
 }
 
-pub async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
+pub(crate) async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
     match subcommand {

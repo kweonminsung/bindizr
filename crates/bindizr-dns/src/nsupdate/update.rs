@@ -33,7 +33,7 @@ const TYPE_AAAA: u16 = 28;
 pub(super) const TYPE_ANY: u16 = 255;
 
 #[derive(Debug)]
-pub enum UpdateError {
+pub(super) enum UpdateError {
     Refused(String),
     NotAuth {
         msg: String,
@@ -48,7 +48,7 @@ pub enum UpdateError {
 }
 
 #[derive(Debug, Clone)]
-pub struct TsigErrorResponse {
+pub(super) struct TsigErrorResponse {
     pub name_canonical: Vec<u8>,
     pub algorithm_canonical: Vec<u8>,
     pub original_id: u16,
@@ -58,11 +58,11 @@ pub struct TsigErrorResponse {
     pub other_data: Vec<u8>,
 }
 
-pub enum UpdateResult {
+pub(super) enum UpdateResult {
     Applied { changed: bool },
 }
 
-pub async fn apply_update(
+pub(super) async fn apply_update(
     request: UpdateRequest,
     query_data: &[u8],
     client_addr: SocketAddr,

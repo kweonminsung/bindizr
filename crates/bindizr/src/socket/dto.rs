@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum DaemonCommandKind {
+pub(crate) enum DaemonCommandKind {
     Status,
     TokenCreate,
     TokenList,
@@ -23,19 +23,19 @@ pub enum DaemonCommandKind {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct DaemonCommand {
+pub(crate) struct DaemonCommand {
     pub command: DaemonCommandKind,
     pub data: serde_json::Value,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct DaemonResponse {
+pub(crate) struct DaemonResponse {
     pub message: String,
     pub data: serde_json::Value,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct DaemonStatusResponse {
+pub(crate) struct DaemonStatusResponse {
     pub pid: Option<u32>,
     pub version: String,
     pub config: BindizrConfig,

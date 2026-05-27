@@ -10,7 +10,10 @@ use axum::{
 };
 use serde_json::json;
 
-pub async fn auth_middleware(mut req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+pub(crate) async fn auth_middleware(
+    mut req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
     // Extract Authorization header
     let auth_header = match req.headers().get(AUTHORIZATION) {
         Some(header) => header,

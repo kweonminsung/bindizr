@@ -4,10 +4,10 @@ use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;
 
-pub const CATALOG_ZONE_NAME: &str = "catalog.bind";
+pub(crate) const CATALOG_ZONE_NAME: &str = "catalog.bind";
 
 /// Generate the catalog zone and its member list
-pub async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
+pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
     log_info!("Generating catalog zone: {}", CATALOG_ZONE_NAME);
 
     let all_zones = ZoneService::list()
@@ -45,7 +45,7 @@ fn generate_catalog_serial(zones: &[Zone]) -> i32 {
     zones.iter().map(|z| z.serial).max().unwrap_or(1)
 }
 
-pub async fn handle_catalog_axfr_with_qtype(
+pub(crate) async fn handle_catalog_axfr_with_qtype(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
     query_id: u16,
@@ -78,11 +78,11 @@ pub async fn handle_catalog_axfr_with_qtype(
     Ok(())
 }
 
-pub fn is_catalog_zone(zone_name: &str) -> bool {
+pub(crate) fn is_catalog_zone(zone_name: &str) -> bool {
     zone_name == CATALOG_ZONE_NAME
 }
 
-pub fn zone_name_to_member_id(zone_name: &str) -> String {
+pub(crate) fn zone_name_to_member_id(zone_name: &str) -> String {
     zone_name.replace('.', "-")
 }
 

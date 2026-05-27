@@ -3,7 +3,7 @@ use std::fmt;
 use tabled::{Table, Tabled, settings::Style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputFormat {
+pub(crate) enum OutputFormat {
     Json,
     Yaml,
     Table,
@@ -36,7 +36,7 @@ impl std::str::FromStr for OutputFormat {
 }
 
 /// Print output with table support
-pub fn print_output_with_table<T, U>(
+pub(crate) fn print_output_with_table<T, U>(
     data: &T,
     format: OutputFormat,
     to_table_rows: impl Fn(&T) -> Vec<U>,

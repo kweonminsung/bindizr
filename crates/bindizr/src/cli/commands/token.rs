@@ -7,7 +7,7 @@ use clap::Subcommand;
 use serde_json::json;
 
 #[derive(Subcommand, Debug)]
-pub enum TokenCommand {
+pub(crate) enum TokenCommand {
     /// Create a new API token
     Create {
         /// Description of the token
@@ -26,7 +26,7 @@ pub enum TokenCommand {
     },
 }
 
-pub async fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
+pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
     match subcommand {

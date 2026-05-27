@@ -4,21 +4,20 @@ use axum::{
     http::{Request, StatusCode},
 };
 use bindizr::{
-    api::router::ApiRouter,
-    config,
+    ApiRouter, config,
     database::{self, DatabasePool, model::zone::Zone},
 };
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
 use tower::ServiceExt;
 
-pub struct TestContext {
+pub(crate) struct TestContext {
     pub api_router: Router,
     pub db_pool: SqlitePool,
 }
 
 impl TestContext {
-    pub async fn new() -> Self {
+    pub(crate) async fn new() -> Self {
         let config_path = "tests/fixture/bindizr.conf.toml";
 
         // Initialize components (skip if already initialized)
@@ -50,7 +49,7 @@ impl TestContext {
         }
     }
 
-    pub async fn create_test_zone(&self) -> Zone {
+    pub(crate) async fn create_test_zone(&self) -> Zone {
         let zone = Zone {
             id: 0, // Will be set by database
             name: "example.com".to_string(),
@@ -93,7 +92,7 @@ impl TestContext {
         }
     }
 
-    pub async fn make_request(
+    pub(crate) async fn make_request(
         &self,
         method: &str,
         path: &str,

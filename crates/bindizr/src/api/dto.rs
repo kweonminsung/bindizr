@@ -1,1 +1,1 @@
-pub use bindizr_db::dto::*;
+pub(crate) use bindizr_db::dto::*;

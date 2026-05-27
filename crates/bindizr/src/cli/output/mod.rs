@@ -1,5 +1,5 @@
-pub mod format;
-pub mod table;
+pub(super) mod format;
+pub(super) mod table;
 
-pub use format::{OutputFormat, print_output_with_table};
-pub use table::{RecordRow, ZoneRow};
+pub(super) use format::{OutputFormat, print_output_with_table};
+pub(super) use table::{RecordRow, ZoneRow};

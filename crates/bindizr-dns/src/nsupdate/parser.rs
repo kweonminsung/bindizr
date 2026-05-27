@@ -7,7 +7,7 @@ const TYPE_SOA: u16 = 6;
 const TSIG_TYPE: u16 = 250;
 
 #[derive(Debug, Clone)]
-pub struct UpdateRequest {
+pub(super) struct UpdateRequest {
     pub zone_name: String,
     pub prerequisites: Vec<PrerequisiteRecord>,
     pub updates: Vec<UpdateRecord>,
@@ -15,7 +15,7 @@ pub struct UpdateRequest {
 }
 
 #[derive(Debug, Clone)]
-pub struct PrerequisiteRecord {
+pub(super) struct PrerequisiteRecord {
     pub name: String,
     pub rr_type: u16,
     pub class: u16,
@@ -25,7 +25,7 @@ pub struct PrerequisiteRecord {
 }
 
 #[derive(Debug, Clone)]
-pub struct UpdateRecord {
+pub(super) struct UpdateRecord {
     pub name: String,
     pub rr_type: u16,
     pub class: u16,
@@ -35,7 +35,7 @@ pub struct UpdateRecord {
 }
 
 #[derive(Debug, Clone)]
-pub struct TsigRecord {
+pub(super) struct TsigRecord {
     #[allow(dead_code)]
     pub name: String,
     pub name_canonical: Vec<u8>,
@@ -52,7 +52,7 @@ pub struct TsigRecord {
 }
 
 #[derive(Debug)]
-pub enum ParseError {
+pub(super) enum ParseError {
     TooShort,
     InvalidOpcode,
     InvalidHeader,
@@ -76,7 +76,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
+pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
     if data.len() < DNS_HEADER_LEN {
         return Err(ParseError::TooShort);
     }
@@ -462,7 +462,7 @@ fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError>
     Ok((name, consumed))
 }
 
-pub fn decode_name_from_rdata(
+pub(super) fn decode_name_from_rdata(
     message: &[u8],
     rdata_start: usize,
     rdata_len: usize,
@@ -478,7 +478,7 @@ pub fn decode_name_from_rdata(
     Ok(name)
 }
 
-pub fn decode_txt_from_rdata(rdata: &[u8]) -> Result<String, ParseError> {
+pub(super) fn decode_txt_from_rdata(rdata: &[u8]) -> Result<String, ParseError> {
     let mut pos = 0usize;
     let mut out = String::new();
 

@@ -51,7 +51,7 @@ use super::dto::{
         license(name = "Apache 2.0", url = "http://www.apache.org/licenses/LICENSE-2.0.html")
     )
 )]
-pub struct ApiDoc;
+pub(crate) struct ApiDoc;
 
 struct SecurityAddon;
 

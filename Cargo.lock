@@ -211,7 +211,6 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http",
- "tower-service",
  "utoipa",
 ]
 
@@ -256,7 +255,6 @@ dependencies = [
  "bindizr-db",
  "chrono",
  "domain",
- "hex",
  "hmac",
  "log",
  "rand",

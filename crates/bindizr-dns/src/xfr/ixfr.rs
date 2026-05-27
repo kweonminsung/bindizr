@@ -6,7 +6,7 @@ use std::net::IpAddr;
 use tokio::net::TcpStream;
 
 /// Handle IXFR
-pub async fn handle_ixfr(
+pub(crate) async fn handle_ixfr(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
     query_id: u16,

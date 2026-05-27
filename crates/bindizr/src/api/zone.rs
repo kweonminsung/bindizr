@@ -17,10 +17,10 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-pub struct ZoneApi;
+pub(crate) struct ZoneApi;
 
 impl ZoneApi {
-    pub async fn routes() -> Router {
+    pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/zones", routing::get(get_zones))
             .route("/zones/{name}", routing::get(get_zone))

@@ -20,68 +20,6 @@ fn create_temp_config_file(content: &str) -> (tempfile::TempDir, String) {
 }
 
 #[test]
-fn test_get_config_string() {
-    let (dir, config_path) = create_temp_config_file("[test]\nstring_value = \"hello\"");
-
-    // Create a config instance directly for testing
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    // Test string value retrieval
-    let value: String = config.get("test.string_value").unwrap();
-    assert_eq!(value, "hello");
-
-    // Keep dir alive until the end of the test
-    drop(dir);
-}
-
-#[test]
-fn test_get_config_numeric() {
-    let (dir, config_path) = create_temp_config_file("[test]\nint_value = 42\nfloat_value = 3.15");
-
-    // Create a config instance directly for testing
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    // Test integer value retrieval
-    let int_value: i32 = config.get("test.int_value").unwrap();
-    assert_eq!(int_value, 42);
-
-    // Test float value retrieval
-    let float_value: f64 = config.get("test.float_value").unwrap();
-    assert!((float_value - 3.15).abs() < f64::EPSILON);
-
-    // Keep dir alive until the end of the test
-    drop(dir);
-}
-
-#[test]
-fn test_get_config_boolean() {
-    let (dir, config_path) =
-        create_temp_config_file("[test]\nbool_true = true\nbool_false = false");
-
-    // Create a config instance directly for testing
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    // Test boolean value retrieval
-    let bool_true: bool = config.get("test.bool_true").unwrap();
-    assert!(bool_true);
-
-    let bool_false: bool = config.get("test.bool_false").unwrap();
-    assert!(!bool_false);
-
-    // Keep dir alive until the end of the test
-    drop(dir);
-}
-
-#[test]
 fn test_parse_bindizr_config_success() {
     let (dir, config_path) = create_temp_config_file(
         r#"

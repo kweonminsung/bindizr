@@ -12,7 +12,10 @@ use crate::{
 };
 use std::collections::HashSet;
 
-pub fn validate_glue_invariants(zone: &Zone, records: &[Record]) -> Result<(), ServiceError> {
+pub(super) fn validate_glue_invariants(
+    zone: &Zone,
+    records: &[Record],
+) -> Result<(), ServiceError> {
     let remaining_in_bailiwick_apex_ns = records.iter().filter(|r| {
         r.record_type == RecordType::NS
             && is_apex_name(&r.name, &zone.name)
@@ -32,7 +35,7 @@ pub fn validate_glue_invariants(zone: &Zone, records: &[Record]) -> Result<(), S
     Ok(())
 }
 
-pub fn validate_record_add_constraints(
+pub(super) fn validate_record_add_constraints(
     zone: &Zone,
     zone_records: &[Record],
     owner_name: &str,
@@ -134,7 +137,7 @@ pub fn validate_record_delete_constraints(
     validate_glue_invariants(zone, &remaining_records)
 }
 
-pub fn validate_record_update_constraints(
+pub(super) fn validate_record_update_constraints(
     zone: &Zone,
     zone_records: &[Record],
     existing_record: &Record,

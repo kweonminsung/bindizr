@@ -8,7 +8,7 @@ use thiserror::Error;
 
 /// API-specific error type that can be converted to HTTP responses
 #[derive(Debug, Error)]
-pub enum ApiError {
+pub(crate) enum ApiError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 

@@ -29,7 +29,7 @@ struct NsupdateResponse {
     tsig: Option<TsigErrorResponse>,
 }
 
-pub fn is_nsupdate(message: &[u8]) -> bool {
+pub(crate) fn is_nsupdate(message: &[u8]) -> bool {
     if message.len() < DNS_HEADER_LEN {
         return false;
     }
@@ -38,7 +38,7 @@ pub fn is_nsupdate(message: &[u8]) -> bool {
     opcode == DNS_OPCODE_UPDATE
 }
 
-pub async fn handle_tcp_nsupdate(
+pub(crate) async fn handle_tcp_nsupdate(
     stream: &mut TcpStream,
     query_data: &[u8],
     client_addr: SocketAddr,
@@ -54,7 +54,7 @@ pub async fn handle_tcp_nsupdate(
         .map_err(|e| format!("Failed to write NSUPDATE TCP response: {}", e))
 }
 
-pub async fn handle_udp_nsupdate(
+pub(crate) async fn handle_udp_nsupdate(
     socket: &UdpSocket,
     query_data: &[u8],
     client_addr: SocketAddr,

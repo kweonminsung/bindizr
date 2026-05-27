@@ -3,7 +3,7 @@ use crate::service::zone::ZoneService;
 use crate::socket::dto::DaemonResponse;
 use serde_json::json;
 
-pub async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let name = data
         .get("name")
         .and_then(|v| v.as_str())
@@ -21,7 +21,7 @@ pub async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String
     }
 }
 
-pub async fn list_zones() -> Result<DaemonResponse, String> {
+pub(super) async fn list_zones() -> Result<DaemonResponse, String> {
     match ZoneService::list().await {
         Ok(zones) => {
             let response: Vec<GetZoneResponse> =
@@ -35,7 +35,7 @@ pub async fn list_zones() -> Result<DaemonResponse, String> {
     }
 }
 
-pub async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let request: CreateZoneRequest =
         serde_json::from_value(data.clone()).map_err(|e| format!("Invalid request data: {}", e))?;
 
@@ -51,7 +51,7 @@ pub async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, Str
     }
 }
 
-pub async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let name = data
         .get("name")
         .and_then(|v| v.as_str())

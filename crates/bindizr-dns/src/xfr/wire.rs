@@ -6,10 +6,10 @@ use crate::{
 use domain::base::{Message, Name, ToName, iana::Rtype};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-pub const DNS_TCP_MAX_SIZE: usize = 65535;
-pub const RCODE_NOTAUTH: u8 = 9;
+pub(crate) const DNS_TCP_MAX_SIZE: usize = 65535;
+pub(crate) const RCODE_NOTAUTH: u8 = 9;
 
-pub struct DnsMessageBuilder {
+pub(crate) struct DnsMessageBuilder {
     query_id: u16,
     qname: Vec<u8>,
     qtype: u16,
@@ -17,7 +17,7 @@ pub struct DnsMessageBuilder {
 }
 
 impl DnsMessageBuilder {
-    pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
+    pub(crate) fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
         Self {
             query_id,
             qname: qname.as_slice().to_vec(),
@@ -27,7 +27,7 @@ impl DnsMessageBuilder {
     }
 
     /// Add SOA record
-    pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
+    pub(crate) fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
 
         // Primary NS
@@ -49,7 +49,7 @@ impl DnsMessageBuilder {
     }
 
     /// Add SOA from a serial-specific snapshot.
-    pub fn add_soa_from_snapshot(
+    pub(crate) fn add_soa_from_snapshot(
         &mut self,
         soa: &super::delta::ZoneSnapshot,
     ) -> Result<(), XfrError> {
@@ -71,14 +71,19 @@ impl DnsMessageBuilder {
     }
 
     /// Add A record
-    pub fn add_a_record(&mut self, name: &str, ttl: u32, addr: Ipv4Addr) -> Result<(), XfrError> {
+    pub(crate) fn add_a_record(
+        &mut self,
+        name: &str,
+        ttl: u32,
+        addr: Ipv4Addr,
+    ) -> Result<(), XfrError> {
         let rdata = addr.octets().to_vec();
         self.add_answer_raw(name, 1, ttl, &rdata)?;
         Ok(())
     }
 
     /// Add AAAA record
-    pub fn add_aaaa_record(
+    pub(crate) fn add_aaaa_record(
         &mut self,
         name: &str,
         ttl: u32,
@@ -90,7 +95,12 @@ impl DnsMessageBuilder {
     }
 
     /// Add CNAME record
-    pub fn add_cname_record(&mut self, name: &str, ttl: u32, target: &str) -> Result<(), XfrError> {
+    pub(crate) fn add_cname_record(
+        &mut self,
+        name: &str,
+        ttl: u32,
+        target: &str,
+    ) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
         encode_domain_name(target, &mut rdata)?;
         self.add_answer_raw(name, 5, ttl, &rdata)?;
@@ -98,7 +108,7 @@ impl DnsMessageBuilder {
     }
 
     /// Add MX record
-    pub fn add_mx_record(
+    pub(crate) fn add_mx_record(
         &mut self,
         name: &str,
         ttl: u32,
@@ -113,7 +123,12 @@ impl DnsMessageBuilder {
     }
 
     /// Add NS record
-    pub fn add_ns_record(&mut self, name: &str, ttl: u32, target: &str) -> Result<(), XfrError> {
+    pub(crate) fn add_ns_record(
+        &mut self,
+        name: &str,
+        ttl: u32,
+        target: &str,
+    ) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
         encode_domain_name(target, &mut rdata)?;
         self.add_answer_raw(name, 2, ttl, &rdata)?;
@@ -121,7 +136,12 @@ impl DnsMessageBuilder {
     }
 
     /// Add TXT record
-    pub fn add_txt_record(&mut self, name: &str, ttl: u32, text: &str) -> Result<(), XfrError> {
+    pub(crate) fn add_txt_record(
+        &mut self,
+        name: &str,
+        ttl: u32,
+        text: &str,
+    ) -> Result<(), XfrError> {
         if let Some(rdata) = txt::decode_raw_txt_rdata(text) {
             self.add_answer_raw(name, 16, ttl, &rdata)?;
             return Ok(());
@@ -144,7 +164,12 @@ impl DnsMessageBuilder {
     }
 
     /// Add PTR record
-    pub fn add_ptr_record(&mut self, name: &str, ttl: u32, target: &str) -> Result<(), XfrError> {
+    pub(crate) fn add_ptr_record(
+        &mut self,
+        name: &str,
+        ttl: u32,
+        target: &str,
+    ) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
         encode_domain_name(target, &mut rdata)?;
         self.add_answer_raw(name, 12, ttl, &rdata)?;
@@ -152,21 +177,25 @@ impl DnsMessageBuilder {
     }
 
     /// Add NS record for catalog zone. NS should be "invalid."
-    pub fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), XfrError> {
+    pub(crate) fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), XfrError> {
         let owner_name = ensure_fqdn(&zone.name);
         self.add_ns_record(&owner_name, zone.ttl as u32, "invalid")?;
         Ok(())
     }
 
     /// Add version record for catalog zone
-    pub fn add_catalog_version(&mut self, zone: &Zone) -> Result<(), XfrError> {
+    pub(crate) fn add_catalog_version(&mut self, zone: &Zone) -> Result<(), XfrError> {
         let version_name = format!("version.{}.", zone.name.trim_end_matches('.'));
         self.add_txt_record(&version_name, zone.ttl as u32, "2")?;
         Ok(())
     }
 
     /// Add PTR record for catalog zone member
-    pub fn add_catalog_ptr(&mut self, zone: &Zone, member_zone: &str) -> Result<(), XfrError> {
+    pub(crate) fn add_catalog_ptr(
+        &mut self,
+        zone: &Zone,
+        member_zone: &str,
+    ) -> Result<(), XfrError> {
         let member_id = super::catalog::zone_name_to_member_id(member_zone);
         let ptr_name = format!("{}.zones.{}.", member_id, zone.name.trim_end_matches('.'));
         let ptr_target = ensure_fqdn(member_zone);
@@ -175,7 +204,7 @@ impl DnsMessageBuilder {
     }
 
     /// Add a record from database Record model
-    pub fn add_record(&mut self, record: &Record, zone_name: &str) -> Result<(), XfrError> {
+    pub(crate) fn add_record(&mut self, record: &Record, zone_name: &str) -> Result<(), XfrError> {
         let ttl = record.ttl.unwrap_or(3600) as u32;
         let owner_name = normalize_name(&record.name, zone_name);
 
@@ -263,7 +292,7 @@ impl DnsMessageBuilder {
     }
 
     /// Build final DNS message
-    pub fn build(self) -> Vec<u8> {
+    pub(crate) fn build(self) -> Vec<u8> {
         let mut message = Vec::new();
 
         // Header (12 bytes)
@@ -289,7 +318,7 @@ impl DnsMessageBuilder {
     }
 }
 
-pub fn build_error_response(
+pub(crate) fn build_error_response(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     qtype: Rtype,
@@ -341,7 +370,7 @@ fn normalize_name(name: &str, zone: &str) -> String {
     format!("{}.{}.", owner_trimmed, zone_trimmed)
 }
 
-pub fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError> {
+pub(crate) fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError> {
     let name = name.trim_end_matches('.');
 
     if name.is_empty() {
@@ -369,7 +398,7 @@ pub fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError>
 type ParseQueryResult = (Name<Vec<u8>>, Rtype, Option<u32>, u16);
 
 /// Parse a DNS query message from bytes
-pub fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
+pub(crate) fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
     let message = Message::from_octets(data)
         .map_err(|e| XfrError::ProtocolError(format!("Failed to parse DNS message: {}", e)))?;
 
@@ -514,7 +543,7 @@ fn skip_name(data: &[u8], start: usize) -> Option<usize> {
     }
 }
 
-pub fn encode_tcp_message(message: &[u8]) -> Vec<u8> {
+pub(crate) fn encode_tcp_message(message: &[u8]) -> Vec<u8> {
     let len = message.len() as u16;
     let mut result = Vec::with_capacity(2 + message.len());
     result.extend_from_slice(&len.to_be_bytes());
@@ -522,7 +551,7 @@ pub fn encode_tcp_message(message: &[u8]) -> Vec<u8> {
     result
 }
 
-pub async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
+pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     reader: &mut R,
 ) -> Result<Vec<u8>, XfrError> {
     let mut len_buf = [0u8; 2];
@@ -569,7 +598,7 @@ pub async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     Ok(message_buf)
 }
 
-pub async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
+pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
     writer: &mut W,
     message: &[u8],
 ) -> Result<(), XfrError> {

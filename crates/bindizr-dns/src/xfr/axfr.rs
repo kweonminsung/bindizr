@@ -8,7 +8,7 @@ use std::net::IpAddr;
 use tokio::net::TcpStream;
 
 /// Handle AXFR
-pub async fn handle_axfr(
+pub(crate) async fn handle_axfr(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
     query_id: u16,
@@ -19,7 +19,7 @@ pub async fn handle_axfr(
 
 /// Handle AXFR payload with a specific response question type.
 /// IXFR fallback should keep QTYPE=IXFR to match the original query.
-pub async fn handle_axfr_with_qtype(
+pub(crate) async fn handle_axfr_with_qtype(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
     query_id: u16,

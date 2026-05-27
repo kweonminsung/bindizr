@@ -7,7 +7,7 @@ use tokio::{
     net::UnixStream,
 };
 
-pub struct DaemonSocketClient;
+pub(crate) struct DaemonSocketClient;
 
 impl Default for DaemonSocketClient {
     fn default() -> Self {
@@ -16,11 +16,11 @@ impl Default for DaemonSocketClient {
 }
 
 impl DaemonSocketClient {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         DaemonSocketClient
     }
 
-    pub async fn send_command(
+    pub(crate) async fn send_command(
         &self,
         command: DaemonCommandKind,
         data: Option<serde_json::Value>,

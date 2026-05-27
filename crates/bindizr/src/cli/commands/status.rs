@@ -6,7 +6,7 @@ use crate::{
     },
 };
 
-pub async fn handle_command() -> Result<(), String> {
+pub(crate) async fn handle_command() -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
     // Create socket request

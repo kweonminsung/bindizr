@@ -4,7 +4,7 @@ use clap::Subcommand;
 use serde_json::json;
 
 #[derive(Subcommand, Debug)]
-pub enum DeleteCommand {
+pub(crate) enum DeleteCommand {
     /// Delete a zone
     Zone {
         /// The name of the zone
@@ -18,7 +18,7 @@ pub enum DeleteCommand {
     },
 }
 
-pub async fn handle_command(subcommand: DeleteCommand) -> Result<(), String> {
+pub(crate) async fn handle_command(subcommand: DeleteCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
     match subcommand {

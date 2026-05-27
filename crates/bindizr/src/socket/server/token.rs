@@ -4,7 +4,7 @@ use crate::{
     socket::dto::DaemonResponse,
 };
 
-pub async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let description = data.get("description").and_then(|v| v.as_str());
     let expires_in_days = data.get("expires_in_days").and_then(|v| v.as_i64());
 
@@ -21,7 +21,7 @@ pub async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, St
     Ok(response)
 }
 
-pub async fn list_tokens() -> Result<DaemonResponse, String> {
+pub(super) async fn list_tokens() -> Result<DaemonResponse, String> {
     // List tokens
     let tokens = match TokenService::list_tokens().await {
         Ok(tokens) => Ok(tokens),
@@ -38,7 +38,7 @@ pub async fn list_tokens() -> Result<DaemonResponse, String> {
     Ok(response)
 }
 
-pub async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let token_id_i64 = data
         .get("id")
         .and_then(|v| v.as_i64())

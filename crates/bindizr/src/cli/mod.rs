@@ -10,13 +10,13 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "bindizr", version, about)]
-pub struct Args {
+pub(crate) struct Args {
     #[command(subcommand)]
     pub command: Command,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum Command {
+pub(crate) enum Command {
     /// Start bindizr on foreground
     Start {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
@@ -52,7 +52,7 @@ pub enum Command {
     },
 }
 
-pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
+pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     // Initialize Configuration
     if let Some(file) = config_file {
         // Load configuration from the specified file

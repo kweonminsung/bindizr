@@ -31,7 +31,7 @@ where
 
 /// Table row for zone display
 #[derive(Debug, Deserialize, Tabled)]
-pub struct ZoneRow {
+pub(crate) struct ZoneRow {
     #[tabled(rename = "ID")]
     pub id: i32,
     #[tabled(rename = "NAME")]
@@ -49,7 +49,7 @@ pub struct ZoneRow {
 
 /// Table row for record display
 #[derive(Debug, Deserialize, Tabled)]
-pub struct RecordRow {
+pub(crate) struct RecordRow {
     #[tabled(rename = "ID")]
     pub id: i32,
     #[tabled(rename = "NAME")]
@@ -70,13 +70,13 @@ pub struct RecordRow {
 }
 
 impl ZoneRow {
-    pub fn from_json(value: &serde_json::Value) -> Result<Self, String> {
+    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse zone: {}", e))
     }
 }
 
 impl RecordRow {
-    pub fn from_json(value: &serde_json::Value) -> Result<Self, String> {
+    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse record: {}", e))
     }
 }

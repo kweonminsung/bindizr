@@ -4,7 +4,7 @@ use crate::{
 };
 use std::process;
 
-pub fn get_status() -> Result<DaemonResponse, String> {
+pub(super) fn get_status() -> Result<DaemonResponse, String> {
     let pid = Some(process::id());
     let version = env!("CARGO_PKG_VERSION");
     let status = DaemonStatusResponse {

@@ -6,5 +6,5 @@ async fn main() {
         std::process::exit(1);
     }
 
-    bindizr::cli::execute().await;
+    bindizr::execute().await;
 }

@@ -5,7 +5,7 @@ use domain::base::iana::Rtype;
 use std::net::{IpAddr, SocketAddr};
 use tokio::net::{TcpStream, UdpSocket};
 
-pub async fn handle_tcp_soa(
+pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
     _secondary_servers: &[IpAddr],
@@ -26,7 +26,7 @@ pub async fn handle_tcp_soa(
     Ok(())
 }
 
-pub async fn handle_udp_soa(
+pub(crate) async fn handle_udp_soa(
     socket: &UdpSocket,
     client_addr: SocketAddr,
     _secondary_servers: &[IpAddr],
