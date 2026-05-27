@@ -1,6 +1,6 @@
 use crate::socket::{
     dto::{DaemonCommand, DaemonCommandKind, DaemonResponse},
-    socket::{FAILBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
+    socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -66,15 +66,17 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, String> {
         Err(err)
             if matches!(
                 err.kind(),
-                std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+                std::io::ErrorKind::PermissionDenied
+                    | std::io::ErrorKind::NotFound
+                    | std::io::ErrorKind::ConnectionRefused
             ) =>
         {
-            UnixStream::connect(FAILBACK_SOCKET_FILE_PATH)
+            UnixStream::connect(FALLBACK_SOCKET_FILE_PATH)
                 .await
                 .map_err(|fallback_err| {
                 format!(
                     "Could not connect to the daemon socket at '{}' or fallback '{}': {}; fallback error: {}\nIs the bindizr daemon running?",
-                    SOCKET_FILE_PATH, FAILBACK_SOCKET_FILE_PATH, err, fallback_err
+                    SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH, err, fallback_err
                 )
             })
         }

@@ -69,7 +69,8 @@ pub async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
                 .await
                 .map_err(|e| e.to_string())
         })
-    });
+    })
+    .map_err(String::from)?;
     database::initialize().await;
     dns::initialize().await;
 

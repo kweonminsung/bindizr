@@ -5,8 +5,10 @@ pub type NotifyHook = fn(Option<String>) -> NotifyFuture;
 
 static NOTIFY_HOOK: OnceLock<NotifyHook> = OnceLock::new();
 
-pub fn set_notify_hook(hook: NotifyHook) {
-    let _ = NOTIFY_HOOK.set(hook);
+pub fn set_notify_hook(hook: NotifyHook) -> Result<(), &'static str> {
+    NOTIFY_HOOK
+        .set(hook)
+        .map_err(|_| "notify hook is already registered")
 }
 
 pub async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {

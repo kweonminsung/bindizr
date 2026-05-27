@@ -5,7 +5,7 @@ mod token;
 mod zone;
 
 use crate::socket::dto::{DaemonCommand, DaemonCommandKind};
-use crate::socket::socket::{FAILBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
+use crate::socket::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
 use crate::{log_error, log_info, log_warn};
 use serde_json::json;
 use std::io;
@@ -92,16 +92,16 @@ async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
                 "Cannot use default Unix socket path '{}': {}. Falling back to '{}'.",
                 SOCKET_FILE_PATH,
                 err,
-                FAILBACK_SOCKET_FILE_PATH
+                FALLBACK_SOCKET_FILE_PATH
             );
 
-            bind_socket(FAILBACK_SOCKET_FILE_PATH)
+            bind_socket(FALLBACK_SOCKET_FILE_PATH)
                 .await
-                .map(|listener| (FAILBACK_SOCKET_FILE_PATH.to_string(), listener))
+                .map(|listener| (FALLBACK_SOCKET_FILE_PATH.to_string(), listener))
                 .map_err(|err| {
                     format!(
                         "Failed to use fallback Unix socket path '{}': {}",
-                        FAILBACK_SOCKET_FILE_PATH, err
+                        FALLBACK_SOCKET_FILE_PATH, err
                     )
                 })
         }
