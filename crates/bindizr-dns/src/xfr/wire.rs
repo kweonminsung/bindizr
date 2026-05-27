@@ -543,12 +543,19 @@ fn skip_name(data: &[u8], start: usize) -> Option<usize> {
     }
 }
 
-pub(crate) fn encode_tcp_message(message: &[u8]) -> Vec<u8> {
+pub(crate) fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, XfrError> {
+    if message.len() > DNS_TCP_MAX_SIZE {
+        return Err(XfrError::ProtocolError(format!(
+            "Message too large: {} bytes",
+            message.len()
+        )));
+    }
+
     let len = message.len() as u16;
     let mut result = Vec::with_capacity(2 + message.len());
     result.extend_from_slice(&len.to_be_bytes());
     result.extend_from_slice(message);
-    result
+    Ok(result)
 }
 
 pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
@@ -602,7 +609,7 @@ pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
     writer: &mut W,
     message: &[u8],
 ) -> Result<(), XfrError> {
-    let encoded = encode_tcp_message(message);
+    let encoded = encode_tcp_message(message)?;
     writer
         .write_all(&encoded)
         .await
@@ -614,7 +621,7 @@ pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_name;
+    use super::{DNS_TCP_MAX_SIZE, XfrError, encode_tcp_message, normalize_name};
 
     #[test]
     fn test_normalize_name_relative() {
@@ -637,5 +644,14 @@ mod tests {
     fn test_normalize_name_fqdn_and_apex() {
         assert_eq!(normalize_name("sub.", "example.com."), "sub.");
         assert_eq!(normalize_name("@", "example.com."), "example.com.");
+    }
+
+    #[test]
+    fn encode_tcp_message_rejects_oversized_payload() {
+        let message = vec![0; DNS_TCP_MAX_SIZE + 1];
+
+        let err = encode_tcp_message(&message).unwrap_err();
+
+        assert!(matches!(err, XfrError::ProtocolError(_)));
     }
 }
