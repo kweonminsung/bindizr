@@ -1,0 +1,41 @@
+[package]
+name = "bindizr"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+
+[lib]
+name = "bindizr"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bindizr"
+path = "src/main.rs"
+
+[dependencies]
+bindizr-core = { path = "../bindizr-core" }
+bindizr-db = { path = "../bindizr-db" }
+bindizr-dns = { path = "../bindizr-dns" }
+axum.workspace = true
+axum-macros.workspace = true
+clap.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tabled.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+utoipa.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true
+sqlx.workspace = true
+tempfile.workspace = true
+tower.workspace = true
+tower-service.workspace = true

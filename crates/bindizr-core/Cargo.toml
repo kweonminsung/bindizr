@@ -1,0 +1,22 @@
+[package]
+name = "bindizr-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+
+[dependencies]
+base64.workspace = true
+chrono.workspace = true
+config.workspace = true
+log.workspace = true
+once_cell.workspace = true
+serde.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
