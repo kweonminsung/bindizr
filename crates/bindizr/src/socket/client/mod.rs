@@ -67,7 +67,6 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, String> {
             if matches!(
                 err.kind(),
                 std::io::ErrorKind::PermissionDenied
-                    | std::io::ErrorKind::NotFound
                     | std::io::ErrorKind::ConnectionRefused
             ) =>
         {
