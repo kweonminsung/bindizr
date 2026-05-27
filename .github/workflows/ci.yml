@@ -18,7 +18,7 @@ jobs:
       uses: actions/checkout@v6
 
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose -p bindizr
       
     - name: Run tests
-      run: cargo test --verbose -- --test-threads=1
+      run: cargo test --workspace --all-features --verbose -- --test-threads=1

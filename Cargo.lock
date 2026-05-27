@@ -193,23 +193,17 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "bindizr"
 version = "0.1.0-beta.3"
 dependencies = [
- "async-trait",
  "axum",
  "axum-macros",
- "base64",
+ "bindizr-core",
+ "bindizr-db",
+ "bindizr-dns",
  "chrono",
  "clap",
- "config",
- "domain",
- "hex",
- "hmac",
  "log",
- "once_cell",
- "rand",
  "serde",
  "serde_json",
  "serde_yaml",
- "sha2 0.11.0",
  "sqlx",
  "tabled",
  "tempfile",
@@ -217,8 +211,56 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http",
- "tower-service",
  "utoipa",
+]
+
+[[package]]
+name = "bindizr-core"
+version = "0.1.0-beta.3"
+dependencies = [
+ "base64",
+ "chrono",
+ "config",
+ "log",
+ "once_cell",
+ "serde",
+ "sqlx",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "bindizr-db"
+version = "0.1.0-beta.3"
+dependencies = [
+ "async-trait",
+ "bindizr-core",
+ "chrono",
+ "hex",
+ "log",
+ "rand",
+ "serde",
+ "sha2 0.11.0",
+ "sqlx",
+ "thiserror",
+ "utoipa",
+]
+
+[[package]]
+name = "bindizr-dns"
+version = "0.1.0-beta.3"
+dependencies = [
+ "base64",
+ "bindizr-core",
+ "bindizr-db",
+ "chrono",
+ "domain",
+ "hmac",
+ "log",
+ "rand",
+ "sha2 0.11.0",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

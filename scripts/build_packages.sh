@@ -7,7 +7,7 @@ RELEASE="1"
 
 # Build the static binary
 echo "Building static binary..."
-cargo build --release --locked --target x86_64-unknown-linux-musl
+cargo build --release --locked --target x86_64-unknown-linux-musl -p bindizr
 
 # Create a temporary directory for packaging
 echo "Creating temporary packaging directory..."

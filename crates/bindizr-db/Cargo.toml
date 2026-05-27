@@ -1,0 +1,22 @@
+[package]
+name = "bindizr-db"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+
+[dependencies]
+bindizr-core = { path = "../bindizr-core" }
+async-trait.workspace = true
+chrono.workspace = true
+hex.workspace = true
+log.workspace = true
+rand.workspace = true
+serde.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+utoipa.workspace = true

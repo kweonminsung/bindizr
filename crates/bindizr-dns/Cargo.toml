@@ -1,0 +1,22 @@
+[package]
+name = "bindizr-dns"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+
+[dependencies]
+bindizr-core = { path = "../bindizr-core" }
+bindizr-db = { path = "../bindizr-db" }
+base64.workspace = true
+chrono.workspace = true
+domain.workspace = true
+hmac.workspace = true
+log.workspace = true
+rand.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
