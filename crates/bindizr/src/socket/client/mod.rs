@@ -68,6 +68,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, String> {
                 err.kind(),
                 std::io::ErrorKind::PermissionDenied
                     | std::io::ErrorKind::ConnectionRefused
+                    | std::io::ErrorKind::NotFound
             ) =>
         {
             UnixStream::connect(FALLBACK_SOCKET_FILE_PATH)
