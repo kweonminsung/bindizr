@@ -1,18 +1,18 @@
-{{- if .Values.bindizr.persistence.enabled }}
+{{- if and (eq .Values.bindizr.database.type "sqlite") .Values.bindizr.database.sqlite.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "bindizr-stack.fullname" . }}-data
+  name: {{ include "bindizr-stack.fullname" . }}-sqlite
   labels:
     {{- include "bindizr-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr
 spec:
   accessModes:
-    {{- toYaml .Values.bindizr.persistence.accessModes | nindent 4 }}
+    {{- toYaml .Values.bindizr.database.sqlite.persistence.accessModes | nindent 4 }}
   resources:
     requests:
-      storage: {{ .Values.bindizr.persistence.size }}
-  {{- if .Values.bindizr.persistence.storageClass }}
-  storageClassName: {{ .Values.bindizr.persistence.storageClass | quote }}
+      storage: {{ .Values.bindizr.database.sqlite.persistence.size }}
+  {{- if .Values.bindizr.database.sqlite.persistence.storageClass }}
+  storageClassName: {{ .Values.bindizr.database.sqlite.persistence.storageClass | quote }}
   {{- end }}
 {{- end }}

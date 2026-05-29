@@ -36,9 +36,6 @@ spec:
           args:
             - |
               db_url="${DATABASE_URL:-}"
-              if [ "{{ .Values.bindizr.database.type }}" = "sqlite" ]; then
-                db_url="sqlite"
-              fi
               sed \
                 -e "s#__DATABASE_URL__#${db_url}#g" \
                 -e "s#__TSIG_SECRET__#${TSIG_SECRET:-}#g" \
@@ -82,21 +79,25 @@ spec:
               readOnly: true
             - name: generated-config
               mountPath: /etc/bindizr
+            {{- if eq .Values.bindizr.database.type "sqlite" }}
             - name: data
               mountPath: /var/lib/bindizr
+            {{- end }}
       volumes:
         - name: config-template
           configMap:
             name: {{ include "bindizr-stack.fullname" . }}-config
         - name: generated-config
           emptyDir: {}
+        {{- if eq .Values.bindizr.database.type "sqlite" }}
         - name: data
-          {{- if .Values.bindizr.persistence.enabled }}
+          {{ if .Values.bindizr.database.sqlite.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "bindizr-stack.fullname" . }}-data
-          {{- else }}
+            claimName: {{ include "bindizr-stack.fullname" . }}-sqlite
+          {{ else }}
           emptyDir: {}
-          {{- end }}
+          {{ end }}
+        {{- end }}
       {{- with .Values.bindizr.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

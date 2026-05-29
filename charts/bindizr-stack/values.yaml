@@ -28,16 +28,17 @@ bindizr:
     existingSecret: bindizr-db-secret
     secretKey: database-url
     # Used only when existingSecret is empty. Prefer an existing Secret for production.
+    # If this is empty and the matching mysql/postgresql subchart is enabled,
+    # the chart builds the URL from the subchart auth values.
     serverUrl: ""
     sqlite:
       filePath: /var/lib/bindizr/bindizr.db
-
-  persistence:
-    enabled: true
-    storageClass: ""
-    accessModes:
-      - ReadWriteOnce
-    size: 1Gi
+      persistence:
+        enabled: true
+        storageClass: ""
+        accessModes:
+          - ReadWriteOnce
+        size: 1Gi
 
   podAnnotations: {}
   podSecurityContext: {}
@@ -48,7 +49,6 @@ bindizr:
   affinity: {}
 
 bind9:
-  enabled: true
   replicas: 2
 
   image:
@@ -91,5 +91,17 @@ serviceAccount:
 rbac:
   create: true
 
+mysql:
+  enabled: false
+  auth:
+    database: bindizr
+    username: bindizr
+    password: bindizr
+    rootPassword: bindizr-root
+
 postgresql:
   enabled: false
+  auth:
+    database: bindizr
+    username: bindizr
+    password: bindizr
