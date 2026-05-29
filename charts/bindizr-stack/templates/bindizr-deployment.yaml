@@ -6,6 +6,10 @@ metadata:
     {{- include "bindizr-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr
 spec:
+  {{- if and (eq .Values.bindizr.database.type "sqlite") .Values.bindizr.database.sqlite.persistence.enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
   replicas: {{ .Values.bindizr.replicas }}
   selector:
     matchLabels:
@@ -67,7 +71,7 @@ spec:
             - name: BINDIZR_DNS_PORT
               value: {{ .Values.bindizr.dns.port | quote }}
             - name: BINDIZR_SECONDARY_ADDRS
-              value: "{{- $fullname := include "bindizr-stack.fullname" . -}}{{- $headless := printf "%s-bind9-headless" $fullname -}}{{- range $i, $_ := until (.Values.bind9.replicas | int) -}}{{- if $i }},{{ end -}}{{ printf "%s-bind9-%d.%s:%d" $fullname $i $headless ($.Values.bind9.service.dnsPort | int) }}{{- end }}"
+              value: "{{- $fullname := include "bindizr-stack.fullname" . -}}{{- $headless := printf "%s-bind9-headless" $fullname -}}{{- range $i, $_ := until (.Values.bind9.replicas | int) -}}{{- if $i }},{{ end -}}{{ printf "%s-bind9-%d.%s:53" $fullname $i $headless }}{{- end }}"
             - name: BINDIZR_NSUPDATE_TSIG_KEY
               valueFrom:
                 secretKeyRef:

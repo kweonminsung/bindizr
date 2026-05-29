@@ -1,7 +1,5 @@
 use crate::{error::ServiceError, types::CreateZoneRequest};
-use bindizr_core::dns::name::{
-    email_to_soa_mailbox, is_same_or_subdomain_fqdn, split_presentation_labels, to_fqdn_lowercase,
-};
+use bindizr_core::dns::name::{email_to_soa_mailbox, split_presentation_labels, to_fqdn_lowercase};
 
 const MAX_DOMAIN_LEN: usize = 253;
 const MAX_EMAIL_LEN: usize = 254;
@@ -30,12 +28,6 @@ pub(super) fn validate_create_zone_request(
     let primary_ns = normalize_primary_ns(&request.primary_ns)?;
     let admin_email = normalize_email(&request.admin_email)?;
     let ttl = validate_ttl(request.ttl)?;
-
-    if !is_same_or_subdomain_fqdn(&primary_ns.fqdn, &zone_name.fqdn) {
-        return Err(ServiceError::BadRequest(
-            "primary NS must be in-bailiwick of the zone".to_string(),
-        ));
-    }
 
     validate_soa_wire_safety(&zone_name, &primary_ns, &admin_email)?;
 

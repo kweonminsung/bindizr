@@ -235,7 +235,7 @@ async fn test_zone_create_rejects_invalid_zone_primary_ns_and_ttl() {
     let (status, _) = ctx
         .make_request("POST", "/zones", Some(out_of_bailiwick_ns))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CREATED);
 
     let suffix_boundary_ns = serde_json::json!({
         "name": "test.example.com",
@@ -246,7 +246,7 @@ async fn test_zone_create_rejects_invalid_zone_primary_ns_and_ttl() {
     let (status, _) = ctx
         .make_request("POST", "/zones", Some(suffix_boundary_ns))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CREATED);
 
     let low_ttl = serde_json::json!({
         "name": "low-ttl.example.com",

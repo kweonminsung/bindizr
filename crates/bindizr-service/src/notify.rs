@@ -17,6 +17,6 @@ pub fn set_notify_sender(sender: Arc<dyn NotifySender>) -> Result<(), &'static s
 pub async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
     match NOTIFY_SENDER.get() {
         Some(sender) => sender.send_notify(zone_name).await,
-        None => Ok(()),
+        None => Err("notify sender is not registered".to_string()),
     }
 }

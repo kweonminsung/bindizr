@@ -24,9 +24,11 @@ PORT="53"
 ##################################
 echo "Cleaning up broken syntax..."
 
-# Remove previously inserted allow-notify and broken catalog-zones
+# Remove previously inserted allow-notify, ixfr-from-differences, and catalog-zones
 perl -0777 -pi -e 's/^[ \t]*allow-notify \{ 127\.0\.0\.1; \};\r?\n//gm' "$OPTIONS_FILE"
+perl -0777 -pi -e 's/^[ \t]*ixfr-from-differences yes;\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" \{\r?\n[ \t]*default-primaries \{ 127\.0\.0\.1 port [0-9]+; \};\r?\n[ \t]*\};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
+perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" default-primaries \{ 127\.0\.0\.1 port [0-9]+; \};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
 
 ##################################
 # 2. Insert catalog-zones & allow-notify

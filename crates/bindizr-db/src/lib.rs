@@ -11,6 +11,7 @@ pub use bindizr_core::model;
 pub(crate) use bindizr_core::{log_error, log_info};
 
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
+static INITIALIZE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Debug)]
 pub enum DatabasePool {
@@ -27,6 +28,12 @@ pub enum DatabaseType {
 }
 
 pub async fn initialize() {
+    if is_initialized() {
+        return;
+    }
+
+    let _guard = INITIALIZE_LOCK.lock().await;
+
     if is_initialized() {
         return;
     }
@@ -55,9 +62,9 @@ pub async fn initialize() {
         DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await,
     };
 
-    DATABASE_POOL
-        .set(pool)
-        .expect("Failed to set database pool");
+    if DATABASE_POOL.set(pool).is_err() {
+        return;
+    }
 
     log_info!("Database pool initialized");
 }
