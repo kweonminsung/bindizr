@@ -76,12 +76,13 @@ impl RecordService {
                     }
                 };
 
-            validate_record_add_constraints(
+            let normalized_owner = validate_record_add_constraints(
                 &zone,
                 &existing_records_in_zone,
                 &create_record_request.name,
                 &record_type,
                 &record_value,
+                create_record_request.priority,
                 None,
             )?;
 
@@ -92,7 +93,7 @@ impl RecordService {
                 &mut tx,
                 Record {
                     id: 0, // Will be set by the database
-                    name: create_record_request.name.clone(),
+                    name: normalized_owner.stored_name,
                     record_type,
                     value: record_value.clone(),
                     ttl: create_record_request.ttl,

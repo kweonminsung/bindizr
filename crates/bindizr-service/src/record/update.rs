@@ -89,7 +89,7 @@ impl RecordService {
                     }
                 };
 
-            let candidate_updated = Record {
+            let mut candidate_updated = Record {
                 id: existing_record.id,
                 name: update_record_request.name.clone(),
                 record_type: record_type.clone(),
@@ -100,12 +100,13 @@ impl RecordService {
                 created_at: existing_record.created_at,
             };
 
-            validate_record_update_constraints(
+            let normalized_owner = validate_record_update_constraints(
                 &zone,
                 &zone_records,
                 &existing_record,
                 &candidate_updated,
             )?;
+            candidate_updated.name = normalized_owner.stored_name;
 
             let new_serial = generate_serial(Some(zone.serial));
             let zone_name = zone.name.clone();

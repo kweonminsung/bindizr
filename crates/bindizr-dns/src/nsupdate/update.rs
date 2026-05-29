@@ -179,9 +179,17 @@ async fn add_record(
 
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
 
-    validate_record_add_constraints_tx(tx, zone, &relative_name, &record_type, &value, None)
-        .await
-        .map_err(|e| UpdateError::Refused(e.to_string()))?;
+    validate_record_add_constraints_tx(
+        tx,
+        zone,
+        &relative_name,
+        &record_type,
+        &value,
+        priority,
+        None,
+    )
+    .await
+    .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
     if RecordService::find_tx(
         tx,

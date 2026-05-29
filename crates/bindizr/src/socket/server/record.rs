@@ -16,12 +16,12 @@ pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
 
     match RecordService::get_by_id(record_id).await {
         Ok(record) => {
-            let mut response = GetRecordResponse::from_record(&record);
-            response.zone_name = ZoneService::find_by_id(record.zone_id)
+            let response = ZoneService::find_by_id(record.zone_id)
                 .await
                 .ok()
                 .flatten()
-                .map(|zone| zone.name);
+                .map(|zone| GetRecordResponse::from_record_with_zone(&record, &zone.name))
+                .unwrap_or_else(|| GetRecordResponse::from_record(&record));
             Ok(DaemonResponse {
                 message: "Record retrieved successfully".to_string(),
                 data: serde_json::to_value(response).unwrap(),
@@ -48,15 +48,13 @@ pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
             let mut response: Vec<GetRecordResponse> = Vec::new();
 
             for record in records.iter() {
-                let zone_name = ZoneService::find_by_id(record.zone_id)
+                let rec_response = ZoneService::find_by_id(record.zone_id)
                     .await
                     .ok()
                     .flatten()
-                    .map(|z| z.name)
-                    .unwrap_or_default();
+                    .map(|zone| GetRecordResponse::from_record_with_zone(record, &zone.name))
+                    .unwrap_or_else(|| GetRecordResponse::from_record(record));
 
-                let mut rec_response = GetRecordResponse::from_record(record);
-                rec_response.zone_name = Some(zone_name);
                 response.push(rec_response);
             }
 
@@ -75,15 +73,13 @@ pub(super) async fn create_record(data: &serde_json::Value) -> Result<DaemonResp
 
     match RecordService::create(&request).await {
         Ok(record) => {
-            let zone_name = ZoneService::find_by_id(record.zone_id)
+            let response = ZoneService::find_by_id(record.zone_id)
                 .await
                 .ok()
                 .flatten()
-                .map(|z| z.name)
-                .unwrap_or_default();
+                .map(|zone| GetRecordResponse::from_record_with_zone(&record, &zone.name))
+                .unwrap_or_else(|| GetRecordResponse::from_record(&record));
 
-            let mut response = GetRecordResponse::from_record(&record);
-            response.zone_name = Some(zone_name);
             Ok(DaemonResponse {
                 message: "Record created successfully".to_string(),
                 data: serde_json::to_value(response).unwrap(),

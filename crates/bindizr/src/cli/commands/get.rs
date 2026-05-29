@@ -221,7 +221,7 @@ fn filter_records(
     priority: Option<i64>,
 ) -> serde_json::Value {
     filter_items(data, |item| {
-        matches_string(item, "zone_name", zone)
+        matches_dns_string(item, "zone_name", zone)
             && matches_string(item, "name", name)
             && matches_string(item, "record_type", record_type)
             && matches_record_value(item, value)
@@ -249,6 +249,21 @@ fn matches_string(item: &serde_json::Value, key: &str, expected: Option<&str>) -
             .and_then(|value| value.as_str())
             .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
     })
+}
+
+fn matches_dns_string(item: &serde_json::Value, key: &str, expected: Option<&str>) -> bool {
+    expected.is_none_or(|expected| {
+        item.get(key)
+            .and_then(|value| value.as_str())
+            .is_some_and(|actual| to_fqdn_lower(actual) == to_fqdn_lower(expected))
+    })
+}
+
+fn to_fqdn_lower(value: &str) -> String {
+    format!(
+        "{}.",
+        value.trim().trim_end_matches('.').to_ascii_lowercase()
+    )
 }
 
 fn matches_record_value(item: &serde_json::Value, expected: Option<&str>) -> bool {
