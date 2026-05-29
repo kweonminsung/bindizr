@@ -27,4 +27,4 @@ USER bindizr
 EXPOSE 8000/tcp 53/tcp 53/udp
 
 ENTRYPOINT ["bindizr-entrypoint"]
-CMD ["bindizr", "start", "--config", "/etc/bindizr/bindizr.conf.toml"]
+CMD ["bindizr", "start"]

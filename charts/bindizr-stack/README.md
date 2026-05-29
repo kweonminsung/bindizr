@@ -70,8 +70,6 @@ helm install bindizr ./charts/bindizr-stack \
 
 ## Notes
 
-- BIND9 is deployed as a StatefulSet with at least one replica so transferred zone files, journals, cache, and working directories can be stable per pod.
-- `bindizr.dns.secondary_addrs` is rendered from BIND9 StatefulSet pod DNS names so Bindizr can send NOTIFY to each secondary replica.
 - External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.serverUrl`.
 - SQLite can use a chart-managed PVC or `emptyDir` through `bindizr.database.sqlite.persistence`.
 - Bundled Bitnami MySQL/PostgreSQL charts are optional and controlled by `mysql.enabled` and `postgresql.enabled`.

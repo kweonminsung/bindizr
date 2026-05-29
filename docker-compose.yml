@@ -8,7 +8,7 @@ services:
         condition: service_healthy
     environment:
       BINDIZR_DATABASE_TYPE: mysql
-      DATABASE_URL: mysql://bindizr:bindizr@mysql:3306/bindizr
+      BINDIZR_DATABASE_URL: mysql://bindizr:bindizr@mysql:3306/bindizr
       BINDIZR_API_PORT: 8000
       BINDIZR_DNS_PORT: 53
       BINDIZR_LOG_LEVEL: info
