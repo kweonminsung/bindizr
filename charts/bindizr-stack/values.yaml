@@ -1,0 +1,95 @@
+nameOverride: ""
+fullnameOverride: ""
+
+bindizr:
+  image:
+    repository: ghcr.io/kweonminsung/bindizr
+    tag: "0.1.0-beta.3"
+    pullPolicy: IfNotPresent
+  replicas: 2
+
+  api:
+    port: 8000
+    requireAuthentication: true
+    service:
+      type: ClusterIP
+      port: 8000
+
+  dns:
+    port: 53
+    service:
+      port: 53
+
+  logging:
+    level: info
+
+  database:
+    type: postgresql
+    existingSecret: bindizr-db-secret
+    secretKey: database-url
+    # Used only when existingSecret is empty. Prefer an existing Secret for production.
+    serverUrl: ""
+    sqlite:
+      filePath: /var/lib/bindizr/bindizr.db
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+bind9:
+  enabled: true
+  replicas: 2
+
+  image:
+    repository: internetsystemsconsortium/bind9
+    tag: "9.20"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: LoadBalancer
+    dnsPort: 53
+    annotations: {}
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+
+  resources: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+tsig:
+  existingSecret: ""
+  keyName: rndc-key
+  algorithm: hmac-sha256
+  # Used only when existingSecret is empty. Generate with: tsig-keygen -a hmac-sha256 rndc-key
+  secret: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+rbac:
+  create: true
+
+postgresql:
+  enabled: false

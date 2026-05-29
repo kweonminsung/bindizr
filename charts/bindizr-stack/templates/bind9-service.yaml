@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}-bind9-headless
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bind9
+spec:
+  clusterIP: None
+  ports:
+    - name: dns-tcp
+      port: {{ .Values.bind9.service.dnsPort }}
+      targetPort: dns-tcp
+      protocol: TCP
+    - name: dns-udp
+      port: {{ .Values.bind9.service.dnsPort }}
+      targetPort: dns-udp
+      protocol: UDP
+  selector:
+    {{- include "bindizr-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: bind9
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}-bind9
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bind9
+  {{- with .Values.bind9.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.bind9.service.type }}
+  ports:
+    - name: dns-tcp
+      port: {{ .Values.bind9.service.dnsPort }}
+      targetPort: dns-tcp
+      protocol: TCP
+    - name: dns-udp
+      port: {{ .Values.bind9.service.dnsPort }}
+      targetPort: dns-udp
+      protocol: UDP
+  selector:
+    {{- include "bindizr-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: bind9

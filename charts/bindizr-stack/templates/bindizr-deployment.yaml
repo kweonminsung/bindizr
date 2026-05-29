@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bindizr
+spec:
+  replicas: {{ .Values.bindizr.replicas }}
+  selector:
+    matchLabels:
+      {{- include "bindizr-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: bindizr
+  template:
+    metadata:
+      labels:
+        {{- include "bindizr-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bindizr
+      {{- with .Values.bindizr.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "bindizr-stack.serviceAccountName" . }}
+      {{- with .Values.bindizr.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: bindizr
+          image: "{{ .Values.bindizr.image.repository }}:{{ .Values.bindizr.image.tag }}"
+          imagePullPolicy: {{ .Values.bindizr.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              db_url="${DATABASE_URL:-}"
+              if [ "{{ .Values.bindizr.database.type }}" = "sqlite" ]; then
+                db_url="sqlite"
+              fi
+              sed \
+                -e "s#__DATABASE_URL__#${db_url}#g" \
+                -e "s#__TSIG_SECRET__#${TSIG_SECRET:-}#g" \
+                /etc/bindizr-template/bindizr.conf.toml.tpl > /etc/bindizr/bindizr.conf.toml
+              exec bindizr start --config /etc/bindizr/bindizr.conf.toml
+          ports:
+            - name: api
+              containerPort: {{ .Values.bindizr.api.port }}
+              protocol: TCP
+            - name: dns-tcp
+              containerPort: {{ .Values.bindizr.dns.port }}
+              protocol: TCP
+            - name: dns-udp
+              containerPort: {{ .Values.bindizr.dns.port }}
+              protocol: UDP
+          env:
+            {{- if ne .Values.bindizr.database.type "sqlite" }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindizr-stack.databaseSecretName" . }}
+                  key: {{ .Values.bindizr.database.secretKey }}
+            {{- end }}
+            - name: TSIG_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindizr-stack.tsigSecretName" . }}
+                  key: {{ .Values.tsig.keyName }}
+                  optional: true
+          {{- with .Values.bindizr.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.bindizr.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config-template
+              mountPath: /etc/bindizr-template
+              readOnly: true
+            - name: generated-config
+              mountPath: /etc/bindizr
+            - name: data
+              mountPath: /var/lib/bindizr
+      volumes:
+        - name: config-template
+          configMap:
+            name: {{ include "bindizr-stack.fullname" . }}-config
+        - name: generated-config
+          emptyDir: {}
+        - name: data
+          {{- if .Values.bindizr.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "bindizr-stack.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.bindizr.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bindizr.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bindizr.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

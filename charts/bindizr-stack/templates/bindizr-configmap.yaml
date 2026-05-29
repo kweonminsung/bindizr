@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}-config
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+data:
+  bindizr.conf.toml.tpl: |
+    listen_addr = "0.0.0.0"
+
+    [api]
+    listen_port = {{ .Values.bindizr.api.port }}
+    require_authentication = {{ .Values.bindizr.api.requireAuthentication }}
+
+    [database]
+    type = "{{ .Values.bindizr.database.type }}"
+
+    [database.mysql]
+    server_url = "__DATABASE_URL__"
+
+    [database.sqlite]
+    file_path = "{{ .Values.bindizr.database.sqlite.filePath }}"
+
+    [database.postgresql]
+    server_url = "__DATABASE_URL__"
+
+    [dns]
+    listen_port = {{ .Values.bindizr.dns.port }}
+    secondary_addrs = "{{- $fullname := include "bindizr-stack.fullname" . -}}{{- $headless := printf "%s-bind9-headless" $fullname -}}{{- range $i, $_ := until (.Values.bind9.replicas | int) -}}{{- if $i }},{{ end -}}{{ printf "%s-bind9-%d.%s:%d" $fullname $i $headless ($.Values.bind9.service.dnsPort | int) }}{{- end }}"
+    nsupdate_tsig_key = "__TSIG_SECRET__"
+
+    [logging]
+    log_level = "{{ .Values.bindizr.logging.level }}"

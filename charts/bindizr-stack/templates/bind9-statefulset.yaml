@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}-bind9
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bind9
+spec:
+  serviceName: {{ include "bindizr-stack.fullname" . }}-bind9-headless
+  replicas: {{ .Values.bind9.replicas }}
+  selector:
+    matchLabels:
+      {{- include "bindizr-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: bind9
+  template:
+    metadata:
+      labels:
+        {{- include "bindizr-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bind9
+      {{- with .Values.bind9.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "bindizr-stack.serviceAccountName" . }}
+      {{- with .Values.bind9.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: bind9
+          image: "{{ .Values.bind9.image.repository }}:{{ .Values.bind9.image.tag }}"
+          imagePullPolicy: {{ .Values.bind9.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              sed "s#__TSIG_SECRET__#${TSIG_SECRET:-}#g" /etc/bind-template/named.conf > /etc/bind/named.conf
+              exec named -g -c /etc/bind/named.conf
+          ports:
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: dns-udp
+              containerPort: 53
+              protocol: UDP
+          env:
+            - name: TSIG_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindizr-stack.tsigSecretName" . }}
+                  key: {{ .Values.tsig.keyName }}
+                  optional: true
+          {{- with .Values.bind9.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.bind9.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config-template
+              mountPath: /etc/bind-template
+              readOnly: true
+            - name: generated-config
+              mountPath: /etc/bind
+            - name: data
+              mountPath: /var/lib/bind
+            - name: cache
+              mountPath: /var/cache/bind
+      volumes:
+        - name: config-template
+          configMap:
+            name: {{ include "bindizr-stack.fullname" . }}-bind9-config
+        - name: generated-config
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+        {{- if not .Values.bind9.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.bind9.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bind9.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bind9.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.bind9.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "bindizr-stack.labels" . | nindent 10 }}
+          app.kubernetes.io/component: bind9
+      spec:
+        accessModes:
+          {{- toYaml .Values.bind9.persistence.accessModes | nindent 10 }}
+        resources:
+          requests:
+            storage: {{ .Values.bind9.persistence.size }}
+        {{- if .Values.bind9.persistence.storageClass }}
+        storageClassName: {{ .Values.bind9.persistence.storageClass | quote }}
+        {{- end }}
+  {{- end }}

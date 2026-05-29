@@ -1,0 +1,18 @@
+{{- if .Values.bindizr.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}-data
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bindizr
+spec:
+  accessModes:
+    {{- toYaml .Values.bindizr.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.bindizr.persistence.size }}
+  {{- if .Values.bindizr.persistence.storageClass }}
+  storageClassName: {{ .Values.bindizr.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}
