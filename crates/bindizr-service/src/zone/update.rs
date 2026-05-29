@@ -10,8 +10,9 @@ use crate::{
     repository::RepositoryService,
     types::CreateZoneRequest,
     utils::{generate_serial, has_glue_records_for, is_in_bailiwick, to_fqdn, to_relative_domain},
-    zone::snapshot::save_zone_snapshot_tx,
+    zone::{snapshot::save_zone_snapshot_tx, validation::normalize_email},
 };
+use bindizr_core::dns::name::email_to_soa_mailbox;
 use chrono::Utc;
 
 use super::ZoneService;
@@ -71,6 +72,7 @@ impl ZoneService {
             Some(s) => s,
             None => generate_serial(Some(existing_zone.serial)),
         };
+        let admin_email = normalize_email(&update_zone_request.admin_email)?;
 
         let zone_records = RepositoryService::get_records_by_zone_id(zone_id)
             .await
@@ -102,7 +104,7 @@ impl ZoneService {
                     id: zone_id,
                     name: update_zone_request.name.clone(),
                     primary_ns: update_zone_request.primary_ns.clone(),
-                    admin_email: update_zone_request.admin_email.clone(),
+                    admin_email: admin_email.clone(),
                     ttl: update_zone_request.ttl,
                     serial: new_serial,
                     refresh: update_zone_request.refresh.unwrap_or(86400),
@@ -165,17 +167,18 @@ impl ZoneService {
                 })?;
             }
 
-            let format_soa = |zone: &Zone| -> String {
-                format!(
+            let format_soa = |zone: &Zone| -> Result<String, ServiceError> {
+                Ok(format!(
                     "{} {} {} {} {} {} {}",
                     zone.primary_ns,
-                    zone.admin_email.replace('@', "."),
+                    email_to_soa_mailbox(&zone.admin_email)
+                        .map_err(|e| ServiceError::BadRequest(e.to_string()))?,
                     zone.serial,
                     zone.refresh,
                     zone.retry,
                     zone.expire,
                     zone.minimum_ttl
-                )
+                ))
             };
 
             // Delete old SOA record
@@ -188,7 +191,7 @@ impl ZoneService {
                     operation: "DEL".to_string(),
                     record_name: "@".to_string(),
                     record_type: "SOA".to_string(),
-                    record_value: format_soa(&existing_zone),
+                    record_value: format_soa(&existing_zone)?,
                     record_ttl: Some(existing_zone.ttl),
                     record_priority: None,
                 },
@@ -209,7 +212,7 @@ impl ZoneService {
                     operation: "ADD".to_string(),
                     record_name: "@".to_string(),
                     record_type: "SOA".to_string(),
-                    record_value: format_soa(&updated_zone),
+                    record_value: format_soa(&updated_zone)?,
                     record_ttl: Some(updated_zone.ttl),
                     record_priority: None,
                 },

@@ -8,7 +8,10 @@ use crate::{
     repository::RepositoryService,
     types::CreateZoneRequest,
     utils::generate_serial,
-    zone::snapshot::save_zone_snapshot_tx,
+    zone::{
+        snapshot::save_zone_snapshot_tx,
+        validation::{is_same_zone_name, validate_create_zone_request},
+    },
 };
 use chrono::Utc;
 
@@ -16,15 +19,21 @@ use super::ZoneService;
 
 impl ZoneService {
     pub async fn create(create_zone_request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
-        // Check if zone already exists
-        match RepositoryService::get_zone_by_name(&create_zone_request.name).await {
-            Ok(Some(_)) => {
-                log_error!("Zone with name {} already exists", create_zone_request.name);
-                return Err(ServiceError::BadRequest(
-                    "Zone with this name already exists".to_string(),
-                ));
+        let validated = validate_create_zone_request(create_zone_request)?;
+
+        // Parent/child zones are allowed; only the same normalized zone name is rejected.
+        match RepositoryService::get_all_zones().await {
+            Ok(zones) => {
+                if zones
+                    .iter()
+                    .any(|zone| is_same_zone_name(&zone.name, &validated.name_fqdn))
+                {
+                    log_error!("Zone with name {} already exists", validated.name);
+                    return Err(ServiceError::BadRequest(
+                        "zone name already exists".to_string(),
+                    ));
+                }
             }
-            Ok(None) => (),
             Err(e) => {
                 log_error!("Failed to check existing zone: {}", e);
                 return Err(ServiceError::Internal("Failed to create zone".to_string()));
@@ -45,10 +54,10 @@ impl ZoneService {
                 &mut tx,
                 Zone {
                     id: 0, // Will be set by the database
-                    name: create_zone_request.name.clone(),
-                    primary_ns: create_zone_request.primary_ns.clone(),
-                    admin_email: create_zone_request.admin_email.clone(),
-                    ttl: create_zone_request.ttl,
+                    name: validated.name.clone(),
+                    primary_ns: validated.primary_ns.clone(),
+                    admin_email: validated.admin_email.clone(),
+                    ttl: validated.ttl,
                     serial,
                     refresh: create_zone_request.refresh.unwrap_or(86400),
                     retry: create_zone_request.retry.unwrap_or(7200),
@@ -68,8 +77,8 @@ impl ZoneService {
                 id: 0,
                 name: "@".to_string(),
                 record_type: RecordType::NS,
-                value: create_zone_request.primary_ns.clone(),
-                ttl: Some(create_zone_request.ttl),
+                value: validated.primary_ns.clone(),
+                ttl: Some(validated.ttl),
                 priority: None,
                 zone_id: created_zone.id,
                 created_at: Utc::now(),

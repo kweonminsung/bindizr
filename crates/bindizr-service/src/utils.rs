@@ -1,4 +1,5 @@
 use crate::model::record::{Record, RecordType};
+use bindizr_core::dns::name::is_same_or_subdomain_fqdn;
 use chrono::Utc;
 
 /// Generate next serial number in YYYYMMDDNN format.
@@ -45,10 +46,6 @@ pub fn is_in_bailiwick(name: &str, zone_name: &str) -> bool {
     let zone = to_fqdn(zone_name).to_ascii_lowercase();
 
     is_same_or_subdomain_fqdn(&name, &zone)
-}
-
-fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
-    name == zone || name.ends_with(&format!(".{}", zone))
 }
 
 pub fn is_apex_name(name: &str, zone_name: &str) -> bool {
