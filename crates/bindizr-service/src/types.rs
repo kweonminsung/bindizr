@@ -290,6 +290,66 @@ pub struct CreateRecordRequest {
     pub zone_name: String,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+pub struct GetZonesFilter {
+    #[schema(example = "example.com")]
+    pub name: Option<String>,
+    #[schema(example = 1)]
+    pub id: Option<i32>,
+    #[schema(example = "ns1.example.com")]
+    pub primary_ns: Option<String>,
+    #[schema(example = "admin@example.com")]
+    pub admin_email: Option<String>,
+    #[schema(example = 3600)]
+    pub ttl: Option<i32>,
+    #[schema(example = 300)]
+    pub min_ttl: Option<i32>,
+    #[schema(example = 86400)]
+    pub max_ttl: Option<i32>,
+    #[schema(example = 2025100101)]
+    pub serial: Option<i32>,
+    #[serde(alias = "q")]
+    #[schema(example = "example")]
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+pub struct GetRecordsFilter {
+    #[schema(example = "example.com")]
+    pub zone_name: Option<String>,
+    #[serde(alias = "zone")]
+    #[schema(example = "example.com")]
+    pub zone: Option<String>,
+    #[schema(example = "sub")]
+    pub name: Option<String>,
+    #[schema(example = "A")]
+    pub record_type: Option<String>,
+    #[serde(alias = "type")]
+    #[schema(example = "192.168.1.100")]
+    pub value: Option<String>,
+    #[schema(example = 3600)]
+    pub ttl: Option<i32>,
+    #[schema(example = 300)]
+    pub min_ttl: Option<i32>,
+    #[schema(example = 86400)]
+    pub max_ttl: Option<i32>,
+    #[schema(example = 10)]
+    pub priority: Option<i32>,
+    #[schema(example = 1)]
+    pub min_priority: Option<i32>,
+    #[schema(example = 20)]
+    pub max_priority: Option<i32>,
+    #[serde(alias = "q")]
+    #[schema(example = "api")]
+    pub search: Option<String>,
+}
+
+impl GetRecordsFilter {
+    pub fn resolved_zone_name(&self) -> Option<String> {
+        self.zone_name.clone().or_else(|| self.zone.clone())
+    }
+}
+
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct UpdateRecordRequest {
     #[schema(example = "sub")]

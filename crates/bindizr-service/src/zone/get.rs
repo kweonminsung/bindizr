@@ -4,6 +4,7 @@ use crate::{
     log_error,
     model::{zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
+    types::GetZonesFilter,
 };
 
 use super::ZoneService;
@@ -39,6 +40,14 @@ impl ZoneService {
         })
     }
 
+    pub async fn list_filtered(filter: GetZonesFilter) -> Result<Vec<Zone>, ServiceError> {
+        let zones = Self::list().await?;
+        Ok(zones
+            .into_iter()
+            .filter(|zone| zone_matches_filter(zone, &filter))
+            .collect())
+    }
+
     pub async fn get_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
         match RepositoryService::get_zone_by_name(zone_name).await {
             Ok(Some(zone)) => Ok(zone),
@@ -52,4 +61,45 @@ impl ZoneService {
             }
         }
     }
+}
+
+fn zone_matches_filter(zone: &Zone, filter: &GetZonesFilter) -> bool {
+    matches_dns_string(&zone.name, filter.name.as_deref())
+        && filter.id.is_none_or(|id| zone.id == id)
+        && matches_dns_string(&zone.primary_ns, filter.primary_ns.as_deref())
+        && matches_string(&zone.admin_email, filter.admin_email.as_deref())
+        && filter.ttl.is_none_or(|ttl| zone.ttl == ttl)
+        && filter.min_ttl.is_none_or(|min_ttl| zone.ttl >= min_ttl)
+        && filter.max_ttl.is_none_or(|max_ttl| zone.ttl <= max_ttl)
+        && filter.serial.is_none_or(|serial| zone.serial == serial)
+        && matches_zone_search(zone, filter.search.as_deref())
+}
+
+fn matches_zone_search(zone: &Zone, search: Option<&str>) -> bool {
+    search.is_none_or(|search| {
+        let search = search.trim().to_ascii_lowercase();
+        !search.is_empty()
+            && [
+                zone.name.as_str(),
+                zone.primary_ns.as_str(),
+                zone.admin_email.as_str(),
+            ]
+            .iter()
+            .any(|value| value.to_ascii_lowercase().contains(&search))
+    })
+}
+
+fn matches_string(actual: &str, expected: Option<&str>) -> bool {
+    expected.is_none_or(|expected| actual.eq_ignore_ascii_case(expected.trim()))
+}
+
+fn matches_dns_string(actual: &str, expected: Option<&str>) -> bool {
+    expected.is_none_or(|expected| to_fqdn_lower(actual) == to_fqdn_lower(expected))
+}
+
+fn to_fqdn_lower(value: &str) -> String {
+    format!(
+        "{}.",
+        value.trim().trim_end_matches('.').to_ascii_lowercase()
+    )
 }

@@ -190,6 +190,63 @@ async fn test_single_record_operations_are_scoped_by_zone() {
 }
 
 #[tokio::test]
+async fn test_record_list_filters_support_ranges_and_partial_search() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+
+    for request in [
+        serde_json::json!({
+            "name": "api",
+            "record_type": "A",
+            "value": "192.168.1.200",
+            "ttl": 1800,
+            "zone_name": zone.name
+        }),
+        serde_json::json!({
+            "name": "mail",
+            "record_type": "MX",
+            "value": "mail.example.com",
+            "ttl": 3600,
+            "priority": 10,
+            "zone_name": zone.name
+        }),
+    ] {
+        let (status, _) = ctx.make_request("POST", "/records", Some(request)).await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    let (status, body) = ctx
+        .make_request(
+            "GET",
+            &format!(
+                "/records?zone_name={}&value=168.1&min_ttl=1000&max_ttl=2000",
+                zone.name
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let records = body["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["name"], "api.example.com.");
+
+    let (status, body) = ctx
+        .make_request(
+            "GET",
+            &format!(
+                "/records?zone_name={}&search=mail&min_priority=5&max_priority=15",
+                zone.name
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let records = body["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["record_type"], "MX");
+}
+
+#[tokio::test]
 async fn test_record_value_matching_is_case_sensitive() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
