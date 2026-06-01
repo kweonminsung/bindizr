@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 
   bind9-1:
-    image: internetsystemsconsortium/bind9:9.20
+    image: internetsystemsconsortium/bind9:9.21
     command: ["-g", "-c", "/etc/bind/named.conf"]
     depends_on:
       bindizr:
@@ -45,7 +45,7 @@ services:
     restart: unless-stopped
 
   bind9-2:
-    image: internetsystemsconsortium/bind9:9.20
+    image: internetsystemsconsortium/bind9:9.21
     command: ["-g", "-c", "/etc/bind/named.conf"]
     depends_on:
       bindizr:
