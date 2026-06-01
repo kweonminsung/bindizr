@@ -210,6 +210,13 @@ async fn test_record_list_filters_support_ranges_and_partial_search() {
             "priority": 10,
             "zone_name": zone.name
         }),
+        serde_json::json!({
+            "name": "alias",
+            "record_type": "CNAME",
+            "value": "Target.Example.Com",
+            "ttl": 7200,
+            "zone_name": zone.name
+        }),
     ] {
         let (status, _) = ctx.make_request("POST", "/records", Some(request)).await;
         assert_eq!(status, StatusCode::CREATED);
@@ -244,6 +251,30 @@ async fn test_record_list_filters_support_ranges_and_partial_search() {
     let records = body["records"].as_array().unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["record_type"], "MX");
+
+    let (status, body) = ctx
+        .make_request(
+            "GET",
+            &format!("/records?zone_name={}&value=target.example.com", zone.name),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let records = body["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["record_type"], "CNAME");
+
+    let (status, body) = ctx
+        .make_request(
+            "GET",
+            "/records?zone_name=Example.Com.&name=api.example.com",
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let records = body["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["name"], "api.example.com.");
 }
 
 #[tokio::test]

@@ -134,7 +134,7 @@ impl RecordService {
     pub async fn list_with_zone_by_filter(
         filter: GetRecordsFilter,
     ) -> Result<Vec<RecordWithZone>, ServiceError> {
-        let zone_name = filter.resolved_zone_name();
+        let zone_name = filter.resolved_zone_name().map(normalize_filter_zone_name);
         let value_filter = filter.value.clone();
         let search_filter = filter.search.clone();
         if let Some(name) = zone_name.as_deref() {
@@ -153,9 +153,11 @@ impl RecordService {
             }
         }
 
+        let name = normalize_filter_record_name(filter.name, zone_name.as_deref());
+
         let mut records = RepositoryService::get_records_by_filter_with_zone(RecordFilter {
             zone_name,
-            name: filter.name,
+            name,
             record_type: filter.record_type,
             value: filter.value,
             ttl: filter.ttl,
@@ -208,6 +210,32 @@ impl RecordService {
             }
         }
     }
+}
+
+fn normalize_filter_zone_name(name: String) -> String {
+    name.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
+fn normalize_filter_record_name(name: Option<String>, zone_name: Option<&str>) -> Option<String> {
+    name.map(|name| {
+        let trimmed = name.trim();
+        let Some(zone_name) = zone_name else {
+            return trimmed.to_string();
+        };
+
+        let zone_fqdn = format!("{}.", zone_name);
+        let candidate = if trimmed.ends_with('.') {
+            trimmed.to_ascii_lowercase()
+        } else {
+            format!("{}.", trimmed.to_ascii_lowercase())
+        };
+
+        if candidate == zone_fqdn || candidate.ends_with(&format!(".{}", zone_fqdn)) {
+            candidate
+        } else {
+            trimmed.to_string()
+        }
+    })
 }
 
 fn record_matches_display_filters(

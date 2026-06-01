@@ -334,7 +334,7 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(CASE WHEN r.name = '@' THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) = LOWER(?)
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
-              AND (? IS NULL OR LOCATE(?, BINARY r.value) > 0 OR r.record_type = 'TXT')
+              AND (? IS NULL OR LOCATE(LOWER(?), LOWER(r.value)) > 0 OR r.record_type = 'TXT')
               AND (? IS NULL OR r.ttl = ?)
               AND (? IS NULL OR r.ttl >= ?)
               AND (? IS NULL OR r.ttl <= ?)

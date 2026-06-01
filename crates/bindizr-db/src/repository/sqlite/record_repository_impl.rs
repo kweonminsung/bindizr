@@ -332,7 +332,7 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
-              AND (? IS NULL OR INSTR(r.value, ?) > 0 OR r.record_type = 'TXT')
+              AND (? IS NULL OR INSTR(LOWER(r.value), LOWER(?)) > 0 OR r.record_type = 'TXT')
               AND (? IS NULL OR r.ttl = ?)
               AND (? IS NULL OR r.ttl >= ?)
               AND (? IS NULL OR r.ttl <= ?)

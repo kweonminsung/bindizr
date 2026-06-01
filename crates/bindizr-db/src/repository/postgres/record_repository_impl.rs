@@ -336,7 +336,7 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
               AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
-              AND ($8::TEXT IS NULL OR POSITION($9 IN r.value) > 0 OR r.record_type = 'TXT')
+              AND ($8::TEXT IS NULL OR POSITION(LOWER($9) IN LOWER(r.value)) > 0 OR r.record_type = 'TXT')
               AND ($10::INT4 IS NULL OR r.ttl = $11)
               AND ($12::INT4 IS NULL OR r.ttl >= $13)
               AND ($14::INT4 IS NULL OR r.ttl <= $15)
