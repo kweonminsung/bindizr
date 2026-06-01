@@ -42,7 +42,7 @@ sqlx = { version = "0.9", features = [
     "sqlite",
     "chrono",
 ] }
-tabled = "0.20"
+tabled = "0.21"
 tempfile = "3.27.0"
 thiserror = "2.0.18"
 tokio = { version = "1", features = ["full"] }
