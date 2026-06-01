@@ -50,6 +50,23 @@ impl DnsMessageBuilder {
         Ok(())
     }
 
+    /// Add SOA record for catalog zone. MNAME and RNAME are intentionally invalid.
+    pub(crate) fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+
+        encode_domain_name("invalid", &mut rdata)?;
+        encode_domain_name("invalid", &mut rdata)?;
+
+        rdata.extend_from_slice(&serial.to_be_bytes());
+        rdata.extend_from_slice(&(zone.refresh as u32).to_be_bytes());
+        rdata.extend_from_slice(&(zone.retry as u32).to_be_bytes());
+        rdata.extend_from_slice(&(zone.expire as u32).to_be_bytes());
+        rdata.extend_from_slice(&(zone.minimum_ttl as u32).to_be_bytes());
+
+        self.add_answer_raw(&zone.name, 6, zone.ttl as u32, &rdata)?;
+        Ok(())
+    }
+
     /// Add SOA from a serial-specific snapshot.
     pub(crate) fn add_soa_from_snapshot(
         &mut self,

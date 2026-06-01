@@ -17,9 +17,21 @@ data:
       recursion no;
       allow-query { any; };
       dnssec-validation auto;
+      ixfr-from-differences yes;
+
+      catalog-zones {
+        zone "catalog.bind" default-primaries { {{ include "bindizr-stack.fullname" . }}-dns port {{ .Values.bindizr.dns.service.port }}; };
+      };
     };
 
     key "{{ .Values.tsig.keyName }}" {
       algorithm {{ .Values.tsig.algorithm }};
       secret "__TSIG_SECRET__";
+    };
+
+    zone "catalog.bind" {
+      type secondary;
+      primaries { {{ include "bindizr-stack.fullname" . }}-dns port {{ .Values.bindizr.dns.service.port }}; };
+      file "/var/cache/bind/catalog.bind.zone";
+      ixfr-from-differences yes;
     };

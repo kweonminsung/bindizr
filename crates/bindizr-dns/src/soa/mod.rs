@@ -70,7 +70,7 @@ async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<
         let (catalog_zone, _member_zones) = catalog::generate_catalog_zone().await?;
 
         let mut builder = wire::DnsMessageBuilder::new(query_id, &zone_name, Rtype::SOA);
-        builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
+        builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;
         return Ok(builder.build());
     }
 

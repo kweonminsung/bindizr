@@ -56,7 +56,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;
 
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
-    builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
+    builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;
 
     builder.add_catalog_ns(&catalog_zone)?;
     builder.add_catalog_version(&catalog_zone)?;
@@ -65,7 +65,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
         builder.add_catalog_ptr(&catalog_zone, zone_name)?;
     }
 
-    builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
+    builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;
 
     let message = builder.build();
     wire::write_tcp_message(stream, &message).await?;

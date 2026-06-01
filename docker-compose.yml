@@ -13,14 +13,53 @@ services:
       BINDIZR_DNS_PORT: 53
       BINDIZR_LOG_LEVEL: info
       BINDIZR_API_REQUIRE_AUTHENTICATION: "false"
-      BINDIZR_SECONDARY_ADDRS: ""
+      BINDIZR_SECONDARY_ADDRS: bind9-1:53,bind9-2:53
       BINDIZR_NSUPDATE_TSIG_KEY: ""
     ports:
       - "8000:8000/tcp"
+      - "5300:53/tcp"
+      - "5300:53/udp"
+    volumes:
+      - bindizr-data:/var/lib/bindizr
+    networks:
+      bindizr-net:
+        ipv4_address: 172.28.0.10
+    restart: unless-stopped
+
+  bind9-1:
+    image: internetsystemsconsortium/bind9:9.20
+    command: ["-g", "-c", "/etc/bind/named.conf"]
+    depends_on:
+      bindizr:
+        condition: service_started
+    ports:
       - "53:53/tcp"
       - "53:53/udp"
     volumes:
-      - bindizr-data:/var/lib/bindizr
+      - ./docker/bind9/named.conf:/etc/bind/named.conf:ro
+      - bind9-1-cache:/var/cache/bind
+      - bind9-1-data:/var/lib/bind
+    networks:
+      bindizr-net:
+        ipv4_address: 172.28.0.11
+    restart: unless-stopped
+
+  bind9-2:
+    image: internetsystemsconsortium/bind9:9.20
+    command: ["-g", "-c", "/etc/bind/named.conf"]
+    depends_on:
+      bindizr:
+        condition: service_started
+    ports:
+      - "1053:53/tcp"
+      - "1053:53/udp"
+    volumes:
+      - ./docker/bind9/named.conf:/etc/bind/named.conf:ro
+      - bind9-2-cache:/var/cache/bind
+      - bind9-2-data:/var/lib/bind
+    networks:
+      bindizr-net:
+        ipv4_address: 172.28.0.12
     restart: unless-stopped
 
   mysql:
@@ -41,8 +80,21 @@ services:
       retries: 20
     volumes:
       - mysql-data:/var/lib/mysql
+    networks:
+      bindizr-net:
+        ipv4_address: 172.28.0.20
     restart: unless-stopped
+
+networks:
+  bindizr-net:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   bindizr-data:
+  bind9-1-cache:
+  bind9-2-cache:
+  bind9-1-data:
+  bind9-2-data:
   mysql-data:

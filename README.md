@@ -122,9 +122,7 @@ cat <<EOF | sudo tee -a "$BIND_CONF_FILE"
 options {
     ixfr-from-differences yes;
     catalog-zones {
-        zone "catalog.bind" {
-            default-primaries { 127.0.0.1 port 53; };
-        };
+        zone "catalog.bind" default-primaries { 127.0.0.1 port 53; };
     };
 };
 EOF
