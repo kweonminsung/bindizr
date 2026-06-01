@@ -1,0 +1,37 @@
+{{- if lt (.Values.bind9.replicas | int) 1 }}
+{{- fail "bind9.replicas must be at least 1" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}-bind9-config
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bind9
+data:
+  named.conf: |
+    options {
+      directory "/var/cache/bind";
+      listen-on port 53 { any; };
+      listen-on-v6 port 53 { any; };
+      recursion no;
+      allow-query { any; };
+      dnssec-validation auto;
+      ixfr-from-differences yes;
+
+      catalog-zones {
+        zone "catalog.bind" default-primaries { {{ include "bindizr-stack.fullname" . }}-dns port {{ .Values.bindizr.dns.service.port }}; };
+      };
+    };
+
+    key "{{ .Values.tsig.keyName }}" {
+      algorithm {{ .Values.tsig.algorithm }};
+      secret "__TSIG_SECRET__";
+    };
+
+    zone "catalog.bind" {
+      type secondary;
+      primaries { {{ include "bindizr-stack.fullname" . }}-dns port {{ .Values.bindizr.dns.service.port }}; };
+      file "/var/cache/bind/catalog.bind.zone";
+      ixfr-from-differences yes;
+    };

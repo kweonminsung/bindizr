@@ -1,7 +1,8 @@
 use super::{error::XfrError, wire};
-use crate::{database::model::zone::Zone, log_info, service::zone::ZoneService};
+use crate::{log_info, model::zone::Zone, service::zone::ZoneService};
 use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
+use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
 pub(crate) const CATALOG_ZONE_NAME: &str = "catalog.bind";
@@ -24,13 +25,15 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     log_info!("Catalog zone contains {} member zones", member_zones.len());
 
     // Create catalog zone metadata. This is a virtual zone
+    let serial = generate_catalog_serial(&member_zones, &all_zones).await?;
+
     let catalog_zone = Zone {
         id: 0, // Virtual zone ID
         name: CATALOG_ZONE_NAME.to_string(),
         primary_ns: "invalid".to_string(),
         admin_email: "invalid".to_string(),
         ttl: 3600,
-        serial: generate_catalog_serial(&all_zones),
+        serial,
         refresh: 3600,
         retry: 600,
         expire: 86400,
@@ -41,8 +44,36 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     Ok((catalog_zone, member_zones))
 }
 
-fn generate_catalog_serial(zones: &[Zone]) -> i32 {
-    zones.iter().map(|z| z.serial).max().unwrap_or(1)
+async fn generate_catalog_serial(member_zones: &[String], zones: &[Zone]) -> Result<i32, XfrError> {
+    let signature = catalog_signature(member_zones, zones);
+    let base_serial = zones.iter().map(|z| z.serial).max().unwrap_or(1);
+    ZoneService::update_catalog_serial_for_signature(CATALOG_ZONE_NAME, &signature, base_serial)
+        .await
+        .map_err(|e| XfrError::DatabaseError(e.to_string()))
+}
+
+fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
+    let mut members = member_zones
+        .iter()
+        .map(|member| member.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    members.sort();
+
+    let mut hasher = Sha256::new();
+    for member in members {
+        if let Some(zone) = zones.iter().find(|z| z.name.eq_ignore_ascii_case(&member)) {
+            hasher.update(member.as_bytes());
+            hasher.update(b"\0");
+            hasher.update(zone.serial.to_string().as_bytes());
+            hasher.update(b"\n");
+        }
+    }
+
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
 }
 
 pub(crate) async fn handle_catalog_axfr_with_qtype(
@@ -56,7 +87,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;
 
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
-    builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
+    builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;
 
     builder.add_catalog_ns(&catalog_zone)?;
     builder.add_catalog_version(&catalog_zone)?;
@@ -65,7 +96,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
         builder.add_catalog_ptr(&catalog_zone, zone_name)?;
     }
 
-    builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
+    builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;
 
     let message = builder.build();
     wire::write_tcp_message(stream, &message).await?;
@@ -105,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_catalog_serial() {
+    fn test_catalog_signature_changes_when_members_change() {
         let zones = vec![
             Zone {
                 id: 1,
@@ -135,6 +166,13 @@ mod tests {
             },
         ];
 
-        assert_eq!(generate_catalog_serial(&zones), 200);
+        let member_zones = zones
+            .iter()
+            .map(|zone| zone.name.clone())
+            .collect::<Vec<_>>();
+        let original = catalog_signature(&member_zones, &zones);
+        let updated_members = vec!["example.com".to_string()];
+
+        assert_ne!(original, catalog_signature(&updated_members, &zones));
     }
 }

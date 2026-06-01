@@ -193,11 +193,13 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "bindizr"
 version = "0.1.0-beta.3"
 dependencies = [
+ "async-trait",
  "axum",
  "axum-macros",
  "bindizr-core",
  "bindizr-db",
  "bindizr-dns",
+ "bindizr-service",
  "chrono",
  "clap",
  "log",
@@ -243,6 +245,7 @@ dependencies = [
  "sha2 0.11.0",
  "sqlx",
  "thiserror",
+ "tokio",
  "utoipa",
 ]
 
@@ -252,7 +255,7 @@ version = "0.1.0-beta.3"
 dependencies = [
  "base64",
  "bindizr-core",
- "bindizr-db",
+ "bindizr-service",
  "chrono",
  "domain",
  "hmac",
@@ -261,6 +264,23 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "bindizr-service"
+version = "0.1.0-beta.3"
+dependencies = [
+ "async-trait",
+ "bindizr-core",
+ "bindizr-db",
+ "chrono",
+ "hex",
+ "log",
+ "rand",
+ "serde",
+ "sha2 0.11.0",
+ "thiserror",
+ "utoipa",
 ]
 
 [[package]]

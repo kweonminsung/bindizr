@@ -6,7 +6,20 @@ use crate::{
     cli::commands::{notify::NotifyCommand, token::TokenCommand},
     config, database, dns, log_info, logger, service, socket,
 };
+use async_trait::async_trait;
 use clap::{Parser, Subcommand};
+use std::sync::Arc;
+
+struct DnsNotifySender;
+
+#[async_trait]
+impl service::notify::NotifySender for DnsNotifySender {
+    async fn send_notify(&self, zone_name: Option<&str>) -> Result<(), String> {
+        dns::xfr::notify::send_notify(zone_name)
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "bindizr", version, about)]
@@ -63,14 +76,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     }
 
     logger::initialize();
-    service::notify::set_notify_hook(|zone_name| {
-        Box::pin(async move {
-            dns::xfr::notify::send_notify(zone_name.as_deref())
-                .await
-                .map_err(|e| e.to_string())
-        })
-    })
-    .map_err(String::from)?;
+    service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
     database::initialize().await;
     dns::initialize().await;
 

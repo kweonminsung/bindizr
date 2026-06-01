@@ -5,8 +5,9 @@ pub use bindizr_core::dns::txt;
 pub mod xfr;
 
 pub(crate) use bindizr_core::config;
+pub(crate) use bindizr_core::model;
 pub(crate) use bindizr_core::{log_error, log_info, log_warn};
-pub(crate) use bindizr_db::{database, service};
+pub(crate) use bindizr_service as service;
 
 use domain::base::iana::Rtype;
 use std::io::ErrorKind;

@@ -1,0 +1,14 @@
+Bindizr stack has been installed.
+
+API service:
+  {{ include "bindizr-stack.fullname" . }}-api:{{ .Values.bindizr.api.service.port }}
+
+Authoritative DNS service:
+  {{ include "bindizr-stack.fullname" . }}-bind9:{{ .Values.bind9.service.dnsPort }} ({{ .Values.bind9.service.type }})
+
+BIND9 replicas are exposed for authoritative DNS traffic.
+
+Before production use:
+  - Set bindizr.image.repository to your published image.
+  - Set tsig.existingSecret or tsig.secret.
+  - Set bindizr.database.existingSecret or bindizr.database.serverUrl when using mysql/postgresql.

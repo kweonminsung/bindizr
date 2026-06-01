@@ -4,6 +4,7 @@ members = [
     "crates/bindizr-core",
     "crates/bindizr-db",
     "crates/bindizr-dns",
+    "crates/bindizr-service",
 ]
 resolver = "3"
 

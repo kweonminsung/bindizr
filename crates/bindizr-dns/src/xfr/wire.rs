@@ -1,8 +1,9 @@
 use super::error::XfrError;
 use crate::{
-    database::model::{record::Record, zone::Zone},
+    model::{record::Record, zone::Zone},
     txt,
 };
+use bindizr_core::dns::name::{email_to_soa_mailbox, split_presentation_labels};
 use domain::base::{Message, Name, ToName, iana::Rtype};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -34,10 +35,28 @@ impl DnsMessageBuilder {
         encode_domain_name(&zone.primary_ns, &mut rdata)?;
 
         // Admin email in DNS SOA mailbox format
-        let admin_email = zone.admin_email.replace('@', ".");
+        let admin_email = email_to_soa_mailbox(&zone.admin_email)
+            .map_err(|e| XfrError::ProtocolError(e.to_string()))?;
         encode_domain_name(&admin_email, &mut rdata)?;
 
         // SERIAL, REFRESH, RETRY, EXPIRE, MINIMUM
+        rdata.extend_from_slice(&serial.to_be_bytes());
+        rdata.extend_from_slice(&(zone.refresh as u32).to_be_bytes());
+        rdata.extend_from_slice(&(zone.retry as u32).to_be_bytes());
+        rdata.extend_from_slice(&(zone.expire as u32).to_be_bytes());
+        rdata.extend_from_slice(&(zone.minimum_ttl as u32).to_be_bytes());
+
+        self.add_answer_raw(&zone.name, 6, zone.ttl as u32, &rdata)?;
+        Ok(())
+    }
+
+    /// Add SOA record for catalog zone. MNAME and RNAME are intentionally invalid.
+    pub(crate) fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+
+        encode_domain_name("invalid", &mut rdata)?;
+        encode_domain_name("invalid", &mut rdata)?;
+
         rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&(zone.refresh as u32).to_be_bytes());
         rdata.extend_from_slice(&(zone.retry as u32).to_be_bytes());
@@ -378,7 +397,9 @@ pub(crate) fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), Xf
         return Ok(());
     }
 
-    for label in name.split('.') {
+    for label in
+        split_presentation_labels(name).map_err(|e| XfrError::ProtocolError(e.to_string()))?
+    {
         if label.is_empty() {
             continue;
         }
@@ -621,7 +642,9 @@ pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
 
 #[cfg(test)]
 mod tests {
-    use super::{DNS_TCP_MAX_SIZE, XfrError, encode_tcp_message, normalize_name};
+    use super::{
+        DNS_TCP_MAX_SIZE, XfrError, encode_domain_name, encode_tcp_message, normalize_name,
+    };
 
     #[test]
     fn test_normalize_name_relative() {
@@ -653,5 +676,20 @@ mod tests {
         let err = encode_tcp_message(&message).unwrap_err();
 
         assert!(matches!(err, XfrError::ProtocolError(_)));
+    }
+
+    #[test]
+    fn encode_domain_name_respects_escaped_dots() {
+        let mut encoded = Vec::new();
+
+        encode_domain_name(r"admin\.dns.example.com.", &mut encoded).unwrap();
+
+        assert_eq!(
+            encoded,
+            vec![
+                9, b'a', b'd', b'm', b'i', b'n', b'.', b'd', b'n', b's', 7, b'e', b'x', b'a', b'm',
+                b'p', b'l', b'e', 3, b'c', b'o', b'm', 0
+            ]
+        );
     }
 }

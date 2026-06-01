@@ -59,7 +59,7 @@ $ git clone https://github.com/kweonminsung/bindizr.git
 $ cd bindizr
 
 # Run the build script
-$ ./scripts/build_packages.sh
+$ ./packaging/scripts/build_packages.sh
 
 # The generated packages will be in the root directory
 $ ls bindizr*.{deb,rpm}

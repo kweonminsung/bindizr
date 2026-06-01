@@ -13,7 +13,7 @@ async fn test_zone_crud_operations() {
     // Test POST /zones (create)
     let create_zone_request = serde_json::json!({
         "name": "test.com",
-        "primary_ns": "ns1.external-dns.net",
+        "primary_ns": "ns1.test.com",
         "admin_email": "admin@test.com",
         "ttl": 3600,
         "refresh": 7200,
@@ -80,7 +80,7 @@ async fn test_zone_crud_operations() {
     // Test creating a zone
     let create_zone_no_ip = serde_json::json!({
         "name": "no-ip.com",
-        "primary_ns": "ns3.external-dns.net",
+        "primary_ns": "ns3.no-ip.com",
         "admin_email": "admin@no-ip.com",
         "ttl": 3600
     });
@@ -88,4 +88,181 @@ async fn test_zone_crud_operations() {
         .make_request("POST", "/zones", Some(create_zone_no_ip))
         .await;
     assert_eq!(status, StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn test_zone_admin_email_validation_and_conversion() {
+    let ctx = TestContext::new().await;
+
+    let invalid_admin_email = serde_json::json!({
+        "name": "invalid-admin-email.com",
+        "primary_ns": "ns1.invalid-admin-email.com",
+        "admin_email": "admin@@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(invalid_admin_email))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let soa_mailbox_admin_email = serde_json::json!({
+        "name": "soa-mailbox.com",
+        "primary_ns": "ns1.soa-mailbox.com",
+        "admin_email": "hostmaster.soa-mailbox.com.",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(soa_mailbox_admin_email))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_zone_create_validation_and_normalization() {
+    let ctx = TestContext::new().await;
+
+    let create_zone_request = serde_json::json!({
+        "name": " Test.Example.Com. ",
+        "primary_ns": "NS1.Test.Example.Com.",
+        "admin_email": "Host.Master@Example.Com.",
+        "ttl": 3600
+    });
+    let (status, body) = ctx
+        .make_request("POST", "/zones", Some(create_zone_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["zone"]["name"], "test.example.com");
+    assert_eq!(body["zone"]["primary_ns"], "ns1.test.example.com");
+    assert_eq!(body["zone"]["admin_email"], "Host.Master@example.com");
+
+    let duplicate_zone_request = serde_json::json!({
+        "name": "test.example.com.",
+        "primary_ns": "ns2.test.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(duplicate_zone_request))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let child_zone_request = serde_json::json!({
+        "name": "child.test.example.com",
+        "primary_ns": "ns1.child.test.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(child_zone_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let apex_primary_ns_request = serde_json::json!({
+        "name": "apex-ns.example.com",
+        "primary_ns": "apex-ns.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 604800
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(apex_primary_ns_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn test_zone_create_rejects_invalid_zone_primary_ns_and_ttl() {
+    let ctx = TestContext::new().await;
+
+    let invalid_zone_name = serde_json::json!({
+        "name": "*.example.com",
+        "primary_ns": "ns1.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(invalid_zone_name))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let root_zone = serde_json::json!({
+        "name": ".",
+        "primary_ns": "ns.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx.make_request("POST", "/zones", Some(root_zone)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let underscore_zone = serde_json::json!({
+        "name": "_tcp.example.com",
+        "primary_ns": "ns._tcp.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(underscore_zone))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let empty_label_zone = serde_json::json!({
+        "name": "test..example.com",
+        "primary_ns": "ns.test.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(empty_label_zone))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let hyphen_edge_zone = serde_json::json!({
+        "name": "-test.example.com",
+        "primary_ns": "ns.-test.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(hyphen_edge_zone))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let out_of_bailiwick_ns = serde_json::json!({
+        "name": "bailiwick.example.com",
+        "primary_ns": "ns.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(out_of_bailiwick_ns))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let suffix_boundary_ns = serde_json::json!({
+        "name": "test.example.com",
+        "primary_ns": "badtest.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/zones", Some(suffix_boundary_ns))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let low_ttl = serde_json::json!({
+        "name": "low-ttl.example.com",
+        "primary_ns": "ns.low-ttl.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 0
+    });
+    let (status, _) = ctx.make_request("POST", "/zones", Some(low_ttl)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let high_ttl = serde_json::json!({
+        "name": "high-ttl.example.com",
+        "primary_ns": "ns.high-ttl.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 604801
+    });
+    let (status, _) = ctx.make_request("POST", "/zones", Some(high_ttl)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

@@ -1,0 +1,9 @@
+target
+.git
+.github
+charts
+docs
+packaging
+public
+bindizr.db
+*.log

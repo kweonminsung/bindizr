@@ -1,6 +1,6 @@
 use crate::{
     config,
-    socket::dto::{DaemonResponse, DaemonStatusResponse},
+    socket::types::{DaemonResponse, DaemonStatusResponse},
 };
 use std::process;
 

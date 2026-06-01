@@ -10,7 +10,7 @@ keywords.workspace = true
 
 [dependencies]
 bindizr-core = { path = "../bindizr-core" }
-bindizr-db = { path = "../bindizr-db" }
+bindizr-service = { path = "../bindizr-service" }
 base64.workspace = true
 chrono.workspace = true
 domain.workspace = true

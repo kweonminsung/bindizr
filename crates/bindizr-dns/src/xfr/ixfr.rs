@@ -238,7 +238,7 @@ async fn send_ixfr_response(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
     query_id: u16,
-    zone: &crate::database::model::zone::Zone,
+    zone: &crate::model::zone::Zone,
     client_serial: u32,
     changes: &[delta::ZoneChange],
     snapshots_by_serial: &HashMap<u32, delta::ZoneSnapshot>,

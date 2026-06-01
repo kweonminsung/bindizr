@@ -2,7 +2,7 @@ use crate::{
     log_debug,
     socket::{
         client::DaemonSocketClient,
-        dto::{DaemonCommandKind, DaemonStatusResponse},
+        types::{DaemonCommandKind, DaemonStatusResponse},
     },
 };
 

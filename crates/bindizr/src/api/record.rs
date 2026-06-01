@@ -1,10 +1,10 @@
 use crate::api::{
-    dto::{
+    error::ApiError,
+    middleware::body_parser::JsonBody,
+    types::{
         CreateRecordRequest, ErrorResponse, GetRecordResponse, MessageResponse, RecordListResponse,
         RecordResponse, UpdateRecordRequest,
     },
-    error::ApiError,
-    middleware::body_parser::JsonBody,
 };
 use crate::service::record::RecordService;
 use axum::{
@@ -47,15 +47,15 @@ impl RecordApi {
 pub(crate) async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl IntoResponse {
     let zone_name = query.zone_name;
 
-    let raw_records = match RecordService::list(zone_name).await {
+    let raw_records = match RecordService::list_with_zone(zone_name).await {
         Ok(records) => records,
         Err(err) => return ApiError::from(err).into_response(),
     };
 
     let records = raw_records
         .iter()
-        .map(GetRecordResponse::from_record)
-        .collect::<Vec<GetRecordResponse>>();
+        .map(GetRecordResponse::from_record_with_zone)
+        .collect::<Vec<_>>();
 
     let json_body = json!({ "records": records });
     (StatusCode::OK, Json(json_body)).into_response()
@@ -77,12 +77,12 @@ pub(crate) async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl In
         )
 )]
 pub(crate) async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
-    let raw_record = match RecordService::get_by_id(params.record_id).await {
+    let raw_record = match RecordService::get_by_id_with_zone(params.record_id).await {
         Ok(record) => record,
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let record = GetRecordResponse::from_record(&raw_record);
+    let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
     (StatusCode::OK, Json(json_body)).into_response()
@@ -110,7 +110,7 @@ pub(crate) async fn create_record(
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let record = GetRecordResponse::from_record(&raw_record);
+    let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
     (StatusCode::CREATED, Json(json_body)).into_response()
@@ -143,7 +143,7 @@ pub(crate) async fn update_record(
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let record = GetRecordResponse::from_record(&raw_record);
+    let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
     (StatusCode::OK, Json(json_body)).into_response()

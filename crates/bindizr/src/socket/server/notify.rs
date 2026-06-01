@@ -1,5 +1,5 @@
 use crate::dns;
-use crate::socket::dto::DaemonResponse;
+use crate::socket::types::DaemonResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 

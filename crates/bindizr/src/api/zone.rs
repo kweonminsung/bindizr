@@ -1,10 +1,10 @@
 use crate::api::{
-    dto::{
+    error::ApiError,
+    middleware::body_parser::JsonBody,
+    types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, MessageResponse,
         ZoneDetailResponse, ZoneListResponse, ZoneResponse,
     },
-    error::ApiError,
-    middleware::body_parser::JsonBody,
 };
 use crate::service::{record::RecordService, zone::ZoneService};
 use axum::{
@@ -92,7 +92,7 @@ pub(crate) async fn get_zone(
     };
     let records = raw_records
         .iter()
-        .map(GetRecordResponse::from_record)
+        .map(|record| GetRecordResponse::from_record_and_zone_name(record, &raw_zone.name))
         .collect::<Vec<GetRecordResponse>>();
 
     let zone = GetZoneResponse::from_zone(&raw_zone);

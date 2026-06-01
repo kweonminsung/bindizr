@@ -1,0 +1,12 @@
+{{- if and .Values.mysql.enabled .Values.postgresql.enabled }}
+{{- fail "Enable only one bundled database: mysql.enabled or postgresql.enabled" }}
+{{- end }}
+{{- if and .Values.mysql.enabled (ne .Values.bindizr.database.type "mysql") }}
+{{- fail "Set bindizr.database.type=mysql when mysql.enabled=true" }}
+{{- end }}
+{{- if and .Values.postgresql.enabled (ne .Values.bindizr.database.type "postgresql") }}
+{{- fail "Set bindizr.database.type=postgresql when postgresql.enabled=true" }}
+{{- end }}
+{{- if and (eq .Values.bindizr.database.type "sqlite") (gt (.Values.bindizr.replicas | int) 1) }}
+{{- fail "Set bindizr.replicas=1 when bindizr.database.type=sqlite" }}
+{{- end }}

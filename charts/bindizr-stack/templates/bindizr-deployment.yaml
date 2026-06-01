@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bindizr
+spec:
+  {{- if and (eq .Values.bindizr.database.type "sqlite") .Values.bindizr.database.sqlite.persistence.enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  replicas: {{ .Values.bindizr.replicas }}
+  selector:
+    matchLabels:
+      {{- include "bindizr-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: bindizr
+  template:
+    metadata:
+      labels:
+        {{- include "bindizr-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bindizr
+      {{- with .Values.bindizr.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "bindizr-stack.serviceAccountName" . }}
+      {{- with .Values.bindizr.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: bindizr
+          image: "{{ .Values.bindizr.image.repository }}:{{ .Values.bindizr.image.tag }}"
+          imagePullPolicy: {{ .Values.bindizr.image.pullPolicy }}
+          command:
+            - bindizr
+            - start
+            - --config
+            - /etc/bindizr-template/bindizr.conf.toml
+          ports:
+            - name: api
+              containerPort: {{ .Values.bindizr.api.port }}
+              protocol: TCP
+            - name: dns-tcp
+              containerPort: {{ .Values.bindizr.dns.port }}
+              protocol: TCP
+            - name: dns-udp
+              containerPort: {{ .Values.bindizr.dns.port }}
+              protocol: UDP
+          env:
+            - name: BINDIZR_LISTEN_ADDR
+              value: "0.0.0.0"
+            - name: BINDIZR_API_PORT
+              value: {{ .Values.bindizr.api.port | quote }}
+            - name: BINDIZR_API_REQUIRE_AUTHENTICATION
+              value: {{ .Values.bindizr.api.requireAuthentication | quote }}
+            - name: BINDIZR_DATABASE_TYPE
+              value: {{ .Values.bindizr.database.type | quote }}
+            {{- if ne .Values.bindizr.database.type "sqlite" }}
+            - name: BINDIZR_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindizr-stack.databaseSecretName" . }}
+                  key: {{ .Values.bindizr.database.secretKey }}
+            {{- else }}
+            - name: BINDIZR_SQLITE_FILE_PATH
+              value: {{ .Values.bindizr.database.sqlite.filePath | quote }}
+            {{- end }}
+            - name: BINDIZR_DNS_PORT
+              value: {{ .Values.bindizr.dns.port | quote }}
+            - name: BINDIZR_SECONDARY_ADDRS
+              value: "{{- $fullname := include "bindizr-stack.fullname" . -}}{{- $headless := printf "%s-bind9-headless" $fullname -}}{{- range $i, $_ := until (.Values.bind9.replicas | int) -}}{{- if $i }},{{ end -}}{{ printf "%s-bind9-%d.%s:53" $fullname $i $headless }}{{- end }}"
+            - name: BINDIZR_NSUPDATE_TSIG_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindizr-stack.tsigSecretName" . }}
+                  key: {{ .Values.tsig.keyName }}
+                  optional: true
+            - name: BINDIZR_LOG_LEVEL
+              value: {{ .Values.bindizr.logging.level | quote }}
+          {{- with .Values.bindizr.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.bindizr.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config-template
+              mountPath: /etc/bindizr-template
+              readOnly: true
+            {{- if eq .Values.bindizr.database.type "sqlite" }}
+            - name: data
+              mountPath: /var/lib/bindizr
+            {{- end }}
+      volumes:
+        - name: config-template
+          configMap:
+            name: {{ include "bindizr-stack.fullname" . }}-config
+        {{- if eq .Values.bindizr.database.type "sqlite" }}
+        - name: data
+          {{ if .Values.bindizr.database.sqlite.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "bindizr-stack.fullname" . }}-sqlite
+          {{ else }}
+          emptyDir: {}
+          {{ end }}
+        {{- end }}
+      {{- with .Values.bindizr.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bindizr.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bindizr.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

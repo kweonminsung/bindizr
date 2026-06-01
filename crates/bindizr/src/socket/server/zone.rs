@@ -1,6 +1,6 @@
-use crate::api::dto::{CreateZoneRequest, GetZoneResponse};
+use crate::api::types::{CreateZoneRequest, GetZoneResponse};
 use crate::service::zone::ZoneService;
-use crate::socket::dto::DaemonResponse;
+use crate::socket::types::DaemonResponse;
 use serde_json::json;
 
 pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {

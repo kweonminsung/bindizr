@@ -3,7 +3,7 @@ use utoipa::{
     openapi::security::{Http, HttpAuthScheme, SecurityScheme},
 };
 
-use super::dto::{
+use super::types::{
     CreateRecordRequest, CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse,
     MessageResponse, RecordListResponse, RecordResponse, RecordValueRequest, UpdateRecordRequest,
     ZoneDetailResponse, ZoneListResponse, ZoneResponse,

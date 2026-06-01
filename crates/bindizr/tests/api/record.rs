@@ -1,6 +1,6 @@
 use crate::common::TestContext;
 use axum::http::StatusCode;
-use bindizr::{database::get_record_repository, database::model::record::RecordType, dns};
+use bindizr::{database::get_record_repository, dns, model::record::RecordType};
 
 #[tokio::test]
 async fn test_record_crud_operations() {
@@ -29,7 +29,7 @@ async fn test_record_crud_operations() {
     let record_name = body["record"]["name"].as_str().unwrap();
     let record_type = body["record"]["record_type"].as_str().unwrap();
     let record_id = body["record"]["id"].as_i64().unwrap();
-    assert_eq!(record_name, "api");
+    assert_eq!(record_name, "api.example.com.");
     assert_eq!(record_type, "A");
 
     // Test GET /records/{record_id}
@@ -37,7 +37,7 @@ async fn test_record_crud_operations() {
         .make_request("GET", &format!("/records/{}", record_id), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["record"]["name"], "api");
+    assert_eq!(body["record"]["name"], "api.example.com.");
 
     // Test POST /records with same name and same type (should succeed)
     let duplicate_record_request = serde_json::json!({
@@ -89,7 +89,7 @@ async fn test_record_crud_operations() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let updated_name = body["record"]["name"].as_str().unwrap();
-    assert_eq!(updated_name, "api-updated");
+    assert_eq!(updated_name, "api-updated.example.com.");
     assert_eq!(body["record"]["value"], "192.168.1.202");
 
     // Test DELETE /records/{record_id}
@@ -178,7 +178,9 @@ async fn test_single_record_operations_are_scoped_by_zone() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|record| record["name"] == "shared" && record["value"] == "192.0.2.10")
+            .any(
+                |record| record["name"] == "shared.example.com." && record["value"] == "192.0.2.10"
+            )
     );
 
     let (status, _) = ctx
@@ -224,6 +226,87 @@ async fn test_record_value_matching_is_case_sensitive() {
         dns::txt::decode_raw_txt_value(&record.value),
         Some(dns::txt::DecodedTxtValue::String("Token=abc".to_string()))
     );
+}
+
+#[tokio::test]
+async fn test_record_owner_name_normalization_and_bailiwick_validation() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+
+    let create_record_request = serde_json::json!({
+        "name": "a1",
+        "record_type": "A",
+        "value": "127.0.0.1",
+        "ttl": 1800,
+        "zone_name": zone.name
+    });
+    let (status, body) = ctx
+        .make_request("POST", "/records", Some(create_record_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["record"]["name"], "a1.example.com.");
+
+    let in_bailiwick_duplicate = serde_json::json!({
+        "name": "a1.example.com.",
+        "record_type": "A",
+        "value": "127.0.0.1",
+        "ttl": 1800,
+        "zone_name": zone.name
+    });
+    let (status, _) = ctx
+        .make_request("POST", "/records", Some(in_bailiwick_duplicate))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let in_bailiwick_different_value = serde_json::json!({
+        "name": "a1.example.com",
+        "record_type": "A",
+        "value": "127.0.0.2",
+        "ttl": 1800,
+        "zone_name": zone.name
+    });
+    let (status, body) = ctx
+        .make_request("POST", "/records", Some(in_bailiwick_different_value))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["record"]["name"], "a1.example.com.");
+
+    for name in [
+        "a1.",
+        "example.net.",
+        "a1.example.net.",
+        "other.com.",
+        "a1.other.com.",
+        "badexample.com.",
+    ] {
+        let out_of_bailiwick = serde_json::json!({
+            "name": name,
+            "record_type": "A",
+            "value": "127.0.0.3",
+            "ttl": 1800,
+            "zone_name": zone.name
+        });
+        let (status, _) = ctx
+            .make_request("POST", "/records", Some(out_of_bailiwick))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{name} should be rejected");
+    }
+
+    let update_out_of_bailiwick = serde_json::json!({
+        "name": "a1.",
+        "record_type": "A",
+        "value": "127.0.0.4",
+        "ttl": 1800
+    });
+    let record_id = body["record"]["id"].as_i64().unwrap();
+    let (status, _) = ctx
+        .make_request(
+            "PUT",
+            &format!("/records/{}", record_id),
+            Some(update_out_of_bailiwick),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -357,7 +440,13 @@ async fn test_multiple_record_types() {
             .await;
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(body["record"]["record_type"], record_type);
-        assert_eq!(body["record"]["value"], value);
+        let expected_value = match record_type {
+            "MX" => "10 mail.example.com.",
+            "SRV" => "10 5 5060 sip.example.com.",
+            "CNAME" => "www.example.com.",
+            _ => value,
+        };
+        assert_eq!(body["record"]["value"], expected_value);
 
         if let Some(expected_priority) = priority {
             assert_eq!(body["record"]["priority"], expected_priority);
