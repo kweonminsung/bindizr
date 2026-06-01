@@ -71,6 +71,14 @@ pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             last_used_at DATETIME
         );
         "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS catalog_zone_state (
+            name VARCHAR(255) PRIMARY KEY,
+            signature VARCHAR(32) NOT NULL,
+            serial INT NOT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        );
+        "#,
     ]
 }
 
@@ -149,6 +157,14 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             last_used_at TIMESTAMP
         );
         "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS catalog_zone_state (
+            name VARCHAR(255) PRIMARY KEY,
+            signature VARCHAR(32) NOT NULL,
+            serial INTEGER NOT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
     ]
 }
 
@@ -225,6 +241,14 @@ pub(super) fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             expires_at DATETIME,
             last_used_at DATETIME
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS catalog_zone_state (
+            name TEXT PRIMARY KEY,
+            signature TEXT NOT NULL,
+            serial INTEGER NOT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
     ]

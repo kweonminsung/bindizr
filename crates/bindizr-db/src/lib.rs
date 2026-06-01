@@ -215,3 +215,8 @@ pub fn get_zone_snapshot_repository() -> Box<dyn repository::ZoneSnapshotReposit
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_snapshot_repository(pool)
 }
+
+pub fn get_catalog_zone_state_repository() -> Box<dyn repository::CatalogZoneStateRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_catalog_zone_state_repository(pool)
+}

@@ -1,7 +1,7 @@
 use crate::{
     database::{
-        get_api_token_repository, get_record_repository, get_zone_change_repository,
-        get_zone_repository, get_zone_snapshot_repository,
+        get_api_token_repository, get_catalog_zone_state_repository, get_record_repository,
+        get_zone_change_repository, get_zone_repository, get_zone_snapshot_repository,
         model::{
             api_token::ApiToken,
             record::{Record, RecordType, RecordWithZone},
@@ -93,6 +93,18 @@ impl RepositoryService {
             .get_all()
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load zones: {}", e)))
+    }
+
+    pub(super) async fn update_catalog_serial_for_signature(
+        name: &str,
+        signature: &str,
+        base_serial: i32,
+    ) -> Result<i32, ServiceError> {
+        get_catalog_zone_state_repository()
+            .update_serial_for_signature(name, signature, base_serial)
+            .await
+            .map(|state| state.serial)
+            .map_err(|e| ServiceError::Internal(format!("failed to update catalog state: {}", e)))
     }
 
     pub(super) async fn update_zone(zone: Zone) -> Result<Zone, ServiceError> {

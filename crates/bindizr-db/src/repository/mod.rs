@@ -4,6 +4,7 @@ pub mod sqlite;
 
 use super::model::{
     api_token::ApiToken,
+    catalog_zone_state::CatalogZoneState,
     record::{Record, RecordType, RecordWithZone},
     zone::Zone,
     zone_change::ZoneChange,
@@ -207,6 +208,16 @@ pub trait ApiTokenRepository: Send + Sync {
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
+#[async_trait]
+pub trait CatalogZoneStateRepository: Send + Sync {
+    async fn update_serial_for_signature(
+        &self,
+        name: &str,
+        signature: &str,
+        base_serial: i32,
+    ) -> Result<CatalogZoneState, DatabaseError>;
+}
+
 // Repository Factory
 pub struct RepositoryFactory;
 
@@ -277,6 +288,22 @@ impl RepositoryFactory {
             ),
             DatabasePool::SQLite(sqlite_pool) => Box::new(
                 sqlite::SqliteZoneSnapshotRepository::new(sqlite_pool.clone()),
+            ),
+        }
+    }
+
+    pub fn create_catalog_zone_state_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn CatalogZoneStateRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => Box::new(
+                mysql::MySqlCatalogZoneStateRepository::new(mysql_pool.clone()),
+            ),
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresCatalogZoneStateRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteCatalogZoneStateRepository::new(sqlite_pool.clone()),
             ),
         }
     }

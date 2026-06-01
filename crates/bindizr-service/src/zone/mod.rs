@@ -1,3 +1,4 @@
+mod catalog_zone_state;
 mod create;
 mod delete;
 mod get;
