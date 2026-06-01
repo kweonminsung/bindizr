@@ -17,14 +17,12 @@ RUN apt-get update \
     && chown -R bindizr:bindizr /etc/bindizr /run/bindizr /var/lib/bindizr
 
 COPY --from=builder /usr/src/bindizr/target/release/bindizr /usr/local/bin/bindizr
-COPY docker/entrypoint.sh /usr/local/bin/bindizr-entrypoint
+COPY --chown=bindizr:bindizr docker/bindizr.conf.toml /etc/bindizr/bindizr.conf.toml
 
-RUN setcap cap_net_bind_service=+ep /usr/local/bin/bindizr \
-    && chmod +x /usr/local/bin/bindizr-entrypoint
+RUN setcap cap_net_bind_service=+ep /usr/local/bin/bindizr
 
 USER bindizr
 
 EXPOSE 8000/tcp 53/tcp 53/udp
 
-ENTRYPOINT ["bindizr-entrypoint"]
 CMD ["bindizr", "start"]

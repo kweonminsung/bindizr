@@ -1,9 +1,3 @@
-#!/bin/sh
-set -eu
-
-CONFIG_PATH="${BINDIZR_CONFIG_PATH:-/etc/bindizr/bindizr.conf.toml}"
-
-cat > "$CONFIG_PATH" <<'EOF'
 listen_addr = "0.0.0.0"
 
 [api]
@@ -29,6 +23,3 @@ nsupdate_tsig_key = ""
 
 [logging]
 log_level = "info"
-EOF
-
-exec "$@"
