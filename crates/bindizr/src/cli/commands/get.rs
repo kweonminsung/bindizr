@@ -1,6 +1,8 @@
 use crate::cli::output::{OutputFormat, RecordRow, ZoneRow, print_output_with_table};
 use crate::socket::client::DaemonSocketClient;
 use crate::socket::types::DaemonCommandKind;
+use bindizr_core::dns::name::to_fqdn_lowercase;
+use bindizr_core::model::record::RecordType;
 use clap::Subcommand;
 use serde_json::json;
 
@@ -347,15 +349,8 @@ fn matches_dns_string(item: &serde_json::Value, key: &str, expected: Option<&str
     expected.is_none_or(|expected| {
         item.get(key)
             .and_then(|value| value.as_str())
-            .is_some_and(|actual| to_fqdn_lower(actual) == to_fqdn_lower(expected))
+            .is_some_and(|actual| to_fqdn_lowercase(actual) == to_fqdn_lowercase(expected))
     })
-}
-
-fn to_fqdn_lower(value: &str) -> String {
-    format!(
-        "{}.",
-        value.trim().trim_end_matches('.').to_ascii_lowercase()
-    )
 }
 
 fn matches_record_value(item: &serde_json::Value, expected: Option<&str>) -> bool {
@@ -420,10 +415,9 @@ fn record_value_text(item: &serde_json::Value) -> Option<String> {
 }
 
 fn is_name_like_record_type(record_type: &str) -> bool {
-    matches!(
-        record_type.to_ascii_uppercase().as_str(),
-        "CNAME" | "NS" | "PTR" | "MX" | "SRV"
-    )
+    record_type
+        .parse::<RecordType>()
+        .is_ok_and(|record_type| record_type.is_name_like_value())
 }
 
 fn values_match(actual: &str, expected: &str, ignore_case: bool) -> bool {

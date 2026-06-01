@@ -197,7 +197,7 @@ impl RecordRepository for MySqlRecordRepository {
         match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value_filter = if is_name_like_value(record_type) {
+        let value_filter = if record_type.is_name_like_value() {
             "AND (? IS NULL OR BINARY LOWER(value) = BINARY LOWER(?))"
         } else {
             "AND (? IS NULL OR BINARY value = BINARY ?)"
@@ -249,7 +249,7 @@ impl RecordRepository for MySqlRecordRepository {
                 ));
             }
         };
-        let value_filter = if is_name_like_value(record_type) {
+        let value_filter = if record_type.is_name_like_value() {
             "AND (? IS NULL OR BINARY LOWER(value) = BINARY LOWER(?))"
         } else {
             "AND (? IS NULL OR BINARY value = BINARY ?)"
@@ -468,13 +468,6 @@ impl RecordRepository for MySqlRecordRepository {
             .await?;
         Ok(())
     }
-}
-
-fn is_name_like_value(record_type: &RecordType) -> bool {
-    matches!(
-        record_type,
-        RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX
-    )
 }
 
 fn normalize_partial_value(value: &str) -> String {

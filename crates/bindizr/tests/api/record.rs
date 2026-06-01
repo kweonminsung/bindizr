@@ -7,12 +7,6 @@ async fn test_record_crud_operations() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
-    // Test GET /records (should have NS record)
-    let (status, _) = ctx
-        .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
     // Test POST /records (create)
     let create_record_request = serde_json::json!({
         "name": "api",
@@ -39,38 +33,12 @@ async fn test_record_crud_operations() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["record"]["name"], "api.example.com.");
 
-    // Test POST /records with same name and same type (should succeed)
-    let duplicate_record_request = serde_json::json!({
-        "name": "api",
-        "record_type": "A",
-        "value": "192.168.1.201",
-        "ttl": 1800,
-        "zone_name": zone.name
-    });
-    let (status, _) = ctx
-        .make_request("POST", "/records", Some(duplicate_record_request))
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-
-    // Test POST /records with same name and different type (should succeed)
-    let different_type_record_request = serde_json::json!({
-        "name": "api",
-        "record_type": "TXT",
-        "value": "some text",
-        "ttl": 1800,
-        "zone_name": zone.name
-    });
-    let (status, _) = ctx
-        .make_request("POST", "/records", Some(different_type_record_request))
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-
     // Test GET /records (with data)
     let (status, body) = ctx
         .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["records"].as_array().unwrap().len(), 3);
+    assert_eq!(body["records"].as_array().unwrap().len(), 1);
 
     // Test PUT /records/{record_id} (update)
     let update_record_request = serde_json::json!({

@@ -199,7 +199,7 @@ impl RecordRepository for PostgresRecordRepository {
         match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value_filter = if is_name_like_value(record_type) {
+        let value_filter = if record_type.is_name_like_value() {
             "AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))"
         } else {
             "AND ($5::TEXT IS NULL OR value = $6)"
@@ -251,7 +251,7 @@ impl RecordRepository for PostgresRecordRepository {
                 ));
             }
         };
-        let value_filter = if is_name_like_value(record_type) {
+        let value_filter = if record_type.is_name_like_value() {
             "AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))"
         } else {
             "AND ($5::TEXT IS NULL OR value = $6)"
@@ -470,13 +470,6 @@ impl RecordRepository for PostgresRecordRepository {
             .await?;
         Ok(())
     }
-}
-
-fn is_name_like_value(record_type: &RecordType) -> bool {
-    matches!(
-        record_type,
-        RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX
-    )
 }
 
 fn normalize_partial_value(value: &str) -> String {

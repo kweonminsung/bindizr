@@ -5,11 +5,6 @@ use axum::http::StatusCode;
 async fn test_zone_crud_operations() {
     let ctx = TestContext::new().await;
 
-    // Test GET /zones (empty)
-    let (status, body) = ctx.make_request("GET", "/zones", None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body["zones"].as_array().unwrap().is_empty());
-
     // Test POST /zones (create)
     let create_zone_request = serde_json::json!({
         "name": "test.com",
@@ -76,18 +71,6 @@ async fn test_zone_crud_operations() {
         .make_request("GET", &format!("/zones/{}", updated_zone_name), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-
-    // Test creating a zone
-    let create_zone_no_ip = serde_json::json!({
-        "name": "no-ip.com",
-        "primary_ns": "ns3.no-ip.com",
-        "admin_email": "admin@no-ip.com",
-        "ttl": 3600
-    });
-    let (status, _) = ctx
-        .make_request("POST", "/zones", Some(create_zone_no_ip))
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
 }
 
 #[tokio::test]

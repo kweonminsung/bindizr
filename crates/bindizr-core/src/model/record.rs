@@ -116,4 +116,11 @@ impl RecordType {
             RecordType::PTR => "PTR",
         }
     }
+
+    pub fn is_name_like_value(&self) -> bool {
+        matches!(
+            self,
+            RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX | RecordType::SRV
+        )
+    }
 }

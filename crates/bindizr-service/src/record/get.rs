@@ -6,7 +6,7 @@ use crate::{
     repository::RepositoryService,
     types::GetRecordsFilter,
 };
-use bindizr_core::dns::txt;
+use bindizr_core::dns::record::{display_record_owner_name, display_record_value};
 use bindizr_db::repository::RecordFilter;
 
 use super::RecordService;
@@ -262,7 +262,7 @@ fn record_matches_display_filters(
 
 fn matches_record_value(actual: &str, record_type: &RecordType, expected: Option<&str>) -> bool {
     expected.is_none_or(|expected| {
-        if is_name_like_record_type(record_type) {
+        if record_type.is_name_like_value() {
             actual
                 .to_ascii_lowercase()
                 .contains(&expected.trim_end_matches('.').to_ascii_lowercase())
@@ -293,67 +293,4 @@ fn matches_record_search(
             .iter()
             .any(|value| value.to_ascii_lowercase().contains(&search))
     })
-}
-
-fn display_record_owner_name(stored_name: &str, zone_name: &str) -> String {
-    let zone_fqdn = to_fqdn_lower(zone_name);
-    let trimmed = stored_name.trim();
-
-    if trimmed == "@" {
-        return zone_fqdn;
-    }
-
-    if trimmed.ends_with('.') {
-        return to_fqdn_lower(trimmed);
-    }
-
-    let candidate = to_fqdn_lower(trimmed);
-    if candidate == zone_fqdn || candidate.ends_with(&format!(".{}", zone_fqdn)) {
-        candidate
-    } else {
-        to_fqdn_lower(&format!("{}.{}", trimmed, zone_fqdn))
-    }
-}
-
-fn display_record_value(value: &str, record_type: &RecordType) -> String {
-    if *record_type == RecordType::TXT {
-        return match txt::decode_raw_txt_value(value) {
-            Some(txt::DecodedTxtValue::String(value)) => value,
-            Some(txt::DecodedTxtValue::Segments(segments)) => segments.join(""),
-            None => value.to_string(),
-        };
-    }
-
-    match record_type {
-        RecordType::CNAME | RecordType::NS | RecordType::PTR => to_fqdn_lower(value),
-        RecordType::MX | RecordType::SRV => display_last_name_field(value),
-        _ => value.to_string(),
-    }
-}
-
-fn display_last_name_field(value: &str) -> String {
-    let mut fields = value
-        .split_whitespace()
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    let Some(last) = fields.pop() else {
-        return value.to_string();
-    };
-
-    fields.push(to_fqdn_lower(&last));
-    fields.join(" ")
-}
-
-fn is_name_like_record_type(record_type: &RecordType) -> bool {
-    matches!(
-        record_type,
-        RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX | RecordType::SRV
-    )
-}
-
-fn to_fqdn_lower(value: &str) -> String {
-    format!(
-        "{}.",
-        value.trim().trim_end_matches('.').to_ascii_lowercase()
-    )
 }
