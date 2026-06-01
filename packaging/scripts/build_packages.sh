@@ -37,8 +37,8 @@ fpm -s dir -t deb -n bindizr -v "$VERSION" --iteration "$RELEASE" \
     --license "Apache-2.0" \
     --description "DNS Synchronization Service for BIND9" \
     --config-files /etc/bindizr/bindizr.conf.toml \
-    --after-install scripts/postinstall.sh \
-    --after-remove scripts/postremove.sh \
+    --after-install packaging/scripts/postinstall.sh \
+    --after-remove packaging/scripts/postremove.sh \
     -C "$TMP_DIR" \
     usr/bin/bindizr usr/lib/systemd/system/bindizr.service etc/bindizr/bindizr.conf.toml usr/share/doc/bindizr/README.md usr/share/licenses/bindizr/LICENSE
 
@@ -48,8 +48,8 @@ fpm -s dir -t rpm -n bindizr -v "$VERSION" --iteration "$RELEASE" \
     --license "Apache-2.0" \
     --description "DNS Synchronization Service for BIND9" \
     --config-files /etc/bindizr/bindizr.conf.toml \
-    --after-install scripts/postinstall.sh \
-    --after-remove scripts/postremove.sh \
+    --after-install packaging/scripts/postinstall.sh \
+    --after-remove packaging/scripts/postremove.sh \
     -C "$TMP_DIR" \
     usr/bin/bindizr usr/lib/systemd/system/bindizr.service etc/bindizr/bindizr.conf.toml usr/share/doc/bindizr/README.md usr/share/licenses/bindizr/LICENSE
 

@@ -91,7 +91,7 @@ This script automatically detects your BIND configuration directory and configur
 
 ```bash
 # Download and run the setup script
-$ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/scripts/setup_bind.sh | sudo bash
+$ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/packaging/scripts/setup_bind.sh | sudo bash
 
 # Restart bind service
 $ sudo systemctl restart bind9  # For Debian-based systems
