@@ -7,6 +7,7 @@ use crate::{
     types::GetRecordsFilter,
 };
 use bindizr_core::dns::txt;
+use bindizr_db::repository::RecordFilter;
 
 use super::RecordService;
 
@@ -130,14 +131,54 @@ impl RecordService {
         }
     }
 
-    pub async fn list_with_zone_filtered(
+    pub async fn list_with_zone_by_filter(
         filter: GetRecordsFilter,
     ) -> Result<Vec<RecordWithZone>, ServiceError> {
-        let records = Self::list_with_zone(filter.resolved_zone_name()).await?;
-        Ok(records
-            .into_iter()
-            .filter(|record| record_matches_filter(record, &filter))
-            .collect())
+        let zone_name = filter.resolved_zone_name();
+        let value_filter = filter.value.clone();
+        let search_filter = filter.search.clone();
+        if let Some(name) = zone_name.as_deref() {
+            match RepositoryService::get_zone_by_name(name).await {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return Err(ServiceError::BadRequest(format!(
+                        "Zone with name '{}' not found",
+                        name
+                    )));
+                }
+                Err(e) => {
+                    log_error!("Failed to fetch zone: {}", e);
+                    return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
+                }
+            }
+        }
+
+        let mut records = RepositoryService::get_records_by_filter_with_zone(RecordFilter {
+            zone_name,
+            name: filter.name,
+            record_type: filter.record_type,
+            value: filter.value,
+            ttl: filter.ttl,
+            min_ttl: filter.min_ttl,
+            max_ttl: filter.max_ttl,
+            priority: filter.priority,
+            min_priority: filter.min_priority,
+            max_priority: filter.max_priority,
+            search: filter.search,
+        })
+        .await?;
+
+        if value_filter.is_some() || search_filter.is_some() {
+            records.retain(|record| {
+                record_matches_display_filters(
+                    record,
+                    value_filter.as_deref(),
+                    search_filter.as_deref(),
+                )
+            });
+        }
+
+        Ok(records)
     }
 
     pub async fn get_by_id(record_id: i32) -> Result<Record, ServiceError> {
@@ -169,35 +210,38 @@ impl RecordService {
     }
 }
 
-fn record_matches_filter(record: &RecordWithZone, filter: &GetRecordsFilter) -> bool {
+fn record_matches_display_filters(
+    record: &RecordWithZone,
+    value_filter: Option<&str>,
+    search_filter: Option<&str>,
+) -> bool {
     let raw_record = record.record();
     let display_name = display_record_owner_name(&raw_record.name, &record.zone_name);
     let display_value = display_record_value(&raw_record.value, &raw_record.record_type);
 
-    matches_dns_string(&record.zone_name, filter.resolved_zone_name().as_deref())
-        && matches_record_name(&raw_record.name, &display_name, filter.name.as_deref())
-        && matches_string(
-            &raw_record.record_type.to_string(),
-            filter.record_type.as_deref(),
-        )
-        && matches_record_value(
-            &display_value,
-            &raw_record.record_type,
-            filter.value.as_deref(),
-        )
-        && matches_optional_i32(raw_record.ttl, filter.ttl)
-        && matches_optional_min(raw_record.ttl, filter.min_ttl)
-        && matches_optional_max(raw_record.ttl, filter.max_ttl)
-        && matches_optional_i32(raw_record.priority, filter.priority)
-        && matches_optional_min(raw_record.priority, filter.min_priority)
-        && matches_optional_max(raw_record.priority, filter.max_priority)
-        && matches_record_search(
-            &raw_record,
-            &record.zone_name,
-            &display_name,
-            &display_value,
-            filter.search.as_deref(),
-        )
+    matches_record_value(
+        &display_value,
+        &raw_record.record_type,
+        value_filter.map(str::trim),
+    ) && matches_record_search(
+        &raw_record,
+        &record.zone_name,
+        &display_name,
+        &display_value,
+        search_filter.map(str::trim),
+    )
+}
+
+fn matches_record_value(actual: &str, record_type: &RecordType, expected: Option<&str>) -> bool {
+    expected.is_none_or(|expected| {
+        if is_name_like_record_type(record_type) {
+            actual
+                .to_ascii_lowercase()
+                .contains(&expected.trim_end_matches('.').to_ascii_lowercase())
+        } else {
+            actual.contains(expected)
+        }
+    })
 }
 
 fn matches_record_search(
@@ -208,7 +252,7 @@ fn matches_record_search(
     search: Option<&str>,
 ) -> bool {
     search.is_none_or(|search| {
-        let search = search.trim().to_ascii_lowercase();
+        let search = search.trim_end_matches('.').to_ascii_lowercase();
         let record_type = record.record_type.to_string();
         !search.is_empty()
             && [
@@ -221,45 +265,6 @@ fn matches_record_search(
             .iter()
             .any(|value| value.to_ascii_lowercase().contains(&search))
     })
-}
-
-fn matches_record_name(raw_name: &str, display_name: &str, expected: Option<&str>) -> bool {
-    expected.is_none_or(|expected| {
-        raw_name.eq_ignore_ascii_case(expected.trim())
-            || to_fqdn_lower(display_name) == to_fqdn_lower(expected)
-    })
-}
-
-fn matches_record_value(actual: &str, record_type: &RecordType, expected: Option<&str>) -> bool {
-    expected.is_none_or(|expected| {
-        if is_name_like_record_type(record_type) {
-            actual
-                .to_ascii_lowercase()
-                .contains(&expected.trim().to_ascii_lowercase())
-        } else {
-            actual.contains(expected.trim())
-        }
-    })
-}
-
-fn matches_string(actual: &str, expected: Option<&str>) -> bool {
-    expected.is_none_or(|expected| actual.eq_ignore_ascii_case(expected.trim()))
-}
-
-fn matches_dns_string(actual: &str, expected: Option<&str>) -> bool {
-    expected.is_none_or(|expected| to_fqdn_lower(actual) == to_fqdn_lower(expected))
-}
-
-fn matches_optional_i32(actual: Option<i32>, expected: Option<i32>) -> bool {
-    expected.is_none_or(|expected| actual == Some(expected))
-}
-
-fn matches_optional_min(actual: Option<i32>, expected: Option<i32>) -> bool {
-    expected.is_none_or(|expected| actual.is_some_and(|actual| actual >= expected))
-}
-
-fn matches_optional_max(actual: Option<i32>, expected: Option<i32>) -> bool {
-    expected.is_none_or(|expected| actual.is_some_and(|actual| actual <= expected))
 }
 
 fn display_record_owner_name(stored_name: &str, zone_name: &str) -> String {

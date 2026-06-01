@@ -112,10 +112,23 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                 || max_ttl.is_some()
                 || serial.is_some()
                 || search.is_some();
+            let filter_payload = || {
+                json!({
+                    "name": name,
+                    "id": id,
+                    "primary_ns": primary_ns,
+                    "admin_email": admin_email,
+                    "ttl": ttl,
+                    "min_ttl": min_ttl,
+                    "max_ttl": max_ttl,
+                    "serial": serial,
+                    "search": search,
+                })
+            };
             let mut data = if let Some(name) = name.as_deref() {
                 if has_filters {
                     client
-                        .send_command(DaemonCommandKind::ListZones, None)
+                        .send_command(DaemonCommandKind::ListZones, Some(filter_payload()))
                         .await?
                         .data
                 } else {
@@ -126,7 +139,10 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                 }
             } else {
                 client
-                    .send_command(DaemonCommandKind::ListZones, None)
+                    .send_command(
+                        DaemonCommandKind::ListZones,
+                        has_filters.then(filter_payload),
+                    )
                     .await?
                     .data
             };
@@ -184,18 +200,30 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                 || min_priority.is_some()
                 || max_priority.is_some()
                 || search.is_some();
+            let filter_payload = || {
+                json!({
+                    "zone_name": zone,
+                    "name": name,
+                    "record_type": record_type,
+                    "value": value,
+                    "ttl": ttl,
+                    "min_ttl": min_ttl,
+                    "max_ttl": max_ttl,
+                    "priority": priority,
+                    "min_priority": min_priority,
+                    "max_priority": max_priority,
+                    "search": search,
+                })
+            };
 
             let mut data = if let Some(id) = id {
                 client
                     .send_command(DaemonCommandKind::GetRecord, Some(json!({ "id": id })))
                     .await?
                     .data
-            } else if let Some(zone_name) = zone.as_deref() {
+            } else if has_filters {
                 client
-                    .send_command(
-                        DaemonCommandKind::ListRecords,
-                        Some(json!({ "zone_name": zone_name })),
-                    )
+                    .send_command(DaemonCommandKind::ListRecords, Some(filter_payload()))
                     .await?
                     .data
             } else {

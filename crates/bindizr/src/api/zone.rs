@@ -53,7 +53,7 @@ impl ZoneApi {
         )
 )]
 pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoResponse {
-    match ZoneService::list_filtered(query).await {
+    match ZoneService::list_by_filter(query).await {
         Ok(zones) => {
             let zones = zones
                 .iter()

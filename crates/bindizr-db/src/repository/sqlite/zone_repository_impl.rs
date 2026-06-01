@@ -1,7 +1,7 @@
 use crate::error::DatabaseError;
 use crate::{
     model::zone::Zone,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneRepository},
+    repository::{RepositoryTx, RepositoryTxKind, ZoneFilter, ZoneRepository},
 };
 use async_trait::async_trait;
 use sqlx::{Pool, Sqlite};
@@ -155,6 +155,57 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(zones)
     }
 
+    async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+        let search = like_pattern(filter.search.as_deref());
+
+        let zones = sqlx::query_as::<_, Zone>(
+            r#"
+            SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at
+            FROM zones
+            WHERE (? IS NULL OR LOWER(name) = LOWER(?))
+              AND (? IS NULL OR id = ?)
+              AND (? IS NULL OR LOWER(primary_ns) = LOWER(?))
+              AND (? IS NULL OR LOWER(admin_email) = LOWER(?))
+              AND (? IS NULL OR ttl = ?)
+              AND (? IS NULL OR ttl >= ?)
+              AND (? IS NULL OR ttl <= ?)
+              AND (? IS NULL OR serial = ?)
+              AND (
+                    ? IS NULL
+                    OR LOWER(name) LIKE LOWER(?)
+                    OR LOWER(primary_ns) LIKE LOWER(?)
+                    OR LOWER(admin_email) LIKE LOWER(?)
+              )
+            ORDER BY name
+            "#,
+        )
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(filter.id)
+        .bind(filter.id)
+        .bind(&filter.primary_ns)
+        .bind(&filter.primary_ns)
+        .bind(&filter.admin_email)
+        .bind(&filter.admin_email)
+        .bind(filter.ttl)
+        .bind(filter.ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.serial)
+        .bind(filter.serial)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        Ok(zones)
+    }
+
     async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -247,4 +298,11 @@ impl ZoneRepository for SqliteZoneRepository {
             .await?;
         Ok(())
     }
+}
+
+fn like_pattern(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{}%", value))
 }

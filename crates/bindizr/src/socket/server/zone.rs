@@ -1,4 +1,4 @@
-use crate::api::types::{CreateZoneRequest, GetZoneResponse};
+use crate::api::types::{CreateZoneRequest, GetZoneResponse, GetZonesFilter};
 use crate::service::zone::ZoneService;
 use crate::socket::types::DaemonResponse;
 use serde_json::json;
@@ -21,8 +21,14 @@ pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse,
     }
 }
 
-pub(super) async fn list_zones() -> Result<DaemonResponse, String> {
-    match ZoneService::list().await {
+pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+    let filter = if data.is_null() {
+        GetZonesFilter::default()
+    } else {
+        serde_json::from_value(data.clone()).map_err(|e| format!("Invalid filter data: {}", e))?
+    };
+
+    match ZoneService::list_by_filter(filter).await {
         Ok(zones) => {
             let response: Vec<GetZoneResponse> =
                 zones.iter().map(GetZoneResponse::from_zone).collect();

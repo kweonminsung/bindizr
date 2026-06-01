@@ -1,7 +1,7 @@
 use crate::error::DatabaseError;
 use crate::{
     model::record::{Record, RecordType, RecordWithZone},
-    repository::{RecordRepository, RepositoryTx, RepositoryTxKind},
+    repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
 };
 use async_trait::async_trait;
 use sqlx::{AssertSqlSafe, MySql, Pool};
@@ -313,6 +313,79 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(records)
     }
 
+    async fn get_by_filter_with_zone(
+        &self,
+        filter: RecordFilter,
+    ) -> Result<Vec<RecordWithZone>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+        let value = filter.value.as_deref().map(normalize_partial_value);
+        let search = like_pattern(filter.search.as_deref());
+
+        let records = sqlx::query_as::<_, RecordWithZone>(
+            r#"
+            SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
+                   r.zone_id, z.name AS zone_name
+            FROM records r
+            INNER JOIN zones z ON z.id = r.zone_id
+            WHERE (? IS NULL OR LOWER(z.name) = LOWER(?))
+              AND (
+                    ? IS NULL
+                    OR LOWER(r.name) = LOWER(?)
+                    OR LOWER(CASE WHEN r.name = '@' THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) = LOWER(?)
+              )
+              AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
+              AND (? IS NULL OR LOCATE(?, BINARY r.value) > 0 OR r.record_type = 'TXT')
+              AND (? IS NULL OR r.ttl = ?)
+              AND (? IS NULL OR r.ttl >= ?)
+              AND (? IS NULL OR r.ttl <= ?)
+              AND (? IS NULL OR r.priority = ?)
+              AND (? IS NULL OR r.priority >= ?)
+              AND (? IS NULL OR r.priority <= ?)
+              AND (
+                    ? IS NULL
+                    OR LOWER(z.name) LIKE LOWER(?)
+                    OR LOWER(r.name) LIKE LOWER(?)
+                    OR LOWER(CASE WHEN r.name = '@' THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) LIKE LOWER(?)
+                    OR LOWER(r.record_type) LIKE LOWER(?)
+                    OR LOWER(r.value) LIKE LOWER(?)
+                    OR r.record_type = 'TXT'
+              )
+            ORDER BY r.name
+            "#,
+        )
+        .bind(&filter.zone_name)
+        .bind(&filter.zone_name)
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(&filter.record_type)
+        .bind(&filter.record_type)
+        .bind(&value)
+        .bind(&value)
+        .bind(filter.ttl)
+        .bind(filter.ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.priority)
+        .bind(filter.priority)
+        .bind(filter.min_priority)
+        .bind(filter.min_priority)
+        .bind(filter.max_priority)
+        .bind(filter.max_priority)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        Ok(records)
+    }
+
     async fn update(&self, record: Record) -> Result<Record, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -402,4 +475,15 @@ fn is_name_like_value(record_type: &RecordType) -> bool {
         record_type,
         RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX
     )
+}
+
+fn normalize_partial_value(value: &str) -> String {
+    value.trim().trim_end_matches('.').to_string()
+}
+
+fn like_pattern(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{}%", value.trim_end_matches('.')))
 }

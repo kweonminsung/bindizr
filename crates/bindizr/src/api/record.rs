@@ -55,7 +55,7 @@ impl RecordApi {
         )
 )]
 pub(crate) async fn get_records(Query(query): Query<GetRecordsFilter>) -> impl IntoResponse {
-    let raw_records = match RecordService::list_with_zone_filtered(query).await {
+    let raw_records = match RecordService::list_with_zone_by_filter(query).await {
         Ok(records) => records,
         Err(err) => return ApiError::from(err).into_response(),
     };
