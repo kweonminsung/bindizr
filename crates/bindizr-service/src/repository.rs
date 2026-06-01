@@ -100,11 +100,20 @@ impl RepositoryService {
         signature: &str,
         base_serial: i32,
     ) -> Result<i32, ServiceError> {
-        get_catalog_zone_state_repository()
-            .update_serial_for_signature(name, signature, base_serial)
-            .await
-            .map(|state| state.serial)
-            .map_err(|e| ServiceError::Internal(format!("failed to update catalog state: {}", e)))
+        let mut tx = Self::begin_tx("Failed to update catalog state").await?;
+
+        let apply_result = async {
+            get_catalog_zone_state_repository()
+                .update_serial_for_signature_tx(&mut tx, name, signature, base_serial)
+                .await
+                .map(|state| state.serial)
+                .map_err(|e| {
+                    ServiceError::Internal(format!("failed to update catalog state: {}", e))
+                })
+        }
+        .await;
+
+        Self::finish_tx(tx, apply_result, "Failed to update catalog state").await
     }
 
     pub(super) async fn update_zone(zone: Zone) -> Result<Zone, ServiceError> {

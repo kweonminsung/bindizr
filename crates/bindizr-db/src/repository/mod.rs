@@ -216,6 +216,13 @@ pub trait CatalogZoneStateRepository: Send + Sync {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError>;
+    async fn update_serial_for_signature_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+        signature: &str,
+        base_serial: i32,
+    ) -> Result<CatalogZoneState, DatabaseError>;
 }
 
 // Repository Factory

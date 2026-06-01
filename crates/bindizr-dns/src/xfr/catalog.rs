@@ -2,10 +2,7 @@ use super::{error::XfrError, wire};
 use crate::{log_info, model::zone::Zone, service::zone::ZoneService};
 use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
-use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
-};
+use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
 pub(crate) const CATALOG_ZONE_NAME: &str = "catalog.bind";
@@ -56,17 +53,27 @@ async fn generate_catalog_serial(member_zones: &[String], zones: &[Zone]) -> Res
 }
 
 fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
-    let mut members = member_zones.to_vec();
+    let mut members = member_zones
+        .iter()
+        .map(|member| member.to_ascii_lowercase())
+        .collect::<Vec<_>>();
     members.sort();
 
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = Sha256::new();
     for member in members {
-        member.hash(&mut hasher);
-        if let Some(zone) = zones.iter().find(|z| z.name == member) {
-            zone.serial.hash(&mut hasher);
+        if let Some(zone) = zones.iter().find(|z| z.name.eq_ignore_ascii_case(&member)) {
+            hasher.update(member.as_bytes());
+            hasher.update(b"\0");
+            hasher.update(zone.serial.to_string().as_bytes());
+            hasher.update(b"\n");
         }
     }
-    format!("{:016x}", hasher.finish())
+
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
 }
 
 pub(crate) async fn handle_catalog_axfr_with_qtype(

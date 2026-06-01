@@ -74,7 +74,7 @@ pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS catalog_zone_state (
             name VARCHAR(255) PRIMARY KEY,
-            signature VARCHAR(32) NOT NULL,
+            signature VARCHAR(64) NOT NULL,
             serial INT NOT NULL,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         );

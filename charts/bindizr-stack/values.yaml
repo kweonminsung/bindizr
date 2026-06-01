@@ -25,7 +25,7 @@ bindizr:
 
   database:
     type: postgresql
-    existingSecret: bindizr-db-secret
+    existingSecret: ""
     secretKey: database-url
     # Used only when existingSecret is empty. Prefer an existing Secret for production.
     # If this is empty and the matching mysql/postgresql subchart is enabled,
