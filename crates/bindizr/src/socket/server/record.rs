@@ -1,5 +1,5 @@
 use crate::api::types::{CreateRecordRequest, GetRecordResponse};
-use crate::service::{record::RecordService, zone::ZoneService};
+use crate::service::record::RecordService;
 use crate::socket::types::DaemonResponse;
 use serde_json::json;
 
@@ -14,14 +14,9 @@ pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
         return Err("Record ID must be non-negative".to_string());
     }
 
-    match RecordService::get_by_id(record_id).await {
+    match RecordService::get_by_id_with_zone(record_id).await {
         Ok(record) => {
-            let response = ZoneService::find_by_id(record.zone_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|zone| GetRecordResponse::from_record_with_zone(&record, &zone.name))
-                .unwrap_or_else(|| GetRecordResponse::from_record(&record));
+            let response = GetRecordResponse::from_record_with_zone(&record);
             Ok(DaemonResponse {
                 message: "Record retrieved successfully".to_string(),
                 data: serde_json::to_value(response).unwrap(),
@@ -38,25 +33,17 @@ pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
         .map(|v| v.to_string());
 
     let records = if let Some(zone_name) = zone_name {
-        RecordService::list(Some(zone_name)).await
+        RecordService::list_with_zone(Some(zone_name)).await
     } else {
-        RecordService::list(None).await
+        RecordService::list_with_zone(None).await
     };
 
     match records {
         Ok(records) => {
-            let mut response: Vec<GetRecordResponse> = Vec::new();
-
-            for record in records.iter() {
-                let rec_response = ZoneService::find_by_id(record.zone_id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|zone| GetRecordResponse::from_record_with_zone(record, &zone.name))
-                    .unwrap_or_else(|| GetRecordResponse::from_record(record));
-
-                response.push(rec_response);
-            }
+            let response = records
+                .iter()
+                .map(GetRecordResponse::from_record_with_zone)
+                .collect::<Vec<_>>();
 
             Ok(DaemonResponse {
                 message: format!("Found {} record(s)", response.len()),
@@ -73,12 +60,7 @@ pub(super) async fn create_record(data: &serde_json::Value) -> Result<DaemonResp
 
     match RecordService::create(&request).await {
         Ok(record) => {
-            let response = ZoneService::find_by_id(record.zone_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|zone| GetRecordResponse::from_record_with_zone(&record, &zone.name))
-                .unwrap_or_else(|| GetRecordResponse::from_record(&record));
+            let response = GetRecordResponse::from_record_with_zone(&record);
 
             Ok(DaemonResponse {
                 message: "Record created successfully".to_string(),

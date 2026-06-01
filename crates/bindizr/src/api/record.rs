@@ -6,7 +6,7 @@ use crate::api::{
         RecordResponse, UpdateRecordRequest,
     },
 };
-use crate::service::{record::RecordService, zone::ZoneService};
+use crate::service::record::RecordService;
 use axum::{
     Json, Router,
     extract::{Path, Query},
@@ -47,15 +47,15 @@ impl RecordApi {
 pub(crate) async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl IntoResponse {
     let zone_name = query.zone_name;
 
-    let raw_records = match RecordService::list(zone_name).await {
+    let raw_records = match RecordService::list_with_zone(zone_name).await {
         Ok(records) => records,
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let mut records = Vec::new();
-    for raw_record in raw_records.iter() {
-        records.push(record_response_with_zone(raw_record).await);
-    }
+    let records = raw_records
+        .iter()
+        .map(GetRecordResponse::from_record_with_zone)
+        .collect::<Vec<_>>();
 
     let json_body = json!({ "records": records });
     (StatusCode::OK, Json(json_body)).into_response()
@@ -77,12 +77,12 @@ pub(crate) async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl In
         )
 )]
 pub(crate) async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
-    let raw_record = match RecordService::get_by_id(params.record_id).await {
+    let raw_record = match RecordService::get_by_id_with_zone(params.record_id).await {
         Ok(record) => record,
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let record = record_response_with_zone(&raw_record).await;
+    let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
     (StatusCode::OK, Json(json_body)).into_response()
@@ -110,7 +110,7 @@ pub(crate) async fn create_record(
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let record = record_response_with_zone(&raw_record).await;
+    let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
     (StatusCode::CREATED, Json(json_body)).into_response()
@@ -143,7 +143,7 @@ pub(crate) async fn update_record(
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let record = record_response_with_zone(&raw_record).await;
+    let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
     (StatusCode::OK, Json(json_body)).into_response()
@@ -192,11 +192,4 @@ pub(crate) struct UpdateRecordParam {
 #[derive(Debug, Deserialize)]
 pub(crate) struct DeleteRecordParam {
     record_id: i32,
-}
-
-async fn record_response_with_zone(record: &crate::model::record::Record) -> GetRecordResponse {
-    match ZoneService::find_by_id(record.zone_id).await.ok().flatten() {
-        Some(zone) => GetRecordResponse::from_record_with_zone(record, &zone.name),
-        None => GetRecordResponse::from_record(record),
-    }
 }

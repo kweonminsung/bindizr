@@ -4,7 +4,7 @@ pub mod sqlite;
 
 use super::model::{
     api_token::ApiToken,
-    record::{Record, RecordType},
+    record::{Record, RecordType, RecordWithZone},
     zone::Zone,
     zone_change::ZoneChange,
     zone_snapshot::ZoneSnapshot,
@@ -115,12 +115,17 @@ pub trait RecordRepository: Send + Sync {
         record: Record,
     ) -> Result<Record, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
+    async fn get_by_id_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError>;
     async fn get_by_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
     ) -> Result<Option<Record>, DatabaseError>;
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
+    async fn get_by_zone_id_with_zone(
+        &self,
+        zone_id: i32,
+    ) -> Result<Vec<RecordWithZone>, DatabaseError>;
     async fn get_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -146,6 +151,7 @@ pub trait RecordRepository: Send + Sync {
         match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<Record>, DatabaseError>;
+    async fn get_all_with_zone(&self) -> Result<Vec<RecordWithZone>, DatabaseError>;
     async fn update(&self, record: Record) -> Result<Record, DatabaseError>;
     async fn update_tx(
         &self,

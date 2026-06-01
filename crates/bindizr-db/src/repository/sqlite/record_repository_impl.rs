@@ -1,6 +1,6 @@
 use crate::error::DatabaseError;
 use crate::{
-    model::record::{Record, RecordType},
+    model::record::{Record, RecordType, RecordWithZone},
     repository::{RecordRepository, RepositoryTx, RepositoryTxKind},
 };
 use async_trait::async_trait;
@@ -85,6 +85,25 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
+    async fn get_by_id_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let record = sqlx::query_as::<_, RecordWithZone>(
+            r#"
+            SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
+                   r.zone_id, z.name AS zone_name
+            FROM records r
+            INNER JOIN zones z ON z.id = r.zone_id
+            WHERE r.id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        Ok(record)
+    }
+
     async fn get_by_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -116,6 +135,29 @@ impl RecordRepository for SqliteRecordRepository {
                 .fetch_all(&mut *conn)
                 .await
                 ?;
+
+        Ok(records)
+    }
+
+    async fn get_by_zone_id_with_zone(
+        &self,
+        zone_id: i32,
+    ) -> Result<Vec<RecordWithZone>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let records = sqlx::query_as::<_, RecordWithZone>(
+            r#"
+            SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
+                   r.zone_id, z.name AS zone_name
+            FROM records r
+            INNER JOIN zones z ON z.id = r.zone_id
+            WHERE r.zone_id = ?
+            ORDER BY r.name
+            "#,
+        )
+        .bind(zone_id)
+        .fetch_all(&mut *conn)
+        .await?;
 
         Ok(records)
     }
@@ -247,6 +289,24 @@ impl RecordRepository for SqliteRecordRepository {
             .fetch_all(&mut *conn)
             .await
             ?;
+
+        Ok(records)
+    }
+
+    async fn get_all_with_zone(&self) -> Result<Vec<RecordWithZone>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let records = sqlx::query_as::<_, RecordWithZone>(
+            r#"
+            SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
+                   r.zone_id, z.name AS zone_name
+            FROM records r
+            INNER JOIN zones z ON z.id = r.zone_id
+            ORDER BY r.name
+            "#,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
 
         Ok(records)
     }

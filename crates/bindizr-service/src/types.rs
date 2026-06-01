@@ -1,5 +1,5 @@
 use crate::model::{
-    record::{Record, RecordType},
+    record::{Record, RecordType, RecordWithZone},
     zone::Zone,
 };
 use bindizr_core::dns::txt;
@@ -80,7 +80,7 @@ impl GetRecordResponse {
         }
     }
 
-    pub fn from_record_with_zone(record: &Record, zone_name: &str) -> Self {
+    pub fn from_record_and_zone_name(record: &Record, zone_name: &str) -> Self {
         GetRecordResponse {
             id: record.id,
             name: display_record_owner_name(&record.name, zone_name),
@@ -91,6 +91,10 @@ impl GetRecordResponse {
             zone_id: record.zone_id,
             zone_name: Some(display_zone_name(zone_name)),
         }
+    }
+
+    pub fn from_record_with_zone(record: &RecordWithZone) -> Self {
+        Self::from_record_and_zone_name(&record.record(), &record.zone_name)
     }
 }
 

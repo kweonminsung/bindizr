@@ -2,7 +2,7 @@ use crate::{
     RepositoryTx,
     error::ServiceError,
     log_error,
-    model::record::{Record, RecordType},
+    model::record::{Record, RecordType, RecordWithZone},
     repository::RepositoryService,
 };
 
@@ -86,8 +86,64 @@ impl RecordService {
         }
     }
 
+    pub async fn list_with_zone(
+        zone_name: Option<String>,
+    ) -> Result<Vec<RecordWithZone>, ServiceError> {
+        match zone_name {
+            Some(name) => {
+                let zone = match RepositoryService::get_zone_by_name(&name).await {
+                    Ok(Some(z)) => z,
+                    Ok(None) => {
+                        return Err(ServiceError::BadRequest(format!(
+                            "Zone with name '{}' not found",
+                            name
+                        )));
+                    }
+                    Err(e) => {
+                        log_error!("Failed to fetch zone: {}", e);
+                        return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
+                    }
+                };
+
+                match RepositoryService::get_records_by_zone_id_with_zone(zone.id).await {
+                    Ok(records) => Ok(records),
+                    Err(e) => {
+                        log_error!("Failed to fetch records for zone {}: {}", name, e);
+                        Err(ServiceError::Internal(format!(
+                            "Failed to fetch records for zone {}",
+                            name
+                        )))
+                    }
+                }
+            }
+            None => match RepositoryService::get_all_records_with_zone().await {
+                Ok(records) => Ok(records),
+                Err(e) => {
+                    log_error!("Failed to fetch all records: {}", e);
+                    Err(ServiceError::Internal(
+                        "Failed to fetch all records".to_string(),
+                    ))
+                }
+            },
+        }
+    }
+
     pub async fn get_by_id(record_id: i32) -> Result<Record, ServiceError> {
         match RepositoryService::get_record_by_id(record_id).await {
+            Ok(Some(record)) => Ok(record),
+            Ok(None) => Err(ServiceError::NotFound(format!(
+                "Record with id '{}' not found",
+                record_id
+            ))),
+            Err(e) => {
+                log_error!("Failed to fetch record: {}", e);
+                Err(ServiceError::Internal("Failed to fetch record".to_string()))
+            }
+        }
+    }
+
+    pub async fn get_by_id_with_zone(record_id: i32) -> Result<RecordWithZone, ServiceError> {
+        match RepositoryService::get_record_by_id_with_zone(record_id).await {
             Ok(Some(record)) => Ok(record),
             Ok(None) => Err(ServiceError::NotFound(format!(
                 "Record with id '{}' not found",

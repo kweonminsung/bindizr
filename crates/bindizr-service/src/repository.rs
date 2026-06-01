@@ -4,7 +4,7 @@ use crate::{
         get_zone_repository, get_zone_snapshot_repository,
         model::{
             api_token::ApiToken,
-            record::{Record, RecordType},
+            record::{Record, RecordType, RecordWithZone},
             zone::Zone,
             zone_change::ZoneChange,
             zone_snapshot::ZoneSnapshot,
@@ -123,6 +123,15 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }
 
+    pub(super) async fn get_records_by_zone_id_with_zone(
+        zone_id: i32,
+    ) -> Result<Vec<RecordWithZone>, ServiceError> {
+        get_record_repository()
+            .get_by_zone_id_with_zone(zone_id)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
+    }
+
     pub(super) async fn get_records_by_zone_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -174,9 +183,25 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }
 
+    pub(super) async fn get_all_records_with_zone() -> Result<Vec<RecordWithZone>, ServiceError> {
+        get_record_repository()
+            .get_all_with_zone()
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
+    }
+
     pub(super) async fn get_record_by_id(record_id: i32) -> Result<Option<Record>, ServiceError> {
         get_record_repository()
             .get_by_id(record_id)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load record: {}", e)))
+    }
+
+    pub(super) async fn get_record_by_id_with_zone(
+        record_id: i32,
+    ) -> Result<Option<RecordWithZone>, ServiceError> {
+        get_record_repository()
+            .get_by_id_with_zone(record_id)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load record: {}", e)))
     }

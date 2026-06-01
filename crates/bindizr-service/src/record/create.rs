@@ -3,7 +3,7 @@ use crate::{
     error::ServiceError,
     log_error, log_info, log_warn,
     model::{
-        record::{Record, RecordType},
+        record::{Record, RecordType, RecordWithZone},
         zone_change::ZoneChange,
     },
     repository::RepositoryService,
@@ -25,7 +25,7 @@ impl RecordService {
 
     pub async fn create(
         create_record_request: &CreateRecordRequest,
-    ) -> Result<Record, ServiceError> {
+    ) -> Result<RecordWithZone, ServiceError> {
         // Validate record type
         let record_type = create_record_request
             .record_type
@@ -172,6 +172,6 @@ impl RecordService {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
-        Ok(created_record)
+        Ok(RecordWithZone::new(created_record, zone_name))
     }
 }

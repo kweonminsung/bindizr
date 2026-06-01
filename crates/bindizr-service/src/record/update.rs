@@ -2,7 +2,7 @@ use crate::{
     error::ServiceError,
     log_error, log_info, log_warn,
     model::{
-        record::{Record, RecordType},
+        record::{Record, RecordType, RecordWithZone},
         zone_change::ZoneChange,
     },
     repository::RepositoryService,
@@ -17,7 +17,7 @@ impl RecordService {
     pub async fn update_by_id(
         record_id: i32,
         update_record_request: &UpdateRecordRequest,
-    ) -> Result<Record, ServiceError> {
+    ) -> Result<RecordWithZone, ServiceError> {
         let zone_id = match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => record.zone_id,
             Ok(None) => {
@@ -205,6 +205,6 @@ impl RecordService {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
-        Ok(updated_record)
+        Ok(RecordWithZone::new(updated_record, zone_name))
     }
 }

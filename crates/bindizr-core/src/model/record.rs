@@ -15,6 +15,49 @@ pub struct Record {
     pub zone_id: i32,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
+pub struct RecordWithZone {
+    pub id: i32,
+    pub name: String,
+    #[sqlx(try_from = "String")]
+    pub record_type: RecordType,
+    pub value: String,
+    pub ttl: Option<i32>,
+    pub priority: Option<i32>,
+    pub created_at: DateTime<Utc>,
+    pub zone_id: i32,
+    pub zone_name: String,
+}
+
+impl RecordWithZone {
+    pub fn new(record: Record, zone_name: String) -> Self {
+        Self {
+            id: record.id,
+            name: record.name,
+            record_type: record.record_type,
+            value: record.value,
+            ttl: record.ttl,
+            priority: record.priority,
+            created_at: record.created_at,
+            zone_id: record.zone_id,
+            zone_name,
+        }
+    }
+
+    pub fn record(&self) -> Record {
+        Record {
+            id: self.id,
+            name: self.name.clone(),
+            record_type: self.record_type.clone(),
+            value: self.value.clone(),
+            ttl: self.ttl,
+            priority: self.priority,
+            created_at: self.created_at,
+            zone_id: self.zone_id,
+        }
+    }
+}
+
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub enum RecordType {

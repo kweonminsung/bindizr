@@ -92,7 +92,7 @@ pub(crate) async fn get_zone(
     };
     let records = raw_records
         .iter()
-        .map(|record| GetRecordResponse::from_record_with_zone(record, &raw_zone.name))
+        .map(|record| GetRecordResponse::from_record_and_zone_name(record, &raw_zone.name))
         .collect::<Vec<GetRecordResponse>>();
 
     let zone = GetZoneResponse::from_zone(&raw_zone);
