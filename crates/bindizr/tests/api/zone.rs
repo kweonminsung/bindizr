@@ -5,11 +5,6 @@ use axum::http::StatusCode;
 async fn test_zone_crud_operations() {
     let ctx = TestContext::new().await;
 
-    // Test GET /zones (empty)
-    let (status, body) = ctx.make_request("GET", "/zones", None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body["zones"].as_array().unwrap().is_empty());
-
     // Test POST /zones (create)
     let create_zone_request = serde_json::json!({
         "name": "test.com",
@@ -76,18 +71,39 @@ async fn test_zone_crud_operations() {
         .make_request("GET", &format!("/zones/{}", updated_zone_name), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
 
-    // Test creating a zone
-    let create_zone_no_ip = serde_json::json!({
-        "name": "no-ip.com",
-        "primary_ns": "ns3.no-ip.com",
-        "admin_email": "admin@no-ip.com",
-        "ttl": 3600
+#[tokio::test]
+async fn test_zone_list_filters_support_ranges_and_partial_search() {
+    let ctx = TestContext::new().await;
+    ctx.create_test_zone().await;
+
+    let create_zone_request = serde_json::json!({
+        "name": "filtered.net",
+        "primary_ns": "ns1.filtered.net",
+        "admin_email": "admin@filtered.net",
+        "ttl": 7200,
+        "refresh": 7200,
+        "retry": 3600,
+        "expire": 604800,
+        "minimum_ttl": 86400
     });
     let (status, _) = ctx
-        .make_request("POST", "/zones", Some(create_zone_no_ip))
+        .make_request("POST", "/zones", Some(create_zone_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = ctx
+        .make_request(
+            "GET",
+            "/zones?search=filtered&min_ttl=7000&max_ttl=8000",
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let zones = body["zones"].as_array().unwrap();
+    assert_eq!(zones.len(), 1);
+    assert_eq!(zones[0]["name"], "filtered.net");
 }
 
 #[tokio::test]

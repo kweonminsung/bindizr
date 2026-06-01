@@ -4,7 +4,10 @@ use crate::{
     log_error,
     model::record::{Record, RecordType, RecordWithZone},
     repository::RepositoryService,
+    types::GetRecordsFilter,
 };
+use bindizr_core::dns::record::{display_record_owner_name, display_record_value};
+use bindizr_db::repository::RecordFilter;
 
 use super::RecordService;
 
@@ -128,6 +131,58 @@ impl RecordService {
         }
     }
 
+    pub async fn list_with_zone_by_filter(
+        filter: GetRecordsFilter,
+    ) -> Result<Vec<RecordWithZone>, ServiceError> {
+        let zone_name = filter.resolved_zone_name().map(normalize_filter_zone_name);
+        let value_filter = filter.value.clone();
+        let search_filter = filter.search.clone();
+        if let Some(name) = zone_name.as_deref() {
+            match RepositoryService::get_zone_by_name(name).await {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return Err(ServiceError::BadRequest(format!(
+                        "Zone with name '{}' not found",
+                        name
+                    )));
+                }
+                Err(e) => {
+                    log_error!("Failed to fetch zone: {}", e);
+                    return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
+                }
+            }
+        }
+
+        let name = normalize_filter_record_name(filter.name, zone_name.as_deref());
+
+        let mut records = RepositoryService::get_records_by_filter_with_zone(RecordFilter {
+            zone_name,
+            name,
+            record_type: filter.record_type,
+            value: filter.value,
+            ttl: filter.ttl,
+            min_ttl: filter.min_ttl,
+            max_ttl: filter.max_ttl,
+            priority: filter.priority,
+            min_priority: filter.min_priority,
+            max_priority: filter.max_priority,
+            search: filter.search,
+        })
+        .await?;
+
+        if value_filter.is_some() || search_filter.is_some() {
+            records.retain(|record| {
+                record_matches_display_filters(
+                    record,
+                    value_filter.as_deref(),
+                    search_filter.as_deref(),
+                )
+            });
+        }
+
+        Ok(records)
+    }
+
     pub async fn get_by_id(record_id: i32) -> Result<Record, ServiceError> {
         match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => Ok(record),
@@ -155,4 +210,87 @@ impl RecordService {
             }
         }
     }
+}
+
+fn normalize_filter_zone_name(name: String) -> String {
+    name.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
+fn normalize_filter_record_name(name: Option<String>, zone_name: Option<&str>) -> Option<String> {
+    name.map(|name| {
+        let trimmed = name.trim();
+        let Some(zone_name) = zone_name else {
+            return trimmed.to_string();
+        };
+
+        let zone_fqdn = format!("{}.", zone_name);
+        let candidate = if trimmed.ends_with('.') {
+            trimmed.to_ascii_lowercase()
+        } else {
+            format!("{}.", trimmed.to_ascii_lowercase())
+        };
+
+        if candidate == zone_fqdn || candidate.ends_with(&format!(".{}", zone_fqdn)) {
+            candidate
+        } else {
+            trimmed.to_string()
+        }
+    })
+}
+
+fn record_matches_display_filters(
+    record: &RecordWithZone,
+    value_filter: Option<&str>,
+    search_filter: Option<&str>,
+) -> bool {
+    let raw_record = record.record();
+    let display_name = display_record_owner_name(&raw_record.name, &record.zone_name);
+    let display_value = display_record_value(&raw_record.value, &raw_record.record_type);
+
+    matches_record_value(
+        &display_value,
+        &raw_record.record_type,
+        value_filter.map(str::trim),
+    ) && matches_record_search(
+        &raw_record,
+        &record.zone_name,
+        &display_name,
+        &display_value,
+        search_filter.map(str::trim),
+    )
+}
+
+fn matches_record_value(actual: &str, record_type: &RecordType, expected: Option<&str>) -> bool {
+    expected.is_none_or(|expected| {
+        if record_type.is_name_like_value() {
+            actual
+                .to_ascii_lowercase()
+                .contains(&expected.trim_end_matches('.').to_ascii_lowercase())
+        } else {
+            actual.contains(expected)
+        }
+    })
+}
+
+fn matches_record_search(
+    record: &Record,
+    zone_name: &str,
+    display_name: &str,
+    display_value: &str,
+    search: Option<&str>,
+) -> bool {
+    search.is_none_or(|search| {
+        let search = search.trim_end_matches('.').to_ascii_lowercase();
+        let record_type = record.record_type.to_string();
+        !search.is_empty()
+            && [
+                record.name.as_str(),
+                display_name,
+                zone_name,
+                record_type.as_str(),
+                display_value,
+            ]
+            .iter()
+            .any(|value| value.to_ascii_lowercase().contains(&search))
+    })
 }

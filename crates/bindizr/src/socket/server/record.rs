@@ -1,4 +1,4 @@
-use crate::api::types::{CreateRecordRequest, GetRecordResponse};
+use crate::api::types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter};
 use crate::service::record::RecordService;
 use crate::socket::types::DaemonResponse;
 use serde_json::json;
@@ -27,18 +27,13 @@ pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
 }
 
 pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let zone_name = data
-        .get("zone_name")
-        .and_then(|v| v.as_str())
-        .map(|v| v.to_string());
-
-    let records = if let Some(zone_name) = zone_name {
-        RecordService::list_with_zone(Some(zone_name)).await
+    let filter = if data.is_null() {
+        GetRecordsFilter::default()
     } else {
-        RecordService::list_with_zone(None).await
+        serde_json::from_value(data.clone()).map_err(|e| format!("Invalid filter data: {}", e))?
     };
 
-    match records {
+    match RecordService::list_with_zone_by_filter(filter).await {
         Ok(records) => {
             let response = records
                 .iter()

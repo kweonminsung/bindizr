@@ -31,7 +31,7 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
                 // Zone commands
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
-                DaemonCommandKind::ListZones => zone::list_zones().await,
+                DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
                 DaemonCommandKind::DeleteZone => zone::delete_zone(&cmd.data).await,
                 // Record commands

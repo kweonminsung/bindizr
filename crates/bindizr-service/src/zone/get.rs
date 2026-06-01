@@ -4,7 +4,9 @@ use crate::{
     log_error,
     model::{zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
+    types::GetZonesFilter,
 };
+use bindizr_db::repository::ZoneFilter;
 
 use super::ZoneService;
 
@@ -37,6 +39,21 @@ impl ZoneService {
             log_error!("Failed to fetch zones: {}", e);
             ServiceError::Internal("Failed to fetch zones".to_string())
         })
+    }
+
+    pub async fn list_by_filter(filter: GetZonesFilter) -> Result<Vec<Zone>, ServiceError> {
+        RepositoryService::get_zones_by_filter(ZoneFilter {
+            name: filter.name,
+            id: filter.id,
+            primary_ns: filter.primary_ns,
+            admin_email: filter.admin_email,
+            ttl: filter.ttl,
+            min_ttl: filter.min_ttl,
+            max_ttl: filter.max_ttl,
+            serial: filter.serial,
+            search: filter.search,
+        })
+        .await
     }
 
     pub async fn get_by_name(zone_name: &str) -> Result<Zone, ServiceError> {

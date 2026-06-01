@@ -16,6 +16,7 @@ use crate::{
 use crate::database::repository as db_repository;
 
 pub use crate::database::repository::RepositoryTx;
+use crate::database::repository::{RecordFilter, ZoneFilter};
 
 use super::error::ServiceError;
 
@@ -91,6 +92,13 @@ impl RepositoryService {
     pub(super) async fn get_all_zones() -> Result<Vec<Zone>, ServiceError> {
         get_zone_repository()
             .get_all()
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load zones: {}", e)))
+    }
+
+    pub(super) async fn get_zones_by_filter(filter: ZoneFilter) -> Result<Vec<Zone>, ServiceError> {
+        get_zone_repository()
+            .get_by_filter(filter)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load zones: {}", e)))
     }
@@ -207,6 +215,15 @@ impl RepositoryService {
     pub(super) async fn get_all_records_with_zone() -> Result<Vec<RecordWithZone>, ServiceError> {
         get_record_repository()
             .get_all_with_zone()
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
+    }
+
+    pub(super) async fn get_records_by_filter_with_zone(
+        filter: RecordFilter,
+    ) -> Result<Vec<RecordWithZone>, ServiceError> {
+        get_record_repository()
+            .get_by_filter_with_zone(filter)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }

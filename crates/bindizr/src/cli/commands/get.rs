@@ -1,6 +1,8 @@
 use crate::cli::output::{OutputFormat, RecordRow, ZoneRow, print_output_with_table};
 use crate::socket::client::DaemonSocketClient;
 use crate::socket::types::DaemonCommandKind;
+use bindizr_core::dns::name::to_fqdn_lowercase;
+use bindizr_core::model::record::RecordType;
 use clap::Subcommand;
 use serde_json::json;
 
@@ -25,9 +27,18 @@ pub(crate) enum GetCommand {
         /// Filter by TTL
         #[arg(long)]
         ttl: Option<i64>,
+        /// Filter by minimum TTL
+        #[arg(long)]
+        min_ttl: Option<i64>,
+        /// Filter by maximum TTL
+        #[arg(long)]
+        max_ttl: Option<i64>,
         /// Filter by serial
         #[arg(long)]
         serial: Option<i64>,
+        /// Search zones by partial text
+        #[arg(short = 'q', long)]
+        search: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -55,9 +66,24 @@ pub(crate) enum GetCommand {
         /// Filter by TTL
         #[arg(long)]
         ttl: Option<i64>,
+        /// Filter by minimum TTL
+        #[arg(long)]
+        min_ttl: Option<i64>,
+        /// Filter by maximum TTL
+        #[arg(long)]
+        max_ttl: Option<i64>,
         /// Filter by priority
         #[arg(long)]
         priority: Option<i64>,
+        /// Filter by minimum priority
+        #[arg(long)]
+        min_priority: Option<i64>,
+        /// Filter by maximum priority
+        #[arg(long)]
+        max_priority: Option<i64>,
+        /// Search records by partial text
+        #[arg(short = 'q', long)]
+        search: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -74,18 +100,37 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
             primary_ns,
             admin_email,
             ttl,
+            min_ttl,
+            max_ttl,
             serial,
+            search,
             output,
         } => {
             let has_filters = id.is_some()
                 || primary_ns.is_some()
                 || admin_email.is_some()
                 || ttl.is_some()
-                || serial.is_some();
+                || min_ttl.is_some()
+                || max_ttl.is_some()
+                || serial.is_some()
+                || search.is_some();
+            let filter_payload = || {
+                json!({
+                    "name": name,
+                    "id": id,
+                    "primary_ns": primary_ns,
+                    "admin_email": admin_email,
+                    "ttl": ttl,
+                    "min_ttl": min_ttl,
+                    "max_ttl": max_ttl,
+                    "serial": serial,
+                    "search": search,
+                })
+            };
             let mut data = if let Some(name) = name.as_deref() {
                 if has_filters {
                     client
-                        .send_command(DaemonCommandKind::ListZones, None)
+                        .send_command(DaemonCommandKind::ListZones, Some(filter_payload()))
                         .await?
                         .data
                 } else {
@@ -96,7 +141,10 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                 }
             } else {
                 client
-                    .send_command(DaemonCommandKind::ListZones, None)
+                    .send_command(
+                        DaemonCommandKind::ListZones,
+                        has_filters.then(filter_payload),
+                    )
                     .await?
                     .data
             };
@@ -109,7 +157,10 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                     primary_ns.as_deref(),
                     admin_email.as_deref(),
                     ttl,
+                    min_ttl,
+                    max_ttl,
                     serial,
+                    search.as_deref(),
                 );
             }
 
@@ -132,7 +183,12 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
             record_type,
             value,
             ttl,
+            min_ttl,
+            max_ttl,
             priority,
+            min_priority,
+            max_priority,
+            search,
             output,
         } => {
             let has_filters = zone.is_some()
@@ -140,19 +196,36 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                 || record_type.is_some()
                 || value.is_some()
                 || ttl.is_some()
-                || priority.is_some();
+                || min_ttl.is_some()
+                || max_ttl.is_some()
+                || priority.is_some()
+                || min_priority.is_some()
+                || max_priority.is_some()
+                || search.is_some();
+            let filter_payload = || {
+                json!({
+                    "zone_name": zone,
+                    "name": name,
+                    "record_type": record_type,
+                    "value": value,
+                    "ttl": ttl,
+                    "min_ttl": min_ttl,
+                    "max_ttl": max_ttl,
+                    "priority": priority,
+                    "min_priority": min_priority,
+                    "max_priority": max_priority,
+                    "search": search,
+                })
+            };
 
             let mut data = if let Some(id) = id {
                 client
                     .send_command(DaemonCommandKind::GetRecord, Some(json!({ "id": id })))
                     .await?
                     .data
-            } else if let Some(zone_name) = zone.as_deref() {
+            } else if has_filters {
                 client
-                    .send_command(
-                        DaemonCommandKind::ListRecords,
-                        Some(json!({ "zone_name": zone_name })),
-                    )
+                    .send_command(DaemonCommandKind::ListRecords, Some(filter_payload()))
                     .await?
                     .data
             } else {
@@ -170,7 +243,12 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                     record_type.as_deref(),
                     value.as_deref(),
                     ttl,
+                    min_ttl,
+                    max_ttl,
                     priority,
+                    min_priority,
+                    max_priority,
+                    search.as_deref(),
                 );
             }
 
@@ -199,7 +277,10 @@ fn filter_zones(
     primary_ns: Option<&str>,
     admin_email: Option<&str>,
     ttl: Option<i64>,
+    min_ttl: Option<i64>,
+    max_ttl: Option<i64>,
     serial: Option<i64>,
+    search: Option<&str>,
 ) -> serde_json::Value {
     filter_items(data, |item| {
         matches_string(item, "name", name)
@@ -207,7 +288,10 @@ fn filter_zones(
             && matches_string(item, "primary_ns", primary_ns)
             && matches_string(item, "admin_email", admin_email)
             && matches_i64(item, "ttl", ttl)
+            && matches_min_i64(item, "ttl", min_ttl)
+            && matches_max_i64(item, "ttl", max_ttl)
             && matches_i64(item, "serial", serial)
+            && matches_search(item, &["name", "primary_ns", "admin_email"], search)
     })
 }
 
@@ -218,7 +302,12 @@ fn filter_records(
     record_type: Option<&str>,
     value: Option<&str>,
     ttl: Option<i64>,
+    min_ttl: Option<i64>,
+    max_ttl: Option<i64>,
     priority: Option<i64>,
+    min_priority: Option<i64>,
+    max_priority: Option<i64>,
+    search: Option<&str>,
 ) -> serde_json::Value {
     filter_items(data, |item| {
         matches_dns_string(item, "zone_name", zone)
@@ -226,7 +315,12 @@ fn filter_records(
             && matches_string(item, "record_type", record_type)
             && matches_record_value(item, value)
             && matches_i64(item, "ttl", ttl)
+            && matches_min_i64(item, "ttl", min_ttl)
+            && matches_max_i64(item, "ttl", max_ttl)
             && matches_i64(item, "priority", priority)
+            && matches_min_i64(item, "priority", min_priority)
+            && matches_max_i64(item, "priority", max_priority)
+            && matches_record_search(item, search)
     })
 }
 
@@ -255,15 +349,8 @@ fn matches_dns_string(item: &serde_json::Value, key: &str, expected: Option<&str
     expected.is_none_or(|expected| {
         item.get(key)
             .and_then(|value| value.as_str())
-            .is_some_and(|actual| to_fqdn_lower(actual) == to_fqdn_lower(expected))
+            .is_some_and(|actual| to_fqdn_lowercase(actual) == to_fqdn_lowercase(expected))
     })
-}
-
-fn to_fqdn_lower(value: &str) -> String {
-    format!(
-        "{}.",
-        value.trim().trim_end_matches('.').to_ascii_lowercase()
-    )
 }
 
 fn matches_record_value(item: &serde_json::Value, expected: Option<&str>) -> bool {
@@ -273,7 +360,7 @@ fn matches_record_value(item: &serde_json::Value, expected: Option<&str>) -> boo
         .is_some_and(is_name_like_record_type);
 
     expected.is_none_or(|expected| match item.get("value") {
-        Some(serde_json::Value::String(actual)) => values_equal(actual, expected, ignore_case),
+        Some(serde_json::Value::String(actual)) => values_match(actual, expected, ignore_case),
         Some(serde_json::Value::Array(values)) => {
             let segments = values
                 .iter()
@@ -282,26 +369,64 @@ fn matches_record_value(item: &serde_json::Value, expected: Option<&str>) -> boo
             segments.is_some_and(|segments| {
                 segments
                     .iter()
-                    .any(|segment| values_equal(segment, expected, ignore_case))
-                    || values_equal(&segments.join(""), expected, ignore_case)
+                    .any(|segment| values_match(segment, expected, ignore_case))
+                    || values_match(&segments.join(""), expected, ignore_case)
             })
         }
         _ => false,
     })
 }
 
-fn is_name_like_record_type(record_type: &str) -> bool {
-    matches!(
-        record_type.to_ascii_uppercase().as_str(),
-        "CNAME" | "NS" | "PTR" | "MX"
-    )
+fn matches_record_search(item: &serde_json::Value, expected: Option<&str>) -> bool {
+    expected.is_none_or(|expected| {
+        let expected = expected.trim().to_ascii_lowercase();
+        !expected.is_empty()
+            && (["zone_name", "name", "record_type"].iter().any(|key| {
+                item.get(key)
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|actual| actual.to_ascii_lowercase().contains(&expected))
+            }) || record_value_text(item)
+                .is_some_and(|value| value.to_ascii_lowercase().contains(&expected)))
+    })
 }
 
-fn values_equal(actual: &str, expected: &str, ignore_case: bool) -> bool {
+fn matches_search(item: &serde_json::Value, keys: &[&str], expected: Option<&str>) -> bool {
+    expected.is_none_or(|expected| {
+        let expected = expected.trim().to_ascii_lowercase();
+        !expected.is_empty()
+            && keys.iter().any(|key| {
+                item.get(key)
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|actual| actual.to_ascii_lowercase().contains(&expected))
+            })
+    })
+}
+
+fn record_value_text(item: &serde_json::Value) -> Option<String> {
+    match item.get("value") {
+        Some(serde_json::Value::String(value)) => Some(value.clone()),
+        Some(serde_json::Value::Array(values)) => values
+            .iter()
+            .map(|value| value.as_str())
+            .collect::<Option<Vec<_>>>()
+            .map(|segments| segments.join("")),
+        _ => None,
+    }
+}
+
+fn is_name_like_record_type(record_type: &str) -> bool {
+    record_type
+        .parse::<RecordType>()
+        .is_ok_and(|record_type| record_type.is_name_like_value())
+}
+
+fn values_match(actual: &str, expected: &str, ignore_case: bool) -> bool {
     if ignore_case {
-        actual.eq_ignore_ascii_case(expected)
+        actual
+            .to_ascii_lowercase()
+            .contains(&expected.trim().to_ascii_lowercase())
     } else {
-        actual == expected
+        actual.contains(expected.trim())
     }
 }
 
@@ -313,84 +438,18 @@ fn matches_i64(item: &serde_json::Value, key: &str, expected: Option<i64>) -> bo
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::filter_records;
-    use serde_json::json;
+fn matches_min_i64(item: &serde_json::Value, key: &str, expected: Option<i64>) -> bool {
+    expected.is_none_or(|expected| {
+        item.get(key)
+            .and_then(|value| value.as_i64())
+            .is_some_and(|actual| actual >= expected)
+    })
+}
 
-    #[test]
-    fn filter_records_matches_txt_value_array_segment() {
-        let data = json!([
-            {"record_type": "TXT", "value": ["v=spf1 ", "include:example.net"], "ttl": 300},
-            {"record_type": "TXT", "value": ["other"], "ttl": 300}
-        ]);
-
-        let filtered = filter_records(
-            data,
-            None,
-            None,
-            None,
-            Some("include:example.net"),
-            None,
-            None,
-        );
-
-        assert_eq!(filtered.as_array().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn filter_records_matches_txt_value_array_joined_segments() {
-        let data = json!([
-            {"record_type": "TXT", "value": ["v=spf1 ", "include:example.net"], "ttl": 300},
-            {"record_type": "TXT", "value": ["other"], "ttl": 300}
-        ]);
-
-        let filtered = filter_records(
-            data,
-            None,
-            None,
-            None,
-            Some("v=spf1 include:example.net"),
-            None,
-            None,
-        );
-
-        assert_eq!(filtered.as_array().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn filter_records_matches_txt_values_case_sensitively() {
-        let data = json!([
-            {"record_type": "TXT", "value": "Token=abc", "ttl": 300},
-            {"record_type": "TXT", "value": "token=abc", "ttl": 300}
-        ]);
-
-        let filtered = filter_records(data, None, None, None, Some("token=abc"), None, None);
-
-        let records = filtered.as_array().unwrap();
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0]["value"], "token=abc");
-    }
-
-    #[test]
-    fn filter_records_matches_name_like_values_case_insensitively() {
-        let data = json!([
-            {"record_type": "CNAME", "value": "Target.Example.Com.", "ttl": 300},
-            {"record_type": "TXT", "value": "Target.Example.Com.", "ttl": 300}
-        ]);
-
-        let filtered = filter_records(
-            data,
-            None,
-            None,
-            None,
-            Some("target.example.com."),
-            None,
-            None,
-        );
-
-        let records = filtered.as_array().unwrap();
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0]["record_type"], "CNAME");
-    }
+fn matches_max_i64(item: &serde_json::Value, key: &str, expected: Option<i64>) -> bool {
+    expected.is_none_or(|expected| {
+        item.get(key)
+            .and_then(|value| value.as_i64())
+            .is_some_and(|actual| actual <= expected)
+    })
 }

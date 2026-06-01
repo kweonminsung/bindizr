@@ -14,6 +14,34 @@ use crate::{DatabasePool, error::DatabaseError, get_pool};
 use async_trait::async_trait;
 use sqlx::{MySql, Postgres, Sqlite};
 
+#[derive(Clone, Debug, Default)]
+pub struct ZoneFilter {
+    pub name: Option<String>,
+    pub id: Option<i32>,
+    pub primary_ns: Option<String>,
+    pub admin_email: Option<String>,
+    pub ttl: Option<i32>,
+    pub min_ttl: Option<i32>,
+    pub max_ttl: Option<i32>,
+    pub serial: Option<i32>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RecordFilter {
+    pub zone_name: Option<String>,
+    pub name: Option<String>,
+    pub record_type: Option<String>,
+    pub value: Option<String>,
+    pub ttl: Option<i32>,
+    pub min_ttl: Option<i32>,
+    pub max_ttl: Option<i32>,
+    pub priority: Option<i32>,
+    pub min_priority: Option<i32>,
+    pub max_priority: Option<i32>,
+    pub search: Option<String>,
+}
+
 pub struct RepositoryTx<'a>(RepositoryTxKind<'a>);
 
 enum RepositoryTxKind<'a> {
@@ -98,6 +126,7 @@ pub trait ZoneRepository: Send + Sync {
         name: &str,
     ) -> Result<Option<Zone>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError>;
+    async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
     async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
@@ -153,6 +182,10 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<Option<Record>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<Record>, DatabaseError>;
     async fn get_all_with_zone(&self) -> Result<Vec<RecordWithZone>, DatabaseError>;
+    async fn get_by_filter_with_zone(
+        &self,
+        filter: RecordFilter,
+    ) -> Result<Vec<RecordWithZone>, DatabaseError>;
     async fn update(&self, record: Record) -> Result<Record, DatabaseError>;
     async fn update_tx(
         &self,

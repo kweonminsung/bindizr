@@ -2,8 +2,8 @@ use crate::api::{
     error::ApiError,
     middleware::body_parser::JsonBody,
     types::{
-        CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, MessageResponse,
-        ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+        CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
+        MessageResponse, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
     },
 };
 use crate::service::{record::RecordService, zone::ZoneService};
@@ -35,14 +35,25 @@ impl ZoneApi {
         path = "/zones",
         tag = "Zone",
         summary = "List all DNS zones",
+        params(
+            ("name" = Option<String>, Query, description = "Filter by zone name."),
+            ("id" = Option<i32>, Query, description = "Filter by zone ID."),
+            ("primary_ns" = Option<String>, Query, description = "Filter by primary name server."),
+            ("admin_email" = Option<String>, Query, description = "Filter by admin email."),
+            ("ttl" = Option<i32>, Query, description = "Filter by TTL."),
+            ("min_ttl" = Option<i32>, Query, description = "Filter by minimum TTL."),
+            ("max_ttl" = Option<i32>, Query, description = "Filter by maximum TTL."),
+            ("serial" = Option<i32>, Query, description = "Filter by serial."),
+            ("search" = Option<String>, Query, description = "Partially search zones.")
+        ),
         responses(
             (status = 200, description = "A list of DNS zones", body = ZoneListResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-pub(crate) async fn get_zones() -> impl IntoResponse {
-    match ZoneService::list().await {
+pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoResponse {
+    match ZoneService::list_by_filter(query).await {
         Ok(zones) => {
             let zones = zones
                 .iter()
