@@ -1,4 +1,4 @@
-use super::{error::XfrError, wire};
+use super::{catalog, error::XfrError, wire};
 use crate::{config, log_error, log_info, service::zone::ZoneService};
 use domain::base::{
     Name, Rtype, StaticCompressor,
@@ -46,11 +46,13 @@ async fn send_notify_for_all_zones() -> Result<(), XfrError> {
 async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
 
-    // Verify zone exists
-    ZoneService::find(zone_name)
-        .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))?
-        .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;
+    if !catalog::is_catalog_zone(zone_name) {
+        // Verify zone exists
+        ZoneService::find(zone_name)
+            .await
+            .map_err(|e| XfrError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;
+    }
 
     // Get secondary servers from config (comma-separated list)
     let secondary_servers_str = &config::get_bindizr_config().dns.secondary_addrs;

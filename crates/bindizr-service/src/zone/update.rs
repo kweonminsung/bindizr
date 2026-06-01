@@ -250,6 +250,12 @@ impl ZoneService {
             );
         }
 
+        if existing_zone.name != updated_zone.name {
+            if let Err(e) = crate::notify::send_notify(Some("catalog.bind")).await {
+                log_warn!("Failed to send NOTIFY for catalog.bind: {}", e);
+            }
+        }
+
         Ok(updated_zone)
     }
 }

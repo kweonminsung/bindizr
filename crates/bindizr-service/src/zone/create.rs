@@ -1,6 +1,6 @@
 use crate::{
     error::ServiceError,
-    log_error, log_info,
+    log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType},
         zone::Zone,
@@ -108,6 +108,10 @@ impl ZoneService {
             created_zone.serial,
             created_zone.id
         );
+
+        if let Err(e) = crate::notify::send_notify(Some("catalog.bind")).await {
+            log_warn!("Failed to send NOTIFY for catalog.bind: {}", e);
+        }
 
         Ok(created_zone)
     }

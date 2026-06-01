@@ -1,4 +1,4 @@
-use crate::{error::ServiceError, log_error, log_info, repository::RepositoryService};
+use crate::{error::ServiceError, log_error, log_info, log_warn, repository::RepositoryService};
 
 use super::ZoneService;
 
@@ -45,6 +45,10 @@ impl ZoneService {
             zone_name_clone,
             zone_id
         );
+
+        if let Err(e) = crate::notify::send_notify(Some("catalog.bind")).await {
+            log_warn!("Failed to send NOTIFY for catalog.bind: {}", e);
+        }
 
         Ok(())
     }
