@@ -1,5 +1,6 @@
 pub(crate) mod error;
 pub(crate) mod middleware;
+pub(crate) mod notify;
 #[cfg(debug_assertions)]
 pub(crate) mod openapi;
 pub(crate) mod record;

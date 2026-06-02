@@ -10,7 +10,7 @@ use crate::config;
 
 #[cfg(debug_assertions)]
 use super::openapi::ApiDoc;
-use super::{record::RecordApi, zone::ZoneApi};
+use super::{notify::NotifyApi, record::RecordApi, zone::ZoneApi};
 
 pub struct ApiRouter;
 
@@ -19,6 +19,7 @@ impl ApiRouter {
         let mut api_router = Router::new()
             .merge(ZoneApi::routes().await)
             .merge(RecordApi::routes().await)
+            .merge(NotifyApi::routes().await)
             .route("/", routing::get(ApiRouter::get_home));
 
         if config::get_bindizr_config().api.require_authentication {

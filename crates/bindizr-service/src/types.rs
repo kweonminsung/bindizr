@@ -254,6 +254,12 @@ pub struct UpdateRecordRequest {
     pub priority: Option<i32>,
 }
 
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct NotifyZoneRequest {
+    #[schema(example = "example.com")]
+    pub zone_name: Option<String>,
+}
+
 #[derive(Serialize, Debug, ToSchema)]
 #[allow(dead_code)]
 pub struct ZoneListResponse {

@@ -238,17 +238,19 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
             if has_filters || matches!(data, serde_json::Value::Array(_)) {
                 data = filter_records(
                     data,
-                    zone.as_deref(),
-                    name.as_deref(),
-                    record_type.as_deref(),
-                    value.as_deref(),
-                    ttl,
-                    min_ttl,
-                    max_ttl,
-                    priority,
-                    min_priority,
-                    max_priority,
-                    search.as_deref(),
+                    RecordFilterArgs {
+                        zone: zone.as_deref(),
+                        name: name.as_deref(),
+                        record_type: record_type.as_deref(),
+                        value: value.as_deref(),
+                        ttl,
+                        min_ttl,
+                        max_ttl,
+                        priority,
+                        min_priority,
+                        max_priority,
+                        search: search.as_deref(),
+                    },
                 );
             }
 
@@ -295,32 +297,33 @@ fn filter_zones(
     })
 }
 
-fn filter_records(
-    data: serde_json::Value,
-    zone: Option<&str>,
-    name: Option<&str>,
-    record_type: Option<&str>,
-    value: Option<&str>,
+struct RecordFilterArgs<'a> {
+    zone: Option<&'a str>,
+    name: Option<&'a str>,
+    record_type: Option<&'a str>,
+    value: Option<&'a str>,
     ttl: Option<i64>,
     min_ttl: Option<i64>,
     max_ttl: Option<i64>,
     priority: Option<i64>,
     min_priority: Option<i64>,
     max_priority: Option<i64>,
-    search: Option<&str>,
-) -> serde_json::Value {
+    search: Option<&'a str>,
+}
+
+fn filter_records(data: serde_json::Value, args: RecordFilterArgs<'_>) -> serde_json::Value {
     filter_items(data, |item| {
-        matches_dns_string(item, "zone_name", zone)
-            && matches_string(item, "name", name)
-            && matches_string(item, "record_type", record_type)
-            && matches_record_value(item, value)
-            && matches_i64(item, "ttl", ttl)
-            && matches_min_i64(item, "ttl", min_ttl)
-            && matches_max_i64(item, "ttl", max_ttl)
-            && matches_i64(item, "priority", priority)
-            && matches_min_i64(item, "priority", min_priority)
-            && matches_max_i64(item, "priority", max_priority)
-            && matches_record_search(item, search)
+        matches_dns_string(item, "zone_name", args.zone)
+            && matches_string(item, "name", args.name)
+            && matches_string(item, "record_type", args.record_type)
+            && matches_record_value(item, args.value)
+            && matches_i64(item, "ttl", args.ttl)
+            && matches_min_i64(item, "ttl", args.min_ttl)
+            && matches_max_i64(item, "ttl", args.max_ttl)
+            && matches_i64(item, "priority", args.priority)
+            && matches_min_i64(item, "priority", args.min_priority)
+            && matches_max_i64(item, "priority", args.max_priority)
+            && matches_record_search(item, args.search)
     })
 }
 

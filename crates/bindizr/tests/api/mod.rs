@@ -1,3 +1,4 @@
+mod notify;
 mod record;
 mod zone;
 

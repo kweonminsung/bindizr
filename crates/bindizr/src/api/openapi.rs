@@ -5,8 +5,8 @@ use utoipa::{
 
 use super::types::{
     CreateRecordRequest, CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse,
-    MessageResponse, RecordListResponse, RecordResponse, RecordValueRequest, UpdateRecordRequest,
-    ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+    MessageResponse, NotifyZoneRequest, RecordListResponse, RecordResponse, RecordValueRequest,
+    UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
 };
 
 #[derive(OpenApi)]
@@ -21,7 +21,8 @@ use super::types::{
         super::record::get_record,
         super::record::create_record,
         super::record::update_record,
-        super::record::delete_record
+        super::record::delete_record,
+        super::notify::notify_zones
     ),
     components(schemas(
         CreateRecordRequest,
@@ -30,6 +31,7 @@ use super::types::{
         GetRecordResponse,
         GetZoneResponse,
         MessageResponse,
+        NotifyZoneRequest,
         RecordListResponse,
         RecordResponse,
         RecordValueRequest,
@@ -41,7 +43,8 @@ use super::types::{
     modifiers(&SecurityAddon),
     tags(
         (name = "Zone", description = "Manage DNS zones including creation, update, deletion, and retrieval."),
-        (name = "Record", description = "Manage DNS records including creation, update, deletion, and retrieval.")
+        (name = "Record", description = "Manage DNS records including creation, update, deletion, and retrieval."),
+        (name = "Notify", description = "Send DNS NOTIFY messages to secondary servers.")
     ),
     info(
         title = "Bindizr HTTP API",
