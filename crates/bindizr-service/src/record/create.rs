@@ -7,8 +7,8 @@ use crate::{
         zone_change::ZoneChange,
     },
     repository::RepositoryService,
+    serial::generate_serial,
     types::CreateRecordRequest,
-    utils::generate_serial,
     zone::snapshot::save_zone_snapshot_tx,
 };
 use chrono::Utc;

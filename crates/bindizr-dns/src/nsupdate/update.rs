@@ -12,11 +12,12 @@ use crate::{
         record::{
             RecordService, validate_record_add_constraints_tx, validate_record_delete_constraints,
         },
-        utils::generate_serial,
+        serial::generate_serial,
         zone::{ZoneService, snapshot::save_zone_snapshot_tx},
     },
     txt, xfr,
 };
+use bindizr_core::dns::name::to_fqdn;
 use chrono::Utc;
 use std::net::SocketAddr;
 
@@ -314,7 +315,7 @@ async fn delete_records(
     }
 
     // Validate delete constraints
-    validate_record_delete_constraints(zone, &zone_records, &matched)
+    validate_record_delete_constraints(zone, &matched)
         .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
     for record in &matched {
@@ -523,14 +524,6 @@ pub(super) fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<Strin
     let rel_len = owner.len() - zone.len() - 1;
     let rel = owner[..rel_len].trim_end_matches('.');
     Ok(rel.to_string())
-}
-
-fn to_fqdn(name: &str) -> String {
-    if name.ends_with('.') {
-        name.to_string()
-    } else {
-        format!("{}.", name)
-    }
 }
 
 fn trim_dot(name: &str) -> &str {

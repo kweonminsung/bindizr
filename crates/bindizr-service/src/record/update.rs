@@ -6,8 +6,8 @@ use crate::{
         zone_change::ZoneChange,
     },
     repository::RepositoryService,
+    serial::generate_serial,
     types::UpdateRecordRequest,
-    utils::generate_serial,
     zone::snapshot::save_zone_snapshot_tx,
 };
 

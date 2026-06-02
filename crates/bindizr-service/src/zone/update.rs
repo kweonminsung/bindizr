@@ -8,11 +8,11 @@ use crate::{
         zone_change::ZoneChange,
     },
     repository::RepositoryService,
+    serial::generate_serial,
     types::CreateZoneRequest,
-    utils::{generate_serial, has_glue_records_for, is_in_bailiwick, to_fqdn, to_relative_domain},
     zone::{snapshot::save_zone_snapshot_tx, validation::normalize_email},
 };
-use bindizr_core::dns::name::email_to_soa_mailbox;
+use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn};
 use chrono::Utc;
 
 use super::ZoneService;
@@ -80,19 +80,6 @@ impl ZoneService {
                 log_error!("Failed to fetch zone records: {}", e);
                 ServiceError::Internal("Failed to update zone".to_string())
             })?;
-
-        if is_in_bailiwick(&update_zone_request.primary_ns, &update_zone_request.name) {
-            let relative = to_relative_domain(
-                &to_fqdn(&update_zone_request.primary_ns),
-                &update_zone_request.name,
-            );
-            if !has_glue_records_for(&zone_records, &relative, None) {
-                return Err(ServiceError::BadRequest(format!(
-                    "Primary NS '{}' is in-bailiwick and requires at least one A/AAAA glue record for '{}'",
-                    update_zone_request.primary_ns, relative
-                )));
-            }
-        }
 
         // Update zone
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;

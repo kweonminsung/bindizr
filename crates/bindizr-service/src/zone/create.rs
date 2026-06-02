@@ -6,8 +6,8 @@ use crate::{
         zone::Zone,
     },
     repository::RepositoryService,
+    serial::generate_serial,
     types::CreateZoneRequest,
-    utils::generate_serial,
     zone::{
         snapshot::save_zone_snapshot_tx,
         validation::{is_same_zone_name, validate_create_zone_request},

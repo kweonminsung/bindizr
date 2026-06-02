@@ -3,9 +3,9 @@ pub mod error;
 pub mod notify;
 pub mod record;
 mod repository;
+pub mod serial;
 pub mod token;
 pub mod types;
-pub mod utils;
 pub mod zone;
 
 pub use repository::RepositoryTx;

@@ -1,6 +1,6 @@
 use crate::{
     RepositoryTx, error::ServiceError, log_error, log_info, log_warn,
-    repository::RepositoryService, utils::generate_serial, zone::snapshot::save_zone_snapshot_tx,
+    repository::RepositoryService, serial::generate_serial, zone::snapshot::save_zone_snapshot_tx,
 };
 
 use super::{RecordService, validation::validate_record_delete_constraints};
@@ -62,22 +62,7 @@ impl RecordService {
             let record_value = existing_record.value.clone();
             let new_serial = generate_serial(Some(zone.serial));
 
-            let zone_records =
-                match RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await {
-                    Ok(records) => records,
-                    Err(e) => {
-                        log_error!("Failed to load zone records: {}", e);
-                        return Err(ServiceError::Internal(
-                            "Failed to delete record".to_string(),
-                        ));
-                    }
-                };
-
-            validate_record_delete_constraints(
-                &zone,
-                &zone_records,
-                std::slice::from_ref(&existing_record),
-            )?;
+            validate_record_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
 
             RepositoryService::delete_record_tx(&mut tx, record_id)
                 .await

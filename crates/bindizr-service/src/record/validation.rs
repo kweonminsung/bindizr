@@ -6,10 +6,10 @@ use crate::{
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    utils::{is_apex_name, is_in_bailiwick, to_fqdn, to_relative_domain},
 };
-use bindizr_core::dns::name::{is_same_or_subdomain_fqdn, split_presentation_labels};
-use std::collections::HashSet;
+use bindizr_core::dns::name::{
+    is_apex_name, is_same_or_subdomain_fqdn, split_presentation_labels, to_fqdn,
+};
 
 const MAX_DNS_LABEL_LEN: usize = 63;
 const MAX_DOMAIN_LEN: usize = 253;
@@ -125,29 +125,6 @@ fn has_whitespace_or_control(value: &str) -> bool {
         .any(|c| c.is_ascii_control() || c.is_whitespace())
 }
 
-pub(super) fn validate_glue_invariants(
-    zone: &Zone,
-    records: &[Record],
-) -> Result<(), ServiceError> {
-    let remaining_in_bailiwick_apex_ns = records.iter().filter(|r| {
-        r.record_type == RecordType::NS
-            && is_apex_name(&r.name, &zone.name)
-            && is_in_bailiwick(&r.value, &zone.name)
-    });
-
-    for ns in remaining_in_bailiwick_apex_ns {
-        let required_host = to_relative_domain(&to_fqdn(&ns.value), &zone.name);
-        if !has_glue_records_for_owner(records, zone, &required_host, None) {
-            return Err(ServiceError::BadRequest(format!(
-                "Cannot remove last glue record '{}' required by NS '{}'",
-                required_host, ns.value
-            )));
-        }
-    }
-
-    Ok(())
-}
-
 pub(super) fn validate_record_add_constraints(
     zone: &Zone,
     zone_records: &[Record],
@@ -210,22 +187,10 @@ pub(super) fn validate_record_add_constraints(
         }
     }
 
-    if *record_type == RecordType::NS {
-        if normalized_owner.stored_name != "@" {
-            return Err(ServiceError::BadRequest(
-                "NS records must use apex owner name '@'".to_string(),
-            ));
-        }
-
-        if is_in_bailiwick(value, &zone.name) {
-            let ns_host_relative = to_relative_domain(&to_fqdn(value), &zone.name);
-            if !has_glue_records_for_owner(zone_records, zone, &ns_host_relative, None) {
-                return Err(ServiceError::BadRequest(format!(
-                    "In-bailiwick NS '{}' requires A/AAAA glue record '{}'",
-                    value, ns_host_relative
-                )));
-            }
-        }
+    if *record_type == RecordType::NS && normalized_owner.stored_name != "@" {
+        return Err(ServiceError::BadRequest(
+            "NS records must use apex owner name '@'".to_string(),
+        ));
     }
 
     Ok(normalized_owner)
@@ -233,7 +198,6 @@ pub(super) fn validate_record_add_constraints(
 
 pub fn validate_record_delete_constraints(
     zone: &Zone,
-    zone_records: &[Record],
     deleting_records: &[Record],
 ) -> Result<(), ServiceError> {
     if deleting_records
@@ -256,14 +220,7 @@ pub fn validate_record_delete_constraints(
         }
     }
 
-    let deleting_ids: HashSet<i32> = deleting_records.iter().map(|r| r.id).collect();
-    let remaining_records: Vec<Record> = zone_records
-        .iter()
-        .filter(|r| !deleting_ids.contains(&r.id))
-        .cloned()
-        .collect();
-
-    validate_glue_invariants(zone, &remaining_records)
+    Ok(())
 }
 
 pub(super) fn validate_record_update_constraints(
@@ -289,22 +246,6 @@ pub(super) fn validate_record_update_constraints(
         updated_record.priority,
         Some(existing_record.id),
     )?;
-
-    let records_after_update: Vec<Record> = zone_records
-        .iter()
-        .map(|record| {
-            if record.id == existing_record.id {
-                Record {
-                    name: normalized_owner.stored_name.clone(),
-                    ..updated_record.clone()
-                }
-            } else {
-                record.clone()
-            }
-        })
-        .collect();
-
-    validate_glue_invariants(zone, &records_after_update)?;
 
     if existing_record.record_type == RecordType::NS
         && is_apex_name(&existing_record.name, &zone.name)
@@ -350,25 +291,6 @@ pub async fn validate_record_add_constraints_tx(
         except_record_id,
     )
     .map(|_| ())
-}
-
-fn has_glue_records_for_owner(
-    records: &[Record],
-    zone: &Zone,
-    host_relative_name: &str,
-    except_id: Option<i32>,
-) -> bool {
-    records.iter().any(|r| {
-        if except_id == Some(r.id)
-            || (r.record_type != RecordType::A && r.record_type != RecordType::AAAA)
-        {
-            return false;
-        }
-
-        normalize_record_owner_name(&r.name, &zone.name)
-            .ok()
-            .is_some_and(|owner| owner.stored_name.eq_ignore_ascii_case(host_relative_name))
-    })
 }
 
 fn record_values_equal(left: &str, right: &str, record_type: &RecordType) -> bool {
