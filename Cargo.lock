@@ -191,7 +191,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bindizr"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -218,7 +218,7 @@ dependencies = [
 
 [[package]]
 name = "bindizr-core"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "base64",
  "chrono",
@@ -233,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "bindizr-db"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "async-trait",
  "bindizr-core",
@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "bindizr-dns"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "base64",
  "bindizr-core",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "bindizr-service"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "async-trait",
  "bindizr-core",

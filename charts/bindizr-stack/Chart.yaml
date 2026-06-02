@@ -3,7 +3,7 @@ name: bindizr-stack
 description: Bindizr DNS control plane with BIND9 authoritative DNS pods.
 type: application
 version: 0.1.0
-appVersion: "0.1.0-beta.3"
+appVersion: "0.1.0-beta.4"
 keywords:
   - dns
   - bindizr
