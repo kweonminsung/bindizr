@@ -36,13 +36,17 @@ pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
     match RecordService::list_with_zone_by_filter(filter).await {
         Ok(records) => {
             let response = records
+                .items
                 .iter()
                 .map(GetRecordResponse::from_record_with_zone)
                 .collect::<Vec<_>>();
 
             Ok(DaemonResponse {
                 message: format!("Found {} record(s)", response.len()),
-                data: serde_json::to_value(response).unwrap(),
+                data: json!({
+                    "items": response,
+                    "pagination": records.pagination,
+                }),
             })
         }
         Err(e) => Err(e.to_string()),

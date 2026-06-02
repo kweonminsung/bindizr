@@ -35,7 +35,7 @@ async fn test_zone_crud_operations() {
     // Test GET /zones (with data)
     let (status, body) = ctx.make_request("GET", "/zones", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["zones"].as_array().unwrap().len(), 1);
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
 
     // Test PUT /zones/{name} (update)
     let update_zone_request = serde_json::json!({
@@ -101,9 +101,23 @@ async fn test_zone_list_filters_support_ranges_and_partial_search() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let zones = body["zones"].as_array().unwrap();
+    let zones = body["items"].as_array().unwrap();
     assert_eq!(zones.len(), 1);
     assert_eq!(zones[0]["name"], "filtered.net");
+
+    let (status, body) = ctx
+        .make_request("GET", "/zones?limit=1&offset=1", None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let zones = body["items"].as_array().unwrap();
+    assert_eq!(zones.len(), 1);
+    assert_eq!(zones[0]["name"], "filtered.net");
+    assert_eq!(body["pagination"]["total"], 2);
+    assert_eq!(body["pagination"]["limit"], 1);
+    assert_eq!(body["pagination"]["offset"], 1);
+
+    let (status, _) = ctx.make_request("GET", "/zones?limit=-1", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

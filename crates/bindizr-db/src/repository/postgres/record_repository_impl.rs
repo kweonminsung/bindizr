@@ -351,8 +351,9 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.record_type) LIKE LOWER($26)
                     OR LOWER(r.value) LIKE LOWER($27)
                     OR r.record_type = 'TXT'
-              )
+            )
             ORDER BY r.name
+            LIMIT $28 OFFSET $29
             "#,
         )
         .bind(&filter.zone_name)
@@ -382,6 +383,13 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
+        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+        .bind(
+            filter
+                .offset
+                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+                .unwrap_or(0),
+        )
         .fetch_all(&mut *conn)
         .await?;
 

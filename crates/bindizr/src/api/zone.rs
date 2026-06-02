@@ -44,22 +44,26 @@ impl ZoneApi {
             ("min_ttl" = Option<i32>, Query, description = "Filter by minimum TTL."),
             ("max_ttl" = Option<i32>, Query, description = "Filter by maximum TTL."),
             ("serial" = Option<i32>, Query, description = "Filter by serial."),
-            ("search" = Option<String>, Query, description = "Partially search zones.")
+            ("search" = Option<String>, Query, description = "Partially search zones."),
+            ("limit" = Option<u32>, Query, description = "Maximum number of zones to return."),
+            ("offset" = Option<u64>, Query, description = "Number of zones to skip.")
         ),
         responses(
             (status = 200, description = "A list of DNS zones", body = ZoneListResponse),
+            (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoResponse {
     match ZoneService::list_by_filter(query).await {
-        Ok(zones) => {
-            let zones = zones
+        Ok(response) => {
+            let zones = response
+                .items
                 .iter()
                 .map(GetZoneResponse::from_zone)
                 .collect::<Vec<GetZoneResponse>>();
-            let json_body = json!({ "zones": zones });
+            let json_body = json!({ "items": zones, "pagination": response.pagination });
             (StatusCode::OK, Json(json_body)).into_response()
         }
         Err(err) => ApiError::from(err).into_response(),

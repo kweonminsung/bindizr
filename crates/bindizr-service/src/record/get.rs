@@ -3,8 +3,9 @@ use crate::{
     error::ServiceError,
     log_error,
     model::record::{Record, RecordType, RecordWithZone},
+    pagination::paginate_items,
     repository::RepositoryService,
-    types::GetRecordsFilter,
+    types::{GetRecordsFilter, PaginatedResponse},
 };
 use bindizr_core::dns::record::{display_record_owner_name, display_record_value};
 use bindizr_db::repository::RecordFilter;
@@ -133,10 +134,13 @@ impl RecordService {
 
     pub async fn list_with_zone_by_filter(
         filter: GetRecordsFilter,
-    ) -> Result<Vec<RecordWithZone>, ServiceError> {
+    ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
         let zone_name = filter.resolved_zone_name().map(normalize_filter_zone_name);
         let value_filter = filter.value.clone();
         let search_filter = filter.search.clone();
+        let limit = filter.limit;
+        let offset = filter.offset;
+
         if let Some(name) = zone_name.as_deref() {
             match RepositoryService::get_zone_by_name(name).await {
                 Ok(Some(_)) => {}
@@ -167,6 +171,8 @@ impl RecordService {
             min_priority: filter.min_priority,
             max_priority: filter.max_priority,
             search: filter.search,
+            limit: None,
+            offset: None,
         })
         .await?;
 
@@ -180,7 +186,7 @@ impl RecordService {
             });
         }
 
-        Ok(records)
+        Ok(paginate_items(records, limit, offset))
     }
 
     pub async fn get_by_id(record_id: i32) -> Result<Record, ServiceError> {

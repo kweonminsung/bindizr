@@ -25,6 +25,8 @@ pub struct ZoneFilter {
     pub max_ttl: Option<i32>,
     pub serial: Option<i32>,
     pub search: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -40,6 +42,8 @@ pub struct RecordFilter {
     pub min_priority: Option<i32>,
     pub max_priority: Option<i32>,
     pub search: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u64>,
 }
 
 pub struct RepositoryTx<'a>(RepositoryTxKind<'a>);

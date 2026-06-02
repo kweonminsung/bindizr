@@ -31,10 +31,13 @@ pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
     match ZoneService::list_by_filter(filter).await {
         Ok(zones) => {
             let response: Vec<GetZoneResponse> =
-                zones.iter().map(GetZoneResponse::from_zone).collect();
+                zones.items.iter().map(GetZoneResponse::from_zone).collect();
             Ok(DaemonResponse {
                 message: format!("Found {} zone(s)", response.len()),
-                data: serde_json::to_value(response).unwrap(),
+                data: json!({
+                    "items": response,
+                    "pagination": zones.pagination,
+                }),
             })
         }
         Err(e) => Err(e.to_string()),

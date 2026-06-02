@@ -5,8 +5,8 @@ use utoipa::{
 
 use super::types::{
     CreateRecordRequest, CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse,
-    MessageResponse, NotifyZoneRequest, RecordListResponse, RecordResponse, RecordValueRequest,
-    UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+    MessageResponse, NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse,
+    RecordValueRequest, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
 };
 
 #[derive(OpenApi)]
@@ -32,6 +32,7 @@ use super::types::{
         GetZoneResponse,
         MessageResponse,
         NotifyZoneRequest,
+        Pagination,
         RecordListResponse,
         RecordResponse,
         RecordValueRequest,

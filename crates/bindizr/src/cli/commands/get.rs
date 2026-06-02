@@ -39,6 +39,12 @@ pub(crate) enum GetCommand {
         /// Search zones by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
+        /// Maximum number of zones to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of zones to skip
+        #[arg(long)]
+        offset: Option<u64>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -84,6 +90,12 @@ pub(crate) enum GetCommand {
         /// Search records by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
+        /// Maximum number of records to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of records to skip
+        #[arg(long)]
+        offset: Option<u64>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -104,6 +116,8 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
             max_ttl,
             serial,
             search,
+            limit,
+            offset,
             output,
         } => {
             let has_filters = id.is_some()
@@ -113,7 +127,9 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                 || min_ttl.is_some()
                 || max_ttl.is_some()
                 || serial.is_some()
-                || search.is_some();
+                || search.is_some()
+                || limit.is_some()
+                || offset.is_some();
             let filter_payload = || {
                 json!({
                     "name": name,
@@ -125,6 +141,8 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                     "max_ttl": max_ttl,
                     "serial": serial,
                     "search": search,
+                    "limit": limit,
+                    "offset": offset,
                 })
             };
             let mut data = if let Some(name) = name.as_deref() {
@@ -149,7 +167,7 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                     .data
             };
 
-            if has_filters || matches!(data, serde_json::Value::Array(_)) {
+            if matches!(data, serde_json::Value::Array(_)) {
                 data = filter_zones(
                     data,
                     name.as_deref(),
@@ -165,7 +183,11 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
             }
 
             print_output_with_table(&data, output, |data| {
-                if let Some(arr) = data.as_array() {
+                if let Some(arr) = data.get("items").and_then(|value| value.as_array()) {
+                    arr.iter()
+                        .filter_map(|v| ZoneRow::from_json(v).ok())
+                        .collect()
+                } else if let Some(arr) = data.as_array() {
                     arr.iter()
                         .filter_map(|v| ZoneRow::from_json(v).ok())
                         .collect()
@@ -189,6 +211,8 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
             min_priority,
             max_priority,
             search,
+            limit,
+            offset,
             output,
         } => {
             let has_filters = zone.is_some()
@@ -201,7 +225,9 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                 || priority.is_some()
                 || min_priority.is_some()
                 || max_priority.is_some()
-                || search.is_some();
+                || search.is_some()
+                || limit.is_some()
+                || offset.is_some();
             let filter_payload = || {
                 json!({
                     "zone_name": zone,
@@ -215,6 +241,8 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                     "min_priority": min_priority,
                     "max_priority": max_priority,
                     "search": search,
+                    "limit": limit,
+                    "offset": offset,
                 })
             };
 
@@ -235,7 +263,7 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
                     .data
             };
 
-            if has_filters || matches!(data, serde_json::Value::Array(_)) {
+            if matches!(data, serde_json::Value::Array(_)) {
                 data = filter_records(
                     data,
                     RecordFilterArgs {
@@ -255,7 +283,11 @@ pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String>
             }
 
             print_output_with_table(&data, output, |data| {
-                if let Some(arr) = data.as_array() {
+                if let Some(arr) = data.get("items").and_then(|value| value.as_array()) {
+                    arr.iter()
+                        .filter_map(|v| RecordRow::from_json(v).ok())
+                        .collect()
+                } else if let Some(arr) = data.as_array() {
                     arr.iter()
                         .filter_map(|v| RecordRow::from_json(v).ok())
                         .collect()

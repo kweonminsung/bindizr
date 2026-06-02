@@ -3,8 +3,9 @@ use crate::{
     error::ServiceError,
     log_error,
     model::{zone::Zone, zone_change::ZoneChange},
+    pagination::paginate_items,
     repository::RepositoryService,
-    types::GetZonesFilter,
+    types::{GetZonesFilter, PaginatedResponse},
 };
 use bindizr_db::repository::ZoneFilter;
 
@@ -41,8 +42,13 @@ impl ZoneService {
         })
     }
 
-    pub async fn list_by_filter(filter: GetZonesFilter) -> Result<Vec<Zone>, ServiceError> {
-        RepositoryService::get_zones_by_filter(ZoneFilter {
+    pub async fn list_by_filter(
+        filter: GetZonesFilter,
+    ) -> Result<PaginatedResponse<Zone>, ServiceError> {
+        let limit = filter.limit;
+        let offset = filter.offset;
+
+        let zones = RepositoryService::get_zones_by_filter(ZoneFilter {
             name: filter.name,
             id: filter.id,
             primary_ns: filter.primary_ns,
@@ -52,8 +58,12 @@ impl ZoneService {
             max_ttl: filter.max_ttl,
             serial: filter.serial,
             search: filter.search,
+            limit: None,
+            offset: None,
         })
-        .await
+        .await?;
+
+        Ok(paginate_items(zones, limit, offset))
     }
 
     pub async fn get_by_name(zone_name: &str) -> Result<Zone, ServiceError> {

@@ -137,6 +137,20 @@ paths:
         required: false
         schema:
           type: string
+      - name: limit
+        in: query
+        description: Maximum number of records to return.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: offset
+        in: query
+        description: Number of records to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
       responses:
         '200':
           description: A list of DNS records
@@ -144,6 +158,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecordListResponse'
+        '400':
+          description: Bad request, invalid pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
           content:
@@ -397,6 +417,20 @@ paths:
         required: false
         schema:
           type: string
+      - name: limit
+        in: query
+        description: Maximum number of zones to return.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: offset
+        in: query
+        description: Number of zones to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
       responses:
         '200':
           description: A list of DNS zones
@@ -404,6 +438,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ZoneListResponse'
+        '400':
+          description: Bad request, invalid pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
           content:
@@ -796,15 +836,37 @@ components:
           - string
           - 'null'
           example: example.com
+    Pagination:
+      type: object
+      required:
+      - limit
+      - offset
+      - total
+      properties:
+        limit:
+          type: integer
+          format: int32
+          example: 50
+        offset:
+          type: integer
+          format: int64
+          example: 0
+        total:
+          type: integer
+          format: int64
+          example: 125
     RecordListResponse:
       type: object
       required:
-      - records
+      - items
+      - pagination
       properties:
-        records:
+        items:
           type: array
           items:
             $ref: '#/components/schemas/GetRecordResponse'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     RecordResponse:
       type: object
       required:
@@ -864,12 +926,15 @@ components:
     ZoneListResponse:
       type: object
       required:
-      - zones
+      - items
+      - pagination
       properties:
-        zones:
+        items:
           type: array
           items:
             $ref: '#/components/schemas/GetZoneResponse'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     ZoneResponse:
       type: object
       required:

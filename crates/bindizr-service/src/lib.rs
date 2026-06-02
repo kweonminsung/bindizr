@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod error;
 pub mod notify;
+mod pagination;
 pub mod record;
 mod repository;
 pub mod serial;

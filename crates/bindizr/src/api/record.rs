@@ -46,10 +46,13 @@ impl RecordApi {
             ("priority" = Option<i32>, Query, description = "Filter by priority."),
             ("min_priority" = Option<i32>, Query, description = "Filter by minimum priority."),
             ("max_priority" = Option<i32>, Query, description = "Filter by maximum priority."),
-            ("search" = Option<String>, Query, description = "Partially search records.")
+            ("search" = Option<String>, Query, description = "Partially search records."),
+            ("limit" = Option<u32>, Query, description = "Maximum number of records to return."),
+            ("offset" = Option<u64>, Query, description = "Number of records to skip.")
         ),
         responses(
             (status = 200, description = "A list of DNS records", body = RecordListResponse),
+            (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -61,11 +64,12 @@ pub(crate) async fn get_records(Query(query): Query<GetRecordsFilter>) -> impl I
     };
 
     let records = raw_records
+        .items
         .iter()
         .map(GetRecordResponse::from_record_with_zone)
         .collect::<Vec<_>>();
 
-    let json_body = json!({ "records": records });
+    let json_body = json!({ "items": records, "pagination": raw_records.pagination });
     (StatusCode::OK, Json(json_body)).into_response()
 }
 

@@ -183,6 +183,7 @@ impl ZoneRepository for PostgresZoneRepository {
                     OR LOWER(admin_email) LIKE LOWER($20)
               )
             ORDER BY name
+            LIMIT $21 OFFSET $22
             "#,
         )
         .bind(&filter.name)
@@ -205,6 +206,13 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
+        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+        .bind(
+            filter
+                .offset
+                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+                .unwrap_or(0),
+        )
         .fetch_all(&mut *conn)
         .await?;
 

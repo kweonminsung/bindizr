@@ -349,8 +349,9 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(r.record_type) LIKE LOWER(?)
                     OR LOWER(r.value) LIKE LOWER(?)
                     OR r.record_type = 'TXT'
-              )
+            )
             ORDER BY r.name
+            LIMIT ? OFFSET ?
             "#,
         )
         .bind(&filter.zone_name)
@@ -380,6 +381,13 @@ impl RecordRepository for MySqlRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
+        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+        .bind(
+            filter
+                .offset
+                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+                .unwrap_or(0),
+        )
         .fetch_all(&mut *conn)
         .await?;
 

@@ -178,6 +178,7 @@ impl ZoneRepository for SqliteZoneRepository {
                     OR LOWER(admin_email) LIKE LOWER(?)
               )
             ORDER BY name
+            LIMIT ? OFFSET ?
             "#,
         )
         .bind(&filter.name)
@@ -200,6 +201,13 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
+        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+        .bind(
+            filter
+                .offset
+                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+                .unwrap_or(0),
+        )
         .fetch_all(&mut *conn)
         .await?;
 

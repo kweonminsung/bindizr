@@ -38,7 +38,7 @@ async fn test_record_crud_operations() {
         .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["records"].as_array().unwrap().len(), 1);
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
 
     // Test PUT /records/{record_id} (update)
     let update_record_request = serde_json::json!({
@@ -142,7 +142,7 @@ async fn test_single_record_operations_are_scoped_by_zone() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(
-        body["records"]
+        body["items"]
             .as_array()
             .unwrap()
             .iter()
@@ -201,7 +201,7 @@ async fn test_record_list_filters_support_ranges_and_partial_search() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let records = body["records"].as_array().unwrap();
+    let records = body["items"].as_array().unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["name"], "api.example.com.");
 
@@ -216,7 +216,7 @@ async fn test_record_list_filters_support_ranges_and_partial_search() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let records = body["records"].as_array().unwrap();
+    let records = body["items"].as_array().unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["record_type"], "MX");
 
@@ -228,7 +228,7 @@ async fn test_record_list_filters_support_ranges_and_partial_search() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let records = body["records"].as_array().unwrap();
+    let records = body["items"].as_array().unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["record_type"], "CNAME");
 
@@ -240,9 +240,27 @@ async fn test_record_list_filters_support_ranges_and_partial_search() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let records = body["records"].as_array().unwrap();
+    let records = body["items"].as_array().unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["name"], "api.example.com.");
+
+    let (status, body) = ctx
+        .make_request(
+            "GET",
+            &format!("/records?zone_name={}&limit=1&offset=1", zone.name),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let records = body["items"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["name"], "api.example.com.");
+    assert_eq!(body["pagination"]["total"], 3);
+    assert_eq!(body["pagination"]["limit"], 1);
+    assert_eq!(body["pagination"]["offset"], 1);
+
+    let (status, _) = ctx.make_request("GET", "/records?offset=-1", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -514,7 +532,7 @@ async fn test_multiple_record_types() {
         .make_request("GET", &format!("/records?zone_name={}", zone.name), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["records"].as_array().unwrap().len(), 5);
+    assert_eq!(body["items"].as_array().unwrap().len(), 5);
 }
 
 #[tokio::test]

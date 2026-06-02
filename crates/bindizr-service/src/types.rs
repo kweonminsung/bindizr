@@ -11,6 +11,31 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[derive(Serialize, Debug, ToSchema)]
+pub struct PaginatedResponse<T> {
+    pub items: Vec<T>,
+    pub pagination: Pagination,
+}
+
+impl<T> PaginatedResponse<T> {
+    pub fn map_items<U>(self, mut f: impl FnMut(T) -> U) -> PaginatedResponse<U> {
+        PaginatedResponse {
+            items: self.items.into_iter().map(&mut f).collect(),
+            pagination: self.pagination,
+        }
+    }
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+pub struct Pagination {
+    #[schema(example = 50)]
+    pub limit: u32,
+    #[schema(example = 0)]
+    pub offset: u64,
+    #[schema(example = 125)]
+    pub total: u64,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
 pub struct GetZoneResponse {
     #[schema(example = 1)]
     pub id: i32,
@@ -202,6 +227,10 @@ pub struct GetZonesFilter {
     #[serde(alias = "q")]
     #[schema(example = "example")]
     pub search: Option<String>,
+    #[schema(example = 50)]
+    pub limit: Option<u32>,
+    #[schema(example = 0)]
+    pub offset: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
@@ -233,6 +262,10 @@ pub struct GetRecordsFilter {
     #[serde(alias = "q")]
     #[schema(example = "api")]
     pub search: Option<String>,
+    #[schema(example = 50)]
+    pub limit: Option<u32>,
+    #[schema(example = 0)]
+    pub offset: Option<u64>,
 }
 
 impl GetRecordsFilter {
@@ -263,7 +296,8 @@ pub struct NotifyZoneRequest {
 #[derive(Serialize, Debug, ToSchema)]
 #[allow(dead_code)]
 pub struct ZoneListResponse {
-    pub zones: Vec<GetZoneResponse>,
+    pub items: Vec<GetZoneResponse>,
+    pub pagination: Pagination,
 }
 
 #[derive(Serialize, Debug, ToSchema)]
@@ -282,7 +316,8 @@ pub struct ZoneResponse {
 #[derive(Serialize, Debug, ToSchema)]
 #[allow(dead_code)]
 pub struct RecordListResponse {
-    pub records: Vec<GetRecordResponse>,
+    pub items: Vec<GetRecordResponse>,
+    pub pagination: Pagination,
 }
 
 #[derive(Serialize, Debug, ToSchema)]
