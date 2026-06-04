@@ -10,6 +10,7 @@ use crate::{
 use bindizr_core::dns::name::{
     is_apex_name, is_same_or_subdomain_fqdn, split_presentation_labels, to_fqdn,
 };
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 const MAX_DNS_LABEL_LEN: usize = 63;
 const MAX_DOMAIN_LEN: usize = 253;
@@ -142,6 +143,8 @@ pub(super) fn validate_record_add_constraints(
         ));
     }
 
+    validate_record_value(record_type, value)?;
+
     if *record_type == RecordType::CNAME && normalized_owner.stored_name == "@" {
         return Err(ServiceError::BadRequest(
             "CNAME record cannot have '@' as name".to_string(),
@@ -194,6 +197,98 @@ pub(super) fn validate_record_add_constraints(
     }
 
     Ok(normalized_owner)
+}
+
+fn validate_record_value(record_type: &RecordType, value: &str) -> Result<(), ServiceError> {
+    match record_type {
+        RecordType::A => value.parse::<Ipv4Addr>().map(|_| ()).map_err(|_| {
+            ServiceError::BadRequest(format!(
+                "A record value must be a valid IPv4 address: {}",
+                value
+            ))
+        }),
+        RecordType::AAAA => value.parse::<Ipv6Addr>().map(|_| ()).map_err(|_| {
+            ServiceError::BadRequest(format!(
+                "AAAA record value must be a valid IPv6 address: {}",
+                value
+            ))
+        }),
+        RecordType::CNAME => validate_domain_record_value("CNAME record value", value),
+        _ => Ok(()),
+    }
+}
+
+fn validate_domain_record_value(field: &str, value: &str) -> Result<(), ServiceError> {
+    let trimmed = value.trim();
+
+    if trimmed.is_empty() {
+        return Err(ServiceError::BadRequest(format!(
+            "{} must not be empty",
+            field
+        )));
+    }
+
+    if has_whitespace_or_control(trimmed) {
+        return Err(ServiceError::BadRequest(format!(
+            "{} must not contain whitespace or control characters",
+            field
+        )));
+    }
+
+    let without_trailing_dot = trimmed.strip_suffix('.').unwrap_or(trimmed);
+    if without_trailing_dot.is_empty() {
+        return Err(ServiceError::BadRequest(format!(
+            "{} must not be the root zone",
+            field
+        )));
+    }
+
+    if without_trailing_dot.len() > MAX_DOMAIN_LEN {
+        return Err(ServiceError::BadRequest(format!(
+            "{} must be 253 bytes or fewer",
+            field
+        )));
+    }
+
+    for label in split_presentation_labels(without_trailing_dot)
+        .map_err(|e| ServiceError::BadRequest(e.to_string()))?
+    {
+        validate_domain_record_label(field, &label)?;
+    }
+
+    Ok(())
+}
+
+fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceError> {
+    if label.is_empty() {
+        return Err(ServiceError::BadRequest(format!(
+            "{} must not contain empty labels",
+            field
+        )));
+    }
+
+    if label.len() > MAX_DNS_LABEL_LEN {
+        return Err(ServiceError::BadRequest(format!(
+            "{} labels must be 63 bytes or fewer",
+            field
+        )));
+    }
+
+    if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(ServiceError::BadRequest(format!(
+            "{} labels must contain only ASCII letters, digits, or hyphens",
+            field
+        )));
+    }
+
+    if label.starts_with('-') || label.ends_with('-') {
+        return Err(ServiceError::BadRequest(format!(
+            "{} labels must not start or end with hyphens",
+            field
+        )));
+    }
+
+    Ok(())
 }
 
 pub fn validate_record_delete_constraints(

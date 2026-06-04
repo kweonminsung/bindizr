@@ -74,6 +74,76 @@ async fn test_record_crud_operations() {
 }
 
 #[tokio::test]
+async fn test_record_value_validation_rejects_invalid_a_aaaa_and_cname_values() {
+    let ctx = TestContext::new().await;
+    let zone = ctx.create_test_zone().await;
+
+    for (record_type, value, expected_error) in [
+        ("A", "not-an-ip", "valid IPv4"),
+        ("AAAA", "192.168.1.1", "valid IPv6"),
+        (
+            "CNAME",
+            "bad target.example.com",
+            "must not contain whitespace",
+        ),
+        (
+            "CNAME",
+            "-bad.example.com",
+            "must not start or end with hyphens",
+        ),
+    ] {
+        let request = serde_json::json!({
+            "name": format!("bad-{}", record_type.to_ascii_lowercase()),
+            "record_type": record_type,
+            "value": value,
+            "ttl": 1800,
+            "zone_name": zone.name
+        });
+
+        let (status, body) = ctx.make_request("POST", "/records", Some(request)).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body["error"].as_str().unwrap().contains(expected_error),
+            "unexpected error for {} value '{}': {}",
+            record_type,
+            value,
+            body["error"]
+        );
+    }
+
+    let valid_request = serde_json::json!({
+        "name": "valid",
+        "record_type": "A",
+        "value": "192.0.2.10",
+        "ttl": 1800,
+        "zone_name": zone.name
+    });
+    let (status, body) = ctx
+        .make_request("POST", "/records", Some(valid_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let record_id = body["record"]["id"].as_i64().unwrap();
+
+    let invalid_update = serde_json::json!({
+        "name": "valid",
+        "record_type": "AAAA",
+        "value": "not-ipv6",
+        "ttl": 1800
+    });
+    let (status, body) = ctx
+        .make_request(
+            "PUT",
+            &format!("/records/{}", record_id),
+            Some(invalid_update),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("valid IPv6"));
+}
+
+#[tokio::test]
 async fn test_single_record_operations_are_scoped_by_zone() {
     let ctx = TestContext::new().await;
     let first_zone = ctx.create_test_zone().await;

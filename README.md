@@ -159,7 +159,8 @@ $ vim /etc/bindizr/bindizr.conf.toml # or use any text editor you prefer
 
 Add the following configuration, adjusting values to match your environment:
 
-```toml[api]
+```toml
+[api]
 listen_addr = "127.0.0.1"     # HTTP API listen address
 listen_port = 3000            # HTTP API listen port
 require_authentication = true # Enable API authentication (true/false)
