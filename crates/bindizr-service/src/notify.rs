@@ -1,6 +1,7 @@
+use std::sync::{Arc, OnceLock};
+
 use async_trait::async_trait;
 use bindizr_core::config;
-use std::sync::{Arc, OnceLock};
 
 #[async_trait]
 pub trait NotifySender: Send + Sync {

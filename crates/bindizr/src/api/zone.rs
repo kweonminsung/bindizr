@@ -1,12 +1,3 @@
-use crate::api::{
-    error::ApiError,
-    middleware::body_parser::JsonBody,
-    types::{
-        CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        MessageResponse, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
-    },
-};
-use crate::service::{record::RecordService, zone::ZoneService};
 use axum::{
     Json, Router,
     extract::{Path, Query},
@@ -16,6 +7,18 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+
+use crate::{
+    api::{
+        error::ApiError,
+        middleware::body_parser::JsonBody,
+        types::{
+            CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
+            MessageResponse, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+        },
+    },
+    service::{record::RecordService, zone::ZoneService},
+};
 
 pub(crate) struct ZoneApi;
 

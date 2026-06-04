@@ -3,8 +3,9 @@ mod record;
 mod zone;
 
 mod test {
-    use crate::common::TestContext;
     use axum::http::StatusCode;
+
+    use crate::common::TestContext;
 
     #[tokio::test]
     async fn api_home_returns_running_message() {

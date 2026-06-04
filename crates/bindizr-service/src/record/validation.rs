@@ -1,3 +1,9 @@
+use std::net::{Ipv4Addr, Ipv6Addr};
+
+use bindizr_core::dns::name::{
+    is_apex_name, is_same_or_subdomain_fqdn, split_presentation_labels, to_fqdn,
+};
+
 use crate::{
     error::ServiceError,
     log_error,
@@ -7,10 +13,6 @@ use crate::{
     },
     repository::{RepositoryService, RepositoryTx},
 };
-use bindizr_core::dns::name::{
-    is_apex_name, is_same_or_subdomain_fqdn, split_presentation_labels, to_fqdn,
-};
-use std::net::{Ipv4Addr, Ipv6Addr};
 
 const MAX_DNS_LABEL_LEN: usize = 63;
 const MAX_DOMAIN_LEN: usize = 253;

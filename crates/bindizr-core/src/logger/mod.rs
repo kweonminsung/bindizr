@@ -1,6 +1,8 @@
-use crate::config;
-use log::{Level, Metadata, Record};
 use std::io::{self, Write};
+
+use log::{Level, Metadata, Record};
+
+use crate::config;
 
 #[macro_export]
 macro_rules! log_error {

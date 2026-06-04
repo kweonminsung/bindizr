@@ -6,12 +6,14 @@ pub(crate) mod ixfr;
 pub mod notify;
 pub(crate) mod wire;
 
-use crate::{acl, log_info, log_warn};
+use std::net::{IpAddr, SocketAddr};
+
 use catalog::generate_catalog_zone;
 use domain::base::iana::Rtype;
 use error::XfrError;
-use std::net::{IpAddr, SocketAddr};
 use tokio::net::TcpStream;
+
+use crate::{acl, log_info, log_warn};
 
 pub async fn initialize() {
     ensure_catalog_zone().await;

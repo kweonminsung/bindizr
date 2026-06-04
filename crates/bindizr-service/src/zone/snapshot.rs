@@ -1,3 +1,6 @@
+use bindizr_core::dns::name::email_to_soa_mailbox;
+use chrono::Utc;
+
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -5,8 +8,6 @@ use crate::{
     model::{zone::Zone, zone_snapshot::ZoneSnapshot},
     repository::RepositoryService,
 };
-use bindizr_core::dns::name::email_to_soa_mailbox;
-use chrono::Utc;
 
 /// Save a snapshot of the zone's SOA data for historical tracking.
 pub async fn save_zone_snapshot_tx(

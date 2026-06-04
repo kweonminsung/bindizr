@@ -1,10 +1,11 @@
 #[cfg(test)]
 mod tests;
 
+use std::{env, fmt, net::IpAddr, path::PathBuf};
+
 use config::{Config, File, FileFormat};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::{env, fmt, net::IpAddr, path::PathBuf};
 
 // Config file path
 pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";

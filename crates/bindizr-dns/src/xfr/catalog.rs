@@ -1,9 +1,10 @@
-use super::{error::XfrError, wire};
-use crate::{log_info, model::zone::Zone, service::zone::ZoneService};
 use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
+
+use super::{delta, error::XfrError, wire};
+use crate::{log_info, model::zone::Zone, service::zone::ZoneService};
 
 pub(crate) const CATALOG_ZONE_NAME: &str = "catalog.bind";
 
@@ -88,9 +89,10 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
 
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
     let mut messages_sent = 0usize;
+    let serial = delta::serial_to_u32(catalog_zone.serial)?;
 
     messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
-        builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)
+        builder.add_catalog_soa(&catalog_zone, serial)
     })
     .await?;
 
@@ -111,7 +113,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     }
 
     messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
-        builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)
+        builder.add_catalog_soa(&catalog_zone, serial)
     })
     .await?;
     messages_sent += wire::flush_message_if_not_empty(stream, &mut builder).await?;

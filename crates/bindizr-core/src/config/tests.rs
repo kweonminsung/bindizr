@@ -1,6 +1,6 @@
+use std::{fs::File as StdFile, io::Write};
+
 use config::{Config, File, FileFormat};
-use std::fs::File as StdFile;
-use std::io::Write;
 use tempfile::tempdir;
 
 use crate::config::{

@@ -1,3 +1,7 @@
+use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn};
+use chrono::Utc;
+
+use super::ZoneService;
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -12,10 +16,6 @@ use crate::{
     types::CreateZoneRequest,
     zone::{snapshot::save_zone_snapshot_tx, validation::normalize_email},
 };
-use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn};
-use chrono::Utc;
-
-use super::ZoneService;
 
 impl ZoneService {
     pub async fn update_tx(tx: &mut RepositoryTx<'_>, zone: Zone) -> Result<Zone, ServiceError> {

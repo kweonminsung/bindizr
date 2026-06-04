@@ -2,6 +2,9 @@ pub mod mysql;
 pub mod postgres;
 pub mod sqlite;
 
+use async_trait::async_trait;
+use sqlx::{MySql, Postgres, Sqlite};
+
 use super::model::{
     api_token::ApiToken,
     catalog_zone_state::CatalogZoneState,
@@ -11,8 +14,6 @@ use super::model::{
     zone_snapshot::ZoneSnapshot,
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
-use async_trait::async_trait;
-use sqlx::{MySql, Postgres, Sqlite};
 
 #[derive(Clone, Debug, Default)]
 pub struct ZoneFilter {

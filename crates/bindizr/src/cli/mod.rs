@@ -1,14 +1,16 @@
 mod commands;
 mod output;
 
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use clap::{Parser, Subcommand};
+
 use crate::{
     api,
     cli::commands::{notify::NotifyCommand, token::TokenCommand},
     config, database, dns, log_error, log_info, logger, service, socket,
 };
-use async_trait::async_trait;
-use clap::{Parser, Subcommand};
-use std::sync::Arc;
 
 struct DnsNotifySender;
 

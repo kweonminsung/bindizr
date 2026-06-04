@@ -1,3 +1,7 @@
+use bindizr_core::dns::record::{display_record_owner_name, display_record_value};
+use bindizr_db::repository::RecordFilter;
+
+use super::RecordService;
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -7,10 +11,6 @@ use crate::{
     repository::RepositoryService,
     types::{GetRecordsFilter, PaginatedResponse},
 };
-use bindizr_core::dns::record::{display_record_owner_name, display_record_value};
-use bindizr_db::repository::RecordFilter;
-
-use super::RecordService;
 
 impl RecordService {
     pub async fn list_by_zone_id(zone_id: i32) -> Result<Vec<Record>, ServiceError> {

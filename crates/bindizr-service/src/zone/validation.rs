@@ -1,5 +1,6 @@
-use crate::{error::ServiceError, types::CreateZoneRequest};
 use bindizr_core::dns::name::{email_to_soa_mailbox, split_presentation_labels, to_fqdn_lowercase};
+
+use crate::{error::ServiceError, types::CreateZoneRequest};
 
 const MAX_DOMAIN_LEN: usize = 253;
 const MAX_EMAIL_LEN: usize = 254;

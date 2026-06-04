@@ -1,3 +1,6 @@
+use chrono::Utc;
+
+use super::ZoneService;
 use crate::{
     error::ServiceError,
     log_error, log_info, log_warn,
@@ -13,9 +16,6 @@ use crate::{
         validation::{is_same_zone_name, validate_create_zone_request},
     },
 };
-use chrono::Utc;
-
-use super::ZoneService;
 
 impl ZoneService {
     pub async fn create(create_zone_request: &CreateZoneRequest) -> Result<Zone, ServiceError> {

@@ -1,7 +1,7 @@
-use crate::{error::ServiceError, log_error, model::api_token::ApiToken};
 use chrono::Utc;
 
 use super::{repository::RepositoryService, token::hash_token};
+use crate::{error::ServiceError, log_error, model::api_token::ApiToken};
 
 pub struct AuthService;
 

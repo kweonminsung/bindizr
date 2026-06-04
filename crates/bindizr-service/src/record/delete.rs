@@ -1,9 +1,8 @@
+use super::{RecordService, validation::validate_record_delete_constraints};
 use crate::{
     RepositoryTx, error::ServiceError, log_error, log_info, log_warn,
     repository::RepositoryService, serial::generate_serial, zone::snapshot::save_zone_snapshot_tx,
 };
-
-use super::{RecordService, validation::validate_record_delete_constraints};
 
 impl RecordService {
     pub async fn delete_tx(tx: &mut RepositoryTx<'_>, record_id: i32) -> Result<(), ServiceError> {

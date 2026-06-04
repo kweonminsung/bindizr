@@ -1,15 +1,17 @@
+use std::{
+    net::SocketAddr,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use base64::Engine;
+use hmac::{Hmac, KeyInit, Mac};
+use sha2::Sha256;
+
 use super::{
     parser::{TsigRecord, UpdateRequest},
     update::{TsigErrorResponse, UpdateError},
 };
 use crate::config;
-use base64::Engine;
-use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha256;
-use std::{
-    net::SocketAddr,
-    time::{SystemTime, UNIX_EPOCH},
-};
 
 type HmacSha256 = Hmac<Sha256>;
 

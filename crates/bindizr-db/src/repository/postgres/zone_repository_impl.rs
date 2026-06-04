@@ -1,10 +1,11 @@
-use crate::error::DatabaseError;
+use async_trait::async_trait;
+use sqlx::{Pool, Postgres, Row};
+
 use crate::{
+    error::DatabaseError,
     model::zone::Zone,
     repository::{RepositoryTx, RepositoryTxKind, ZoneFilter, ZoneRepository},
 };
-use async_trait::async_trait;
-use sqlx::{Pool, Postgres, Row};
 
 pub struct PostgresZoneRepository {
     pool: Pool<Postgres>,

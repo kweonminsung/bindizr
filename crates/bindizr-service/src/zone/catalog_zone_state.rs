@@ -1,6 +1,5 @@
-use crate::{error::ServiceError, repository::RepositoryService};
-
 use super::ZoneService;
+use crate::{error::ServiceError, repository::RepositoryService};
 
 impl ZoneService {
     pub async fn update_catalog_serial_for_signature(

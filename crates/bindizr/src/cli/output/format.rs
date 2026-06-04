@@ -1,5 +1,6 @@
-use serde::Serialize;
 use std::fmt;
+
+use serde::Serialize;
 use tabled::{Table, Tabled, settings::Style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

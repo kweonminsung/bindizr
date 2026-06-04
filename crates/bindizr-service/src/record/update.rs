@@ -1,3 +1,4 @@
+use super::{RecordService, validation::validate_record_update_constraints};
 use crate::{
     error::ServiceError,
     log_error, log_info, log_warn,
@@ -10,8 +11,6 @@ use crate::{
     types::UpdateRecordRequest,
     zone::snapshot::save_zone_snapshot_tx,
 };
-
-use super::{RecordService, validation::validate_record_update_constraints};
 
 impl RecordService {
     pub async fn update_by_id(

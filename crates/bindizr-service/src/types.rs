@@ -1,7 +1,3 @@
-use crate::model::{
-    record::{Record, RecordType, RecordWithZone},
-    zone::Zone,
-};
 use bindizr_core::dns::{
     name::to_fqdn_lowercase,
     record::{display_record_owner_name, display_record_value},
@@ -9,6 +5,11 @@ use bindizr_core::dns::{
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::model::{
+    record::{Record, RecordType, RecordWithZone},
+    zone::Zone,
+};
 
 #[derive(Serialize, Debug, ToSchema)]
 pub struct PaginatedResponse<T> {

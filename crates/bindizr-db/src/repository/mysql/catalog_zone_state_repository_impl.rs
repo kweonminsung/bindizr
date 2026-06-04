@@ -1,10 +1,11 @@
-use crate::error::DatabaseError;
+use async_trait::async_trait;
+use sqlx::{MySql, Pool};
+
 use crate::{
+    error::DatabaseError,
     model::catalog_zone_state::CatalogZoneState,
     repository::{CatalogZoneStateRepository, RepositoryTx, RepositoryTxKind},
 };
-use async_trait::async_trait;
-use sqlx::{MySql, Pool};
 
 pub struct MySqlCatalogZoneStateRepository {
     pool: Pool<MySql>,

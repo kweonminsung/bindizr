@@ -1,6 +1,7 @@
-use crate::common::TestContext;
 use axum::http::StatusCode;
 use bindizr::{database::get_record_repository, dns, model::record::RecordType};
+
+use crate::common::TestContext;
 
 #[tokio::test]
 async fn record_create_read_update_delete_round_trip() {

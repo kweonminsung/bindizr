@@ -1,3 +1,6 @@
+use bindizr_db::repository::ZoneFilter;
+
+use super::ZoneService;
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -7,9 +10,6 @@ use crate::{
     repository::RepositoryService,
     types::{GetZonesFilter, PaginatedResponse},
 };
-use bindizr_db::repository::ZoneFilter;
-
-use super::ZoneService;
 
 impl ZoneService {
     pub async fn find(zone_name: &str) -> Result<Option<Zone>, ServiceError> {

@@ -1,10 +1,11 @@
-use crate::cli::output::{OutputFormat, RecordRow, ZoneRow, print_output_with_table};
-use crate::socket::client::DaemonSocketClient;
-use crate::socket::types::DaemonCommandKind;
-use bindizr_core::dns::name::to_fqdn_lowercase;
-use bindizr_core::model::record::RecordType;
+use bindizr_core::{dns::name::to_fqdn_lowercase, model::record::RecordType};
 use clap::Subcommand;
 use serde_json::json;
+
+use crate::{
+    cli::output::{OutputFormat, RecordRow, ZoneRow, print_output_with_table},
+    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+};
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum GetCommand {

@@ -1,7 +1,7 @@
-use crate::dns;
-use crate::socket::types::DaemonResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::{dns, socket::types::DaemonResponse};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(super) struct NotifyZoneRequest {

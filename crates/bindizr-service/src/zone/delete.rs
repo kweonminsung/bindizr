@@ -1,6 +1,5 @@
-use crate::{error::ServiceError, log_error, log_info, log_warn, repository::RepositoryService};
-
 use super::ZoneService;
+use crate::{error::ServiceError, log_error, log_info, log_warn, repository::RepositoryService};
 
 impl ZoneService {
     pub async fn delete(zone_name: &str) -> Result<(), ServiceError> {

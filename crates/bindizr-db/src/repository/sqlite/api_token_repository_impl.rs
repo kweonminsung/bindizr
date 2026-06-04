@@ -1,7 +1,7 @@
-use crate::error::DatabaseError;
-use crate::{model::api_token::ApiToken, repository::ApiTokenRepository};
 use async_trait::async_trait;
 use sqlx::{Pool, Sqlite};
+
+use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
 
 pub struct SqliteApiTokenRepository {
     pool: Pool<Sqlite>,

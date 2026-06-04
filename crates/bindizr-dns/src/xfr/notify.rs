@@ -1,13 +1,14 @@
-use super::{catalog, error::XfrError, wire};
-use crate::{config, log_error, log_info, service::zone::ZoneService};
+use std::{net::SocketAddr, time::Duration};
+
 use domain::base::{
     Name, Rtype, StaticCompressor,
     iana::{Opcode, Rcode},
     message_builder::MessageBuilder,
 };
-use std::net::SocketAddr;
-use std::time::Duration;
 use tokio::net::{UdpSocket, lookup_host};
+
+use super::{catalog, error::XfrError, wire};
+use crate::{config, log_error, log_info, service::zone::ZoneService};
 
 /// Send DNS NOTIFY to all configured DNS servers for a zone
 /// If zone_name is None, sends NOTIFY for all zones

@@ -1,9 +1,10 @@
+use std::{collections::HashMap, net::IpAddr};
+
+use domain::base::{Name, iana::Rtype};
+use tokio::net::TcpStream;
+
 use super::{axfr, catalog, delta, error::XfrError, wire};
 use crate::{log_info, log_warn, service::zone::ZoneService};
-use domain::base::{Name, iana::Rtype};
-use std::collections::HashMap;
-use std::net::IpAddr;
-use tokio::net::TcpStream;
 
 /// Handle IXFR
 pub(crate) async fn handle_ixfr(
@@ -35,7 +36,7 @@ pub(crate) async fn handle_ixfr(
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
-    let current_serial = zone.serial as u32;
+    let current_serial = delta::serial_to_u32(zone.serial)?;
 
     // If no client serial provided, fallback to AXFR
     let client_serial = match client_serial {
@@ -99,7 +100,10 @@ pub(crate) async fn handle_ixfr(
     }
 
     // Group changes by serial to validate monotonic serial progression
-    let mut serials_in_changes: Vec<u32> = changes.iter().map(|c| c.serial).collect();
+    let mut serials_in_changes: Vec<u32> = changes
+        .iter()
+        .map(|c| delta::serial_to_u32(c.serial))
+        .collect::<Result<_, _>>()?;
     serials_in_changes.sort_unstable();
     serials_in_changes.dedup();
 
@@ -247,7 +251,7 @@ async fn send_ixfr_response(
 
     // Add initial SOA record
     let current_snapshot = snapshots_by_serial
-        .get(&(zone.serial as u32))
+        .get(&delta::serial_to_u32(zone.serial)?)
         .ok_or_else(|| {
             XfrError::ProtocolError("Missing current serial SOA snapshot for IXFR".to_string())
         })?;
@@ -256,10 +260,8 @@ async fn send_ixfr_response(
     // Group changes by serial
     let mut changes_by_serial: HashMap<u32, Vec<&delta::ZoneChange>> = HashMap::new();
     for change in changes {
-        changes_by_serial
-            .entry(change.serial)
-            .or_default()
-            .push(change);
+        let serial = delta::serial_to_u32(change.serial)?;
+        changes_by_serial.entry(serial).or_default().push(change);
     }
 
     // Get sorted serials

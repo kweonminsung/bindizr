@@ -6,11 +6,10 @@ use tower_http::cors::CorsLayer;
 #[cfg(debug_assertions)]
 use utoipa::OpenApi;
 
-use crate::config;
-
 #[cfg(debug_assertions)]
 use super::openapi::ApiDoc;
 use super::{notify::NotifyApi, record::RecordApi, zone::ZoneApi};
+use crate::config;
 
 pub struct ApiRouter;
 

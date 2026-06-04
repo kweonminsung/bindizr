@@ -1,10 +1,11 @@
-use crate::socket::{
-    socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
-    types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
-};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
+};
+
+use crate::socket::{
+    socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
+    types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
 };
 
 pub(crate) struct DaemonSocketClient;

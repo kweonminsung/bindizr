@@ -1,10 +1,11 @@
-use crate::error::DatabaseError;
+use async_trait::async_trait;
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
+
 use crate::{
+    error::DatabaseError,
     model::record::{Record, RecordType, RecordWithZone},
     repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
 };
-use async_trait::async_trait;
-use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 pub struct SqliteRecordRepository {
     pool: Pool<Sqlite>,

@@ -4,17 +4,19 @@ pub(crate) mod soa;
 pub use bindizr_core::dns::txt;
 pub mod xfr;
 
-pub(crate) use bindizr_core::config;
-pub(crate) use bindizr_core::model;
-pub(crate) use bindizr_core::{log_error, log_info, log_warn};
-pub(crate) use bindizr_service as service;
+use std::{
+    io::ErrorKind,
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 
+pub(crate) use bindizr_core::{config, log_error, log_info, log_warn, model};
+pub(crate) use bindizr_service as service;
 use domain::base::iana::Rtype;
-use std::io::ErrorKind;
-use std::net::{IpAddr, SocketAddr};
-use std::time::Duration;
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::time::timeout;
+use tokio::{
+    net::{TcpListener, TcpStream, UdpSocket},
+    time::timeout,
+};
 
 const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 

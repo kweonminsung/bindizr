@@ -4,16 +4,22 @@ mod status;
 mod token;
 mod zone;
 
-use crate::socket::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
-use crate::socket::types::{DaemonCommand, DaemonCommandKind};
-use crate::{log_error, log_info, log_warn};
+use std::{io, os::unix::fs::FileTypeExt, path::Path};
+
 use serde_json::json;
-use std::io;
-use std::os::unix::fs::FileTypeExt;
-use std::path::Path;
-use tokio::fs;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::{
+    fs,
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::{UnixListener, UnixStream},
+};
+
+use crate::{
+    log_error, log_info, log_warn,
+    socket::{
+        socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
+        types::{DaemonCommand, DaemonCommandKind},
+    },
+};
 
 async fn handle_client(stream: UnixStream) {
     let mut reader = BufReader::new(stream);

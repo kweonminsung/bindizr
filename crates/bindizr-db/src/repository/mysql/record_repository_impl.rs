@@ -1,10 +1,11 @@
-use crate::error::DatabaseError;
+use async_trait::async_trait;
+use sqlx::{AssertSqlSafe, MySql, Pool};
+
 use crate::{
+    error::DatabaseError,
     model::record::{Record, RecordType, RecordWithZone},
     repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
 };
-use async_trait::async_trait;
-use sqlx::{AssertSqlSafe, MySql, Pool};
 
 pub struct MySqlRecordRepository {
     pool: Pool<MySql>,

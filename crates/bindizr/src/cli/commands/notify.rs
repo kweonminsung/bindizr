@@ -1,6 +1,7 @@
-use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 use clap::Subcommand;
 use serde_json::json;
+
+use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum NotifyCommand {

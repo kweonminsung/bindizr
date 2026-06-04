@@ -1,9 +1,13 @@
-use crate::log_info;
-use crate::service::zone::ZoneService;
-use crate::xfr::{catalog, error::XfrError, wire};
-use domain::base::iana::Rtype;
 use std::net::{IpAddr, SocketAddr};
+
+use domain::base::iana::Rtype;
 use tokio::net::{TcpStream, UdpSocket};
+
+use crate::{
+    log_info,
+    service::zone::ZoneService,
+    xfr::{catalog, error::XfrError, wire},
+};
 
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,

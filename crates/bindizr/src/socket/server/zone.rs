@@ -1,7 +1,10 @@
-use crate::api::types::{CreateZoneRequest, GetZoneResponse, GetZonesFilter};
-use crate::service::zone::ZoneService;
-use crate::socket::types::DaemonResponse;
 use serde_json::json;
+
+use crate::{
+    api::types::{CreateZoneRequest, GetZoneResponse, GetZonesFilter},
+    service::zone::ZoneService,
+    socket::types::DaemonResponse,
+};
 
 pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let name = data

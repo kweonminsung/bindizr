@@ -1,3 +1,6 @@
+use chrono::Utc;
+
+use super::{RecordService, validation::validate_record_add_constraints};
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -11,9 +14,6 @@ use crate::{
     types::CreateRecordRequest,
     zone::snapshot::save_zone_snapshot_tx,
 };
-use chrono::Utc;
-
-use super::{RecordService, validation::validate_record_add_constraints};
 
 impl RecordService {
     pub async fn create_tx(

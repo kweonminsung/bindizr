@@ -3,10 +3,12 @@ mod parser;
 mod prerequisite;
 mod update;
 
-use crate::{log_info, log_warn};
 use std::net::SocketAddr;
+
 use tokio::net::{TcpStream, UdpSocket};
 use update::TsigErrorResponse;
+
+use crate::{log_info, log_warn};
 
 const DNS_HEADER_LEN: usize = 12;
 const DNS_OPCODE_UPDATE: u8 = 5;

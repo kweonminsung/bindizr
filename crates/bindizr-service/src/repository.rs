@@ -1,3 +1,5 @@
+use super::error::ServiceError;
+pub use crate::database::repository::RepositoryTx;
 use crate::{
     database::{
         get_api_token_repository, get_catalog_zone_state_repository, get_record_repository,
@@ -9,16 +11,11 @@ use crate::{
             zone_change::ZoneChange,
             zone_snapshot::ZoneSnapshot,
         },
+        repository as db_repository,
+        repository::{RecordFilter, ZoneFilter},
     },
     log_error,
 };
-
-use crate::database::repository as db_repository;
-
-pub use crate::database::repository::RepositoryTx;
-use crate::database::repository::{RecordFilter, ZoneFilter};
-
-use super::error::ServiceError;
 
 pub(super) struct RepositoryService;
 

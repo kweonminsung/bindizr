@@ -1,5 +1,6 @@
-use crate::{config, log_warn};
 use std::net::{IpAddr, SocketAddr};
+
+use crate::{config, log_warn};
 
 pub(crate) fn secondary_servers_from_config() -> Vec<IpAddr> {
     parse_ip_list_with_socket_fallback(&config::get_bindizr_config().dns.secondary_addrs)

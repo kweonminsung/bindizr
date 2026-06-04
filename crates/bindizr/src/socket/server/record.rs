@@ -1,7 +1,10 @@
-use crate::api::types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter};
-use crate::service::record::RecordService;
-use crate::socket::types::DaemonResponse;
 use serde_json::json;
+
+use crate::{
+    api::types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
+    service::record::RecordService,
+    socket::types::DaemonResponse,
+};
 
 pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let record_id_i64 = data

@@ -2,9 +2,8 @@ use chrono::{Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
-use crate::model::api_token::ApiToken;
-
 use super::{error::ServiceError, repository::RepositoryService};
+use crate::model::api_token::ApiToken;
 
 pub struct TokenService;
 

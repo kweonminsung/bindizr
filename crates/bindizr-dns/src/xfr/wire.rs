@@ -1,11 +1,13 @@
+use std::net::{Ipv4Addr, Ipv6Addr};
+
+use bindizr_core::dns::name::{email_to_soa_mailbox, split_presentation_labels};
+use domain::base::{Message, Name, ToName, iana::Rtype};
+
 use super::error::XfrError;
 use crate::{
     model::{record::Record, zone::Zone},
     txt,
 };
-use bindizr_core::dns::name::{email_to_soa_mailbox, split_presentation_labels};
-use domain::base::{Message, Name, ToName, iana::Rtype};
-use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub(crate) const DNS_TCP_MAX_SIZE: usize = 65535;
 pub(crate) const RCODE_NOTAUTH: u8 = 9;
@@ -77,7 +79,8 @@ impl DnsMessageBuilder {
         encode_domain_name(&soa.primary_ns, &mut rdata)?;
         encode_domain_name(&soa.admin_email, &mut rdata)?;
 
-        rdata.extend_from_slice(&soa.serial.to_be_bytes());
+        let serial = super::delta::serial_to_u32(soa.serial)?;
+        rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&(soa.refresh as u32).to_be_bytes());
         rdata.extend_from_slice(&(soa.retry as u32).to_be_bytes());
         rdata.extend_from_slice(&(soa.expire as u32).to_be_bytes());
@@ -726,12 +729,14 @@ pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
 
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv4Addr;
+
+    use domain::base::{Name, iana::Rtype};
+
     use super::{
         DNS_TCP_MAX_SIZE, DnsMessageBuilder, XfrError, add_answer_and_flush_if_needed,
         encode_domain_name, encode_tcp_message, flush_message_if_not_empty, normalize_name,
     };
-    use domain::base::{Name, iana::Rtype};
-    use std::net::Ipv4Addr;
 
     #[test]
     fn normalize_name_relative() {

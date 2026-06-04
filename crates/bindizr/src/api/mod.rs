@@ -8,10 +8,12 @@ pub(crate) mod router;
 pub(crate) mod types;
 pub(crate) mod zone;
 
-use crate::{config, log_error, log_info};
-use router::ApiRouter;
 use std::net::SocketAddr;
+
+use router::ApiRouter;
 use tokio::net::TcpListener;
+
+use crate::{config, log_error, log_info};
 
 pub(crate) async fn initialize() -> Result<(), String> {
     let bindizr_config = config::get_bindizr_config();

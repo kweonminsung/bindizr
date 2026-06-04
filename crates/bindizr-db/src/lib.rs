@@ -1,14 +1,14 @@
-use sqlx::{MySql, Pool, Postgres, Sqlite, sqlite::SqlitePoolOptions};
 use std::sync::OnceLock;
+
+use sqlx::{MySql, Pool, Postgres, Sqlite, sqlite::SqlitePoolOptions};
 
 pub mod error;
 pub mod repository;
 mod schema;
 mod utils;
 
-pub(crate) use bindizr_core::config;
 pub use bindizr_core::model;
-pub(crate) use bindizr_core::{log_error, log_info};
+pub(crate) use bindizr_core::{config, log_error, log_info};
 
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
 static INITIALIZE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());

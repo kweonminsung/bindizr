@@ -1,7 +1,7 @@
-use crate::error::DatabaseError;
-use crate::{model::api_token::ApiToken, repository::ApiTokenRepository};
 use async_trait::async_trait;
 use sqlx::{MySql, Pool};
+
+use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
 
 pub struct MySqlApiTokenRepository {
     pool: Pool<MySql>,

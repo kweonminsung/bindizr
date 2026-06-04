@@ -1,12 +1,3 @@
-use crate::api::{
-    error::ApiError,
-    middleware::body_parser::JsonBody,
-    types::{
-        CreateRecordRequest, ErrorResponse, GetRecordResponse, GetRecordsFilter, MessageResponse,
-        RecordListResponse, RecordResponse, UpdateRecordRequest,
-    },
-};
-use crate::service::record::RecordService;
 use axum::{
     Json, Router,
     extract::{Path, Query},
@@ -16,6 +7,18 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+
+use crate::{
+    api::{
+        error::ApiError,
+        middleware::body_parser::JsonBody,
+        types::{
+            CreateRecordRequest, ErrorResponse, GetRecordResponse, GetRecordsFilter,
+            MessageResponse, RecordListResponse, RecordResponse, UpdateRecordRequest,
+        },
+    },
+    service::record::RecordService,
+};
 
 pub(crate) struct RecordApi;
 

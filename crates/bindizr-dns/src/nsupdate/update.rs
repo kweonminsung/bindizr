@@ -1,3 +1,8 @@
+use std::net::SocketAddr;
+
+use bindizr_core::{config, dns::name::to_fqdn};
+use chrono::Utc;
+
 use super::parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata};
 use crate::{
     log_error, log_info,
@@ -17,9 +22,6 @@ use crate::{
     },
     txt, xfr,
 };
-use bindizr_core::{config, dns::name::to_fqdn};
-use chrono::Utc;
-use std::net::SocketAddr;
 
 pub(super) const CLASS_IN: u16 = 1;
 pub(super) const CLASS_NONE: u16 = 254;
@@ -607,8 +609,7 @@ mod tests {
         absolute_to_relative, record_value_matches, rr_to_record_value,
         validate_delete_update_shape,
     };
-    use crate::model::record::RecordType;
-    use crate::nsupdate::parser::UpdateRecord;
+    use crate::{model::record::RecordType, nsupdate::parser::UpdateRecord};
 
     #[test]
     fn absolute_to_relative_accepts_apex() {

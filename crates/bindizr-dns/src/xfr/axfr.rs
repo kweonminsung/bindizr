@@ -1,11 +1,13 @@
-use super::{catalog, error::XfrError, wire};
+use std::net::IpAddr;
+
+use domain::base::{Name, iana::Rtype};
+use tokio::net::TcpStream;
+
+use super::{catalog, delta, error::XfrError, wire};
 use crate::{
     log_info,
     service::{record::RecordService, zone::ZoneService},
 };
-use domain::base::{Name, iana::Rtype};
-use std::net::IpAddr;
-use tokio::net::TcpStream;
 
 /// Handle AXFR
 pub(crate) async fn handle_axfr(
@@ -67,8 +69,9 @@ pub(crate) async fn handle_axfr_with_qtype(
     let mut messages_sent = 0usize;
 
     // Add initial SOA record
+    let serial = delta::serial_to_u32(zone.serial)?;
     messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
-        builder.add_soa(&zone, zone.serial as u32)
+        builder.add_soa(&zone, serial)
     })
     .await?;
 
@@ -82,7 +85,7 @@ pub(crate) async fn handle_axfr_with_qtype(
 
     // Add final SOA record to indicate end of transfer
     messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
-        builder.add_soa(&zone, zone.serial as u32)
+        builder.add_soa(&zone, serial)
     })
     .await?;
     messages_sent += wire::flush_message_if_not_empty(stream, &mut builder).await?;
