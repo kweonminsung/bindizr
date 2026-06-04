@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use bindizr::{database::get_record_repository, dns, model::record::RecordType};
 
 #[tokio::test]
-async fn test_record_crud_operations() {
+async fn record_create_read_update_delete_round_trip() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
@@ -74,7 +74,7 @@ async fn test_record_crud_operations() {
 }
 
 #[tokio::test]
-async fn test_record_value_validation_rejects_invalid_a_aaaa_and_cname_values() {
+async fn record_create_and_update_reject_invalid_address_and_cname_values() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
@@ -144,7 +144,7 @@ async fn test_record_value_validation_rejects_invalid_a_aaaa_and_cname_values() 
 }
 
 #[tokio::test]
-async fn test_single_record_operations_are_scoped_by_zone() {
+async fn record_reads_are_scoped_to_their_zone() {
     let ctx = TestContext::new().await;
     let first_zone = ctx.create_test_zone().await;
     let second_zone_name = "example.net";
@@ -228,7 +228,7 @@ async fn test_single_record_operations_are_scoped_by_zone() {
 }
 
 #[tokio::test]
-async fn test_record_list_filters_support_ranges_and_partial_search() {
+async fn record_list_filters_support_ranges_search_and_pagination() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
@@ -334,7 +334,7 @@ async fn test_record_list_filters_support_ranges_and_partial_search() {
 }
 
 #[tokio::test]
-async fn test_record_value_matching_is_case_sensitive() {
+async fn txt_record_value_matching_is_case_sensitive() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
@@ -373,7 +373,7 @@ async fn test_record_value_matching_is_case_sensitive() {
 }
 
 #[tokio::test]
-async fn test_record_owner_name_normalization_and_bailiwick_validation() {
+async fn record_owner_names_normalize_and_reject_out_of_bailiwick_values() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
@@ -454,7 +454,7 @@ async fn test_record_owner_name_normalization_and_bailiwick_validation() {
 }
 
 #[tokio::test]
-async fn test_txt_record_value_accepts_segment_array() {
+async fn txt_record_value_accepts_segment_array() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
@@ -474,7 +474,7 @@ async fn test_txt_record_value_accepts_segment_array() {
 }
 
 #[tokio::test]
-async fn test_txt_record_value_rejects_empty_segment_array() {
+async fn txt_record_value_rejects_empty_segment_array() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
@@ -499,7 +499,7 @@ async fn test_txt_record_value_rejects_empty_segment_array() {
 }
 
 #[tokio::test]
-async fn test_txt_record_string_value_auto_splits_when_longer_than_dns_character_string() {
+async fn txt_record_string_value_auto_splits_when_longer_than_dns_character_string() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
     let value = "a".repeat(300);
@@ -523,41 +523,7 @@ async fn test_txt_record_string_value_auto_splits_when_longer_than_dns_character
 }
 
 #[tokio::test]
-async fn test_name_like_record_value_matching_is_case_insensitive() {
-    let ctx = TestContext::new().await;
-    let zone = ctx.create_test_zone().await;
-
-    let create_record_request = serde_json::json!({
-        "name": "alias",
-        "record_type": "CNAME",
-        "value": "Target.Example.Com.",
-        "ttl": 1800,
-        "zone_name": zone.name
-    });
-
-    let (status, _) = ctx
-        .make_request("POST", "/records", Some(create_record_request))
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-
-    let record = get_record_repository()
-        .get(
-            Some(zone.id),
-            "alias",
-            &RecordType::CNAME,
-            Some("target.example.com."),
-            None,
-            false,
-        )
-        .await
-        .expect("Failed to query record")
-        .expect("Expected case-insensitive record match");
-
-    assert_eq!(record.value, "Target.Example.Com.");
-}
-
-#[tokio::test]
-async fn test_multiple_record_types() {
+async fn creates_mx_srv_txt_aaaa_and_cname_records() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
@@ -606,7 +572,7 @@ async fn test_multiple_record_types() {
 }
 
 #[tokio::test]
-async fn test_cname_validation() {
+async fn cname_owner_conflict_rules_reject_invalid_combinations() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 

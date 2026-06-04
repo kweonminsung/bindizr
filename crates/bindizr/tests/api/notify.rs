@@ -2,7 +2,7 @@ use crate::common::TestContext;
 use axum::http::StatusCode;
 
 #[tokio::test]
-async fn test_notify_zone() {
+async fn notify_zone_returns_success_for_existing_zone() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;
 
@@ -21,7 +21,7 @@ async fn test_notify_zone() {
 }
 
 #[tokio::test]
-async fn test_notify_all_zones() {
+async fn notify_all_zones_returns_success_when_zones_exist() {
     let ctx = TestContext::new().await;
     ctx.create_test_zone().await;
 
@@ -37,7 +37,7 @@ async fn test_notify_all_zones() {
 }
 
 #[tokio::test]
-async fn test_notify_missing_zone_returns_not_found() {
+async fn notify_missing_zone_returns_not_found() {
     let ctx = TestContext::new().await;
 
     let request = serde_json::json!({

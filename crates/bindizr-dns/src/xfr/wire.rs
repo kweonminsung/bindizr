@@ -647,12 +647,12 @@ mod tests {
     };
 
     #[test]
-    fn test_normalize_name_relative() {
+    fn normalize_name_relative() {
         assert_eq!(normalize_name("sub", "example.com"), "sub.example.com.");
     }
 
     #[test]
-    fn test_normalize_name_zone_qualified() {
+    fn normalize_name_zone_qualified() {
         assert_eq!(
             normalize_name("www.example.com", "example.com."),
             "www.example.com."
@@ -664,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_name_fqdn_and_apex() {
+    fn normalize_name_fqdn_and_apex() {
         assert_eq!(normalize_name("sub.", "example.com."), "sub.");
         assert_eq!(normalize_name("@", "example.com."), "example.com.");
     }

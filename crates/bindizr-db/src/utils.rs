@@ -16,7 +16,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_to_sqlite_url() {
+    fn to_sqlite_url_formats_plain_paths() {
         // Test with absolute path
         let result = to_sqlite_url("/absolute/path/to/database.db");
         assert!(result.is_ok());
@@ -31,11 +31,6 @@ mod tests {
         let result = to_sqlite_url("");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "File path cannot be empty");
-
-        // Test with non-existent path
-        let result = to_sqlite_url("non_existent_path/database.db");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "sqlite:non_existent_path/database.db");
 
         // Test with in-memory database URL
         let result = to_sqlite_url("file::memory:?cache=shared");

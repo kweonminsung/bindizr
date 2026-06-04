@@ -2,7 +2,7 @@ use crate::common::TestContext;
 use axum::http::StatusCode;
 
 #[tokio::test]
-async fn test_zone_crud_operations() {
+async fn zone_create_read_update_delete_round_trip() {
     let ctx = TestContext::new().await;
 
     // Test POST /zones (create)
@@ -74,7 +74,7 @@ async fn test_zone_crud_operations() {
 }
 
 #[tokio::test]
-async fn test_zone_list_filters_support_ranges_and_partial_search() {
+async fn zone_list_filters_support_ranges_search_and_pagination() {
     let ctx = TestContext::new().await;
     ctx.create_test_zone().await;
 
@@ -121,7 +121,7 @@ async fn test_zone_list_filters_support_ranges_and_partial_search() {
 }
 
 #[tokio::test]
-async fn test_zone_admin_email_validation_and_conversion() {
+async fn zone_create_rejects_invalid_admin_email_forms() {
     let ctx = TestContext::new().await;
 
     let invalid_admin_email = serde_json::json!({
@@ -148,7 +148,7 @@ async fn test_zone_admin_email_validation_and_conversion() {
 }
 
 #[tokio::test]
-async fn test_zone_create_validation_and_normalization() {
+async fn zone_create_normalizes_names_and_rejects_duplicates() {
     let ctx = TestContext::new().await;
 
     let create_zone_request = serde_json::json!({
@@ -200,7 +200,7 @@ async fn test_zone_create_validation_and_normalization() {
 }
 
 #[tokio::test]
-async fn test_zone_create_rejects_invalid_zone_primary_ns_and_ttl() {
+async fn zone_create_rejects_invalid_names_and_ttl_bounds() {
     let ctx = TestContext::new().await;
 
     let invalid_zone_name = serde_json::json!({

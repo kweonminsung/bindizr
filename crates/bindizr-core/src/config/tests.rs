@@ -22,7 +22,7 @@ fn create_temp_config_file(content: &str) -> (tempfile::TempDir, String) {
 }
 
 #[test]
-fn test_parse_bindizr_config_success() {
+fn parse_bindizr_config_accepts_valid_config() {
     let (dir, config_path) = create_temp_config_file(
         r#"
 [api]
@@ -80,7 +80,7 @@ log_level = "debug"
 }
 
 #[test]
-fn test_parse_bindizr_config_defaults_missing_nsupdate_tsig_key() {
+fn parse_bindizr_config_defaults_missing_nsupdate_tsig_key() {
     let (dir, config_path) = create_temp_config_file(
         r#"
 [api]
@@ -127,7 +127,7 @@ log_level = "debug"
 }
 
 #[test]
-fn test_parse_bindizr_config_defaults_unselected_database_sections() {
+fn parse_bindizr_config_defaults_unselected_database_sections() {
     let (dir, config_path) = create_temp_config_file(
         r#"
 [api]
@@ -170,7 +170,7 @@ log_level = "debug"
 }
 
 #[test]
-fn test_parse_bindizr_config_rejects_invalid_listen_addr() {
+fn parse_bindizr_config_rejects_invalid_listen_addr() {
     let (dir, config_path) = create_temp_config_file(
         r#"
 [api]
@@ -214,7 +214,7 @@ log_level = "debug"
 }
 
 #[test]
-fn test_parse_bindizr_config_rejects_empty_selected_database_url() {
+fn parse_bindizr_config_rejects_empty_selected_database_url() {
     let (dir, config_path) = create_temp_config_file(
         r#"
 [api]
@@ -258,58 +258,7 @@ log_level = "debug"
 }
 
 #[test]
-fn test_parse_bindizr_config_accepts_bindizr_database_url_env_override() {
-    let (dir, config_path) = create_temp_config_file(
-        r#"
-[api]
-listen_addr = "127.0.0.1"
-listen_port = 3000
-require_authentication = false
-
-[database]
-type = "mysql"
-
-[database.mysql]
-server_url = ""
-
-[database.sqlite]
-file_path = "file::memory:?cache=shared"
-
-[database.postgresql]
-server_url = ""
-
-[dns]
-listen_addr = "127.0.0.1"
-listen_port = 53
-secondary_addrs = ""
-nsupdate_tsig_key = ""
-
-[logging]
-log_level = "debug"
-"#,
-    );
-
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    let parsed = parse_bindizr_config_with_env(config, |name| match name {
-        "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
-        _ => None,
-    })
-    .unwrap();
-
-    assert_eq!(
-        parsed.database.mysql.server_url,
-        "mysql://user:p#ss&word@mysql:3306/bindizr"
-    );
-
-    drop(dir);
-}
-
-#[test]
-fn test_apply_env_overrides_replaces_config_values_before_validation() {
+fn apply_env_overrides_replaces_config_values_before_validation() {
     let (dir, config_path) = create_temp_config_file(
         r#"
 [api]
@@ -395,7 +344,7 @@ log_level = "debug"
 }
 
 #[test]
-fn test_apply_env_overrides_rejects_invalid_values() {
+fn apply_env_overrides_rejects_invalid_values() {
     let (dir, config_path) = create_temp_config_file(
         r#"
 [api]

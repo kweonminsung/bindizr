@@ -122,21 +122,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_catalog_zone() {
+    fn is_catalog_zone_matches_catalog_bind() {
         assert!(is_catalog_zone("catalog.bind"));
         assert!(!is_catalog_zone("example.com"));
         assert!(!is_catalog_zone("catalog.example.com"));
     }
 
     #[test]
-    fn test_zone_name_to_member_id() {
+    fn zone_name_to_member_id_is_stable_and_dns_safe() {
         assert_eq!(zone_name_to_member_id("example.com"), "example-com");
         assert_eq!(zone_name_to_member_id("api.example.com"), "api-example-com");
         assert_eq!(zone_name_to_member_id("test.co.uk"), "test-co-uk");
     }
 
     #[test]
-    fn test_catalog_signature_changes_when_members_change() {
+    fn catalog_signature_changes_when_members_change() {
         let zones = vec![
             Zone {
                 id: 1,
