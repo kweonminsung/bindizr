@@ -310,8 +310,28 @@ impl DnsMessageBuilder {
         Ok(())
     }
 
+    pub(crate) fn answer_count(&self) -> usize {
+        self.answers.len()
+    }
+
+    pub(crate) fn message_len(&self) -> usize {
+        12 + self.qname.len() + 4 + self.answers.iter().map(Vec::len).sum::<usize>()
+    }
+
+    pub(crate) fn pop_last_answer(&mut self) -> Option<Vec<u8>> {
+        self.answers.pop()
+    }
+
+    pub(crate) fn push_answer(&mut self, answer: Vec<u8>) {
+        self.answers.push(answer);
+    }
+
+    pub(crate) fn clear_answers(&mut self) {
+        self.answers.clear();
+    }
+
     /// Build final DNS message
-    pub(crate) fn build(self) -> Vec<u8> {
+    pub(crate) fn build_message(&self) -> Vec<u8> {
         let mut message = Vec::new();
 
         // Header (12 bytes)
@@ -335,6 +355,70 @@ impl DnsMessageBuilder {
 
         message
     }
+
+    /// Build final DNS message
+    pub(crate) fn build(self) -> Vec<u8> {
+        self.build_message()
+    }
+}
+
+pub(crate) async fn add_answer_and_flush_if_needed<W, F>(
+    writer: &mut W,
+    builder: &mut DnsMessageBuilder,
+    add_answer: F,
+) -> Result<usize, XfrError>
+where
+    W: tokio::io::AsyncWriteExt + Unpin,
+    F: FnOnce(&mut DnsMessageBuilder) -> Result<(), XfrError>,
+{
+    add_answer(builder)?;
+
+    if builder.message_len() <= DNS_TCP_MAX_SIZE {
+        return Ok(0);
+    }
+
+    let last_answer = builder.pop_last_answer().ok_or_else(|| {
+        XfrError::ProtocolError("DNS message exceeded maximum size without answers".to_string())
+    })?;
+
+    if builder.answer_count() == 0 {
+        builder.push_answer(last_answer);
+        return Err(XfrError::ProtocolError(format!(
+            "Single DNS answer is too large: {} bytes",
+            builder.message_len()
+        )));
+    }
+
+    let sent = flush_message_if_not_empty(writer, builder).await?;
+
+    builder.push_answer(last_answer);
+    if builder.message_len() > DNS_TCP_MAX_SIZE {
+        return Err(XfrError::ProtocolError(format!(
+            "Single DNS answer is too large: {} bytes",
+            builder.message_len()
+        )));
+    }
+
+    Ok(sent)
+}
+
+pub(crate) async fn flush_message_if_not_empty<W>(
+    writer: &mut W,
+    builder: &mut DnsMessageBuilder,
+) -> Result<usize, XfrError>
+where
+    W: tokio::io::AsyncWriteExt + Unpin,
+{
+    let answer_count = builder.answer_count();
+    if answer_count == 0 {
+        return Ok(0);
+    }
+
+    let message = builder.build_message();
+    write_tcp_message(writer, &message).await?;
+    builder.clear_answers();
+
+    Ok(1)
 }
 
 pub(crate) fn build_error_response(
@@ -643,8 +727,11 @@ pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::{
-        DNS_TCP_MAX_SIZE, XfrError, encode_domain_name, encode_tcp_message, normalize_name,
+        DNS_TCP_MAX_SIZE, DnsMessageBuilder, XfrError, add_answer_and_flush_if_needed,
+        encode_domain_name, encode_tcp_message, flush_message_if_not_empty, normalize_name,
     };
+    use domain::base::{Name, iana::Rtype};
+    use std::net::Ipv4Addr;
 
     #[test]
     fn normalize_name_relative() {
@@ -691,5 +778,45 @@ mod tests {
                 b'p', b'l', b'e', 3, b'c', b'o', b'm', 0
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn chunked_tcp_writer_splits_large_answer_sets() {
+        let mut qname = Vec::new();
+        encode_domain_name("example.com.", &mut qname).unwrap();
+        let qname = Name::from_octets(qname).unwrap();
+        let mut builder = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR);
+        let mut writer = Vec::new();
+
+        for index in 0..4000 {
+            add_answer_and_flush_if_needed(&mut writer, &mut builder, |builder| {
+                builder.add_a_record(
+                    &format!("host-{}.example.com.", index),
+                    3600,
+                    Ipv4Addr::new(192, 0, 2, (index % 255) as u8),
+                )
+            })
+            .await
+            .unwrap();
+        }
+        flush_message_if_not_empty(&mut writer, &mut builder)
+            .await
+            .unwrap();
+
+        let mut answer_count = 0usize;
+        let mut frame_count = 0;
+        let mut pos = 0;
+        while pos < writer.len() {
+            let len = u16::from_be_bytes([writer[pos], writer[pos + 1]]) as usize;
+            assert!(len <= DNS_TCP_MAX_SIZE);
+            assert!(len > 0);
+            answer_count += u16::from_be_bytes([writer[pos + 8], writer[pos + 9]]) as usize;
+            frame_count += 1;
+            pos += 2 + len;
+        }
+
+        assert_eq!(pos, writer.len());
+        assert_eq!(answer_count, 4000);
+        assert!(frame_count > 1);
     }
 }

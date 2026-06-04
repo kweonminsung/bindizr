@@ -87,23 +87,39 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;
 
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
-    builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;
+    let mut messages_sent = 0usize;
 
-    builder.add_catalog_ns(&catalog_zone)?;
-    builder.add_catalog_version(&catalog_zone)?;
+    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)
+    })
+    .await?;
 
-    for zone_name in &member_zones {
-        builder.add_catalog_ptr(&catalog_zone, zone_name)?;
+    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        builder.add_catalog_ns(&catalog_zone)
+    })
+    .await?;
+    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        builder.add_catalog_version(&catalog_zone)
+    })
+    .await?;
+
+    for member_zone in &member_zones {
+        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+            builder.add_catalog_ptr(&catalog_zone, member_zone)
+        })
+        .await?;
     }
 
-    builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;
-
-    let message = builder.build();
-    wire::write_tcp_message(stream, &message).await?;
+    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)
+    })
+    .await?;
+    messages_sent += wire::flush_message_if_not_empty(stream, &mut builder).await?;
 
     log_info!(
-        "Catalog AXFR completed: sent {} member zones",
-        member_zones.len()
+        "Catalog AXFR completed: sent {} member zones in {} DNS message(s)",
+        member_zones.len(),
+        messages_sent
     );
 
     Ok(())
