@@ -29,7 +29,10 @@ pub async fn initialize() {
     xfr::initialize().await;
 
     let bindizr_config = config::get_bindizr_config();
-    let listen_addr = SocketAddr::new(bindizr_config.listen_addr, bindizr_config.dns.listen_port);
+    let listen_addr = SocketAddr::new(
+        bindizr_config.dns.listen_addr,
+        bindizr_config.dns.listen_port,
+    );
 
     let secondary_servers = acl::secondary_servers_from_config();
     let tcp_secondary_servers = secondary_servers.clone();

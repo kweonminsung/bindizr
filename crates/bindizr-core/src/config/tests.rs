@@ -25,9 +25,8 @@ fn create_temp_config_file(content: &str) -> (tempfile::TempDir, String) {
 fn test_parse_bindizr_config_success() {
     let (dir, config_path) = create_temp_config_file(
         r#"
-listen_addr = "127.0.0.1"
-
 [api]
+listen_addr = "127.0.0.1"
 listen_port = 3000
 require_authentication = false
 
@@ -44,10 +43,13 @@ file_path = "file::memory:?cache=shared"
 server_url = ""
 
 [dns]
+listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = "127.0.0.1:53"
 notify_after_update = false
 notify_on_startup = true
+notify_retries = 4
+notify_timeout_secs = 9
 nsupdate_tsig_key = ""
 
 [logging]
@@ -62,7 +64,8 @@ log_level = "debug"
 
     let parsed = parse_bindizr_config_with_env(config, |_| None).unwrap();
 
-    assert_eq!(parsed.listen_addr.to_string(), "127.0.0.1");
+    assert_eq!(parsed.api.listen_addr.to_string(), "127.0.0.1");
+    assert_eq!(parsed.dns.listen_addr.to_string(), "127.0.0.1");
     assert!(matches!(
         parsed.database.database_type,
         DatabaseType::Sqlite
@@ -70,6 +73,8 @@ log_level = "debug"
     assert_eq!(parsed.api.listen_port, 3000);
     assert!(!parsed.dns.notify_after_update);
     assert!(parsed.dns.notify_on_startup);
+    assert_eq!(parsed.dns.notify_retries, 4);
+    assert_eq!(parsed.dns.notify_timeout_secs, 9);
 
     drop(dir);
 }
@@ -78,9 +83,8 @@ log_level = "debug"
 fn test_parse_bindizr_config_defaults_missing_nsupdate_tsig_key() {
     let (dir, config_path) = create_temp_config_file(
         r#"
-listen_addr = "127.0.0.1"
-
 [api]
+listen_addr = "127.0.0.1"
 listen_port = 3000
 require_authentication = false
 
@@ -97,6 +101,7 @@ file_path = "file::memory:?cache=shared"
 server_url = ""
 
 [dns]
+listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = "127.0.0.1:53"
 
@@ -115,6 +120,8 @@ log_level = "debug"
     assert_eq!(parsed.dns.nsupdate_tsig_key, "");
     assert!(parsed.dns.notify_after_update);
     assert!(!parsed.dns.notify_on_startup);
+    assert_eq!(parsed.dns.notify_retries, 3);
+    assert_eq!(parsed.dns.notify_timeout_secs, 5);
 
     drop(dir);
 }
@@ -123,9 +130,8 @@ log_level = "debug"
 fn test_parse_bindizr_config_defaults_unselected_database_sections() {
     let (dir, config_path) = create_temp_config_file(
         r#"
-listen_addr = "127.0.0.1"
-
 [api]
+listen_addr = "127.0.0.1"
 listen_port = 3000
 require_authentication = false
 
@@ -136,6 +142,7 @@ type = "sqlite"
 file_path = "file::memory:?cache=shared"
 
 [dns]
+listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = "127.0.0.1:53"
 nsupdate_tsig_key = ""
@@ -166,9 +173,8 @@ log_level = "debug"
 fn test_parse_bindizr_config_rejects_invalid_listen_addr() {
     let (dir, config_path) = create_temp_config_file(
         r#"
-listen_addr = "not-an-ip"
-
 [api]
+listen_addr = "not-an-ip"
 listen_port = 3000
 require_authentication = false
 
@@ -185,6 +191,7 @@ file_path = "file::memory:?cache=shared"
 server_url = ""
 
 [dns]
+listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = ""
 nsupdate_tsig_key = ""
@@ -210,9 +217,8 @@ log_level = "debug"
 fn test_parse_bindizr_config_rejects_empty_selected_database_url() {
     let (dir, config_path) = create_temp_config_file(
         r#"
-listen_addr = "127.0.0.1"
-
 [api]
+listen_addr = "127.0.0.1"
 listen_port = 3000
 require_authentication = false
 
@@ -229,6 +235,7 @@ file_path = "file::memory:?cache=shared"
 server_url = ""
 
 [dns]
+listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = ""
 nsupdate_tsig_key = ""
@@ -254,9 +261,8 @@ log_level = "debug"
 fn test_parse_bindizr_config_accepts_bindizr_database_url_env_override() {
     let (dir, config_path) = create_temp_config_file(
         r#"
-listen_addr = "127.0.0.1"
-
 [api]
+listen_addr = "127.0.0.1"
 listen_port = 3000
 require_authentication = false
 
@@ -273,6 +279,7 @@ file_path = "file::memory:?cache=shared"
 server_url = ""
 
 [dns]
+listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = ""
 nsupdate_tsig_key = ""
@@ -305,9 +312,8 @@ log_level = "debug"
 fn test_apply_env_overrides_replaces_config_values_before_validation() {
     let (dir, config_path) = create_temp_config_file(
         r#"
-listen_addr = "127.0.0.1"
-
 [api]
+listen_addr = "127.0.0.1"
 listen_port = 3000
 require_authentication = true
 
@@ -324,6 +330,7 @@ file_path = "file::memory:?cache=shared"
 server_url = ""
 
 [dns]
+listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = ""
 nsupdate_tsig_key = ""
@@ -342,22 +349,25 @@ log_level = "debug"
     let mut overridden = parsed.clone();
 
     apply_env_overrides_from(&mut overridden, |name| match name {
-        "BINDIZR_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
+        "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
         "BINDIZR_API_PORT" => Some("8000".to_string()),
         "BINDIZR_API_REQUIRE_AUTHENTICATION" => Some("false".to_string()),
         "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
         "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
+        "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
         "BINDIZR_DNS_PORT" => Some("5353".to_string()),
         "BINDIZR_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
         "BINDIZR_NSUPDATE_TSIG_KEY" => Some("secret#with&chars".to_string()),
         "BINDIZR_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
         "BINDIZR_NOTIFY_ON_STARTUP" => Some("true".to_string()),
+        "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
+        "BINDIZR_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
         "BINDIZR_LOG_LEVEL" => Some("info".to_string()),
         _ => None,
     })
     .unwrap();
 
-    assert_eq!(overridden.listen_addr.to_string(), "0.0.0.0");
+    assert_eq!(overridden.api.listen_addr.to_string(), "0.0.0.0");
     assert_eq!(overridden.api.listen_port, 8000);
     assert!(!overridden.api.require_authentication);
     assert!(matches!(
@@ -368,6 +378,7 @@ log_level = "debug"
         overridden.database.mysql.server_url,
         "mysql://user:p#ss&word@mysql:3306/bindizr"
     );
+    assert_eq!(overridden.dns.listen_addr.to_string(), "127.0.0.2");
     assert_eq!(overridden.dns.listen_port, 5353);
     assert_eq!(
         overridden.dns.secondary_addrs,
@@ -376,6 +387,8 @@ log_level = "debug"
     assert_eq!(overridden.dns.nsupdate_tsig_key, "secret#with&chars");
     assert!(!overridden.dns.notify_after_update);
     assert!(overridden.dns.notify_on_startup);
+    assert_eq!(overridden.dns.notify_retries, 7);
+    assert_eq!(overridden.dns.notify_timeout_secs, 11);
     assert!(matches!(overridden.logging.log_level, LogLevel::Info));
 
     drop(dir);
@@ -385,9 +398,8 @@ log_level = "debug"
 fn test_apply_env_overrides_rejects_invalid_values() {
     let (dir, config_path) = create_temp_config_file(
         r#"
-listen_addr = "127.0.0.1"
-
 [api]
+listen_addr = "127.0.0.1"
 listen_port = 3000
 require_authentication = false
 
@@ -398,6 +410,7 @@ type = "sqlite"
 file_path = "file::memory:?cache=shared"
 
 [dns]
+listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = ""
 nsupdate_tsig_key = ""

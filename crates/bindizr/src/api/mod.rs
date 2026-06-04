@@ -15,7 +15,10 @@ use tokio::net::TcpListener;
 
 pub(crate) async fn initialize() -> Result<(), String> {
     let bindizr_config = config::get_bindizr_config();
-    let addr = SocketAddr::from((bindizr_config.listen_addr, bindizr_config.api.listen_port));
+    let addr = SocketAddr::from((
+        bindizr_config.api.listen_addr,
+        bindizr_config.api.listen_port,
+    ));
 
     let listener = TcpListener::bind(addr).await.unwrap_or_else(|e| {
         log_error!("Failed to bind to address {}: {:?}", addr, e);

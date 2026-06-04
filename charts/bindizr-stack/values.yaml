@@ -9,6 +9,7 @@ bindizr:
   replicas: 2
 
   api:
+    listenAddr: "0.0.0.0"
     port: 8000
     requireAuthentication: true
     service:
@@ -16,9 +17,12 @@ bindizr:
       port: 8000
 
   dns:
+    listenAddr: "0.0.0.0"
     port: 53
     notifyAfterUpdate: true
     notifyOnStartup: false
+    notifyRetries: 3
+    notifyTimeoutSecs: 3
     service:
       port: 53
 

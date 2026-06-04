@@ -50,8 +50,8 @@ spec:
               containerPort: {{ .Values.bindizr.dns.port }}
               protocol: UDP
           env:
-            - name: BINDIZR_LISTEN_ADDR
-              value: "0.0.0.0"
+            - name: BINDIZR_API_LISTEN_ADDR
+              value: {{ .Values.bindizr.api.listenAddr | quote }}
             - name: BINDIZR_API_PORT
               value: {{ .Values.bindizr.api.port | quote }}
             - name: BINDIZR_API_REQUIRE_AUTHENTICATION
@@ -70,8 +70,14 @@ spec:
             {{- end }}
             - name: BINDIZR_DNS_PORT
               value: {{ .Values.bindizr.dns.port | quote }}
+            - name: BINDIZR_DNS_LISTEN_ADDR
+              value: {{ .Values.bindizr.dns.listenAddr | quote }}
             - name: BINDIZR_SECONDARY_ADDRS
               value: "{{- $fullname := include "bindizr-stack.fullname" . -}}{{- $headless := printf "%s-bind9-headless" $fullname -}}{{- range $i, $_ := until (.Values.bind9.replicas | int) -}}{{- if $i }},{{ end -}}{{ printf "%s-bind9-%d.%s:53" $fullname $i $headless }}{{- end }}"
+            - name: BINDIZR_NOTIFY_RETRIES
+              value: {{ .Values.bindizr.dns.notifyRetries | quote }}
+            - name: BINDIZR_NOTIFY_TIMEOUT_SECS
+              value: {{ .Values.bindizr.dns.notifyTimeoutSecs | quote }}
             - name: BINDIZR_NSUPDATE_TSIG_KEY
               valueFrom:
                 secretKeyRef:

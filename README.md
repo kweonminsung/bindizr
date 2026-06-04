@@ -159,30 +159,31 @@ $ vim /etc/bindizr/bindizr.conf.toml # or use any text editor you prefer
 
 Add the following configuration, adjusting values to match your environment:
 
-```toml
-listen_addr = "127.0.0.1"         # Common listen address for all services
-
-[api]
-listen_port = 3000             # HTTP API listen port
-require_authentication = true  # Enable API authentication (true/false)
+```toml[api]
+listen_addr = "127.0.0.1"     # HTTP API listen address
+listen_port = 3000            # HTTP API listen port
+require_authentication = true # Enable API authentication (true/false)
 
 [database]
-type = "mysql"                 # Database type: mysql, sqlite, postgresql
+type = "mysql"                # Database type: mysql, sqlite, postgresql
 
 [database.mysql]
-server_url = "mysql://user:password@hostname:port/database"      # Mysql server configuration
+server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
 
 [database.sqlite]
-file_path = "bindizr.db"       # SQLite database file path
+file_path = "bindizr.db"      # SQLite database file path
 
 [database.postgresql]
 server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
 
 [dns]
-listen_port = 53                  # DNS server listen port (UDP and TCP)
-secondary_addrs = ""              # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
-notify_after_update = true        # Send DNS NOTIFY after zone changes
-notify_on_startup = false         # Send DNS NOTIFY when bindizr starts
+listen_addr = "127.0.0.1"     # DNS server listen address
+listen_port = 53              # DNS server listen port (UDP and TCP)
+secondary_addrs = ""          # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
+notify_after_update = true    # Send DNS NOTIFY after zone changes
+notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
+notify_retries = 3            # Retry count after the initial NOTIFY attempt
+notify_timeout_secs = 5       # Timeout in seconds for each NOTIFY send/response wait
 nsupdate_tsig_key = ""            # Shared TSIG secret for nsupdate authentication (empty to disable, base64 recommended)
 
 [logging]

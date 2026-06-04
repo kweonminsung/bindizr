@@ -6,9 +6,8 @@ use domain::base::{
     message_builder::MessageBuilder,
 };
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::net::{UdpSocket, lookup_host};
-
-const NOTIFY_RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Send DNS NOTIFY to all configured DNS servers for a zone
 /// If zone_name is None, sends NOTIFY for all zones
@@ -85,6 +84,10 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
         zone_name
     );
 
+    let notify_config = &config::get_bindizr_config().dns;
+    let notify_timeout = Duration::from_secs(notify_config.notify_timeout_secs);
+    let notify_retries = notify_config.notify_retries;
+
     // Parse zone name - encode to DNS wire format
     let mut zone_name_bytes = Vec::new();
     wire::encode_domain_name(zone_name, &mut zone_name_bytes)?;
@@ -93,7 +96,7 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
 
     // Send NOTIFY to each secondary DNS server
     for server_addr in server_addresses {
-        match send_notify_to_server(&qname, server_addr).await {
+        match send_notify_to_server(&qname, server_addr, notify_timeout, notify_retries).await {
             Ok(()) => {
                 log_info!("NOTIFY sent successfully to {}", server_addr);
             }
@@ -149,6 +152,39 @@ fn format_failures(failures: &[String]) -> String {
 async fn send_notify_to_server(
     zone_name: &Name<Vec<u8>>,
     server_addr: SocketAddr,
+    timeout: Duration,
+    retries: u32,
+) -> Result<(), XfrError> {
+    let attempts = retries.saturating_add(1);
+    let mut last_error = None;
+
+    for attempt in 1..=attempts {
+        match send_notify_to_server_once(zone_name, server_addr, timeout).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                if attempt < attempts {
+                    log_info!(
+                        "Retrying NOTIFY to {} ({}/{}) after error: {}",
+                        server_addr,
+                        attempt + 1,
+                        attempts,
+                        e
+                    );
+                }
+                last_error = Some(e);
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        XfrError::ProtocolError(format!("NOTIFY to {} was not attempted", server_addr))
+    }))
+}
+
+async fn send_notify_to_server_once(
+    zone_name: &Name<Vec<u8>>,
+    server_addr: SocketAddr,
+    timeout: Duration,
 ) -> Result<(), XfrError> {
     // Build NOTIFY message
     let (query_id, notify_message) = build_notify_message(zone_name)?;
@@ -169,7 +205,7 @@ async fn send_notify_to_server(
         .map_err(XfrError::IoError)?;
 
     // Send NOTIFY with timeout
-    let sent = tokio::time::timeout(NOTIFY_RESPONSE_TIMEOUT, socket.send(&notify_message))
+    let sent = tokio::time::timeout(timeout, socket.send(&notify_message))
         .await
         .map_err(|_| XfrError::ProtocolError("NOTIFY send timeout".to_string()))?
         .map_err(XfrError::IoError)?;
@@ -190,7 +226,7 @@ async fn send_notify_to_server(
     );
 
     let mut response = [0u8; 512];
-    let received = tokio::time::timeout(NOTIFY_RESPONSE_TIMEOUT, socket.recv(&mut response))
+    let received = tokio::time::timeout(timeout, socket.recv(&mut response))
         .await
         .map_err(|_| {
             XfrError::ProtocolError(format!("NOTIFY response timeout from {}", server_addr))

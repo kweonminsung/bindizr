@@ -14,7 +14,6 @@ static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BindizrConfig {
-    pub listen_addr: IpAddr,
     pub api: ApiConfig,
     pub database: DatabaseConfig,
     pub dns: DnsConfig,
@@ -23,6 +22,7 @@ pub struct BindizrConfig {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiConfig {
+    pub listen_addr: IpAddr,
     #[serde(alias = "port")]
     pub listen_port: u16,
     pub require_authentication: bool,
@@ -76,12 +76,17 @@ pub struct PostgresqlConfig {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DnsConfig {
+    pub listen_addr: IpAddr,
     pub listen_port: u16,
     pub secondary_addrs: String,
     #[serde(default = "default_notify_after_update")]
     pub notify_after_update: bool,
     #[serde(default)]
     pub notify_on_startup: bool,
+    #[serde(default = "default_notify_retries")]
+    pub notify_retries: u32,
+    #[serde(default = "default_notify_timeout_secs")]
+    pub notify_timeout_secs: u64,
     /// Empty disables nsupdate TSIG authentication.
     #[serde(default)]
     pub nsupdate_tsig_key: String,
@@ -89,6 +94,14 @@ pub struct DnsConfig {
 
 fn default_notify_after_update() -> bool {
     true
+}
+
+fn default_notify_retries() -> u32 {
+    3
+}
+
+fn default_notify_timeout_secs() -> u64 {
+    5
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -171,8 +184,8 @@ fn apply_env_overrides_from(
     config: &mut BindizrConfig,
     get_env: impl Fn(&str) -> Option<String>,
 ) -> Result<(), String> {
-    if let Some(value) = get_env("BINDIZR_LISTEN_ADDR") {
-        config.listen_addr = parse_env_value("BINDIZR_LISTEN_ADDR", &value)?;
+    if let Some(value) = get_env("BINDIZR_API_LISTEN_ADDR") {
+        config.api.listen_addr = parse_env_value("BINDIZR_API_LISTEN_ADDR", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_API_PORT") {
         config.api.listen_port = parse_env_value("BINDIZR_API_PORT", &value)?;
@@ -203,6 +216,9 @@ fn apply_env_overrides_from(
     if let Some(value) = get_env("BINDIZR_DNS_PORT") {
         config.dns.listen_port = parse_env_value("BINDIZR_DNS_PORT", &value)?;
     }
+    if let Some(value) = get_env("BINDIZR_DNS_LISTEN_ADDR") {
+        config.dns.listen_addr = parse_env_value("BINDIZR_DNS_LISTEN_ADDR", &value)?;
+    }
     if let Some(value) = get_env("BINDIZR_SECONDARY_ADDRS") {
         config.dns.secondary_addrs = value;
     }
@@ -216,6 +232,12 @@ fn apply_env_overrides_from(
     }
     if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
         config.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_NOTIFY_RETRIES") {
+        config.dns.notify_retries = parse_env_value("BINDIZR_NOTIFY_RETRIES", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_NOTIFY_TIMEOUT_SECS") {
+        config.dns.notify_timeout_secs = parse_env_value("BINDIZR_NOTIFY_TIMEOUT_SECS", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
         config.logging.log_level = parse_log_level_env("BINDIZR_LOG_LEVEL", &value)?;

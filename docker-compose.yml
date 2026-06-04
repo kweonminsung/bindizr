@@ -9,11 +9,15 @@ services:
     environment:
       BINDIZR_DATABASE_TYPE: mysql
       BINDIZR_DATABASE_URL: mysql://bindizr:bindizr@mysql:3306/bindizr
-      BINDIZR_API_PORT: 8000
-      BINDIZR_DNS_PORT: 53
+      BINDIZR_API_LISTEN_ADDR: "0.0.0.0"
+      BINDIZR_API_PORT: "8000"
+      BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
+      BINDIZR_DNS_PORT: "53"
       BINDIZR_LOG_LEVEL: info
       BINDIZR_API_REQUIRE_AUTHENTICATION: "false"
       BINDIZR_SECONDARY_ADDRS: bind9-1:53,bind9-2:53
+      BINDIZR_NOTIFY_RETRIES: "3"
+      BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
       BINDIZR_NSUPDATE_TSIG_KEY: ""
     ports:
       - "8000:8000/tcp"

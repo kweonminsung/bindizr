@@ -30,14 +30,12 @@ pub(crate) async fn handle_command() -> Result<(), String> {
     println!("Version: {}", status.version);
 
     println!("Loaded Configurations:");
-    println!("\x1b[36m[root]\x1b[0m");
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "listen_addr", status.config.listen_addr
-    );
-    println!();
 
     println!("\x1b[36m[api]\x1b[0m");
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "listen_addr", status.config.api.listen_addr
+    );
     println!(
         "  \x1b[33m{:<22}\x1b[0m = {}",
         "listen_port", status.config.api.listen_port
@@ -79,6 +77,10 @@ pub(crate) async fn handle_command() -> Result<(), String> {
     println!("\x1b[36m[dns]\x1b[0m");
     println!(
         "  \x1b[33m{:<22}\x1b[0m = {}",
+        "listen_addr", status.config.dns.listen_addr
+    );
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
         "listen_port", status.config.dns.listen_port
     );
     println!(
@@ -92,6 +94,14 @@ pub(crate) async fn handle_command() -> Result<(), String> {
     println!(
         "  \x1b[33m{:<22}\x1b[0m = {}",
         "notify_on_startup", status.config.dns.notify_on_startup
+    );
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "notify_retries", status.config.dns.notify_retries
+    );
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "notify_timeout_secs", status.config.dns.notify_timeout_secs
     );
     println!();
 

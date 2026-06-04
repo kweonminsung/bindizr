@@ -6,9 +6,8 @@ metadata:
     {{- include "bindizr-stack.labels" . | nindent 4 }}
 data:
   bindizr.conf.toml: |
-    listen_addr = "0.0.0.0"
-
     [api]
+    listen_addr = "{{ .Values.bindizr.api.listenAddr }}"
     listen_port = {{ .Values.bindizr.api.port }}
     require_authentication = {{ .Values.bindizr.api.requireAuthentication }}
 
@@ -25,10 +24,13 @@ data:
     server_url = ""
 
     [dns]
+    listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"
     listen_port = {{ .Values.bindizr.dns.port }}
     secondary_addrs = ""
     notify_after_update = {{ .Values.bindizr.dns.notifyAfterUpdate }}
     notify_on_startup = {{ .Values.bindizr.dns.notifyOnStartup }}
+    notify_retries = {{ .Values.bindizr.dns.notifyRetries }}
+    notify_timeout_secs = {{ .Values.bindizr.dns.notifyTimeoutSecs }}
     nsupdate_tsig_key = ""
 
     [logging]
