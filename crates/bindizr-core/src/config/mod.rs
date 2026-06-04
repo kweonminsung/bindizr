@@ -1,15 +1,12 @@
 #[cfg(test)]
 mod tests;
 
-pub mod error;
-
 use config::{Config, File, FileFormat};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::{env, fmt, net::IpAddr, path::PathBuf};
 
 // Config file path
-#[allow(dead_code)]
 pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";
 pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 

@@ -14,13 +14,12 @@ pub enum XfrError {
     #[error("DNS protocol error: {0}")]
     ProtocolError(String),
 
+    #[error("NOTIFY failed: {0}")]
+    NotifyFailed(String),
+
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
 
     #[error("Access denied: {0}")]
     AccessDenied(String),
-
-    #[allow(dead_code)]
-    #[error("No history available for IXFR")]
-    NoHistoryAvailable,
 }

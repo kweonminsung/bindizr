@@ -1,6 +1,5 @@
 mod api;
 mod cli;
-pub mod error;
 mod socket;
 
 pub use api::router::ApiRouter;

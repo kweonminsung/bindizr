@@ -294,47 +294,40 @@ pub struct NotifyZoneRequest {
 }
 
 #[derive(Serialize, Debug, ToSchema)]
-#[allow(dead_code)]
 pub struct ZoneListResponse {
     pub items: Vec<GetZoneResponse>,
     pub pagination: Pagination,
 }
 
 #[derive(Serialize, Debug, ToSchema)]
-#[allow(dead_code)]
 pub struct ZoneDetailResponse {
     pub zone: GetZoneResponse,
     pub records: Vec<GetRecordResponse>,
 }
 
 #[derive(Serialize, Debug, ToSchema)]
-#[allow(dead_code)]
 pub struct ZoneResponse {
     pub zone: GetZoneResponse,
 }
 
 #[derive(Serialize, Debug, ToSchema)]
-#[allow(dead_code)]
 pub struct RecordListResponse {
     pub items: Vec<GetRecordResponse>,
     pub pagination: Pagination,
 }
 
 #[derive(Serialize, Debug, ToSchema)]
-#[allow(dead_code)]
 pub struct RecordResponse {
     pub record: GetRecordResponse,
 }
 
 #[derive(Serialize, Debug, ToSchema)]
-#[allow(dead_code)]
 pub struct MessageResponse {
     #[schema(example = "Deleted successfully")]
     pub message: String,
 }
 
 #[derive(Serialize, Debug, ToSchema)]
-#[allow(dead_code)]
 pub struct ErrorResponse {
     #[schema(example = "Bad request: invalid input data")]
     pub error: String,

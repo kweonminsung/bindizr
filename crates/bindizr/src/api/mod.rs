@@ -6,7 +6,6 @@ pub(crate) mod openapi;
 pub(crate) mod record;
 pub(crate) mod router;
 pub(crate) mod types;
-pub(crate) mod validation;
 pub(crate) mod zone;
 
 use crate::{config, log_error, log_info};
