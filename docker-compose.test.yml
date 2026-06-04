@@ -1,7 +1,7 @@
 services:
   # Note: The dns-lb service is added for testing purposes to load balance between the two bind9 instances.
   dns-lb:
-    image: powerdns/dnsdist-20:2.0.5
+    image: powerdns/dnsdist-20:2.0.6
     command:
       [
         "--supervised",
