@@ -229,7 +229,7 @@ impl ZoneService {
         );
 
         // Send NOTIFY to secondary servers
-        if let Err(e) = crate::notify::send_notify(Some(&updated_zone.name)).await {
+        if let Err(e) = crate::notify::send_notify_after_update(Some(&updated_zone.name)).await {
             log_warn!(
                 "Failed to send NOTIFY for zone {}: {}",
                 updated_zone.name,
@@ -238,7 +238,7 @@ impl ZoneService {
         }
 
         if existing_zone.name != updated_zone.name
-            && let Err(e) = crate::notify::send_notify(Some("catalog.bind")).await
+            && let Err(e) = crate::notify::send_notify_after_update(Some("catalog.bind")).await
         {
             log_warn!("Failed to send NOTIFY for catalog.bind: {}", e);
         }

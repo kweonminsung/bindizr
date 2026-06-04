@@ -4,7 +4,7 @@ mod output;
 use crate::{
     api,
     cli::commands::{notify::NotifyCommand, token::TokenCommand},
-    config, database, dns, log_info, logger, service, socket,
+    config, database, dns, log_error, log_info, logger, service, socket,
 };
 use async_trait::async_trait;
 use clap::{Parser, Subcommand};
@@ -79,6 +79,13 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
     database::initialize().await;
     dns::initialize().await;
+
+    if config::get_bindizr_config().dns.notify_on_startup {
+        match dns::xfr::notify::send_notify(None).await {
+            Ok(()) => log_info!("Startup DNS NOTIFY completed."),
+            Err(e) => log_error!("Startup DNS NOTIFY failed: {}", e),
+        }
+    }
 
     log_info!("Bindizr is running in foreground mode.");
     log_info!("For production use, please run bindizr as a systemd service:");

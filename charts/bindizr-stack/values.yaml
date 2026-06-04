@@ -17,6 +17,8 @@ bindizr:
 
   dns:
     port: 53
+    notifyAfterUpdate: true
+    notifyOnStartup: false
     service:
       port: 53
 

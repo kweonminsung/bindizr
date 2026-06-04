@@ -81,9 +81,17 @@ pub struct PostgresqlConfig {
 pub struct DnsConfig {
     pub listen_port: u16,
     pub secondary_addrs: String,
+    #[serde(default = "default_notify_after_update")]
+    pub notify_after_update: bool,
+    #[serde(default)]
+    pub notify_on_startup: bool,
     /// Empty disables nsupdate TSIG authentication.
     #[serde(default)]
     pub nsupdate_tsig_key: String,
+}
+
+fn default_notify_after_update() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -205,6 +213,12 @@ fn apply_env_overrides_from(
         config.dns.nsupdate_tsig_key = value;
     } else if let Some(value) = get_env("TSIG_SECRET") {
         config.dns.nsupdate_tsig_key = value;
+    }
+    if let Some(value) = get_env("BINDIZR_NOTIFY_AFTER_UPDATE") {
+        config.dns.notify_after_update = parse_env_value("BINDIZR_NOTIFY_AFTER_UPDATE", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
+        config.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
         config.logging.log_level = parse_log_level_env("BINDIZR_LOG_LEVEL", &value)?;

@@ -19,6 +19,8 @@ server_url = ""
 [dns]
 listen_port = 53
 secondary_addrs = "127.0.0.1:53"
+notify_after_update = true
+notify_on_startup = false
 nsupdate_tsig_key = ""
 
 [logging]

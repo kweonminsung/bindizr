@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bindizr_core::config;
 use std::sync::{Arc, OnceLock};
 
 #[async_trait]
@@ -19,4 +20,12 @@ pub async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
         Some(sender) => sender.send_notify(zone_name).await,
         None => Err("notify sender is not registered".to_string()),
     }
+}
+
+pub async fn send_notify_after_update(zone_name: Option<&str>) -> Result<(), String> {
+    if !config::get_bindizr_config().dns.notify_after_update {
+        return Ok(());
+    }
+
+    send_notify(zone_name).await
 }

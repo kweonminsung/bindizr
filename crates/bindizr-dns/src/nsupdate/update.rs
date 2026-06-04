@@ -17,7 +17,7 @@ use crate::{
     },
     txt, xfr,
 };
-use bindizr_core::dns::name::to_fqdn;
+use bindizr_core::{config, dns::name::to_fqdn};
 use chrono::Utc;
 use std::net::SocketAddr;
 
@@ -130,6 +130,15 @@ pub(super) async fn apply_update(
     };
 
     if changed {
+        if !config::get_bindizr_config().dns.notify_after_update {
+            log_info!(
+                "NSUPDATE committed for zone {} with serial {}",
+                zone.name,
+                new_serial
+            );
+            return Ok(UpdateResult::Applied { changed });
+        }
+
         if let Err(e) = xfr::notify::send_notify(Some(&zone.name)).await {
             log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
         }

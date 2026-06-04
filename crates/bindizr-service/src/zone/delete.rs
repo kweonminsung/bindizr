@@ -46,7 +46,7 @@ impl ZoneService {
             zone_id
         );
 
-        if let Err(e) = crate::notify::send_notify(Some("catalog.bind")).await {
+        if let Err(e) = crate::notify::send_notify_after_update(Some("catalog.bind")).await {
             log_warn!("Failed to send NOTIFY for catalog.bind: {}", e);
         }
 

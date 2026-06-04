@@ -85,6 +85,14 @@ pub(crate) async fn handle_command() -> Result<(), String> {
         "  \x1b[33m{:<22}\x1b[0m = {}",
         "secondary_addrs", status.config.dns.secondary_addrs
     );
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "notify_after_update", status.config.dns.notify_after_update
+    );
+    println!(
+        "  \x1b[33m{:<22}\x1b[0m = {}",
+        "notify_on_startup", status.config.dns.notify_on_startup
+    );
     println!();
 
     println!("\x1b[36m[logging]\x1b[0m");

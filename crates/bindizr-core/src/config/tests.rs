@@ -46,6 +46,8 @@ server_url = ""
 [dns]
 listen_port = 53
 secondary_addrs = "127.0.0.1:53"
+notify_after_update = false
+notify_on_startup = true
 nsupdate_tsig_key = ""
 
 [logging]
@@ -66,6 +68,8 @@ log_level = "debug"
         DatabaseType::Sqlite
     ));
     assert_eq!(parsed.api.listen_port, 3000);
+    assert!(!parsed.dns.notify_after_update);
+    assert!(parsed.dns.notify_on_startup);
 
     drop(dir);
 }
@@ -109,6 +113,8 @@ log_level = "debug"
     let parsed = parse_bindizr_config_with_env(config, |_| None).unwrap();
 
     assert_eq!(parsed.dns.nsupdate_tsig_key, "");
+    assert!(parsed.dns.notify_after_update);
+    assert!(!parsed.dns.notify_on_startup);
 
     drop(dir);
 }
@@ -344,6 +350,8 @@ log_level = "debug"
         "BINDIZR_DNS_PORT" => Some("5353".to_string()),
         "BINDIZR_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
         "BINDIZR_NSUPDATE_TSIG_KEY" => Some("secret#with&chars".to_string()),
+        "BINDIZR_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
+        "BINDIZR_NOTIFY_ON_STARTUP" => Some("true".to_string()),
         "BINDIZR_LOG_LEVEL" => Some("info".to_string()),
         _ => None,
     })
@@ -366,6 +374,8 @@ log_level = "debug"
         "192.0.2.10:53,192.0.2.11:53"
     );
     assert_eq!(overridden.dns.nsupdate_tsig_key, "secret#with&chars");
+    assert!(!overridden.dns.notify_after_update);
+    assert!(overridden.dns.notify_on_startup);
     assert!(matches!(overridden.logging.log_level, LogLevel::Info));
 
     drop(dir);

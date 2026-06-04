@@ -27,6 +27,8 @@ data:
     [dns]
     listen_port = {{ .Values.bindizr.dns.port }}
     secondary_addrs = ""
+    notify_after_update = {{ .Values.bindizr.dns.notifyAfterUpdate }}
+    notify_on_startup = {{ .Values.bindizr.dns.notifyOnStartup }}
     nsupdate_tsig_key = ""
 
     [logging]
