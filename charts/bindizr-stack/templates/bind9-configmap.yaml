@@ -24,10 +24,12 @@ data:
       };
     };
 
+    {{ if or .Values.tsig.existingSecret .Values.tsig.secret }}
     key "{{ .Values.tsig.keyName }}" {
       algorithm {{ .Values.tsig.algorithm }};
       secret "__TSIG_SECRET__";
     };
+    {{ end }}
 
     zone "catalog.bind" {
       type secondary;

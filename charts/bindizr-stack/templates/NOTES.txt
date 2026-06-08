@@ -10,5 +10,5 @@ BIND9 replicas are exposed for authoritative DNS traffic.
 
 Before production use:
   - Set bindizr.image.repository and bindizr.image.tag if you need a different Bindizr image.
-  - Set tsig.existingSecret or tsig.secret.
+  - Set tsig.existingSecret or tsig.secret if you need nsupdate TSIG authentication.
   - Set bindizr.database.existingSecret or bindizr.database.serverUrl when using mysql/postgresql.

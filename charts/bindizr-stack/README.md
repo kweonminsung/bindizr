@@ -25,7 +25,7 @@ kubectl create secret generic bindizr-db-secret \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 ```
 
-Create or reference a TSIG Secret:
+Optionally create or reference a TSIG Secret for nsupdate authentication:
 
 ```sh
 kubectl create secret generic bindizr-tsig \
@@ -38,16 +38,14 @@ Install:
 helm install bindizr ./charts/bindizr-stack \
   --set bindizr.image.repository=kweonminsung/bindizr \
   --set bindizr.image.tag=0.1.0-beta.4 \
-  --set bindizr.database.existingSecret=bindizr-db-secret \
-  --set tsig.existingSecret=bindizr-tsig
+  --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 
 For local testing, the chart can create Secrets from values:
 
 ```sh
 helm install bindizr ./charts/bindizr-stack \
-  --set bindizr.database.serverUrl='postgresql://user:password@postgresql:5432/bindizr' \
-  --set tsig.secret='BASE64_TSIG_SECRET'
+  --set bindizr.database.serverUrl='postgresql://user:password@postgresql:5432/bindizr'
 ```
 
 To run a bundled MySQL database for development:
@@ -56,8 +54,7 @@ To run a bundled MySQL database for development:
 helm install bindizr ./charts/bindizr-stack \
   --set bindizr.database.type=mysql \
   --set bindizr.database.existingSecret= \
-  --set mysql.enabled=true \
-  --set tsig.secret='BASE64_TSIG_SECRET'
+  --set mysql.enabled=true
 ```
 
 To run SQLite for local testing without an external database:
@@ -65,12 +62,12 @@ To run SQLite for local testing without an external database:
 ```sh
 helm install bindizr ./charts/bindizr-stack \
   --set bindizr.database.type=sqlite \
-  --set bindizr.replicas=1 \
-  --set tsig.secret='BASE64_TSIG_SECRET'
+  --set bindizr.replicas=1
 ```
 
 ## Notes
 
 - External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.serverUrl`.
 - SQLite can use a chart-managed PVC or `emptyDir` through `bindizr.database.sqlite.persistence`.
+- TSIG is optional. Set `tsig.existingSecret` or `tsig.secret` only when nsupdate TSIG authentication is needed.
 - Bundled Bitnami MySQL/PostgreSQL charts are optional and controlled by `mysql.enabled` and `postgresql.enabled`.
