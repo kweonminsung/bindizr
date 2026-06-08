@@ -6,9 +6,8 @@ use crate::{
     error::ServiceError,
     log_error,
     model::{zone::Zone, zone_change::ZoneChange},
-    pagination::paginate_items,
     repository::RepositoryService,
-    types::{GetZonesFilter, PaginatedResponse},
+    types::{GetZonesFilter, PaginatedResponse, Pagination},
 };
 
 impl ZoneService {
@@ -48,7 +47,7 @@ impl ZoneService {
         let limit = filter.limit;
         let offset = filter.offset;
 
-        let zones = RepositoryService::get_zones_by_filter(ZoneFilter {
+        let zone_filter = ZoneFilter {
             name: filter.name,
             id: filter.id,
             primary_ns: filter.primary_ns,
@@ -58,12 +57,23 @@ impl ZoneService {
             max_ttl: filter.max_ttl,
             serial: filter.serial,
             search: filter.search,
-            limit: None,
-            offset: None,
-        })
-        .await?;
+            limit,
+            offset,
+        };
 
-        Ok(paginate_items(zones, limit, offset))
+        let total = RepositoryService::count_zones_by_filter(zone_filter.clone()).await?;
+        let zones = RepositoryService::get_zones_by_filter(zone_filter).await?;
+        let offset = offset.unwrap_or(0);
+        let limit = limit.unwrap_or_else(|| total.min(u64::from(u32::MAX)) as u32);
+
+        Ok(PaginatedResponse {
+            items: zones,
+            pagination: Pagination {
+                limit,
+                offset,
+                total,
+            },
+        })
     }
 
     pub async fn get_by_name(zone_name: &str) -> Result<Zone, ServiceError> {

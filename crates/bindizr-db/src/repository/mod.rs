@@ -132,6 +132,7 @@ pub trait ZoneRepository: Send + Sync {
     ) -> Result<Option<Zone>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError>;
     async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
+    async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError>;
     async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;

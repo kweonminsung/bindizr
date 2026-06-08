@@ -8,7 +8,11 @@ use domain::base::{
 use tokio::net::{UdpSocket, lookup_host};
 
 use super::{catalog, error::XfrError, wire};
-use crate::{config, log_error, log_info, service::zone::ZoneService};
+use crate::{
+    address::{ParsedAddress, parse_address_target},
+    config, log_error, log_info,
+    service::zone::ZoneService,
+};
 
 /// Send DNS NOTIFY to all configured DNS servers for a zone.
 /// If zone_name is None, sends NOTIFY for all zones. If force is true, increments the target zone serial before notifying.
@@ -156,12 +160,15 @@ async fn resolve_secondary_servers(raw: &str) -> (Vec<SocketAddr>, Vec<String>) 
             continue;
         }
 
-        match lookup_host(trimmed).await {
-            Ok(resolved) => addrs.extend(resolved),
-            Err(e) => {
-                log_error!("Invalid server address '{}': {}", trimmed, e);
-                failures.push(format!("{}: {}", trimmed, e));
-            }
+        match parse_address_target(trimmed, 53) {
+            ParsedAddress::SocketAddr(addr) => addrs.push(addr),
+            ParsedAddress::HostPort(host_port) => match lookup_host(&host_port).await {
+                Ok(resolved) => addrs.extend(resolved),
+                Err(e) => {
+                    log_error!("Invalid server address '{}': {}", trimmed, e);
+                    failures.push(format!("{}: {}", trimmed, e));
+                }
+            },
         }
     }
 

@@ -18,8 +18,6 @@ const MAX_DNS_LABEL_LEN: usize = 63;
 const MAX_DOMAIN_LEN: usize = 253;
 
 pub(super) struct NormalizedOwnerName {
-    /// Fully-qualified, lowercase name used for comparison and validation.
-    pub fqdn: String,
     /// Name stored in the database according to the current relative-name policy.
     pub stored_name: String,
 }
@@ -67,7 +65,6 @@ pub(super) fn normalize_record_owner_name(
 
     Ok(NormalizedOwnerName {
         stored_name: owner_fqdn_to_stored_name(&owner_fqdn, &zone_fqdn),
-        fqdn: owner_fqdn,
     })
 }
 
@@ -156,9 +153,7 @@ pub(super) fn validate_record_add_constraints(
     let existing_records_with_name: Vec<_> = zone_records
         .iter()
         .filter(|r| {
-            normalize_record_owner_name(&r.name, &zone.name)
-                .ok()
-                .is_some_and(|owner| owner.fqdn == normalized_owner.fqdn)
+            r.name.eq_ignore_ascii_case(&normalized_owner.stored_name)
                 && except_record_id.map(|id| id != r.id).unwrap_or(true)
         })
         .collect();
@@ -425,20 +420,16 @@ mod tests {
         let zone = "test.example.com";
 
         let apex = normalize_record_owner_name("@", zone).unwrap();
-        assert_eq!(apex.fqdn, "test.example.com.");
         assert_eq!(apex.stored_name, "@");
 
         let relative = normalize_record_owner_name("a1", zone).unwrap();
-        assert_eq!(relative.fqdn, "a1.test.example.com.");
         assert_eq!(relative.stored_name, "a1");
 
         let relative_with_zone_suffix =
             normalize_record_owner_name("A1.Test.Example.Com", zone).unwrap();
-        assert_eq!(relative_with_zone_suffix.fqdn, "a1.test.example.com.");
         assert_eq!(relative_with_zone_suffix.stored_name, "a1");
 
         let absolute = normalize_record_owner_name("A1.Test.Example.Com.", zone).unwrap();
-        assert_eq!(absolute.fqdn, "a1.test.example.com.");
         assert_eq!(absolute.stored_name, "a1");
     }
 

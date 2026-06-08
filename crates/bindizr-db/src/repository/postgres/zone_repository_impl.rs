@@ -220,6 +220,56 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zones)
     }
 
+    async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+        let search = like_pattern(filter.search.as_deref());
+
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM zones
+            WHERE ($1::TEXT IS NULL OR LOWER(name) = LOWER($2))
+              AND ($3::INT4 IS NULL OR id = $4)
+              AND ($5::TEXT IS NULL OR LOWER(primary_ns) = LOWER($6))
+              AND ($7::TEXT IS NULL OR LOWER(admin_email) = LOWER($8))
+              AND ($9::INT4 IS NULL OR ttl = $10)
+              AND ($11::INT4 IS NULL OR ttl >= $12)
+              AND ($13::INT4 IS NULL OR ttl <= $14)
+              AND ($15::INT4 IS NULL OR serial = $16)
+              AND (
+                    $17::TEXT IS NULL
+                    OR LOWER(name) LIKE LOWER($18)
+                    OR LOWER(primary_ns) LIKE LOWER($19)
+                    OR LOWER(admin_email) LIKE LOWER($20)
+              )
+            "#,
+        )
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(filter.id)
+        .bind(filter.id)
+        .bind(&filter.primary_ns)
+        .bind(&filter.primary_ns)
+        .bind(&filter.admin_email)
+        .bind(&filter.admin_email)
+        .bind(filter.ttl)
+        .bind(filter.ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.serial)
+        .bind(filter.serial)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        Ok(count as u64)
+    }
+
     async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

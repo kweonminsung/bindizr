@@ -100,6 +100,13 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load zones: {}", e)))
     }
 
+    pub(super) async fn count_zones_by_filter(filter: ZoneFilter) -> Result<u64, ServiceError> {
+        get_zone_repository()
+            .count_by_filter(filter)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to count zones: {}", e)))
+    }
+
     pub(super) async fn update_catalog_serial_for_signature(
         name: &str,
         signature: &str,

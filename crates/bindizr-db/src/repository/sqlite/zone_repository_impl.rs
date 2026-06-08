@@ -215,6 +215,56 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(zones)
     }
 
+    async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+        let search = like_pattern(filter.search.as_deref());
+
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM zones
+            WHERE (? IS NULL OR LOWER(name) = LOWER(?))
+              AND (? IS NULL OR id = ?)
+              AND (? IS NULL OR LOWER(primary_ns) = LOWER(?))
+              AND (? IS NULL OR LOWER(admin_email) = LOWER(?))
+              AND (? IS NULL OR ttl = ?)
+              AND (? IS NULL OR ttl >= ?)
+              AND (? IS NULL OR ttl <= ?)
+              AND (? IS NULL OR serial = ?)
+              AND (
+                    ? IS NULL
+                    OR LOWER(name) LIKE LOWER(?)
+                    OR LOWER(primary_ns) LIKE LOWER(?)
+                    OR LOWER(admin_email) LIKE LOWER(?)
+              )
+            "#,
+        )
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(filter.id)
+        .bind(filter.id)
+        .bind(&filter.primary_ns)
+        .bind(&filter.primary_ns)
+        .bind(&filter.admin_email)
+        .bind(&filter.admin_email)
+        .bind(filter.ttl)
+        .bind(filter.ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.serial)
+        .bind(filter.serial)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        Ok(count as u64)
+    }
+
     async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
