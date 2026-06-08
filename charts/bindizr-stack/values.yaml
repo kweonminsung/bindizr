@@ -47,8 +47,13 @@ bindizr:
         size: 1Gi
 
   podAnnotations: {}
-  podSecurityContext: {}
-  securityContext: {}
+  podSecurityContext:
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+  securityContext:
+    runAsUser: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
   resources: {}
   nodeSelector: {}
   tolerations: []
