@@ -34,10 +34,14 @@ impl NotifyApi {
         )
 )]
 pub(crate) async fn notify_zones(JsonBody(body): JsonBody<NotifyZoneRequest>) -> impl IntoResponse {
-    match dns::xfr::notify::send_notify(body.zone_name.as_deref()).await {
+    match dns::xfr::notify::send_notify(body.zone_name.as_deref(), body.force).await {
         Ok(()) => {
             let message = match body.zone_name {
+                Some(zone_name) if body.force => {
+                    format!("NOTIFY sent successfully for zone: {} (forced)", zone_name)
+                }
                 Some(zone_name) => format!("NOTIFY sent successfully for zone: {}", zone_name),
+                None if body.force => "NOTIFY sent successfully for all zones (forced)".to_string(),
                 None => "NOTIFY sent successfully for all zones".to_string(),
             };
             (StatusCode::OK, Json(json!({ "message": message }))).into_response()

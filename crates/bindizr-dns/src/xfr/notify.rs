@@ -10,13 +10,40 @@ use tokio::net::{UdpSocket, lookup_host};
 use super::{catalog, error::XfrError, wire};
 use crate::{config, log_error, log_info, service::zone::ZoneService};
 
-/// Send DNS NOTIFY to all configured DNS servers for a zone
-/// If zone_name is None, sends NOTIFY for all zones
-pub async fn send_notify(zone_name: Option<&str>) -> Result<(), XfrError> {
+/// Send DNS NOTIFY to all configured DNS servers for a zone.
+/// If zone_name is None, sends NOTIFY for all zones. If force is true, increments the target zone serial before notifying.
+pub async fn send_notify(zone_name: Option<&str>, force: bool) -> Result<(), XfrError> {
+    if force {
+        force_increment_serial(zone_name).await?;
+    }
+
     match zone_name {
         Some(name) => send_notify_for_zone(name).await,
         None => send_notify_for_all_zones().await,
     }
+}
+
+async fn force_increment_serial(zone_name: Option<&str>) -> Result<(), XfrError> {
+    if matches!(zone_name, Some(name) if catalog::is_catalog_zone(name)) {
+        log_info!("Skipping forced serial increment for virtual catalog zone");
+        return Ok(());
+    }
+
+    let bumped_zones = ZoneService::force_increment_serial(zone_name)
+        .await
+        .map_err(|e| match e {
+            crate::service::error::ServiceError::NotFound(_) => {
+                XfrError::ZoneNotFound(zone_name.unwrap_or_default().to_string())
+            }
+            other => XfrError::DatabaseError(other.to_string()),
+        })?;
+
+    log_info!(
+        "Forced serial increment for {} zone(s) before NOTIFY",
+        bumped_zones.len()
+    );
+
+    Ok(())
 }
 
 /// Send DNS NOTIFY for all zones

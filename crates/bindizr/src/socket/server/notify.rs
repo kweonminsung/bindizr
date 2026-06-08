@@ -6,6 +6,8 @@ use crate::{dns, socket::types::DaemonResponse};
 #[derive(Serialize, Deserialize, Debug)]
 pub(super) struct NotifyZoneRequest {
     pub zone_name: Option<String>,
+    #[serde(default)]
+    pub force: bool,
 }
 
 pub(super) async fn handle_notify_zone(data: serde_json::Value) -> Result<DaemonResponse, String> {
@@ -19,10 +21,16 @@ pub(super) async fn handle_notify_zone(data: serde_json::Value) -> Result<Daemon
         }
     };
 
-    match dns::xfr::notify::send_notify(request.zone_name.as_deref()).await {
+    match dns::xfr::notify::send_notify(request.zone_name.as_deref(), request.force).await {
         Ok(()) => Ok(DaemonResponse {
             message: match request.zone_name {
+                Some(ref name) if request.force => {
+                    format!("NOTIFY sent successfully for zone: {} (forced)", name)
+                }
                 Some(ref name) => format!("NOTIFY sent successfully for zone: {}", name),
+                None if request.force => {
+                    "NOTIFY sent successfully for all zones (forced)".to_string()
+                }
                 None => "NOTIFY sent successfully for all zones".to_string(),
             },
             data: json!(null),

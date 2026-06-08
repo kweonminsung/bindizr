@@ -204,7 +204,7 @@ pub(crate) async fn handle_ixfr(
         current_serial
     );
 
-    send_ixfr_response(
+    if let Err(err) = send_ixfr_response(
         stream,
         zone_name,
         query_id,
@@ -213,7 +213,15 @@ pub(crate) async fn handle_ixfr(
         &changes,
         &snapshots_by_serial,
     )
-    .await?;
+    .await
+    {
+        log_warn!(
+            "IXFR: Failed to build incremental response ({}), falling back to AXFR",
+            err
+        );
+        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
+            .await;
+    }
 
     log_info!("IXFR completed for zone {}", zone_name_str);
 

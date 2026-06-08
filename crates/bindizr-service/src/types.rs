@@ -292,6 +292,9 @@ pub struct UpdateRecordRequest {
 pub struct NotifyZoneRequest {
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
+    #[serde(default)]
+    #[schema(example = true)]
+    pub force: bool,
 }
 
 #[derive(Serialize, Debug, ToSchema)]

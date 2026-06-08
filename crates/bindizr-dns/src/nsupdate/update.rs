@@ -141,7 +141,7 @@ pub(super) async fn apply_update(
             return Ok(UpdateResult::Applied { changed });
         }
 
-        if let Err(e) = xfr::notify::send_notify(Some(&zone.name)).await {
+        if let Err(e) = xfr::notify::send_notify(Some(&zone.name), false).await {
             log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
         }
 

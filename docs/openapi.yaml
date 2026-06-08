@@ -831,6 +831,9 @@ components:
     NotifyZoneRequest:
       type: object
       properties:
+        force:
+          type: boolean
+          example: true
         zone_name:
           type:
           - string
