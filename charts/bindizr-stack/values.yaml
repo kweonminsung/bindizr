@@ -3,7 +3,7 @@ fullnameOverride: ""
 
 bindizr:
   image:
-    repository: ghcr.io/kweonminsung/bindizr
+    repository: kweonminsung/bindizr
     tag: "0.1.0-beta.4"
     pullPolicy: IfNotPresent
   replicas: 2

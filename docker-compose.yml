@@ -1,6 +1,6 @@
 services:
   bindizr:
-    image: ghcr.io/kweonminsung/bindizr:0.1.0-beta.4
+    image: kweonminsung/bindizr:0.1.0-beta.4
     environment:
       BINDIZR_DATABASE_TYPE: mysql
       BINDIZR_DATABASE_URL: mysql://bindizr:bindizr@mysql:3306/bindizr

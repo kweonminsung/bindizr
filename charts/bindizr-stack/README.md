@@ -36,7 +36,7 @@ Install:
 
 ```sh
 helm install bindizr ./charts/bindizr-stack \
-  --set bindizr.image.repository=ghcr.io/kweonminsung/bindizr \
+  --set bindizr.image.repository=kweonminsung/bindizr \
   --set bindizr.image.tag=0.1.0-beta.4 \
   --set bindizr.database.existingSecret=bindizr-db-secret \
   --set tsig.existingSecret=bindizr-tsig
