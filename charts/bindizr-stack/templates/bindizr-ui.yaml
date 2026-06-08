@@ -1,0 +1,85 @@
+{{- if .Values.bindizrUi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}-ui
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bindizr-ui
+spec:
+  type: {{ .Values.bindizrUi.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.bindizrUi.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "bindizr-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: bindizr-ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}-ui
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bindizr-ui
+spec:
+  replicas: {{ .Values.bindizrUi.replicas }}
+  selector:
+    matchLabels:
+      {{- include "bindizr-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: bindizr-ui
+  template:
+    metadata:
+      labels:
+        {{- include "bindizr-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bindizr-ui
+      {{- with .Values.bindizrUi.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.bindizrUi.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: bindizr-ui
+          image: "{{ .Values.bindizrUi.image.repository }}:{{ .Values.bindizrUi.image.tag }}"
+          imagePullPolicy: {{ .Values.bindizrUi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.bindizrUi.env.port }}
+              protocol: TCP
+            - name: ui
+              containerPort: {{ .Values.bindizrUi.env.uiPort }}
+              protocol: TCP
+          env:
+            - name: GO_ENV
+              value: {{ .Values.bindizrUi.env.goEnv | quote }}
+            - name: PORT
+              value: {{ .Values.bindizrUi.env.port | quote }}
+            - name: UI_PORT
+              value: {{ .Values.bindizrUi.env.uiPort | quote }}
+          {{- with .Values.bindizrUi.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.bindizrUi.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.bindizrUi.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bindizrUi.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bindizrUi.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

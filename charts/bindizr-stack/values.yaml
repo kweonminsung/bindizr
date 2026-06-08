@@ -51,6 +51,28 @@ bindizr:
   tolerations: []
   affinity: {}
 
+bindizrUi:
+  enabled: false
+  image:
+    repository: kweonminsung/bindizr-ui
+    tag: "0.1.0-beta.4"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  env:
+    goEnv: production
+    port: 9000
+    uiPort: 9001
+  service:
+    type: ClusterIP
+    port: 9000
+  resources: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 bind9:
   replicas: 2
 

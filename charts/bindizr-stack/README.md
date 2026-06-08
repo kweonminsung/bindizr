@@ -36,8 +36,6 @@ Install:
 
 ```sh
 helm install bindizr ./charts/bindizr-stack \
-  --set bindizr.image.repository=kweonminsung/bindizr \
-  --set bindizr.image.tag=0.1.0-beta.4 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 
@@ -64,6 +62,13 @@ helm install bindizr ./charts/bindizr-stack \
   --set bindizr.database.type=postgresql \
   --set bindizr.database.existingSecret= \
   --set postgresql.enabled=true
+```
+
+To enable bindizr-ui:
+
+```sh
+helm install bindizr ./charts/bindizr-stack \
+  --set bindizrUi.enabled=true
 ```
 
 ## Notes
