@@ -28,7 +28,7 @@ jobs:
           node-version: "24"
 
       - name: Setup Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Install Redocly CLI
         run: npm install -g @redocly/cli
