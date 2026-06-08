@@ -16,6 +16,7 @@ data:
       listen-on-v6 port 53 { any; };
       recursion no;
       allow-query { any; };
+      allow-notify { any; };
       dnssec-validation auto;
       ixfr-from-differences yes;
 

@@ -25,7 +25,7 @@ PORT="53"
 echo "Cleaning up broken syntax..."
 
 # Remove previously inserted allow-notify, ixfr-from-differences, and catalog-zones
-perl -0777 -pi -e 's/^[ \t]*allow-notify \{ 127\.0\.0\.1; \};\r?\n//gm' "$OPTIONS_FILE"
+perl -0777 -pi -e 's/^[ \t]*allow-notify \{ (?:127\.0\.0\.1|any); \};\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*ixfr-from-differences yes;\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" \{\r?\n[ \t]*default-primaries \{ 127\.0\.0\.1 port [0-9]+; \};\r?\n[ \t]*\};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" default-primaries \{ 127\.0\.0\.1 port [0-9]+; \};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
@@ -48,7 +48,7 @@ BEGIN {
         depth = 1
         print $0
         if (!added_notify) {
-            print "    allow-notify { " host "; };"
+            print "    allow-notify { any; };"
             print "    ixfr-from-differences yes;"
             added_notify = 1
         }
@@ -88,7 +88,7 @@ zone "catalog.bind" {
     type secondary;
     primaries { $HOST port $PORT; };
     file "$CACHE/catalog.bind.zone";
-    allow-notify { $HOST; };
+    allow-notify { any; };
     ixfr-from-differences yes;
 };
 EOF

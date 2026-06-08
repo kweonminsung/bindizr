@@ -198,6 +198,7 @@ Update your main BIND configuration file (`$BIND_CONF_FILE`) by adding the follo
 # Configure catalog zone support
 cat <<EOF | sudo tee -a "$BIND_CONF_FILE"
 options {
+    allow-notify { any; };
     ixfr-from-differences yes;
     catalog-zones {
         zone "catalog.bind" default-primaries { 127.0.0.1 port 53; };
@@ -211,6 +212,7 @@ zone "catalog.bind" {
     type secondary;
     primaries { 127.0.0.1 port 53; };
     file "$BIND_CACHE_DIR/catalog.bind.zone";
+    allow-notify { any; };
     ixfr-from-differences yes;
 };
 EOF
