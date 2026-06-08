@@ -20,7 +20,7 @@ data:
       ixfr-from-differences yes;
 
       catalog-zones {
-        zone "catalog.bind" default-primaries { {{ include "bindizr-stack.fullname" . }}-dns port {{ .Values.bindizr.dns.service.port }}; };
+        zone "catalog.bind" default-primaries { __BINDIZR_DNS_ADDR__ port {{ .Values.bindizr.dns.service.port }}; };
       };
     };
 
@@ -33,7 +33,7 @@ data:
 
     zone "catalog.bind" {
       type secondary;
-      primaries { {{ include "bindizr-stack.fullname" . }}-dns port {{ .Values.bindizr.dns.service.port }}; };
+      primaries { __BINDIZR_DNS_ADDR__ port {{ .Values.bindizr.dns.service.port }}; };
       file "/var/cache/bind/catalog.bind.zone";
       ixfr-from-differences yes;
     };
