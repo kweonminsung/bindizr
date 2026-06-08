@@ -2,6 +2,7 @@
 /bindizr.conf.toml
 *.log
 *.tar.gz
+*.tgz
 *.db
 *.deb
 *.rpm
