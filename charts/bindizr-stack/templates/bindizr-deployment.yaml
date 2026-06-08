@@ -108,12 +108,12 @@ spec:
             name: {{ include "bindizr-stack.fullname" . }}-config
         {{- if eq .Values.bindizr.database.type "sqlite" }}
         - name: data
-          {{ if .Values.bindizr.database.sqlite.persistence.enabled }}
+          {{- if .Values.bindizr.database.sqlite.persistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "bindizr-stack.fullname" . }}-sqlite
           {{ else }}
           emptyDir: {}
-          {{ end }}
+          {{- end }}
         {{- end }}
       {{- with .Values.bindizr.nodeSelector }}
       nodeSelector:

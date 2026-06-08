@@ -40,7 +40,7 @@ bindizr:
     sqlite:
       filePath: /var/lib/bindizr/bindizr.db
       persistence:
-        enabled: true
+        enabled: false
         storageClass: ""
         accessModes:
           - ReadWriteOnce

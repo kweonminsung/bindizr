@@ -68,6 +68,6 @@ helm install bindizr ./charts/bindizr-stack \
 ## Notes
 
 - External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.serverUrl`.
-- SQLite can use a chart-managed PVC or `emptyDir` through `bindizr.database.sqlite.persistence`.
+- SQLite uses `emptyDir` by default. Set `bindizr.database.sqlite.persistence.enabled=true` to use a chart-managed PVC.
 - TSIG is optional. Set `tsig.existingSecret` or `tsig.secret` only when nsupdate TSIG authentication is needed.
 - Bundled Bitnami MySQL/PostgreSQL charts are optional and controlled by `mysql.enabled` and `postgresql.enabled`.
