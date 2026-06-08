@@ -17,9 +17,6 @@ data:
     [database.mysql]
     server_url = ""
 
-    [database.sqlite]
-    file_path = "{{ .Values.bindizr.database.sqlite.filePath }}"
-
     [database.postgresql]
     server_url = ""
 

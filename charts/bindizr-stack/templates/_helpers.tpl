@@ -68,6 +68,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- required "Set bindizr.database.serverUrl, bindizr.database.existingSecret, or enable postgresql.enabled when bindizr.database.type is postgresql" .Values.bindizr.database.serverUrl -}}
 {{- end -}}
 {{- else -}}
-{{- required "bindizr.database.type must be mysql, postgresql, or sqlite" "" -}}
+{{- required "bindizr.database.type must be mysql or postgresql" "" -}}
 {{- end -}}
 {{- end -}}

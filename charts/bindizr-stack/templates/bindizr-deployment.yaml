@@ -6,10 +6,6 @@ metadata:
     {{- include "bindizr-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr
 spec:
-  {{- if and (eq .Values.bindizr.database.type "sqlite") .Values.bindizr.database.sqlite.persistence.enabled }}
-  strategy:
-    type: Recreate
-  {{- end }}
   replicas: {{ .Values.bindizr.replicas }}
   selector:
     matchLabels:
@@ -58,16 +54,11 @@ spec:
               value: {{ .Values.bindizr.api.requireAuthentication | quote }}
             - name: BINDIZR_DATABASE_TYPE
               value: {{ .Values.bindizr.database.type | quote }}
-            {{- if ne .Values.bindizr.database.type "sqlite" }}
             - name: BINDIZR_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ include "bindizr-stack.databaseSecretName" . }}
                   key: {{ .Values.bindizr.database.secretKey }}
-            {{- else }}
-            - name: BINDIZR_SQLITE_FILE_PATH
-              value: {{ .Values.bindizr.database.sqlite.filePath | quote }}
-            {{- end }}
             - name: BINDIZR_DNS_PORT
               value: {{ .Values.bindizr.dns.port | quote }}
             - name: BINDIZR_DNS_LISTEN_ADDR
@@ -98,23 +89,10 @@ spec:
             - name: config-template
               mountPath: /etc/bindizr-template
               readOnly: true
-            {{- if eq .Values.bindizr.database.type "sqlite" }}
-            - name: data
-              mountPath: /var/lib/bindizr
-            {{- end }}
       volumes:
         - name: config-template
           configMap:
             name: {{ include "bindizr-stack.fullname" . }}-config
-        {{- if eq .Values.bindizr.database.type "sqlite" }}
-        - name: data
-          {{- if .Values.bindizr.database.sqlite.persistence.enabled }}
-          persistentVolumeClaim:
-            claimName: {{ include "bindizr-stack.fullname" . }}-sqlite
-          {{ else }}
-          emptyDir: {}
-          {{- end }}
-        {{- end }}
       {{- with .Values.bindizr.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

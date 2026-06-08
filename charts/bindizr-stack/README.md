@@ -57,17 +57,9 @@ helm install bindizr ./charts/bindizr-stack \
   --set mysql.enabled=true
 ```
 
-To run SQLite for local testing without an external database:
-
-```sh
-helm install bindizr ./charts/bindizr-stack \
-  --set bindizr.database.type=sqlite \
-  --set bindizr.replicas=1
-```
-
 ## Notes
 
 - External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.serverUrl`.
-- SQLite uses `emptyDir` by default. Set `bindizr.database.sqlite.persistence.enabled=true` to use a chart-managed PVC.
+- SQLite is not supported by this Helm chart.
 - TSIG is optional. Set `tsig.existingSecret` or `tsig.secret` only when nsupdate TSIG authentication is needed.
 - Bundled Bitnami MySQL/PostgreSQL charts are optional and controlled by `mysql.enabled` and `postgresql.enabled`.

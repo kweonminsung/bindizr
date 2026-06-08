@@ -37,14 +37,6 @@ bindizr:
     # If this is empty and the matching mysql/postgresql subchart is enabled,
     # the chart builds the URL from the subchart auth values.
     serverUrl: ""
-    sqlite:
-      filePath: /var/lib/bindizr/bindizr.db
-      persistence:
-        enabled: false
-        storageClass: ""
-        accessModes:
-          - ReadWriteOnce
-        size: 1Gi
 
   podAnnotations: {}
   podSecurityContext:
