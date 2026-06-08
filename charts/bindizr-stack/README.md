@@ -57,9 +57,18 @@ helm install bindizr ./charts/bindizr-stack \
   --set mysql.enabled=true
 ```
 
+To run a bundled PostgreSQL database for development:
+
+```sh
+helm install bindizr ./charts/bindizr-stack \
+  --set bindizr.database.type=postgresql \
+  --set bindizr.database.existingSecret= \
+  --set postgresql.enabled=true
+```
+
 ## Notes
 
 - External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.serverUrl`.
 - SQLite is not supported by this Helm chart.
 - TSIG is optional. Set `tsig.existingSecret` or `tsig.secret` only when nsupdate TSIG authentication is needed.
-- Bundled Bitnami MySQL/PostgreSQL charts are optional and controlled by `mysql.enabled` and `postgresql.enabled`.
+- Bundled MySQL/PostgreSQL are optional single-replica StatefulSets using the configured Docker images and controlled by `mysql.enabled` and `postgresql.enabled`.

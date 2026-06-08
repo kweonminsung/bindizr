@@ -34,8 +34,8 @@ bindizr:
     existingSecret: ""
     secretKey: database-url
     # Used only when existingSecret is empty. Prefer an existing Secret for production.
-    # If this is empty and the matching mysql/postgresql subchart is enabled,
-    # the chart builds the URL from the subchart auth values.
+    # If this is empty and the matching bundled mysql/postgresql database is enabled,
+    # the chart builds the URL from the bundled database auth values.
     serverUrl: ""
 
   podAnnotations: {}
@@ -96,15 +96,53 @@ rbac:
 
 mysql:
   enabled: false
+  image:
+    repository: mysql
+    tag: "9.7"
+    pullPolicy: IfNotPresent
+  service:
+    port: 3306
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 8Gi
   auth:
     database: bindizr
     username: bindizr
     password: bindizr
     rootPassword: bindizr-root
+  resources: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 postgresql:
   enabled: false
+  image:
+    repository: postgres
+    tag: "18"
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 8Gi
   auth:
     database: bindizr
     username: bindizr
     password: bindizr
+  resources: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

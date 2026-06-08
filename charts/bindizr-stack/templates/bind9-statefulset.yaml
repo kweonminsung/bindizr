@@ -36,8 +36,8 @@ spec:
             - -ec
           args:
             - |
-              sed "s#__TSIG_SECRET__#${TSIG_SECRET:-}#g" /etc/bind-template/named.conf > /etc/bind/named.conf
-              exec named -g -c /etc/bind/named.conf
+              sed "s#__TSIG_SECRET__#${TSIG_SECRET:-}#g" /etc/bind-template/named.conf > /tmp/named.conf
+              exec named -g -c /tmp/named.conf
           ports:
             - name: dns-tcp
               containerPort: 53
@@ -64,8 +64,6 @@ spec:
             - name: config-template
               mountPath: /etc/bind-template
               readOnly: true
-            - name: generated-config
-              mountPath: /etc/bind
             - name: data
               mountPath: /var/lib/bind
             - name: cache
@@ -74,8 +72,6 @@ spec:
         - name: config-template
           configMap:
             name: {{ include "bindizr-stack.fullname" . }}-bind9-config
-        - name: generated-config
-          emptyDir: {}
         - name: cache
           emptyDir: {}
         {{- if not .Values.bind9.persistence.enabled }}
