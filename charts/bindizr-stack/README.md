@@ -29,7 +29,7 @@ Optionally create or reference a TSIG Secret for nsupdate authentication:
 
 ```sh
 kubectl create secret generic bindizr-tsig \
-  --from-literal=rndc-key='BASE64_TSIG_SECRET'
+  --from-literal=nsupdate-key='BASE64_TSIG_SECRET'
 ```
 
 Install:
@@ -76,4 +76,5 @@ helm install bindizr ./charts/bindizr-stack \
 - External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.serverUrl`.
 - SQLite is not supported by this Helm chart.
 - TSIG is optional. Set `tsig.existingSecret` or `tsig.secret` only when nsupdate TSIG authentication is needed.
+- BIND9 accepts NOTIFY from any source by default through `allow-notify { any; }`.
 - Bundled MySQL/PostgreSQL are optional single-replica StatefulSets using the configured Docker images and controlled by `mysql.enabled` and `postgresql.enabled`.

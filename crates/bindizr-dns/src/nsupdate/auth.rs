@@ -24,13 +24,11 @@ pub(super) fn validate_tsig(
     query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<(), UpdateError> {
-    let secret = config::get_bindizr_config()
-        .dns
-        .nsupdate_tsig_key
-        .trim()
-        .to_string();
+    let dns_config = &config::get_bindizr_config().dns;
+    let expected_key_name = dns_config.nsupdate_tsig_key_name.trim().to_string();
+    let secret = dns_config.nsupdate_tsig_key.trim().to_string();
 
-    if secret.is_empty() {
+    if expected_key_name.is_empty() || secret.is_empty() {
         return Ok(());
     }
 
@@ -38,6 +36,17 @@ pub(super) fn validate_tsig(
         .tsig
         .as_ref()
         .ok_or_else(|| UpdateError::Refused(format!("missing TSIG record from {}", client_addr)))?;
+
+    let expected_key_canonical = encode_canonical_name(&expected_key_name)?;
+    if tsig.name_canonical != expected_key_canonical {
+        return Err(tsig_notauth(
+            format!("unexpected TSIG key name: {}", tsig.name),
+            tsig,
+            TSIG_ERROR_BADKEY,
+            tsig.time_signed,
+            Vec::new(),
+        ));
+    }
 
     let algorithm = tsig.algorithm.trim_end_matches('.').to_ascii_lowercase();
     if algorithm != "hmac-sha256" && algorithm != "hmac-sha256.sig-alg.reg.int" {
@@ -147,6 +156,13 @@ fn decode_tsig_secret(raw: &str) -> Result<Vec<u8>, UpdateError> {
     Ok(bytes)
 }
 
+fn encode_canonical_name(name: &str) -> Result<Vec<u8>, UpdateError> {
+    let mut out = Vec::new();
+    crate::xfr::wire::encode_domain_name(&name.to_ascii_lowercase(), &mut out)
+        .map_err(|e| UpdateError::Internal(e.to_string()))?;
+    Ok(out)
+}
+
 fn build_tsig_signed_data(query_data: &[u8], tsig: &TsigRecord) -> Result<Vec<u8>, UpdateError> {
     if query_data.len() < 12
         || tsig.rr_start < 12
@@ -185,4 +201,19 @@ fn build_tsig_signed_data(query_data: &[u8], tsig: &TsigRecord) -> Result<Vec<u8
     out.extend_from_slice(&tsig.other_data);
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encode_canonical_name_lowercases_key_name() {
+        assert_eq!(
+            encode_canonical_name("Nsupdate-Key.").unwrap(),
+            vec![
+                12, b'n', b's', b'u', b'p', b'd', b'a', b't', b'e', b'-', b'k', b'e', b'y', 0,
+            ]
+        );
+    }
 }

@@ -23,7 +23,8 @@ notify_after_update = true    # Send DNS NOTIFY after zone changes
 notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
 notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
-nsupdate_tsig_key = ""        # Shared TSIG secret for nsupdate authentication (empty to disable, base64 recommended)
+nsupdate_tsig_key_name = "nsupdate-key" # TSIG key name for nsupdate authentication (name and key must both be set)
+nsupdate_tsig_key = ""        # Shared TSIG secret for nsupdate authentication (name and key must both be set, base64 recommended)
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

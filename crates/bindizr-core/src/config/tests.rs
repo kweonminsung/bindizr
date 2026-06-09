@@ -50,6 +50,7 @@ notify_after_update = false
 notify_on_startup = true
 notify_retries = 4
 notify_timeout_secs = 9
+nsupdate_tsig_key_name = "nsupdate-key"
 nsupdate_tsig_key = ""
 
 [logging]
@@ -75,6 +76,7 @@ log_level = "debug"
     assert!(parsed.dns.notify_on_startup);
     assert_eq!(parsed.dns.notify_retries, 4);
     assert_eq!(parsed.dns.notify_timeout_secs, 9);
+    assert_eq!(parsed.dns.nsupdate_tsig_key_name, "nsupdate-key");
 
     drop(dir);
 }
@@ -122,6 +124,7 @@ log_level = "debug"
     assert!(!parsed.dns.notify_on_startup);
     assert_eq!(parsed.dns.notify_retries, 3);
     assert_eq!(parsed.dns.notify_timeout_secs, 5);
+    assert_eq!(parsed.dns.nsupdate_tsig_key_name, "");
 
     drop(dir);
 }
@@ -307,6 +310,7 @@ log_level = "debug"
         "BINDIZR_DNS_PORT" => Some("5353".to_string()),
         "BINDIZR_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
         "BINDIZR_NSUPDATE_TSIG_KEY" => Some("secret#with&chars".to_string()),
+        "BINDIZR_NSUPDATE_TSIG_KEY_NAME" => Some("nsupdate-key".to_string()),
         "BINDIZR_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
         "BINDIZR_NOTIFY_ON_STARTUP" => Some("true".to_string()),
         "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
@@ -334,6 +338,7 @@ log_level = "debug"
         "192.0.2.10:53,192.0.2.11:53"
     );
     assert_eq!(overridden.dns.nsupdate_tsig_key, "secret#with&chars");
+    assert_eq!(overridden.dns.nsupdate_tsig_key_name, "nsupdate-key");
     assert!(!overridden.dns.notify_after_update);
     assert!(overridden.dns.notify_on_startup);
     assert_eq!(overridden.dns.notify_retries, 7);

@@ -13,6 +13,7 @@ services:
       BINDIZR_SECONDARY_ADDRS: tasks.bind9:53
       BINDIZR_NOTIFY_RETRIES: "3"
       BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
+      BINDIZR_NSUPDATE_TSIG_KEY_NAME: nsupdate-key
       BINDIZR_NSUPDATE_TSIG_KEY: ""
     ports:
       - target: 8000

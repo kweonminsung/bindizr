@@ -103,9 +103,9 @@ bind9:
 
 tsig:
   existingSecret: ""
-  keyName: rndc-key
+  keyName: nsupdate-key
   algorithm: hmac-sha256
-  # Used only when existingSecret is empty. Generate with: tsig-keygen -a hmac-sha256 rndc-key
+  # Used only when existingSecret is empty. Generate with: tsig-keygen -a hmac-sha256 nsupdate-key
   secret: ""
 
 serviceAccount:

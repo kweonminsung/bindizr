@@ -297,9 +297,7 @@ fn build_notify_message(zone_name: &Name<Vec<u8>>) -> Result<(u16, Vec<u8>), Xfr
     // Get answer section (but leave it empty)
     let answer = question.answer();
 
-    let msg_bytes = answer.finish().into_target().as_slice().to_vec();
-
-    Ok((query_id, msg_bytes))
+    Ok((query_id, answer.finish().into_target().as_slice().to_vec()))
 }
 
 fn validate_notify_response(query_id: u16, response: &[u8]) -> Result<(), XfrError> {

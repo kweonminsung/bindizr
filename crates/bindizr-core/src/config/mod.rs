@@ -88,7 +88,9 @@ pub struct DnsConfig {
     pub notify_retries: u32,
     #[serde(default = "default_notify_timeout_secs")]
     pub notify_timeout_secs: u64,
-    /// Empty disables nsupdate TSIG authentication.
+    /// Both name and key must be non-empty to enable nsupdate TSIG authentication.
+    #[serde(default)]
+    pub nsupdate_tsig_key_name: String,
     #[serde(default)]
     pub nsupdate_tsig_key: String,
 }
@@ -227,6 +229,9 @@ fn apply_env_overrides_from(
         config.dns.nsupdate_tsig_key = value;
     } else if let Some(value) = get_env("TSIG_SECRET") {
         config.dns.nsupdate_tsig_key = value;
+    }
+    if let Some(value) = get_env("BINDIZR_NSUPDATE_TSIG_KEY_NAME") {
+        config.dns.nsupdate_tsig_key_name = value;
     }
     if let Some(value) = get_env("BINDIZR_NOTIFY_AFTER_UPDATE") {
         config.dns.notify_after_update = parse_env_value("BINDIZR_NOTIFY_AFTER_UPDATE", &value)?;

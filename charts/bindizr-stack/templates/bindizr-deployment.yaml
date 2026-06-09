@@ -75,6 +75,8 @@ spec:
                   name: {{ include "bindizr-stack.tsigSecretName" . }}
                   key: {{ .Values.tsig.keyName }}
                   optional: true
+            - name: BINDIZR_NSUPDATE_TSIG_KEY_NAME
+              value: {{ .Values.tsig.keyName | quote }}
             - name: BINDIZR_LOG_LEVEL
               value: {{ .Values.bindizr.logging.level | quote }}
           {{- with .Values.bindizr.securityContext }}

@@ -47,6 +47,7 @@ services:
       BINDIZR_SECONDARY_ADDRS: bind9-1:53,bind9-2:53
       BINDIZR_NOTIFY_RETRIES: "3"
       BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
+      BINDIZR_NSUPDATE_TSIG_KEY_NAME: nsupdate-key
       BINDIZR_NSUPDATE_TSIG_KEY: ""
     ports:
       - "8000:8000/tcp"

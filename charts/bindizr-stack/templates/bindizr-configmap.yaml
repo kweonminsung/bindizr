@@ -28,6 +28,7 @@ data:
     notify_on_startup = {{ .Values.bindizr.dns.notifyOnStartup }}
     notify_retries = {{ .Values.bindizr.dns.notifyRetries }}
     notify_timeout_secs = {{ .Values.bindizr.dns.notifyTimeoutSecs }}
+    nsupdate_tsig_key_name = "{{ .Values.tsig.keyName }}"
     nsupdate_tsig_key = ""
 
     [logging]
