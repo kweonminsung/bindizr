@@ -121,7 +121,7 @@ async fn handle_tcp_query(
             nsupdate::handle_tcp_nsupdate(stream, query_data, client_addr).await?;
         }
         Ok(QueryRoute::Soa) => {
-            soa::handle_tcp_soa(stream, client_addr, secondary_servers, query_data)
+            soa::handle_tcp_soa(stream, client_addr, query_data)
                 .await
                 .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
         }
@@ -177,9 +177,7 @@ async fn run_udp_server(
                 }
             }
             Ok(QueryRoute::Soa) => {
-                if let Err(e) =
-                    soa::handle_udp_soa(&socket, client_addr, &secondary_servers, query_data).await
-                {
+                if let Err(e) = soa::handle_udp_soa(&socket, client_addr, query_data).await {
                     log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
                 }
             }

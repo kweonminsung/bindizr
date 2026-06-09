@@ -10,7 +10,7 @@ pub(crate) fn secondary_servers_from_config() -> Vec<IpAddr> {
 }
 
 pub(crate) fn is_client_allowed(client_ip: IpAddr, allowed_ips: &[IpAddr]) -> bool {
-    allowed_ips.is_empty() || allowed_ips.contains(&client_ip)
+    allowed_ips.contains(&client_ip)
 }
 
 fn parse_ip_list_with_socket_fallback(raw: &str) -> Vec<IpAddr> {

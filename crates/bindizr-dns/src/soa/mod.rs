@@ -12,7 +12,6 @@ use crate::{
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
-    _secondary_servers: &[IpAddr],
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
@@ -33,7 +32,6 @@ pub(crate) async fn handle_tcp_soa(
 pub(crate) async fn handle_udp_soa(
     socket: &UdpSocket,
     client_addr: SocketAddr,
-    _secondary_servers: &[IpAddr],
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();

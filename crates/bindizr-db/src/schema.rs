@@ -160,7 +160,7 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS catalog_zone_state (
             name VARCHAR(255) PRIMARY KEY,
-            signature VARCHAR(32) NOT NULL,
+            signature VARCHAR(64) NOT NULL,
             serial INTEGER NOT NULL,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
