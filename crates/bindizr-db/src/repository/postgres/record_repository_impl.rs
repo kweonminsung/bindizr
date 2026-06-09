@@ -397,6 +397,74 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(records)
     }
 
+    async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+        let value = filter.value.as_deref().map(normalize_partial_value);
+        let search = like_pattern(filter.search.as_deref());
+
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM records r
+            INNER JOIN zones z ON z.id = r.zone_id
+            WHERE ($1::TEXT IS NULL OR LOWER(z.name) = LOWER($2))
+              AND (
+                    $3::TEXT IS NULL
+                    OR LOWER(r.name) = LOWER($4)
+                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
+              )
+              AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
+              AND ($8::TEXT IS NULL OR POSITION(LOWER($9) IN LOWER(r.value)) > 0 OR r.record_type = 'TXT')
+              AND ($10::INT4 IS NULL OR r.ttl = $11)
+              AND ($12::INT4 IS NULL OR r.ttl >= $13)
+              AND ($14::INT4 IS NULL OR r.ttl <= $15)
+              AND ($16::INT4 IS NULL OR r.priority = $17)
+              AND ($18::INT4 IS NULL OR r.priority >= $19)
+              AND ($20::INT4 IS NULL OR r.priority <= $21)
+              AND (
+                    $22::TEXT IS NULL
+                    OR LOWER(z.name) LIKE LOWER($23)
+                    OR LOWER(r.name) LIKE LOWER($24)
+                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
+                    OR LOWER(r.record_type) LIKE LOWER($26)
+                    OR LOWER(r.value) LIKE LOWER($27)
+                    OR r.record_type = 'TXT'
+            )
+            "#,
+        )
+        .bind(&filter.zone_name)
+        .bind(&filter.zone_name)
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(&filter.record_type)
+        .bind(&filter.record_type)
+        .bind(&value)
+        .bind(&value)
+        .bind(filter.ttl)
+        .bind(filter.ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.priority)
+        .bind(filter.priority)
+        .bind(filter.min_priority)
+        .bind(filter.min_priority)
+        .bind(filter.max_priority)
+        .bind(filter.max_priority)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        Ok(count as u64)
+    }
+
     async fn update(&self, record: Record) -> Result<Record, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

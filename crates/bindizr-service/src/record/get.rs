@@ -9,7 +9,7 @@ use crate::{
     model::record::{Record, RecordType, RecordWithZone},
     pagination::paginate_items,
     repository::RepositoryService,
-    types::{GetRecordsFilter, PaginatedResponse},
+    types::{GetRecordsFilter, PaginatedResponse, Pagination},
 };
 
 impl RecordService {
@@ -159,7 +159,8 @@ impl RecordService {
 
         let name = normalize_filter_record_name(filter.name, zone_name.as_deref());
 
-        let mut records = RepositoryService::get_records_by_filter_with_zone(RecordFilter {
+        let use_display_filters = value_filter.is_some() || search_filter.is_some();
+        let record_filter = RecordFilter {
             zone_name,
             name,
             record_type: filter.record_type,
@@ -171,12 +172,13 @@ impl RecordService {
             min_priority: filter.min_priority,
             max_priority: filter.max_priority,
             search: filter.search,
-            limit: None,
-            offset: None,
-        })
-        .await?;
+            limit: if use_display_filters { None } else { limit },
+            offset: if use_display_filters { None } else { offset },
+        };
 
-        if value_filter.is_some() || search_filter.is_some() {
+        if use_display_filters {
+            let mut records =
+                RepositoryService::get_records_by_filter_with_zone(record_filter).await?;
             records.retain(|record| {
                 record_matches_display_filters(
                     record,
@@ -184,9 +186,23 @@ impl RecordService {
                     search_filter.as_deref(),
                 )
             });
+
+            return Ok(paginate_items(records, limit, offset));
         }
 
-        Ok(paginate_items(records, limit, offset))
+        let total = RepositoryService::count_records_by_filter(record_filter.clone()).await?;
+        let records = RepositoryService::get_records_by_filter_with_zone(record_filter).await?;
+        let offset = offset.unwrap_or(0);
+        let limit = limit.unwrap_or_else(|| total.min(u64::from(u32::MAX)) as u32);
+
+        Ok(PaginatedResponse {
+            items: records,
+            pagination: Pagination {
+                limit,
+                offset,
+                total,
+            },
+        })
     }
 
     pub async fn get_by_id(record_id: i32) -> Result<Record, ServiceError> {

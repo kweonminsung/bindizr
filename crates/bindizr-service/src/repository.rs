@@ -232,6 +232,13 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }
 
+    pub(super) async fn count_records_by_filter(filter: RecordFilter) -> Result<u64, ServiceError> {
+        get_record_repository()
+            .count_by_filter(filter)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to count records: {}", e)))
+    }
+
     pub(super) async fn get_record_by_id(record_id: i32) -> Result<Option<Record>, ServiceError> {
         get_record_repository()
             .get_by_id(record_id)

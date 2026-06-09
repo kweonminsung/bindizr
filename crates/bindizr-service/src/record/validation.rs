@@ -271,9 +271,12 @@ fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceE
         )));
     }
 
-    if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if !label
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(ServiceError::BadRequest(format!(
-            "{} labels must contain only ASCII letters, digits, or hyphens",
+            "{} labels must contain only ASCII letters, digits, hyphens, or underscores",
             field
         )));
     }
@@ -412,7 +415,7 @@ fn canonical_last_name_field(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_record_owner_name, record_values_equal};
+    use super::{normalize_record_owner_name, record_values_equal, validate_record_value};
     use crate::model::record::RecordType;
 
     #[test]
@@ -474,5 +477,13 @@ mod tests {
             "token=abc",
             &RecordType::TXT
         ));
+    }
+
+    #[test]
+    fn validate_cname_value_accepts_underscore_labels() {
+        assert!(
+            validate_record_value(&RecordType::CNAME, "_acme-challenge.validation.example.")
+                .is_ok()
+        );
     }
 }

@@ -192,6 +192,7 @@ pub trait RecordRepository: Send + Sync {
         &self,
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError>;
+    async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError>;
     async fn update(&self, record: Record) -> Result<Record, DatabaseError>;
     async fn update_tx(
         &self,
