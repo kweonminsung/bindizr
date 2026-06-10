@@ -13,9 +13,13 @@ version = "0.1.0-beta.4"
 edition = "2024"
 authors = ["kweonminsung"]
 description = "DNS Synchronization Service for BIND9"
+homepage = "https://github.com/kweonminsung/bindizr"
 repository = "https://github.com/kweonminsung/bindizr"
+documentation = "https://docs.rs/bindizr"
 license = "Apache-2.0"
-keywords = ["DNS", "BIND9", "CLI", "XFR"]
+rust-version = "1.85"
+keywords = ["dns", "bind9", "cli", "xfr"]
+categories = ["command-line-utilities", "network-programming"]
 
 [workspace.dependencies]
 async-trait = "0.1.89"

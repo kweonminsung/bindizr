@@ -3,14 +3,18 @@ name = "bindizr-service"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description.workspace = true
+description = "Application services for bindizr zone, record, token, and notification workflows"
+homepage.workspace = true
 repository.workspace = true
+documentation = "https://docs.rs/bindizr-service"
 license.workspace = true
+rust-version.workspace = true
 keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-bindizr-core = { path = "../bindizr-core" }
-bindizr-db = { path = "../bindizr-db" }
+bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.4" }
+bindizr-db = { path = "../bindizr-db", version = "0.1.0-beta.4" }
 async-trait.workspace = true
 chrono.workspace = true
 hex.workspace = true

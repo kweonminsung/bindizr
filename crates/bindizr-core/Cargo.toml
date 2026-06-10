@@ -3,10 +3,14 @@ name = "bindizr-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description.workspace = true
+description = "Core models, configuration, DNS record types, and logging utilities for bindizr"
+homepage.workspace = true
 repository.workspace = true
+documentation = "https://docs.rs/bindizr-core"
 license.workspace = true
+rust-version.workspace = true
 keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 base64.workspace = true

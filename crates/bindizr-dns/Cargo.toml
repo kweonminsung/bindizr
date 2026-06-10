@@ -3,14 +3,18 @@ name = "bindizr-dns"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description.workspace = true
+description = "DNS transfer, NOTIFY, TSIG, and nsupdate support for bindizr"
+homepage.workspace = true
 repository.workspace = true
+documentation = "https://docs.rs/bindizr-dns"
 license.workspace = true
+rust-version.workspace = true
 keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-bindizr-core = { path = "../bindizr-core" }
-bindizr-service = { path = "../bindizr-service" }
+bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.4" }
+bindizr-service = { path = "../bindizr-service", version = "0.1.0-beta.4" }
 base64.workspace = true
 chrono.workspace = true
 domain.workspace = true
