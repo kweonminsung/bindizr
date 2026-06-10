@@ -5,12 +5,9 @@ pub(crate) mod soa;
 pub use bindizr_core::dns::txt;
 pub mod xfr;
 
-use std::{
-    io::ErrorKind,
-    net::{IpAddr, SocketAddr},
-    time::Duration,
-};
+use std::{io::ErrorKind, net::SocketAddr, time::Duration};
 
+use acl::SecondaryAcl;
 pub(crate) use bindizr_core::{config, log_error, log_info, log_warn, model};
 pub(crate) use bindizr_service as service;
 use domain::base::iana::Rtype;
@@ -37,17 +34,17 @@ pub async fn initialize() {
         bindizr_config.dns.listen_port,
     );
 
-    let secondary_servers = acl::secondary_servers_from_config();
-    let tcp_secondary_servers = secondary_servers.clone();
+    let secondary_acl = acl::secondary_acl_from_config();
+    let tcp_secondary_acl = secondary_acl.clone();
 
     tokio::spawn(async move {
-        if let Err(e) = run_tcp_server(listen_addr, tcp_secondary_servers).await {
+        if let Err(e) = run_tcp_server(listen_addr, tcp_secondary_acl).await {
             log_error!("DNS TCP server error: {}", e);
         }
     });
 
     tokio::spawn(async move {
-        if let Err(e) = run_udp_server(listen_addr, secondary_servers).await {
+        if let Err(e) = run_udp_server(listen_addr, secondary_acl).await {
             log_error!("DNS UDP server error: {}", e);
         }
     });
@@ -55,7 +52,7 @@ pub async fn initialize() {
 
 async fn run_tcp_server(
     listen_addr: SocketAddr,
-    secondary_servers: Vec<IpAddr>,
+    secondary_acl: SecondaryAcl,
 ) -> Result<(), String> {
     let listener = TcpListener::bind(listen_addr)
         .await
@@ -66,7 +63,7 @@ async fn run_tcp_server(
     loop {
         match listener.accept().await {
             Ok((stream, client_addr)) => {
-                let allowed = secondary_servers.clone();
+                let allowed = secondary_acl.clone();
                 tokio::spawn(async move {
                     if let Err(e) = handle_tcp_connection(stream, client_addr, allowed).await {
                         log_error!("DNS TCP connection error from {}: {}", client_addr, e);
@@ -83,7 +80,7 @@ async fn run_tcp_server(
 async fn handle_tcp_connection(
     mut stream: TcpStream,
     client_addr: SocketAddr,
-    secondary_servers: Vec<IpAddr>,
+    secondary_acl: SecondaryAcl,
 ) -> Result<(), String> {
     loop {
         let query_data = match timeout(TCP_IDLE_TIMEOUT, xfr::wire::read_tcp_message(&mut stream))
@@ -104,7 +101,7 @@ async fn handle_tcp_connection(
             }
         };
 
-        handle_tcp_query(&mut stream, client_addr, &secondary_servers, &query_data).await?;
+        handle_tcp_query(&mut stream, client_addr, &secondary_acl, &query_data).await?;
     }
 
     Ok(())
@@ -113,7 +110,7 @@ async fn handle_tcp_connection(
 async fn handle_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
-    secondary_servers: &[IpAddr],
+    secondary_acl: &SecondaryAcl,
     query_data: &[u8],
 ) -> Result<(), String> {
     match classify_query_route(query_data) {
@@ -126,7 +123,7 @@ async fn handle_tcp_query(
                 .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
         }
         Ok(QueryRoute::Xfr) => {
-            xfr::handle_tcp_query(stream, client_addr, secondary_servers, query_data)
+            xfr::handle_tcp_query(stream, client_addr, secondary_acl, query_data)
                 .await
                 .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
         }
@@ -147,7 +144,7 @@ async fn handle_tcp_query(
 
 async fn run_udp_server(
     listen_addr: SocketAddr,
-    secondary_servers: Vec<IpAddr>,
+    secondary_acl: SecondaryAcl,
 ) -> Result<(), String> {
     let socket = UdpSocket::bind(listen_addr)
         .await
@@ -182,8 +179,7 @@ async fn run_udp_server(
                 }
             }
             Ok(QueryRoute::Xfr) => {
-                if let Err(e) =
-                    xfr::handle_udp_query(client_addr, &secondary_servers, query_data).await
+                if let Err(e) = xfr::handle_udp_query(client_addr, &secondary_acl, query_data).await
                 {
                     log_warn!("Failed to handle XFR UDP query from {}: {}", client_addr, e);
                 }

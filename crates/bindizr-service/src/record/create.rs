@@ -44,26 +44,24 @@ impl RecordService {
         let mut tx = RepositoryService::begin_tx("Failed to create record").await?;
 
         let apply_result = async {
-            let zone = match RepositoryService::get_zone_by_name_tx(
-                &mut tx,
-                &create_record_request.zone_name,
-            )
-            .await
-            {
-                Ok(Some(zone)) => zone,
-                Ok(None) => {
-                    return Err(ServiceError::NotFound(format!(
-                        "Zone with name '{}' not found",
-                        create_record_request.zone_name
-                    )));
-                }
-                Err(e) => {
-                    log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::Internal(
-                        "Failed to create record".to_string(),
-                    ));
-                }
-            };
+            let lookup_zone_name =
+                normalize_record_create_zone_name(&create_record_request.zone_name);
+            let zone =
+                match RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_zone_name).await {
+                    Ok(Some(zone)) => zone,
+                    Ok(None) => {
+                        return Err(ServiceError::NotFound(format!(
+                            "Zone with name '{}' not found",
+                            create_record_request.zone_name
+                        )));
+                    }
+                    Err(e) => {
+                        log_error!("Failed to fetch zone: {}", e);
+                        return Err(ServiceError::Internal(
+                            "Failed to create record".to_string(),
+                        ));
+                    }
+                };
 
             let existing_records_in_zone =
                 match RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await {
@@ -174,4 +172,8 @@ impl RecordService {
 
         Ok(RecordWithZone::new(created_record, zone_name))
     }
+}
+
+fn normalize_record_create_zone_name(name: &str) -> String {
+    name.trim().trim_end_matches('.').to_ascii_lowercase()
 }

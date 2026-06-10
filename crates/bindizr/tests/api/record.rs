@@ -75,6 +75,37 @@ async fn record_create_read_update_delete_round_trip() {
 }
 
 #[tokio::test]
+async fn record_create_normalizes_zone_name_for_lookup() {
+    let ctx = TestContext::new().await;
+
+    let create_zone_request = serde_json::json!({
+        "name": "Example.Com.",
+        "primary_ns": "ns1.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, body) = ctx
+        .make_request("POST", "/zones", Some(create_zone_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["zone"]["name"], "example.com");
+
+    let create_record_request = serde_json::json!({
+        "name": "api",
+        "record_type": "A",
+        "value": "192.168.1.200",
+        "ttl": 1800,
+        "zone_name": "Example.Com."
+    });
+    let (status, body) = ctx
+        .make_request("POST", "/records", Some(create_record_request))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["record"]["name"], "api.example.com.");
+    assert_eq!(body["record"]["zone_name"], "example.com.");
+}
+
+#[tokio::test]
 async fn record_create_and_update_reject_invalid_address_and_cname_values() {
     let ctx = TestContext::new().await;
     let zone = ctx.create_test_zone().await;

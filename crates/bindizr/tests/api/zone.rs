@@ -201,6 +201,76 @@ async fn zone_create_normalizes_names_and_rejects_duplicates() {
 }
 
 #[tokio::test]
+async fn zone_update_normalizes_values_and_rejects_invalid_or_duplicate_names() {
+    let ctx = TestContext::new().await;
+
+    let first_zone = serde_json::json!({
+        "name": "first.example.com",
+        "primary_ns": "ns1.first.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx.make_request("POST", "/zones", Some(first_zone)).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let second_zone = serde_json::json!({
+        "name": "second.example.com",
+        "primary_ns": "ns1.second.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx.make_request("POST", "/zones", Some(second_zone)).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let normalize_update = serde_json::json!({
+        "name": " First.Example.Com. ",
+        "primary_ns": "NS1.First.Example.Com.",
+        "admin_email": "Host.Master@Example.Com.",
+        "ttl": 7200
+    });
+    let (status, body) = ctx
+        .make_request("PUT", "/zones/first.example.com", Some(normalize_update))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["zone"]["name"], "first.example.com");
+    assert_eq!(body["zone"]["primary_ns"], "ns1.first.example.com");
+    assert_eq!(body["zone"]["admin_email"], "Host.Master@example.com");
+
+    let duplicate_update = serde_json::json!({
+        "name": "Second.Example.Com.",
+        "primary_ns": "ns1.first.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("PUT", "/zones/first.example.com", Some(duplicate_update))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let invalid_name_update = serde_json::json!({
+        "name": "test..example.com",
+        "primary_ns": "ns1.test.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = ctx
+        .make_request("PUT", "/zones/first.example.com", Some(invalid_name_update))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let invalid_ttl_update = serde_json::json!({
+        "name": "first.example.com",
+        "primary_ns": "ns1.first.example.com",
+        "admin_email": "hostmaster@example.com",
+        "ttl": 0
+    });
+    let (status, _) = ctx
+        .make_request("PUT", "/zones/first.example.com", Some(invalid_ttl_update))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn zone_create_rejects_invalid_names_and_ttl_bounds() {
     let ctx = TestContext::new().await;
 

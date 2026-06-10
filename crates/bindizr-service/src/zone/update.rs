@@ -14,7 +14,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::CreateZoneRequest,
-    zone::{snapshot::save_zone_snapshot_tx, validation::normalize_email},
+    zone::{snapshot::save_zone_snapshot_tx, validation::validate_create_zone_request},
 };
 
 impl ZoneService {
@@ -49,30 +49,30 @@ impl ZoneService {
             }
         };
         let zone_id = existing_zone.id;
+        let validated = validate_create_zone_request(update_zone_request)?;
 
         // Check if zone with the new name already exists (if name is being changed)
-        if zone_name != update_zone_request.name {
-            match RepositoryService::get_zone_by_name(&update_zone_request.name).await {
-                Ok(Some(_)) => {
-                    log_error!("Zone with name {} already exists", update_zone_request.name);
+        match RepositoryService::get_zone_by_name(&validated.name).await {
+            Ok(Some(zone)) => {
+                if zone.id != zone_id {
+                    log_error!("Zone with name {} already exists", validated.name);
                     return Err(ServiceError::BadRequest(
-                        "Zone with this name already exists".to_string(),
+                        "Zone name already exists".to_string(),
                     ));
                 }
-                Ok(None) => (),
-                Err(e) => {
-                    log_error!("Failed to check existing zone: {}", e);
-                    return Err(ServiceError::Internal("Failed to update zone".to_string()));
-                }
-            };
-        }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                log_error!("Failed to check existing zone: {}", e);
+                return Err(ServiceError::Internal("Failed to update zone".to_string()));
+            }
+        };
 
         // Auto-increment serial if not provided, or use existing if no change
         let new_serial = match update_zone_request.serial {
             Some(s) => s,
             None => generate_serial(Some(existing_zone.serial)),
         };
-        let admin_email = normalize_email(&update_zone_request.admin_email)?;
 
         let zone_records = RepositoryService::get_records_by_zone_id(zone_id)
             .await
@@ -89,10 +89,10 @@ impl ZoneService {
                 &mut tx,
                 Zone {
                     id: zone_id,
-                    name: update_zone_request.name.clone(),
-                    primary_ns: update_zone_request.primary_ns.clone(),
-                    admin_email: admin_email.clone(),
-                    ttl: update_zone_request.ttl,
+                    name: validated.name.clone(),
+                    primary_ns: validated.primary_ns.clone(),
+                    admin_email: validated.admin_email.clone(),
+                    ttl: validated.ttl,
                     serial: new_serial,
                     refresh: update_zone_request.refresh.unwrap_or(86400),
                     retry: update_zone_request.retry.unwrap_or(7200),
@@ -222,7 +222,7 @@ impl ZoneService {
         // Log zone update after commit (structured logging)
         log_info!(
             "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",
-            update_zone_request.name,
+            updated_zone.name,
             zone_name,
             new_serial,
             updated_zone.id
