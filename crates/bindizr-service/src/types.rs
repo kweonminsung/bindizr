@@ -245,7 +245,6 @@ pub struct GetRecordsFilter {
     pub name: Option<String>,
     #[schema(example = "A")]
     pub record_type: Option<String>,
-    #[serde(alias = "type")]
     #[schema(example = "192.168.1.100")]
     pub value: Option<String>,
     #[schema(example = 3600)]

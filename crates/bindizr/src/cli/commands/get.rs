@@ -65,7 +65,7 @@ pub(crate) enum GetCommand {
         #[arg(long)]
         name: Option<String>,
         /// Filter by record type
-        #[arg(long, aliases = ["type"])]
+        #[arg(long = "type", alias = "record-type")]
         record_type: Option<String>,
         /// Filter by record value
         #[arg(long)]

@@ -30,10 +30,7 @@ pub(crate) enum CreateCommand {
         #[arg(long)]
         name: String,
         /// Record type (A, AAAA, CNAME, MX, etc.)
-        #[arg(
-            long,
-            aliases = ["type"]
-        )]
+        #[arg(long = "type", alias = "record-type")]
         record_type: String,
         /// Record value
         #[arg(long)]
