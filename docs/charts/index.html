@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bindizr Helm Repository</title>
+  <title>Bindizr Helm Charts</title>
   <style>
     body {
       margin: 0;
@@ -42,12 +42,12 @@
 </head>
 <body>
   <main>
-    <h1>Bindizr</h1>
-    <p>This GitHub Pages site hosts the Bindizr API documentation and Helm chart repository.</p>
+    <h1>Bindizr Helm Charts</h1>
+    <p>This directory is the Helm chart repository for Bindizr.</p>
     <pre><code>helm repo add bindizr https://kweonminsung.github.io/bindizr/charts
 helm repo update
 helm install bindizr bindizr/bindizr-stack</code></pre>
-    <p>The HTTP API documentation is available at <a href="./api/">/api</a>. The Helm chart repository is available at <a href="./charts/">/charts</a>.</p>
+    <p>Helm reads the repository metadata from <a href="./index.yaml">index.yaml</a>. The project home page is available at <a href="../">/bindizr</a>.</p>
   </main>
 </body>
 </html>
