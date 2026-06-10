@@ -5,7 +5,7 @@ mod force;
 mod get;
 pub mod snapshot;
 mod update;
-mod validation;
+pub(crate) mod validation;
 
 #[derive(Clone)]
 pub struct ZoneService;

@@ -1,6 +1,6 @@
 use bindizr_db::repository::ZoneFilter;
 
-use super::ZoneService;
+use super::{ZoneService, validation::normalize_zone_lookup_name};
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -12,14 +12,16 @@ use crate::{
 
 impl ZoneService {
     pub async fn find(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
-        RepositoryService::get_zone_by_name(zone_name).await
+        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+        RepositoryService::get_zone_by_name(&lookup_name).await
     }
 
     pub async fn find_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
     ) -> Result<Option<Zone>, ServiceError> {
-        RepositoryService::get_zone_by_name_tx(tx, zone_name).await
+        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+        RepositoryService::get_zone_by_name_tx(tx, &lookup_name).await
     }
 
     pub async fn find_by_id(zone_id: i32) -> Result<Option<Zone>, ServiceError> {
@@ -77,7 +79,9 @@ impl ZoneService {
     }
 
     pub async fn get_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
-        match RepositoryService::get_zone_by_name(zone_name).await {
+        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+
+        match RepositoryService::get_zone_by_name(&lookup_name).await {
             Ok(Some(zone)) => Ok(zone),
             Ok(None) => Err(ServiceError::NotFound(format!(
                 "Zone with name '{}' not found",

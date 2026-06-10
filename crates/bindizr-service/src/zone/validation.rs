@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::{email_to_soa_mailbox, split_presentation_labels, to_fqdn_lowercase};
+use bindizr_core::dns::name::{email_to_soa_mailbox, split_presentation_labels};
 
 use crate::{error::ServiceError, types::CreateZoneRequest};
 
@@ -11,15 +11,9 @@ const MAX_TTL: i32 = 604_800;
 
 pub(super) struct ValidatedCreateZoneRequest {
     pub name: String,
-    pub name_fqdn: String,
     pub primary_ns: String,
     pub admin_email: String,
     pub ttl: i32,
-}
-
-struct NormalizedDomainName {
-    storage: String,
-    fqdn: String,
 }
 
 pub(super) fn validate_create_zone_request(
@@ -33,21 +27,26 @@ pub(super) fn validate_create_zone_request(
     validate_soa_wire_safety(&zone_name, &primary_ns, &admin_email)?;
 
     Ok(ValidatedCreateZoneRequest {
-        name: zone_name.storage,
-        name_fqdn: zone_name.fqdn,
-        primary_ns: primary_ns.storage,
+        name: zone_name,
+        primary_ns,
         admin_email,
         ttl,
     })
 }
 
-pub(super) fn is_same_zone_name(existing_name: &str, normalized_fqdn: &str) -> bool {
+pub(super) fn is_same_zone_name(existing_name: &str, normalized_name: &str) -> bool {
     normalize_zone_name(existing_name)
-        .map(|existing| existing.fqdn == normalized_fqdn)
+        .map(|existing| existing == normalized_name)
         .unwrap_or_else(|_| {
-            let existing = to_fqdn_lowercase(existing_name);
-            existing == normalized_fqdn
+            existing_name
+                .trim()
+                .trim_end_matches('.')
+                .eq_ignore_ascii_case(normalized_name)
         })
+}
+
+pub(crate) fn normalize_zone_lookup_name(value: &str) -> Result<String, ServiceError> {
+    normalize_zone_name(value)
 }
 
 pub(super) fn normalize_email(value: &str) -> Result<String, ServiceError> {
@@ -78,7 +77,7 @@ pub(super) fn normalize_email(value: &str) -> Result<String, ServiceError> {
     validate_email_local_part(local)?;
     let domain = normalize_domain_name(domain, "admin email domain", false)?;
 
-    let normalized = format!("{}@{}", local, domain.storage);
+    let normalized = format!("{}@{}", local, domain);
     if normalized.len() > MAX_EMAIL_LEN {
         return Err(ServiceError::BadRequest(
             "admin email must be 254 bytes or fewer".to_string(),
@@ -88,7 +87,7 @@ pub(super) fn normalize_email(value: &str) -> Result<String, ServiceError> {
     Ok(normalized)
 }
 
-fn normalize_zone_name(value: &str) -> Result<NormalizedDomainName, ServiceError> {
+fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed == "." {
@@ -106,7 +105,7 @@ fn normalize_zone_name(value: &str) -> Result<NormalizedDomainName, ServiceError
     normalize_domain_name(trimmed, "zone name", false)
 }
 
-fn normalize_primary_ns(value: &str) -> Result<NormalizedDomainName, ServiceError> {
+fn normalize_primary_ns(value: &str) -> Result<String, ServiceError> {
     normalize_domain_name(value, "primary NS", false)
 }
 
@@ -114,7 +113,7 @@ fn normalize_domain_name(
     value: &str,
     field: &str,
     allow_wildcard: bool,
-) -> Result<NormalizedDomainName, ServiceError> {
+) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed.is_empty() {
@@ -151,10 +150,7 @@ fn normalize_domain_name(
         validate_domain_label(label, field, allow_wildcard)?;
     }
 
-    let storage = without_trailing_dot.to_ascii_lowercase();
-    let fqdn = format!("{}.", storage);
-
-    Ok(NormalizedDomainName { storage, fqdn })
+    Ok(without_trailing_dot.to_ascii_lowercase())
 }
 
 fn validate_domain_label(
@@ -251,12 +247,12 @@ fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
 }
 
 fn validate_soa_wire_safety(
-    zone_name: &NormalizedDomainName,
-    primary_ns: &NormalizedDomainName,
+    zone_name: &str,
+    primary_ns: &str,
     admin_email: &str,
 ) -> Result<(), ServiceError> {
-    validate_wire_domain_name(&zone_name.fqdn, "zone name")?;
-    validate_wire_domain_name(&primary_ns.fqdn, "primary NS")?;
+    validate_wire_domain_name(zone_name, "zone name")?;
+    validate_wire_domain_name(primary_ns, "primary NS")?;
     let soa_mailbox =
         email_to_soa_mailbox(admin_email).map_err(|e| ServiceError::BadRequest(e.to_string()))?;
     validate_wire_domain_name(&soa_mailbox, "admin email SOA RNAME")?;

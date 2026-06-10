@@ -12,7 +12,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::CreateRecordRequest,
-    zone::snapshot::save_zone_snapshot_tx,
+    zone::{snapshot::save_zone_snapshot_tx, validation::normalize_zone_lookup_name},
 };
 
 impl RecordService {
@@ -44,8 +44,7 @@ impl RecordService {
         let mut tx = RepositoryService::begin_tx("Failed to create record").await?;
 
         let apply_result = async {
-            let lookup_zone_name =
-                normalize_record_create_zone_name(&create_record_request.zone_name);
+            let lookup_zone_name = normalize_zone_lookup_name(&create_record_request.zone_name)?;
             let zone =
                 match RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_zone_name).await {
                     Ok(Some(zone)) => zone,
@@ -172,8 +171,4 @@ impl RecordService {
 
         Ok(RecordWithZone::new(created_record, zone_name))
     }
-}
-
-fn normalize_record_create_zone_name(name: &str) -> String {
-    name.trim().trim_end_matches('.').to_ascii_lowercase()
 }

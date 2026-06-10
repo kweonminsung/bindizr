@@ -26,7 +26,7 @@ impl ZoneService {
             Ok(zones) => {
                 if zones
                     .iter()
-                    .any(|zone| is_same_zone_name(&zone.name, &validated.name_fqdn))
+                    .any(|zone| is_same_zone_name(&zone.name, &validated.name))
                 {
                     log_error!("Zone with name {} already exists", validated.name);
                     return Err(ServiceError::BadRequest(
