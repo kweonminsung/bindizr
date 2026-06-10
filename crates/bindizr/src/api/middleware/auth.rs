@@ -1,14 +1,13 @@
-use crate::log_debug;
-use crate::service::auth::AuthService;
-use axum::Json;
-use axum::body::Body;
-use axum::http::header::AUTHORIZATION;
 use axum::{
-    http::{Request, StatusCode},
+    Json,
+    body::Body,
+    http::{Request, StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use serde_json::json;
+
+use crate::{log_debug, service::auth::AuthService};
 
 pub(crate) async fn auth_middleware(
     mut req: Request<Body>,

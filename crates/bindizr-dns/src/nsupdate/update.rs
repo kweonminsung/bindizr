@@ -1,23 +1,27 @@
+use std::net::SocketAddr;
+
+use bindizr_core::{config, dns::name::to_fqdn};
+use chrono::Utc;
+
 use super::parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata};
 use crate::{
-    database::model::{
+    log_error, log_info,
+    model::{
         record::{Record, RecordType},
         zone::Zone,
         zone_change::ZoneChange,
     },
-    log_error, log_info, service,
+    service,
     service::{
         RepositoryTx,
         record::{
             RecordService, validate_record_add_constraints_tx, validate_record_delete_constraints,
         },
-        utils::generate_serial,
+        serial::generate_serial,
         zone::{ZoneService, snapshot::save_zone_snapshot_tx},
     },
     txt, xfr,
 };
-use chrono::Utc;
-use std::net::SocketAddr;
 
 pub(super) const CLASS_IN: u16 = 1;
 pub(super) const CLASS_NONE: u16 = 254;
@@ -128,7 +132,16 @@ pub(super) async fn apply_update(
     };
 
     if changed {
-        if let Err(e) = xfr::notify::send_notify(Some(&zone.name)).await {
+        if !config::get_bindizr_config().dns.notify_after_update {
+            log_info!(
+                "NSUPDATE committed for zone {} with serial {}",
+                zone.name,
+                new_serial
+            );
+            return Ok(UpdateResult::Applied { changed });
+        }
+
+        if let Err(e) = xfr::notify::send_notify(Some(&zone.name), false).await {
             log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
         }
 
@@ -178,9 +191,17 @@ async fn add_record(
 
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
 
-    validate_record_add_constraints_tx(tx, zone, &relative_name, &record_type, &value, None)
-        .await
-        .map_err(|e| UpdateError::Refused(e.to_string()))?;
+    validate_record_add_constraints_tx(
+        tx,
+        zone,
+        &relative_name,
+        &record_type,
+        &value,
+        priority,
+        None,
+    )
+    .await
+    .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
     if RecordService::find_tx(
         tx,
@@ -305,7 +326,7 @@ async fn delete_records(
     }
 
     // Validate delete constraints
-    validate_record_delete_constraints(zone, &zone_records, &matched)
+    validate_record_delete_constraints(zone, &matched)
         .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
     for record in &matched {
@@ -516,14 +537,6 @@ pub(super) fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<Strin
     Ok(rel.to_string())
 }
 
-fn to_fqdn(name: &str) -> String {
-    if name.ends_with('.') {
-        name.to_string()
-    } else {
-        format!("{}.", name)
-    }
-}
-
 fn trim_dot(name: &str) -> &str {
     name.trim_end_matches('.')
 }
@@ -596,8 +609,7 @@ mod tests {
         absolute_to_relative, record_value_matches, rr_to_record_value,
         validate_delete_update_shape,
     };
-    use crate::database::model::record::RecordType;
-    use crate::nsupdate::parser::UpdateRecord;
+    use crate::{model::record::RecordType, nsupdate::parser::UpdateRecord};
 
     #[test]
     fn absolute_to_relative_accepts_apex() {

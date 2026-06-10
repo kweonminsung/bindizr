@@ -1,0 +1,170 @@
+nameOverride: ""
+fullnameOverride: ""
+
+bindizr:
+  image:
+    repository: kweonminsung/bindizr
+    tag: "0.1.0-beta.4"
+    pullPolicy: IfNotPresent
+  replicas: 2
+
+  api:
+    listenAddr: "0.0.0.0"
+    port: 8000
+    requireAuthentication: true
+    service:
+      type: ClusterIP
+      port: 8000
+
+  dns:
+    listenAddr: "0.0.0.0"
+    port: 53
+    notifyAfterUpdate: true
+    notifyOnStartup: false
+    notifyRetries: 3
+    notifyTimeoutSecs: 3
+    service:
+      port: 53
+
+  logging:
+    level: info
+
+  database:
+    type: postgresql
+    existingSecret: ""
+    secretKey: database-url
+    # Used only when existingSecret is empty. Prefer an existing Secret for production.
+    # If this is empty and the matching bundled mysql/postgresql database is enabled,
+    # the chart builds the URL from the bundled database auth values.
+    serverUrl: ""
+
+  podAnnotations: {}
+  podSecurityContext:
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+  securityContext:
+    runAsUser: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+bindizrUi:
+  enabled: false
+  image:
+    repository: kweonminsung/bindizr-ui
+    tag: "0.1.0-beta.4"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  env:
+    goEnv: production
+    port: 9000
+    uiPort: 9001
+  service:
+    type: ClusterIP
+    port: 9000
+  resources: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+bind9:
+  replicas: 2
+
+  image:
+    repository: internetsystemsconsortium/bind9
+    tag: "9.21"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: LoadBalancer
+    dnsPort: 53
+    annotations: {}
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+
+  resources: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+tsig:
+  existingSecret: ""
+  keyName: nsupdate-key
+  algorithm: hmac-sha256
+  # Used only when existingSecret is empty. Generate with: tsig-keygen -a hmac-sha256 nsupdate-key
+  secret: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+rbac:
+  create: true
+
+mysql:
+  enabled: false
+  image:
+    repository: mysql
+    tag: "9.7"
+    pullPolicy: IfNotPresent
+  service:
+    port: 3306
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 8Gi
+  auth:
+    database: bindizr
+    username: bindizr
+    password: bindizr
+    rootPassword: bindizr-root
+  resources: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+postgresql:
+  enabled: false
+  image:
+    repository: postgres
+    tag: "18"
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 8Gi
+  auth:
+    database: bindizr
+    username: bindizr
+    password: bindizr
+  resources: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

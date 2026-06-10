@@ -1,0 +1,134 @@
+services:
+  # Note: The dns-lb service is added for testing purposes to load balance between the two bind9 instances.
+  dns-lb:
+    image: powerdns/dnsdist-20:2.0.6
+    command:
+      [
+        "--supervised",
+        "--disable-syslog",
+        "--config",
+        "/etc/dnsdist/dnsdist.conf",
+      ]
+    depends_on:
+      bind9-1:
+        condition: service_started
+      bind9-2:
+        condition: service_started
+    ports:
+      # Note: Binding to port 53 on the host requires elevated privileges.
+      # - "53:53/tcp"
+      # - "53:53/udp"
+      # Bind to localhost for testing to avoid conflicts with any existing DNS servers on the host.
+      - "127.0.0.1:53:53/tcp"
+      - "127.0.0.1:53:53/udp"
+    volumes:
+      - ./docker/dnsdist/dnsdist.conf:/etc/dnsdist/dnsdist.conf:ro
+    networks:
+      bindizr-net:
+        ipv4_address: 172.28.0.2
+    restart: unless-stopped
+
+  bindizr:
+    build:
+      context: .
+    image: bindizr:local
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      BINDIZR_DATABASE_TYPE: mysql
+      BINDIZR_DATABASE_URL: mysql://bindizr:bindizr@mysql:3306/bindizr
+      BINDIZR_API_LISTEN_ADDR: "0.0.0.0"
+      BINDIZR_API_PORT: "8000"
+      BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
+      BINDIZR_DNS_PORT: "53"
+      BINDIZR_LOG_LEVEL: info
+      BINDIZR_API_REQUIRE_AUTHENTICATION: "false"
+      BINDIZR_SECONDARY_ADDRS: bind9-1:53,bind9-2:53
+      BINDIZR_NOTIFY_RETRIES: "3"
+      BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
+      BINDIZR_NSUPDATE_TSIG_KEY_NAME: nsupdate-key
+      BINDIZR_NSUPDATE_TSIG_KEY: ""
+    ports:
+      - "8000:8000/tcp"
+      - "5300:53/tcp"
+      - "5300:53/udp"
+    volumes:
+      - bindizr-data:/var/lib/bindizr
+    networks:
+      bindizr-net:
+        ipv4_address: 172.28.0.10
+    restart: unless-stopped
+
+  bind9-1:
+    image: internetsystemsconsortium/bind9:9.21
+    command: ["-g", "-c", "/etc/bind/named.conf"]
+    depends_on:
+      bindizr:
+        condition: service_started
+    ports:
+      - "1053:53/tcp"
+      - "1053:53/udp"
+    volumes:
+      - ./docker/bind9/named.conf:/etc/bind/named.conf:ro
+      - bind9-1-cache:/var/cache/bind
+      - bind9-1-data:/var/lib/bind
+    networks:
+      bindizr-net:
+        ipv4_address: 172.28.0.11
+    restart: unless-stopped
+
+  bind9-2:
+    image: internetsystemsconsortium/bind9:9.21
+    command: ["-g", "-c", "/etc/bind/named.conf"]
+    depends_on:
+      bindizr:
+        condition: service_started
+    ports:
+      - "1054:53/tcp"
+      - "1054:53/udp"
+    volumes:
+      - ./docker/bind9/named.conf:/etc/bind/named.conf:ro
+      - bind9-2-cache:/var/cache/bind
+      - bind9-2-data:/var/lib/bind
+    networks:
+      bindizr-net:
+        ipv4_address: 172.28.0.12
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:9.7
+    environment:
+      MYSQL_DATABASE: bindizr
+      MYSQL_USER: bindizr
+      MYSQL_PASSWORD: bindizr
+      MYSQL_ROOT_PASSWORD: bindizr-root
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -ubindizr -pbindizr --silent",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      bindizr-net:
+        ipv4_address: 172.28.0.20
+    restart: unless-stopped
+
+networks:
+  bindizr-net:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  bindizr-data:
+  bind9-1-cache:
+  bind9-2-cache:
+  bind9-1-data:
+  bind9-2-data:
+  mysql-data:

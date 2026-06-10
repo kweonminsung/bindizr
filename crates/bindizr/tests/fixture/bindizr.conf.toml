@@ -1,6 +1,5 @@
-listen_addr = "127.0.0.1"
-
 [api]
+listen_addr = "127.0.0.1"
 listen_port = 3000
 require_authentication = false
 
@@ -17,8 +16,13 @@ file_path = "file::memory:?cache=shared"
 server_url = ""
 
 [dns]
+listen_addr = "127.0.0.1"
 listen_port = 53
-secondary_addrs = "127.0.0.1:53"
+secondary_addrs = ""
+notify_after_update = true
+notify_on_startup = false
+notify_retries = 3
+notify_timeout_secs = 3
 nsupdate_tsig_key = ""
 
 [logging]

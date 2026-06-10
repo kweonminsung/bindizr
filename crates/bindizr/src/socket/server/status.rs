@@ -1,8 +1,9 @@
+use std::process;
+
 use crate::{
     config,
-    socket::dto::{DaemonResponse, DaemonStatusResponse},
+    socket::types::{DaemonResponse, DaemonStatusResponse},
 };
-use std::process;
 
 pub(super) fn get_status() -> Result<DaemonResponse, String> {
     let pid = Some(process::id());

@@ -4,16 +4,22 @@ mod status;
 mod token;
 mod zone;
 
-use crate::socket::dto::{DaemonCommand, DaemonCommandKind};
-use crate::socket::socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH};
-use crate::{log_error, log_info, log_warn};
+use std::{io, os::unix::fs::FileTypeExt, path::Path};
+
 use serde_json::json;
-use std::io;
-use std::os::unix::fs::FileTypeExt;
-use std::path::Path;
-use tokio::fs;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::{
+    fs,
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::{UnixListener, UnixStream},
+};
+
+use crate::{
+    log_error, log_info, log_warn,
+    socket::{
+        socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
+        types::{DaemonCommand, DaemonCommandKind},
+    },
+};
 
 async fn handle_client(stream: UnixStream) {
     let mut reader = BufReader::new(stream);
@@ -31,7 +37,7 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
                 // Zone commands
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
-                DaemonCommandKind::ListZones => zone::list_zones().await,
+                DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
                 DaemonCommandKind::DeleteZone => zone::delete_zone(&cmd.data).await,
                 // Record commands

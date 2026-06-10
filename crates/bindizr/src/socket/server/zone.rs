@@ -1,7 +1,10 @@
-use crate::api::dto::{CreateZoneRequest, GetZoneResponse};
-use crate::service::zone::ZoneService;
-use crate::socket::dto::DaemonResponse;
 use serde_json::json;
+
+use crate::{
+    api::types::{CreateZoneRequest, GetZoneResponse, GetZonesFilter},
+    service::zone::ZoneService,
+    socket::types::DaemonResponse,
+};
 
 pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let name = data
@@ -21,14 +24,23 @@ pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse,
     }
 }
 
-pub(super) async fn list_zones() -> Result<DaemonResponse, String> {
-    match ZoneService::list().await {
+pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+    let filter = if data.is_null() {
+        GetZonesFilter::default()
+    } else {
+        serde_json::from_value(data.clone()).map_err(|e| format!("Invalid filter data: {}", e))?
+    };
+
+    match ZoneService::list_by_filter(filter).await {
         Ok(zones) => {
             let response: Vec<GetZoneResponse> =
-                zones.iter().map(GetZoneResponse::from_zone).collect();
+                zones.items.iter().map(GetZoneResponse::from_zone).collect();
             Ok(DaemonResponse {
                 message: format!("Found {} zone(s)", response.len()),
-                data: serde_json::to_value(response).unwrap(),
+                data: json!({
+                    "items": response,
+                    "pagination": zones.pagination,
+                }),
             })
         }
         Err(e) => Err(e.to_string()),

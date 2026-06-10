@@ -1,21 +1,26 @@
-pub(crate) mod dto;
 pub(crate) mod error;
 pub(crate) mod middleware;
+pub(crate) mod notify;
 #[cfg(debug_assertions)]
 pub(crate) mod openapi;
 pub(crate) mod record;
 pub(crate) mod router;
-pub(crate) mod validation;
+pub(crate) mod types;
 pub(crate) mod zone;
 
-use crate::{config, log_error, log_info};
-use router::ApiRouter;
 use std::net::SocketAddr;
+
+use router::ApiRouter;
 use tokio::net::TcpListener;
+
+use crate::{config, log_error, log_info};
 
 pub(crate) async fn initialize() -> Result<(), String> {
     let bindizr_config = config::get_bindizr_config();
-    let addr = SocketAddr::from((bindizr_config.listen_addr, bindizr_config.api.listen_port));
+    let addr = SocketAddr::from((
+        bindizr_config.api.listen_addr,
+        bindizr_config.api.listen_port,
+    ));
 
     let listener = TcpListener::bind(addr).await.unwrap_or_else(|e| {
         log_error!("Failed to bind to address {}: {:?}", addr, e);

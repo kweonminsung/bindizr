@@ -3,10 +3,10 @@ use utoipa::{
     openapi::security::{Http, HttpAuthScheme, SecurityScheme},
 };
 
-use super::dto::{
+use super::types::{
     CreateRecordRequest, CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse,
-    MessageResponse, RecordListResponse, RecordResponse, RecordValueRequest, UpdateRecordRequest,
-    ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+    MessageResponse, NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse,
+    RecordValueRequest, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
 };
 
 #[derive(OpenApi)]
@@ -21,7 +21,8 @@ use super::dto::{
         super::record::get_record,
         super::record::create_record,
         super::record::update_record,
-        super::record::delete_record
+        super::record::delete_record,
+        super::notify::notify_zones
     ),
     components(schemas(
         CreateRecordRequest,
@@ -30,6 +31,8 @@ use super::dto::{
         GetRecordResponse,
         GetZoneResponse,
         MessageResponse,
+        NotifyZoneRequest,
+        Pagination,
         RecordListResponse,
         RecordResponse,
         RecordValueRequest,
@@ -41,7 +44,8 @@ use super::dto::{
     modifiers(&SecurityAddon),
     tags(
         (name = "Zone", description = "Manage DNS zones including creation, update, deletion, and retrieval."),
-        (name = "Record", description = "Manage DNS records including creation, update, deletion, and retrieval.")
+        (name = "Record", description = "Manage DNS records including creation, update, deletion, and retrieval."),
+        (name = "Notify", description = "Send DNS NOTIFY messages to secondary servers.")
     ),
     info(
         title = "Bindizr HTTP API",

@@ -1,0 +1,12 @@
+{{- if and .Values.mysql.enabled .Values.postgresql.enabled }}
+{{- fail "Enable only one bundled database: mysql.enabled or postgresql.enabled" }}
+{{- end }}
+{{- if and .Values.mysql.enabled (ne .Values.bindizr.database.type "mysql") }}
+{{- fail "Set bindizr.database.type=mysql when mysql.enabled=true" }}
+{{- end }}
+{{- if and .Values.postgresql.enabled (ne .Values.bindizr.database.type "postgresql") }}
+{{- fail "Set bindizr.database.type=postgresql when postgresql.enabled=true" }}
+{{- end }}
+{{- if eq .Values.bindizr.database.type "sqlite" }}
+{{- fail "SQLite is not supported by the Helm chart. Use mysql or postgresql." }}
+{{- end }}

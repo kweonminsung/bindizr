@@ -1,0 +1,63 @@
+name: Update GitHub Pages
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+    paths:
+      - "docs/openapi.yaml"
+      - "charts/bindizr-stack/**"
+      - ".github/workflows/update-github-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  
+jobs:
+  build-pages:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v5
+
+      - name: Install Redocly CLI
+        run: npm install -g @redocly/cli
+
+      - name: Build OpenAPI docs
+        working-directory: docs
+        run: |
+          mkdir -p api
+          npx @redocly/cli build-docs openapi.yaml -o api/index.html
+
+      - name: Package Helm chart
+        run: |
+          helm dependency update charts/bindizr-stack
+          mkdir -p docs/charts
+          helm package charts/bindizr-stack --destination docs/charts
+          helm repo index docs/charts --url https://kweonminsung.github.io/bindizr/charts
+
+      - name: Commit & Push updated Pages artifacts
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add docs/index.html docs/api/index.html docs/charts/index.yaml
+          git add -f docs/charts/*.tgz
+
+          # Only commit and push if there are changes
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update github pages artifacts"
+            git push origin ${GITHUB_REF#refs/heads/}
+          else
+            echo "No changes to commit."
+          fi

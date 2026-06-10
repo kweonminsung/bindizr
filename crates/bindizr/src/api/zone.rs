@@ -1,12 +1,3 @@
-use crate::api::{
-    dto::{
-        CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, MessageResponse,
-        ZoneDetailResponse, ZoneListResponse, ZoneResponse,
-    },
-    error::ApiError,
-    middleware::body_parser::JsonBody,
-};
-use crate::service::{record::RecordService, zone::ZoneService};
 use axum::{
     Json, Router,
     extract::{Path, Query},
@@ -16,6 +7,18 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+
+use crate::{
+    api::{
+        error::ApiError,
+        middleware::body_parser::JsonBody,
+        types::{
+            CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
+            MessageResponse, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+        },
+    },
+    service::{record::RecordService, zone::ZoneService},
+};
 
 pub(crate) struct ZoneApi;
 
@@ -35,20 +38,35 @@ impl ZoneApi {
         path = "/zones",
         tag = "Zone",
         summary = "List all DNS zones",
+        params(
+            ("name" = Option<String>, Query, description = "Filter by zone name."),
+            ("id" = Option<i32>, Query, description = "Filter by zone ID."),
+            ("primary_ns" = Option<String>, Query, description = "Filter by primary name server."),
+            ("admin_email" = Option<String>, Query, description = "Filter by admin email."),
+            ("ttl" = Option<i32>, Query, description = "Filter by TTL."),
+            ("min_ttl" = Option<i32>, Query, description = "Filter by minimum TTL."),
+            ("max_ttl" = Option<i32>, Query, description = "Filter by maximum TTL."),
+            ("serial" = Option<i32>, Query, description = "Filter by serial."),
+            ("search" = Option<String>, Query, description = "Partially search zones."),
+            ("limit" = Option<u32>, Query, description = "Maximum number of zones to return."),
+            ("offset" = Option<u64>, Query, description = "Number of zones to skip.")
+        ),
         responses(
             (status = 200, description = "A list of DNS zones", body = ZoneListResponse),
+            (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-pub(crate) async fn get_zones() -> impl IntoResponse {
-    match ZoneService::list().await {
-        Ok(zones) => {
-            let zones = zones
+pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoResponse {
+    match ZoneService::list_by_filter(query).await {
+        Ok(response) => {
+            let zones = response
+                .items
                 .iter()
                 .map(GetZoneResponse::from_zone)
                 .collect::<Vec<GetZoneResponse>>();
-            let json_body = json!({ "zones": zones });
+            let json_body = json!({ "items": zones, "pagination": response.pagination });
             (StatusCode::OK, Json(json_body)).into_response()
         }
         Err(err) => ApiError::from(err).into_response(),
@@ -92,7 +110,7 @@ pub(crate) async fn get_zone(
     };
     let records = raw_records
         .iter()
-        .map(GetRecordResponse::from_record)
+        .map(|record| GetRecordResponse::from_record_and_zone_name(record, &raw_zone.name))
         .collect::<Vec<GetRecordResponse>>();
 
     let zone = GetZoneResponse::from_zone(&raw_zone);

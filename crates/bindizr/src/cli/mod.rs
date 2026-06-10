@@ -1,12 +1,27 @@
 mod commands;
 mod output;
 
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use clap::{Parser, Subcommand};
+
 use crate::{
     api,
     cli::commands::{notify::NotifyCommand, token::TokenCommand},
-    config, database, dns, log_info, logger, service, socket,
+    config, database, dns, log_error, log_info, logger, service, socket,
 };
-use clap::{Parser, Subcommand};
+
+struct DnsNotifySender;
+
+#[async_trait]
+impl service::notify::NotifySender for DnsNotifySender {
+    async fn send_notify(&self, zone_name: Option<&str>) -> Result<(), String> {
+        dns::xfr::notify::send_notify(zone_name, false)
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "bindizr", version, about)]
@@ -63,16 +78,16 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     }
 
     logger::initialize();
-    service::notify::set_notify_hook(|zone_name| {
-        Box::pin(async move {
-            dns::xfr::notify::send_notify(zone_name.as_deref())
-                .await
-                .map_err(|e| e.to_string())
-        })
-    })
-    .map_err(String::from)?;
+    service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
     database::initialize().await;
     dns::initialize().await;
+
+    if config::get_bindizr_config().dns.notify_on_startup {
+        match dns::xfr::notify::send_notify(None, false).await {
+            Ok(()) => log_info!("Startup DNS NOTIFY completed."),
+            Err(e) => log_error!("Startup DNS NOTIFY failed: {}", e),
+        }
+    }
 
     log_info!("Bindizr is running in foreground mode.");
     log_info!("For production use, please run bindizr as a systemd service:");

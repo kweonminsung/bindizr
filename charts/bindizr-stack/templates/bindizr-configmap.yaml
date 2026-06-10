@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bindizr-stack.fullname" . }}-config
+  labels:
+    {{- include "bindizr-stack.labels" . | nindent 4 }}
+data:
+  bindizr.conf.toml: |
+    [api]
+    listen_addr = "{{ .Values.bindizr.api.listenAddr }}"
+    listen_port = {{ .Values.bindizr.api.port }}
+    require_authentication = {{ .Values.bindizr.api.requireAuthentication }}
+
+    [database]
+    type = "{{ .Values.bindizr.database.type }}"
+
+    [database.mysql]
+    server_url = ""
+
+    [database.postgresql]
+    server_url = ""
+
+    [dns]
+    listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"
+    listen_port = {{ .Values.bindizr.dns.port }}
+    secondary_addrs = ""
+    notify_after_update = {{ .Values.bindizr.dns.notifyAfterUpdate }}
+    notify_on_startup = {{ .Values.bindizr.dns.notifyOnStartup }}
+    notify_retries = {{ .Values.bindizr.dns.notifyRetries }}
+    notify_timeout_secs = {{ .Values.bindizr.dns.notifyTimeoutSecs }}
+    nsupdate_tsig_key_name = "{{ .Values.tsig.keyName }}"
+    nsupdate_tsig_key = ""
+
+    [logging]
+    log_level = "{{ .Values.bindizr.logging.level }}"

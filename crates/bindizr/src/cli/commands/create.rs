@@ -1,7 +1,7 @@
-use crate::socket::client::DaemonSocketClient;
-use crate::socket::dto::DaemonCommandKind;
 use clap::Subcommand;
 use serde_json::json;
+
+use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum CreateCommand {
@@ -30,10 +30,7 @@ pub(crate) enum CreateCommand {
         #[arg(long)]
         name: String,
         /// Record type (A, AAAA, CNAME, MX, etc.)
-        #[arg(
-            long,
-            aliases = ["type"]
-        )]
+        #[arg(long = "type", alias = "record-type")]
         record_type: String,
         /// Record value
         #[arg(long)]

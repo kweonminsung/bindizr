@@ -1,12 +1,3 @@
-use crate::api::{
-    dto::{
-        CreateRecordRequest, ErrorResponse, GetRecordResponse, MessageResponse, RecordListResponse,
-        RecordResponse, UpdateRecordRequest,
-    },
-    error::ApiError,
-    middleware::body_parser::JsonBody,
-};
-use crate::service::record::RecordService;
 use axum::{
     Json, Router,
     extract::{Path, Query},
@@ -16,6 +7,18 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+
+use crate::{
+    api::{
+        error::ApiError,
+        middleware::body_parser::JsonBody,
+        types::{
+            CreateRecordRequest, ErrorResponse, GetRecordResponse, GetRecordsFilter,
+            MessageResponse, RecordListResponse, RecordResponse, UpdateRecordRequest,
+        },
+    },
+    service::record::RecordService,
+};
 
 pub(crate) struct RecordApi;
 
@@ -36,28 +39,40 @@ impl RecordApi {
         tag = "Record",
         summary = "List all DNS records",
         params(
-            ("zone_name" = Option<String>, Query, description = "The name of the DNS zone to filter records by.")
+            ("zone_name" = Option<String>, Query, description = "The name of the DNS zone to filter records by."),
+            ("name" = Option<String>, Query, description = "Filter by record name."),
+            ("record_type" = Option<String>, Query, description = "Filter by record type."),
+            ("value" = Option<String>, Query, description = "Partially filter by record value."),
+            ("ttl" = Option<i32>, Query, description = "Filter by TTL."),
+            ("min_ttl" = Option<i32>, Query, description = "Filter by minimum TTL."),
+            ("max_ttl" = Option<i32>, Query, description = "Filter by maximum TTL."),
+            ("priority" = Option<i32>, Query, description = "Filter by priority."),
+            ("min_priority" = Option<i32>, Query, description = "Filter by minimum priority."),
+            ("max_priority" = Option<i32>, Query, description = "Filter by maximum priority."),
+            ("search" = Option<String>, Query, description = "Partially search records."),
+            ("limit" = Option<u32>, Query, description = "Maximum number of records to return."),
+            ("offset" = Option<u64>, Query, description = "Number of records to skip.")
         ),
         responses(
             (status = 200, description = "A list of DNS records", body = RecordListResponse),
+            (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-pub(crate) async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl IntoResponse {
-    let zone_name = query.zone_name;
-
-    let raw_records = match RecordService::list(zone_name).await {
+pub(crate) async fn get_records(Query(query): Query<GetRecordsFilter>) -> impl IntoResponse {
+    let raw_records = match RecordService::list_with_zone_by_filter(query).await {
         Ok(records) => records,
         Err(err) => return ApiError::from(err).into_response(),
     };
 
     let records = raw_records
+        .items
         .iter()
-        .map(GetRecordResponse::from_record)
-        .collect::<Vec<GetRecordResponse>>();
+        .map(GetRecordResponse::from_record_with_zone)
+        .collect::<Vec<_>>();
 
-    let json_body = json!({ "records": records });
+    let json_body = json!({ "items": records, "pagination": raw_records.pagination });
     (StatusCode::OK, Json(json_body)).into_response()
 }
 
@@ -77,12 +92,12 @@ pub(crate) async fn get_records(Query(query): Query<GetRecordsQuery>) -> impl In
         )
 )]
 pub(crate) async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
-    let raw_record = match RecordService::get_by_id(params.record_id).await {
+    let raw_record = match RecordService::get_by_id_with_zone(params.record_id).await {
         Ok(record) => record,
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let record = GetRecordResponse::from_record(&raw_record);
+    let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
     (StatusCode::OK, Json(json_body)).into_response()
@@ -110,7 +125,7 @@ pub(crate) async fn create_record(
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let record = GetRecordResponse::from_record(&raw_record);
+    let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
     (StatusCode::CREATED, Json(json_body)).into_response()
@@ -143,7 +158,7 @@ pub(crate) async fn update_record(
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    let record = GetRecordResponse::from_record(&raw_record);
+    let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
     (StatusCode::OK, Json(json_body)).into_response()
@@ -172,11 +187,6 @@ pub(crate) async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl
         }
         Err(err) => ApiError::from(err).into_response(),
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct GetRecordsQuery {
-    zone_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

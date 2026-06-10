@@ -37,7 +37,98 @@ DNS Synchronization Service for BIND9
 
 &nbsp;<img src="public/concepts.png" width="462px">
 
-## Get Started
+## Deployment Options
+
+Bindizr can be deployed with Helm, Docker Compose for Docker Swarm, or a manual package-based setup.
+
+### Helm
+
+Use the Helm chart to deploy Bindizr, BIND9 secondary pods, and optional bundled MySQL/PostgreSQL in Kubernetes.
+
+For production, create a Kubernetes Secret that points Bindizr to your external MySQL or PostgreSQL database:
+
+```bash
+$ helm repo add bindizr https://kweonminsung.github.io/bindizr/charts
+$ helm repo update
+
+$ kubectl create secret generic bindizr-db-secret \
+  --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
+
+$ helm install bindizr bindizr/bindizr-stack \
+  --set bindizr.database.existingSecret=bindizr-db-secret
+```
+
+For development, the chart can run a single-replica MySQL or PostgreSQL StatefulSet:
+
+```bash
+$ helm install bindizr bindizr/bindizr-stack \
+  --set bindizr.database.type=postgresql \
+  --set bindizr.database.existingSecret= \
+  --set postgresql.enabled=true
+```
+
+SQLite is not supported by the Helm chart. See [charts/bindizr-stack](charts/bindizr-stack/README.md) for all Helm values and examples, including TSIG and bindizr-ui.
+
+### Docker Compose
+
+Use the default `docker-compose.yml` with Docker Swarm for a containerized Bindizr deployment.
+
+```bash
+$ docker stack deploy -c docker-compose.yml bindizr
+```
+
+The stack runs Bindizr, MySQL, and BIND9 on an overlay network, using Docker configs for BIND9 configuration.
+
+### Manual Installation
+
+For package-based installation on a VM or bare-metal host, follow the manual installation guide below. It installs BIND9, installs the Bindizr binary or package, configures BIND9 as a secondary using the catalog zone, and starts Bindizr as a system service.
+
+## Bindizr Configuration
+
+Bindizr can read configuration from `/etc/bindizr/bindizr.conf.toml` and can also be configured with environment variables in container deployments. The Docker files in this repository set the same options through environment variables.
+
+For manual installation, create the configuration file:
+
+```bash
+$ vim /etc/bindizr/bindizr.conf.toml # or use any text editor you prefer
+```
+
+Add the following configuration, adjusting values to match your environment:
+
+```toml
+[api]
+listen_addr = "127.0.0.1"     # HTTP API listen address
+listen_port = 3000            # HTTP API listen port
+require_authentication = true # Enable API authentication (true/false)
+
+[database]
+type = "mysql"                # Database type: mysql, sqlite, postgresql
+
+[database.mysql]
+server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
+
+[database.sqlite]
+file_path = "bindizr.db"      # SQLite database file path
+
+[database.postgresql]
+server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
+
+[dns]
+listen_addr = "127.0.0.1"     # DNS server listen address
+listen_port = 53              # DNS server listen port (UDP and TCP)
+secondary_addrs = ""          # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
+notify_after_update = true    # Send DNS NOTIFY after zone changes
+notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
+notify_retries = 3            # Retry count after the initial NOTIFY attempt
+notify_timeout_secs = 5       # Timeout in seconds for each NOTIFY send/response wait
+nsupdate_tsig_key_name = "nsupdate-key" # TSIG key name for nsupdate authentication (name and key must both be set)
+nsupdate_tsig_key = ""        # Shared TSIG secret for nsupdate authentication (name and key must both be set, base64 recommended)
+
+[logging]
+log_level = "debug"           # Log level: error, warn, info, debug, trace
+```
+
+## Manual Installation
 
 ### 1. Install BIND9
 
@@ -91,7 +182,7 @@ This script automatically detects your BIND configuration directory and configur
 
 ```bash
 # Download and run the setup script
-$ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/scripts/setup_bind.sh | sudo bash
+$ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/packaging/scripts/setup_bind.sh | sudo bash
 
 # Restart bind service
 $ sudo systemctl restart bind9  # For Debian-based systems
@@ -120,11 +211,10 @@ Update your main BIND configuration file (`$BIND_CONF_FILE`) by adding the follo
 # Configure catalog zone support
 cat <<EOF | sudo tee -a "$BIND_CONF_FILE"
 options {
+    allow-notify { any; };
     ixfr-from-differences yes;
     catalog-zones {
-        zone "catalog.bind" {
-            default-primaries { 127.0.0.1 port 53; };
-        };
+        zone "catalog.bind" default-primaries { 127.0.0.1 port 53; };
     };
 };
 EOF
@@ -135,6 +225,7 @@ zone "catalog.bind" {
     type secondary;
     primaries { 127.0.0.1 port 53; };
     file "$BIND_CACHE_DIR/catalog.bind.zone";
+    allow-notify { any; };
     ixfr-from-differences yes;
 };
 EOF
@@ -153,41 +244,7 @@ $ sudo systemctl restart named  # For Red Hat-based systems
 
 ### 4. Configure Bindizr Options
 
-Create a configuration file for Bindizr:
-
-```bash
-$ vim /etc/bindizr/bindizr.conf.toml # or use any text editor you prefer
-```
-
-Add the following configuration, adjusting values to match your environment:
-
-```toml
-listen_addr = "127.0.0.1"         # Common listen address for all services
-
-[api]
-listen_port = 3000             # HTTP API listen port
-require_authentication = true  # Enable API authentication (true/false)
-
-[database]
-type = "mysql"                 # Database type: mysql, sqlite, postgresql
-
-[database.mysql]
-server_url = "mysql://user:password@hostname:port/database"      # Mysql server configuration
-
-[database.sqlite]
-file_path = "bindizr.db"       # SQLite database file path
-
-[database.postgresql]
-server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
-
-[dns]
-listen_port = 53                  # DNS server listen port (UDP and TCP)
-secondary_addrs = ""              # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53")
-nsupdate_tsig_key = ""            # Shared TSIG secret for nsupdate authentication (empty to disable, base64 recommended)
-
-[logging]
-log_level = "debug"           # Log level: error, warn, info, debug, trace
-```
+Create `/etc/bindizr/bindizr.conf.toml` using the [Bindizr Configuration](#bindizr-configuration) section above, adjusting values to match your environment.
 
 ### 5. Start Bindizr Service
 
@@ -260,7 +317,7 @@ $ bindizr token --help
 ## API Documentation
 
 The full HTTP API documentation is available at:  
-👉 [https://kweonminsung.github.io/bindizr/](https://kweonminsung.github.io/bindizr/)
+👉 [https://kweonminsung.github.io/bindizr/api/](https://kweonminsung.github.io/bindizr/api/)
 
 
 ### API Authentication

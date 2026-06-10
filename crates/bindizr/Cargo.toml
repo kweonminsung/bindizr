@@ -20,6 +20,8 @@ path = "src/main.rs"
 bindizr-core = { path = "../bindizr-core" }
 bindizr-db = { path = "../bindizr-db" }
 bindizr-dns = { path = "../bindizr-dns" }
+bindizr-service = { path = "../bindizr-service" }
+async-trait.workspace = true
 axum.workspace = true
 axum-macros.workspace = true
 clap.workspace = true

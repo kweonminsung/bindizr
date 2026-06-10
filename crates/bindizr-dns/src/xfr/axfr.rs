@@ -1,11 +1,13 @@
-use super::{catalog, error::XfrError, wire};
+use std::net::IpAddr;
+
+use domain::base::{Name, iana::Rtype};
+use tokio::net::TcpStream;
+
+use super::{catalog, delta, error::XfrError, wire};
 use crate::{
     log_info,
     service::{record::RecordService, zone::ZoneService},
 };
-use domain::base::{Name, iana::Rtype};
-use std::net::IpAddr;
-use tokio::net::TcpStream;
 
 /// Handle AXFR
 pub(crate) async fn handle_axfr(
@@ -62,26 +64,37 @@ pub(crate) async fn handle_axfr_with_qtype(
         zone.serial
     );
 
-    // Build and send AXFR response
+    // Build and send AXFR response across one or more TCP DNS messages.
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
+    let mut messages_sent = 0usize;
 
     // Add initial SOA record
-    builder.add_soa(&zone, zone.serial as u32)?;
+    let serial = delta::serial_to_u32(zone.serial)?;
+    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        builder.add_soa(&zone, serial)
+    })
+    .await?;
 
     // Add all records
     for record in &records {
-        builder.add_record(record, &zone.name)?;
+        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+            builder.add_record(record, &zone.name)
+        })
+        .await?;
     }
 
     // Add final SOA record to indicate end of transfer
-    builder.add_soa(&zone, zone.serial as u32)?;
-    let message = builder.build();
-    wire::write_tcp_message(stream, &message).await?;
+    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        builder.add_soa(&zone, serial)
+    })
+    .await?;
+    messages_sent += wire::flush_message_if_not_empty(stream, &mut builder).await?;
 
     log_info!(
-        "AXFR completed for zone {}: sent {} records + 2 SOA records",
+        "AXFR completed for zone {}: sent {} records + 2 SOA records in {} DNS message(s)",
         zone_name_str,
-        records.len()
+        records.len(),
+        messages_sent
     );
 
     Ok(())

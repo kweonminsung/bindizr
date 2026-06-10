@@ -6,12 +6,14 @@ pub(crate) mod ixfr;
 pub mod notify;
 pub(crate) mod wire;
 
-use crate::{acl, log_info, log_warn};
+use std::net::{IpAddr, SocketAddr};
+
 use catalog::generate_catalog_zone;
 use domain::base::iana::Rtype;
 use error::XfrError;
-use std::net::{IpAddr, SocketAddr};
 use tokio::net::TcpStream;
+
+use crate::{acl, log_info, log_warn};
 
 pub async fn initialize() {
     ensure_catalog_zone().await;
@@ -36,15 +38,15 @@ pub fn is_xfr_query_type(qtype: Rtype) -> bool {
     matches!(qtype, Rtype::AXFR | Rtype::IXFR)
 }
 
-pub async fn handle_tcp_query(
+pub(crate) async fn handle_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
-    secondary_servers: &[IpAddr],
+    secondary_acl: &acl::SecondaryAcl,
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
 
-    validate_secondary_acl(client_ip, secondary_servers)?;
+    validate_secondary_acl(client_ip, secondary_acl).await?;
 
     let (zone_name, qtype, client_serial, query_id) = wire::parse_query(query_data)?;
 
@@ -83,14 +85,14 @@ pub async fn handle_tcp_query(
     Ok(())
 }
 
-pub async fn handle_udp_query(
+pub(crate) async fn handle_udp_query(
     client_addr: SocketAddr,
-    secondary_servers: &[IpAddr],
+    secondary_acl: &acl::SecondaryAcl,
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
 
-    validate_secondary_acl(client_ip, secondary_servers)?;
+    validate_secondary_acl(client_ip, secondary_acl).await?;
 
     let (zone_name, qtype, _client_serial, _query_id) = wire::parse_query(query_data)?;
 
@@ -113,8 +115,11 @@ pub async fn handle_udp_query(
     )))
 }
 
-fn validate_secondary_acl(client_ip: IpAddr, secondary_servers: &[IpAddr]) -> Result<(), XfrError> {
-    if !acl::is_client_allowed(client_ip, secondary_servers) {
+async fn validate_secondary_acl(
+    client_ip: IpAddr,
+    secondary_acl: &acl::SecondaryAcl,
+) -> Result<(), XfrError> {
+    if !acl::is_client_allowed(client_ip, secondary_acl).await {
         log_warn!(
             "XFR request denied from {} (not a configured secondary server)",
             client_ip

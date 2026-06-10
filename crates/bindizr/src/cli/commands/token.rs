@@ -1,10 +1,11 @@
-use crate::{
-    database::model::api_token::ApiToken,
-    log_debug,
-    socket::{client::DaemonSocketClient, dto::DaemonCommandKind},
-};
 use clap::Subcommand;
 use serde_json::json;
+
+use crate::{
+    log_debug,
+    model::api_token::ApiToken,
+    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+};
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum TokenCommand {

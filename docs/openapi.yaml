@@ -7,8 +7,57 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 0.1.0-beta.3
+  version: 0.1.0-beta.4
 paths:
+  /notify/zones:
+    post:
+      tags:
+      - Notify
+      summary: Send DNS NOTIFY messages for a zone or all zones
+      operationId: notify_zones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotifyZoneRequest'
+        required: true
+      responses:
+        '200':
+          description: DNS NOTIFY sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /records:
     get:
       tags:
@@ -22,6 +71,86 @@ paths:
         required: false
         schema:
           type: string
+      - name: name
+        in: query
+        description: Filter by record name.
+        required: false
+        schema:
+          type: string
+      - name: record_type
+        in: query
+        description: Filter by record type.
+        required: false
+        schema:
+          type: string
+      - name: value
+        in: query
+        description: Partially filter by record value.
+        required: false
+        schema:
+          type: string
+      - name: ttl
+        in: query
+        description: Filter by TTL.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: min_ttl
+        in: query
+        description: Filter by minimum TTL.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: max_ttl
+        in: query
+        description: Filter by maximum TTL.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: priority
+        in: query
+        description: Filter by priority.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: min_priority
+        in: query
+        description: Filter by minimum priority.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: max_priority
+        in: query
+        description: Filter by maximum priority.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: search
+        in: query
+        description: Partially search records.
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Maximum number of records to return.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: offset
+        in: query
+        description: Number of records to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
       responses:
         '200':
           description: A list of DNS records
@@ -29,6 +158,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecordListResponse'
+        '400':
+          description: Bad request, invalid pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
           content:
@@ -222,6 +357,80 @@ paths:
       - Zone
       summary: List all DNS zones
       operationId: get_zones
+      parameters:
+      - name: name
+        in: query
+        description: Filter by zone name.
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: query
+        description: Filter by zone ID.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: primary_ns
+        in: query
+        description: Filter by primary name server.
+        required: false
+        schema:
+          type: string
+      - name: admin_email
+        in: query
+        description: Filter by admin email.
+        required: false
+        schema:
+          type: string
+      - name: ttl
+        in: query
+        description: Filter by TTL.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: min_ttl
+        in: query
+        description: Filter by minimum TTL.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: max_ttl
+        in: query
+        description: Filter by maximum TTL.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: serial
+        in: query
+        description: Filter by serial.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: search
+        in: query
+        description: Partially search zones.
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Maximum number of zones to return.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: offset
+        in: query
+        description: Number of zones to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
       responses:
         '200':
           description: A list of DNS zones
@@ -229,6 +438,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ZoneListResponse'
+        '400':
+          description: Bad request, invalid pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
           content:
@@ -613,15 +828,48 @@ components:
         message:
           type: string
           example: Deleted successfully
+    NotifyZoneRequest:
+      type: object
+      properties:
+        force:
+          type: boolean
+          example: true
+        zone_name:
+          type:
+          - string
+          - 'null'
+          example: example.com
+    Pagination:
+      type: object
+      required:
+      - limit
+      - offset
+      - total
+      properties:
+        limit:
+          type: integer
+          format: int32
+          example: 50
+        offset:
+          type: integer
+          format: int64
+          example: 0
+        total:
+          type: integer
+          format: int64
+          example: 125
     RecordListResponse:
       type: object
       required:
-      - records
+      - items
+      - pagination
       properties:
-        records:
+        items:
           type: array
           items:
             $ref: '#/components/schemas/GetRecordResponse'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     RecordResponse:
       type: object
       required:
@@ -681,12 +929,15 @@ components:
     ZoneListResponse:
       type: object
       required:
-      - zones
+      - items
+      - pagination
       properties:
-        zones:
+        items:
           type: array
           items:
             $ref: '#/components/schemas/GetZoneResponse'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     ZoneResponse:
       type: object
       required:
@@ -703,3 +954,5 @@ tags:
   description: Manage DNS zones including creation, update, deletion, and retrieval.
 - name: Record
   description: Manage DNS records including creation, update, deletion, and retrieval.
+- name: Notify
+  description: Send DNS NOTIFY messages to secondary servers.

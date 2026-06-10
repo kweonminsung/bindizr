@@ -1,12 +1,14 @@
+mod notify;
 mod record;
 mod zone;
 
 mod test {
-    use crate::common::TestContext;
     use axum::http::StatusCode;
 
+    use crate::common::TestContext;
+
     #[tokio::test]
-    async fn test_api_home() {
+    async fn api_home_returns_running_message() {
         let ctx = TestContext::new().await;
 
         let (status, body) = ctx.make_request("GET", "/", None).await;
@@ -16,7 +18,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_error_handling() {
+    async fn missing_resources_and_invalid_payloads_return_client_errors() {
         let ctx = TestContext::new().await;
 
         // Test 404 for non-existent zone

@@ -1,14 +1,17 @@
-use crate::log_info;
-use crate::service::zone::ZoneService;
-use crate::xfr::{catalog, error::XfrError, wire};
-use domain::base::iana::Rtype;
 use std::net::{IpAddr, SocketAddr};
+
+use domain::base::iana::Rtype;
 use tokio::net::{TcpStream, UdpSocket};
+
+use crate::{
+    log_info,
+    service::zone::ZoneService,
+    xfr::{catalog, error::XfrError, wire},
+};
 
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
-    _secondary_servers: &[IpAddr],
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
@@ -29,7 +32,6 @@ pub(crate) async fn handle_tcp_soa(
 pub(crate) async fn handle_udp_soa(
     socket: &UdpSocket,
     client_addr: SocketAddr,
-    _secondary_servers: &[IpAddr],
     query_data: &[u8],
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
@@ -70,7 +72,7 @@ async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<
         let (catalog_zone, _member_zones) = catalog::generate_catalog_zone().await?;
 
         let mut builder = wire::DnsMessageBuilder::new(query_id, &zone_name, Rtype::SOA);
-        builder.add_soa(&catalog_zone, catalog_zone.serial as u32)?;
+        builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;
         return Ok(builder.build());
     }
 

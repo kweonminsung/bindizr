@@ -1,15 +1,13 @@
 #[cfg(test)]
 mod tests;
 
-pub mod error;
+use std::{env, fmt, net::IpAddr, path::PathBuf};
 
 use config::{Config, File, FileFormat};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::IpAddr, path::PathBuf};
 
 // Config file path
-#[allow(dead_code)]
 pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";
 pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
@@ -17,7 +15,6 @@ static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BindizrConfig {
-    pub listen_addr: IpAddr,
     pub api: ApiConfig,
     pub database: DatabaseConfig,
     pub dns: DnsConfig,
@@ -26,6 +23,7 @@ pub struct BindizrConfig {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiConfig {
+    pub listen_addr: IpAddr,
     #[serde(alias = "port")]
     pub listen_port: u16,
     pub require_authentication: bool,
@@ -79,11 +77,34 @@ pub struct PostgresqlConfig {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DnsConfig {
+    pub listen_addr: IpAddr,
     pub listen_port: u16,
     pub secondary_addrs: String,
-    /// Empty disables nsupdate TSIG authentication.
+    #[serde(default = "default_notify_after_update")]
+    pub notify_after_update: bool,
+    #[serde(default)]
+    pub notify_on_startup: bool,
+    #[serde(default = "default_notify_retries")]
+    pub notify_retries: u32,
+    #[serde(default = "default_notify_timeout_secs")]
+    pub notify_timeout_secs: u64,
+    /// Both name and key must be non-empty to enable nsupdate TSIG authentication.
+    #[serde(default)]
+    pub nsupdate_tsig_key_name: String,
     #[serde(default)]
     pub nsupdate_tsig_key: String,
+}
+
+fn default_notify_after_update() -> bool {
+    true
+}
+
+fn default_notify_retries() -> u32 {
+    3
+}
+
+fn default_notify_timeout_secs() -> u64 {
+    5
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -115,15 +136,18 @@ impl fmt::Display for LogLevel {
 }
 
 pub fn initialize(conf_file_path: Option<&str>) {
-    let conf_file_path = conf_file_path.unwrap_or(BINDIZR_CONF_PATH);
+    let conf_file_path = conf_file_path
+        .map(str::to_string)
+        .or_else(|| env::var("BINDIZR_CONFIG_PATH").ok())
+        .unwrap_or_else(|| BINDIZR_CONF_PATH.to_string());
 
-    if !PathBuf::from(conf_file_path).exists() {
+    if !PathBuf::from(&conf_file_path).exists() {
         exit_config_error(format!("Bindizr config does not exist: {}", conf_file_path));
     }
 
     println!("Initializing configuration from file: {}", conf_file_path);
 
-    let cfg = load_raw_config(conf_file_path).unwrap_or_else(|err| exit_config_error(err));
+    let cfg = load_raw_config(&conf_file_path).unwrap_or_else(|err| exit_config_error(err));
     let bindizr_config = parse_bindizr_config(cfg).unwrap_or_else(|err| exit_config_error(err));
 
     BINDIZR_CONFIG.get_or_init(|| bindizr_config);
@@ -142,13 +166,126 @@ fn load_raw_config(conf_file_path: &str) -> Result<Config, String> {
 }
 
 fn parse_bindizr_config(cfg: Config) -> Result<BindizrConfig, String> {
-    let bindizr_config = cfg
+    parse_bindizr_config_with_env(cfg, |name| env::var(name).ok())
+}
+
+fn parse_bindizr_config_with_env(
+    cfg: Config,
+    get_env: impl Fn(&str) -> Option<String>,
+) -> Result<BindizrConfig, String> {
+    let mut bindizr_config = cfg
         .try_deserialize::<BindizrConfig>()
         .map_err(|e| format!("Invalid Bindizr configuration: {}", e))?;
 
+    apply_env_overrides_from(&mut bindizr_config, get_env)?;
     validate_database_config(&bindizr_config.database)?;
 
     Ok(bindizr_config)
+}
+
+fn apply_env_overrides_from(
+    config: &mut BindizrConfig,
+    get_env: impl Fn(&str) -> Option<String>,
+) -> Result<(), String> {
+    if let Some(value) = get_env("BINDIZR_API_LISTEN_ADDR") {
+        config.api.listen_addr = parse_env_value("BINDIZR_API_LISTEN_ADDR", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_API_PORT") {
+        config.api.listen_port = parse_env_value("BINDIZR_API_PORT", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_API_REQUIRE_AUTHENTICATION") {
+        config.api.require_authentication =
+            parse_env_value("BINDIZR_API_REQUIRE_AUTHENTICATION", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
+        config.database.database_type = parse_database_type_env("BINDIZR_DATABASE_TYPE", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_MYSQL_SERVER_URL") {
+        config.database.mysql.server_url = value;
+    }
+    if let Some(value) = get_env("BINDIZR_POSTGRESQL_SERVER_URL") {
+        config.database.postgresql.server_url = value;
+    }
+    if let Some(value) = get_env("BINDIZR_SQLITE_FILE_PATH") {
+        config.database.sqlite.file_path = value;
+    }
+    if let Some(value) = get_env("BINDIZR_DATABASE_URL") {
+        match config.database.database_type {
+            DatabaseType::Mysql => config.database.mysql.server_url = value,
+            DatabaseType::Postgresql => config.database.postgresql.server_url = value,
+            DatabaseType::Sqlite => {}
+        }
+    }
+    if let Some(value) = get_env("BINDIZR_DNS_PORT") {
+        config.dns.listen_port = parse_env_value("BINDIZR_DNS_PORT", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_DNS_LISTEN_ADDR") {
+        config.dns.listen_addr = parse_env_value("BINDIZR_DNS_LISTEN_ADDR", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_SECONDARY_ADDRS") {
+        config.dns.secondary_addrs = value;
+    }
+    if let Some(value) = get_env("BINDIZR_NSUPDATE_TSIG_KEY") {
+        config.dns.nsupdate_tsig_key = value;
+    } else if let Some(value) = get_env("TSIG_SECRET") {
+        config.dns.nsupdate_tsig_key = value;
+    }
+    if let Some(value) = get_env("BINDIZR_NSUPDATE_TSIG_KEY_NAME") {
+        config.dns.nsupdate_tsig_key_name = value;
+    }
+    if let Some(value) = get_env("BINDIZR_NOTIFY_AFTER_UPDATE") {
+        config.dns.notify_after_update = parse_env_value("BINDIZR_NOTIFY_AFTER_UPDATE", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
+        config.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_NOTIFY_RETRIES") {
+        config.dns.notify_retries = parse_env_value("BINDIZR_NOTIFY_RETRIES", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_NOTIFY_TIMEOUT_SECS") {
+        config.dns.notify_timeout_secs = parse_env_value("BINDIZR_NOTIFY_TIMEOUT_SECS", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
+        config.logging.log_level = parse_log_level_env("BINDIZR_LOG_LEVEL", &value)?;
+    }
+
+    Ok(())
+}
+
+fn parse_env_value<T>(name: &str, value: &str) -> Result<T, String>
+where
+    T: std::str::FromStr,
+    T::Err: fmt::Display,
+{
+    value
+        .parse::<T>()
+        .map_err(|e| format!("Invalid {} environment variable '{}': {}", name, value, e))
+}
+
+fn parse_database_type_env(name: &str, value: &str) -> Result<DatabaseType, String> {
+    match value {
+        "mysql" => Ok(DatabaseType::Mysql),
+        "postgresql" => Ok(DatabaseType::Postgresql),
+        "sqlite" => Ok(DatabaseType::Sqlite),
+        _ => Err(format!(
+            "Invalid {} environment variable '{}': expected mysql, postgresql, or sqlite",
+            name, value
+        )),
+    }
+}
+
+fn parse_log_level_env(name: &str, value: &str) -> Result<LogLevel, String> {
+    match value {
+        "trace" => Ok(LogLevel::Trace),
+        "debug" => Ok(LogLevel::Debug),
+        "info" => Ok(LogLevel::Info),
+        "warn" => Ok(LogLevel::Warn),
+        "error" => Ok(LogLevel::Error),
+        _ => Err(format!(
+            "Invalid {} environment variable '{}': expected trace, debug, info, warn, or error",
+            name, value
+        )),
+    }
 }
 
 fn validate_database_config(config: &DatabaseConfig) -> Result<(), String> {
