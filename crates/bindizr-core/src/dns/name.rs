@@ -119,7 +119,9 @@ fn escape_soa_local_part(local: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_in_bailiwick, to_relative_domain};
+    use super::{
+        email_to_soa_mailbox, is_in_bailiwick, split_presentation_labels, to_relative_domain,
+    };
 
     #[test]
     fn is_in_bailiwick_accepts_apex_and_subdomain() {
@@ -141,5 +143,24 @@ mod tests {
             to_relative_domain("notexample.com.", "example.com."),
             "notexample.com"
         );
+    }
+
+    #[test]
+    fn split_presentation_labels_preserves_escaped_dots_and_rejects_dangling_escape() {
+        assert_eq!(
+            split_presentation_labels(r"host\.name.example.com").unwrap(),
+            vec!["host.name", "example", "com"]
+        );
+        assert!(split_presentation_labels(r"bad.example.com\").is_err());
+    }
+
+    #[test]
+    fn email_to_soa_mailbox_escapes_local_part() {
+        assert_eq!(
+            email_to_soa_mailbox(r"host.master\ops@example.com").unwrap(),
+            r"host\.master\\ops.example.com."
+        );
+        assert!(email_to_soa_mailbox("hostmaster.example.com").is_err());
+        assert!(email_to_soa_mailbox("host@@example.com").is_err());
     }
 }

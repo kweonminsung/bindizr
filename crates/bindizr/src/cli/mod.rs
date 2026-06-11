@@ -4,12 +4,16 @@ mod output;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bindizr_core::{config, log_error, log_info, logger};
+use bindizr_db as database;
+use bindizr_dns as dns;
+use bindizr_service as service;
 use clap::{Parser, Subcommand};
 
 use crate::{
     api,
     cli::commands::{notify::NotifyCommand, token::TokenCommand},
-    config, database, dns, log_error, log_info, logger, service, socket,
+    socket,
 };
 
 struct DnsNotifySender;

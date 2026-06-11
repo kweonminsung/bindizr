@@ -1,8 +1,8 @@
+use bindizr_service::record::RecordService;
 use serde_json::json;
 
 use crate::{
     api::types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
-    service::record::RecordService,
     socket::types::DaemonResponse,
 };
 

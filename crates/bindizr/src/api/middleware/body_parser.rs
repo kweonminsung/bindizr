@@ -1,8 +1,7 @@
 use axum::{extract::rejection::JsonRejection, http::StatusCode, response::IntoResponse};
 use axum_macros::FromRequest;
+use bindizr_core::log_error;
 use serde_json::json;
-
-use crate::log_error;
 
 // Custom extractor for JSON body with error handling
 #[derive(FromRequest)]

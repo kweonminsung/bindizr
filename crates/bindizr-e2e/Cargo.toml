@@ -1,0 +1,19 @@
+[package]
+name = "bindizr-e2e"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "bindizr"
+path = "src/bin/bindizr.rs"
+
+[dependencies]
+bindizr = { path = "../bindizr" }
+tokio.workspace = true
+
+[dev-dependencies]
+reqwest.workspace = true
+serde_json.workspace = true
+serial_test.workspace = true
+tempfile.workspace = true

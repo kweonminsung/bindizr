@@ -14,9 +14,7 @@ use crate::{
     service,
     service::{
         RepositoryTx,
-        record::{
-            RecordService, validate_record_add_constraints_tx, validate_record_delete_constraints,
-        },
+        record::{RecordService, validate_add_constraints_tx, validate_delete_constraints},
         serial::generate_serial,
         zone::{ZoneService, snapshot::save_zone_snapshot_tx},
     },
@@ -191,7 +189,7 @@ async fn add_record(
 
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
 
-    validate_record_add_constraints_tx(
+    validate_add_constraints_tx(
         tx,
         zone,
         &relative_name,
@@ -326,8 +324,7 @@ async fn delete_records(
     }
 
     // Validate delete constraints
-    validate_record_delete_constraints(zone, &matched)
-        .map_err(|e| UpdateError::Refused(e.to_string()))?;
+    validate_delete_constraints(zone, &matched).map_err(|e| UpdateError::Refused(e.to_string()))?;
 
     for record in &matched {
         RecordService::delete_tx(tx, record.id)
@@ -606,7 +603,7 @@ async fn log_zone_change(
 mod tests {
     use super::{
         CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_A, TYPE_ANY, TYPE_TXT, UpdateError,
-        absolute_to_relative, record_value_matches, rr_to_record_value,
+        absolute_to_relative, normalize_owner_name, record_value_matches, rr_to_record_value,
         validate_delete_update_shape,
     };
     use crate::{model::record::RecordType, nsupdate::parser::UpdateRecord};
@@ -627,6 +624,16 @@ mod tests {
     fn absolute_to_relative_rejects_partial_suffix_match() {
         let err = absolute_to_relative("aexample.com.", "example.com.").unwrap_err();
         assert!(matches!(err, UpdateError::NotZone(_)));
+    }
+
+    #[test]
+    fn normalize_owner_name_rejects_out_of_zone_suffix_matches() {
+        assert!(normalize_owner_name("www.example.com.", "example.com.").is_ok());
+
+        for owner in ["badexample.com.", "www.badexample.com.", "."] {
+            let err = normalize_owner_name(owner, "example.com.").unwrap_err();
+            assert!(matches!(err, UpdateError::NotZone(_)));
+        }
     }
 
     #[test]

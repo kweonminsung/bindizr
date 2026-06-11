@@ -6,6 +6,7 @@ mod zone;
 
 use std::{io, os::unix::fs::FileTypeExt, path::Path};
 
+use bindizr_core::{log_error, log_info, log_warn};
 use serde_json::json;
 use tokio::{
     fs,
@@ -13,12 +14,9 @@ use tokio::{
     net::{UnixListener, UnixStream},
 };
 
-use crate::{
-    log_error, log_info, log_warn,
-    socket::{
-        socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
-        types::{DaemonCommand, DaemonCommandKind},
-    },
+use crate::socket::{
+    socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
+    types::{DaemonCommand, DaemonCommandKind},
 };
 
 async fn handle_client(stream: UnixStream) {

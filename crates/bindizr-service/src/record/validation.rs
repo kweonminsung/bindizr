@@ -291,7 +291,7 @@ fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceE
     Ok(())
 }
 
-pub fn validate_record_delete_constraints(
+pub fn validate_delete_constraints(
     zone: &Zone,
     deleting_records: &[Record],
 ) -> Result<(), ServiceError> {
@@ -360,7 +360,7 @@ pub(super) fn validate_record_update_constraints(
     Ok(normalized_owner)
 }
 
-pub async fn validate_record_add_constraints_tx(
+pub async fn validate_add_constraints_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     owner_name: &str,
@@ -415,8 +415,16 @@ fn canonical_last_name_field(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_record_owner_name, record_values_equal, validate_record_value};
-    use crate::model::record::RecordType;
+    use chrono::Utc;
+
+    use super::{
+        normalize_record_owner_name, record_values_equal, validate_delete_constraints,
+        validate_record_add_constraints, validate_record_value,
+    };
+    use crate::model::{
+        record::{Record, RecordType},
+        zone::Zone,
+    };
 
     #[test]
     fn normalize_record_owner_name_accepts_relative_and_in_bailiwick_absolute_names() {
@@ -485,5 +493,116 @@ mod tests {
             validate_record_value(&RecordType::CNAME, "_acme-challenge.validation.example.")
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn validate_cname_value_rejects_invalid_domain_forms() {
+        for value in [
+            "",
+            ".",
+            "bad target.example.com",
+            "bad..example.com",
+            "-bad.example.com",
+            "bad-.example.com",
+        ] {
+            assert!(
+                validate_record_value(&RecordType::CNAME, value).is_err(),
+                "{value:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
+        let zone = test_zone();
+
+        let cname_at_apex = validate_record_add_constraints(
+            &zone,
+            &[],
+            "@",
+            &RecordType::CNAME,
+            "target.example.com",
+            None,
+            None,
+        );
+        assert!(cname_at_apex.is_err());
+
+        let ns_below_apex = validate_record_add_constraints(
+            &zone,
+            &[],
+            "child",
+            &RecordType::NS,
+            "ns.example.com",
+            None,
+            None,
+        );
+        assert!(ns_below_apex.is_err());
+
+        let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
+        let cname_conflict = validate_record_add_constraints(
+            &zone,
+            &[existing_a],
+            "www",
+            &RecordType::CNAME,
+            "target.example.com",
+            None,
+            None,
+        );
+        assert!(cname_conflict.is_err());
+    }
+
+    #[test]
+    fn validate_delete_constraints_protects_soa_and_primary_ns() {
+        let zone = test_zone();
+
+        let soa = test_record(
+            1,
+            "@",
+            RecordType::SOA,
+            "ns1.example.com hostmaster.example.com",
+            None,
+        );
+        assert!(validate_delete_constraints(&zone, &[soa]).is_err());
+
+        let primary_ns = test_record(2, "@", RecordType::NS, "ns1.example.com.", None);
+        assert!(validate_delete_constraints(&zone, &[primary_ns]).is_err());
+
+        let secondary_ns = test_record(3, "@", RecordType::NS, "ns2.example.com.", None);
+        assert!(validate_delete_constraints(&zone, &[secondary_ns]).is_ok());
+    }
+
+    fn test_zone() -> Zone {
+        Zone {
+            id: 1,
+            name: "example.com".to_string(),
+            primary_ns: "ns1.example.com".to_string(),
+            admin_email: "hostmaster@example.com".to_string(),
+            ttl: 3600,
+            serial: 2023010101,
+            refresh: 7200,
+            retry: 3600,
+            expire: 604800,
+            minimum_ttl: 86400,
+            created_at: Utc::now(),
+        }
+    }
+
+    fn test_record(
+        id: i32,
+        name: &str,
+        record_type: RecordType,
+        value: &str,
+        priority: Option<i32>,
+    ) -> Record {
+        Record {
+            id,
+            name: name.to_string(),
+            record_type,
+            value: value.to_string(),
+            ttl: Some(3600),
+            priority,
+            zone_id: 1,
+            created_at: Utc::now(),
+        }
     }
 }
