@@ -3,9 +3,9 @@ entries:
   bindizr-stack:
   - apiVersion: v2
     appVersion: 0.1.0-beta.4
-    created: "2026-06-10T20:34:56.032369016Z"
+    created: "2026-06-18T19:37:31.178441921Z"
     description: Bindizr DNS control plane with BIND9 authoritative DNS pods.
-    digest: ffa4ca8b8cd5fe70a66951dc7a6136ad72c72b308374ef6182c50a7285565857
+    digest: b9614ea99a72cf31d90e4f575f4512ef3b3d265b0bccd5d707d4caa18a47d082
     home: https://github.com/kweonminsung/bindizr
     keywords:
     - dns
@@ -23,4 +23,4 @@ entries:
     urls:
     - https://kweonminsung.github.io/bindizr/charts/bindizr-stack-0.1.0-beta.4.tgz
     version: 0.1.0-beta.4
-generated: "2026-06-10T20:35:21.093043647Z"
+generated: "2026-06-18T19:37:31.177512503Z"
