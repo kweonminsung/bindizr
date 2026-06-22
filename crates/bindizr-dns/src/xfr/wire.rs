@@ -144,6 +144,25 @@ impl DnsMessageBuilder {
         Ok(())
     }
 
+    /// Add SRV record
+    pub(crate) fn add_srv_record(
+        &mut self,
+        name: &str,
+        ttl: u32,
+        priority: u16,
+        weight: u16,
+        port: u16,
+        target: &str,
+    ) -> Result<(), XfrError> {
+        let mut rdata = Vec::new();
+        rdata.extend_from_slice(&priority.to_be_bytes());
+        rdata.extend_from_slice(&weight.to_be_bytes());
+        rdata.extend_from_slice(&port.to_be_bytes());
+        encode_domain_name(target, &mut rdata)?;
+        self.add_answer_raw(name, 33, ttl, &rdata)?;
+        Ok(())
+    }
+
     /// Add NS record
     pub(crate) fn add_ns_record(
         &mut self,
@@ -247,11 +266,19 @@ impl DnsMessageBuilder {
                 self.add_cname_record(&owner_name, ttl, &record.value)?;
             }
             "MX" => {
-                let priority = record.priority.unwrap_or(10) as u16;
-                self.add_mx_record(&owner_name, ttl, priority, &record.value)?;
+                let (priority, target) = parse_mx_record_value(&record.value, record.priority)?;
+                self.add_mx_record(&owner_name, ttl, priority, target)?;
             }
             "NS" => {
                 self.add_ns_record(&owner_name, ttl, &record.value)?;
+            }
+            "PTR" => {
+                self.add_ptr_record(&owner_name, ttl, &record.value)?;
+            }
+            "SRV" => {
+                let (priority, weight, port, target) =
+                    parse_srv_record_value(&record.value, record.priority)?;
+                self.add_srv_record(&owner_name, ttl, priority, weight, port, target)?;
             }
             "TXT" => {
                 self.add_txt_record(&owner_name, ttl, &record.value)?;
@@ -363,6 +390,67 @@ impl DnsMessageBuilder {
     pub(crate) fn build(self) -> Vec<u8> {
         self.build_message()
     }
+}
+
+pub(crate) fn parse_mx_record_value(
+    value: &str,
+    fallback_priority: Option<i32>,
+) -> Result<(u16, &str), XfrError> {
+    let fields = value.split_whitespace().collect::<Vec<_>>();
+    match fields.as_slice() {
+        [priority, target] => Ok((parse_u16_field(priority, "MX priority")?, target)),
+        [target] => Ok((
+            parse_optional_priority(fallback_priority, "MX priority")?,
+            target,
+        )),
+        _ => Err(XfrError::ProtocolError(format!(
+            "Invalid MX record value: {value}"
+        ))),
+    }
+}
+
+pub(crate) fn parse_srv_record_value(
+    value: &str,
+    fallback_priority: Option<i32>,
+) -> Result<(u16, u16, u16, &str), XfrError> {
+    let fields = value.split_whitespace().collect::<Vec<_>>();
+    let (priority, weight, port, target) = match fields.as_slice() {
+        [priority, weight, port, target] => (
+            parse_u16_field(priority, "SRV priority")?,
+            *weight,
+            *port,
+            *target,
+        ),
+        [weight, port, target] => (
+            parse_optional_priority(fallback_priority, "SRV priority")?,
+            *weight,
+            *port,
+            *target,
+        ),
+        _ => {
+            return Err(XfrError::ProtocolError(format!(
+                "Invalid SRV record value: {value}"
+            )));
+        }
+    };
+
+    Ok((
+        priority,
+        parse_u16_field(weight, "SRV weight")?,
+        parse_u16_field(port, "SRV port")?,
+        target,
+    ))
+}
+
+fn parse_optional_priority(priority: Option<i32>, field: &str) -> Result<u16, XfrError> {
+    u16::try_from(priority.unwrap_or(10))
+        .map_err(|_| XfrError::ProtocolError(format!("Invalid {field}")))
+}
+
+fn parse_u16_field(value: &str, field: &str) -> Result<u16, XfrError> {
+    value
+        .parse()
+        .map_err(|_| XfrError::ProtocolError(format!("Invalid {field}: {value}")))
 }
 
 pub(crate) async fn add_answer_and_flush_if_needed<W, F>(
@@ -739,12 +827,12 @@ mod tests {
     };
 
     #[test]
-    fn normalize_name_relative() {
+    fn normalize_name_expands_relative_name() {
         assert_eq!(normalize_name("sub", "example.com"), "sub.example.com.");
     }
 
     #[test]
-    fn normalize_name_zone_qualified() {
+    fn normalize_name_keeps_zone_qualified_name() {
         assert_eq!(
             normalize_name("www.example.com", "example.com."),
             "www.example.com."
@@ -756,7 +844,7 @@ mod tests {
     }
 
     #[test]
-    fn normalize_name_fqdn_and_apex() {
+    fn normalize_name_handles_fqdn_and_apex() {
         assert_eq!(normalize_name("sub.", "example.com."), "sub.");
         assert_eq!(normalize_name("@", "example.com."), "example.com.");
     }

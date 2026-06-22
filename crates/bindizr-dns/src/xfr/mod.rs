@@ -21,7 +21,7 @@ pub async fn initialize() {
 
 async fn ensure_catalog_zone() {
     match generate_catalog_zone().await {
-        Ok((catalog, _members)) => {
+        Ok((catalog, _)) => {
             log_info!(
                 "Catalog zone '{}' is ready (serial: {})",
                 catalog::CATALOG_ZONE_NAME,
@@ -94,7 +94,7 @@ pub(crate) async fn handle_udp_query(
 
     validate_secondary_acl(client_ip, secondary_acl).await?;
 
-    let (zone_name, qtype, _client_serial, _query_id) = wire::parse_query(query_data)?;
+    let (zone_name, qtype, _, _) = wire::parse_query(query_data)?;
 
     if is_xfr_query_type(qtype) {
         log_warn!(

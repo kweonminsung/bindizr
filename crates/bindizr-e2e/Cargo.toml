@@ -3,10 +3,15 @@ name = "bindizr-e2e"
 version.workspace = true
 edition.workspace = true
 publish = false
+autotests = false
 
 [[bin]]
 name = "bindizr"
 path = "src/bin/bindizr.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e.rs"
 
 [dependencies]
 bindizr = { path = "../bindizr" }

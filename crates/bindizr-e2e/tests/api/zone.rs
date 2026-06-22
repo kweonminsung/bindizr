@@ -5,12 +5,14 @@ use crate::common::TestApp;
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_create_read_update_delete_round_trip() {
+async fn zone_create_read_update_delete() {
     let app = TestApp::start().await;
+    let zone_name = app.zone_name("test.com");
+    let updated_zone_name = app.zone_name("updated-test.com");
 
     let create_zone_request = json!({
-        "name": "test.com",
-        "primary_ns": "ns1.test.com",
+        "name": zone_name,
+        "primary_ns": format!("ns1.{zone_name}"),
         "admin_email": "admin@test.com",
         "ttl": 3600,
         "refresh": 7200,
@@ -24,21 +26,17 @@ async fn zone_create_read_update_delete_round_trip() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let zone_name = body["zone"]["name"].as_str().unwrap();
-    assert_eq!(zone_name, "test.com");
+    let created_zone_name = body["zone"]["name"].as_str().unwrap();
+    assert_eq!(created_zone_name, zone_name);
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .request(Method::GET, &format!("/zones/{created_zone_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["zone"]["name"], "test.com");
-
-    let (status, body) = app.request(Method::GET, "/zones", None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["zone"]["name"], zone_name);
 
     let update_zone_request = json!({
-        "name": "updated-test.com",
+        "name": updated_zone_name,
         "primary_ns": "ns2.external-dns.net",
         "admin_email": "admin@updated-test.com",
         "ttl": 7200,
@@ -51,34 +49,43 @@ async fn zone_create_read_update_delete_round_trip() {
     let (status, body) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}"),
+            &format!("/zones/{created_zone_name}"),
             Some(update_zone_request),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let updated_zone_name = body["zone"]["name"].as_str().unwrap();
-    assert_eq!(updated_zone_name, "updated-test.com");
+    let actual_updated_zone_name = body["zone"]["name"].as_str().unwrap();
+    assert_eq!(actual_updated_zone_name, updated_zone_name);
 
     let (status, _) = app
-        .request(Method::DELETE, &format!("/zones/{updated_zone_name}"), None)
+        .request(
+            Method::DELETE,
+            &format!("/zones/{actual_updated_zone_name}"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .request(Method::GET, &format!("/zones/{updated_zone_name}"), None)
+        .request(
+            Method::GET,
+            &format!("/zones/{actual_updated_zone_name}"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_list_filters_support_ranges_search_and_pagination() {
+async fn zone_filter_and_paginate() {
     let app = TestApp::start().await;
     app.create_test_zone().await;
+    let filtered_zone_name = app.zone_name("filtered.net");
 
     let create_zone_request = json!({
-        "name": "filtered.net",
-        "primary_ns": "ns1.filtered.net",
+        "name": filtered_zone_name,
+        "primary_ns": format!("ns1.{filtered_zone_name}"),
         "admin_email": "admin@filtered.net",
         "ttl": 7200,
         "refresh": 7200,
@@ -94,22 +101,29 @@ async fn zone_list_filters_support_ranges_search_and_pagination() {
     let (status, body) = app
         .request(
             Method::GET,
-            "/zones?search=filtered&min_ttl=7000&max_ttl=8000",
+            &format!(
+                "/zones?search={}&min_ttl=7000&max_ttl=8000",
+                app.namespace()
+            ),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     let zones = body["items"].as_array().unwrap();
     assert_eq!(zones.len(), 1);
-    assert_eq!(zones[0]["name"], "filtered.net");
+    assert_eq!(zones[0]["name"], filtered_zone_name);
 
     let (status, body) = app
-        .request(Method::GET, "/zones?limit=1&offset=1", None)
+        .request(
+            Method::GET,
+            &format!("/zones?search={}&limit=1&offset=1", app.namespace()),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     let zones = body["items"].as_array().unwrap();
     assert_eq!(zones.len(), 1);
-    assert_eq!(zones[0]["name"], "filtered.net");
+    assert_eq!(zones[0]["name"], filtered_zone_name);
     assert_eq!(body["pagination"]["total"], 2);
     assert_eq!(body["pagination"]["limit"], 1);
     assert_eq!(body["pagination"]["offset"], 1);
@@ -120,8 +134,10 @@ async fn zone_list_filters_support_ranges_search_and_pagination() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_create_and_update_apply_validation_and_normalization() {
+async fn zone_validate_and_normalize() {
     let app = TestApp::start().await;
+    let zone_name = app.zone_name("test.example.com");
+    let second_zone_name = app.zone_name("second.example.com");
 
     for invalid_admin_email in [
         json!({
@@ -144,8 +160,8 @@ async fn zone_create_and_update_apply_validation_and_normalization() {
     }
 
     let create_zone_request = json!({
-        "name": " Test.Example.Com. ",
-        "primary_ns": "NS1.Test.Example.Com.",
+        "name": format!(" {}. ", zone_name.to_ascii_uppercase()),
+        "primary_ns": format!("NS1.{}.", zone_name.to_ascii_uppercase()),
         "admin_email": "Host.Master@Example.Com.",
         "ttl": 3600
     });
@@ -153,13 +169,13 @@ async fn zone_create_and_update_apply_validation_and_normalization() {
         .request(Method::POST, "/zones", Some(create_zone_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["zone"]["name"], "test.example.com");
-    assert_eq!(body["zone"]["primary_ns"], "ns1.test.example.com");
+    assert_eq!(body["zone"]["name"], zone_name);
+    assert_eq!(body["zone"]["primary_ns"], format!("ns1.{zone_name}"));
     assert_eq!(body["zone"]["admin_email"], "Host.Master@example.com");
 
     let duplicate_zone_request = json!({
-        "name": "test.example.com.",
-        "primary_ns": "ns2.test.example.com",
+        "name": format!("{zone_name}."),
+        "primary_ns": format!("ns2.{zone_name}"),
         "admin_email": "hostmaster@example.com",
         "ttl": 3600
     });
@@ -169,8 +185,8 @@ async fn zone_create_and_update_apply_validation_and_normalization() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let second_zone = json!({
-        "name": "second.example.com",
-        "primary_ns": "ns1.second.example.com",
+        "name": second_zone_name,
+        "primary_ns": format!("ns1.{second_zone_name}"),
         "admin_email": "hostmaster@example.com",
         "ttl": 3600
     });
@@ -178,45 +194,49 @@ async fn zone_create_and_update_apply_validation_and_normalization() {
     assert_eq!(status, StatusCode::CREATED);
 
     let normalize_update = json!({
-        "name": " Test.Example.Com. ",
-        "primary_ns": "NS1.Test.Example.Com.",
+        "name": format!(" {}. ", zone_name.to_ascii_uppercase()),
+        "primary_ns": format!("NS1.{}.", zone_name.to_ascii_uppercase()),
         "admin_email": "Host.Master@Example.Com.",
         "ttl": 7200
     });
     let (status, body) = app
         .request(
             Method::PUT,
-            "/zones/test.example.com",
+            &format!("/zones/{zone_name}"),
             Some(normalize_update),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["zone"]["name"], "test.example.com");
-    assert_eq!(body["zone"]["primary_ns"], "ns1.test.example.com");
+    assert_eq!(body["zone"]["name"], zone_name);
+    assert_eq!(body["zone"]["primary_ns"], format!("ns1.{zone_name}"));
     assert_eq!(body["zone"]["admin_email"], "Host.Master@example.com");
 
     for invalid_update in [
         json!({
-            "name": "Second.Example.Com.",
-            "primary_ns": "ns1.test.example.com",
+            "name": format!("{}.", second_zone_name.to_ascii_uppercase()),
+            "primary_ns": format!("ns1.{zone_name}"),
             "admin_email": "hostmaster@example.com",
             "ttl": 3600
         }),
         json!({
-            "name": "test..example.com",
-            "primary_ns": "ns1.test.example.com",
+            "name": format!("{}..example.com", app.namespace()),
+            "primary_ns": format!("ns1.{zone_name}"),
             "admin_email": "hostmaster@example.com",
             "ttl": 3600
         }),
         json!({
-            "name": "test.example.com",
-            "primary_ns": "ns1.test.example.com",
+            "name": zone_name,
+            "primary_ns": format!("ns1.{zone_name}"),
             "admin_email": "hostmaster@example.com",
             "ttl": 0
         }),
     ] {
         let (status, _) = app
-            .request(Method::PUT, "/zones/test.example.com", Some(invalid_update))
+            .request(
+                Method::PUT,
+                &format!("/zones/{zone_name}"),
+                Some(invalid_update),
+            )
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
@@ -224,7 +244,7 @@ async fn zone_create_and_update_apply_validation_and_normalization() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_create_rejects_invalid_names_and_ttl_bounds() {
+async fn zone_reject_invalid_name_and_ttl() {
     let app = TestApp::start().await;
 
     for invalid_zone in [
@@ -279,13 +299,13 @@ async fn zone_create_rejects_invalid_names_and_ttl_bounds() {
 
     for valid_zone in [
         json!({
-            "name": "bailiwick.example.com",
+            "name": app.zone_name("bailiwick.example.com"),
             "primary_ns": "ns.example.com",
             "admin_email": "hostmaster@example.com",
             "ttl": 3600
         }),
         json!({
-            "name": "test.example.com",
+            "name": app.zone_name("bad-ns.example.com"),
             "primary_ns": "badtest.example.com",
             "admin_email": "hostmaster@example.com",
             "ttl": 3600

@@ -107,7 +107,7 @@ mod tests {
     use super::{decode_raw_txt_rdata, encode_raw_txt_rdata};
 
     #[test]
-    fn raw_txt_rdata_round_trips() {
+    fn raw_txt_rdata_encode_decode() {
         let rdata = [2, b'a', b'b', 1, b'c'];
         let encoded = encode_raw_txt_rdata(&rdata);
 
@@ -115,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn txt_segments_encode_to_reversible_json_value() {
+    fn txt_segments_encode_reversible_json() {
         let encoded = super::encode_txt_segments(["a", "bc"]).unwrap();
 
         assert_eq!(
@@ -136,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn txt_value_rejects_zero_segment_rdata() {
+    fn txt_value_rejects_empty_rdata() {
         let encoded = encode_raw_txt_rdata(&[]);
 
         assert_eq!(super::decode_raw_txt_value(&encoded), None);
@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn txt_string_auto_splits_long_values() {
+    fn txt_string_splits_long_values() {
         let value = "a".repeat(300);
         let encoded = super::encode_txt_string(&value);
 
@@ -193,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_raw_txt_rdata_prefix_is_ignored() {
+    fn raw_txt_rdata_ignores_invalid_prefix() {
         assert_eq!(decode_raw_txt_rdata("bindizr:txt-rdata:v1:A2Fi"), None);
     }
 }

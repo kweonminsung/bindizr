@@ -195,8 +195,7 @@ fn classify_query_route(query_data: &[u8]) -> Result<QueryRoute, String> {
         return Ok(QueryRoute::Nsupdate);
     }
 
-    let (_zone_name, qtype, _client_serial, _query_id) =
-        xfr::wire::parse_query(query_data).map_err(|e| e.to_string())?;
+    let (_, qtype, _, _) = xfr::wire::parse_query(query_data).map_err(|e| e.to_string())?;
 
     if qtype == Rtype::SOA {
         Ok(QueryRoute::Soa)

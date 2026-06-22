@@ -365,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn matches_record_search_still_filters_non_empty_searches() {
+    fn matches_record_search_filters_non_empty_search() {
         let record = test_record();
 
         assert!(matches_record_search(

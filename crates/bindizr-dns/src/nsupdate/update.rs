@@ -683,7 +683,7 @@ mod tests {
     }
 
     #[test]
-    fn record_value_matches_is_case_sensitive_for_txt() {
+    fn record_value_matches_preserves_txt_case() {
         assert!(record_value_matches(&RecordType::TXT, "Hello", "Hello"));
         assert!(!record_value_matches(&RecordType::TXT, "Hello", "hello"));
     }

@@ -5,16 +5,17 @@ use crate::common::TestApp;
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_create_read_update_delete_round_trip() {
+async fn record_create_read_update_delete() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     let create_record_request = json!({
         "name": "api",
         "record_type": "A",
         "value": "192.168.1.200",
         "ttl": 1800,
-        "zone_name": zone["name"]
+        "zone_name": zone_name
     });
     let (status, body) = app
         .request(Method::POST, "/records", Some(create_record_request))
@@ -22,19 +23,19 @@ async fn record_create_read_update_delete_round_trip() {
     assert_eq!(status, StatusCode::CREATED);
 
     let record_id = body["record"]["id"].as_i64().unwrap();
-    assert_eq!(body["record"]["name"], "api.example.com.");
+    assert_eq!(body["record"]["name"], format!("api.{zone_name}."));
     assert_eq!(body["record"]["record_type"], "A");
 
     let (status, body) = app
         .request(Method::GET, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["record"]["name"], "api.example.com.");
+    assert_eq!(body["record"]["name"], format!("api.{zone_name}."));
 
     let (status, body) = app
         .request(
             Method::GET,
-            "/records?zone_name=example.com&record_type=A",
+            &format!("/records?zone_name={zone_name}&record_type=A"),
             None,
         )
         .await;
@@ -55,7 +56,7 @@ async fn record_create_read_update_delete_round_trip() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["record"]["name"], "api-updated.example.com.");
+    assert_eq!(body["record"]["name"], format!("api-updated.{zone_name}."));
     assert_eq!(body["record"]["value"], "192.168.1.202");
 
     let (status, _) = app
@@ -71,12 +72,13 @@ async fn record_create_read_update_delete_round_trip() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_create_normalizes_zone_name_for_lookup() {
+async fn record_normalize_zone_name() {
     let app = TestApp::start().await;
+    let zone_name = app.zone_name("example.com");
 
     let create_zone_request = json!({
-        "name": "Example.Com.",
-        "primary_ns": "ns1.example.com",
+        "name": format!("{}.", zone_name.to_ascii_uppercase()),
+        "primary_ns": format!("ns1.{zone_name}"),
         "admin_email": "hostmaster@example.com",
         "ttl": 3600
     });
@@ -84,26 +86,26 @@ async fn record_create_normalizes_zone_name_for_lookup() {
         .request(Method::POST, "/zones", Some(create_zone_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["zone"]["name"], "example.com");
+    assert_eq!(body["zone"]["name"], zone_name);
 
     let create_record_request = json!({
         "name": "api",
         "record_type": "A",
         "value": "192.168.1.200",
         "ttl": 1800,
-        "zone_name": "Example.Com."
+        "zone_name": format!("{}.", zone_name.to_ascii_uppercase())
     });
     let (status, body) = app
         .request(Method::POST, "/records", Some(create_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["record"]["name"], "api.example.com.");
-    assert_eq!(body["record"]["zone_name"], "example.com.");
+    assert_eq!(body["record"]["name"], format!("api.{zone_name}."));
+    assert_eq!(body["record"]["zone_name"], format!("{zone_name}."));
 }
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_create_and_update_reject_invalid_address_and_cname_values() {
+async fn record_reject_invalid_values() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -172,13 +174,15 @@ async fn record_create_and_update_reject_invalid_address_and_cname_values() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reads_are_scoped_to_their_zone() {
+async fn record_scope_by_zone() {
     let app = TestApp::start().await;
-    app.create_test_zone().await;
+    let zone = app.create_test_zone().await;
+    let first_zone_name = zone["name"].as_str().unwrap();
+    let second_zone_name = app.zone_name("example.net");
 
     let second_zone = json!({
-        "name": "example.net",
-        "primary_ns": "ns1.example.net",
+        "name": second_zone_name,
+        "primary_ns": format!("ns1.{second_zone_name}"),
         "admin_email": "admin@example.net",
         "ttl": 3600
     });
@@ -186,7 +190,10 @@ async fn record_reads_are_scoped_to_their_zone() {
     assert_eq!(status, StatusCode::CREATED);
 
     let mut second_record_id = None;
-    for (zone_name, value) in [("example.com", "192.0.2.10"), ("example.net", "192.0.2.20")] {
+    for (zone_name, value) in [
+        (first_zone_name, "192.0.2.10"),
+        (second_zone_name.as_str(), "192.0.2.20"),
+    ] {
         let create_record_request = json!({
             "name": "shared",
             "record_type": "A",
@@ -199,7 +206,7 @@ async fn record_reads_are_scoped_to_their_zone() {
             .request(Method::POST, "/records", Some(create_record_request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
-        if zone_name == "example.net" {
+        if zone_name == second_zone_name {
             second_record_id = Some(body["record"]["id"].as_i64().unwrap());
         }
     }
@@ -222,7 +229,11 @@ async fn record_reads_are_scoped_to_their_zone() {
     assert_eq!(status, StatusCode::OK);
 
     let (status, body) = app
-        .request(Method::GET, "/records?zone_name=example.com", None)
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={first_zone_name}"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(
@@ -231,7 +242,8 @@ async fn record_reads_are_scoped_to_their_zone() {
             .unwrap()
             .iter()
             .any(
-                |record| record["name"] == "shared.example.com." && record["value"] == "192.0.2.10"
+                |record| record["name"] == format!("shared.{first_zone_name}.")
+                    && record["value"] == "192.0.2.10"
             )
     );
 
@@ -243,9 +255,10 @@ async fn record_reads_are_scoped_to_their_zone() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_list_filters_support_ranges_search_and_pagination() {
+async fn record_filter_and_paginate() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     for request in [
         json!({
@@ -278,19 +291,19 @@ async fn record_list_filters_support_ranges_search_and_pagination() {
     let (status, body) = app
         .request(
             Method::GET,
-            "/records?zone_name=example.com&value=168.1&min_ttl=1000&max_ttl=2000",
+            &format!("/records?zone_name={zone_name}&value=168.1&min_ttl=1000&max_ttl=2000"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["name"], "api.example.com.");
+    assert_eq!(records[0]["name"], format!("api.{zone_name}."));
 
     let (status, body) = app
         .request(
             Method::GET,
-            "/records?zone_name=example.com&search=mail&min_priority=5&max_priority=15",
+            &format!("/records?zone_name={zone_name}&search=mail&min_priority=5&max_priority=15"),
             None,
         )
         .await;
@@ -302,7 +315,7 @@ async fn record_list_filters_support_ranges_search_and_pagination() {
     let (status, body) = app
         .request(
             Method::GET,
-            "/records?zone_name=example.com&value=target.example.com",
+            &format!("/records?zone_name={zone_name}&value=target.example.com"),
             None,
         )
         .await;
@@ -314,26 +327,26 @@ async fn record_list_filters_support_ranges_search_and_pagination() {
     let (status, body) = app
         .request(
             Method::GET,
-            "/records?zone_name=Example.Com.&name=api.example.com",
+            &format!("/records?zone_name={zone_name}.&name=api.{zone_name}"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["name"], "api.example.com.");
+    assert_eq!(records[0]["name"], format!("api.{zone_name}."));
 
     let (status, body) = app
         .request(
             Method::GET,
-            "/records?zone_name=example.com&limit=1&offset=2",
+            &format!("/records?zone_name={zone_name}&limit=1&offset=2"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["name"], "api.example.com.");
+    assert_eq!(records[0]["name"], format!("api.{zone_name}."));
     assert_eq!(body["pagination"]["total"], 4);
     assert_eq!(body["pagination"]["limit"], 1);
     assert_eq!(body["pagination"]["offset"], 2);
@@ -344,9 +357,10 @@ async fn record_list_filters_support_ranges_search_and_pagination() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn txt_record_values_round_trip_and_filter_case_sensitively() {
+async fn record_preserve_txt_segments_and_case() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     for value in ["Token=ABC", "Token=abc"] {
         let create_record_request = json!({
@@ -366,7 +380,7 @@ async fn txt_record_values_round_trip_and_filter_case_sensitively() {
     let (status, body) = app
         .request(
             Method::GET,
-            "/records?zone_name=example.com&value=Token=abc",
+            &format!("/records?zone_name={zone_name}&value=Token=abc"),
             None,
         )
         .await;
@@ -421,9 +435,10 @@ async fn txt_record_values_round_trip_and_filter_case_sensitively() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_owner_names_normalize_and_reject_out_of_bailiwick_values() {
+async fn record_normalize_owner_and_reject_out_of_zone() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     let create_record_request = json!({
         "name": "a1",
@@ -436,10 +451,10 @@ async fn record_owner_names_normalize_and_reject_out_of_bailiwick_values() {
         .request(Method::POST, "/records", Some(create_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["record"]["name"], "a1.example.com.");
+    assert_eq!(body["record"]["name"], format!("a1.{zone_name}."));
 
     let in_bailiwick_duplicate = json!({
-        "name": "a1.example.com.",
+        "name": format!("a1.{zone_name}."),
         "record_type": "A",
         "value": "127.0.0.1",
         "ttl": 1800,
@@ -451,7 +466,7 @@ async fn record_owner_names_normalize_and_reject_out_of_bailiwick_values() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let in_bailiwick_different_value = json!({
-        "name": "a1.example.com",
+        "name": format!("a1.{zone_name}"),
         "record_type": "A",
         "value": "127.0.0.2",
         "ttl": 1800,
@@ -461,7 +476,7 @@ async fn record_owner_names_normalize_and_reject_out_of_bailiwick_values() {
         .request(Method::POST, "/records", Some(in_bailiwick_different_value))
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["record"]["name"], "a1.example.com.");
+    assert_eq!(body["record"]["name"], format!("a1.{zone_name}."));
 
     for name in [
         "a1.",
@@ -503,9 +518,10 @@ async fn record_owner_names_normalize_and_reject_out_of_bailiwick_values() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn creates_mx_srv_txt_aaaa_and_cname_records() {
+async fn record_create_supported_types() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
 
     let record_types = vec![
         ("mail", "MX", "10 mail.example.com", Some(10)),
@@ -544,7 +560,11 @@ async fn creates_mx_srv_txt_aaaa_and_cname_records() {
     }
 
     let (status, body) = app
-        .request(Method::GET, "/records?zone_name=example.com", None)
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
@@ -561,7 +581,7 @@ async fn creates_mx_srv_txt_aaaa_and_cname_records() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn cname_owner_conflict_rules_reject_invalid_combinations() {
+async fn record_reject_cname_conflicts() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 

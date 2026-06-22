@@ -347,11 +347,20 @@ fn add_change_to_builder(
             builder.add_cname_record(&owner_name, ttl, &change.record_value)?;
         }
         "MX" => {
-            let priority = change.record_priority.unwrap_or(10) as u16;
-            builder.add_mx_record(&owner_name, ttl, priority, &change.record_value)?;
+            let (priority, target) =
+                wire::parse_mx_record_value(&change.record_value, change.record_priority)?;
+            builder.add_mx_record(&owner_name, ttl, priority, target)?;
         }
         "NS" => {
             builder.add_ns_record(&owner_name, ttl, &change.record_value)?;
+        }
+        "PTR" => {
+            builder.add_ptr_record(&owner_name, ttl, &change.record_value)?;
+        }
+        "SRV" => {
+            let (priority, weight, port, target) =
+                wire::parse_srv_record_value(&change.record_value, change.record_priority)?;
+            builder.add_srv_record(&owner_name, ttl, priority, weight, port, target)?;
         }
         "TXT" => {
             builder.add_txt_record(&owner_name, ttl, &change.record_value)?;
@@ -389,7 +398,7 @@ mod tests {
     use super::normalize_change_name;
 
     #[test]
-    fn normalize_relative_name() {
+    fn normalize_change_name_expands_relative_name() {
         assert_eq!(
             normalize_change_name("www", "example.com"),
             "www.example.com."
@@ -397,12 +406,12 @@ mod tests {
     }
 
     #[test]
-    fn normalize_apex_name() {
+    fn normalize_change_name_expands_apex() {
         assert_eq!(normalize_change_name("@", "example.com."), "example.com.");
     }
 
     #[test]
-    fn keep_fqdn_name() {
+    fn normalize_change_name_keeps_fqdn() {
         assert_eq!(
             normalize_change_name("api.example.com.", "example.com"),
             "api.example.com."

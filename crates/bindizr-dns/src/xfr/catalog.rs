@@ -140,7 +140,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_catalog_zone_matches_catalog_bind() {
+    fn is_catalog_zone_matches_catalog_name() {
         assert!(is_catalog_zone("catalog.bind"));
         assert!(!is_catalog_zone("example.com"));
         assert!(!is_catalog_zone("catalog.example.com"));
