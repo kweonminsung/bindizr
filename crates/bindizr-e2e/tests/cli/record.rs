@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::common::TestApp;
+use crate::common::{TestApp, assert_cli_failure_contains};
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -147,26 +147,21 @@ async fn record_reject_invalid_values() {
         ("A", "not-an-ip", "valid IPv4"),
         ("CNAME", "bad target.example", "must not contain whitespace"),
     ] {
-        let output = app
-            .run_cli(&[
-                "create",
-                "record",
-                "--name",
-                "invalid",
-                "--type",
-                record_type,
-                "--value",
-                value,
-                "--zone",
-                &zone_name,
-                "--ttl",
-                "300",
-            ])
-            .await;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.contains(expected_error),
-            "invalid {record_type} response did not contain '{expected_error}': {stdout}"
-        );
+        let args = [
+            "create",
+            "record",
+            "--name",
+            "invalid",
+            "--type",
+            record_type,
+            "--value",
+            value,
+            "--zone",
+            &zone_name,
+            "--ttl",
+            "300",
+        ];
+        let output = app.run_cli(&args).await;
+        assert_cli_failure_contains(&args, &output, expected_error);
     }
 }

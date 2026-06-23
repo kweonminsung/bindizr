@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::common::{TestApp, assert_cli_success};
+use crate::common::{TestApp, assert_cli_failure_contains, assert_cli_success};
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -39,12 +39,13 @@ async fn zone_create_read_delete() {
     let deleted = app.run_cli_success(&["delete", "zone", &zone_name]).await;
     assert!(deleted.contains("deleted successfully"));
 
-    let missing = app
-        .run_cli(&["get", "zones", &zone_name, "--output", "json"])
-        .await;
-    let missing: Value =
-        serde_json::from_slice(&missing.stdout).expect("missing zone response was not JSON");
-    assert_eq!(missing, Value::Null);
+    let args = ["get", "zones", &zone_name, "--output", "json"];
+    let missing = app.run_cli(&args).await;
+    assert_cli_failure_contains(
+        &args,
+        &missing,
+        &format!("Zone with name '{zone_name}' not found"),
+    );
 }
 
 #[tokio::test]
@@ -120,25 +121,22 @@ async fn zone_reject_invalid_name_and_ttl() {
         ("_tcp.example", "3600", "ASCII letters"),
         ("low-ttl.example", "0", "ttl must be at least"),
     ] {
-        let output = app
-            .run_cli(&[
-                "create",
-                "zone",
-                "--name",
-                name,
-                "--primary-ns",
-                &format!("ns1.{name}"),
-                "--admin-email",
-                &format!("hostmaster@{name}"),
-                "--ttl",
-                ttl,
-            ])
-            .await;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.contains(expected_error),
-            "invalid zone response did not contain '{expected_error}': {stdout}"
-        );
+        let primary_ns = format!("ns1.{name}");
+        let admin_email = format!("hostmaster@{name}");
+        let args = [
+            "create",
+            "zone",
+            "--name",
+            name,
+            "--primary-ns",
+            &primary_ns,
+            "--admin-email",
+            &admin_email,
+            "--ttl",
+            ttl,
+        ];
+        let output = app.run_cli(&args).await;
+        assert_cli_failure_contains(&args, &output, expected_error);
     }
 
     let status = app.run_cli(&["status"]).await;

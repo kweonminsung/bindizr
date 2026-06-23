@@ -142,7 +142,7 @@ pub(super) fn validate_record_add_constraints(
         ));
     }
 
-    validate_record_value(record_type, value)?;
+    validate_record_value(record_type, value, priority)?;
 
     if *record_type == RecordType::CNAME && normalized_owner.stored_name == "@" {
         return Err(ServiceError::BadRequest(
@@ -196,7 +196,11 @@ pub(super) fn validate_record_add_constraints(
     Ok(normalized_owner)
 }
 
-fn validate_record_value(record_type: &RecordType, value: &str) -> Result<(), ServiceError> {
+fn validate_record_value(
+    record_type: &RecordType,
+    value: &str,
+    priority: Option<i32>,
+) -> Result<(), ServiceError> {
     match record_type {
         RecordType::A => value.parse::<Ipv4Addr>().map(|_| ()).map_err(|_| {
             ServiceError::BadRequest(format!(
@@ -211,8 +215,72 @@ fn validate_record_value(record_type: &RecordType, value: &str) -> Result<(), Se
             ))
         }),
         RecordType::CNAME => validate_domain_record_value("CNAME record value", value),
+        RecordType::NS => validate_domain_record_value("NS record value", value),
+        RecordType::PTR => validate_domain_record_value("PTR record value", value),
+        RecordType::MX => validate_mx_record_value(value, priority),
+        RecordType::SRV => validate_srv_record_value(value, priority),
         _ => Ok(()),
     }
+}
+
+fn validate_mx_record_value(
+    value: &str,
+    fallback_priority: Option<i32>,
+) -> Result<(), ServiceError> {
+    let fields = value.split_whitespace().collect::<Vec<_>>();
+    match fields.as_slice() {
+        [priority, target] => {
+            validate_u16_record_field("MX priority", priority)?;
+            validate_domain_record_value("MX record target", target)
+        }
+        [target] => {
+            validate_optional_u16_record_field("MX priority", fallback_priority)?;
+            validate_domain_record_value("MX record target", target)
+        }
+        _ => Err(ServiceError::BadRequest(format!(
+            "MX record value must be '<priority> <target>' or '<target>': {value}"
+        ))),
+    }
+}
+
+fn validate_srv_record_value(
+    value: &str,
+    fallback_priority: Option<i32>,
+) -> Result<(), ServiceError> {
+    let fields = value.split_whitespace().collect::<Vec<_>>();
+    let (weight, port, target) = match fields.as_slice() {
+        [priority, weight, port, target] => {
+            validate_u16_record_field("SRV priority", priority)?;
+            (*weight, *port, *target)
+        }
+        [weight, port, target] => {
+            validate_optional_u16_record_field("SRV priority", fallback_priority)?;
+            (*weight, *port, *target)
+        }
+        _ => {
+            return Err(ServiceError::BadRequest(format!(
+                "SRV record value must be '<priority> <weight> <port> <target>' or '<weight> <port> <target>': {value}"
+            )));
+        }
+    };
+
+    validate_u16_record_field("SRV weight", weight)?;
+    validate_u16_record_field("SRV port", port)?;
+    validate_domain_record_value("SRV record target", target)
+}
+
+fn validate_optional_u16_record_field(field: &str, value: Option<i32>) -> Result<(), ServiceError> {
+    u16::try_from(value.unwrap_or(10))
+        .map(|_| ())
+        .map_err(|_| ServiceError::BadRequest(format!("{field} must be between 0 and 65535")))
+}
+
+fn validate_u16_record_field(field: &str, value: &str) -> Result<(), ServiceError> {
+    value.parse::<u16>().map(|_| ()).map_err(|_| {
+        ServiceError::BadRequest(format!(
+            "{field} must be an unsigned 16-bit integer: {value}"
+        ))
+    })
 }
 
 fn validate_domain_record_value(field: &str, value: &str) -> Result<(), ServiceError> {
@@ -490,8 +558,12 @@ mod tests {
     #[test]
     fn validate_cname_value_accepts_underscore_labels() {
         assert!(
-            validate_record_value(&RecordType::CNAME, "_acme-challenge.validation.example.")
-                .is_ok()
+            validate_record_value(
+                &RecordType::CNAME,
+                "_acme-challenge.validation.example.",
+                None
+            )
+            .is_ok()
         );
     }
 
@@ -506,8 +578,86 @@ mod tests {
             "bad-.example.com",
         ] {
             assert!(
-                validate_record_value(&RecordType::CNAME, value).is_err(),
+                validate_record_value(&RecordType::CNAME, value, None).is_err(),
                 "{value:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_ns_and_ptr_values_reject_invalid_domain_forms() {
+        for record_type in [RecordType::NS, RecordType::PTR] {
+            for value in [
+                "",
+                ".",
+                "bad target.example.com",
+                "bad..example.com",
+                "-bad.example.com",
+                "bad-.example.com",
+            ] {
+                assert!(
+                    validate_record_value(&record_type, value, None).is_err(),
+                    "{record_type} value {value:?} should be rejected"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn validate_mx_value_accepts_full_and_split_priority_forms() {
+        assert!(validate_record_value(&RecordType::MX, "10 mail.example.com", None).is_ok());
+        assert!(validate_record_value(&RecordType::MX, "mail.example.com", Some(10)).is_ok());
+        assert!(validate_record_value(&RecordType::MX, "mail.example.com", None).is_ok());
+    }
+
+    #[test]
+    fn validate_mx_value_rejects_invalid_forms() {
+        for (value, priority) in [
+            ("", None),
+            ("10 mail.example.com extra", None),
+            ("not-a-priority mail.example.com", None),
+            ("65536 mail.example.com", None),
+            ("10 bad target.example.com", None),
+            ("10 bad..example.com", None),
+            ("mail.example.com", Some(-1)),
+            ("mail.example.com", Some(65_536)),
+        ] {
+            assert!(
+                validate_record_value(&RecordType::MX, value, priority).is_err(),
+                "MX value {value:?} with priority {priority:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_srv_value_accepts_full_and_split_priority_forms() {
+        assert!(validate_record_value(&RecordType::SRV, "10 5 5060 sip.example.com", None).is_ok());
+        assert!(
+            validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", Some(10)).is_ok()
+        );
+        assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", None).is_ok());
+    }
+
+    #[test]
+    fn validate_srv_value_rejects_invalid_forms() {
+        for (value, priority) in [
+            ("", None),
+            ("10 5", None),
+            ("10 5 5060 sip.example.com extra", None),
+            ("not-a-priority 5 5060 sip.example.com", None),
+            ("10 not-a-weight 5060 sip.example.com", None),
+            ("10 5 not-a-port sip.example.com", None),
+            ("65536 5 5060 sip.example.com", None),
+            ("10 65536 5060 sip.example.com", None),
+            ("10 5 65536 sip.example.com", None),
+            ("10 5 5060 bad target.example.com", None),
+            ("10 5 5060 bad..example.com", None),
+            ("5 5060 sip.example.com", Some(-1)),
+            ("5 5060 sip.example.com", Some(65_536)),
+        ] {
+            assert!(
+                validate_record_value(&RecordType::SRV, value, priority).is_err(),
+                "SRV value {value:?} with priority {priority:?} should be rejected"
             );
         }
     }

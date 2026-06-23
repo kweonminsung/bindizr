@@ -159,8 +159,7 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
 
 fn json_response_error(msg: &str) -> String {
     json!({
-        "message": msg,
-        "data": null
+        "error": msg
     })
     .to_string()
 }

@@ -287,25 +287,26 @@ impl TestApp {
 
 fn dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();
-    if record_type != 15 {
+    if !matches!(record_type, 15 | 33) {
         return value;
     }
 
     let Some(target) = value.as_str() else {
         return value;
     };
-    let includes_priority = target
-        .split_whitespace()
-        .next()
-        .is_some_and(|field| field.parse::<u16>().is_ok());
-    if includes_priority {
+
+    let fields = target.split_whitespace().collect::<Vec<_>>();
+    let expects_priority_fallback = match record_type {
+        15 => fields.len() == 1,
+        33 => fields.len() == 3,
+        _ => false,
+    };
+    if !expects_priority_fallback {
         return value;
     }
 
-    match record["priority"].as_u64() {
-        Some(priority) => json!(format!("{priority} {target}")),
-        None => value,
-    }
+    let priority = record["priority"].as_u64().unwrap_or(10);
+    json!(format!("{priority} {target}"))
 }
 
 fn dns_key_from_record(record: &Value) -> (String, u16) {
@@ -327,6 +328,31 @@ pub(crate) fn assert_cli_success(args: &[&str], output: &std::process::Output) {
         args.join(" "),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+pub(crate) fn assert_cli_failure_contains(
+    args: &[&str],
+    output: &std::process::Output,
+    expected_error: &str,
+) {
+    assert!(
+        !output.status.success(),
+        "expected bindizr {} to fail, but it succeeded.\nstdout:\n{}\nstderr:\n{}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let combined = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains(expected_error),
+        "bindizr {} response did not contain '{expected_error}': {combined}",
+        args.join(" ")
     );
 }
 
@@ -776,18 +802,28 @@ fn decode_dns_value(
             Value::String(Ipv6Addr::from(bytes).to_string())
         }
         2 | 5 | 12 => Value::String(decode_dns_name(response, offset)?),
-        15 => Value::String(format!(
-            "{} {}",
-            u16::from_be_bytes([response[offset], response[offset + 1]]),
-            decode_dns_name(response, offset + 2)?
-        )),
-        33 => Value::String(format!(
-            "{} {} {} {}",
-            u16::from_be_bytes([response[offset], response[offset + 1]]),
-            u16::from_be_bytes([response[offset + 2], response[offset + 3]]),
-            u16::from_be_bytes([response[offset + 4], response[offset + 5]]),
-            decode_dns_name(response, offset + 6)?
-        )),
+        15 => {
+            if rdlen < 2 {
+                return Err("invalid MX rdlen".to_string());
+            }
+            Value::String(format!(
+                "{} {}",
+                u16::from_be_bytes([response[offset], response[offset + 1]]),
+                decode_dns_name(response, offset + 2)?
+            ))
+        }
+        33 => {
+            if rdlen < 6 {
+                return Err("invalid SRV rdlen".to_string());
+            }
+            Value::String(format!(
+                "{} {} {} {}",
+                u16::from_be_bytes([response[offset], response[offset + 1]]),
+                u16::from_be_bytes([response[offset + 2], response[offset + 3]]),
+                u16::from_be_bytes([response[offset + 4], response[offset + 5]]),
+                decode_dns_name(response, offset + 6)?
+            ))
+        }
         16 => {
             let mut position = offset;
             let mut segments = Vec::new();
