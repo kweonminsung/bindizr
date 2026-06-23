@@ -160,8 +160,7 @@ pub(super) fn validate_record_add_constraints(
 
     if existing_records_with_name.iter().any(|r| {
         r.record_type == *record_type
-            && record_values_equal(&r.value, value, record_type)
-            && r.priority == priority
+            && record_values_equal(&r.value, r.priority, value, priority, record_type)
     }) {
         return Err(ServiceError::BadRequest(format!(
             "Record '{}' {} '{}' already exists in this zone",
@@ -456,16 +455,79 @@ pub async fn validate_add_constraints_tx(
     .map(|_| ())
 }
 
-fn record_values_equal(left: &str, right: &str, record_type: &RecordType) -> bool {
-    canonical_record_value(left, record_type) == canonical_record_value(right, record_type)
+fn record_values_equal(
+    left: &str,
+    left_priority: Option<i32>,
+    right: &str,
+    right_priority: Option<i32>,
+    record_type: &RecordType,
+) -> bool {
+    canonical_record_value(left, left_priority, record_type)
+        == canonical_record_value(right, right_priority, record_type)
 }
 
-fn canonical_record_value(value: &str, record_type: &RecordType) -> String {
+fn canonical_record_value(
+    value: &str,
+    fallback_priority: Option<i32>,
+    record_type: &RecordType,
+) -> String {
     match record_type {
         RecordType::CNAME | RecordType::NS | RecordType::PTR => to_fqdn(value).to_ascii_lowercase(),
-        RecordType::MX | RecordType::SRV => canonical_last_name_field(value),
+        RecordType::MX => canonical_mx_record_value(value, fallback_priority),
+        RecordType::SRV => canonical_srv_record_value(value, fallback_priority),
         _ => value.to_string(),
     }
+}
+
+fn canonical_mx_record_value(value: &str, fallback_priority: Option<i32>) -> String {
+    let fields = value.split_whitespace().collect::<Vec<_>>();
+    match fields.as_slice() {
+        [priority, target] => format!(
+            "{} {}",
+            canonical_u16_field(priority),
+            to_fqdn(target).to_ascii_lowercase()
+        ),
+        [target] => format!(
+            "{} {}",
+            canonical_optional_u16_field(fallback_priority),
+            to_fqdn(target).to_ascii_lowercase()
+        ),
+        _ => canonical_last_name_field(value),
+    }
+}
+
+fn canonical_srv_record_value(value: &str, fallback_priority: Option<i32>) -> String {
+    let fields = value.split_whitespace().collect::<Vec<_>>();
+    match fields.as_slice() {
+        [priority, weight, port, target] => format!(
+            "{} {} {} {}",
+            canonical_u16_field(priority),
+            canonical_u16_field(weight),
+            canonical_u16_field(port),
+            to_fqdn(target).to_ascii_lowercase()
+        ),
+        [weight, port, target] => format!(
+            "{} {} {} {}",
+            canonical_optional_u16_field(fallback_priority),
+            canonical_u16_field(weight),
+            canonical_u16_field(port),
+            to_fqdn(target).to_ascii_lowercase()
+        ),
+        _ => canonical_last_name_field(value),
+    }
+}
+
+fn canonical_optional_u16_field(value: Option<i32>) -> String {
+    u16::try_from(value.unwrap_or(10))
+        .map(|value| value.to_string())
+        .unwrap_or_else(|_| value.unwrap_or(10).to_string())
+}
+
+fn canonical_u16_field(value: &str) -> String {
+    value
+        .parse::<u16>()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|_| value.to_string())
 }
 
 fn canonical_last_name_field(value: &str) -> String {
@@ -535,22 +597,44 @@ mod tests {
     fn record_values_equal_normalizes_name_like_values() {
         assert!(record_values_equal(
             "Target.Example.Net",
+            None,
             "target.example.net.",
+            None,
             &RecordType::CNAME
         ));
         assert!(record_values_equal(
             "10 mail.example.com",
+            None,
             "10 mail.example.com.",
+            None,
+            &RecordType::MX
+        ));
+        assert!(record_values_equal(
+            "mail.example.com",
+            Some(10),
+            "010 mail.example.com.",
+            None,
             &RecordType::MX
         ));
         assert!(record_values_equal(
             "10 5 5060 sip.example.com",
+            None,
             "10 5 5060 sip.example.com.",
+            None,
+            &RecordType::SRV
+        ));
+        assert!(record_values_equal(
+            "5 5060 sip.example.com",
+            Some(10),
+            "010 005 5060 sip.example.com.",
+            None,
             &RecordType::SRV
         ));
         assert!(!record_values_equal(
             "Token=ABC",
+            None,
             "token=abc",
+            None,
             &RecordType::TXT
         ));
     }
@@ -699,6 +783,41 @@ mod tests {
             None,
         );
         assert!(cname_conflict.is_err());
+    }
+
+    #[test]
+    fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates() {
+        let zone = test_zone();
+
+        let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
+        let duplicate_mx = validate_record_add_constraints(
+            &zone,
+            &[existing_mx],
+            "@",
+            &RecordType::MX,
+            "10 mail.example.com",
+            Some(10),
+            None,
+        );
+        assert!(duplicate_mx.is_err());
+
+        let existing_srv = test_record(
+            2,
+            "_sip._tcp",
+            RecordType::SRV,
+            "5 5060 sip.example.com",
+            Some(10),
+        );
+        let duplicate_srv = validate_record_add_constraints(
+            &zone,
+            &[existing_srv],
+            "_sip._tcp",
+            &RecordType::SRV,
+            "10 5 5060 sip.example.com",
+            Some(10),
+            None,
+        );
+        assert!(duplicate_srv.is_err());
     }
 
     #[test]
