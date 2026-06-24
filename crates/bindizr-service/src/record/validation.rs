@@ -229,6 +229,12 @@ fn validate_mx_record_value(
     let fields = value.split_whitespace().collect::<Vec<_>>();
     match fields.as_slice() {
         [priority, target] => {
+            if fallback_priority.is_some() {
+                return Err(ServiceError::BadRequest(
+                    "MX priority must be provided either inline or in the priority field, not both"
+                        .to_string(),
+                ));
+            }
             validate_u16_record_field("MX priority", priority)?;
             validate_domain_record_value("MX record target", target)
         }
@@ -249,6 +255,12 @@ fn validate_srv_record_value(
     let fields = value.split_whitespace().collect::<Vec<_>>();
     let (weight, port, target) = match fields.as_slice() {
         [priority, weight, port, target] => {
+            if fallback_priority.is_some() {
+                return Err(ServiceError::BadRequest(
+                    "SRV priority must be provided either inline or in the priority field, not both"
+                        .to_string(),
+                ));
+            }
             validate_u16_record_field("SRV priority", priority)?;
             (*weight, *port, *target)
         }
@@ -703,6 +715,7 @@ mod tests {
             ("65536 mail.example.com", None),
             ("10 bad target.example.com", None),
             ("10 bad..example.com", None),
+            ("10 mail.example.com", Some(10)),
             ("mail.example.com", Some(-1)),
             ("mail.example.com", Some(65_536)),
         ] {
@@ -736,6 +749,7 @@ mod tests {
             ("10 5 65536 sip.example.com", None),
             ("10 5 5060 bad target.example.com", None),
             ("10 5 5060 bad..example.com", None),
+            ("10 5 5060 sip.example.com", Some(10)),
             ("5 5060 sip.example.com", Some(-1)),
             ("5 5060 sip.example.com", Some(65_536)),
         ] {
