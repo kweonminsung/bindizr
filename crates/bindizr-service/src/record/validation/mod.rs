@@ -1,5 +1,3 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
-
 use bindizr_core::dns::name::{
     is_apex_name, is_same_or_subdomain_fqdn, split_presentation_labels, to_fqdn,
 };
@@ -14,8 +12,12 @@ use crate::{
     repository::{RepositoryService, RepositoryTx},
 };
 
-const MAX_DNS_LABEL_LEN: usize = 63;
-const MAX_DOMAIN_LEN: usize = 253;
+mod record_value;
+
+use record_value::{record_values_equal, validate_record_value};
+
+pub(super) const MAX_DNS_LABEL_LEN: usize = 63;
+pub(super) const MAX_DOMAIN_LEN: usize = 253;
 
 pub(super) struct NormalizedOwnerName {
     /// Name stored in the database according to the current relative-name policy.
@@ -195,169 +197,6 @@ pub(super) fn validate_record_add_constraints(
     Ok(normalized_owner)
 }
 
-fn validate_record_value(
-    record_type: &RecordType,
-    value: &str,
-    priority: Option<i32>,
-) -> Result<(), ServiceError> {
-    match record_type {
-        RecordType::A => value.parse::<Ipv4Addr>().map(|_| ()).map_err(|_| {
-            ServiceError::BadRequest(format!(
-                "A record value must be a valid IPv4 address: {}",
-                value
-            ))
-        }),
-        RecordType::AAAA => value.parse::<Ipv6Addr>().map(|_| ()).map_err(|_| {
-            ServiceError::BadRequest(format!(
-                "AAAA record value must be a valid IPv6 address: {}",
-                value
-            ))
-        }),
-        RecordType::CNAME => validate_domain_record_value("CNAME record value", value),
-        RecordType::NS => validate_domain_record_value("NS record value", value),
-        RecordType::PTR => validate_domain_record_value("PTR record value", value),
-        RecordType::MX => validate_mx_record_value(value, priority),
-        RecordType::SRV => validate_srv_record_value(value, priority),
-        _ => Ok(()),
-    }
-}
-
-fn validate_mx_record_value(
-    value: &str,
-    fallback_priority: Option<i32>,
-) -> Result<(), ServiceError> {
-    let fields = value.split_whitespace().collect::<Vec<_>>();
-    match fields.as_slice() {
-        [priority, target] => {
-            validate_u16_record_field("MX priority", priority)?;
-            validate_domain_record_value("MX record target", target)
-        }
-        [target] => {
-            validate_optional_u16_record_field("MX priority", fallback_priority)?;
-            validate_domain_record_value("MX record target", target)
-        }
-        _ => Err(ServiceError::BadRequest(format!(
-            "MX record value must be '<priority> <target>' or '<target>': {value}"
-        ))),
-    }
-}
-
-fn validate_srv_record_value(
-    value: &str,
-    fallback_priority: Option<i32>,
-) -> Result<(), ServiceError> {
-    let fields = value.split_whitespace().collect::<Vec<_>>();
-    let (weight, port, target) = match fields.as_slice() {
-        [priority, weight, port, target] => {
-            validate_u16_record_field("SRV priority", priority)?;
-            (*weight, *port, *target)
-        }
-        [weight, port, target] => {
-            validate_optional_u16_record_field("SRV priority", fallback_priority)?;
-            (*weight, *port, *target)
-        }
-        _ => {
-            return Err(ServiceError::BadRequest(format!(
-                "SRV record value must be '<priority> <weight> <port> <target>' or '<weight> <port> <target>': {value}"
-            )));
-        }
-    };
-
-    validate_u16_record_field("SRV weight", weight)?;
-    validate_u16_record_field("SRV port", port)?;
-    validate_domain_record_value("SRV record target", target)
-}
-
-fn validate_optional_u16_record_field(field: &str, value: Option<i32>) -> Result<(), ServiceError> {
-    u16::try_from(value.unwrap_or(10))
-        .map(|_| ())
-        .map_err(|_| ServiceError::BadRequest(format!("{field} must be between 0 and 65535")))
-}
-
-fn validate_u16_record_field(field: &str, value: &str) -> Result<(), ServiceError> {
-    value.parse::<u16>().map(|_| ()).map_err(|_| {
-        ServiceError::BadRequest(format!(
-            "{field} must be an unsigned 16-bit integer: {value}"
-        ))
-    })
-}
-
-fn validate_domain_record_value(field: &str, value: &str) -> Result<(), ServiceError> {
-    let trimmed = value.trim();
-
-    if trimmed.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
-            "{} must not be empty",
-            field
-        )));
-    }
-
-    if has_whitespace_or_control(trimmed) {
-        return Err(ServiceError::BadRequest(format!(
-            "{} must not contain whitespace or control characters",
-            field
-        )));
-    }
-
-    let without_trailing_dot = trimmed.strip_suffix('.').unwrap_or(trimmed);
-    if without_trailing_dot.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
-            "{} must not be the root zone",
-            field
-        )));
-    }
-
-    if without_trailing_dot.len() > MAX_DOMAIN_LEN {
-        return Err(ServiceError::BadRequest(format!(
-            "{} must be 253 bytes or fewer",
-            field
-        )));
-    }
-
-    for label in split_presentation_labels(without_trailing_dot)
-        .map_err(|e| ServiceError::BadRequest(e.to_string()))?
-    {
-        validate_domain_record_label(field, &label)?;
-    }
-
-    Ok(())
-}
-
-fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceError> {
-    if label.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
-            "{} must not contain empty labels",
-            field
-        )));
-    }
-
-    if label.len() > MAX_DNS_LABEL_LEN {
-        return Err(ServiceError::BadRequest(format!(
-            "{} labels must be 63 bytes or fewer",
-            field
-        )));
-    }
-
-    if !label
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(ServiceError::BadRequest(format!(
-            "{} labels must contain only ASCII letters, digits, hyphens, or underscores",
-            field
-        )));
-    }
-
-    if label.starts_with('-') || label.ends_with('-') {
-        return Err(ServiceError::BadRequest(format!(
-            "{} labels must not start or end with hyphens",
-            field
-        )));
-    }
-
-    Ok(())
-}
-
 pub fn validate_delete_constraints(
     zone: &Zone,
     deleting_records: &[Record],
@@ -455,94 +294,6 @@ pub async fn validate_add_constraints_tx(
     .map(|_| ())
 }
 
-fn record_values_equal(
-    left: &str,
-    left_priority: Option<i32>,
-    right: &str,
-    right_priority: Option<i32>,
-    record_type: &RecordType,
-) -> bool {
-    canonical_record_value(left, left_priority, record_type)
-        == canonical_record_value(right, right_priority, record_type)
-}
-
-fn canonical_record_value(
-    value: &str,
-    fallback_priority: Option<i32>,
-    record_type: &RecordType,
-) -> String {
-    match record_type {
-        RecordType::CNAME | RecordType::NS | RecordType::PTR => to_fqdn(value).to_ascii_lowercase(),
-        RecordType::MX => canonical_mx_record_value(value, fallback_priority),
-        RecordType::SRV => canonical_srv_record_value(value, fallback_priority),
-        _ => value.to_string(),
-    }
-}
-
-fn canonical_mx_record_value(value: &str, fallback_priority: Option<i32>) -> String {
-    let fields = value.split_whitespace().collect::<Vec<_>>();
-    match fields.as_slice() {
-        [priority, target] => format!(
-            "{} {}",
-            canonical_u16_field(priority),
-            to_fqdn(target).to_ascii_lowercase()
-        ),
-        [target] => format!(
-            "{} {}",
-            canonical_optional_u16_field(fallback_priority),
-            to_fqdn(target).to_ascii_lowercase()
-        ),
-        _ => canonical_last_name_field(value),
-    }
-}
-
-fn canonical_srv_record_value(value: &str, fallback_priority: Option<i32>) -> String {
-    let fields = value.split_whitespace().collect::<Vec<_>>();
-    match fields.as_slice() {
-        [priority, weight, port, target] => format!(
-            "{} {} {} {}",
-            canonical_u16_field(priority),
-            canonical_u16_field(weight),
-            canonical_u16_field(port),
-            to_fqdn(target).to_ascii_lowercase()
-        ),
-        [weight, port, target] => format!(
-            "{} {} {} {}",
-            canonical_optional_u16_field(fallback_priority),
-            canonical_u16_field(weight),
-            canonical_u16_field(port),
-            to_fqdn(target).to_ascii_lowercase()
-        ),
-        _ => canonical_last_name_field(value),
-    }
-}
-
-fn canonical_optional_u16_field(value: Option<i32>) -> String {
-    u16::try_from(value.unwrap_or(10))
-        .map(|value| value.to_string())
-        .unwrap_or_else(|_| value.unwrap_or(10).to_string())
-}
-
-fn canonical_u16_field(value: &str) -> String {
-    value
-        .parse::<u16>()
-        .map(|value| value.to_string())
-        .unwrap_or_else(|_| value.to_string())
-}
-
-fn canonical_last_name_field(value: &str) -> String {
-    let mut fields = value
-        .split_whitespace()
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    let Some(last) = fields.pop() else {
-        return value.to_string();
-    };
-
-    fields.push(to_fqdn(&last).to_ascii_lowercase());
-    fields.join(" ")
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
@@ -595,6 +346,20 @@ mod tests {
 
     #[test]
     fn record_values_equal_normalizes_name_like_values() {
+        assert!(record_values_equal(
+            "192.0.2.10",
+            None,
+            "192.0.2.10",
+            None,
+            &RecordType::A
+        ));
+        assert!(record_values_equal(
+            "2001:0db8:0000:0000:0000:0000:0000:0001",
+            None,
+            "2001:db8::1",
+            None,
+            &RecordType::AAAA
+        ));
         assert!(record_values_equal(
             "Target.Example.Net",
             None,
@@ -692,6 +457,8 @@ mod tests {
         assert!(validate_record_value(&RecordType::MX, "10 mail.example.com", None).is_ok());
         assert!(validate_record_value(&RecordType::MX, "mail.example.com", Some(10)).is_ok());
         assert!(validate_record_value(&RecordType::MX, "mail.example.com", None).is_ok());
+        assert!(validate_record_value(&RecordType::MX, "0 .", None).is_ok());
+        assert!(validate_record_value(&RecordType::MX, ".", Some(0)).is_ok());
     }
 
     #[test]
@@ -736,6 +503,7 @@ mod tests {
             ("10 5 65536 sip.example.com", None),
             ("10 5 5060 bad target.example.com", None),
             ("10 5 5060 bad..example.com", None),
+            ("10 5 5060 .", None),
             ("5 5060 sip.example.com", Some(-1)),
             ("5 5060 sip.example.com", Some(65_536)),
         ] {
