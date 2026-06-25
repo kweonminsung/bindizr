@@ -86,10 +86,13 @@ impl<'a> MxRecordValue<'a> {
     fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, ServiceError> {
         let fields = value.split_whitespace().collect::<Vec<_>>();
         match fields.as_slice() {
-            [priority, target] => Ok(Self {
-                priority: parse_u16_record_field("MX priority", priority)?,
-                target,
-            }),
+            [priority, target] => {
+                reject_duplicate_priority_field("MX", fallback_priority)?;
+                Ok(Self {
+                    priority: parse_u16_record_field("MX priority", priority)?,
+                    target,
+                })
+            }
             [target] => Ok(Self {
                 priority: parse_optional_u16_record_field("MX priority", fallback_priority)?,
                 target,
@@ -144,12 +147,15 @@ impl<'a> SrvRecordValue<'a> {
     fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, ServiceError> {
         let fields = value.split_whitespace().collect::<Vec<_>>();
         match fields.as_slice() {
-            [priority, weight, port, target] => Ok(Self {
-                priority: parse_u16_record_field("SRV priority", priority)?,
-                weight: parse_u16_record_field("SRV weight", weight)?,
-                port: parse_u16_record_field("SRV port", port)?,
-                target,
-            }),
+            [priority, weight, port, target] => {
+                reject_duplicate_priority_field("SRV", fallback_priority)?;
+                Ok(Self {
+                    priority: parse_u16_record_field("SRV priority", priority)?,
+                    weight: parse_u16_record_field("SRV weight", weight)?,
+                    port: parse_u16_record_field("SRV port", port)?,
+                    target,
+                })
+            }
             [weight, port, target] => Ok(Self {
                 priority: parse_optional_u16_record_field("SRV priority", fallback_priority)?,
                 weight: parse_u16_record_field("SRV weight", weight)?,
@@ -269,6 +275,19 @@ fn validate_srv_record_target(target: &str) -> Result<(), ServiceError> {
     }
 
     validate_domain_record_value("SRV record target", target)
+}
+
+fn reject_duplicate_priority_field(
+    record_type: &str,
+    fallback_priority: Option<i32>,
+) -> Result<(), ServiceError> {
+    if fallback_priority.is_some() {
+        return Err(ServiceError::BadRequest(format!(
+            "{record_type} priority must be provided either inline or in the priority field, not both"
+        )));
+    }
+
+    Ok(())
 }
 
 fn parse_optional_u16_record_field(field: &str, value: Option<i32>) -> Result<u16, ServiceError> {

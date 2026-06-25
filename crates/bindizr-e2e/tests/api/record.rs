@@ -524,8 +524,8 @@ async fn record_create_supported_types() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let record_types = vec![
-        ("mail", "MX", "10 mail.example.com", Some(10)),
-        ("_sip._tcp", "SRV", "10 5 5060 sip.example.com", Some(10)),
+        ("mail", "MX", "mail.example.com", Some(10)),
+        ("_sip._tcp", "SRV", "5 5060 sip.example.com", Some(10)),
         ("@", "TXT", "v=spf1 include:_spf.google.com ~all", None),
         ("ipv6", "AAAA", "2001:db8::1", None),
         ("alias", "CNAME", "www.example.com", None),
@@ -547,8 +547,8 @@ async fn record_create_supported_types() {
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(body["record"]["record_type"], record_type);
         let expected_value = match record_type {
-            "MX" => "10 mail.example.com.",
-            "SRV" => "10 5 5060 sip.example.com.",
+            "MX" => "mail.example.com.",
+            "SRV" => "5 5060 sip.example.com.",
             "CNAME" => "www.example.com.",
             _ => value,
         };

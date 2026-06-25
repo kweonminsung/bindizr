@@ -470,6 +470,7 @@ mod tests {
             ("65536 mail.example.com", None),
             ("10 bad target.example.com", None),
             ("10 bad..example.com", None),
+            ("10 mail.example.com", Some(10)),
             ("mail.example.com", Some(-1)),
             ("mail.example.com", Some(65_536)),
         ] {
@@ -505,6 +506,7 @@ mod tests {
             ("10 5 65536 sip.example.com", None),
             ("10 5 5060 bad target.example.com", None),
             ("10 5 5060 bad..example.com", None),
+            ("10 5 5060 sip.example.com", Some(10)),
             ("5 5060 sip.example.com", Some(-1)),
             ("5 5060 sip.example.com", Some(65_536)),
         ] {
