@@ -487,6 +487,8 @@ mod tests {
             validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", Some(10)).is_ok()
         );
         assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", None).is_ok());
+        assert!(validate_record_value(&RecordType::SRV, "0 0 443 .", None).is_ok());
+        assert!(validate_record_value(&RecordType::SRV, "0 443 .", Some(0)).is_ok());
     }
 
     #[test]
@@ -503,7 +505,6 @@ mod tests {
             ("10 5 65536 sip.example.com", None),
             ("10 5 5060 bad target.example.com", None),
             ("10 5 5060 bad..example.com", None),
-            ("10 5 5060 .", None),
             ("5 5060 sip.example.com", Some(-1)),
             ("5 5060 sip.example.com", Some(65_536)),
         ] {

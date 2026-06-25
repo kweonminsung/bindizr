@@ -2,9 +2,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use bindizr_core::dns::name::{split_presentation_labels, to_fqdn};
 
-use crate::{error::ServiceError, model::record::RecordType};
-
 use super::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control};
+use crate::{error::ServiceError, model::record::RecordType};
 
 struct ARecordValue(Ipv4Addr);
 
@@ -164,7 +163,7 @@ impl<'a> SrvRecordValue<'a> {
     }
 
     fn validate(&self) -> Result<(), ServiceError> {
-        validate_domain_record_value("SRV record target", self.target)
+        validate_srv_record_target(self.target)
     }
 
     fn canonical(&self) -> String {
@@ -262,6 +261,14 @@ fn validate_mx_record_target(target: &str) -> Result<(), ServiceError> {
     }
 
     validate_domain_record_value("MX record target", target)
+}
+
+fn validate_srv_record_target(target: &str) -> Result<(), ServiceError> {
+    if target.trim() == "." {
+        return Ok(());
+    }
+
+    validate_domain_record_value("SRV record target", target)
 }
 
 fn parse_optional_u16_record_field(field: &str, value: Option<i32>) -> Result<u16, ServiceError> {

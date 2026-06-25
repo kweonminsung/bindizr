@@ -193,7 +193,7 @@ mod tests {
 
         prepare_socket_path(socket_path).await.unwrap();
 
-        assert!(!std::path::Path::new(socket_path).exists());
+        assert!(!Path::new(socket_path).exists());
     }
 
     #[tokio::test]
@@ -210,7 +210,7 @@ mod tests {
         let err = prepare_socket_path(socket_path).await.unwrap_err();
 
         assert_eq!(err.kind(), io::ErrorKind::AddrInUse);
-        assert!(std::path::Path::new(socket_path).exists());
+        assert!(Path::new(socket_path).exists());
         drop(listener);
     }
 
@@ -224,6 +224,6 @@ mod tests {
         let err = prepare_socket_path(socket_path).await.unwrap_err();
 
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
-        assert!(std::path::Path::new(socket_path).exists());
+        assert!(Path::new(socket_path).exists());
     }
 }
