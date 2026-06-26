@@ -32,20 +32,28 @@ pub fn display_record_value(value: &str, record_type: &RecordType) -> String {
 
     match record_type {
         RecordType::CNAME | RecordType::NS | RecordType::PTR => to_fqdn_lowercase(value),
-        RecordType::MX | RecordType::SRV => display_last_name_field(value),
+        RecordType::MX => display_last_name_field(value, MX_FIELD_COUNTS),
+        RecordType::SRV => display_last_name_field(value, SRV_FIELD_COUNTS),
         _ => value.to_string(),
     }
 }
 
-fn display_last_name_field(value: &str) -> String {
+// Priority may live in the separate column, so it can be omitted from the value:
+// MX is `[priority] target`, SRV is `[priority] weight port target`.
+const MX_FIELD_COUNTS: &[usize] = &[1, 2];
+const SRV_FIELD_COUNTS: &[usize] = &[3, 4];
+
+fn display_last_name_field(value: &str, valid_field_counts: &[usize]) -> String {
     let mut fields = value
         .split_whitespace()
         .map(str::to_string)
         .collect::<Vec<_>>();
-    let Some(last) = fields.pop() else {
-        return value.to_string();
-    };
 
+    if !valid_field_counts.contains(&fields.len()) {
+        return value.to_string();
+    }
+
+    let last = fields.pop().expect("valid field count guarantees a target");
     fields.push(to_fqdn_lowercase(&last));
     fields.join(" ")
 }

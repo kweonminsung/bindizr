@@ -1,5 +1,6 @@
 pub(super) fn to_sqlite_url(file_path: &str) -> Result<String, String> {
-    if file_path.trim().is_empty() {
+    let file_path = file_path.trim();
+    if file_path.is_empty() {
         return Err("File path cannot be empty".to_string());
     }
 

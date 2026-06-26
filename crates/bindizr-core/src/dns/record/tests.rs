@@ -59,3 +59,37 @@ fn display_record_value_keeps_non_name_values_unchanged() {
         "v=spf1 include:example.net"
     );
 }
+
+#[test]
+fn display_record_value_keeps_split_priority_forms() {
+    // Priority can live in the separate column, so the stored value omits it.
+    assert_eq!(
+        display_record_value("mail.example.com", &RecordType::MX),
+        "mail.example.com."
+    );
+    assert_eq!(
+        display_record_value("5 5060 sip.example.com", &RecordType::SRV),
+        "5 5060 sip.example.com."
+    );
+}
+
+#[test]
+fn display_record_value_leaves_wrong_field_count_unchanged() {
+    // Legacy rows whose field count cannot match any valid MX/SRV form must not be
+    // rewritten into a fake hostname (e.g. a trailing numeric field gaining a dot).
+    for value in ["", "10 mail.example.com extra"] {
+        assert_eq!(
+            display_record_value(value, &RecordType::MX),
+            value,
+            "malformed MX value {value:?} should be returned unchanged"
+        );
+    }
+
+    for value in ["", "10 5", "10 5 5060 sip.example.com extra"] {
+        assert_eq!(
+            display_record_value(value, &RecordType::SRV),
+            value,
+            "malformed SRV value {value:?} should be returned unchanged"
+        );
+    }
+}

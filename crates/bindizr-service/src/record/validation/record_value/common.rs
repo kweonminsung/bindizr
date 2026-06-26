@@ -34,6 +34,14 @@ pub(super) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, Se
     })
 }
 
+pub(super) fn parse_u32_record_field(field: &str, value: &str) -> Result<u32, ServiceError> {
+    value.parse::<u32>().map_err(|_| {
+        ServiceError::BadRequest(format!(
+            "{field} must be an unsigned 32-bit integer: {value}"
+        ))
+    })
+}
+
 pub(super) fn validate_domain_record_value(field: &str, value: &str) -> Result<(), ServiceError> {
     let trimmed = value.trim();
 
@@ -44,7 +52,7 @@ pub(super) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
         )));
     }
 
-    if has_whitespace_or_control(trimmed) {
+    if has_whitespace_or_control(value) {
         return Err(ServiceError::BadRequest(format!(
             "{} must not contain whitespace or control characters",
             field

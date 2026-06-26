@@ -36,10 +36,7 @@ pub(super) fn validate_record_value(
             Ok(())
         }
         RecordType::NS => NsRecordValue::parse(value).map(|_| ()),
-        RecordType::SOA => {
-            let _ = SoaRecordValue::parse(value);
-            Ok(())
-        }
+        RecordType::SOA => SoaRecordValue::parse(value)?.validate(),
         RecordType::SRV => SrvRecordValue::parse(value, priority)?.validate(),
         RecordType::PTR => PtrRecordValue::parse(value).map(|_| ()),
     }
@@ -84,7 +81,9 @@ fn canonical_record_value(
         RecordType::NS => NsRecordValue::parse(value)
             .map(|parsed| parsed.canonical())
             .unwrap_or_else(|_| common::canonical_domain_value(value)),
-        RecordType::SOA => SoaRecordValue::parse(value).canonical(),
+        RecordType::SOA => SoaRecordValue::parse(value)
+            .map(|parsed| parsed.canonical())
+            .unwrap_or_else(|_| value.to_string()),
         RecordType::SRV => SrvRecordValue::parse(value, fallback_priority)
             .map(|parsed| parsed.canonical())
             .unwrap_or_else(|_| value.to_string()),

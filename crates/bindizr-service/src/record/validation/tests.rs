@@ -142,6 +142,8 @@ fn validate_ns_and_ptr_values_reject_invalid_domain_forms() {
             "",
             ".",
             "bad target.example.com",
+            " leading.example.com",
+            "trailing.example.com ",
             "bad..example.com",
             "-bad.example.com",
             "bad-.example.com",
@@ -218,6 +220,65 @@ fn validate_srv_value_rejects_invalid_forms() {
             "SRV value {value:?} with priority {priority:?} should be rejected"
         );
     }
+}
+
+#[test]
+fn validate_soa_value_accepts_well_formed_records() {
+    assert!(
+        validate_record_value(
+            &RecordType::SOA,
+            "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600",
+            None,
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_record_value(
+            &RecordType::SOA,
+            "ns1.example.com. hostmaster.example.com. 0 0 0 0 0",
+            None,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn validate_soa_value_rejects_invalid_forms() {
+    for value in [
+        "",
+        "ns1.example.com hostmaster.example.com",
+        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600",
+        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600 extra",
+        "ns1.example.com hostmaster.example.com serial 7200 3600 1209600 3600",
+        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 -1",
+        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 4294967296",
+        "bad..example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600",
+        "ns1.example.com bad..example.com 2024010101 7200 3600 1209600 3600",
+        ". . 2024010101 7200 3600 1209600 3600",
+    ] {
+        assert!(
+            validate_record_value(&RecordType::SOA, value, None).is_err(),
+            "SOA value {value:?} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn record_values_equal_normalizes_soa_records() {
+    assert!(record_values_equal(
+        "NS1.Example.COM hostmaster.example.com 2024010101 7200 3600 1209600 3600",
+        None,
+        "ns1.example.com. hostmaster.example.com. 2024010101 7200 3600 1209600 3600",
+        None,
+        &RecordType::SOA,
+    ));
+    assert!(!record_values_equal(
+        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600",
+        None,
+        "ns1.example.com hostmaster.example.com 2024010102 7200 3600 1209600 3600",
+        None,
+        &RecordType::SOA,
+    ));
 }
 
 #[test]
