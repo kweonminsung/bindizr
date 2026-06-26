@@ -1,12 +1,13 @@
 use super::{
     parser::{PrerequisiteRecord, UpdateRecord},
     update::{
-        CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY, UpdateError, absolute_to_relative,
-        normalize_owner_name, record_value_matches, rr_to_record_value, rr_type_to_record_type,
+        UpdateError, absolute_to_relative, normalize_owner_name, record_value_matches,
+        rr_to_record_value, rr_type_to_record_type,
     },
 };
 use crate::{
     model::{record::Record, zone::Zone},
+    protocol::{CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY},
     service::{RepositoryTx, record::RecordService},
 };
 

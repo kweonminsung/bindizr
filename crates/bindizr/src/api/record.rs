@@ -5,19 +5,17 @@ use axum::{
     response::IntoResponse,
     routing,
 };
+use bindizr_service::record::RecordService;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{
-    api::{
-        error::ApiError,
-        middleware::body_parser::JsonBody,
-        types::{
-            CreateRecordRequest, ErrorResponse, GetRecordResponse, GetRecordsFilter,
-            MessageResponse, RecordListResponse, RecordResponse, UpdateRecordRequest,
-        },
+use crate::api::{
+    error::ApiError,
+    middleware::body_parser::JsonBody,
+    types::{
+        CreateRecordRequest, ErrorResponse, GetRecordResponse, GetRecordsFilter, MessageResponse,
+        RecordListResponse, RecordResponse, UpdateRecordRequest,
     },
-    service::record::RecordService,
 };
 
 pub(crate) struct RecordApi;

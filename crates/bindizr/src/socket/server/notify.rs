@@ -1,7 +1,8 @@
+use bindizr_dns as dns;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::{dns, socket::types::DaemonResponse};
+use crate::socket::types::DaemonResponse;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(super) struct NotifyZoneRequest {

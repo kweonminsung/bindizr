@@ -1,9 +1,11 @@
-use super::{ZoneService, validation::normalize_zone_lookup_name};
+use bindizr_core::dns::CATALOG_ZONE_NAME;
+
+use super::{ZoneService, validation::normalize_zone_name};
 use crate::{error::ServiceError, log_error, log_info, log_warn, repository::RepositoryService};
 
 impl ZoneService {
     pub async fn delete(zone_name: &str) -> Result<(), ServiceError> {
-        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+        let lookup_name = normalize_zone_name(zone_name)?;
 
         // Check if zone exists and get its ID
         let zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
@@ -47,8 +49,8 @@ impl ZoneService {
             zone_id
         );
 
-        if let Err(e) = crate::notify::send_notify_after_update(Some("catalog.bind")).await {
-            log_warn!("Failed to send NOTIFY for catalog.bind: {}", e);
+        if let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await {
+            log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }
 
         Ok(())

@@ -8,23 +8,14 @@ use std::net::SocketAddr;
 use tokio::net::{TcpStream, UdpSocket};
 use update::TsigErrorResponse;
 
-use crate::{log_info, log_warn};
-
-const DNS_HEADER_LEN: usize = 12;
-const DNS_OPCODE_UPDATE: u8 = 5;
-
-const RCODE_NOERROR: u8 = 0;
-const RCODE_FORMERR: u8 = 1;
-const RCODE_SERVFAIL: u8 = 2;
-const RCODE_NXDOMAIN: u8 = 3;
-const RCODE_REFUSED: u8 = 5;
-const RCODE_YXDOMAIN: u8 = 6;
-const RCODE_YXRRSET: u8 = 7;
-const RCODE_NXRRSET: u8 = 8;
-const RCODE_NOTAUTH: u8 = 9;
-const RCODE_NOTZONE: u8 = 10;
-const TYPE_TSIG: u16 = 250;
-const CLASS_ANY: u16 = 255;
+use crate::{
+    log_info, log_warn,
+    protocol::{
+        CLASS_ANY, DNS_COMPRESSION_POINTER_MASK, DNS_HEADER_LEN, DNS_OPCODE_UPDATE, RCODE_FORMERR,
+        RCODE_NOERROR, RCODE_NOTAUTH, RCODE_NOTZONE, RCODE_NXDOMAIN, RCODE_NXRRSET, RCODE_REFUSED,
+        RCODE_SERVFAIL, RCODE_YXDOMAIN, RCODE_YXRRSET, TYPE_TSIG,
+    },
+};
 
 struct NsupdateResponse {
     rcode: u8,
@@ -175,7 +166,7 @@ fn zone_section_end(message: &[u8]) -> Option<usize> {
 
         let len = message[offset];
 
-        if (len & 0xC0) == 0xC0 {
+        if (len & DNS_COMPRESSION_POINTER_MASK) == DNS_COMPRESSION_POINTER_MASK {
             // Compression pointer – two bytes, name ends here.
             if offset + 1 >= message.len() {
                 return None;
@@ -281,49 +272,4 @@ fn encode_u48(value: u64) -> [u8; 6] {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn minimal_update_query() -> Vec<u8> {
-        let mut message = Vec::new();
-        message.extend_from_slice(&[
-            0x12, 0x34, // ID
-            0x28, 0x00, // Opcode UPDATE
-            0x00, 0x01, // ZOCOUNT
-            0x00, 0x00, // PRCOUNT
-            0x00, 0x00, // UPCOUNT
-            0x00, 0x00, // ADCOUNT
-            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00,
-        ]);
-        message.extend_from_slice(&6u16.to_be_bytes());
-        message.extend_from_slice(&1u16.to_be_bytes());
-        message
-    }
-
-    #[test]
-    fn build_response_appends_tsig_error_rr() {
-        let response = build_response(
-            &minimal_update_query(),
-            NsupdateResponse {
-                rcode: RCODE_NOTAUTH,
-                tsig: Some(TsigErrorResponse {
-                    name_canonical: vec![3, b'k', b'e', b'y', 0],
-                    algorithm_canonical: vec![
-                        11, b'h', b'm', b'a', b'c', b'-', b's', b'h', b'a', b'2', b'5', b'6', 0,
-                    ],
-                    original_id: 0x1234,
-                    time_signed: 1,
-                    fudge: 300,
-                    error: 16,
-                    other_data: Vec::new(),
-                }),
-            },
-        )
-        .unwrap();
-
-        assert_eq!(response[3] & 0x0f, RCODE_NOTAUTH);
-        assert_eq!(u16::from_be_bytes([response[10], response[11]]), 1);
-        assert!(response.windows(2).any(|w| w == TYPE_TSIG.to_be_bytes()));
-        assert!(response.windows(2).any(|w| w == 16u16.to_be_bytes()));
-    }
-}
+mod tests;

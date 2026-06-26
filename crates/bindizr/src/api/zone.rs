@@ -5,19 +5,17 @@ use axum::{
     response::IntoResponse,
     routing,
 };
+use bindizr_service::{record::RecordService, zone::ZoneService};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{
-    api::{
-        error::ApiError,
-        middleware::body_parser::JsonBody,
-        types::{
-            CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-            MessageResponse, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
-        },
+use crate::api::{
+    error::ApiError,
+    middleware::body_parser::JsonBody,
+    types::{
+        CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
+        MessageResponse, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
     },
-    service::{record::RecordService, zone::ZoneService},
 };
 
 pub(crate) struct ZoneApi;

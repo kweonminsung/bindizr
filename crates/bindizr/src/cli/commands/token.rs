@@ -1,11 +1,8 @@
+use bindizr_core::{log_debug, model::api_token::ApiToken};
 use clap::Subcommand;
 use serde_json::json;
 
-use crate::{
-    log_debug,
-    model::api_token::ApiToken,
-    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
-};
+use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum TokenCommand {

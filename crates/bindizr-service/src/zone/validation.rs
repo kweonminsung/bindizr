@@ -1,11 +1,15 @@
-use bindizr_core::dns::name::{email_to_soa_mailbox, split_presentation_labels};
+use bindizr_core::dns::name::email_to_soa_mailbox;
 
-use crate::{error::ServiceError, types::CreateZoneRequest};
+use crate::{
+    error::ServiceError,
+    types::CreateZoneRequest,
+    validation::{
+        MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels,
+    },
+};
 
-const MAX_DOMAIN_LEN: usize = 253;
 const MAX_EMAIL_LEN: usize = 254;
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
-const MAX_DNS_LABEL_LEN: usize = 63;
 const MIN_TTL: i32 = 60;
 const MAX_TTL: i32 = 604_800;
 
@@ -24,7 +28,7 @@ pub(super) fn validate_create_zone_request(
     let admin_email = normalize_email(&request.admin_email)?;
     let ttl = validate_ttl(request.ttl)?;
 
-    validate_soa_wire_safety(&zone_name, &primary_ns, &admin_email)?;
+    validate_soa_wire_safety(&admin_email)?;
 
     Ok(ValidatedCreateZoneRequest {
         name: zone_name,
@@ -34,22 +38,7 @@ pub(super) fn validate_create_zone_request(
     })
 }
 
-pub(super) fn is_same_zone_name(existing_name: &str, normalized_name: &str) -> bool {
-    normalize_zone_name(existing_name)
-        .map(|existing| existing == normalized_name)
-        .unwrap_or_else(|_| {
-            existing_name
-                .trim()
-                .trim_end_matches('.')
-                .eq_ignore_ascii_case(normalized_name)
-        })
-}
-
-pub(crate) fn normalize_zone_lookup_name(value: &str) -> Result<String, ServiceError> {
-    normalize_zone_name(value)
-}
-
-pub(super) fn normalize_email(value: &str) -> Result<String, ServiceError> {
+fn normalize_email(value: &str) -> Result<String, ServiceError> {
     let value = value.trim();
 
     if value.is_empty() {
@@ -75,7 +64,7 @@ pub(super) fn normalize_email(value: &str) -> Result<String, ServiceError> {
         .expect("admin email contains exactly one @");
 
     validate_email_local_part(local)?;
-    let domain = normalize_domain_name(domain, "admin email domain", false)?;
+    let domain = normalize_domain_name(domain, "admin email domain")?;
 
     let normalized = format!("{}@{}", local, domain);
     if normalized.len() > MAX_EMAIL_LEN {
@@ -87,7 +76,7 @@ pub(super) fn normalize_email(value: &str) -> Result<String, ServiceError> {
     Ok(normalized)
 }
 
-fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
+pub(crate) fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed == "." {
@@ -102,18 +91,14 @@ fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
         ));
     }
 
-    normalize_domain_name(trimmed, "zone name", false)
+    normalize_domain_name(trimmed, "zone name")
 }
 
 fn normalize_primary_ns(value: &str) -> Result<String, ServiceError> {
-    normalize_domain_name(value, "primary NS", false)
+    normalize_domain_name(value, "primary NS")
 }
 
-fn normalize_domain_name(
-    value: &str,
-    field: &str,
-    allow_wildcard: bool,
-) -> Result<String, ServiceError> {
+fn normalize_domain_name(value: &str, field: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed.is_empty() {
@@ -147,17 +132,13 @@ fn normalize_domain_name(
     }
 
     for label in without_trailing_dot.split('.') {
-        validate_domain_label(label, field, allow_wildcard)?;
+        validate_domain_label(label, field)?;
     }
 
     Ok(without_trailing_dot.to_ascii_lowercase())
 }
 
-fn validate_domain_label(
-    label: &str,
-    field: &str,
-    allow_wildcard: bool,
-) -> Result<(), ServiceError> {
+fn validate_domain_label(label: &str, field: &str) -> Result<(), ServiceError> {
     if label.is_empty() {
         return Err(ServiceError::BadRequest(format!(
             "{} must not contain empty labels",
@@ -168,17 +149,6 @@ fn validate_domain_label(
     if label.len() > MAX_DNS_LABEL_LEN {
         return Err(ServiceError::BadRequest(format!(
             "{} labels must be 63 bytes or fewer",
-            field
-        )));
-    }
-
-    if label == "*" {
-        if allow_wildcard {
-            return Ok(());
-        }
-
-        return Err(ServiceError::BadRequest(format!(
-            "{} must not contain wildcard labels",
             field
         )));
     }
@@ -246,54 +216,13 @@ fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
     Ok(ttl)
 }
 
-fn validate_soa_wire_safety(
-    zone_name: &str,
-    primary_ns: &str,
-    admin_email: &str,
-) -> Result<(), ServiceError> {
-    validate_wire_domain_name(zone_name, "zone name")?;
-    validate_wire_domain_name(primary_ns, "primary NS")?;
+// `zone_name` and `primary_ns` are already wire-safe after `normalize_domain_name`
+// (plain ASCII labels, each <= 63 bytes), so only the derived SOA RNAME, whose
+// label boundaries can shift during the email-to-mailbox escaping, needs rechecking.
+fn validate_soa_wire_safety(admin_email: &str) -> Result<(), ServiceError> {
     let soa_mailbox =
         email_to_soa_mailbox(admin_email).map_err(|e| ServiceError::BadRequest(e.to_string()))?;
-    validate_wire_domain_name(&soa_mailbox, "admin email SOA RNAME")?;
-    Ok(())
-}
-
-fn validate_wire_domain_name(name: &str, field: &str) -> Result<(), ServiceError> {
-    let name = name.trim_end_matches('.');
-
-    if name.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
-            "{} must be wire-encodable",
-            field
-        )));
-    }
-
-    for label in
-        split_presentation_labels(name).map_err(|e| ServiceError::BadRequest(e.to_string()))?
-    {
-        if label.is_empty() {
-            return Err(ServiceError::BadRequest(format!(
-                "{} must not contain empty labels",
-                field
-            )));
-        }
-
-        if label.len() > MAX_DNS_LABEL_LEN {
-            return Err(ServiceError::BadRequest(format!(
-                "{} labels must be 63 bytes or fewer",
-                field
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-fn has_whitespace_or_control(value: &str) -> bool {
-    value
-        .chars()
-        .any(|c| c.is_ascii_control() || c.is_whitespace())
+    validate_wire_labels(&soa_mailbox, "admin email SOA RNAME")
 }
 
 fn is_valid_email_local_char(c: char) -> bool {

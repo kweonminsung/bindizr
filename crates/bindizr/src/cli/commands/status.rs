@@ -1,9 +1,8 @@
-use crate::{
-    log_debug,
-    socket::{
-        client::DaemonSocketClient,
-        types::{DaemonCommandKind, DaemonStatusResponse},
-    },
+use bindizr_core::log_debug;
+
+use crate::socket::{
+    client::DaemonSocketClient,
+    types::{DaemonCommandKind, DaemonStatusResponse},
 };
 
 pub(crate) async fn handle_command() -> Result<(), String> {

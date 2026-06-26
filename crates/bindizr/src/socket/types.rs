@@ -1,6 +1,5 @@
+use bindizr_core::config::BindizrConfig;
 use serde::{Deserialize, Serialize};
-
-use crate::config::BindizrConfig;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

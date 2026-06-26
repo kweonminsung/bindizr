@@ -5,9 +5,9 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use bindizr_core::log_debug;
+use bindizr_service::auth::AuthService;
 use serde_json::json;
-
-use crate::{log_debug, service::auth::AuthService};
 
 pub(crate) async fn auth_middleware(
     mut req: Request<Body>,
