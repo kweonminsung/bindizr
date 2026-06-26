@@ -10,7 +10,7 @@ use crate::{
     pagination::paginate_items,
     repository::RepositoryService,
     types::{GetRecordsFilter, PaginatedResponse, Pagination},
-    zone::validation::normalize_zone_lookup_name,
+    zone::validation::normalize_zone_name,
 };
 
 impl RecordService {
@@ -49,7 +49,7 @@ impl RecordService {
     pub async fn list(zone_name: Option<String>) -> Result<Vec<Record>, ServiceError> {
         match zone_name {
             Some(name) => {
-                let lookup_name = normalize_zone_lookup_name(&name)?;
+                let lookup_name = normalize_zone_name(&name)?;
 
                 // Check if zone exists and get zone_id
                 let zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
@@ -98,7 +98,7 @@ impl RecordService {
     ) -> Result<Vec<RecordWithZone>, ServiceError> {
         match zone_name {
             Some(name) => {
-                let lookup_name = normalize_zone_lookup_name(&name)?;
+                let lookup_name = normalize_zone_name(&name)?;
 
                 let zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
                     Ok(Some(z)) => z,
@@ -142,7 +142,7 @@ impl RecordService {
     ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
         let zone_name = filter
             .resolved_zone_name()
-            .map(|name| normalize_zone_lookup_name(&name))
+            .map(|name| normalize_zone_name(&name))
             .transpose()?;
         let value_filter = filter.value.clone();
         let search_filter = filter.search.clone();

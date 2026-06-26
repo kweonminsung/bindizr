@@ -45,11 +45,7 @@ pub(super) fn is_same_zone_name(existing_name: &str, normalized_name: &str) -> b
         })
 }
 
-pub(crate) fn normalize_zone_lookup_name(value: &str) -> Result<String, ServiceError> {
-    normalize_zone_name(value)
-}
-
-pub(super) fn normalize_email(value: &str) -> Result<String, ServiceError> {
+fn normalize_email(value: &str) -> Result<String, ServiceError> {
     let value = value.trim();
 
     if value.is_empty() {
@@ -75,7 +71,7 @@ pub(super) fn normalize_email(value: &str) -> Result<String, ServiceError> {
         .expect("admin email contains exactly one @");
 
     validate_email_local_part(local)?;
-    let domain = normalize_domain_name(domain, "admin email domain", false)?;
+    let domain = normalize_domain_name(domain, "admin email domain")?;
 
     let normalized = format!("{}@{}", local, domain);
     if normalized.len() > MAX_EMAIL_LEN {
@@ -87,7 +83,7 @@ pub(super) fn normalize_email(value: &str) -> Result<String, ServiceError> {
     Ok(normalized)
 }
 
-fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
+pub(crate) fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed == "." {
@@ -102,18 +98,14 @@ fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
         ));
     }
 
-    normalize_domain_name(trimmed, "zone name", false)
+    normalize_domain_name(trimmed, "zone name")
 }
 
 fn normalize_primary_ns(value: &str) -> Result<String, ServiceError> {
-    normalize_domain_name(value, "primary NS", false)
+    normalize_domain_name(value, "primary NS")
 }
 
-fn normalize_domain_name(
-    value: &str,
-    field: &str,
-    allow_wildcard: bool,
-) -> Result<String, ServiceError> {
+fn normalize_domain_name(value: &str, field: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed.is_empty() {
@@ -147,17 +139,13 @@ fn normalize_domain_name(
     }
 
     for label in without_trailing_dot.split('.') {
-        validate_domain_label(label, field, allow_wildcard)?;
+        validate_domain_label(label, field)?;
     }
 
     Ok(without_trailing_dot.to_ascii_lowercase())
 }
 
-fn validate_domain_label(
-    label: &str,
-    field: &str,
-    allow_wildcard: bool,
-) -> Result<(), ServiceError> {
+fn validate_domain_label(label: &str, field: &str) -> Result<(), ServiceError> {
     if label.is_empty() {
         return Err(ServiceError::BadRequest(format!(
             "{} must not contain empty labels",
@@ -168,17 +156,6 @@ fn validate_domain_label(
     if label.len() > MAX_DNS_LABEL_LEN {
         return Err(ServiceError::BadRequest(format!(
             "{} labels must be 63 bytes or fewer",
-            field
-        )));
-    }
-
-    if label == "*" {
-        if allow_wildcard {
-            return Ok(());
-        }
-
-        return Err(ServiceError::BadRequest(format!(
-            "{} must not contain wildcard labels",
             field
         )));
     }

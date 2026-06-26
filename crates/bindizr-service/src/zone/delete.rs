@@ -1,9 +1,9 @@
-use super::{ZoneService, validation::normalize_zone_lookup_name};
+use super::{ZoneService, validation::normalize_zone_name};
 use crate::{error::ServiceError, log_error, log_info, log_warn, repository::RepositoryService};
 
 impl ZoneService {
     pub async fn delete(zone_name: &str) -> Result<(), ServiceError> {
-        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+        let lookup_name = normalize_zone_name(zone_name)?;
 
         // Check if zone exists and get its ID
         let zone = match RepositoryService::get_zone_by_name(&lookup_name).await {

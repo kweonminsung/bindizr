@@ -1,7 +1,7 @@
 use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn};
 use chrono::Utc;
 
-use super::{ZoneService, validation::normalize_zone_lookup_name};
+use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -33,7 +33,7 @@ impl ZoneService {
         zone_name: &str,
         update_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
-        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+        let lookup_name = normalize_zone_name(zone_name)?;
 
         // Check if zone exists
         let existing_zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
