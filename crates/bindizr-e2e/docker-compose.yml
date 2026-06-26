@@ -3,7 +3,7 @@ services:
   # DNS E2E test starts bindizr and both BIND9 secondaries directly to avoid
   # binding privileged host port 53 during automated runs.
   dns-lb:
-    image: powerdns/dnsdist-20:2.0.6
+    image: powerdns/dnsdist-20:2.0.7
     command:
       [
         "--supervised",
