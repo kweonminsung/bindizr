@@ -14,7 +14,7 @@ use crate::{
 
 mod record_value;
 
-use record_value::{record_values_equal, validate_record_value};
+use record_value::{is_null_mx_record_value, record_values_equal, validate_record_value};
 
 pub(super) const MAX_DNS_LABEL_LEN: usize = 63;
 pub(super) const MAX_DOMAIN_LEN: usize = 253;
@@ -168,6 +168,23 @@ pub(super) fn validate_record_add_constraints(
             "Record '{}' {} '{}' already exists in this zone",
             owner_name, record_type, value
         )));
+    }
+
+    if *record_type == RecordType::MX {
+        let adding_null_mx = is_null_mx_record_value(value, priority);
+        let has_existing_null_mx = existing_records_with_name.iter().any(|r| {
+            r.record_type == RecordType::MX && is_null_mx_record_value(&r.value, r.priority)
+        });
+        let has_existing_mx = existing_records_with_name
+            .iter()
+            .any(|r| r.record_type == RecordType::MX);
+
+        if (adding_null_mx && has_existing_mx) || (!adding_null_mx && has_existing_null_mx) {
+            return Err(ServiceError::BadRequest(format!(
+                "Null MX record for '{}' cannot coexist with other MX records",
+                owner_name
+            )));
+        }
     }
 
     if !existing_records_with_name.is_empty() {
@@ -468,6 +485,9 @@ mod tests {
             ("10 mail.example.com extra", None),
             ("not-a-priority mail.example.com", None),
             ("65536 mail.example.com", None),
+            ("10 .", None),
+            (".", None),
+            (".", Some(10)),
             ("10 bad target.example.com", None),
             ("10 bad..example.com", None),
             ("10 mail.example.com", Some(10)),
@@ -589,6 +609,35 @@ mod tests {
             None,
         );
         assert!(duplicate_srv.is_err());
+    }
+
+    #[test]
+    fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
+        let zone = test_zone();
+
+        let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
+        let null_mx_with_existing_mx = validate_record_add_constraints(
+            &zone,
+            &[existing_mx],
+            "@",
+            &RecordType::MX,
+            "0 .",
+            None,
+            None,
+        );
+        assert!(null_mx_with_existing_mx.is_err());
+
+        let existing_null_mx = test_record(2, "@", RecordType::MX, ".", Some(0));
+        let mx_with_existing_null_mx = validate_record_add_constraints(
+            &zone,
+            &[existing_null_mx],
+            "@",
+            &RecordType::MX,
+            "mail.example.com",
+            Some(10),
+            None,
+        );
+        assert!(mx_with_existing_null_mx.is_err());
     }
 
     #[test]

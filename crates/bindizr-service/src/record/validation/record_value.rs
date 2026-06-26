@@ -104,7 +104,7 @@ impl<'a> MxRecordValue<'a> {
     }
 
     fn validate(&self) -> Result<(), ServiceError> {
-        validate_mx_record_target(self.target)
+        validate_mx_record_target(self.target, self.priority)
     }
 
     fn canonical(&self) -> String {
@@ -229,6 +229,12 @@ pub(super) fn record_values_equal(
         == canonical_record_value(right, right_priority, record_type)
 }
 
+pub(super) fn is_null_mx_record_value(value: &str, priority: Option<i32>) -> bool {
+    MxRecordValue::parse(value, priority)
+        .map(|parsed| parsed.priority == 0 && parsed.target.trim() == ".")
+        .unwrap_or(false)
+}
+
 fn canonical_record_value(
     value: &str,
     fallback_priority: Option<i32>,
@@ -261,8 +267,13 @@ fn canonical_record_value(
     }
 }
 
-fn validate_mx_record_target(target: &str) -> Result<(), ServiceError> {
+fn validate_mx_record_target(target: &str, priority: u16) -> Result<(), ServiceError> {
     if target.trim() == "." {
+        if priority != 0 {
+            return Err(ServiceError::BadRequest(
+                "Null MX record target '.' must use priority 0".to_string(),
+            ));
+        }
         return Ok(());
     }
 
