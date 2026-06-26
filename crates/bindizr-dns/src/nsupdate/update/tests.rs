@@ -1,8 +1,12 @@
 use super::{
-    CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_A, TYPE_ANY, TYPE_TXT, UpdateError, absolute_to_relative,
-    normalize_owner_name, record_value_matches, rr_to_record_value, validate_delete_update_shape,
+    UpdateError, absolute_to_relative, normalize_owner_name, record_value_matches,
+    rr_to_record_value, validate_delete_update_shape,
 };
-use crate::{model::record::RecordType, nsupdate::parser::UpdateRecord};
+use crate::{
+    model::record::RecordType,
+    nsupdate::parser::UpdateRecord,
+    protocol::{CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY},
+};
 
 #[test]
 fn absolute_to_relative_accepts_apex() {
@@ -34,21 +38,21 @@ fn normalize_owner_name_rejects_out_of_zone_suffix_matches() {
 
 #[test]
 fn validate_delete_update_shape_accepts_any_class_rrset_delete() {
-    let update = update_record(TYPE_A, CLASS_ANY, 0, Vec::new());
+    let update = update_record(RecordType::A.wire_code(), CLASS_ANY, 0, Vec::new());
 
     validate_delete_update_shape(&update, true).unwrap();
 }
 
 #[test]
 fn validate_delete_update_shape_accepts_none_class_exact_delete() {
-    let update = update_record(TYPE_A, CLASS_NONE, 0, vec![192, 0, 2, 1]);
+    let update = update_record(RecordType::A.wire_code(), CLASS_NONE, 0, vec![192, 0, 2, 1]);
 
     validate_delete_update_shape(&update, false).unwrap();
 }
 
 #[test]
 fn validate_delete_update_shape_rejects_delete_with_nonzero_ttl() {
-    let update = update_record(TYPE_A, CLASS_ANY, 60, Vec::new());
+    let update = update_record(RecordType::A.wire_code(), CLASS_ANY, 60, Vec::new());
     let err = validate_delete_update_shape(&update, true).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
@@ -56,7 +60,7 @@ fn validate_delete_update_shape_rejects_delete_with_nonzero_ttl() {
 
 #[test]
 fn validate_delete_update_shape_rejects_any_class_delete_with_rdata() {
-    let update = update_record(TYPE_A, CLASS_ANY, 0, vec![192, 0, 2, 1]);
+    let update = update_record(RecordType::A.wire_code(), CLASS_ANY, 0, vec![192, 0, 2, 1]);
     let err = validate_delete_update_shape(&update, true).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
@@ -64,7 +68,7 @@ fn validate_delete_update_shape_rejects_any_class_delete_with_rdata() {
 
 #[test]
 fn validate_delete_update_shape_rejects_none_class_delete_without_rdata() {
-    let update = update_record(TYPE_A, CLASS_NONE, 0, Vec::new());
+    let update = update_record(RecordType::A.wire_code(), CLASS_NONE, 0, Vec::new());
     let err = validate_delete_update_shape(&update, false).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
@@ -88,7 +92,7 @@ fn record_value_matches_preserves_txt_case() {
 fn rr_to_record_value_preserves_txt_character_string_boundaries() {
     let first = UpdateRecord {
         name: "txt.example.com.".to_string(),
-        rr_type: TYPE_TXT,
+        rr_type: RecordType::TXT.wire_code(),
         class: CLASS_IN,
         ttl: 300,
         rdata: vec![2, b'a', b'b', 1, b'c'],
@@ -96,7 +100,7 @@ fn rr_to_record_value_preserves_txt_character_string_boundaries() {
     };
     let second = UpdateRecord {
         name: "txt.example.com.".to_string(),
-        rr_type: TYPE_TXT,
+        rr_type: RecordType::TXT.wire_code(),
         class: CLASS_IN,
         ttl: 300,
         rdata: vec![1, b'a', 2, b'b', b'c'],

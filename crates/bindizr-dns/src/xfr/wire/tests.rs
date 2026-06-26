@@ -4,31 +4,8 @@ use domain::base::{Name, iana::Rtype};
 
 use super::{
     DNS_TCP_MAX_SIZE, DnsMessageBuilder, XfrError, add_answer_and_flush_if_needed,
-    encode_domain_name, encode_tcp_message, flush_message_if_not_empty, normalize_name,
+    encode_domain_name, encode_tcp_message, flush_message_if_not_empty,
 };
-
-#[test]
-fn normalize_name_expands_relative_name() {
-    assert_eq!(normalize_name("sub", "example.com"), "sub.example.com.");
-}
-
-#[test]
-fn normalize_name_keeps_zone_qualified_name() {
-    assert_eq!(
-        normalize_name("www.example.com", "example.com."),
-        "www.example.com."
-    );
-    assert_eq!(
-        normalize_name("example.com", "example.com."),
-        "example.com."
-    );
-}
-
-#[test]
-fn normalize_name_handles_fqdn_and_apex() {
-    assert_eq!(normalize_name("sub.", "example.com."), "sub.");
-    assert_eq!(normalize_name("@", "example.com."), "example.com.");
-}
 
 #[test]
 fn encode_tcp_message_rejects_oversized_payload() {

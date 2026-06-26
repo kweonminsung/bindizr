@@ -1,10 +1,11 @@
 use std::fmt;
 
-const DNS_HEADER_LEN: usize = 12;
-const CLASS_IN: u16 = 1;
-const CLASS_ANY: u16 = 255;
-const TYPE_SOA: u16 = 6;
-const TSIG_TYPE: u16 = 250;
+use bindizr_core::dns::name::MAX_DNS_LABEL_LEN;
+
+use crate::{
+    model::record::RecordType,
+    protocol::{CLASS_ANY, CLASS_IN, DNS_COMPRESSION_POINTER_MASK, DNS_HEADER_LEN, TYPE_TSIG},
+};
 
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRequest {
@@ -108,7 +109,7 @@ pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseEr
     let zclass = u16::from_be_bytes([data[pos + 2], data[pos + 3]]);
     pos += 4;
 
-    if ztype != TYPE_SOA || zclass != CLASS_IN {
+    if ztype != RecordType::SOA.wire_code() || zclass != CLASS_IN {
         return Err(ParseError::InvalidZoneSection);
     }
 
@@ -189,7 +190,7 @@ fn parse_additional_section(
 
     for index in 0..count {
         let rr_type = peek_rr_type(data, pos)?;
-        if rr_type == TSIG_TYPE {
+        if rr_type == TYPE_TSIG {
             if tsig.is_some() || index + 1 != count {
                 return Err(ParseError::InvalidTsig);
             }
@@ -236,7 +237,7 @@ fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseEr
     let ttl = u32::from_be_bytes([data[hdr + 4], data[hdr + 5], data[hdr + 6], data[hdr + 7]]);
     let rdlen = u16::from_be_bytes([data[hdr + 8], data[hdr + 9]]) as usize;
 
-    if rr_type != TSIG_TYPE || class != CLASS_ANY || ttl != 0 {
+    if rr_type != TYPE_TSIG || class != CLASS_ANY || ttl != 0 {
         return Err(ParseError::InvalidTsig);
     }
 
@@ -331,7 +332,7 @@ fn decode_name_canonical(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), 
         }
 
         let len = data[pos];
-        if len & 0xC0 == 0xC0 {
+        if len & DNS_COMPRESSION_POINTER_MASK == DNS_COMPRESSION_POINTER_MASK {
             if pos + 1 >= data.len() {
                 return Err(ParseError::InvalidName);
             }
@@ -366,7 +367,7 @@ fn decode_name_canonical(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), 
         let label_start = pos + 1;
         let label_end = label_start + label_len;
 
-        if label_end > data.len() || label_len > 63 {
+        if label_end > data.len() || label_len > MAX_DNS_LABEL_LEN {
             return Err(ParseError::InvalidName);
         }
 
@@ -403,7 +404,7 @@ fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError>
         }
 
         let len = data[pos];
-        if len & 0xC0 == 0xC0 {
+        if len & DNS_COMPRESSION_POINTER_MASK == DNS_COMPRESSION_POINTER_MASK {
             if pos + 1 >= data.len() {
                 return Err(ParseError::InvalidName);
             }
@@ -437,7 +438,7 @@ fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError>
         let label_start = pos + 1;
         let label_end = label_start + label_len;
 
-        if label_end > data.len() || label_len > 63 {
+        if label_end > data.len() || label_len > MAX_DNS_LABEL_LEN {
             return Err(ParseError::InvalidName);
         }
 

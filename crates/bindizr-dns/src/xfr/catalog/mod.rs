@@ -1,3 +1,4 @@
+pub(crate) use bindizr_core::dns::CATALOG_ZONE_NAME;
 use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
 use sha2::{Digest, Sha256};
@@ -5,8 +6,6 @@ use tokio::net::TcpStream;
 
 use super::{delta, error::XfrError, wire};
 use crate::{log_info, model::zone::Zone, service::zone::ZoneService};
-
-pub(crate) const CATALOG_ZONE_NAME: &str = "catalog.bind";
 
 /// Generate the catalog zone and its member list
 pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {

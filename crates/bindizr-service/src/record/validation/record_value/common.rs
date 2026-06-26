@@ -1,7 +1,9 @@
 use bindizr_core::dns::name::{split_presentation_labels, to_fqdn};
 
-use super::super::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control};
-use crate::error::ServiceError;
+use crate::{
+    error::ServiceError,
+    validation::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control},
+};
 
 pub(super) fn reject_duplicate_priority_field(
     record_type: &str,

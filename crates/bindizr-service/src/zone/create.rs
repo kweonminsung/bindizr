@@ -1,3 +1,4 @@
+use bindizr_core::dns::CATALOG_ZONE_NAME;
 use chrono::Utc;
 
 use super::ZoneService;
@@ -12,8 +13,8 @@ use crate::{
     serial::generate_serial,
     types::CreateZoneRequest,
     zone::{
-        snapshot::save_zone_snapshot_tx,
-        validation::{is_same_zone_name, validate_create_zone_request},
+        DEFAULT_EXPIRE, DEFAULT_MINIMUM_TTL, DEFAULT_REFRESH, DEFAULT_RETRY,
+        snapshot::save_zone_snapshot_tx, validation::validate_create_zone_request,
     },
 };
 
@@ -22,18 +23,15 @@ impl ZoneService {
         let validated = validate_create_zone_request(create_zone_request)?;
 
         // Parent/child zones are allowed; only the same normalized zone name is rejected.
-        match RepositoryService::get_all_zones().await {
-            Ok(zones) => {
-                if zones
-                    .iter()
-                    .any(|zone| is_same_zone_name(&zone.name, &validated.name))
-                {
-                    log_error!("Zone with name {} already exists", validated.name);
-                    return Err(ServiceError::BadRequest(
-                        "zone name already exists".to_string(),
-                    ));
-                }
+        // Names are stored normalized, so an exact lookup is enough to detect a collision.
+        match RepositoryService::get_zone_by_name(&validated.name).await {
+            Ok(Some(_)) => {
+                log_error!("Zone with name {} already exists", validated.name);
+                return Err(ServiceError::BadRequest(
+                    "zone name already exists".to_string(),
+                ));
             }
+            Ok(None) => {}
             Err(e) => {
                 log_error!("Failed to check existing zone: {}", e);
                 return Err(ServiceError::Internal("Failed to create zone".to_string()));
@@ -59,10 +57,12 @@ impl ZoneService {
                     admin_email: validated.admin_email.clone(),
                     ttl: validated.ttl,
                     serial,
-                    refresh: create_zone_request.refresh.unwrap_or(86400),
-                    retry: create_zone_request.retry.unwrap_or(7200),
-                    expire: create_zone_request.expire.unwrap_or(3_600_000),
-                    minimum_ttl: create_zone_request.minimum_ttl.unwrap_or(86400),
+                    refresh: create_zone_request.refresh.unwrap_or(DEFAULT_REFRESH),
+                    retry: create_zone_request.retry.unwrap_or(DEFAULT_RETRY),
+                    expire: create_zone_request.expire.unwrap_or(DEFAULT_EXPIRE),
+                    minimum_ttl: create_zone_request
+                        .minimum_ttl
+                        .unwrap_or(DEFAULT_MINIMUM_TTL),
                     created_at: Utc::now(), // Will be set by the database
                 },
             )
@@ -109,8 +109,8 @@ impl ZoneService {
             created_zone.id
         );
 
-        if let Err(e) = crate::notify::send_notify_after_update(Some("catalog.bind")).await {
-            log_warn!("Failed to send NOTIFY for catalog.bind: {}", e);
+        if let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await {
+            log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }
 
         Ok(created_zone)

@@ -1,16 +1,16 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-use bindizr_core::dns::name::{email_to_soa_mailbox, split_presentation_labels};
+use bindizr_core::dns::name::{
+    MAX_DNS_LABEL_LEN, email_to_soa_mailbox, split_presentation_labels, to_fqdn, to_owner_fqdn,
+};
 use domain::base::{Message, Name, ToName, iana::Rtype};
 
 use super::error::XfrError;
 use crate::{
     model::{record::Record, zone::Zone},
+    protocol::DNS_TCP_MAX_SIZE,
     txt,
 };
-
-pub(crate) const DNS_TCP_MAX_SIZE: usize = 65535;
-pub(crate) const RCODE_NOTAUTH: u8 = 9;
 
 pub(crate) struct DnsMessageBuilder {
     query_id: u16,
@@ -219,7 +219,7 @@ impl DnsMessageBuilder {
 
     /// Add NS record for catalog zone. NS should be "invalid."
     pub(crate) fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), XfrError> {
-        let owner_name = ensure_fqdn(&zone.name);
+        let owner_name = to_fqdn(&zone.name);
         self.add_ns_record(&owner_name, zone.ttl as u32, "invalid")?;
         Ok(())
     }
@@ -239,7 +239,7 @@ impl DnsMessageBuilder {
     ) -> Result<(), XfrError> {
         let member_id = super::catalog::zone_name_to_member_id(member_zone);
         let ptr_name = format!("{}.zones.{}.", member_id, zone.name.trim_end_matches('.'));
-        let ptr_target = ensure_fqdn(member_zone);
+        let ptr_target = to_fqdn(member_zone);
         self.add_ptr_record(&ptr_name, zone.ttl as u32, &ptr_target)?;
         Ok(())
     }
@@ -247,7 +247,7 @@ impl DnsMessageBuilder {
     /// Add a record from database Record model
     pub(crate) fn add_record(&mut self, record: &Record, zone_name: &str) -> Result<(), XfrError> {
         let ttl = record.ttl.unwrap_or(3600) as u32;
-        let owner_name = normalize_name(&record.name, zone_name);
+        let owner_name = to_owner_fqdn(&record.name, zone_name);
 
         match record.record_type.as_str() {
             "A" => {
@@ -535,35 +535,6 @@ pub(crate) fn build_error_response(
     message
 }
 
-fn ensure_fqdn(name: &str) -> String {
-    if name.ends_with('.') {
-        name.to_string()
-    } else {
-        format!("{}.", name)
-    }
-}
-
-fn normalize_name(name: &str, zone: &str) -> String {
-    if name.ends_with('.') {
-        return name.to_string();
-    }
-
-    let zone_trimmed = zone.trim_end_matches('.');
-    if name == "@" {
-        return format!("{}.", zone_trimmed);
-    }
-
-    let owner_trimmed = name.trim_end_matches('.');
-    let zone_suffix = format!(".{}", zone_trimmed.to_ascii_lowercase());
-    let owner_lower = owner_trimmed.to_ascii_lowercase();
-
-    if owner_lower == zone_trimmed.to_ascii_lowercase() || owner_lower.ends_with(&zone_suffix) {
-        return format!("{}.", owner_trimmed);
-    }
-
-    format!("{}.{}.", owner_trimmed, zone_trimmed)
-}
-
 pub(crate) fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError> {
     let name = name.trim_end_matches('.');
 
@@ -578,7 +549,7 @@ pub(crate) fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), Xf
         if label.is_empty() {
             continue;
         }
-        if label.len() > 63 {
+        if label.len() > MAX_DNS_LABEL_LEN {
             return Err(XfrError::ProtocolError(format!(
                 "Label too long: {}",
                 label
@@ -726,7 +697,7 @@ fn skip_name(data: &[u8], start: usize) -> Option<usize> {
         }
 
         let label_len = len as usize;
-        if label_len > 63 {
+        if label_len > MAX_DNS_LABEL_LEN {
             return None;
         }
 

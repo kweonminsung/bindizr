@@ -123,4 +123,35 @@ impl RecordType {
             RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX | RecordType::SRV
         )
     }
+
+    /// Numeric TYPE code used on the wire (RFC 1035 and successors).
+    pub fn wire_code(&self) -> u16 {
+        match self {
+            RecordType::A => 1,
+            RecordType::NS => 2,
+            RecordType::CNAME => 5,
+            RecordType::SOA => 6,
+            RecordType::PTR => 12,
+            RecordType::MX => 15,
+            RecordType::TXT => 16,
+            RecordType::AAAA => 28,
+            RecordType::SRV => 33,
+        }
+    }
+
+    /// Map a numeric wire TYPE code back to a [`RecordType`], if supported.
+    pub fn from_wire_code(code: u16) -> Option<Self> {
+        match code {
+            1 => Some(RecordType::A),
+            2 => Some(RecordType::NS),
+            5 => Some(RecordType::CNAME),
+            6 => Some(RecordType::SOA),
+            12 => Some(RecordType::PTR),
+            15 => Some(RecordType::MX),
+            16 => Some(RecordType::TXT),
+            28 => Some(RecordType::AAAA),
+            33 => Some(RecordType::SRV),
+            _ => None,
+        }
+    }
 }

@@ -1,3 +1,8 @@
+/// Maximum length of a single DNS label, in bytes (RFC 1035).
+pub const MAX_DNS_LABEL_LEN: usize = 63;
+/// Maximum length of a domain name, in bytes (RFC 1035).
+pub const MAX_DOMAIN_LEN: usize = 253;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NameError {
     DanglingEscape,
@@ -54,6 +59,28 @@ pub fn to_fqdn_lowercase(value: &str) -> String {
 
 pub fn to_fqdn(value: &str) -> String {
     format!("{}.", value.trim_end_matches('.'))
+}
+
+/// Resolve an owner name to an absolute FQDN within `zone` (`@` = apex; absolute
+/// or in-zone names pass through; otherwise `zone` is appended).
+pub fn to_owner_fqdn(name: &str, zone: &str) -> String {
+    if name.ends_with('.') {
+        return name.to_string();
+    }
+
+    let zone_trimmed = zone.trim_end_matches('.');
+    if name == "@" {
+        return format!("{}.", zone_trimmed);
+    }
+
+    let owner_trimmed = name.trim_end_matches('.');
+    let zone_suffix = format!(".{}", zone_trimmed.to_ascii_lowercase());
+    let owner_lower = owner_trimmed.to_ascii_lowercase();
+    if owner_lower == zone_trimmed.to_ascii_lowercase() || owner_lower.ends_with(&zone_suffix) {
+        return format!("{}.", owner_trimmed);
+    }
+
+    format!("{}.{}.", owner_trimmed, zone_trimmed)
 }
 
 pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {

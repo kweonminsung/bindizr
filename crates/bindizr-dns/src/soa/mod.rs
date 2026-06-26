@@ -20,7 +20,7 @@ pub(crate) async fn handle_tcp_soa(
         Ok(response) => response,
         Err(XfrError::ZoneNotFound(_)) => {
             let (zone_name, qtype, _, query_id) = wire::parse_query(query_data)?;
-            wire::build_error_response(query_id, &zone_name, qtype, wire::RCODE_NOTAUTH)
+            wire::build_error_response(query_id, &zone_name, qtype, crate::protocol::RCODE_NOTAUTH)
         }
         Err(err) => return Err(err),
     };
@@ -40,7 +40,7 @@ pub(crate) async fn handle_udp_soa(
         Ok(response) => response,
         Err(XfrError::ZoneNotFound(_)) => {
             let (zone_name, qtype, _, query_id) = wire::parse_query(query_data)?;
-            wire::build_error_response(query_id, &zone_name, qtype, wire::RCODE_NOTAUTH)
+            wire::build_error_response(query_id, &zone_name, qtype, crate::protocol::RCODE_NOTAUTH)
         }
         Err(err) => return Err(err),
     };

@@ -15,7 +15,7 @@ use tokio::{
 };
 
 use crate::socket::{
-    socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
+    FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
     types::{DaemonCommand, DaemonCommandKind},
 };
 

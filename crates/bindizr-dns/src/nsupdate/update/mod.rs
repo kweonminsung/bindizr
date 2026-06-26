@@ -11,6 +11,7 @@ use crate::{
         zone::Zone,
         zone_change::ZoneChange,
     },
+    protocol::{CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY},
     service,
     service::{
         RepositoryTx,
@@ -20,19 +21,6 @@ use crate::{
     },
     txt, xfr,
 };
-
-pub(super) const CLASS_IN: u16 = 1;
-pub(super) const CLASS_NONE: u16 = 254;
-pub(super) const CLASS_ANY: u16 = 255;
-
-const TYPE_A: u16 = 1;
-const TYPE_NS: u16 = 2;
-const TYPE_CNAME: u16 = 5;
-const TYPE_PTR: u16 = 12;
-const TYPE_MX: u16 = 15;
-const TYPE_TXT: u16 = 16;
-const TYPE_AAAA: u16 = 28;
-pub(super) const TYPE_ANY: u16 = 255;
 
 #[derive(Debug)]
 pub(super) enum UpdateError {
@@ -398,8 +386,8 @@ pub(super) fn rr_to_record_value(
     update: &UpdateRecord,
     message: &[u8],
 ) -> Result<(RecordType, String, Option<i32>), UpdateError> {
-    match update.rr_type {
-        TYPE_A => {
+    match rr_type_to_record_type(update.rr_type)? {
+        RecordType::A => {
             if update.rdata.len() != 4 {
                 return Err(UpdateError::Refused("invalid A rdata length".to_string()));
             }
@@ -412,7 +400,7 @@ pub(super) fn rr_to_record_value(
             .to_string();
             Ok((RecordType::A, value, None))
         }
-        TYPE_AAAA => {
+        RecordType::AAAA => {
             if update.rdata.len() != 16 {
                 return Err(UpdateError::Refused(
                     "invalid AAAA rdata length".to_string(),
@@ -423,25 +411,25 @@ pub(super) fn rr_to_record_value(
             let value = std::net::Ipv6Addr::from(octets).to_string();
             Ok((RecordType::AAAA, value, None))
         }
-        TYPE_CNAME => Ok((
+        RecordType::CNAME => Ok((
             RecordType::CNAME,
             decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
                 .map_err(|e| UpdateError::Refused(format!("invalid CNAME rdata: {}", e)))?,
             None,
         )),
-        TYPE_NS => Ok((
+        RecordType::NS => Ok((
             RecordType::NS,
             decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
                 .map_err(|e| UpdateError::Refused(format!("invalid NS rdata: {}", e)))?,
             None,
         )),
-        TYPE_PTR => Ok((
+        RecordType::PTR => Ok((
             RecordType::PTR,
             decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
                 .map_err(|e| UpdateError::Refused(format!("invalid PTR rdata: {}", e)))?,
             None,
         )),
-        TYPE_TXT => {
+        RecordType::TXT => {
             decode_txt_from_rdata(&update.rdata)
                 .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?;
             Ok((
@@ -450,7 +438,7 @@ pub(super) fn rr_to_record_value(
                 None,
             ))
         }
-        TYPE_MX => {
+        RecordType::MX => {
             if update.rdata.len() < 3 {
                 return Err(UpdateError::Refused("invalid MX rdata length".to_string()));
             }
@@ -469,19 +457,9 @@ pub(super) fn rr_to_record_value(
 }
 
 pub(super) fn rr_type_to_record_type(rr_type: u16) -> Result<RecordType, UpdateError> {
-    match rr_type {
-        TYPE_A => Ok(RecordType::A),
-        TYPE_AAAA => Ok(RecordType::AAAA),
-        TYPE_CNAME => Ok(RecordType::CNAME),
-        TYPE_MX => Ok(RecordType::MX),
-        TYPE_TXT => Ok(RecordType::TXT),
-        TYPE_NS => Ok(RecordType::NS),
-        TYPE_PTR => Ok(RecordType::PTR),
-        _ => Err(UpdateError::Refused(format!(
-            "unsupported rr type: {}",
-            rr_type
-        ))),
-    }
+    RecordType::from_wire_code(rr_type)
+        .filter(|rt| !matches!(rt, RecordType::SOA | RecordType::SRV))
+        .ok_or_else(|| UpdateError::Refused(format!("unsupported rr type: {}", rr_type)))
 }
 
 pub(super) fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String, UpdateError> {

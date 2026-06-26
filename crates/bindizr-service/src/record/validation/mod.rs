@@ -1,6 +1,4 @@
-use bindizr_core::dns::name::{
-    is_apex_name, is_same_or_subdomain_fqdn, split_presentation_labels, to_fqdn,
-};
+use bindizr_core::dns::name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn};
 
 use crate::{
     error::ServiceError,
@@ -10,14 +8,12 @@ use crate::{
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
+    validation::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels},
 };
 
 mod record_value;
 
 use record_value::{is_null_mx_record_value, record_values_equal, validate_record_value};
-
-pub(super) const MAX_DNS_LABEL_LEN: usize = 63;
-pub(super) const MAX_DOMAIN_LEN: usize = 253;
 
 pub(super) struct NormalizedOwnerName {
     /// Name stored in the database according to the current relative-name policy.
@@ -49,7 +45,7 @@ pub(super) fn normalize_record_owner_name(
         normalize_absolute_owner_fqdn(input)?
     } else {
         let candidate = format!("{}.", input.to_ascii_lowercase());
-        validate_owner_fqdn(&candidate)?;
+        validate_wire_labels(&candidate, "record name")?;
 
         if is_same_or_subdomain_fqdn(&candidate, &zone_fqdn) {
             candidate
@@ -86,28 +82,8 @@ fn normalize_absolute_owner_fqdn(value: &str) -> Result<String, ServiceError> {
     }
 
     let fqdn = format!("{}.", without_trailing_dot.to_ascii_lowercase());
-    validate_owner_fqdn(&fqdn)?;
+    validate_wire_labels(&fqdn, "record name")?;
     Ok(fqdn)
-}
-
-fn validate_owner_fqdn(fqdn: &str) -> Result<(), ServiceError> {
-    for label in split_presentation_labels(fqdn.trim_end_matches('.'))
-        .map_err(|e| ServiceError::BadRequest(e.to_string()))?
-    {
-        if label.is_empty() {
-            return Err(ServiceError::BadRequest(
-                "record name must not contain empty labels".to_string(),
-            ));
-        }
-
-        if label.len() > MAX_DNS_LABEL_LEN {
-            return Err(ServiceError::BadRequest(
-                "record name labels must be 63 bytes or fewer".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
 }
 
 fn owner_fqdn_to_stored_name(owner_fqdn: &str, zone_fqdn: &str) -> String {
@@ -119,12 +95,6 @@ fn owner_fqdn_to_stored_name(owner_fqdn: &str, zone_fqdn: &str) -> String {
         .trim_end_matches(zone_fqdn)
         .trim_end_matches('.')
         .to_string()
-}
-
-fn has_whitespace_or_control(value: &str) -> bool {
-    value
-        .chars()
-        .any(|c| c.is_ascii_control() || c.is_whitespace())
 }
 
 pub(super) fn validate_record_add_constraints(

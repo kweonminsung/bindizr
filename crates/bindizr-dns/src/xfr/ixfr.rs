@@ -1,5 +1,6 @@
 use std::{collections::HashMap, net::IpAddr};
 
+use bindizr_core::dns::name::to_owner_fqdn;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;
 
@@ -328,7 +329,7 @@ fn add_change_to_builder(
     zone_name: &str,
 ) -> Result<(), XfrError> {
     let ttl = change.record_ttl.unwrap_or(3600) as u32;
-    let owner_name = normalize_change_name(&change.record_name, zone_name);
+    let owner_name = to_owner_fqdn(&change.record_name, zone_name);
 
     match change.record_type.as_str() {
         "A" => {
@@ -372,26 +373,3 @@ fn add_change_to_builder(
 
     Ok(())
 }
-
-fn normalize_change_name(name: &str, zone: &str) -> String {
-    if name.ends_with('.') {
-        return name.to_string();
-    }
-
-    let zone_trimmed = zone.trim_end_matches('.');
-    if name == "@" {
-        return format!("{}.", zone_trimmed);
-    }
-
-    let owner_trimmed = name.trim_end_matches('.');
-    let zone_suffix = format!(".{}", zone_trimmed.to_ascii_lowercase());
-    let owner_lower = owner_trimmed.to_ascii_lowercase();
-    if owner_lower == zone_trimmed.to_ascii_lowercase() || owner_lower.ends_with(&zone_suffix) {
-        return format!("{}.", owner_trimmed);
-    }
-
-    format!("{}.{}.", owner_trimmed, zone_trimmed)
-}
-
-#[cfg(test)]
-mod tests;

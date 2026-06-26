@@ -1,6 +1,7 @@
 pub(crate) mod acl;
 pub(crate) mod address;
 pub(crate) mod nsupdate;
+pub(crate) mod protocol;
 pub(crate) mod soa;
 pub use bindizr_core::dns::txt;
 pub mod xfr;

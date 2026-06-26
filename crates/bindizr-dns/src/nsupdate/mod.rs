@@ -8,23 +8,14 @@ use std::net::SocketAddr;
 use tokio::net::{TcpStream, UdpSocket};
 use update::TsigErrorResponse;
 
-use crate::{log_info, log_warn};
-
-const DNS_HEADER_LEN: usize = 12;
-const DNS_OPCODE_UPDATE: u8 = 5;
-
-const RCODE_NOERROR: u8 = 0;
-const RCODE_FORMERR: u8 = 1;
-const RCODE_SERVFAIL: u8 = 2;
-const RCODE_NXDOMAIN: u8 = 3;
-const RCODE_REFUSED: u8 = 5;
-const RCODE_YXDOMAIN: u8 = 6;
-const RCODE_YXRRSET: u8 = 7;
-const RCODE_NXRRSET: u8 = 8;
-const RCODE_NOTAUTH: u8 = 9;
-const RCODE_NOTZONE: u8 = 10;
-const TYPE_TSIG: u16 = 250;
-const CLASS_ANY: u16 = 255;
+use crate::{
+    log_info, log_warn,
+    protocol::{
+        CLASS_ANY, DNS_COMPRESSION_POINTER_MASK, DNS_HEADER_LEN, DNS_OPCODE_UPDATE, RCODE_FORMERR,
+        RCODE_NOERROR, RCODE_NOTAUTH, RCODE_NOTZONE, RCODE_NXDOMAIN, RCODE_NXRRSET, RCODE_REFUSED,
+        RCODE_SERVFAIL, RCODE_YXDOMAIN, RCODE_YXRRSET, TYPE_TSIG,
+    },
+};
 
 struct NsupdateResponse {
     rcode: u8,
@@ -175,7 +166,7 @@ fn zone_section_end(message: &[u8]) -> Option<usize> {
 
         let len = message[offset];
 
-        if (len & 0xC0) == 0xC0 {
+        if (len & DNS_COMPRESSION_POINTER_MASK) == DNS_COMPRESSION_POINTER_MASK {
             // Compression pointer – two bytes, name ends here.
             if offset + 1 >= message.len() {
                 return None;

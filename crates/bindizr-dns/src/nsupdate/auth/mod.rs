@@ -11,13 +11,12 @@ use super::{
     parser::{TsigRecord, UpdateRequest},
     update::{TsigErrorResponse, UpdateError},
 };
-use crate::config;
+use crate::{
+    config,
+    protocol::{TSIG_ERROR_BADKEY, TSIG_ERROR_BADSIG, TSIG_ERROR_BADTIME},
+};
 
 type HmacSha256 = Hmac<Sha256>;
-
-const TSIG_ERROR_BADSIG: u16 = 16;
-const TSIG_ERROR_BADKEY: u16 = 17;
-const TSIG_ERROR_BADTIME: u16 = 18;
 
 pub(super) fn validate_tsig(
     request: &UpdateRequest,

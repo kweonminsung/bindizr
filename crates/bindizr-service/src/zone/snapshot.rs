@@ -1,4 +1,3 @@
-use bindizr_core::dns::name::email_to_soa_mailbox;
 use chrono::Utc;
 
 use crate::{
@@ -22,7 +21,8 @@ pub async fn save_zone_snapshot_tx(
             zone_id: zone.id,
             serial,
             primary_ns: zone.primary_ns.clone(),
-            admin_email: email_to_soa_mailbox(&zone.admin_email)
+            admin_email: zone
+                .soa_mailbox()
                 .map_err(|e| ServiceError::BadRequest(e.to_string()))?,
             ttl: zone.ttl,
             refresh: zone.refresh,

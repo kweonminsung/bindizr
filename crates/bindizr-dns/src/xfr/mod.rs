@@ -73,8 +73,12 @@ pub(crate) async fn handle_tcp_query(
 
     if let Err(err) = result {
         if matches!(err, XfrError::ZoneNotFound(_)) {
-            let response =
-                wire::build_error_response(query_id, &zone_name, qtype, wire::RCODE_NOTAUTH);
+            let response = wire::build_error_response(
+                query_id,
+                &zone_name,
+                qtype,
+                crate::protocol::RCODE_NOTAUTH,
+            );
             wire::write_tcp_message(stream, &response).await?;
             return Ok(());
         }
