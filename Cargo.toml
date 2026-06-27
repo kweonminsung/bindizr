@@ -7,6 +7,7 @@ members = [
     "crates/bindizr-dns",
     "crates/bindizr-service",
 ]
+default-members = ["crates/bindizr"]
 resolver = "3"
 
 [workspace.package]
