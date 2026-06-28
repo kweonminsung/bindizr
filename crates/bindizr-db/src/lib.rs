@@ -32,7 +32,7 @@ pub async fn initialize() {
         return;
     }
 
-    let _guard = INITIALIZE_LOCK.lock().await;
+    let initialize_guard = INITIALIZE_LOCK.lock().await;
 
     if is_initialized() {
         return;
@@ -66,6 +66,7 @@ pub async fn initialize() {
         return;
     }
 
+    drop(initialize_guard);
     log_info!("Database pool initialized");
 }
 
@@ -113,7 +114,7 @@ impl DatabasePool {
     }
     pub async fn new_sqlite(url: &str) -> Self {
         let pool = SqlitePoolOptions::new()
-            .after_connect(|conn, _meta| {
+            .after_connect(|conn, _| {
                 Box::pin(async move {
                     // Enable foreign key constraints for SQLite
                     sqlx::query("PRAGMA foreign_keys = ON")

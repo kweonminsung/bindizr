@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/bindizr",
+    "crates/bindizr-e2e",
     "crates/bindizr-core",
     "crates/bindizr-db",
     "crates/bindizr-dns",
@@ -35,9 +36,11 @@ hex = "0.4"
 log = { version = "0.4", features = ["std"] }
 once_cell = "1.21.4"
 rand = "0.10"
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+serial_test = "3"
 sha2 = "0.11"
 sqlx = { version = "0.9", features = [
     "runtime-tokio",
@@ -52,7 +55,7 @@ tempfile = "3.27.0"
 thiserror = "2.0.18"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6.11", features = ["cors"] }
+tower-http = { version = "0.7.0", features = ["cors"] }
 utoipa = { version = "5.5", features = ["axum_extras", "yaml"] }
 
 [profile.release]

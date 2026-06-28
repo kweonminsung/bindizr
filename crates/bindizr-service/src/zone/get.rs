@@ -1,6 +1,6 @@
 use bindizr_db::repository::ZoneFilter;
 
-use super::{ZoneService, validation::normalize_zone_lookup_name};
+use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -12,7 +12,7 @@ use crate::{
 
 impl ZoneService {
     pub async fn find(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
-        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+        let lookup_name = normalize_zone_name(zone_name)?;
         RepositoryService::get_zone_by_name(&lookup_name).await
     }
 
@@ -20,7 +20,7 @@ impl ZoneService {
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
     ) -> Result<Option<Zone>, ServiceError> {
-        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+        let lookup_name = normalize_zone_name(zone_name)?;
         RepositoryService::get_zone_by_name_tx(tx, &lookup_name).await
     }
 
@@ -79,7 +79,7 @@ impl ZoneService {
     }
 
     pub async fn get_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
-        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+        let lookup_name = normalize_zone_name(zone_name)?;
 
         match RepositoryService::get_zone_by_name(&lookup_name).await {
             Ok(Some(zone)) => Ok(zone),

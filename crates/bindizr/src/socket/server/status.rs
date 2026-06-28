@@ -1,9 +1,8 @@
 use std::process;
 
-use crate::{
-    config,
-    socket::types::{DaemonResponse, DaemonStatusResponse},
-};
+use bindizr_core::config;
+
+use crate::socket::types::{DaemonResponse, DaemonStatusResponse};
 
 pub(super) fn get_status() -> Result<DaemonResponse, String> {
     let pid = Some(process::id());

@@ -1,13 +1,11 @@
 use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
+use bindizr_dns as dns;
 use serde_json::json;
 
-use crate::{
-    api::{
-        error::ApiError,
-        middleware::body_parser::JsonBody,
-        types::{ErrorResponse, MessageResponse, NotifyZoneRequest},
-    },
-    dns,
+use crate::api::{
+    error::ApiError,
+    middleware::body_parser::JsonBody,
+    types::{ErrorResponse, MessageResponse, NotifyZoneRequest},
 };
 
 pub(crate) struct NotifyApi;

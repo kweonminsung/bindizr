@@ -19,8 +19,8 @@ pub(crate) async fn handle_tcp_soa(
     let response = match build_soa_response(query_data, client_ip).await {
         Ok(response) => response,
         Err(XfrError::ZoneNotFound(_)) => {
-            let (zone_name, qtype, _client_serial, query_id) = wire::parse_query(query_data)?;
-            wire::build_error_response(query_id, &zone_name, qtype, wire::RCODE_NOTAUTH)
+            let (zone_name, qtype, _, query_id) = wire::parse_query(query_data)?;
+            wire::build_error_response(query_id, &zone_name, qtype, crate::protocol::RCODE_NOTAUTH)
         }
         Err(err) => return Err(err),
     };
@@ -39,8 +39,8 @@ pub(crate) async fn handle_udp_soa(
     let response = match build_soa_response(query_data, client_ip).await {
         Ok(response) => response,
         Err(XfrError::ZoneNotFound(_)) => {
-            let (zone_name, qtype, _client_serial, query_id) = wire::parse_query(query_data)?;
-            wire::build_error_response(query_id, &zone_name, qtype, wire::RCODE_NOTAUTH)
+            let (zone_name, qtype, _, query_id) = wire::parse_query(query_data)?;
+            wire::build_error_response(query_id, &zone_name, qtype, crate::protocol::RCODE_NOTAUTH)
         }
         Err(err) => return Err(err),
     };
@@ -50,7 +50,7 @@ pub(crate) async fn handle_udp_soa(
 }
 
 async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<u8>, XfrError> {
-    let (zone_name, qtype, _client_serial, query_id) = wire::parse_query(query_data)?;
+    let (zone_name, qtype, _, query_id) = wire::parse_query(query_data)?;
     if qtype != Rtype::SOA {
         return Err(XfrError::InvalidQuery(format!(
             "Expected SOA query, got {:?}",
@@ -69,7 +69,7 @@ async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<
 
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("SOA query for catalog zone: {}", catalog::CATALOG_ZONE_NAME);
-        let (catalog_zone, _member_zones) = catalog::generate_catalog_zone().await?;
+        let (catalog_zone, _) = catalog::generate_catalog_zone().await?;
 
         let mut builder = wire::DnsMessageBuilder::new(query_id, &zone_name, Rtype::SOA);
         builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;

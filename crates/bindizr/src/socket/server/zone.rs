@@ -1,8 +1,8 @@
+use bindizr_service::zone::ZoneService;
 use serde_json::json;
 
 use crate::{
     api::types::{CreateZoneRequest, GetZoneResponse, GetZonesFilter},
-    service::zone::ZoneService,
     socket::types::DaemonResponse,
 };
 

@@ -1,7 +1,7 @@
-use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn};
+use bindizr_core::dns::{CATALOG_ZONE_NAME, name::to_fqdn};
 use chrono::Utc;
 
-use super::{ZoneService, validation::normalize_zone_lookup_name};
+use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -14,7 +14,10 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::CreateZoneRequest,
-    zone::{snapshot::save_zone_snapshot_tx, validation::validate_create_zone_request},
+    zone::{
+        snapshot::save_zone_snapshot_tx,
+        validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
+    },
 };
 
 impl ZoneService {
@@ -33,7 +36,7 @@ impl ZoneService {
         zone_name: &str,
         update_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
-        let lookup_name = normalize_zone_lookup_name(zone_name)?;
+        let lookup_name = normalize_zone_name(zone_name)?;
 
         // Check if zone exists
         let existing_zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
@@ -52,6 +55,16 @@ impl ZoneService {
         };
         let zone_id = existing_zone.id;
         let validated = validate_create_zone_request(update_zone_request)?;
+        // Preserve the zone's current SOA timers when the request omits them.
+        let timers = resolve_soa_timers(
+            update_zone_request,
+            ResolvedSoaTimers {
+                refresh: existing_zone.refresh,
+                retry: existing_zone.retry,
+                expire: existing_zone.expire,
+                minimum_ttl: existing_zone.minimum_ttl,
+            },
+        )?;
 
         // Check if zone with the new name already exists (if name is being changed)
         match RepositoryService::get_zone_by_name(&validated.name).await {
@@ -96,10 +109,10 @@ impl ZoneService {
                     admin_email: validated.admin_email.clone(),
                     ttl: validated.ttl,
                     serial: new_serial,
-                    refresh: update_zone_request.refresh.unwrap_or(86400),
-                    retry: update_zone_request.retry.unwrap_or(7200),
-                    expire: update_zone_request.expire.unwrap_or(3_600_000),
-                    minimum_ttl: update_zone_request.minimum_ttl.unwrap_or(86400),
+                    refresh: timers.refresh,
+                    retry: timers.retry,
+                    expire: timers.expire,
+                    minimum_ttl: timers.minimum_ttl,
                     created_at: existing_zone.created_at,
                 },
             )
@@ -156,18 +169,9 @@ impl ZoneService {
                 })?;
             }
 
-            let format_soa = |zone: &Zone| -> Result<String, ServiceError> {
-                Ok(format!(
-                    "{} {} {} {} {} {} {}",
-                    zone.primary_ns,
-                    email_to_soa_mailbox(&zone.admin_email)
-                        .map_err(|e| ServiceError::BadRequest(e.to_string()))?,
-                    zone.serial,
-                    zone.refresh,
-                    zone.retry,
-                    zone.expire,
-                    zone.minimum_ttl
-                ))
+            let soa_rdata = |zone: &Zone| -> Result<String, ServiceError> {
+                zone.soa_rdata()
+                    .map_err(|e| ServiceError::BadRequest(e.to_string()))
             };
 
             // Delete old SOA record
@@ -180,7 +184,7 @@ impl ZoneService {
                     operation: "DEL".to_string(),
                     record_name: "@".to_string(),
                     record_type: "SOA".to_string(),
-                    record_value: format_soa(&existing_zone)?,
+                    record_value: soa_rdata(&existing_zone)?,
                     record_ttl: Some(existing_zone.ttl),
                     record_priority: None,
                 },
@@ -201,7 +205,7 @@ impl ZoneService {
                     operation: "ADD".to_string(),
                     record_name: "@".to_string(),
                     record_type: "SOA".to_string(),
-                    record_value: format_soa(&updated_zone)?,
+                    record_value: soa_rdata(&updated_zone)?,
                     record_ttl: Some(updated_zone.ttl),
                     record_priority: None,
                 },
@@ -240,9 +244,9 @@ impl ZoneService {
         }
 
         if existing_zone.name != updated_zone.name
-            && let Err(e) = crate::notify::send_notify_after_update(Some("catalog.bind")).await
+            && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
         {
-            log_warn!("Failed to send NOTIFY for catalog.bind: {}", e);
+            log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }
 
         Ok(updated_zone)

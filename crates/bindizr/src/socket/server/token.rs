@@ -1,8 +1,7 @@
-use crate::{
-    log_error,
-    service::{error::ServiceError, token::TokenService},
-    socket::types::DaemonResponse,
-};
+use bindizr_core::log_error;
+use bindizr_service::{error::ServiceError, token::TokenService};
+
+use crate::socket::types::DaemonResponse;
 
 pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let description = data.get("description").and_then(|v| v.as_str());

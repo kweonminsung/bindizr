@@ -1,6 +1,7 @@
 #[cfg(debug_assertions)]
 use axum::http::header::CONTENT_TYPE;
 use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
+use bindizr_core::config;
 use serde_json::json;
 use tower_http::cors::CorsLayer;
 #[cfg(debug_assertions)]
@@ -9,12 +10,11 @@ use utoipa::OpenApi;
 #[cfg(debug_assertions)]
 use super::openapi::ApiDoc;
 use super::{notify::NotifyApi, record::RecordApi, zone::ZoneApi};
-use crate::config;
 
-pub struct ApiRouter;
+pub(crate) struct ApiRouter;
 
 impl ApiRouter {
-    pub async fn routes() -> Router {
+    pub(crate) async fn routes() -> Router {
         let mut api_router = Router::new()
             .merge(ZoneApi::routes().await)
             .merge(RecordApi::routes().await)

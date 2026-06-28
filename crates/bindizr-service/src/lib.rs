@@ -7,6 +7,7 @@ mod repository;
 pub mod serial;
 pub mod token;
 pub mod types;
+pub(crate) mod validation;
 pub mod zone;
 
 pub(crate) use bindizr_core::{log_error, log_info, log_warn, model};

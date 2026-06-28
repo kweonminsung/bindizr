@@ -4,7 +4,7 @@ use tokio::{
 };
 
 use crate::socket::{
-    socket::{FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH},
+    FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
     types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
 };
 
@@ -57,7 +57,13 @@ impl DaemonSocketClient {
             .map_err(|e| format!("Failed to read from socket: {}", e))?;
 
         // Deserialize the response
-        serde_json::from_str(&response).map_err(|e| format!("Failed to parse response: {}", e))
+        let response: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+        if let Some(error) = response.get("error").and_then(serde_json::Value::as_str) {
+            return Err(error.to_string());
+        }
+
+        serde_json::from_value(response).map_err(|e| format!("Failed to parse response: {}", e))
     }
 }
 
