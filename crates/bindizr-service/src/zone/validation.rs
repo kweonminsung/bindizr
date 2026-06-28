@@ -52,14 +52,14 @@ fn resolve_soa_interval(
     fallback: i32,
     field: &str,
 ) -> Result<i32, ServiceError> {
-    match value {
-        Some(value) if value <= 0 => Err(ServiceError::BadRequest(format!(
+    let resolved = value.unwrap_or(fallback);
+    if resolved <= 0 {
+        return Err(ServiceError::BadRequest(format!(
             "{} must be a positive number of seconds",
             field
-        ))),
-        Some(value) => Ok(value),
-        None => Ok(fallback),
+        )));
     }
+    Ok(resolved)
 }
 
 pub(super) fn validate_create_zone_request(
