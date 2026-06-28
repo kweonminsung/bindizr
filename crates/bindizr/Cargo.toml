@@ -12,7 +12,6 @@ rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
-default-run = "bindizr"
 
 [lib]
 name = "bindizr"

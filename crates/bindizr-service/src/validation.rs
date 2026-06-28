@@ -9,10 +9,20 @@ pub(crate) fn has_whitespace_or_control(value: &str) -> bool {
         .any(|c| c.is_ascii_control() || c.is_whitespace())
 }
 
-/// Ensure every label of a domain name is non-empty and at most 63 bytes.
+/// Ensure a domain name fits the 253-byte presentation limit and every label is
+/// non-empty and at most 63 bytes.
 pub(crate) fn validate_wire_labels(name: &str, field: &str) -> Result<(), ServiceError> {
-    for label in split_presentation_labels(name.trim_end_matches('.'))
-        .map_err(|e| ServiceError::BadRequest(e.to_string()))?
+    let name = name.trim_end_matches('.');
+
+    if name.len() > MAX_DOMAIN_LEN {
+        return Err(ServiceError::BadRequest(format!(
+            "{} must be 253 bytes or fewer",
+            field
+        )));
+    }
+
+    for label in
+        split_presentation_labels(name).map_err(|e| ServiceError::BadRequest(e.to_string()))?
     {
         if label.is_empty() {
             return Err(ServiceError::BadRequest(format!(

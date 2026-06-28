@@ -14,13 +14,23 @@ use crate::{
     types::CreateZoneRequest,
     zone::{
         DEFAULT_EXPIRE, DEFAULT_MINIMUM_TTL, DEFAULT_REFRESH, DEFAULT_RETRY,
-        snapshot::save_zone_snapshot_tx, validation::validate_create_zone_request,
+        snapshot::save_zone_snapshot_tx,
+        validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
     },
 };
 
 impl ZoneService {
     pub async fn create(create_zone_request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
         let validated = validate_create_zone_request(create_zone_request)?;
+        let timers = resolve_soa_timers(
+            create_zone_request,
+            ResolvedSoaTimers {
+                refresh: DEFAULT_REFRESH,
+                retry: DEFAULT_RETRY,
+                expire: DEFAULT_EXPIRE,
+                minimum_ttl: DEFAULT_MINIMUM_TTL,
+            },
+        )?;
 
         // Parent/child zones are allowed; only the same normalized zone name is rejected.
         // Names are stored normalized, so an exact lookup is enough to detect a collision.
@@ -57,12 +67,10 @@ impl ZoneService {
                     admin_email: validated.admin_email.clone(),
                     ttl: validated.ttl,
                     serial,
-                    refresh: create_zone_request.refresh.unwrap_or(DEFAULT_REFRESH),
-                    retry: create_zone_request.retry.unwrap_or(DEFAULT_RETRY),
-                    expire: create_zone_request.expire.unwrap_or(DEFAULT_EXPIRE),
-                    minimum_ttl: create_zone_request
-                        .minimum_ttl
-                        .unwrap_or(DEFAULT_MINIMUM_TTL),
+                    refresh: timers.refresh,
+                    retry: timers.retry,
+                    expire: timers.expire,
+                    minimum_ttl: timers.minimum_ttl,
                     created_at: Utc::now(), // Will be set by the database
                 },
             )

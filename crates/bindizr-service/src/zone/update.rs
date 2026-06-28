@@ -15,8 +15,8 @@ use crate::{
     serial::generate_serial,
     types::CreateZoneRequest,
     zone::{
-        DEFAULT_EXPIRE, DEFAULT_MINIMUM_TTL, DEFAULT_REFRESH, DEFAULT_RETRY,
-        snapshot::save_zone_snapshot_tx, validation::validate_create_zone_request,
+        snapshot::save_zone_snapshot_tx,
+        validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
     },
 };
 
@@ -55,6 +55,16 @@ impl ZoneService {
         };
         let zone_id = existing_zone.id;
         let validated = validate_create_zone_request(update_zone_request)?;
+        // Preserve the zone's current SOA timers when the request omits them.
+        let timers = resolve_soa_timers(
+            update_zone_request,
+            ResolvedSoaTimers {
+                refresh: existing_zone.refresh,
+                retry: existing_zone.retry,
+                expire: existing_zone.expire,
+                minimum_ttl: existing_zone.minimum_ttl,
+            },
+        )?;
 
         // Check if zone with the new name already exists (if name is being changed)
         match RepositoryService::get_zone_by_name(&validated.name).await {
@@ -99,12 +109,10 @@ impl ZoneService {
                     admin_email: validated.admin_email.clone(),
                     ttl: validated.ttl,
                     serial: new_serial,
-                    refresh: update_zone_request.refresh.unwrap_or(DEFAULT_REFRESH),
-                    retry: update_zone_request.retry.unwrap_or(DEFAULT_RETRY),
-                    expire: update_zone_request.expire.unwrap_or(DEFAULT_EXPIRE),
-                    minimum_ttl: update_zone_request
-                        .minimum_ttl
-                        .unwrap_or(DEFAULT_MINIMUM_TTL),
+                    refresh: timers.refresh,
+                    retry: timers.retry,
+                    expire: timers.expire,
+                    minimum_ttl: timers.minimum_ttl,
                     created_at: existing_zone.created_at,
                 },
             )

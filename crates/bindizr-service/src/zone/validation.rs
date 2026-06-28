@@ -20,6 +20,48 @@ pub(super) struct ValidatedCreateZoneRequest {
     pub ttl: i32,
 }
 
+/// Resolved SOA timing fields. Used both as the fallback source (zone defaults on
+/// create, the existing zone's values on update) and as the validated output.
+pub(super) struct ResolvedSoaTimers {
+    pub refresh: i32,
+    pub retry: i32,
+    pub expire: i32,
+    pub minimum_ttl: i32,
+}
+
+/// Validate client-supplied SOA timers, using `fallback` for omitted fields
+/// (zone defaults on create, the existing zone's values on update).
+pub(super) fn resolve_soa_timers(
+    request: &CreateZoneRequest,
+    fallback: ResolvedSoaTimers,
+) -> Result<ResolvedSoaTimers, ServiceError> {
+    Ok(ResolvedSoaTimers {
+        refresh: resolve_soa_interval(request.refresh, fallback.refresh, "refresh")?,
+        retry: resolve_soa_interval(request.retry, fallback.retry, "retry")?,
+        expire: resolve_soa_interval(request.expire, fallback.expire, "expire")?,
+        minimum_ttl: resolve_soa_interval(
+            request.minimum_ttl,
+            fallback.minimum_ttl,
+            "minimum_ttl",
+        )?,
+    })
+}
+
+fn resolve_soa_interval(
+    value: Option<i32>,
+    fallback: i32,
+    field: &str,
+) -> Result<i32, ServiceError> {
+    match value {
+        Some(value) if value <= 0 => Err(ServiceError::BadRequest(format!(
+            "{} must be a positive number of seconds",
+            field
+        ))),
+        Some(value) => Ok(value),
+        None => Ok(fallback),
+    }
+}
+
 pub(super) fn validate_create_zone_request(
     request: &CreateZoneRequest,
 ) -> Result<ValidatedCreateZoneRequest, ServiceError> {
