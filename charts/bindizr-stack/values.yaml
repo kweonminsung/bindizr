@@ -4,7 +4,7 @@ fullnameOverride: ""
 bindizr:
   image:
     repository: kweonminsung/bindizr
-    tag: "0.1.0-beta.4"
+    tag: "0.1.0-beta.5"
     pullPolicy: IfNotPresent
   replicas: 2
 
@@ -55,7 +55,7 @@ bindizrUi:
   enabled: false
   image:
     repository: kweonminsung/bindizr-ui
-    tag: "0.1.0-beta.4"
+    tag: "0.1.0-beta.5"
     pullPolicy: IfNotPresent
   replicas: 1
   env:
