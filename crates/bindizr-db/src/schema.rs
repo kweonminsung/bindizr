@@ -96,7 +96,7 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             retry INTEGER NOT NULL DEFAULT 7200,
             expire INTEGER NOT NULL DEFAULT 3600000,
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
         r#"
@@ -107,7 +107,7 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             value TEXT NOT NULL,
             ttl INTEGER,
             priority INTEGER,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INTEGER NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
@@ -123,7 +123,7 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             record_value TEXT NOT NULL,
             record_ttl INTEGER,
             record_priority INTEGER,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -142,7 +142,7 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             retry INTEGER NOT NULL,
             expire INTEGER NOT NULL,
             minimum_ttl INTEGER NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(zone_id, serial),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
@@ -152,9 +152,9 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             id SERIAL PRIMARY KEY,
             token VARCHAR(64) UNIQUE NOT NULL,
             description VARCHAR(255),
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            expires_at TIMESTAMP,
-            last_used_at TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMPTZ,
+            last_used_at TIMESTAMPTZ
         );
         "#,
         r#"
@@ -162,7 +162,7 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             name VARCHAR(255) PRIMARY KEY,
             signature VARCHAR(64) NOT NULL,
             serial INTEGER NOT NULL,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
     ]
