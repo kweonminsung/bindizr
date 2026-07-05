@@ -1,0 +1,50 @@
+"""Benchmark 8 — DNS Query Performance.
+
+Loads a fixed A-record zone into the system, then hammers its resolver with UDP
+queries for existing names, measuring QPS and latency percentiles.
+
+The headline comparison is `Native BIND9` vs `Bindizr + BIND9`: since Bindizr is
+outside the DNS data plane (queries are served by the BIND9 secondary), the two
+should match — demonstrating zero query overhead.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from datasets.gen_dataset import generate  # noqa: E402
+from lib import dnsquery  # noqa: E402
+
+
+async def run(adapter, cfg, ctx) -> dict:
+    zone = ctx["zone"]
+    q = cfg["query"]
+    size = q["zone_size"]
+
+    await adapter.create_zone(zone)
+    # Use only A records so every queried name has an answer of a known type.
+    records = [r for r in generate(size * 2, cfg["seed"], zone)
+               if r["type"] == "A"][:size]
+    await adapter.bulk_import(zone, records)
+
+    names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
+    ep = adapter.dns_endpoint()
+
+    # Warm the resolver / let secondaries finish pulling the zone before measuring.
+    import asyncio
+    await asyncio.sleep(3)
+
+    rec = await dnsquery.query_load(
+        ep.host, ep.port, names, dnsquery.QTYPE["A"],
+        q["concurrency"], q["duration_secs"], warmup_secs=2.0)
+    s = rec.summary()
+    return {
+        "system": ctx["label"],
+        "zone_records": len(records),
+        "qps": s["tps"],
+        "avg_latency_ms": s["mean_ms"],
+        "p95_ms": s["p95_ms"],
+        "p99_ms": s["p99_ms"],
+        "error_rate": s["error_rate"],
+    }

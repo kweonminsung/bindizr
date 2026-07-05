@@ -1,0 +1,40 @@
+# BIND9 primary managed by rewriting the zone file + `rndc reload`.
+services:
+  seed:
+    image: internetsystemsconsortium/bind9:9.21
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cp /seed/bench.example.zone /var/cache/bind/bench.example.zone
+        chown 53:53 /var/cache/bind/bench.example.zone
+    volumes:
+      - ./bench.example.zone:/seed/bench.example.zone:ro
+      - bind9-cache:/var/cache/bind
+
+  bind9:
+    image: internetsystemsconsortium/bind9:9.21
+    command: ["-g", "-c", "/etc/bind/named.conf"]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    volumes:
+      - ./named.conf:/etc/bind/named.conf:ro
+      - ./rndc.key:/etc/bind/rndc.key:ro
+      - bind9-cache:/var/cache/bind
+    ports:
+      - "${RNDC_DNS_HOST_PORT:-15357}:53/tcp"
+      - "${RNDC_DNS_HOST_PORT:-15357}:53/udp"
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
+networks:
+  bench-net:
+
+volumes:
+  bind9-cache:

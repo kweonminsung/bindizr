@@ -1,0 +1,74 @@
+# Bindizr Benchmark Suite — central configuration.
+# All knobs live here so runs are reproducible and CI can override via env.
+
+# Fixed seed makes dataset generation and workload ordering reproducible.
+seed: 1337
+
+# Record-set sizes used by bulk/large-zone/AXFR benchmarks.
+# 1_000_000 is heavy (time + disk); it is excluded from `sizes_ci` and only
+# runs when explicitly selected (BENCH_SIZES=1000000 or --sizes 1000000).
+sizes: [1000, 10000, 100000, 1000000]
+sizes_ci: [1000, 10000]
+
+# CRUD (Benchmark 1) workload.
+crud:
+  concurrency: 32          # closed-loop concurrent clients
+  duration_secs: 30        # per-operation measurement window
+  warmup_secs: 5           # discarded before measurement
+  records_prepopulate: 5000 # rows seeded before GET/PUT/DELETE phases
+
+# DNS query (Benchmark 8) workload.
+query:
+  duration_secs: 30
+  concurrency: 50
+  qps_target: 0            # 0 = unthrottled (max throughput)
+  zone_size: 10000         # records loaded before querying (B8/B9)
+
+# Propagation (Benchmark 3): how long to poll `dig` for a freshly-created record.
+propagation:
+  poll_interval_ms: 50
+  timeout_secs: 30
+  samples: 100             # number of create->visible measurements
+
+# Resource sampling (Benchmark 9 + inline for others).
+resources:
+  sample_interval_secs: 1
+
+# Systems under test. `enabled` toggles participation; adapters map to
+# benchmarks/systems/<key>/adapter.py and compose.yml.
+systems:
+  bindizr:
+    enabled: true
+    label: "Bindizr + BIND9"
+    kind: control_plane      # writes DB, propagates via XFR; outside query data-plane
+  powerdns:
+    enabled: true
+    label: "PowerDNS Authoritative"
+    kind: integrated
+  technitium:
+    enabled: true
+    label: "Technitium DNS"
+    kind: integrated
+  bind9_nsupdate:
+    enabled: true
+    label: "BIND9 + nsupdate"
+    kind: dynamic_update
+  bind9_rndc:
+    enabled: true
+    label: "BIND9 + rndc"
+    kind: dynamic_update
+
+# Which systems each benchmark applies to (per the task spec).
+benchmarks:
+  b01_crud_tps:      [bindizr, powerdns, technitium, bind9_nsupdate]
+  b02_bulk_import:   [bindizr, powerdns, technitium, bind9_rndc]
+  b03_propagation:   [bindizr, powerdns, technitium, bind9_nsupdate]
+  b04_axfr:          [bindizr, powerdns, technitium]
+  b05_ixfr:          [bindizr, powerdns, technitium]
+  b06_large_zone:    [bindizr]
+  b07_database:      [bindizr]   # SQLite / MySQL / PostgreSQL backends
+  b08_query_perf:    [bind9_native, bindizr, powerdns, technitium]
+  b09_resource_usage: [bindizr, powerdns, technitium]
+
+# Database backends for Benchmark 7 (Bindizr only).
+databases: [sqlite, mysql, postgresql]
