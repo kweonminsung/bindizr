@@ -3,19 +3,18 @@ use axum_macros::FromRequest;
 use bindizr_core::log_error;
 use serde_json::json;
 
-// Custom extractor for JSON body with error handling
+/// JSON body extractor that maps rejections to a JSON [`ApiError`] response.
 #[derive(FromRequest)]
 #[from_request(via(axum::Json), rejection(ApiError))]
 pub(crate) struct JsonBody<T>(pub T);
 
-// Custom API error type for handling JSON extraction errors
+/// Error returned when JSON body extraction fails.
 #[derive(Debug)]
 pub(crate) struct ApiError {
     code: StatusCode,
     message: String,
 }
 
-// Implement conversion from JsonRejection to ApiError
 impl From<JsonRejection> for ApiError {
     fn from(rejection: JsonRejection) -> Self {
         let code = match rejection {

@@ -38,7 +38,6 @@ impl ZoneService {
     ) -> Result<Zone, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
 
-        // Check if zone exists
         let existing_zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
@@ -96,7 +95,6 @@ impl ZoneService {
                 ServiceError::Internal("Failed to update zone".to_string())
             })?;
 
-        // Update zone
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
 
         let apply_result = async {
@@ -225,7 +223,7 @@ impl ZoneService {
         let updated_zone =
             RepositoryService::finish_tx(tx, apply_result, "Failed to update zone").await?;
 
-        // Log zone update after commit (structured logging)
+        // Log zone update after commit
         log_info!(
             "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",
             updated_zone.name,

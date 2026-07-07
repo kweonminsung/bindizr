@@ -311,7 +311,6 @@ async fn delete_records(
         return Ok(false);
     }
 
-    // Validate delete constraints
     validate_delete_constraints(zone, &matched).map_err(|e| UpdateError::Refused(e.to_string()))?;
 
     for record in &matched {

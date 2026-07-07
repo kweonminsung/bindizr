@@ -51,7 +51,6 @@ impl RecordService {
             Some(name) => {
                 let lookup_name = normalize_zone_name(&name)?;
 
-                // Check if zone exists and get zone_id
                 let zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
                     Ok(Some(z)) => z,
                     Ok(None) => {
@@ -66,7 +65,6 @@ impl RecordService {
                     }
                 };
 
-                // Fetch records by zone_id
                 match RepositoryService::get_records_by_zone_id(zone.id).await {
                     Ok(records) => Ok(records),
                     Err(e) => {
@@ -78,18 +76,15 @@ impl RecordService {
                     }
                 }
             }
-            None => {
-                // Fetch all records
-                match RepositoryService::get_all_records().await {
-                    Ok(records) => Ok(records),
-                    Err(e) => {
-                        log_error!("Failed to fetch all records: {}", e);
-                        Err(ServiceError::Internal(
-                            "Failed to fetch all records".to_string(),
-                        ))
-                    }
+            None => match RepositoryService::get_all_records().await {
+                Ok(records) => Ok(records),
+                Err(e) => {
+                    log_error!("Failed to fetch all records: {}", e);
+                    Err(ServiceError::Internal(
+                        "Failed to fetch all records".to_string(),
+                    ))
                 }
-            }
+            },
         }
     }
 

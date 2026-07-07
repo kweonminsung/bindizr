@@ -54,7 +54,6 @@ impl ZoneService {
             None => generate_serial(None),
         };
 
-        // Create zone
         let mut tx = RepositoryService::begin_tx("Failed to create zone").await?;
 
         let apply_result = async {
@@ -108,7 +107,7 @@ impl ZoneService {
         let created_zone =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create zone").await?;
 
-        // Log zone creation after commit (structured logging)
+        // Log zone creation after commit
         log_info!(
             "event=zone_create zone={} primary_ns={} serial={} zone_id={}",
             created_zone.name,

@@ -4,7 +4,7 @@ use crate::service::zone::{ZoneService, snapshot};
 pub(crate) type ZoneChange = bindizr_core::model::zone_change::ZoneChange;
 pub(crate) type ZoneSnapshot = bindizr_core::model::zone_snapshot::ZoneSnapshot;
 
-/// Get zone changes between two serials for IXFR
+/// Gets zone changes between two serials for IXFR.
 pub(crate) async fn get_zone_changes(
     zone_id: i32,
     from_serial: u32,

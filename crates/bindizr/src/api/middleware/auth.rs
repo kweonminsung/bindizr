@@ -13,7 +13,6 @@ pub(crate) async fn auth_middleware(
     mut req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Extract Authorization header
     let auth_header = match req.headers().get(AUTHORIZATION) {
         Some(header) => header,
         None => {
@@ -21,7 +20,6 @@ pub(crate) async fn auth_middleware(
         }
     };
 
-    // Extract Bearer token
     let auth_str = match auth_header.to_str() {
         Ok(s) => s,
         Err(_) => return Ok(unauthorized("Invalid authorization header")),
@@ -33,7 +31,6 @@ pub(crate) async fn auth_middleware(
 
     let token = &auth_str[7..];
 
-    // Validate token
     match AuthService::validate_token(token).await {
         Ok(api_token) => {
             req.extensions_mut().insert(api_token);

@@ -87,7 +87,6 @@ impl DatabasePool {
 
         let database_pool = DatabasePool::MySQL(pool);
 
-        // Create tables
         if let Err(e) = database_pool.create_tables().await {
             log_error!("Failed to create tables: {}", e);
             std::process::exit(1);
@@ -104,7 +103,6 @@ impl DatabasePool {
 
         let database_pool = DatabasePool::PostgreSQL(pool);
 
-        // Create tables
         if let Err(e) = database_pool.create_tables().await {
             log_error!("Failed to create tables: {}", e);
             std::process::exit(1);
@@ -132,7 +130,6 @@ impl DatabasePool {
 
         let database_pool = DatabasePool::SQLite(pool);
 
-        // Create tables
         if let Err(e) = database_pool.create_tables().await {
             log_error!("Failed to create tables: {}", e);
             std::process::exit(1);
@@ -142,7 +139,7 @@ impl DatabasePool {
     }
 
     async fn create_tables(&self) -> Result<(), String> {
-        // Get table creation queries from schema module based on database type
+        // Table creation queries vary by database backend.
         let queries = match self {
             DatabasePool::MySQL(_) => schema::get_mysql_table_creation_queries(),
             DatabasePool::PostgreSQL(_) => schema::get_postgres_table_creation_queries(),
@@ -191,7 +188,7 @@ impl DatabasePool {
     }
 }
 
-// Repository convenience functions - returns trait objects for runtime dispatch
+// Repository accessors returning trait objects for runtime dispatch.
 pub fn get_zone_repository() -> Box<dyn repository::ZoneRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_repository(pool)

@@ -8,7 +8,6 @@ use crate::socket::{
 pub(crate) async fn handle_command() -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
-    // Create socket request
     let res = client.send_command(DaemonCommandKind::Status, None).await?;
 
     log_debug!("Status command result: {:?}", res);

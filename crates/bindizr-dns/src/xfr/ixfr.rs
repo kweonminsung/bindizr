@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use super::{axfr, catalog, delta, error::XfrError, wire};
 use crate::{log_info, log_warn, service::zone::ZoneService};
 
-/// Handle IXFR
+/// Handles an IXFR request.
 pub(crate) async fn handle_ixfr(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -25,7 +25,7 @@ pub(crate) async fn handle_ixfr(
     let zone_name_str = zone_name.to_string();
     let zone_name_str = zone_name_str.trim_end_matches('.');
 
-    // Check if this is a catalog zone request. Fallback to AXFR
+    // Catalog zones fall back to AXFR.
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("IXFR: Catalog zone requested, falling back to AXFR");
         return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
@@ -229,7 +229,7 @@ pub(crate) async fn handle_ixfr(
     Ok(())
 }
 
-/// Send response when client is up-to-date (single SOA)
+/// Sends a single-SOA response when the client is already up-to-date.
 async fn send_up_to_date_response(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -246,7 +246,7 @@ async fn send_up_to_date_response(
     Ok(())
 }
 
-/// Send IXFR response with incremental changes
+/// Sends an IXFR response with incremental changes.
 async fn send_ixfr_response(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -273,11 +273,9 @@ async fn send_ixfr_response(
         changes_by_serial.entry(serial).or_default().push(change);
     }
 
-    // Get sorted serials
     let mut serials: Vec<u32> = changes_by_serial.keys().copied().collect();
     serials.sort();
 
-    // Process each serial in order
     for (idx, &serial) in serials.iter().enumerate() {
         let serial_changes = &changes_by_serial[&serial];
 
@@ -322,7 +320,7 @@ async fn send_ixfr_response(
     Ok(())
 }
 
-/// Add a zone change record to the message builder
+/// Adds a zone change record to the message builder.
 fn add_change_to_builder(
     builder: &mut wire::DnsMessageBuilder,
     change: &delta::ZoneChange,

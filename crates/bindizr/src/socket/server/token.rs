@@ -7,12 +7,10 @@ pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
     let description = data.get("description").and_then(|v| v.as_str());
     let expires_in_days = data.get("expires_in_days").and_then(|v| v.as_i64());
 
-    // Create token
     let created_token = TokenService::create_token(description, expires_in_days)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Create response
     let response = DaemonResponse {
         message: "Token created successfully".to_string(),
         data: serde_json::to_value(created_token).unwrap(),
@@ -21,7 +19,6 @@ pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 }
 
 pub(super) async fn list_tokens() -> Result<DaemonResponse, String> {
-    // List tokens
     let tokens = match TokenService::list_tokens().await {
         Ok(tokens) => Ok(tokens),
         Err(e) => {

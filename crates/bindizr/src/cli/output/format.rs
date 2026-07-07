@@ -36,7 +36,7 @@ impl std::str::FromStr for OutputFormat {
     }
 }
 
-/// Print output with table support
+/// Print serialized output as JSON, YAML, or a formatted table.
 pub(crate) fn print_output_with_table<T, U>(
     data: &T,
     format: OutputFormat,

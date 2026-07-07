@@ -9,7 +9,7 @@ use crate::{
     service::{record::RecordService, zone::ZoneService},
 };
 
-/// Handle AXFR
+/// Handles an AXFR request.
 pub(crate) async fn handle_axfr(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -19,8 +19,8 @@ pub(crate) async fn handle_axfr(
     handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::AXFR).await
 }
 
-/// Handle AXFR payload with a specific response question type.
-/// IXFR fallback should keep QTYPE=IXFR to match the original query.
+/// Handles an AXFR payload with a specific response question type.
+/// IXFR fallback keeps QTYPE=IXFR to match the original query.
 pub(crate) async fn handle_axfr_with_qtype(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -37,7 +37,7 @@ pub(crate) async fn handle_axfr_with_qtype(
     let zone_name_owned = zone_name.to_string();
     let zone_name_str = zone_name_owned.trim_end_matches('.');
 
-    // Check if this is a catalog zone request
+    // Catalog zone requests are handled separately.
     if catalog::is_catalog_zone(zone_name_str) {
         return catalog::handle_catalog_axfr_with_qtype(
             stream,
@@ -75,7 +75,6 @@ pub(crate) async fn handle_axfr_with_qtype(
     })
     .await?;
 
-    // Add all records
     for record in &records {
         messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
             builder.add_record(record, &zone.name)

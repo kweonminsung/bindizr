@@ -7,7 +7,6 @@ impl ZoneService {
     pub async fn delete(zone_name: &str) -> Result<(), ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
 
-        // Check if zone exists and get its ID
         let zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
             Ok(Some(z)) => z,
             Ok(None) => {
@@ -26,7 +25,6 @@ impl ZoneService {
         let zone_id = zone.id;
         let zone_name_clone = zone.name.clone();
 
-        // Delete zone
         let mut tx = RepositoryService::begin_tx("Failed to delete zone").await?;
 
         let apply_result = async {
@@ -42,7 +40,7 @@ impl ZoneService {
 
         RepositoryService::finish_tx(tx, apply_result, "Failed to delete zone").await?;
 
-        // Log zone deletion after commit (structured logging)
+        // Log zone deletion after commit
         log_info!(
             "event=zone_delete zone={} zone_id={}",
             zone_name_clone,

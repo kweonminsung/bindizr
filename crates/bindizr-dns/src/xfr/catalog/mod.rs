@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use super::{delta, error::XfrError, wire};
 use crate::{log_info, model::zone::Zone, service::zone::ZoneService};
 
-/// Generate the catalog zone and its member list
+/// Generates the catalog zone and its member zone list.
 pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
     log_info!("Generating catalog zone: {}", CATALOG_ZONE_NAME);
 
@@ -15,7 +15,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
 
-    // Filter out catalog zone itself
+    // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = all_zones
         .iter()
         .map(|z| z.name.clone())
@@ -24,7 +24,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
 
     log_info!("Catalog zone contains {} member zones", member_zones.len());
 
-    // Create catalog zone metadata. This is a virtual zone
+    // The catalog zone is virtual (no DB row); build its metadata in memory.
     let serial = generate_catalog_serial(&member_zones, &all_zones).await?;
 
     let catalog_zone = Zone {

@@ -72,12 +72,9 @@ pub(crate) enum Command {
 }
 
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
-    // Initialize Configuration
     if let Some(file) = config_file {
-        // Load configuration from the specified file
         config::initialize(Some(file));
     } else {
-        // Use default configuration file
         config::initialize(None);
     }
 
@@ -113,7 +110,6 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 pub async fn execute() {
     let args = Args::parse();
 
-    // Execute command
     if let Err(e) = match args.command {
         Command::Start { config } => commands::start::handle_command(config).await,
         Command::Status => commands::status::handle_command().await,
