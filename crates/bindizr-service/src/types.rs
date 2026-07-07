@@ -207,6 +207,84 @@ pub struct CreateRecordRequest {
     pub zone_name: String,
 }
 
+/// A single record entry for bulk insertion. The zone is taken from the request
+/// path, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct BulkRecordItem {
+    #[schema(example = "sub")]
+    pub name: String,
+    #[schema(example = "A")]
+    pub record_type: String,
+    pub value: RecordValueRequest,
+    #[schema(example = 3600)]
+    pub ttl: Option<i32>,
+    #[schema(example = 10)]
+    pub priority: Option<i32>,
+}
+
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct CreateBulkRecordsRequest {
+    pub records: Vec<BulkRecordItem>,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+pub struct BulkRecordsResponse {
+    #[schema(example = 3)]
+    pub inserted: usize,
+    pub records: Vec<GetRecordResponse>,
+}
+
+/// How parsed records are reconciled with the records already in the zone.
+#[derive(Clone, Copy, Debug, Default, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ImportMode {
+    /// Add parsed records; records already present are left untouched.
+    #[default]
+    Append,
+    /// Replace every RRset (name + type) that appears in the file with the
+    /// parsed records, leaving other RRsets untouched.
+    Upsert,
+    /// Replace all non-protected records in the zone with the parsed records.
+    Replace,
+}
+
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct ImportZoneFileRequest {
+    /// Raw BIND zone file text.
+    #[schema(example = "www IN A 192.0.2.1\nmail IN A 192.0.2.2\n")]
+    pub content: String,
+    #[serde(default)]
+    pub mode: ImportMode,
+    /// When true, parse and validate without applying any change.
+    #[serde(default, alias = "dryRun")]
+    pub dry_run: bool,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ImportZoneFileResponse {
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
+    pub summary: ImportSummary,
+    /// Per-record validation errors. When non-empty nothing is applied.
+    pub errors: Vec<String>,
+}
+
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ImportSummary {
+    #[schema(example = 12)]
+    pub parsed: usize,
+    #[schema(example = 8)]
+    pub added: usize,
+    #[schema(example = 2)]
+    pub deleted: usize,
+    #[schema(example = 2)]
+    pub unchanged: usize,
+    #[schema(example = 0)]
+    pub skipped: usize,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
 pub struct GetZonesFilter {
     #[schema(example = "example.com")]

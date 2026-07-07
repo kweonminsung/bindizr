@@ -315,3 +315,156 @@ async fn zone_reject_invalid_name_and_ttl() {
         assert_eq!(status, StatusCode::CREATED);
     }
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_zone_file_dry_run_then_apply() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let content = "www IN A 192.0.2.10\nmail IN A 192.0.2.11\nftp IN CNAME www\n";
+
+    // Dry run: reports the plan without applying it.
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content, "dryRun": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], false);
+    assert_eq!(body["dry_run"], true);
+    assert_eq!(body["summary"]["added"], 3);
+    assert_eq!(body["errors"].as_array().unwrap().len(), 0);
+
+    // Nothing applied yet.
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}"),
+            None,
+        )
+        .await;
+    let before = body["items"].as_array().unwrap().len();
+
+    // Real apply.
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["summary"]["added"], 3);
+
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}"),
+            None,
+        )
+        .await;
+    assert_eq!(body["items"].as_array().unwrap().len(), before + 3);
+
+    // Re-applying in append mode is idempotent: everything is unchanged.
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["summary"]["added"], 0);
+    assert_eq!(body["summary"]["unchanged"], 3);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_zone_file_replace_mode() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // Seed two A records.
+    app.request(
+        Method::POST,
+        &format!("/zones/{zone_name}/records/bulk"),
+        Some(json!({
+            "records": [
+                { "name": "keep", "record_type": "A", "value": "192.0.2.1" },
+                { "name": "drop", "record_type": "A", "value": "192.0.2.2" }
+            ]
+        })),
+    )
+    .await;
+
+    // Replace: keep stays (same value), drop is removed, add is created.
+    let content = "keep IN A 192.0.2.1\nadd IN A 192.0.2.3\n";
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content, "mode": "replace" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["summary"]["added"], 1);
+    assert_eq!(body["summary"]["deleted"], 1);
+    assert_eq!(body["summary"]["unchanged"], 1);
+
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=drop"),
+            None,
+        )
+        .await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 0);
+
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=add"),
+            None,
+        )
+        .await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_zone_file_reports_validation_errors() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // A CNAME cannot coexist with another record of the same name.
+    let content = "dup IN A 192.0.2.1\ndup IN CNAME www\n";
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], false);
+    assert!(!body["errors"].as_array().unwrap().is_empty());
+
+    // Nothing applied because of the validation error.
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=dup"),
+            None,
+        )
+        .await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 0);
+}

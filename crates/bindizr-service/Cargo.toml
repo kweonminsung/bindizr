@@ -17,6 +17,7 @@ bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.5" }
 bindizr-db = { path = "../bindizr-db", version = "0.1.0-beta.5" }
 async-trait.workspace = true
 chrono.workspace = true
+domain = { workspace = true, features = ["zonefile"] }
 hex.workspace = true
 log.workspace = true
 rand.workspace = true

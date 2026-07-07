@@ -1,5 +1,6 @@
 use bindizr_core::dns::name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn};
 
+use super::record_value::{is_null_mx_record_value, record_values_equal, validate_record_value};
 use crate::{
     error::ServiceError,
     log_error,
@@ -10,10 +11,6 @@ use crate::{
     repository::{RepositoryService, RepositoryTx},
     validation::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels},
 };
-
-mod record_value;
-
-use record_value::{is_null_mx_record_value, record_values_equal, validate_record_value};
 
 pub(super) struct NormalizedOwnerName {
     /// Name stored in the database according to the current relative-name policy.

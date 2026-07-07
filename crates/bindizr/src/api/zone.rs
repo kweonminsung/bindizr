@@ -14,7 +14,8 @@ use crate::api::{
     middleware::body_parser::JsonBody,
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        MessageResponse, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, ZoneDetailResponse,
+        ZoneListResponse, ZoneResponse,
     },
 };
 
@@ -28,6 +29,7 @@ impl ZoneApi {
             .route("/zones", routing::post(create_zone))
             .route("/zones/{name}", routing::put(update_zone))
             .route("/zones/{name}", routing::delete(delete_zone))
+            .route("/zones/{name}/imports", routing::post(import_zone))
     }
 }
 
@@ -200,6 +202,40 @@ pub(crate) async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl Int
         }
         Err(err) => ApiError::from(err).into_response(),
     }
+}
+
+#[utoipa::path(
+        post,
+        path = "/zones/{name}/imports",
+        tag = "Zone",
+        summary = "Import a BIND zone file into a zone",
+        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone to import records into.")
+        ),
+        request_body = ImportZoneFileRequest,
+        responses(
+            (status = 200, description = "Import summary and validation errors", body = ImportZoneFileResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+pub(crate) async fn import_zone(
+    Path(params): Path<ImportZoneParam>,
+    JsonBody(body): JsonBody<ImportZoneFileRequest>,
+) -> impl IntoResponse {
+    match RecordService::import_zone_file(&params.name, &body).await {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(err) => ApiError::from(err).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ImportZoneParam {
+    name: String,
 }
 
 #[derive(Debug, Deserialize)]

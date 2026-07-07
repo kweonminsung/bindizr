@@ -13,8 +13,9 @@ use crate::api::{
     error::ApiError,
     middleware::body_parser::JsonBody,
     types::{
-        CreateRecordRequest, ErrorResponse, GetRecordResponse, GetRecordsFilter, MessageResponse,
-        RecordListResponse, RecordResponse, UpdateRecordRequest,
+        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
+        GetRecordResponse, GetRecordsFilter, MessageResponse, RecordListResponse, RecordResponse,
+        UpdateRecordRequest,
     },
 };
 
@@ -28,6 +29,10 @@ impl RecordApi {
             .route("/records", routing::post(create_record))
             .route("/records/{record_id}", routing::put(update_record))
             .route("/records/{record_id}", routing::delete(delete_record))
+            .route(
+                "/zones/{zone_name}/records/bulk",
+                routing::post(create_records_bulk),
+            )
     }
 }
 
@@ -185,6 +190,48 @@ pub(crate) async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl
         }
         Err(err) => ApiError::from(err).into_response(),
     }
+}
+
+#[utoipa::path(
+        post,
+        path = "/zones/{zone_name}/records/bulk",
+        tag = "Record",
+        summary = "Bulk insert DNS records into a zone",
+        description = "Insert many records into a single zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are.",
+        params(
+            ("zone_name" = String, Path, description = "The name of the DNS zone to insert records into.")
+        ),
+        request_body = CreateBulkRecordsRequest,
+        responses(
+            (status = 201, description = "DNS records created successfully", body = BulkRecordsResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+pub(crate) async fn create_records_bulk(
+    Path(params): Path<ZoneScopedParam>,
+    JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
+) -> impl IntoResponse {
+    let raw_records = match RecordService::create_bulk(&params.zone_name, &body.records).await {
+        Ok(records) => records,
+        Err(err) => return ApiError::from(err).into_response(),
+    };
+
+    let records = raw_records
+        .iter()
+        .map(GetRecordResponse::from_record_with_zone)
+        .collect::<Vec<_>>();
+
+    let json_body = json!({ "inserted": records.len(), "records": records });
+    (StatusCode::CREATED, Json(json_body)).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ZoneScopedParam {
+    zone_name: String,
 }
 
 #[derive(Debug, Deserialize)]
