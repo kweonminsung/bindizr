@@ -4,6 +4,7 @@ use serde_json::json;
 
 use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 
+/// Subcommands for managing API tokens.
 #[derive(Subcommand, Debug)]
 pub(crate) enum TokenCommand {
     /// Create a new API token
@@ -24,6 +25,7 @@ pub(crate) enum TokenCommand {
     },
 }
 
+/// Handle the `token` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 

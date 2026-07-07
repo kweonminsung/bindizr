@@ -3,9 +3,11 @@ use chrono::Utc;
 use super::{repository::RepositoryService, token::hash_token};
 use crate::{error::ServiceError, log_error, model::api_token::ApiToken};
 
+/// Authenticates API tokens.
 pub struct AuthService;
 
 impl AuthService {
+    /// Validate an API token, rejecting expired tokens and stamping `last_used_at`.
     pub async fn validate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
         let token_hash = hash_token(token_str);
         let stored_token = match RepositoryService::get_api_token_by_token(&token_hash).await {

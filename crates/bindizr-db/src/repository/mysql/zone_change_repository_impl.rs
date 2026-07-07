@@ -7,11 +7,13 @@ use crate::{
     repository::{RepositoryTx, RepositoryTxKind, ZoneChangeRepository},
 };
 
+/// MySQL-backed implementation of `ZoneChangeRepository`.
 pub struct MySqlZoneChangeRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlZoneChangeRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }

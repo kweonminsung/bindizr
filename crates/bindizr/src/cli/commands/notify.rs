@@ -3,12 +3,14 @@ use serde_json::json;
 
 use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 
+/// Subcommands for sending DNS NOTIFY to secondary servers.
 #[derive(Subcommand, Debug)]
 pub(crate) enum NotifyCommand {
     /// Send NOTIFY messages to secondary servers for a zone
     Zone(NotifyZoneArgs),
 }
 
+/// Arguments for the `notify zone` subcommand.
 #[derive(Args, Debug)]
 pub(crate) struct NotifyZoneArgs {
     /// Force serial increment before sending NOTIFY
@@ -19,6 +21,7 @@ pub(crate) struct NotifyZoneArgs {
     zone_name: Option<String>,
 }
 
+/// Handle the `notify` subcommand by forwarding it to the daemon over the socket.
 pub(crate) async fn handle_notify(subcommand: &NotifyCommand) -> Result<(), String> {
     match subcommand {
         NotifyCommand::Zone(args) => notify_zone(args.zone_name.as_deref(), args.force).await,

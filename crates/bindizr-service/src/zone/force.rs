@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl ZoneService {
+    /// Force-increment the serial of one zone by name, or of every zone when `None`.
     pub async fn force_increment_serial(
         zone_name: Option<&str>,
     ) -> Result<Vec<Zone>, ServiceError> {

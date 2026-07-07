@@ -5,10 +5,12 @@ use crate::{
 };
 
 impl RecordService {
+    /// Delete a record by id within the caller's transaction.
     pub async fn delete_tx(tx: &mut RepositoryTx<'_>, record_id: i32) -> Result<(), ServiceError> {
         RepositoryService::delete_record_tx(tx, record_id).await
     }
 
+    /// Delete a record by id, bumping the zone serial and recording a DEL change for IXFR.
     pub async fn delete_by_id(record_id: i32) -> Result<(), ServiceError> {
         let zone_id = match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => record.zone_id,

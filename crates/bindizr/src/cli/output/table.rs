@@ -70,12 +70,14 @@ pub(crate) struct RecordRow {
 }
 
 impl ZoneRow {
+    /// Build a [`ZoneRow`] from a JSON value.
     pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse zone: {}", e))
     }
 }
 
 impl RecordRow {
+    /// Build a [`RecordRow`] from a JSON value.
     pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse record: {}", e))
     }

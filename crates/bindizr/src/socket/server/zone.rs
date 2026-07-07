@@ -6,6 +6,7 @@ use crate::{
     socket::types::DaemonResponse,
 };
 
+/// Handle the `GetZone` command by returning a zone by name.
 pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let name = data
         .get("name")
@@ -24,6 +25,7 @@ pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse,
     }
 }
 
+/// Handle the `ListZones` command by returning zones matching the filter.
 pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let filter = if data.is_null() {
         GetZonesFilter::default()
@@ -47,6 +49,7 @@ pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
     }
 }
 
+/// Handle the `CreateZone` command by creating a new zone.
 pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let request: CreateZoneRequest =
         serde_json::from_value(data.clone()).map_err(|e| format!("Invalid request data: {}", e))?;
@@ -63,6 +66,7 @@ pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
     }
 }
 
+/// Handle the `DeleteZone` command by deleting a zone by name.
 pub(super) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let name = data
         .get("name")

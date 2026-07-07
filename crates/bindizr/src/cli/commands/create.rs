@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 
+/// Subcommands for creating resources.
 #[derive(Subcommand, Debug)]
 pub(crate) enum CreateCommand {
     /// Create a zone
@@ -49,6 +50,7 @@ pub(crate) enum CreateCommand {
     },
 }
 
+/// Handle the `create` subcommand by forwarding it to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: CreateCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 

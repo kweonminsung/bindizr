@@ -7,6 +7,7 @@ use crate::{
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
 
+/// Subcommands for reading zones and records.
 #[derive(Subcommand, Debug)]
 pub(crate) enum GetCommand {
     /// Get zones
@@ -103,6 +104,7 @@ pub(crate) enum GetCommand {
     },
 }
 
+/// Handle the `get` subcommand by querying the daemon and printing the results.
 pub(crate) async fn handle_command(subcommand: GetCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 

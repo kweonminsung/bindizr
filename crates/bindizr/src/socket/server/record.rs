@@ -6,6 +6,7 @@ use crate::{
     socket::types::DaemonResponse,
 };
 
+/// Handle the `GetRecord` command by returning a record by ID.
 pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let record_id_i64 = data
         .get("id")
@@ -29,6 +30,7 @@ pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
     }
 }
 
+/// Handle the `ListRecords` command by returning records matching the filter.
 pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let filter = if data.is_null() {
         GetRecordsFilter::default()
@@ -56,6 +58,7 @@ pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
     }
 }
 
+/// Handle the `CreateRecord` command by creating a new record.
 pub(super) async fn create_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let request: CreateRecordRequest =
         serde_json::from_value(data.clone()).map_err(|e| format!("Invalid request data: {}", e))?;
@@ -73,6 +76,7 @@ pub(super) async fn create_record(data: &serde_json::Value) -> Result<DaemonResp
     }
 }
 
+/// Handle the `DeleteRecord` command by deleting a record by ID.
 pub(super) async fn delete_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let record_id_i64 = data
         .get("id")

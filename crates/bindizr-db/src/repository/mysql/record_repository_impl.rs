@@ -7,11 +7,13 @@ use crate::{
     repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
 };
 
+/// MySQL-backed implementation of `RecordRepository`.
 pub struct MySqlRecordRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlRecordRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<MySql>) -> Self {
         MySqlRecordRepository { pool }
     }

@@ -20,6 +20,7 @@ use crate::{
 };
 
 impl ZoneService {
+    /// Create a new zone with an apex NS record and NOTIFY the catalog zone.
     pub async fn create(create_zone_request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
         let validated = validate_create_zone_request(create_zone_request)?;
         let timers = resolve_soa_timers(

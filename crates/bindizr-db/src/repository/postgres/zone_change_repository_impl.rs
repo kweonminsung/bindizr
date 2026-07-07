@@ -7,11 +7,13 @@ use crate::{
     repository::{RepositoryTx, RepositoryTxKind, ZoneChangeRepository},
 };
 
+/// PostgreSQL-backed implementation of `ZoneChangeRepository`.
 pub struct PostgresZoneChangeRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresZoneChangeRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }

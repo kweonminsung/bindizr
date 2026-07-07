@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use super::{error::ServiceError, repository::RepositoryService};
 use crate::model::api_token::ApiToken;
 
+/// Creates, lists, and revokes API tokens.
 pub struct TokenService;
 
 pub(crate) fn hash_token(token: &str) -> String {
@@ -14,6 +15,7 @@ pub(crate) fn hash_token(token: &str) -> String {
 }
 
 impl TokenService {
+    /// Create a new API token; the returned token carries the raw secret to show once.
     pub async fn create_token(
         description: Option<&str>,
         expires_in_days: Option<i64>,
@@ -44,6 +46,7 @@ impl TokenService {
         Ok(created)
     }
 
+    /// List all API tokens with their secret hashes cleared.
     pub async fn list_tokens() -> Result<Vec<ApiToken>, ServiceError> {
         let mut tokens = RepositoryService::get_all_api_tokens().await?;
         for token in &mut tokens {
@@ -52,6 +55,7 @@ impl TokenService {
         Ok(tokens)
     }
 
+    /// Delete the API token with the given id, returning `NotFound` if it is absent.
     pub async fn delete_token(token_id: i32) -> Result<(), ServiceError> {
         let exists = RepositoryService::get_api_token_by_id(token_id).await?;
         if exists.is_none() {

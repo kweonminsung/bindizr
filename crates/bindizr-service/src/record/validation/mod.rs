@@ -181,6 +181,7 @@ pub(super) fn validate_record_add_constraints(
     Ok(normalized_owner)
 }
 
+/// Reject deletions of the SOA record or the NS record referenced by `primary_ns`.
 pub fn validate_delete_constraints(
     zone: &Zone,
     deleting_records: &[Record],
@@ -250,6 +251,7 @@ pub(super) fn validate_record_update_constraints(
     Ok(normalized_owner)
 }
 
+/// Validate an add against conflicting records loaded within the caller's transaction.
 pub async fn validate_add_constraints_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,

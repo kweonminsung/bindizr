@@ -41,6 +41,7 @@ pub async fn save_zone_snapshot_tx(
     Ok(())
 }
 
+/// Fetch the SOA snapshot recorded for a zone at the given serial, if any.
 pub async fn get_by_serial(
     zone_id: i32,
     serial: i32,

@@ -1,5 +1,6 @@
 use sqlx::FromRow;
 
+/// A single record add/delete change within a zone, used for IXFR.
 #[derive(Debug, Clone, FromRow)]
 pub struct ZoneChange {
     pub id: i32,

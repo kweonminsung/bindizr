@@ -16,6 +16,7 @@ use error::ServiceError;
 use repository::RepositoryService;
 pub use repository::RepositoryTx;
 
+/// Begin a repository transaction; `internal_msg` is the error message on failure.
 pub async fn begin_tx(internal_msg: &'static str) -> Result<RepositoryTx<'static>, ServiceError> {
     RepositoryService::begin_tx(internal_msg).await
 }

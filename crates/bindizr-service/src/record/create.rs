@@ -19,6 +19,7 @@ use crate::{
 };
 
 impl RecordService {
+    /// Insert a record within the caller's transaction.
     pub async fn create_tx(
         tx: &mut RepositoryTx<'_>,
         record: Record,
@@ -26,6 +27,7 @@ impl RecordService {
         RepositoryService::create_record_tx(tx, record).await
     }
 
+    /// Create a record, bumping the zone serial and recording an ADD change for IXFR.
     pub async fn create(
         create_record_request: &CreateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {

@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::FromRow;
 
+/// A single DNS resource record belonging to a zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Record {
     pub id: i32,
@@ -15,6 +16,7 @@ pub struct Record {
     pub zone_id: i32,
 }
 
+/// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {
     pub id: i32,
@@ -30,6 +32,7 @@ pub struct RecordWithZone {
 }
 
 impl RecordWithZone {
+    /// Create a [`RecordWithZone`] from a [`Record`] and its zone name.
     pub fn new(record: Record, zone_name: String) -> Self {
         Self {
             id: record.id,
@@ -44,6 +47,7 @@ impl RecordWithZone {
         }
     }
 
+    /// Return the underlying [`Record`], dropping the zone name.
     pub fn record(&self) -> Record {
         Record {
             id: self.id,
@@ -58,6 +62,7 @@ impl RecordWithZone {
     }
 }
 
+/// Supported DNS resource record types.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub enum RecordType {
@@ -103,6 +108,7 @@ impl std::str::FromStr for RecordType {
 }
 
 impl RecordType {
+    /// Return the record type's presentation-format mnemonic (e.g. `"A"`).
     pub fn as_str(&self) -> &str {
         match self {
             RecordType::A => "A",
@@ -117,6 +123,7 @@ impl RecordType {
         }
     }
 
+    /// Whether the record's value is (or ends with) a domain name.
     pub fn is_name_like_value(&self) -> bool {
         matches!(
             self,

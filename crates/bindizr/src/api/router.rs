@@ -11,9 +11,11 @@ use utoipa::OpenApi;
 use super::openapi::ApiDoc;
 use super::{notify::NotifyApi, record::RecordApi, zone::ZoneApi};
 
+/// HTTP API router assembling all route groups.
 pub(crate) struct ApiRouter;
 
 impl ApiRouter {
+    /// Build the full axum router with auth, CORS, and (in debug) OpenAPI routes.
     pub(crate) async fn routes() -> Router {
         let mut api_router = Router::new()
             .merge(ZoneApi::routes().await)

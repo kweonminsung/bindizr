@@ -19,9 +19,11 @@ use crate::api::{
     },
 };
 
+/// Route group for zone endpoints.
 pub(crate) struct ZoneApi;
 
 impl ZoneApi {
+    /// Build the router for zone endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/zones", routing::get(get_zones))
@@ -58,6 +60,7 @@ impl ZoneApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// List DNS zones, optionally filtered and paginated.
 pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoResponse {
     match ZoneService::list_by_filter(query).await {
         Ok(response) => {
@@ -89,6 +92,7 @@ pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoR
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Get a single DNS zone, optionally including its records.
 pub(crate) async fn get_zone(
     Path(params): Path<GetZoneParam>,
     Query(query): Query<GetZoneQuery>,
@@ -132,6 +136,7 @@ pub(crate) async fn get_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Create a new DNS zone.
 pub(crate) async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> impl IntoResponse {
     match ZoneService::create(&body).await {
         Ok(zone) => {
@@ -161,6 +166,7 @@ pub(crate) async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> 
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Update an existing DNS zone.
 pub(crate) async fn update_zone(
     Path(params): Path<UpdateZoneParam>,
     JsonBody(body): JsonBody<CreateZoneRequest>,
@@ -192,6 +198,7 @@ pub(crate) async fn update_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Delete a DNS zone.
 pub(crate) async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl IntoResponse {
     let zone_name = params.name;
 
@@ -223,6 +230,7 @@ pub(crate) async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl Int
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Import a BIND zone file into a zone, reconciling records in one transaction.
 pub(crate) async fn import_zone(
     Path(params): Path<ImportZoneParam>,
     JsonBody(body): JsonBody<ImportZoneFileRequest>,
@@ -233,26 +241,31 @@ pub(crate) async fn import_zone(
     }
 }
 
+/// Path parameters for importing a zone file.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ImportZoneParam {
     name: String,
 }
 
+/// Path parameters for fetching a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetZoneParam {
     name: String,
 }
 
+/// Query parameters for fetching a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetZoneQuery {
     records: Option<bool>,
 }
 
+/// Path parameters for updating a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct UpdateZoneParam {
     name: String,
 }
 
+/// Path parameters for deleting a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct DeleteZoneParam {
     name: String,

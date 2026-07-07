@@ -3,6 +3,7 @@ use std::fmt;
 use serde::Serialize;
 use tabled::{Table, Tabled, settings::Style};
 
+/// Output format for CLI results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputFormat {
     Json,

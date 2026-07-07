@@ -65,6 +65,7 @@ async fn handle_client(stream: UnixStream) {
     }
 }
 
+/// Bind the daemon's Unix socket and spawn the connection accept loop.
 pub(crate) async fn initialize() -> Result<(), String> {
     let (socket_path, listener) = bind_daemon_socket().await?;
 

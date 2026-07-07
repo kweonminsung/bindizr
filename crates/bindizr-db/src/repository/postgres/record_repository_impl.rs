@@ -7,11 +7,13 @@ use crate::{
     repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
 };
 
+/// PostgreSQL-backed implementation of `RecordRepository`.
 pub struct PostgresRecordRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresRecordRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Postgres>) -> Self {
         PostgresRecordRepository { pool }
     }

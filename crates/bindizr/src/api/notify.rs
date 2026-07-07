@@ -8,9 +8,11 @@ use crate::api::{
     types::{ErrorResponse, MessageResponse, NotifyZoneRequest},
 };
 
+/// Route group for NOTIFY endpoints.
 pub(crate) struct NotifyApi;
 
 impl NotifyApi {
+    /// Build the router for NOTIFY endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new().route("/notify/zones", routing::post(notify_zones))
     }
@@ -31,6 +33,7 @@ impl NotifyApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Send DNS NOTIFY messages for a specific zone or all zones.
 pub(crate) async fn notify_zones(JsonBody(body): JsonBody<NotifyZoneRequest>) -> impl IntoResponse {
     match dns::xfr::notify::send_notify(body.zone_name.as_deref(), body.force).await {
         Ok(()) => {

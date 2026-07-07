@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 
+/// Subcommands for deleting resources.
 #[derive(Subcommand, Debug)]
 pub(crate) enum DeleteCommand {
     /// Delete a zone
@@ -18,6 +19,7 @@ pub(crate) enum DeleteCommand {
     },
 }
 
+/// Handle the `delete` subcommand by forwarding it to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: DeleteCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 

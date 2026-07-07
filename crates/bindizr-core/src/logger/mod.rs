@@ -39,6 +39,7 @@ macro_rules! log_trace {
     };
 }
 
+/// Simple `log` implementation that writes to stderr.
 pub struct Logger {
     log_level: Level,
 }
@@ -73,6 +74,7 @@ impl log::Log for Logger {
     }
 }
 
+/// Install the global logger using the configured log level.
 pub fn initialize() {
     let log_level = match config::get_bindizr_config().logging.log_level {
         config::LogLevel::Error => Level::Error,

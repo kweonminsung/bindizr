@@ -7,12 +7,14 @@ use config::{Config, File, FileFormat};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
-// Config file path
+/// Default directory holding the bindizr configuration.
 pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";
+/// Default path to the bindizr configuration file.
 pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
 
+/// Top-level bindizr configuration.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BindizrConfig {
     pub api: ApiConfig,
@@ -21,6 +23,7 @@ pub struct BindizrConfig {
     pub logging: LoggingConfig,
 }
 
+/// HTTP API server settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
@@ -29,6 +32,7 @@ pub struct ApiConfig {
     pub require_authentication: bool,
 }
 
+/// Database backend selection and per-backend connection settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DatabaseConfig {
     #[serde(rename = "type")]
@@ -41,6 +45,7 @@ pub struct DatabaseConfig {
     pub postgresql: PostgresqlConfig,
 }
 
+/// Supported database backends.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
@@ -60,21 +65,25 @@ impl fmt::Display for DatabaseType {
     }
 }
 
+/// MySQL connection settings.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct MysqlConfig {
     pub server_url: String,
 }
 
+/// SQLite connection settings.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SqliteConfig {
     pub file_path: String,
 }
 
+/// PostgreSQL connection settings.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct PostgresqlConfig {
     pub server_url: String,
 }
 
+/// DNS server and NOTIFY/nsupdate settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
@@ -107,11 +116,13 @@ fn default_notify_timeout_secs() -> u64 {
     5
 }
 
+/// Logging settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LoggingConfig {
     pub log_level: LogLevel,
 }
 
+/// Console log verbosity levels.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
@@ -135,6 +146,8 @@ impl fmt::Display for LogLevel {
     }
 }
 
+/// Load configuration from `conf_file_path` (or the default path / env var),
+/// apply environment overrides, and store it as the global config.
 pub fn initialize(conf_file_path: Option<&str>) {
     let conf_file_path = conf_file_path
         .map(str::to_string)
@@ -309,6 +322,7 @@ fn exit_config_error(message: String) -> ! {
     std::process::exit(1);
 }
 
+/// Return the global configuration; panics if [`initialize`] has not run.
 pub fn get_bindizr_config() -> &'static BindizrConfig {
     BINDIZR_CONFIG.get().expect("Configuration not initialized")
 }

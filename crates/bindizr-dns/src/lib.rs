@@ -26,6 +26,7 @@ enum QueryRoute {
     Other(Rtype),
 }
 
+/// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
 pub async fn initialize() {
     xfr::initialize().await;
 

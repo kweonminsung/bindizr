@@ -21,10 +21,12 @@ use crate::{
 };
 
 impl ZoneService {
+    /// Persist a zone within the caller's transaction.
     pub async fn update_tx(tx: &mut RepositoryTx<'_>, zone: Zone) -> Result<Zone, ServiceError> {
         RepositoryService::update_zone_tx(tx, zone).await
     }
 
+    /// Record a zone change (IXFR log entry) within the caller's transaction.
     pub async fn create_change_tx(
         tx: &mut RepositoryTx<'_>,
         zone_change: ZoneChange,
@@ -32,6 +34,7 @@ impl ZoneService {
         RepositoryService::create_zone_change_tx(tx, zone_change).await
     }
 
+    /// Update a zone, bumping its serial and recording SOA/NS changes for IXFR.
     pub async fn update(
         zone_name: &str,
         update_zone_request: &CreateZoneRequest,

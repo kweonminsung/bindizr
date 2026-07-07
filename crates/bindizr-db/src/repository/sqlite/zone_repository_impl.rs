@@ -7,11 +7,13 @@ use crate::{
     repository::{RepositoryTx, RepositoryTxKind, ZoneFilter, ZoneRepository},
 };
 
+/// SQLite-backed implementation of `ZoneRepository`.
 pub struct SqliteZoneRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteZoneRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }

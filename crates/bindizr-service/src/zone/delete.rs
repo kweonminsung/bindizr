@@ -4,6 +4,7 @@ use super::{ZoneService, validation::normalize_zone_name};
 use crate::{error::ServiceError, log_error, log_info, log_warn, repository::RepositoryService};
 
 impl ZoneService {
+    /// Delete a zone by name and NOTIFY the catalog zone after commit.
     pub async fn delete(zone_name: &str) -> Result<(), ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
 

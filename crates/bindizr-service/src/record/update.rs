@@ -16,6 +16,7 @@ use crate::{
 };
 
 impl RecordService {
+    /// Update a record by id, bumping the zone serial and recording DEL+ADD changes for IXFR.
     pub async fn update_by_id(
         record_id: i32,
         update_record_request: &UpdateRecordRequest,

@@ -13,6 +13,7 @@ pub(crate) use bindizr_core::{config, log_error, log_info};
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
 static INITIALIZE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// A connection pool for one of the supported database backends.
 #[derive(Debug)]
 pub enum DatabasePool {
     MySQL(Pool<MySql>),
@@ -20,6 +21,7 @@ pub enum DatabasePool {
     SQLite(Pool<Sqlite>),
 }
 
+/// Supported database backend types.
 #[derive(Debug, Clone)]
 pub enum DatabaseType {
     MySQL,
@@ -27,6 +29,7 @@ pub enum DatabaseType {
     SQLite,
 }
 
+/// Initialize the global database pool from configuration. Idempotent.
 pub async fn initialize() {
     if is_initialized() {
         return;
@@ -74,11 +77,13 @@ fn is_initialized() -> bool {
     DATABASE_POOL.get().is_some()
 }
 
+/// Return the global database pool, panicking if not yet initialized.
 pub fn get_pool() -> &'static DatabasePool {
     DATABASE_POOL.get().expect("Database pool not initialized")
 }
 
 impl DatabasePool {
+    /// Connect to MySQL, create tables, and return the pool.
     pub async fn new_mysql(url: &str) -> Self {
         let pool = Pool::<MySql>::connect(url).await.unwrap_or_else(|e| {
             log_error!("Failed to create MySQL database pool: {}", e);
@@ -95,6 +100,7 @@ impl DatabasePool {
         database_pool
     }
 
+    /// Connect to PostgreSQL, create tables, and return the pool.
     pub async fn new_postgres(url: &str) -> Self {
         let pool = Pool::<Postgres>::connect(url).await.unwrap_or_else(|e| {
             log_error!("Failed to create PostgreSQL database pool: {}", e);
@@ -110,6 +116,7 @@ impl DatabasePool {
 
         database_pool
     }
+    /// Connect to SQLite, create tables, and return the pool.
     pub async fn new_sqlite(url: &str) -> Self {
         let pool = SqlitePoolOptions::new()
             .after_connect(|conn, _| {
@@ -189,31 +196,38 @@ impl DatabasePool {
 }
 
 // Repository accessors returning trait objects for runtime dispatch.
+
+/// Return a zone repository backed by the global pool.
 pub fn get_zone_repository() -> Box<dyn repository::ZoneRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_repository(pool)
 }
 
+/// Return a record repository backed by the global pool.
 pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_record_repository(pool)
 }
 
+/// Return an API token repository backed by the global pool.
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_api_token_repository(pool)
 }
 
+/// Return a zone change repository backed by the global pool.
 pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_change_repository(pool)
 }
 
+/// Return a zone snapshot repository backed by the global pool.
 pub fn get_zone_snapshot_repository() -> Box<dyn repository::ZoneSnapshotRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_snapshot_repository(pool)
 }
 
+/// Return a catalog zone state repository backed by the global pool.
 pub fn get_catalog_zone_state_repository() -> Box<dyn repository::CatalogZoneStateRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_catalog_zone_state_repository(pool)

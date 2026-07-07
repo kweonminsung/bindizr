@@ -11,6 +11,7 @@ use super::types::{
     UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
 };
 
+/// OpenAPI document for the HTTP API (debug builds only).
 #[derive(OpenApi)]
 #[openapi(
     paths(

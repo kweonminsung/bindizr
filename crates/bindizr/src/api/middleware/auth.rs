@@ -9,6 +9,7 @@ use bindizr_core::log_debug;
 use bindizr_service::auth::AuthService;
 use serde_json::json;
 
+/// Validate the request's Bearer token, rejecting unauthorized requests.
 pub(crate) async fn auth_middleware(
     mut req: Request<Body>,
     next: Next,

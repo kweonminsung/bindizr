@@ -8,6 +8,7 @@ use crate::socket::{
     types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
 };
 
+/// Client for sending commands to the daemon over the Unix socket.
 pub(crate) struct DaemonSocketClient;
 
 impl Default for DaemonSocketClient {
@@ -17,10 +18,12 @@ impl Default for DaemonSocketClient {
 }
 
 impl DaemonSocketClient {
+    /// Create a new [`DaemonSocketClient`].
     pub(crate) fn new() -> Self {
         DaemonSocketClient
     }
 
+    /// Send a command to the daemon and return its parsed response.
     pub(crate) async fn send_command(
         &self,
         command: DaemonCommandKind,

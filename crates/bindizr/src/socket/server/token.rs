@@ -3,6 +3,7 @@ use bindizr_service::{error::ServiceError, token::TokenService};
 
 use crate::socket::types::DaemonResponse;
 
+/// Handle the `TokenCreate` command by creating a new API token.
 pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let description = data.get("description").and_then(|v| v.as_str());
     let expires_in_days = data.get("expires_in_days").and_then(|v| v.as_i64());
@@ -18,6 +19,7 @@ pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
     Ok(response)
 }
 
+/// Handle the `TokenList` command by returning all API tokens.
 pub(super) async fn list_tokens() -> Result<DaemonResponse, String> {
     let tokens = match TokenService::list_tokens().await {
         Ok(tokens) => Ok(tokens),
@@ -34,6 +36,7 @@ pub(super) async fn list_tokens() -> Result<DaemonResponse, String> {
     Ok(response)
 }
 
+/// Handle the `TokenDelete` command by deleting an API token by ID.
 pub(super) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, String> {
     let token_id_i64 = data
         .get("id")
