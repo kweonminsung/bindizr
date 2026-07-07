@@ -25,9 +25,14 @@ class BindizrAdapter(DnsAdapter):
     key = "bindizr"
     resource_services = ["bindizr", "bind9"]
     supports_ixfr = True
-    # Bindizr serialises writes (SOA bump + XFR); keep bulk concurrency modest so
-    # SQLite/MySQL write locks don't dominate. MySQL/PG tolerate more than SQLite.
-    bulk_concurrency = 8
+    # Bindizr exposes a native bulk-insert API and a BIND zone-file import API, so
+    # it does not fall back to the base one-by-one bulk path.
+    supports_bulk_api = True
+    supports_zone_import = True
+    # Records per request: each bulk/import batch is one server-side transaction
+    # (single serial bump + NOTIFY), so batch to bound memory and transaction size.
+    bulk_chunk = 2000
+    import_chunk = 5000
 
     def __init__(self, cfg: dict, project: str, db_type: str = "sqlite",
                  notify_after_update: bool = True):
@@ -128,6 +133,63 @@ class BindizrAdapter(DnsAdapter):
         async with self.session.delete(self.base + f"/records/{handle}") as r:
             await r.read()
             return r.status == 200
+
+    def _bulk_item(self, rec: dict) -> dict:
+        item = {
+            "name": rec["name"],
+            "record_type": rec["type"],
+            "value": rec["value"],
+            "ttl": rec.get("ttl", 3600),
+        }
+        if "priority" in rec:
+            item["priority"] = rec["priority"]
+        return item
+
+    async def _post_with_retry(self, url: str, body: dict, count: int) -> int:
+        """POST `body`, retrying transient failures. Returns the number of records
+        that failed after all retries (0 on success)."""
+        delay = 0.05
+        for attempt in range(4):
+            try:
+                async with self.session.post(url, json=body) as r:
+                    if r.status in (200, 201):
+                        return 0
+            except Exception:
+                pass
+            if attempt < 3:
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 1.0)
+        return count
+
+    async def bulk_import(self, zone: str, records: list[dict]) -> None:
+        """Bulk-insert via Bindizr's `/records/bulk` API in single-transaction
+        chunks (each chunk bumps the serial once and sends one NOTIFY)."""
+        self.bulk_errors = 0
+        url = self.base + f"/zones/{zone.rstrip('.')}/records/bulk"
+        for start in range(0, len(records), self.bulk_chunk):
+            chunk = records[start:start + self.bulk_chunk]
+            body = {"records": [self._bulk_item(r) for r in chunk]}
+            self.bulk_errors += await self._post_with_retry(url, body, len(chunk))
+
+    def _zone_line(self, rec: dict) -> str:
+        ttl = rec.get("ttl", 3600)
+        rdata = rec["value"]
+        if rec["type"] == "TXT":
+            rdata = '"{}"'.format(rec["value"].replace("\\", "\\\\").replace('"', '\\"'))
+        elif rec["type"] == "MX":
+            rdata = f'{rec.get("priority", 10)} {rec["value"]}'
+        return f'{rec["name"]} {ttl} IN {rec["type"]} {rdata}'
+
+    async def import_zone_file(self, zone: str, records: list[dict]) -> None:
+        """Import records as BIND zone-file text via `/zones/{name}/imports`
+        (append mode), chunked so large sets don't build one giant request."""
+        self.import_errors = 0
+        url = self.base + f"/zones/{zone.rstrip('.')}/imports"
+        for start in range(0, len(records), self.import_chunk):
+            chunk = records[start:start + self.import_chunk]
+            content = "\n".join(self._zone_line(r) for r in chunk) + "\n"
+            body = {"content": content, "mode": "append"}
+            self.import_errors += await self._post_with_retry(url, body, len(chunk))
 
     def dns_endpoint(self) -> Endpoint:
         return Endpoint("127.0.0.1", DNS_PORT)
