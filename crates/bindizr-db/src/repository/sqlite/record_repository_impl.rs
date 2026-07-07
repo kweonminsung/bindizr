@@ -187,6 +187,32 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
+    async fn get_by_zone_id_and_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        name: &str,
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        let records = sqlx::query_as::<_, Record>(
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND LOWER(name) = LOWER(?) ORDER BY name",
+        )
+        .bind(zone_id)
+        .bind(name)
+        .fetch_all(&mut **sqlite_tx)
+        .await?;
+
+        Ok(records)
+    }
+
     async fn get(
         &self,
         zone_id: Option<i32>,

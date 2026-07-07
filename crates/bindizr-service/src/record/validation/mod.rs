@@ -259,12 +259,19 @@ pub async fn validate_add_constraints_tx(
     priority: Option<i32>,
     except_record_id: Option<i32>,
 ) -> Result<(), ServiceError> {
-    let zone_records = RepositoryService::get_records_by_zone_id_tx(tx, zone.id)
-        .await
-        .map_err(|e| {
-            log_error!("Failed to load zone records: {}", e);
-            ServiceError::Internal("Failed to load zone records".to_string())
-        })?;
+    // Only records sharing the owner name can conflict, so load just those
+    // instead of the whole zone.
+    let lookup_owner = normalize_record_owner_name(owner_name, &zone.name)?;
+    let zone_records = RepositoryService::get_records_by_zone_id_and_name_tx(
+        tx,
+        zone.id,
+        &lookup_owner.stored_name,
+    )
+    .await
+    .map_err(|e| {
+        log_error!("Failed to load zone records: {}", e);
+        ServiceError::Internal("Failed to load zone records".to_string())
+    })?;
 
     validate_record_add_constraints(
         zone,

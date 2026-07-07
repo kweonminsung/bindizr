@@ -188,6 +188,32 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(records)
     }
 
+    async fn get_by_zone_id_and_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        name: &str,
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let mysql_tx = match &mut tx.0 {
+            RepositoryTxKind::MySQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected MySQL)".to_string(),
+                ));
+            }
+        };
+
+        let records = sqlx::query_as::<_, Record>(
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND LOWER(name) = LOWER(?) ORDER BY name FOR UPDATE",
+        )
+        .bind(zone_id)
+        .bind(name)
+        .fetch_all(&mut **mysql_tx)
+        .await?;
+
+        Ok(records)
+    }
+
     async fn get(
         &self,
         zone_id: Option<i32>,

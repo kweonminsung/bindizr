@@ -175,6 +175,17 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }
 
+    pub(super) async fn get_records_by_zone_id_and_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        name: &str,
+    ) -> Result<Vec<Record>, ServiceError> {
+        get_record_repository()
+            .get_by_zone_id_and_name_tx(tx, zone_id, name)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
+    }
+
     pub(super) async fn create_record(record: Record) -> Result<Record, ServiceError> {
         get_record_repository()
             .create(record)

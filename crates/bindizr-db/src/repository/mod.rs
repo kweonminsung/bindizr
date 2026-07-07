@@ -111,7 +111,6 @@ impl<'a> RepositoryTx<'a> {
     }
 }
 
-// Zone Repository Trait
 #[allow(dead_code)]
 #[async_trait]
 pub trait ZoneRepository: Send + Sync {
@@ -140,7 +139,6 @@ pub trait ZoneRepository: Send + Sync {
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
 }
 
-// Record Repository Trait
 #[allow(dead_code)]
 #[async_trait]
 pub trait RecordRepository: Send + Sync {
@@ -166,6 +164,12 @@ pub trait RecordRepository: Send + Sync {
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
+    ) -> Result<Vec<Record>, DatabaseError>;
+    async fn get_by_zone_id_and_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        name: &str,
     ) -> Result<Vec<Record>, DatabaseError>;
     async fn get(
         &self,
@@ -203,7 +207,6 @@ pub trait RecordRepository: Send + Sync {
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
 }
 
-// Zone Change Repository Trait
 #[allow(dead_code)]
 #[async_trait]
 pub trait ZoneChangeRepository: Send + Sync {
@@ -237,7 +240,6 @@ pub trait ZoneSnapshotRepository: Send + Sync {
     ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
 }
 
-// API Token Repository Trait
 #[async_trait]
 pub trait ApiTokenRepository: Send + Sync {
     async fn create(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
@@ -265,7 +267,6 @@ pub trait CatalogZoneStateRepository: Send + Sync {
     ) -> Result<CatalogZoneState, DatabaseError>;
 }
 
-// Repository Factory
 pub struct RepositoryFactory;
 
 impl RepositoryFactory {

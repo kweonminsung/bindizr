@@ -1,4 +1,7 @@
-use super::{RecordService, validation::validate_record_update_constraints};
+use super::{
+    RecordService,
+    validation::{normalize_record_owner_name, validate_record_update_constraints},
+};
 use crate::{
     error::ServiceError,
     log_error, log_info, log_warn,
@@ -77,16 +80,25 @@ impl RecordService {
                 .to_storage_value(&record_type)
                 .map_err(ServiceError::BadRequest)?;
 
-            let zone_records =
-                match RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await {
-                    Ok(records) => records,
-                    Err(e) => {
-                        log_error!("Failed to load zone records: {}", e);
-                        return Err(ServiceError::Internal(
-                            "Failed to update record".to_string(),
-                        ));
-                    }
-                };
+            // Only records sharing the new owner name can conflict, so load just
+            // those instead of the whole zone.
+            let lookup_owner =
+                normalize_record_owner_name(&update_record_request.name, &zone.name)?;
+            let zone_records = match RepositoryService::get_records_by_zone_id_and_name_tx(
+                &mut tx,
+                zone.id,
+                &lookup_owner.stored_name,
+            )
+            .await
+            {
+                Ok(records) => records,
+                Err(e) => {
+                    log_error!("Failed to load zone records: {}", e);
+                    return Err(ServiceError::Internal(
+                        "Failed to update record".to_string(),
+                    ));
+                }
+            };
 
             let mut candidate_updated = Record {
                 id: existing_record.id,
