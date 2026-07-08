@@ -91,6 +91,11 @@ pub struct DnsConfig {
     pub secondary_addrs: String,
     #[serde(default = "default_notify_after_update")]
     pub notify_after_update: bool,
+    /// Whether reload/NOTIFY runs inline on the write path (`sync`) or is handed
+    /// to a background worker so the write returns as soon as the DB commits
+    /// (`async`).
+    #[serde(default = "default_apply_mode")]
+    pub apply_mode: ApplyMode,
     #[serde(default)]
     pub notify_on_startup: bool,
     #[serde(default = "default_notify_retries")]
@@ -106,6 +111,30 @@ pub struct DnsConfig {
 
 fn default_notify_after_update() -> bool {
     true
+}
+
+fn default_apply_mode() -> ApplyMode {
+    ApplyMode::Sync
+}
+
+/// How zone reload/NOTIFY is applied relative to the write request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApplyMode {
+    /// Reload/NOTIFY runs inline; the write returns only after propagation kicks off.
+    Sync,
+    /// Reload/NOTIFY is queued to a background worker; the write returns at commit.
+    Async,
+}
+
+impl fmt::Display for ApplyMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            ApplyMode::Sync => "sync",
+            ApplyMode::Async => "async",
+        };
+        write!(f, "{}", value)
+    }
 }
 
 fn default_notify_retries() -> u32 {
@@ -249,6 +278,9 @@ fn apply_env_overrides_from(
     if let Some(value) = get_env("BINDIZR_NOTIFY_AFTER_UPDATE") {
         config.dns.notify_after_update = parse_env_value("BINDIZR_NOTIFY_AFTER_UPDATE", &value)?;
     }
+    if let Some(value) = get_env("BINDIZR_APPLY_MODE") {
+        config.dns.apply_mode = parse_apply_mode_env("BINDIZR_APPLY_MODE", &value)?;
+    }
     if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
         config.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;
     }
@@ -282,6 +314,17 @@ fn parse_database_type_env(name: &str, value: &str) -> Result<DatabaseType, Stri
         "sqlite" => Ok(DatabaseType::Sqlite),
         _ => Err(format!(
             "Invalid {} environment variable '{}': expected mysql, postgresql, or sqlite",
+            name, value
+        )),
+    }
+}
+
+fn parse_apply_mode_env(name: &str, value: &str) -> Result<ApplyMode, String> {
+    match value {
+        "sync" => Ok(ApplyMode::Sync),
+        "async" => Ok(ApplyMode::Async),
+        _ => Err(format!(
+            "Invalid {} environment variable '{}': expected sync or async",
             name, value
         )),
     }

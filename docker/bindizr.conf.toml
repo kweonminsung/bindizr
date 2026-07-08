@@ -20,6 +20,7 @@ listen_addr = "0.0.0.0"
 listen_port = 53
 secondary_addrs = ""
 notify_after_update = true
+apply_mode = "sync"
 notify_on_startup = false
 notify_retries = 3
 notify_timeout_secs = 3
