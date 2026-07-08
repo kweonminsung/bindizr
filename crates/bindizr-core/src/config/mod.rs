@@ -96,6 +96,12 @@ pub struct DnsConfig {
     /// (`async`).
     #[serde(default = "default_apply_mode")]
     pub apply_mode: ApplyMode,
+    /// Coalescing window (ms) for the async apply worker: NOTIFYs queued within
+    /// this window are collapsed to one per zone. Only affects `apply_mode =
+    /// async`; larger values reduce NOTIFY/XFR traffic under bursty writes at the
+    /// cost of that much added propagation latency. `0` disables the wait.
+    #[serde(default = "default_apply_coalesce_ms")]
+    pub apply_coalesce_ms: u64,
     #[serde(default)]
     pub notify_on_startup: bool,
     #[serde(default = "default_notify_retries")]
@@ -115,6 +121,10 @@ fn default_notify_after_update() -> bool {
 
 fn default_apply_mode() -> ApplyMode {
     ApplyMode::Sync
+}
+
+fn default_apply_coalesce_ms() -> u64 {
+    50
 }
 
 /// How zone reload/NOTIFY is applied relative to the write request.
@@ -280,6 +290,9 @@ fn apply_env_overrides_from(
     }
     if let Some(value) = get_env("BINDIZR_APPLY_MODE") {
         config.dns.apply_mode = parse_apply_mode_env("BINDIZR_APPLY_MODE", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_APPLY_COALESCE_MS") {
+        config.dns.apply_coalesce_ms = parse_env_value("BINDIZR_APPLY_COALESCE_MS", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
         config.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;
