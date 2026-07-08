@@ -124,10 +124,8 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
 
 
 async def main_async(args) -> None:
-    import os
-
     cfg = settings.load()
-    repeats = int(os.environ.get("BENCH_REPEATS", "1"))
+    repeats = int(cfg.get("repeats", 1))
     benches = args.benchmarks or list(RUNNERS.keys())
 
     # Clear only the raw files for the benchmarks about to run, so repeated

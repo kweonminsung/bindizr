@@ -1,14 +1,20 @@
 """Benchmark 7 — Database Performance (Bindizr backends).
 
 Runs the same CRUD-lite workload against Bindizr backed by SQLite, MySQL, and
-PostgreSQL in turn, comparing create/read TPS, latency, and resource use.
+PostgreSQL in turn, comparing create/read TPS, latency, and resource use. Each
+backend then runs a bulk-import comparison (`db_bulk_sizes`, e.g. 10k/100k) so
+the operationally-recommended backend is clear and 100k linearity is confirmed.
 
 This runner is special: it builds and tears down its own Bindizr adapters (one
 per backend), so the orchestrator invokes it with `adapter=None`.
+
+Emits CRUD-lite rows ({backend, create_tps, ...}) and bulk rows
+({backend, size, import_secs, ...}); the report renders them as two tables.
 """
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -62,6 +68,32 @@ async def _bench_backend(adapter, cfg, zone, label) -> dict:
     }
 
 
+async def _bulk_backend(adapter, cfg, zone, backend, size) -> dict:
+    """Import `size` records into a fresh zone via the backend and time it,
+    sampling the DB container's resource usage."""
+    await adapter.delete_zone(zone)
+    await adapter.create_zone(zone)
+    records = generate(size, cfg["seed"], zone)
+
+    ids = [i for i in (adapter.compose.container_id(s)
+                       for s in adapter.resource_services) if i]
+    sampler = ResourceSampler(ids, cfg["resources"]["sample_interval_secs"])
+    sampler.start()
+    t0 = time.monotonic()
+    await adapter.bulk_import(zone, records)
+    elapsed = time.monotonic() - t0
+    res = sampler.stop()
+    return {
+        "backend": backend,
+        "size": size,
+        "import_secs": round(elapsed, 3),
+        "records_per_sec": round(size / elapsed, 1) if elapsed else 0,
+        "import_errors": getattr(adapter, "bulk_errors", 0),
+        "peak_mem_mb": res.get("peak_mem_mb", 0),
+        "avg_cpu_pct": res.get("avg_cpu_pct", 0),
+    }
+
+
 async def run(_adapter, cfg, ctx) -> list:
     zone = ctx["zone"]
     rows = []
@@ -75,7 +107,12 @@ async def run(_adapter, cfg, ctx) -> list:
             await adapter.setup()
             row = await _bench_backend(adapter, cfg, zone, backend)
             rows.append(row)
-            print(f"    backend {backend}: {row}", flush=True)
+            print(f"    backend {backend} (crud): {row}", flush=True)
+
+            for size in cfg.get("db_bulk_sizes", []):
+                brow = await _bulk_backend(adapter, cfg, zone, backend, size)
+                rows.append(brow)
+                print(f"    backend {backend} (bulk {size}): {brow}", flush=True)
         except Exception as e:
             print(f"    backend {backend} FAILED: {e}")
             # Report the failure faithfully instead of silently omitting it.

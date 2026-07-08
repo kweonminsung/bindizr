@@ -76,7 +76,7 @@ def collect(cfg: dict) -> dict:
             "sizes": cfg.get("sizes"),
             "crud_concurrency": cfg.get("crud", {}).get("concurrency"),
             "crud_duration_secs": cfg.get("crud", {}).get("duration_secs"),
-            "repeats": int(os.environ.get("BENCH_REPEATS", "1")),
+            "repeats": int(cfg.get("repeats", 1)),
         },
         "limits": {
             # Per-SUT-container resource caps applied via compose deploy.resources.

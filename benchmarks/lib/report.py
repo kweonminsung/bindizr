@@ -85,8 +85,10 @@ DIMENSION_FIELDS = ("system", "backend", "size", "changes")
 
 def _aggregate(rows: list[dict]) -> list[dict]:
     """Collapse repeated runs: group by dimension fields, average numeric metrics,
-    and add a `runs` count. With a single run this is a no-op (runs omitted)."""
+    and record their sample standard deviation as a companion `<metric>_std` key.
+    Also add a `runs` count. With a single run std is 0 and `runs` is omitted."""
     from collections import OrderedDict
+    from statistics import stdev
 
     groups: "OrderedDict[tuple, list[dict]]" = OrderedDict()
     for r in rows:
@@ -103,12 +105,88 @@ def _aggregate(rows: list[dict]) -> list[dict]:
                        if isinstance(v, (int, float)) and not isinstance(v, bool)]
             if k not in DIMENSION_FIELDS and numeric and len(numeric) == len(vals):
                 agg[k] = round(sum(numeric) / len(numeric), 3)
+                agg[f"{k}_std"] = round(stdev(numeric), 3) if len(numeric) > 1 else 0.0
             else:
                 agg[k] = base.get(k)
         if len(grp) > 1:
             agg["runs"] = len(grp)
         out.append(agg)
     return out
+
+
+def _pm(row: dict, key: str, prec: int = 1, default: Any = "-") -> str:
+    """Render a metric as `mean ± std` (std omitted when 0 / single run)."""
+    mean = row.get(key)
+    if not isinstance(mean, (int, float)) or isinstance(mean, bool):
+        return default
+    std = row.get(f"{key}_std", 0) or 0
+    if std:
+        return f"{mean:.{prec}f} ± {std:.{prec}f}"
+    return f"{mean:.{prec}f}"
+
+
+def _bulk_linearity_note(rows: list[dict]) -> str:
+    """Per-system 10k→100k scaling: import time should grow ~10x for 10x records."""
+    by_sys: dict[str, dict[int, float]] = {}
+    for r in rows:
+        secs = r.get("import_secs")
+        if isinstance(r.get("size"), int) and isinstance(secs, (int, float)):
+            by_sys.setdefault(r["system"], {})[r["size"]] = secs
+    lines = []
+    for system, bysize in by_sys.items():
+        if 10000 in bysize and 100000 in bysize and bysize[10000]:
+            ratio = bysize[100000] / bysize[10000]
+            verdict = "near-linear" if 8.0 <= ratio <= 12.0 else "super-linear" \
+                if ratio > 12.0 else "sub-linear"
+            lines.append(
+                f"- **{system}:** 10k → {bysize[10000]:.2f}s, "
+                f"100k → {bysize[100000]:.2f}s ({ratio:.1f}× for 10× records → {verdict})")
+    if not lines:
+        return ""
+    return ("\n> **10k → 100k scaling** (ideal 10.0× — confirms bulk import stays "
+            "linear at scale):\n" + "\n".join(lines) + "\n")
+
+
+def _render_b07(rows: list[dict]) -> str:
+    """Benchmark 7 emits two row shapes: CRUD-lite (create/read TPS) and bulk
+    import (import_secs per size). Render them as two separate tables."""
+    crud = [r for r in rows if "create_tps" in r]
+    bulk = [r for r in rows if "import_secs" in r]
+    failed = [r for r in rows if r.get("status") == "FAILED"]
+    out = ["\n## Benchmark 7 — Database Performance\n"]
+
+    if crud:
+        out.append("\n### 7a — CRUD throughput by backend\n")
+        crud_rows = [[
+            r.get("backend", "-"), _pm(r, "create_tps"), _pm(r, "read_tps"),
+            _pm(r, "create_p95_ms", 2), _pm(r, "read_p95_ms", 2),
+            f'{r.get("error_rate", 0) * 100:.2f}%', r.get("peak_mem_mb", "-"),
+            r.get("runs", 1),
+        ] for r in crud]
+        out.append(_md_table(
+            ["Backend", "Create TPS", "Read TPS", "Create p95 (ms)",
+             "Read p95 (ms)", "Error Rate", "Peak mem (MB)", "Runs"], crud_rows))
+
+    if bulk:
+        out.append("\n### 7b — Bulk import by backend\n")
+        bulk = sorted(bulk, key=lambda r: (r.get("backend", ""), r.get("size", 0)))
+        bulk_rows = [[
+            r.get("backend", "-"), r.get("size", "-"),
+            _pm(r, "import_secs", 3), _pm(r, "records_per_sec"),
+            r.get("import_errors", "-"), r.get("peak_mem_mb", "-"),
+            r.get("runs", 1),
+        ] for r in bulk]
+        out.append(_md_table(
+            ["Backend", "Records", "Import (s)", "Records/sec", "Errors",
+             "Peak mem (MB)", "Runs"], bulk_rows))
+        out.append(_bulk_linearity_note(
+            [{**r, "system": r.get("backend", "-")} for r in bulk]))
+
+    if failed:
+        out.append("\n> ⚠️ Failed backends: " +
+                   ", ".join(f'{r.get("backend")} ({r.get("error", "?")})'
+                             for r in failed) + "\n")
+    return "".join(out)
 
 
 def _rows(data: dict, key: str) -> list[dict]:
@@ -142,22 +220,39 @@ def _render_markdown(env: dict, data: dict) -> str:
         rows = []
         for r in _rows(data, "b01_crud_tps"):
             rows.append([
-                r["system"], r.get("create_tps", "-"), r.get("update_tps", "-"),
-                r.get("delete_tps", "-"), r.get("read_tps", "-"),
-                r.get("read_p95_ms", "-"), f'{r.get("error_rate", 0) * 100:.2f}%',
+                r["system"], _pm(r, "create_tps"), _pm(r, "update_tps"),
+                _pm(r, "delete_tps"), _pm(r, "read_tps"),
+                _pm(r, "read_p95_ms", 2), f'{r.get("error_rate", 0) * 100:.2f}%',
+                r.get("runs", 1),
             ])
         out.append(_md_table(
             ["Product", "Create TPS", "Update TPS", "Delete TPS", "Read TPS",
-             "Read p95 (ms)", "Error Rate"], rows))
+             "Read p95 (ms)", "Error Rate", "Runs"], rows))
+
+    # Benchmark 2 — Bulk Import (curated: mean ± std on time / throughput).
+    if "b02_bulk_import" in data:
+        results = sorted(_rows(data, "b02_bulk_import"),
+                         key=lambda r: (r["system"], r.get("size", 0)))
+        out.append("\n## Benchmark 2 — Bulk Import\n")
+        rows = []
+        for r in results:
+            rows.append([
+                r["system"], r.get("size", "-"),
+                _pm(r, "import_secs", 3), _pm(r, "records_per_sec"),
+                r.get("import_errors", "-"), r.get("peak_mem_mb", "-"),
+                r.get("runs", 1),
+            ])
+        out.append(_md_table(
+            ["System", "Records", "Import (s)", "Records/sec", "Errors",
+             "Peak mem (MB)", "Runs"], rows))
+        out.append(_bulk_linearity_note(results))
 
     # Generic dump for the remaining benchmarks.
     titles = {
-        "b02_bulk_import": "Benchmark 2 — Bulk Import",
         "b03_propagation": "Benchmark 3 — End-to-End Propagation",
         "b04_axfr": "Benchmark 4 — AXFR Performance",
         "b05_ixfr": "Benchmark 5 — IXFR Performance",
         "b06_large_zone": "Benchmark 6 — Large Zone Performance",
-        "b07_database": "Benchmark 7 — Database Performance",
     }
     for key, title in titles.items():
         if key not in data:
@@ -166,9 +261,13 @@ def _render_markdown(env: dict, data: dict) -> str:
         if not results:
             continue
         out.append(f"\n## {title}\n")
-        headers = list(results[0].keys())
+        headers = [h for h in results[0].keys() if not h.endswith("_std")]
         rows = [[r.get(h, "-") for h in headers] for r in results]
         out.append(_md_table(headers, rows))
+
+    # Benchmark 7 — Database Performance (CRUD + per-backend bulk import).
+    if "b07_database" in data:
+        out.append(_render_b07(_rows(data, "b07_database")))
 
     if "b08_query_perf" in data:
         results = _rows(data, "b08_query_perf")
@@ -194,7 +293,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         results = _rows(data, "b09_resource_usage")
         if results:
             out.append("\n## Benchmark 9 — Resource Usage\n")
-            headers = list(results[0].keys())
+            headers = [h for h in results[0].keys() if not h.endswith("_std")]
             rows = [[r.get(h, "-") for h in headers] for r in results]
             out.append(_md_table(headers, rows))
     return "\n".join(out)

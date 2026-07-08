@@ -10,6 +10,13 @@ seed: 1337
 sizes: [1000, 10000, 100000, 1000000]
 sizes_ci: [1000, 10000]
 
+# How many times each measurement is repeated. The report averages numeric
+# metrics per dimension and reports the sample standard deviation, so >=5 gives
+# stable README-quality figures. CI uses 1 to stay fast; override with
+# BENCH_REPEATS=N (env wins over both).
+repeats: 5
+repeats_ci: 1
+
 # CRUD (Benchmark 1) workload.
 crud:
   concurrency: 32          # closed-loop concurrent clients
@@ -72,3 +79,9 @@ benchmarks:
 
 # Database backends for Benchmark 7 (Bindizr only).
 databases: [sqlite, mysql, postgresql]
+
+# Record-set sizes for the per-backend bulk-import comparison (Benchmark 7).
+# Each backend imports these sizes so SQLite/MySQL/PostgreSQL bulk throughput
+# can be compared directly and 100k linearity checked against 10k.
+db_bulk_sizes: [10000, 100000]
+db_bulk_sizes_ci: [1000, 10000]

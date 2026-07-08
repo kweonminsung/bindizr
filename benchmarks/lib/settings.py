@@ -23,10 +23,16 @@ def load(path: Path | None = None) -> dict[str, Any]:
     # Environment overrides for CI.
     if os.environ.get("BENCH_CI") in ("1", "true"):
         cfg["sizes"] = cfg["sizes_ci"]
+        cfg["repeats"] = cfg.get("repeats_ci", 1)
+        cfg["db_bulk_sizes"] = cfg.get("db_bulk_sizes_ci", cfg.get("db_bulk_sizes", []))
     if os.environ.get("BENCH_SIZES"):
         cfg["sizes"] = [int(x) for x in os.environ["BENCH_SIZES"].split(",")]
     if os.environ.get("BENCH_SEED"):
         cfg["seed"] = int(os.environ["BENCH_SEED"])
+    if os.environ.get("BENCH_REPEATS"):
+        cfg["repeats"] = int(os.environ["BENCH_REPEATS"])
+    if os.environ.get("BENCH_DB_BULK_SIZES"):
+        cfg["db_bulk_sizes"] = [int(x) for x in os.environ["BENCH_DB_BULK_SIZES"].split(",")]
 
     # Quick-run overrides (used for smoke tests / CI tuning).
     if os.environ.get("BENCH_CRUD_DURATION"):

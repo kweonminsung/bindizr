@@ -38,7 +38,7 @@ tables), `performance.csv`, `performance.json`, and `graphs/*.png`.
 | 4 | `b04_axfr` | Full zone transfer time, size, records/sec | bindizr, powerdns, technitium |
 | 5 | `b05_ixfr` | Incremental transfer size/time for 1–1000 changes | bindizr, powerdns, technitium |
 | 6 | `b06_large_zone` | Zone create/populate/export/delete + mem/CPU by size | bindizr |
-| 7 | `b07_database` | Bindizr CRUD across SQLite / MySQL / PostgreSQL | bindizr |
+| 7 | `b07_database` | Bindizr CRUD **and bulk import (10k/100k)** across SQLite / MySQL / PostgreSQL | bindizr |
 | 8 | `b08_query_perf` | DNS **QPS** + latency; proves zero query-path overhead | native, bindizr, powerdns, technitium |
 | 9 | `b09_resource_usage` | CPU/mem/net under steady query load | bindizr, powerdns, technitium |
 
@@ -73,11 +73,13 @@ BIND9` — i.e. **Bindizr introduces no measurable DNS query overhead**.
   require the secondary to receive updates. (TTL is fixed at 3600 and not varied
   — the query benchmarks hit authoritative servers directly, so resolver-cache
   TTL effects don't apply.)
-- **Repeatable & averaged.** Set `BENCH_REPEATS=N` to run every measurement N
-  times; the report averages numeric metrics per system/backend and shows a
-  `runs` column. Each full run starts from a clean `results/raw`, and every
-  system is `down -v`'d before setup, so runs never accumulate stale/duplicate
-  rows.
+- **Repeatable & averaged.** A full run repeats every measurement **5 times**
+  (`repeats` in `config/settings.yaml`; CI uses `repeats_ci: 1`, override with
+  `BENCH_REPEATS=N`). The report averages numeric metrics per system/backend,
+  reports the **sample standard deviation** as `mean ± std` on headline metrics,
+  and shows a `runs` column. Each full run starts from a clean `results/raw`, and
+  every system is `down -v`'d before setup, so runs never accumulate
+  stale/duplicate rows.
 - **Reproducible.** A fixed seed (`config/settings.yaml`) generates the same
   dataset every run; workload order is deterministic.
 - **Isolated.** Each system is set up, exercised, and torn down on its own; only
@@ -114,7 +116,8 @@ overrides (used by CI and quick runs):
 | `BENCH_QUERY_DURATION` / `BENCH_QUERY_ZONE_SIZE` | query load |
 | `BENCH_PROP_SAMPLES` | propagation samples |
 | `BENCH_CPU_LIMIT` / `BENCH_MEM_LIMIT` | per-SUT-container caps (default `4` / `4g`) |
-| `BENCH_REPEATS` | repeat each measurement N times and average (default 1) |
+| `BENCH_REPEATS` | repeat each measurement N times and average (default `5`, CI `1`) |
+| `BENCH_DB_BULK_SIZES=10000,100000` | per-backend bulk-import sizes (Benchmark 7) |
 
 The **1,000,000-record** size is heavy (time + disk) and excluded from CI; run it
 explicitly with `BENCH_SIZES=1000000`.
