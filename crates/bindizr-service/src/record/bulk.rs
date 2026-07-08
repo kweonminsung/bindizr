@@ -219,10 +219,8 @@ impl RecordService {
 
             let new_serial = generate_serial(Some(zone.serial));
 
-            // Validate each record against the zone and the records already
-            // accepted in this batch, building the rows to insert. Batching the
-            // writes (one multi-row INSERT for records, one for their changes)
-            // avoids a per-record round trip.
+            // Validate each record (including intra-batch conflicts) up front,
+            // then insert all rows and changes in one multi-row statement each.
             let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
                 let normalized_owner = validate_record_add_constraints(

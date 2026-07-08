@@ -1,10 +1,6 @@
-//! Per-zone cache of the rendered record set, keyed by serial.
-//!
-//! Every write bumps the zone serial, so a cached entry whose serial still
-//! matches the zone's current serial is guaranteed to be up to date. Repeated
-//! AXFRs at a stable serial — the common case once a burst of writes settles —
-//! are then served from memory instead of re-reading every record from the
-//! database. One entry per zone bounds memory to the live zone data.
+//! Per-zone cache of the record set, keyed by serial. Every write bumps the
+//! serial, so an entry matching the zone's current serial is always fresh;
+//! repeated AXFRs at that serial skip the database read. One entry per zone.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -26,13 +22,12 @@ fn cache() -> &'static Mutex<HashMap<i32, CachedZone>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Load a zone's records for the given serial, using the render cache when
-/// enabled. Falls back to a direct database read (uncached) when disabled.
+/// Load a zone's records for `serial`, from cache when enabled and fresh.
 pub(crate) async fn list_records(
     zone_id: i32,
     serial: i32,
 ) -> Result<Arc<Vec<Record>>, ServiceError> {
-    if !config::get_bindizr_config().dns.render_cache {
+    if !config::get_bindizr_config().dns.zone_cache {
         return Ok(Arc::new(RecordService::list_by_zone_id(zone_id).await?));
     }
 

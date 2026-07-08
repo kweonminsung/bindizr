@@ -41,10 +41,8 @@ struct ApplyJob {
 
 static APPLY_QUEUE: OnceLock<UnboundedSender<ApplyJob>> = OnceLock::new();
 
-/// Spawn the background apply worker that drains queued NOTIFY jobs. Only the
-/// first call installs the queue; later calls are no-ops. Must be called from a
-/// Tokio runtime (e.g. during service bootstrap) for `apply_mode = async` to
-/// take effect; without it, writes fall back to inline NOTIFY.
+/// Spawn the background worker that drains queued NOTIFYs. First call wins;
+/// later calls are no-ops. Without it, async-mode writes fall back to inline.
 pub fn init_apply_worker() {
     let (tx, mut rx) = unbounded_channel::<ApplyJob>();
     if APPLY_QUEUE.set(tx).is_err() {
@@ -52,13 +50,13 @@ pub fn init_apply_worker() {
     }
 
     tokio::spawn(async move {
-        // Block for the first job, then coalesce everything that arrives within
+        // Block for the first job, then batch everything that arrives within
         // the configured window into a single NOTIFY per zone.
         while let Some(first) = rx.recv().await {
             let mut batch = ApplyBatch::default();
             batch.add(first);
 
-            let window = Duration::from_millis(config::get_bindizr_config().dns.apply_coalesce_ms);
+            let window = Duration::from_millis(config::get_bindizr_config().dns.apply_batch_ms);
             if !window.is_zero() {
                 let deadline = Instant::now() + window;
                 loop {
@@ -131,10 +129,7 @@ fn enqueue_apply(zone_name: Option<&str>) -> bool {
 }
 
 /// Send a NOTIFY after a zone update, unless disabled by `notify_after_update`.
-///
-/// In `apply_mode = async` the NOTIFY is handed to the background worker and this
-/// returns immediately (the write no longer waits on propagation). In `sync` mode
-/// — or if the worker is not running — it sends inline as before.
+/// In async mode it is queued and this returns at once; otherwise sent inline.
 pub async fn send_notify_after_update(zone_name: Option<&str>) -> Result<(), String> {
     let dns = &config::get_bindizr_config().dns;
     if !dns.notify_after_update {

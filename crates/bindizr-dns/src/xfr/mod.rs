@@ -4,8 +4,8 @@ pub(crate) mod delta;
 pub mod error;
 pub(crate) mod ixfr;
 pub mod notify;
-pub(crate) mod render_cache;
 pub(crate) mod wire;
+pub(crate) mod zone_cache;
 
 use std::net::{IpAddr, SocketAddr};
 

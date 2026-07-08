@@ -156,9 +156,8 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError>;
-    /// Insert many records in one statement (chunked), returning them with their
-    /// assigned ids in input order. Preserves order so callers can pair each
-    /// returned record back to its source.
+    /// Insert many records in one chunked statement, returning them with their
+    /// assigned ids in input order.
     async fn create_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

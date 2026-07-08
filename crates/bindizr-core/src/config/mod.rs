@@ -91,22 +91,15 @@ pub struct DnsConfig {
     pub secondary_addrs: String,
     #[serde(default = "default_notify_after_update")]
     pub notify_after_update: bool,
-    /// Whether reload/NOTIFY runs inline on the write path (`sync`) or is handed
-    /// to a background worker so the write returns as soon as the DB commits
-    /// (`async`).
+    /// `sync` runs reload/NOTIFY inline; `async` hands it to a background worker.
     #[serde(default = "default_apply_mode")]
     pub apply_mode: ApplyMode,
-    /// Coalescing window (ms) for the async apply worker: NOTIFYs queued within
-    /// this window are collapsed to one per zone. Only affects `apply_mode =
-    /// async`; larger values reduce NOTIFY/XFR traffic under bursty writes at the
-    /// cost of that much added propagation latency. `0` disables the wait.
-    #[serde(default = "default_apply_coalesce_ms")]
-    pub apply_coalesce_ms: u64,
-    /// Cache the rendered record set per zone, keyed by serial, so repeated
-    /// AXFRs at the same serial skip the database read. Always correct because
-    /// every write bumps the serial; disable only to trade memory for freshness.
-    #[serde(default = "default_render_cache")]
-    pub render_cache: bool,
+    /// Window (ms) over which async-mode NOTIFYs are collapsed to one per zone.
+    #[serde(default = "default_apply_batch_ms")]
+    pub apply_batch_ms: u64,
+    /// Cache each zone's records by serial so repeated AXFRs skip the DB read.
+    #[serde(default = "default_zone_cache")]
+    pub zone_cache: bool,
     #[serde(default)]
     pub notify_on_startup: bool,
     #[serde(default = "default_notify_retries")]
@@ -128,21 +121,21 @@ fn default_apply_mode() -> ApplyMode {
     ApplyMode::Sync
 }
 
-fn default_apply_coalesce_ms() -> u64 {
+fn default_apply_batch_ms() -> u64 {
     50
 }
 
-fn default_render_cache() -> bool {
+fn default_zone_cache() -> bool {
     true
 }
 
-/// How zone reload/NOTIFY is applied relative to the write request.
+/// When zone reload/NOTIFY runs relative to the write request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApplyMode {
-    /// Reload/NOTIFY runs inline; the write returns only after propagation kicks off.
+    /// Inline: the write returns only after NOTIFY is sent.
     Sync,
-    /// Reload/NOTIFY is queued to a background worker; the write returns at commit.
+    /// Queued to a background worker: the write returns at commit.
     Async,
 }
 
@@ -300,11 +293,11 @@ fn apply_env_overrides_from(
     if let Some(value) = get_env("BINDIZR_APPLY_MODE") {
         config.dns.apply_mode = parse_apply_mode_env("BINDIZR_APPLY_MODE", &value)?;
     }
-    if let Some(value) = get_env("BINDIZR_APPLY_COALESCE_MS") {
-        config.dns.apply_coalesce_ms = parse_env_value("BINDIZR_APPLY_COALESCE_MS", &value)?;
+    if let Some(value) = get_env("BINDIZR_APPLY_BATCH_MS") {
+        config.dns.apply_batch_ms = parse_env_value("BINDIZR_APPLY_BATCH_MS", &value)?;
     }
-    if let Some(value) = get_env("BINDIZR_RENDER_CACHE") {
-        config.dns.render_cache = parse_env_value("BINDIZR_RENDER_CACHE", &value)?;
+    if let Some(value) = get_env("BINDIZR_ZONE_CACHE") {
+        config.dns.zone_cache = parse_env_value("BINDIZR_ZONE_CACHE", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
         config.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;
