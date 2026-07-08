@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use sqlx::{Pool, Postgres};
+use sqlx::{AssertSqlSafe, Pool, Postgres};
 
 use crate::{
     error::DatabaseError,
@@ -74,6 +74,57 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         .fetch_one(&mut **postgres_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        changes: &[ZoneChange],
+    ) -> Result<(), DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        const CHUNK: usize = 500;
+        for chunk in changes.chunks(CHUNK) {
+            let mut sql = String::from(
+                "INSERT INTO zone_changes (zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority) VALUES ",
+            );
+            let mut p = 1;
+            for i in 0..chunk.len() {
+                if i > 0 {
+                    sql.push(',');
+                }
+                sql.push_str(&format!(
+                    "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                    p, p + 1, p + 2, p + 3, p + 4, p + 5, p + 6, p + 7
+                ));
+                p += 8;
+            }
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for c in chunk {
+                query = query
+                    .bind(c.zone_id)
+                    .bind(c.serial)
+                    .bind(c.operation.clone())
+                    .bind(c.record_name.clone())
+                    .bind(c.record_type.clone())
+                    .bind(c.record_value.clone())
+                    .bind(c.record_ttl)
+                    .bind(c.record_priority);
+            }
+            query
+                .execute(&mut **postgres_tx)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        }
+        Ok(())
     }
 
     async fn get_changes_between_serials(

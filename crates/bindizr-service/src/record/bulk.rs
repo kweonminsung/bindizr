@@ -218,19 +218,55 @@ impl RecordService {
                 };
 
             let new_serial = generate_serial(Some(zone.serial));
-            let mut created_records = Vec::with_capacity(prepared.len());
 
+            // Validate each record against the zone and the records already
+            // accepted in this batch, building the rows to insert. Batching the
+            // writes (one multi-row INSERT for records, one for their changes)
+            // avoids a per-record round trip.
+            let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
-                let created_record = insert_prepared_tx(
-                    &mut tx,
+                let normalized_owner = validate_record_add_constraints(
                     &zone,
-                    &mut zone_records,
-                    new_serial,
-                    prepared_record,
-                )
-                .await?;
-                created_records.push(created_record);
+                    &zone_records,
+                    &prepared_record.owner_name,
+                    &prepared_record.record_type,
+                    &prepared_record.value,
+                    prepared_record.priority,
+                    None,
+                )?;
+
+                let record = Record {
+                    id: 0, // Will be set by the database
+                    name: normalized_owner.stored_name,
+                    record_type: prepared_record.record_type.clone(),
+                    value: prepared_record.value.clone(),
+                    ttl: prepared_record.ttl,
+                    priority: prepared_record.priority,
+                    zone_id: zone.id,
+                    created_at: Utc::now(), // Will be set by the database
+                };
+                // Make it visible to the next iteration's constraint check.
+                zone_records.push(record.clone());
+                to_insert.push(record);
             }
+
+            let created_records = RepositoryService::create_records_tx(&mut tx, &to_insert).await?;
+
+            let changes: Vec<ZoneChange> = created_records
+                .iter()
+                .map(|record| ZoneChange {
+                    id: 0,
+                    zone_id: zone.id,
+                    serial: new_serial,
+                    operation: "ADD".to_string(),
+                    record_name: record.name.clone(),
+                    record_type: record.record_type.to_string(),
+                    record_value: record.value.clone(),
+                    record_ttl: record.ttl,
+                    record_priority: record.priority,
+                })
+                .collect();
+            RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
 
             // Increment zone serial once so IXFR consumers detect the batch
             RepositoryService::update_zone_tx(

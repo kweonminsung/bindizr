@@ -77,6 +77,57 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let mysql_tx = match &mut tx.0 {
+            RepositoryTxKind::MySQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected MySQL)".to_string(),
+                ));
+            }
+        };
+
+        const CHUNK: usize = 500;
+        let mut out = Vec::with_capacity(records.len());
+        for chunk in records.chunks(CHUNK) {
+            let mut sql = String::from(
+                "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
+            );
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 { "(?, ?, ?, ?, ?, ?)" } else { ",(?, ?, ?, ?, ?, ?)" });
+            }
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for r in chunk {
+                query = query
+                    .bind(r.name.clone())
+                    .bind(r.record_type.to_string())
+                    .bind(r.value.clone())
+                    .bind(r.ttl)
+                    .bind(r.priority)
+                    .bind(r.zone_id);
+            }
+            let result = query
+                .execute(&mut **mysql_tx)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            // For a multi-row insert MySQL returns the id of the FIRST row and
+            // assigns the rest consecutively (default innodb_autoinc_lock_mode).
+            let first = result.last_insert_id() as i32;
+            for (offset, r) in chunk.iter().enumerate() {
+                let mut rec = r.clone();
+                rec.id = first + offset as i32;
+                out.push(rec);
+            }
+        }
+        Ok(out)
+    }
+
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

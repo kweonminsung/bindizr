@@ -79,6 +79,64 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(record)
     }
 
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        const CHUNK: usize = 500;
+        let mut out = Vec::with_capacity(records.len());
+        for chunk in records.chunks(CHUNK) {
+            let mut sql = String::from(
+                "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
+            );
+            let mut p = 1;
+            for i in 0..chunk.len() {
+                if i > 0 {
+                    sql.push(',');
+                }
+                sql.push_str(&format!(
+                    "(${}, ${}, ${}, ${}, ${}, ${})",
+                    p, p + 1, p + 2, p + 3, p + 4, p + 5
+                ));
+                p += 6;
+            }
+            sql.push_str(" RETURNING id");
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for r in chunk {
+                query = query
+                    .bind(r.name.clone())
+                    .bind(r.record_type.to_string())
+                    .bind(r.value.clone())
+                    .bind(r.ttl)
+                    .bind(r.priority)
+                    .bind(r.zone_id);
+            }
+            let rows = query
+                .fetch_all(&mut **postgres_tx)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            // Postgres returns RETURNING rows in the order the VALUES were given.
+            for (r, row) in chunk.iter().zip(rows) {
+                let mut rec = r.clone();
+                rec.id = row.get::<i32, _>(0);
+                out.push(rec);
+            }
+        }
+        Ok(out)
+    }
+
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

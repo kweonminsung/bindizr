@@ -203,6 +203,16 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to create record: {}", e)))
     }
 
+    pub(super) async fn create_records_tx(
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, ServiceError> {
+        get_record_repository()
+            .create_many_tx(tx, records)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to create records: {}", e)))
+    }
+
     pub(super) async fn update_record(record: Record) -> Result<Record, ServiceError> {
         get_record_repository()
             .update(record)
@@ -345,6 +355,16 @@ impl RepositoryService {
             .create_tx(tx, zone_change)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to create zone change: {}", e)))
+    }
+
+    pub(super) async fn create_zone_changes_tx(
+        tx: &mut RepositoryTx<'_>,
+        changes: &[ZoneChange],
+    ) -> Result<(), ServiceError> {
+        get_zone_change_repository()
+            .create_many_tx(tx, changes)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to create zone changes: {}", e)))
     }
 
     pub(super) async fn get_zone_changes_between_serials(

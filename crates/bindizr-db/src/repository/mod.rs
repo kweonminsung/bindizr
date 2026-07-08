@@ -156,6 +156,14 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError>;
+    /// Insert many records in one statement (chunked), returning them with their
+    /// assigned ids in input order. Preserves order so callers can pair each
+    /// returned record back to its source.
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
     async fn get_by_id_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError>;
     async fn get_by_id_tx(
@@ -225,6 +233,12 @@ pub trait ZoneChangeRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_change: ZoneChange,
     ) -> Result<ZoneChange, DatabaseError>;
+    /// Insert many zone changes in one statement (chunked). Ids are not returned.
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        changes: &[ZoneChange],
+    ) -> Result<(), DatabaseError>;
     async fn get_changes_between_serials(
         &self,
         zone_id: i32,

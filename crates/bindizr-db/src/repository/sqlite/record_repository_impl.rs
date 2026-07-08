@@ -76,6 +76,59 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        // 6 columns per row; keep bind count under SQLite's conservative limit.
+        const CHUNK: usize = 150;
+        let mut out = Vec::with_capacity(records.len());
+        for chunk in records.chunks(CHUNK) {
+            let mut sql = String::from(
+                "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
+            );
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 { "(?, ?, ?, ?, ?, ?)" } else { ",(?, ?, ?, ?, ?, ?)" });
+            }
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for r in chunk {
+                query = query
+                    .bind(r.name.clone())
+                    .bind(r.record_type.to_string())
+                    .bind(r.value.clone())
+                    .bind(r.ttl)
+                    .bind(r.priority)
+                    .bind(r.zone_id);
+            }
+            let result = query
+                .execute(&mut **sqlite_tx)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            // SQLite assigns contiguous rowids within a single insert; the last
+            // one is `last_insert_rowid()`, so the chunk spans first..=last.
+            let last = result.last_insert_rowid() as i32;
+            let first = last - chunk.len() as i32 + 1;
+            for (offset, r) in chunk.iter().enumerate() {
+                let mut rec = r.clone();
+                rec.id = first + offset as i32;
+                out.push(rec);
+            }
+        }
+        Ok(out)
+    }
+
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
