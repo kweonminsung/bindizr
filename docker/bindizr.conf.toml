@@ -22,6 +22,7 @@ secondary_addrs = ""
 notify_after_update = true
 apply_mode = "sync"
 apply_coalesce_ms = 50
+render_cache = true
 notify_on_startup = false
 notify_retries = 3
 notify_timeout_secs = 3

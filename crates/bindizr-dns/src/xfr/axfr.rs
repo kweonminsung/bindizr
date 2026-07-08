@@ -3,11 +3,8 @@ use std::net::IpAddr;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;
 
-use super::{catalog, delta, error::XfrError, wire};
-use crate::{
-    log_info,
-    service::{record::RecordService, zone::ZoneService},
-};
+use super::{catalog, delta, error::XfrError, render_cache, wire};
+use crate::{log_info, service::zone::ZoneService};
 
 /// Handles an AXFR request.
 pub(crate) async fn handle_axfr(
@@ -53,7 +50,7 @@ pub(crate) async fn handle_axfr_with_qtype(
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
-    let records = RecordService::list_by_zone_id(zone.id)
+    let records = render_cache::list_records(zone.id, zone.serial)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
 
@@ -75,7 +72,7 @@ pub(crate) async fn handle_axfr_with_qtype(
     })
     .await?;
 
-    for record in &records {
+    for record in records.iter() {
         messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
             builder.add_record(record, &zone.name)
         })

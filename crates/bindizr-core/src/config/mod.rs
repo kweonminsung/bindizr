@@ -102,6 +102,11 @@ pub struct DnsConfig {
     /// cost of that much added propagation latency. `0` disables the wait.
     #[serde(default = "default_apply_coalesce_ms")]
     pub apply_coalesce_ms: u64,
+    /// Cache the rendered record set per zone, keyed by serial, so repeated
+    /// AXFRs at the same serial skip the database read. Always correct because
+    /// every write bumps the serial; disable only to trade memory for freshness.
+    #[serde(default = "default_render_cache")]
+    pub render_cache: bool,
     #[serde(default)]
     pub notify_on_startup: bool,
     #[serde(default = "default_notify_retries")]
@@ -125,6 +130,10 @@ fn default_apply_mode() -> ApplyMode {
 
 fn default_apply_coalesce_ms() -> u64 {
     50
+}
+
+fn default_render_cache() -> bool {
+    true
 }
 
 /// How zone reload/NOTIFY is applied relative to the write request.
@@ -293,6 +302,9 @@ fn apply_env_overrides_from(
     }
     if let Some(value) = get_env("BINDIZR_APPLY_COALESCE_MS") {
         config.dns.apply_coalesce_ms = parse_env_value("BINDIZR_APPLY_COALESCE_MS", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_RENDER_CACHE") {
+        config.dns.render_cache = parse_env_value("BINDIZR_RENDER_CACHE", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
         config.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;

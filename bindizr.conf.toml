@@ -22,6 +22,7 @@ secondary_addrs = ""          # Comma-separated secondary DNS server addresses f
 notify_after_update = true    # Send DNS NOTIFY after zone changes
 apply_mode = "sync"           # "sync": reload/NOTIFY runs inline; "async": queued to a background worker so writes return at commit
 apply_coalesce_ms = 50        # async only: collapse NOTIFYs queued within this window into one per zone (0 disables the wait)
+render_cache = true           # Cache rendered records per zone (keyed by serial) so repeated AXFRs skip the DB read
 notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
 notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
