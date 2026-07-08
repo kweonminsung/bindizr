@@ -1,3 +1,6 @@
+//! DNS wire-format encoding for zone-transfer responses: message framing and
+//! record/SOA serialization.
+
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use bindizr_core::dns::name::{

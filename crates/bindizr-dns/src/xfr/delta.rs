@@ -1,3 +1,5 @@
+//! IXFR delta computation: the zone changes between two serials.
+
 use super::error::XfrError;
 use crate::service::zone::{ZoneService, snapshot};
 

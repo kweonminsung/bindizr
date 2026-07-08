@@ -1,3 +1,5 @@
+//! Unix-socket control channel between the CLI and the running daemon.
+
 pub(crate) mod client;
 pub(crate) mod server;
 pub(crate) mod types;

@@ -1,3 +1,6 @@
+//! DNS front end: the authoritative TCP/UDP server plus zone transfer
+//! (AXFR/IXFR), NOTIFY, SOA queries, RFC 2136 nsupdate, and secondary ACLs.
+
 pub(crate) mod acl;
 pub(crate) mod address;
 pub(crate) mod nsupdate;

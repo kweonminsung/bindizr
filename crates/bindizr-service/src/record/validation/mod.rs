@@ -1,3 +1,6 @@
+//! DNS record constraint validation: CNAME/NS/MX/SOA rules, duplicate
+//! detection, and owner-name normalization.
+
 use bindizr_core::dns::name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn};
 
 use super::record_value::{is_null_mx_record_value, record_values_equal, validate_record_value};

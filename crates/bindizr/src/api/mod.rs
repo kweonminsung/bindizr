@@ -1,3 +1,5 @@
+//! HTTP API server: routing, middleware, and the zone/record/notify endpoints.
+
 pub(crate) mod error;
 pub(crate) mod middleware;
 pub(crate) mod notify;

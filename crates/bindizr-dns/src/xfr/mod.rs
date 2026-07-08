@@ -1,3 +1,6 @@
+//! Zone-transfer subsystem: dispatches AXFR/IXFR requests and drives NOTIFY,
+//! SOA responses, and catalog-zone generation.
+
 pub(crate) mod axfr;
 pub(crate) mod catalog;
 pub(crate) mod delta;

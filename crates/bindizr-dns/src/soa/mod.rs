@@ -1,3 +1,6 @@
+//! Serves SOA queries over TCP and UDP, used by secondaries to poll the
+//! primary's serial.
+
 use std::net::{IpAddr, SocketAddr};
 
 use domain::base::iana::Rtype;

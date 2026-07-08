@@ -1,3 +1,6 @@
+//! Backend-agnostic repository traits, the cross-backend transaction type, and
+//! the factory that builds per-backend implementations.
+
 pub mod mysql;
 pub mod postgres;
 pub mod sqlite;

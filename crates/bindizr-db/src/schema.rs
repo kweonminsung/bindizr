@@ -1,3 +1,5 @@
+//! Table-creation DDL for each backend, run at startup to bring the schema up.
+
 pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"

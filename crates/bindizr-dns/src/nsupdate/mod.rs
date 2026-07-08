@@ -1,3 +1,6 @@
+//! RFC 2136 dynamic DNS update (nsupdate) handling, including TSIG-authenticated
+//! requests.
+
 mod auth;
 mod parser;
 mod prerequisite;

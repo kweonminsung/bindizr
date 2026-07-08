@@ -1,3 +1,5 @@
+//! Per-record-type parsing, validation, and storage encoding of record values.
+
 use crate::{error::ServiceError, model::record::RecordType};
 
 mod a;

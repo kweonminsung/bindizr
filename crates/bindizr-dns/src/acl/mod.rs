@@ -1,3 +1,6 @@
+//! Access control for zone transfers: matches client addresses against the
+//! configured secondary servers.
+
 use std::net::IpAddr;
 
 use tokio::net::lookup_host;

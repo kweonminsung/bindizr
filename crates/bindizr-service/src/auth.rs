@@ -1,3 +1,5 @@
+//! API token authentication.
+
 use chrono::Utc;
 
 use super::{repository::RepositoryService, token::hash_token};

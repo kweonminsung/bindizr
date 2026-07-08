@@ -1,3 +1,5 @@
+//! SOA serial-number generation in the `YYYYMMDDNN` convention.
+
 use chrono::Utc;
 
 /// Generate next serial number in YYYYMMDDNN format.

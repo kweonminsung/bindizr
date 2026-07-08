@@ -1,3 +1,5 @@
+//! In-memory pagination of list responses.
+
 use crate::types::{PaginatedResponse, Pagination};
 
 pub(crate) fn paginate_items<T>(

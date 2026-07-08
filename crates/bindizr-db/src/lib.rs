@@ -1,3 +1,6 @@
+//! Database layer: connection-pool setup and repository implementations for
+//! the MySQL, PostgreSQL, and SQLite backends.
+
 use std::sync::OnceLock;
 
 use sqlx::{MySql, Pool, Postgres, Sqlite, sqlite::SqlitePoolOptions};
