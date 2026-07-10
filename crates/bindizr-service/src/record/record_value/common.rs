@@ -119,7 +119,5 @@ fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceE
 }
 
 pub(super) fn canonical_domain_value(value: &str) -> String {
-    // Lowercase while appending the trailing dot, rather than building the FQDN
-    // and then reallocating to lowercase it.
     to_fqdn_lowercase(value)
 }

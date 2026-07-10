@@ -40,17 +40,13 @@ RUNNERS = {
 }
 
 
-# Only the database benchmark disables NOTIFY, to isolate raw backend write
-# throughput from propagation. Everywhere else Bindizr keeps notify_after_update
-# on so it does the same propagation work its integrated competitors do — with
-# apply_mode=async the write no longer blocks on NOTIFY, so this is both fair
-# and the production-realistic configuration.
+# NOTIFY is disabled only where propagation would confound the measurement.
+# Elsewhere Bindizr keeps it on, so it does the same propagation work its
+# integrated competitors always do.
 NOTIFY_OFF_BENCHMARKS = {"b07_database"}
 
 
 def bindizr_notify_for(bench: str) -> bool:
-    # BENCH_BINDIZR_NOTIFY forces the flag either way, so the async-apply path
-    # (which only engages when NOTIFY is on) can be A/B'd on write benchmarks.
     override = os.environ.get("BENCH_BINDIZR_NOTIFY")
     if override is not None:
         return override.lower() == "true"

@@ -21,8 +21,7 @@ impl std::fmt::Display for NameError {
 
 impl std::error::Error for NameError {}
 
-/// Labels of a presentation-format name. Names without `\` escapes — the common
-/// case — borrow straight from the input instead of allocating a label per dot.
+/// Labels of a presentation-format name.
 pub enum PresentationLabels<'a> {
     Borrowed(std::str::Split<'a, char>),
     Owned(std::vec::IntoIter<String>),
@@ -40,7 +39,6 @@ impl<'a> Iterator for PresentationLabels<'a> {
 }
 
 /// Iterate a presentation-format name's labels, honoring `\` escapes.
-/// Allocates only when the name actually contains an escape.
 pub fn presentation_labels(name: &str) -> Result<PresentationLabels<'_>, NameError> {
     if name.contains('\\') {
         Ok(PresentationLabels::Owned(

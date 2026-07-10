@@ -63,9 +63,7 @@ pub(super) fn is_null_mx_record_value(value: &str, priority: Option<i32>) -> boo
         .unwrap_or(false)
 }
 
-/// Canonical form used only to compare two values. Borrows the input where the
-/// canonical form is the input (TXT, and every type whose parse fails), so the
-/// comparison-heavy validation loops do not allocate.
+/// Canonical form used only to compare two values, never to store them.
 fn canonical_record_value<'a>(
     value: &'a str,
     fallback_priority: Option<i32>,

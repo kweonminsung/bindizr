@@ -97,9 +97,8 @@ fn owner_fqdn_to_stored_name(owner_fqdn: &str, zone_fqdn: &str) -> String {
         .to_string()
 }
 
-/// Normalize `owner_name` and validate the add. Callers that already normalized
-/// the name should call [`validate_record_add_constraints_normalized`] directly
-/// rather than paying for a second normalization.
+/// Normalize `owner_name` and validate the add. Callers holding an already
+/// normalized name should use [`validate_record_add_constraints_normalized`].
 pub(super) fn validate_record_add_constraints(
     zone: &Zone,
     zone_records: &[Record],

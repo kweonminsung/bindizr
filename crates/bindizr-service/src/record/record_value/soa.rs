@@ -13,8 +13,7 @@ pub(super) struct SoaRecordValue<'a> {
 
 impl<'a> SoaRecordValue<'a> {
     pub(super) fn parse(value: &'a str) -> Result<Self, ServiceError> {
-        // Pull exactly seven fields off the iterator; the trailing `None` rejects
-        // extra fields without collecting into a Vec.
+        // The trailing `None` rejects a value with more than seven fields.
         let mut fields = value.split_whitespace();
         match (
             fields.next(),

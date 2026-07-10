@@ -187,8 +187,6 @@ impl RecordService {
                 .cloned()
                 .collect();
             for add in &adds {
-                // The owner name was already normalized above, so validate
-                // against `stored_name` instead of normalizing a second time.
                 match validate_record_add_constraints_normalized(
                     &simulated,
                     &add.prepared.owner_name,
@@ -227,8 +225,6 @@ impl RecordService {
 
                 delete_records_tx(&mut tx, zone.id, new_serial, &dels).await?;
 
-                // Already validated against `simulated` above, so insert directly —
-                // in one multi-row statement rather than a round trip per record.
                 let to_insert: Vec<Record> = adds
                     .iter()
                     .map(|add| Record {
@@ -261,8 +257,6 @@ impl RecordService {
                 errors,
             };
 
-            // `zone` is dead after this point, so hand its name over rather than
-            // cloning it.
             Ok::<(ImportZoneFileResponse, String, bool), ServiceError>((
                 response,
                 zone.name,

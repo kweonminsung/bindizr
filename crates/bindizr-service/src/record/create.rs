@@ -68,8 +68,7 @@ impl RecordService {
                 };
 
             // Only records sharing the owner name can conflict, so load just
-            // those instead of the whole zone. The name is normalized once here
-            // and reused for both the lookup and the constraint check.
+            // those instead of the whole zone.
             let normalized_owner =
                 normalize_record_owner_name(&create_record_request.name, &zone.name)?;
             let existing_records_with_name =
@@ -151,8 +150,6 @@ impl RecordService {
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
-            // `zone` is dead after this point, so hand its name over rather than
-            // cloning it up front.
             Ok::<(Record, String), ServiceError>((created_record, zone.name))
         }
         .await;

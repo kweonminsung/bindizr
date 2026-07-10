@@ -9,7 +9,7 @@ impl<'a> TxtRecordValue<'a> {
         Self { value }
     }
 
-    /// TXT values are already stored in canonical form, so borrow rather than copy.
+    /// TXT values are stored already canonical.
     pub(super) fn canonical(&self) -> Cow<'a, str> {
         Cow::Borrowed(self.value)
     }

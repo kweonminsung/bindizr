@@ -657,7 +657,6 @@ impl RecordRepository for PostgresRecordRepository {
             }
         };
 
-        // A single array bind, so no per-parameter chunking is needed.
         sqlx::query("DELETE FROM records WHERE id = ANY($1)")
             .bind(ids)
             .execute(&mut **postgres_tx)

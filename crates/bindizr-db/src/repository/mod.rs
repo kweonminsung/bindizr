@@ -145,8 +145,7 @@ pub trait ZoneRepository: Send + Sync {
     async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
-    /// Bump only the serial. Every record write does this, so it avoids cloning
-    /// the whole zone just to rewrite the columns that did not change.
+    /// Bump only the serial, leaving the zone's other columns untouched.
     async fn update_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

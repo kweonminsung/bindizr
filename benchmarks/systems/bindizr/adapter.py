@@ -43,10 +43,7 @@ class BindizrAdapter(DnsAdapter):
         super().__init__(cfg, project)
         self.db_type = db_type
         self.notify_after_update = notify_after_update
-        # `sync` runs reload/NOTIFY inline; `async` hands it to a background
-        # worker that coalesces NOTIFYs over `apply_batch_ms`. `zone_cache`
-        # caches rendered zone records by serial so repeated AXFRs skip the DB.
-        # None => inherit Bindizr's own defaults (sync / 50 / true).
+        # None => Bindizr's own defaults (sync / 50 / true); see compose.yml.
         self.apply_mode = apply_mode or os.environ.get("BENCH_BINDIZR_APPLY_MODE", "sync")
         self.apply_batch_ms = apply_batch_ms if apply_batch_ms is not None else int(
             os.environ.get("BENCH_BINDIZR_APPLY_BATCH_MS", "50"))

@@ -50,7 +50,6 @@ pub(super) fn prepare_record(
     })
 }
 
-/// Build the zone-change rows describing `records` under `operation`.
 fn zone_changes_for(
     zone_id: i32,
     new_serial: i32,
@@ -73,9 +72,7 @@ fn zone_changes_for(
         .collect()
 }
 
-/// Insert already-validated records and their ADD zone changes, each in one
-/// multi-row statement (chunked by the backend's bind limit). Shared by bulk
-/// insert and zone-file import.
+/// Insert records that the caller has already validated, with their ADD zone changes.
 pub(super) async fn insert_validated_records_tx(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
@@ -92,8 +89,7 @@ pub(super) async fn insert_validated_records_tx(
     Ok(created_records)
 }
 
-/// Delete records and record their DEL zone changes, batched the same way.
-/// Used by zone-file import (`upsert`/`replace`).
+/// Delete records, with their DEL zone changes.
 pub(super) async fn delete_records_tx(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
@@ -179,8 +175,7 @@ impl RecordService {
             // Validate each record (including intra-batch conflicts) up front,
             // then insert all rows and changes in one multi-row statement each.
             // New records are appended to `zone_records` so each iteration's
-            // constraint check sees the ones before it, then split back off —
-            // avoiding a clone of every record.
+            // constraint check sees the ones before it.
             let existing_count = zone_records.len();
             zone_records.reserve(prepared.len());
             for prepared_record in &prepared {
@@ -220,8 +215,6 @@ impl RecordService {
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
-            // `zone` is dead after this point, so hand its name over rather than
-            // cloning it.
             Ok::<(Vec<Record>, String), ServiceError>((created_records, zone.name))
         }
         .await;
