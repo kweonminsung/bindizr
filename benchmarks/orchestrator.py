@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import os
 import traceback
 from pathlib import Path
 
@@ -39,14 +40,20 @@ RUNNERS = {
 }
 
 
-# Benchmarks that measure the pure management-plane write path (no propagation):
-# run Bindizr with notify_after_update=off so its CRUD TPS reflects DB writes,
-# not synchronous NOTIFY+XFR. The rest need the secondary to receive updates
-# (propagation, AXFR/IXFR, query, resources), so they keep notify=on.
-NOTIFY_OFF_BENCHMARKS = {"b01_crud_tps", "b02_bulk_import", "b07_database"}
+# Only the database benchmark disables NOTIFY, to isolate raw backend write
+# throughput from propagation. Everywhere else Bindizr keeps notify_after_update
+# on so it does the same propagation work its integrated competitors do — with
+# apply_mode=async the write no longer blocks on NOTIFY, so this is both fair
+# and the production-realistic configuration.
+NOTIFY_OFF_BENCHMARKS = {"b07_database"}
 
 
 def bindizr_notify_for(bench: str) -> bool:
+    # BENCH_BINDIZR_NOTIFY forces the flag either way, so the async-apply path
+    # (which only engages when NOTIFY is on) can be A/B'd on write benchmarks.
+    override = os.environ.get("BENCH_BINDIZR_NOTIFY")
+    if override is not None:
+        return override.lower() == "true"
     return bench not in NOTIFY_OFF_BENCHMARKS
 
 
@@ -149,6 +156,8 @@ async def main_async(args) -> None:
     print("\n=== building report ===")
     report.build_report(envmod.collect(cfg), cfg)
     print(f"Report written to {settings.RESULTS_DIR}")
+    print(f"To re-run a subset into this same directory:\n"
+          f"  BENCH_RESULTS_DIR={settings.RESULTS_DIR.name} python3 orchestrator.py -b <bench>")
 
 
 def main() -> None:

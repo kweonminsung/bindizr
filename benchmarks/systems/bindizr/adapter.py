@@ -7,6 +7,7 @@ zones via the catalog zone. Bindizr is never in the query path.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -35,14 +36,29 @@ class BindizrAdapter(DnsAdapter):
     import_chunk = 5000
 
     def __init__(self, cfg: dict, project: str, db_type: str = "sqlite",
-                 notify_after_update: bool = True):
+                 notify_after_update: bool = True,
+                 apply_mode: str | None = None,
+                 apply_batch_ms: int | None = None,
+                 zone_cache: bool | None = None):
         super().__init__(cfg, project)
         self.db_type = db_type
         self.notify_after_update = notify_after_update
+        # `sync` runs reload/NOTIFY inline; `async` hands it to a background
+        # worker that coalesces NOTIFYs over `apply_batch_ms`. `zone_cache`
+        # caches rendered zone records by serial so repeated AXFRs skip the DB.
+        # None => inherit Bindizr's own defaults (sync / 50 / true).
+        self.apply_mode = apply_mode or os.environ.get("BENCH_BINDIZR_APPLY_MODE", "sync")
+        self.apply_batch_ms = apply_batch_ms if apply_batch_ms is not None else int(
+            os.environ.get("BENCH_BINDIZR_APPLY_BATCH_MS", "50"))
+        self.zone_cache = zone_cache if zone_cache is not None else (
+            os.environ.get("BENCH_BINDIZR_ZONE_CACHE", "true").lower() == "true")
         self.base = f"http://localhost:{API_PORT}"
         self.session: aiohttp.ClientSession | None = None
         env = {"BINDIZR_DB_TYPE": db_type,
-               "BINDIZR_NOTIFY_AFTER_UPDATE": "true" if notify_after_update else "false"}
+               "BINDIZR_NOTIFY_AFTER_UPDATE": "true" if notify_after_update else "false",
+               "BINDIZR_APPLY_MODE": self.apply_mode,
+               "BINDIZR_APPLY_BATCH_MS": str(self.apply_batch_ms),
+               "BINDIZR_ZONE_CACHE": "true" if self.zone_cache else "false"}
         if db_type == "mysql":
             env["COMPOSE_PROFILES"] = "mysql"
         elif db_type == "postgresql":

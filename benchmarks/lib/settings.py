@@ -5,13 +5,30 @@ Precedence: CLI overrides > environment variables > settings.yaml defaults.
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-RESULTS_DIR = ROOT / "results"
+
+
+def _results_dir() -> Path:
+    """Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory.
+
+    Set `BENCH_RESULTS_DIR` to reuse an existing one — required when re-running a
+    subset of benchmarks (`-b ...`) so the report is rebuilt from the full set of
+    raw results rather than just the ones re-run.
+    """
+    override = os.environ.get("BENCH_RESULTS_DIR")
+    if override:
+        p = Path(override)
+        return p if p.is_absolute() else ROOT / p
+    return ROOT / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+
+RESULTS_DIR = _results_dir()
 GRAPHS_DIR = RESULTS_DIR / "graphs"
 
 

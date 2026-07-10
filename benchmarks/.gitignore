@@ -1,4 +1,10 @@
+# Benchmark output: every run writes results_<YYYYmmdd_HHMMSS>/
 results/
+results_*/
+
+# A/B experiment outputs (the scripts themselves are tracked)
+ab/*.json
+
 .venv/
 __pycache__/
 *.pyc
