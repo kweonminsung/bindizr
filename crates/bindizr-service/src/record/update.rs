@@ -1,6 +1,6 @@
 use super::{
     RecordService,
-    validation::{normalize_record_owner_name, validate_record_update_constraints},
+    validation::{normalize_record_owner_name, validate_record_update_constraints_normalized},
 };
 use crate::{
     error::ServiceError,
@@ -112,13 +112,14 @@ impl RecordService {
                 created_at: existing_record.created_at,
             };
 
-            let normalized_owner = validate_record_update_constraints(
+            validate_record_update_constraints_normalized(
                 &zone,
                 &zone_records,
                 &existing_record,
                 &candidate_updated,
+                &lookup_owner.stored_name,
             )?;
-            candidate_updated.name = normalized_owner.stored_name;
+            candidate_updated.name = lookup_owner.stored_name;
 
             let new_serial = generate_serial(Some(zone.serial));
             let zone_name = zone.name.clone();

@@ -50,30 +50,20 @@ pub(super) fn prepare_record(
     })
 }
 
-/// Validate and insert one record, appending it to `zone_records` and recording
-/// an ADD zone change for IXFR. Shared by bulk insert and zone-file import.
-pub(super) async fn insert_prepared_tx(
+/// Insert one already-validated record and record an ADD zone change for IXFR.
+/// The caller must have validated it and normalized its owner to `stored_name`.
+pub(super) async fn insert_validated_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
-    zone_records: &mut Vec<Record>,
     new_serial: i32,
+    stored_name: &str,
     prepared: &PreparedRecord,
 ) -> Result<Record, ServiceError> {
-    let normalized_owner = validate_record_add_constraints(
-        zone,
-        zone_records,
-        &prepared.owner_name,
-        &prepared.record_type,
-        &prepared.value,
-        prepared.priority,
-        None,
-    )?;
-
     let created_record = RepositoryService::create_record_tx(
         tx,
         Record {
             id: 0, // Will be set by the database
-            name: normalized_owner.stored_name,
+            name: stored_name.to_string(),
             record_type: prepared.record_type.clone(),
             value: prepared.value.clone(),
             ttl: prepared.ttl,
@@ -87,8 +77,6 @@ pub(super) async fn insert_prepared_tx(
         log_error!("Failed to create record: {}", e);
         ServiceError::Internal("Failed to create record".to_string())
     })?;
-
-    zone_records.push(created_record.clone());
 
     RepositoryService::create_zone_change_tx(
         tx,
@@ -113,12 +101,11 @@ pub(super) async fn insert_prepared_tx(
     Ok(created_record)
 }
 
-/// Delete one record, dropping it from `zone_records` and recording a DEL zone
-/// change for IXFR. Used by zone-file import (`upsert`/`replace`).
+/// Delete one record and record a DEL zone change for IXFR.
+/// Used by zone-file import (`upsert`/`replace`).
 pub(super) async fn delete_existing_record_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
-    zone_records: &mut Vec<Record>,
     new_serial: i32,
     record: &Record,
 ) -> Result<(), ServiceError> {
@@ -128,8 +115,6 @@ pub(super) async fn delete_existing_record_tx(
             log_error!("Failed to delete record: {}", e);
             ServiceError::Internal("Failed to delete record".to_string())
         })?;
-
-    zone_records.retain(|r| r.id != record.id);
 
     RepositoryService::create_zone_change_tx(
         tx,

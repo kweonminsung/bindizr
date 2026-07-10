@@ -97,6 +97,9 @@ fn owner_fqdn_to_stored_name(owner_fqdn: &str, zone_fqdn: &str) -> String {
         .to_string()
 }
 
+/// Normalize `owner_name` and validate the add. Callers that already normalized
+/// the name should call [`validate_record_add_constraints_normalized`] directly
+/// rather than paying for a second normalization.
 pub(super) fn validate_record_add_constraints(
     zone: &Zone,
     zone_records: &[Record],
@@ -107,7 +110,29 @@ pub(super) fn validate_record_add_constraints(
     except_record_id: Option<i32>,
 ) -> Result<NormalizedOwnerName, ServiceError> {
     let normalized_owner = normalize_record_owner_name(owner_name, &zone.name)?;
+    validate_record_add_constraints_normalized(
+        zone_records,
+        owner_name,
+        &normalized_owner.stored_name,
+        record_type,
+        value,
+        priority,
+        except_record_id,
+    )?;
+    Ok(normalized_owner)
+}
 
+/// Validate an add whose owner name has already been normalized to `stored_name`.
+/// `owner_name` is the caller's original spelling, used only in error messages.
+pub(super) fn validate_record_add_constraints_normalized(
+    zone_records: &[Record],
+    owner_name: &str,
+    stored_name: &str,
+    record_type: &RecordType,
+    value: &str,
+    priority: Option<i32>,
+    except_record_id: Option<i32>,
+) -> Result<(), ServiceError> {
     if *record_type == RecordType::SOA {
         return Err(ServiceError::BadRequest(
             "Cannot create SOA record manually".to_string(),
@@ -116,7 +141,7 @@ pub(super) fn validate_record_add_constraints(
 
     validate_record_value(record_type, value, priority)?;
 
-    if *record_type == RecordType::CNAME && normalized_owner.stored_name == "@" {
+    if *record_type == RecordType::CNAME && stored_name == "@" {
         return Err(ServiceError::BadRequest(
             "CNAME record cannot have '@' as name".to_string(),
         ));
@@ -125,7 +150,7 @@ pub(super) fn validate_record_add_constraints(
     let existing_records_with_name: Vec<_> = zone_records
         .iter()
         .filter(|r| {
-            r.name.eq_ignore_ascii_case(&normalized_owner.stored_name)
+            r.name.eq_ignore_ascii_case(stored_name)
                 && except_record_id.map(|id| id != r.id).unwrap_or(true)
         })
         .collect();
@@ -175,13 +200,13 @@ pub(super) fn validate_record_add_constraints(
         }
     }
 
-    if *record_type == RecordType::NS && normalized_owner.stored_name != "@" {
+    if *record_type == RecordType::NS && stored_name != "@" {
         return Err(ServiceError::BadRequest(
             "NS records must use apex owner name '@'".to_string(),
         ));
     }
 
-    Ok(normalized_owner)
+    Ok(())
 }
 
 /// Reject deletions of the SOA record or the NS record referenced by `primary_ns`.
@@ -212,12 +237,14 @@ pub fn validate_delete_constraints(
     Ok(())
 }
 
-pub(super) fn validate_record_update_constraints(
+/// Validate an update whose new owner name is already normalized.
+pub(super) fn validate_record_update_constraints_normalized(
     zone: &Zone,
     zone_records: &[Record],
     existing_record: &Record,
     updated_record: &Record,
-) -> Result<NormalizedOwnerName, ServiceError> {
+    stored_name: &str,
+) -> Result<(), ServiceError> {
     // Preserve previous API semantics for SOA update attempts.
     if updated_record.record_type == RecordType::SOA {
         log_error!("Cannot update to SOA record type");
@@ -226,10 +253,10 @@ pub(super) fn validate_record_update_constraints(
         ));
     }
 
-    let normalized_owner = validate_record_add_constraints(
-        zone,
+    validate_record_add_constraints_normalized(
         zone_records,
         &updated_record.name,
+        stored_name,
         &updated_record.record_type,
         &updated_record.value,
         updated_record.priority,
@@ -251,7 +278,7 @@ pub(super) fn validate_record_update_constraints(
         }
     }
 
-    Ok(normalized_owner)
+    Ok(())
 }
 
 /// Validate an add against conflicting records loaded within the caller's transaction.

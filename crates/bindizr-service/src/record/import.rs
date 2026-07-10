@@ -2,10 +2,11 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, delete_existing_record_tx, insert_prepared_tx, load_zone_tx},
+    bulk::{PreparedRecord, delete_existing_record_tx, insert_validated_tx, load_zone_tx},
     record_value::record_values_equal,
     validation::{
-        normalize_record_owner_name, validate_delete_constraints, validate_record_add_constraints,
+        normalize_record_owner_name, validate_delete_constraints,
+        validate_record_add_constraints_normalized,
     },
     zonefile::parse_zone_file,
 };
@@ -186,17 +187,19 @@ impl RecordService {
                 .cloned()
                 .collect();
             for add in &adds {
-                match validate_record_add_constraints(
-                    &zone,
+                // The owner name was already normalized above, so validate
+                // against `stored_name` instead of normalizing a second time.
+                match validate_record_add_constraints_normalized(
                     &simulated,
                     &add.prepared.owner_name,
+                    &add.stored_name,
                     &add.prepared.record_type,
                     &add.prepared.value,
                     add.prepared.priority,
                     None,
                 ) {
-                    Ok(normalized) => simulated.push(synthetic_record(
-                        &normalized.stored_name,
+                    Ok(()) => simulated.push(synthetic_record(
+                        &add.stored_name,
                         &add.prepared.record_type,
                         &add.prepared.value,
                         add.prepared.priority,
@@ -221,24 +224,17 @@ impl RecordService {
 
             if will_apply && has_changes {
                 let new_serial = generate_serial(Some(zone.serial));
-                let mut zone_records = existing_records.clone();
 
                 for record in &dels {
-                    delete_existing_record_tx(
-                        &mut tx,
-                        &zone,
-                        &mut zone_records,
-                        new_serial,
-                        record,
-                    )
-                    .await?;
+                    delete_existing_record_tx(&mut tx, &zone, new_serial, record).await?;
                 }
+                // Already validated against `simulated` above, so insert directly.
                 for add in &adds {
-                    insert_prepared_tx(
+                    insert_validated_tx(
                         &mut tx,
                         &zone,
-                        &mut zone_records,
                         new_serial,
+                        &add.stored_name,
                         &add.prepared,
                     )
                     .await?;

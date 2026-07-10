@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    validation::{normalize_record_owner_name, validate_record_add_constraints},
+    validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
 };
 use crate::{
     RepositoryTx,
@@ -68,14 +68,15 @@ impl RecordService {
                 };
 
             // Only records sharing the owner name can conflict, so load just
-            // those instead of the whole zone.
-            let lookup_owner =
+            // those instead of the whole zone. The name is normalized once here
+            // and reused for both the lookup and the constraint check.
+            let normalized_owner =
                 normalize_record_owner_name(&create_record_request.name, &zone.name)?;
             let existing_records_with_name =
                 match RepositoryService::get_records_by_zone_id_and_name_tx(
                     &mut tx,
                     zone.id,
-                    &lookup_owner.stored_name,
+                    &normalized_owner.stored_name,
                 )
                 .await
                 {
@@ -88,10 +89,10 @@ impl RecordService {
                     }
                 };
 
-            let normalized_owner = validate_record_add_constraints(
-                &zone,
+            validate_record_add_constraints_normalized(
                 &existing_records_with_name,
                 &create_record_request.name,
+                &normalized_owner.stored_name,
                 &record_type,
                 &record_value,
                 create_record_request.priority,
