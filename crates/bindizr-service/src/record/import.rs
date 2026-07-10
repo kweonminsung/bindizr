@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, delete_existing_record_tx, insert_validated_tx, load_zone_tx},
+    bulk::{PreparedRecord, delete_records_tx, insert_validated_records_tx, load_zone_tx},
     record_value::record_values_equal,
     validation::{
         normalize_record_owner_name, validate_delete_constraints,
@@ -225,20 +225,24 @@ impl RecordService {
             if will_apply && has_changes {
                 let new_serial = generate_serial(Some(zone.serial));
 
-                for record in &dels {
-                    delete_existing_record_tx(&mut tx, &zone, new_serial, record).await?;
-                }
-                // Already validated against `simulated` above, so insert directly.
-                for add in &adds {
-                    insert_validated_tx(
-                        &mut tx,
-                        &zone,
-                        new_serial,
-                        &add.stored_name,
-                        &add.prepared,
-                    )
-                    .await?;
-                }
+                delete_records_tx(&mut tx, zone.id, new_serial, &dels).await?;
+
+                // Already validated against `simulated` above, so insert directly —
+                // in one multi-row statement rather than a round trip per record.
+                let to_insert: Vec<Record> = adds
+                    .iter()
+                    .map(|add| Record {
+                        id: 0, // Will be set by the database
+                        name: add.stored_name.clone(),
+                        record_type: add.prepared.record_type.clone(),
+                        value: add.prepared.value.clone(),
+                        ttl: add.prepared.ttl,
+                        priority: add.prepared.priority,
+                        zone_id: zone.id,
+                        created_at: Utc::now(), // Will be set by the database
+                    })
+                    .collect();
+                insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
 
                 RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
                     .await

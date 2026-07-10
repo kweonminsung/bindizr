@@ -231,6 +231,12 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<Record, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
+    /// Delete many records in as few statements as the backend's bind limit allows.
+    async fn delete_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), DatabaseError>;
 }
 
 /// Persistence operations for zone changes.

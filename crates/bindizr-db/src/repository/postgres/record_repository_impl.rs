@@ -638,6 +638,32 @@ impl RecordRepository for PostgresRecordRepository {
             .await?;
         Ok(())
     }
+
+    async fn delete_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), DatabaseError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        // A single array bind, so no per-parameter chunking is needed.
+        sqlx::query("DELETE FROM records WHERE id = ANY($1)")
+            .bind(ids)
+            .execute(&mut **postgres_tx)
+            .await?;
+        Ok(())
+    }
 }
 
 fn normalize_partial_value(value: &str) -> String {

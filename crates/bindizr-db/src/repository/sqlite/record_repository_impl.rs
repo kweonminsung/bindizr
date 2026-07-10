@@ -630,6 +630,42 @@ impl RecordRepository for SqliteRecordRepository {
             .await?;
         Ok(())
     }
+
+    async fn delete_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), DatabaseError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        // One bind per id; keep the count under SQLite's conservative limit.
+        const CHUNK: usize = 900;
+        for chunk in ids.chunks(CHUNK) {
+            let mut sql = String::from("DELETE FROM records WHERE id IN (");
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 { "?" } else { ",?" });
+            }
+            sql.push(')');
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for id in chunk {
+                query = query.bind(id);
+            }
+            query.execute(&mut **sqlite_tx).await?;
+        }
+        Ok(())
+    }
 }
 
 fn normalize_partial_value(value: &str) -> String {

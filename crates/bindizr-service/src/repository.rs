@@ -213,6 +213,16 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to create records: {}", e)))
     }
 
+    pub(super) async fn delete_records_tx(
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), ServiceError> {
+        get_record_repository()
+            .delete_many_tx(tx, ids)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to delete records: {}", e)))
+    }
+
     pub(super) async fn update_record(record: Record) -> Result<Record, ServiceError> {
         get_record_repository()
             .update(record)

@@ -21,6 +21,36 @@ impl std::fmt::Display for NameError {
 
 impl std::error::Error for NameError {}
 
+/// Labels of a presentation-format name. Names without `\` escapes — the common
+/// case — borrow straight from the input instead of allocating a label per dot.
+pub enum PresentationLabels<'a> {
+    Borrowed(std::str::Split<'a, char>),
+    Owned(std::vec::IntoIter<String>),
+}
+
+impl<'a> Iterator for PresentationLabels<'a> {
+    type Item = std::borrow::Cow<'a, str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Borrowed(labels) => labels.next().map(std::borrow::Cow::Borrowed),
+            Self::Owned(labels) => labels.next().map(std::borrow::Cow::Owned),
+        }
+    }
+}
+
+/// Iterate a presentation-format name's labels, honoring `\` escapes.
+/// Allocates only when the name actually contains an escape.
+pub fn presentation_labels(name: &str) -> Result<PresentationLabels<'_>, NameError> {
+    if name.contains('\\') {
+        Ok(PresentationLabels::Owned(
+            split_presentation_labels(name)?.into_iter(),
+        ))
+    } else {
+        Ok(PresentationLabels::Borrowed(name.split('.')))
+    }
+}
+
 /// Split a presentation-format name into labels, honoring `\` escapes.
 pub fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
     let mut labels = Vec::new();

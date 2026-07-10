@@ -50,92 +50,64 @@ pub(super) fn prepare_record(
     })
 }
 
-/// Insert one already-validated record and record an ADD zone change for IXFR.
-/// The caller must have validated it and normalized its owner to `stored_name`.
-pub(super) async fn insert_validated_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
+/// Build the zone-change rows describing `records` under `operation`.
+fn zone_changes_for(
+    zone_id: i32,
     new_serial: i32,
-    stored_name: &str,
-    prepared: &PreparedRecord,
-) -> Result<Record, ServiceError> {
-    let created_record = RepositoryService::create_record_tx(
-        tx,
-        Record {
-            id: 0, // Will be set by the database
-            name: stored_name.to_string(),
-            record_type: prepared.record_type.clone(),
-            value: prepared.value.clone(),
-            ttl: prepared.ttl,
-            priority: prepared.priority,
-            zone_id: zone.id,
-            created_at: Utc::now(), // Will be set by the database
-        },
-    )
-    .await
-    .map_err(|e| {
-        log_error!("Failed to create record: {}", e);
-        ServiceError::Internal("Failed to create record".to_string())
-    })?;
-
-    RepositoryService::create_zone_change_tx(
-        tx,
-        ZoneChange {
+    operation: &str,
+    records: &[Record],
+) -> Vec<ZoneChange> {
+    records
+        .iter()
+        .map(|record| ZoneChange {
             id: 0,
-            zone_id: zone.id,
+            zone_id,
             serial: new_serial,
-            operation: "ADD".to_string(),
-            record_name: created_record.name.clone(),
-            record_type: created_record.record_type.to_string(),
-            record_value: created_record.value.clone(),
-            record_ttl: created_record.ttl,
-            record_priority: created_record.priority,
-        },
-    )
-    .await
-    .map_err(|e| {
-        log_error!("Failed to create zone change: {}", e);
-        ServiceError::Internal("Failed to create zone change".to_string())
-    })?;
-
-    Ok(created_record)
-}
-
-/// Delete one record and record a DEL zone change for IXFR.
-/// Used by zone-file import (`upsert`/`replace`).
-pub(super) async fn delete_existing_record_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
-    new_serial: i32,
-    record: &Record,
-) -> Result<(), ServiceError> {
-    RepositoryService::delete_record_tx(tx, record.id)
-        .await
-        .map_err(|e| {
-            log_error!("Failed to delete record: {}", e);
-            ServiceError::Internal("Failed to delete record".to_string())
-        })?;
-
-    RepositoryService::create_zone_change_tx(
-        tx,
-        ZoneChange {
-            id: 0,
-            zone_id: zone.id,
-            serial: new_serial,
-            operation: "DEL".to_string(),
+            operation: operation.to_string(),
             record_name: record.name.clone(),
             record_type: record.record_type.to_string(),
             record_value: record.value.clone(),
             record_ttl: record.ttl,
             record_priority: record.priority,
-        },
-    )
-    .await
-    .map_err(|e| {
-        log_error!("Failed to create zone change: {}", e);
-        ServiceError::Internal("Failed to create zone change".to_string())
-    })?;
+        })
+        .collect()
+}
 
+/// Insert already-validated records and their ADD zone changes, each in one
+/// multi-row statement (chunked by the backend's bind limit). Shared by bulk
+/// insert and zone-file import.
+pub(super) async fn insert_validated_records_tx(
+    tx: &mut RepositoryTx<'_>,
+    zone_id: i32,
+    new_serial: i32,
+    records: &[Record],
+) -> Result<Vec<Record>, ServiceError> {
+    if records.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let created_records = RepositoryService::create_records_tx(tx, records).await?;
+    let changes = zone_changes_for(zone_id, new_serial, "ADD", &created_records);
+    RepositoryService::create_zone_changes_tx(tx, &changes).await?;
+    Ok(created_records)
+}
+
+/// Delete records and record their DEL zone changes, batched the same way.
+/// Used by zone-file import (`upsert`/`replace`).
+pub(super) async fn delete_records_tx(
+    tx: &mut RepositoryTx<'_>,
+    zone_id: i32,
+    new_serial: i32,
+    records: &[Record],
+) -> Result<(), ServiceError> {
+    if records.is_empty() {
+        return Ok(());
+    }
+
+    let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
+    RepositoryService::delete_records_tx(tx, &ids).await?;
+    let changes = zone_changes_for(zone_id, new_serial, "DEL", records);
+    RepositoryService::create_zone_changes_tx(tx, &changes).await?;
     Ok(())
 }
 
@@ -235,23 +207,8 @@ impl RecordService {
             }
             let to_insert = zone_records.split_off(existing_count);
 
-            let created_records = RepositoryService::create_records_tx(&mut tx, &to_insert).await?;
-
-            let changes: Vec<ZoneChange> = created_records
-                .iter()
-                .map(|record| ZoneChange {
-                    id: 0,
-                    zone_id: zone.id,
-                    serial: new_serial,
-                    operation: "ADD".to_string(),
-                    record_name: record.name.clone(),
-                    record_type: record.record_type.to_string(),
-                    record_value: record.value.clone(),
-                    record_ttl: record.ttl,
-                    record_priority: record.priority,
-                })
-                .collect();
-            RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
+            let created_records =
+                insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
 
             // Increment zone serial once so IXFR consumers detect the batch
             RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)

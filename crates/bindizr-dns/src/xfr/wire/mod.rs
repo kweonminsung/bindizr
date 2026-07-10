@@ -4,7 +4,7 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use bindizr_core::dns::name::{
-    MAX_DNS_LABEL_LEN, email_to_soa_mailbox, split_presentation_labels, to_fqdn, to_owner_fqdn,
+    MAX_DNS_LABEL_LEN, email_to_soa_mailbox, presentation_labels, to_fqdn, to_owner_fqdn,
 };
 use domain::base::{Message, Name, ToName, iana::Rtype};
 
@@ -537,9 +537,7 @@ pub(crate) fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), Xf
         return Ok(());
     }
 
-    for label in
-        split_presentation_labels(name).map_err(|e| XfrError::ProtocolError(e.to_string()))?
-    {
+    for label in presentation_labels(name).map_err(|e| XfrError::ProtocolError(e.to_string()))? {
         if label.is_empty() {
             continue;
         }

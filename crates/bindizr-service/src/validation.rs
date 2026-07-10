@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::split_presentation_labels;
+use bindizr_core::dns::name::presentation_labels;
 pub(crate) use bindizr_core::dns::name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN};
 
 use crate::error::ServiceError;
@@ -21,9 +21,7 @@ pub(crate) fn validate_wire_labels(name: &str, field: &str) -> Result<(), Servic
         )));
     }
 
-    for label in
-        split_presentation_labels(name).map_err(|e| ServiceError::BadRequest(e.to_string()))?
-    {
+    for label in presentation_labels(name).map_err(|e| ServiceError::BadRequest(e.to_string()))? {
         if label.is_empty() {
             return Err(ServiceError::BadRequest(format!(
                 "{} must not contain empty labels",
