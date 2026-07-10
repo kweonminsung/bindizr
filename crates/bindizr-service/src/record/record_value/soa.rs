@@ -13,9 +13,29 @@ pub(super) struct SoaRecordValue<'a> {
 
 impl<'a> SoaRecordValue<'a> {
     pub(super) fn parse(value: &'a str) -> Result<Self, ServiceError> {
-        let fields = value.split_whitespace().collect::<Vec<_>>();
-        match fields.as_slice() {
-            [mname, rname, serial, refresh, retry, expire, minimum] => Ok(Self {
+        // Pull exactly seven fields off the iterator; the trailing `None` rejects
+        // extra fields without collecting into a Vec.
+        let mut fields = value.split_whitespace();
+        match (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) {
+            (
+                Some(mname),
+                Some(rname),
+                Some(serial),
+                Some(refresh),
+                Some(retry),
+                Some(expire),
+                Some(minimum),
+                None,
+            ) => Ok(Self {
                 mname,
                 rname,
                 serial: parse_u32_record_field("SOA serial", serial)?,

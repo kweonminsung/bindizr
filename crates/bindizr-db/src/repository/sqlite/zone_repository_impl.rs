@@ -343,6 +343,29 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(())
     }
 
+    async fn update_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), DatabaseError> {
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query("UPDATE zones SET serial = ? WHERE id = ?")
+            .bind(serial)
+            .bind(zone_id)
+            .execute(&mut **sqlite_tx)
+            .await?;
+        Ok(())
+    }
+
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
         let sqlite_tx = match &mut tx.0 {
             RepositoryTxKind::SQLite(tx) => tx,

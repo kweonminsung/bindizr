@@ -417,6 +417,18 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to update zone: {}", e)))
     }
 
+    /// Bump only the zone serial, without rewriting (or cloning) the whole zone.
+    pub(super) async fn update_zone_serial_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), ServiceError> {
+        get_zone_repository()
+            .update_serial_tx(tx, zone_id, serial)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to update zone serial: {}", e)))
+    }
+
     pub(super) async fn delete_zone_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

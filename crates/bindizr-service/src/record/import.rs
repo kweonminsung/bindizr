@@ -244,18 +244,12 @@ impl RecordService {
                     .await?;
                 }
 
-                RepositoryService::update_zone_tx(
-                    &mut tx,
-                    Zone {
-                        serial: new_serial,
-                        ..zone.clone()
-                    },
-                )
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::Internal("Failed to update zone serial".to_string())
-                })?;
+                RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to update zone serial: {}", e);
+                        ServiceError::Internal("Failed to update zone serial".to_string())
+                    })?;
 
                 save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
             }
@@ -267,9 +261,11 @@ impl RecordService {
                 errors,
             };
 
+            // `zone` is dead after this point, so hand its name over rather than
+            // cloning it.
             Ok::<(ImportZoneFileResponse, String, bool), ServiceError>((
                 response,
-                zone.name.clone(),
+                zone.name,
                 will_apply && has_changes,
             ))
         }

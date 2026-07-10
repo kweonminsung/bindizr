@@ -24,7 +24,7 @@ impl ZoneService {
         };
 
         let zone_id = zone.id;
-        let zone_name_clone = zone.name.clone();
+        let zone_name = zone.name;
 
         let mut tx = RepositoryService::begin_tx("Failed to delete zone").await?;
 
@@ -42,11 +42,7 @@ impl ZoneService {
         RepositoryService::finish_tx(tx, apply_result, "Failed to delete zone").await?;
 
         // Log zone deletion after commit
-        log_info!(
-            "event=zone_delete zone={} zone_id={}",
-            zone_name_clone,
-            zone_id
-        );
+        log_info!("event=zone_delete zone={} zone_id={}", zone_name, zone_id);
 
         if let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await {
             log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);

@@ -99,7 +99,6 @@ impl RecordService {
             )?;
 
             let new_serial = generate_serial(Some(zone.serial));
-            let zone_name = zone.name.clone();
 
             let created_record = RepositoryService::create_record_tx(
                 &mut tx,
@@ -107,7 +106,7 @@ impl RecordService {
                     id: 0, // Will be set by the database
                     name: normalized_owner.stored_name,
                     record_type,
-                    value: record_value.clone(),
+                    value: record_value,
                     ttl: create_record_request.ttl,
                     priority: create_record_request.priority,
                     zone_id: zone.id,
@@ -121,18 +120,12 @@ impl RecordService {
             })?;
 
             // Increment zone serial so IXFR consumers can detect this change
-            RepositoryService::update_zone_tx(
-                &mut tx,
-                crate::model::zone::Zone {
-                    serial: new_serial,
-                    ..zone.clone()
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
-                ServiceError::Internal("Failed to update zone serial".to_string())
-            })?;
+            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to update zone serial: {}", e);
+                    ServiceError::Internal("Failed to update zone serial".to_string())
+                })?;
 
             // Record zone change for IXFR
             RepositoryService::create_zone_change_tx(
@@ -157,7 +150,9 @@ impl RecordService {
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
-            Ok::<(Record, String), ServiceError>((created_record, zone_name))
+            // `zone` is dead after this point, so hand its name over rather than
+            // cloning it up front.
+            Ok::<(Record, String), ServiceError>((created_record, zone.name))
         }
         .await;
 

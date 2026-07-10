@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::{split_presentation_labels, to_fqdn};
+use bindizr_core::dns::name::{split_presentation_labels, to_fqdn_lowercase};
 
 use crate::{
     error::ServiceError,
@@ -119,5 +119,7 @@ fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceE
 }
 
 pub(super) fn canonical_domain_value(value: &str) -> String {
-    to_fqdn(value).to_ascii_lowercase()
+    // Lowercase while appending the trailing dot, rather than building the FQDN
+    // and then reallocating to lowercase it.
+    to_fqdn_lowercase(value)
 }

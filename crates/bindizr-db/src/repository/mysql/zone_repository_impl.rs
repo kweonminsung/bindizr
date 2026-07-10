@@ -348,6 +348,29 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(())
     }
 
+    async fn update_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), DatabaseError> {
+        let mysql_tx = match &mut tx.0 {
+            RepositoryTxKind::MySQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected MySQL)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query("UPDATE zones SET serial = ? WHERE id = ?")
+            .bind(serial)
+            .bind(zone_id)
+            .execute(&mut **mysql_tx)
+            .await?;
+        Ok(())
+    }
+
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
         let mysql_tx = match &mut tx.0 {
             RepositoryTxKind::MySQL(tx) => tx,

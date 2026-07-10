@@ -131,18 +131,12 @@ impl RecordService {
                 })?;
 
             // Increment zone serial so IXFR consumers can detect this change
-            RepositoryService::update_zone_tx(
-                &mut tx,
-                crate::model::zone::Zone {
-                    serial: new_serial,
-                    ..zone.clone()
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
-                ServiceError::Internal("Failed to update zone serial".to_string())
-            })?;
+            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to update zone serial: {}", e);
+                    ServiceError::Internal("Failed to update zone serial".to_string())
+                })?;
 
             // Record zone changes for IXFR
 

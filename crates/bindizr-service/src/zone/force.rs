@@ -53,7 +53,7 @@ impl ZoneService {
                 &mut tx,
                 Zone {
                     serial: new_serial,
-                    ..zone.clone()
+                    ..zone
                 },
             )
             .await

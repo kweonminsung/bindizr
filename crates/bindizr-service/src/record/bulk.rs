@@ -221,7 +221,11 @@ impl RecordService {
 
             // Validate each record (including intra-batch conflicts) up front,
             // then insert all rows and changes in one multi-row statement each.
-            let mut to_insert = Vec::with_capacity(prepared.len());
+            // New records are appended to `zone_records` so each iteration's
+            // constraint check sees the ones before it, then split back off —
+            // avoiding a clone of every record.
+            let existing_count = zone_records.len();
+            zone_records.reserve(prepared.len());
             for prepared_record in &prepared {
                 let normalized_owner = validate_record_add_constraints(
                     &zone,
@@ -233,7 +237,7 @@ impl RecordService {
                     None,
                 )?;
 
-                let record = Record {
+                zone_records.push(Record {
                     id: 0, // Will be set by the database
                     name: normalized_owner.stored_name,
                     record_type: prepared_record.record_type.clone(),
@@ -242,11 +246,9 @@ impl RecordService {
                     priority: prepared_record.priority,
                     zone_id: zone.id,
                     created_at: Utc::now(), // Will be set by the database
-                };
-                // Make it visible to the next iteration's constraint check.
-                zone_records.push(record.clone());
-                to_insert.push(record);
+                });
             }
+            let to_insert = zone_records.split_off(existing_count);
 
             let created_records = RepositoryService::create_records_tx(&mut tx, &to_insert).await?;
 
@@ -267,22 +269,18 @@ impl RecordService {
             RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
 
             // Increment zone serial once so IXFR consumers detect the batch
-            RepositoryService::update_zone_tx(
-                &mut tx,
-                Zone {
-                    serial: new_serial,
-                    ..zone.clone()
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
-                ServiceError::Internal("Failed to update zone serial".to_string())
-            })?;
+            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to update zone serial: {}", e);
+                    ServiceError::Internal("Failed to update zone serial".to_string())
+                })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
-            Ok::<(Vec<Record>, String), ServiceError>((created_records, zone.name.clone()))
+            // `zone` is dead after this point, so hand its name over rather than
+            // cloning it.
+            Ok::<(Vec<Record>, String), ServiceError>((created_records, zone.name))
         }
         .await;
 
