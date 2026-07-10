@@ -102,7 +102,14 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
                 }
                 sql.push_str(&format!(
                     "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                    p, p + 1, p + 2, p + 3, p + 4, p + 5, p + 6, p + 7
+                    p,
+                    p + 1,
+                    p + 2,
+                    p + 3,
+                    p + 4,
+                    p + 5,
+                    p + 6,
+                    p + 7
                 ));
                 p += 8;
             }

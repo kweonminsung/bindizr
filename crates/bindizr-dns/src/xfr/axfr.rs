@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;
 
-use super::{catalog, delta, error::XfrError, zone_cache, wire};
+use super::{catalog, delta, error::XfrError, wire, zone_cache};
 use crate::{log_info, service::zone::ZoneService};
 
 /// Handles an AXFR request.

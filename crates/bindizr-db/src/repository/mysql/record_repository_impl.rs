@@ -98,7 +98,11 @@ impl RecordRepository for MySqlRecordRepository {
                 "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
             );
             for i in 0..chunk.len() {
-                sql.push_str(if i == 0 { "(?, ?, ?, ?, ?, ?)" } else { ",(?, ?, ?, ?, ?, ?)" });
+                sql.push_str(if i == 0 {
+                    "(?, ?, ?, ?, ?, ?)"
+                } else {
+                    ",(?, ?, ?, ?, ?, ?)"
+                });
             }
 
             let mut query = sqlx::query(AssertSqlSafe(sql));

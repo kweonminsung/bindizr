@@ -1,11 +1,15 @@
-use std::collections::HashSet;
-use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::{
+    collections::HashSet,
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use bindizr_core::config::{self, ApplyMode};
-use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
-use tokio::time::{Instant, timeout};
+use tokio::{
+    sync::mpsc::{UnboundedSender, unbounded_channel},
+    time::{Instant, timeout},
+};
 
 use crate::log_warn;
 

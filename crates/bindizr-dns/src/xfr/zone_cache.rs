@@ -2,8 +2,10 @@
 //! serial, so an entry matching the zone's current serial is always fresh;
 //! repeated AXFRs at that serial skip the database read. One entry per zone.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use crate::{
     config,
