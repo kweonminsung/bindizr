@@ -47,7 +47,20 @@ async def run(adapter, cfg, ctx) -> list:
     change_pool = generate(sum(CHANGE_SIZES) + BASELINE, cfg["seed"] + 50, zone)
     ci = 0
     for n in CHANGE_SIZES:
-        base_serial = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
+        # Read the pre-change serial, retrying on a transient SOA-query miss. A
+        # single miss used to fall back to `base_serial or 1`, which requests
+        # IXFR from serial 1 — a serial with no delta history, forcing a full
+        # AXFR and a spurious "huge IXFR" outlier.
+        base_serial = None
+        for _ in range(10):
+            base_serial = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
+            if base_serial is not None:
+                break
+            await asyncio.sleep(0.5)
+        if base_serial is None:
+            print(f"  [SKIP] b05: could not read base serial for {n}-change IXFR")
+            continue
+
         # Apply n new records.
         batch = []
         for _ in range(n):
@@ -66,7 +79,7 @@ async def run(adapter, cfg, ctx) -> list:
             await asyncio.sleep(0.5)
 
         secs, lines, nbytes = await loop.run_in_executor(
-            None, dnsutil.ixfr, zone, xe.host, xe.port, base_serial or 1)
+            None, dnsutil.ixfr, zone, xe.host, xe.port, base_serial)
         rows.append({
             "system": ctx["label"],
             "changes": n,

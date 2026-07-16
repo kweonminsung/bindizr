@@ -28,6 +28,19 @@ async def run(adapter, cfg, ctx) -> dict:
     await adapter.create_zone(zone)
     loop = asyncio.get_event_loop()
 
+    # Warm up: the first record in a freshly created zone waits for the secondary
+    # to finish establishing it (for Bindizr: catalog discovery + initial AXFR) —
+    # a one-time ~2s bootstrap cost unrelated to steady-state propagation. Do one
+    # throwaway create so the measured samples below reflect steady state.
+    warm = {"name": "warmup", "type": "A", "value": "10.0.0.1", "ttl": 60}
+    try:
+        await adapter.create_record(zone, warm)
+        await loop.run_in_executor(
+            None, dnsutil.poll_until_visible, f"warmup.{zone.rstrip('.')}", "A",
+            "10.0.0.1", ep.host, ep.port, p["poll_interval_ms"], p["timeout_secs"])
+    except Exception:
+        pass
+
     api = LatencyRecorder()
     visible = LatencyRecorder()
     api.started_at = time.monotonic()
