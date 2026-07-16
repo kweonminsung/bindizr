@@ -76,9 +76,22 @@ class ResourceSampler:
             return {"peak_cpu_pct": 0, "avg_cpu_pct": 0, "peak_mem_mb": 0, "avg_mem_mb": 0}
         cpus = [s["cpu_pct"] for s in self.samples]
         mems = [s["mem_bytes"] for s in self.samples]
+
+        # Per-container average CPU. `avg_cpu_pct` above pools every container into
+        # one mean, which understates a multi-container stack (e.g. Bindizr's near-
+        # idle control plane averaged with the BIND9 that actually serves queries).
+        # Keep the pooled value for back-compat but expose the breakdown too.
+        by_container: dict[str, list[float]] = {}
+        for s in self.samples:
+            by_container.setdefault(s["name"], []).append(s["cpu_pct"])
+        cpu_by_container = {
+            name: round(sum(v) / len(v), 2) for name, v in by_container.items()
+        }
+
         return {
             "peak_cpu_pct": round(max(cpus), 2),
             "avg_cpu_pct": round(sum(cpus) / len(cpus), 2),
+            "cpu_by_container": cpu_by_container,
             "peak_mem_mb": round(max(mems) / 1024**2, 2),
             "avg_mem_mb": round(sum(mems) / len(mems) / 1024**2, 2),
             "peak_net_tx_mb": round(max(s["net_tx"] for s in self.samples) / 1024**2, 2),

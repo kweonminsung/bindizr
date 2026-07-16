@@ -36,11 +36,23 @@ async def run(adapter, cfg, ctx) -> dict:
                                     cfg["query"]["concurrency"], LOAD_SECS, warmup_secs=1.0)
     res = sampler.stop()
     s = rec.summary()
+
+    # Report CPU per container, not pooled. Bindizr is outside the query data
+    # plane, so its container idles while BIND9 serves; a single pooled mean
+    # would hide that split and halve the stack's true cost. `cpu_total_pct` is
+    # the sum of per-container averages (comparable to a single-engine system);
+    # `cpu_by_container` shows where that CPU actually goes.
+    def _service(name: str) -> str:
+        # docker container names are "<project>-<service>-<index>".
+        parts = name.rsplit("-", 2)
+        return parts[-2] if len(parts) == 3 else name
+
+    by_service = {_service(n): v for n, v in res.get("cpu_by_container", {}).items()}
     return {
         "system": ctx["label"],
         "qps_during": s["tps"],
-        "peak_cpu_pct": res.get("peak_cpu_pct", 0),
-        "avg_cpu_pct": res.get("avg_cpu_pct", 0),
+        "cpu_total_pct": round(sum(by_service.values()), 2),
+        "cpu_by_container": ", ".join(f"{n} {v}" for n, v in sorted(by_service.items())),
         "peak_mem_mb": res.get("peak_mem_mb", 0),
         "avg_mem_mb": res.get("avg_mem_mb", 0),
         "peak_net_tx_mb": res.get("peak_net_tx_mb", 0),
