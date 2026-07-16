@@ -3,7 +3,10 @@
 
 use std::sync::OnceLock;
 
-use sqlx::{MySql, Pool, Postgres, Sqlite, sqlite::SqlitePoolOptions};
+use sqlx::{
+    MySql, Pool, Postgres, Sqlite, mysql::MySqlPoolOptions, postgres::PgPoolOptions,
+    sqlite::SqlitePoolOptions,
+};
 
 pub mod error;
 pub mod repository;
@@ -85,13 +88,26 @@ pub fn get_pool() -> &'static DatabasePool {
     DATABASE_POOL.get().expect("Database pool not initialized")
 }
 
+/// Max pooled connections for the networked backends, scaled to the host.
+/// sqlx's default is a flat 10; size it to the available parallelism instead.
+fn networked_pool_max_connections() -> u32 {
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    ((cores * 4) as u32).clamp(8, 64)
+}
+
 impl DatabasePool {
     /// Connect to MySQL, create tables, and return the pool.
     pub async fn new_mysql(url: &str) -> Self {
-        let pool = Pool::<MySql>::connect(url).await.unwrap_or_else(|e| {
-            log_error!("Failed to create MySQL database pool: {}", e);
-            std::process::exit(1);
-        });
+        let pool = MySqlPoolOptions::new()
+            .max_connections(networked_pool_max_connections())
+            .connect(url)
+            .await
+            .unwrap_or_else(|e| {
+                log_error!("Failed to create MySQL database pool: {}", e);
+                std::process::exit(1);
+            });
 
         let database_pool = DatabasePool::MySQL(pool);
 
@@ -105,10 +121,14 @@ impl DatabasePool {
 
     /// Connect to PostgreSQL, create tables, and return the pool.
     pub async fn new_postgres(url: &str) -> Self {
-        let pool = Pool::<Postgres>::connect(url).await.unwrap_or_else(|e| {
-            log_error!("Failed to create PostgreSQL database pool: {}", e);
-            std::process::exit(1);
-        });
+        let pool = PgPoolOptions::new()
+            .max_connections(networked_pool_max_connections())
+            .connect(url)
+            .await
+            .unwrap_or_else(|e| {
+                log_error!("Failed to create PostgreSQL database pool: {}", e);
+                std::process::exit(1);
+            });
 
         let database_pool = DatabasePool::PostgreSQL(pool);
 
