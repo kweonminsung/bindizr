@@ -127,9 +127,3 @@ explicitly with `BENCH_SIZES=1000000`.
 - Docker + Docker Compose v2
 - Host tools: `dig`, `nsupdate` (Debian/Ubuntu: `dnsutils` / `bind9-dnsutils`)
 - Python 3.10+ with `aiohttp`, `PyYAML`, `matplotlib`
-
-## CI
-
-[`.github-workflow-benchmark.yml`](.github-workflow-benchmark.yml) runs a small
-comparison on manual dispatch and uploads `results/` as an artifact. Copy it to
-`.github/workflows/benchmark.yml` to enable.
