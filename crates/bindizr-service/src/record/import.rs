@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use chrono::Utc;
 
 use super::{
@@ -92,7 +94,10 @@ impl RecordService {
             let mut skipped = 0usize;
 
             // Normalize parsed records and drop duplicates within the file.
+            // Records are indexed by owner name so the dedup check (and the
+            // reconciliation below) scans only same-name entries, not the whole set.
             let mut desired: Vec<DesiredRecord> = Vec::new();
+            let mut desired_by_name: HashMap<String, Vec<usize>> = HashMap::new();
             for record in parsed.records {
                 let value = match record.value.to_storage_value(&record.record_type) {
                     Ok(value) => value,
@@ -111,22 +116,25 @@ impl RecordService {
                     Err(e) => return Err(e),
                 };
 
-                let duplicate_in_file = desired.iter().any(|d| {
-                    d.stored_name.eq_ignore_ascii_case(&stored_name)
-                        && d.prepared.record_type == record.record_type
-                        && record_values_equal(
-                            &d.prepared.value,
-                            d.prepared.priority,
-                            &value,
-                            record.priority,
-                            &record.record_type,
-                        )
+                let name_key = stored_name.to_ascii_lowercase();
+                let duplicate_in_file = desired_by_name.get(&name_key).is_some_and(|idxs| {
+                    idxs.iter().any(|&i| {
+                        desired[i].prepared.record_type == record.record_type
+                            && record_values_equal(
+                                &desired[i].prepared.value,
+                                desired[i].prepared.priority,
+                                &value,
+                                record.priority,
+                                &record.record_type,
+                            )
+                    })
                 });
                 if duplicate_in_file {
                     skipped += 1;
                     continue;
                 }
 
+                desired_by_name.entry(name_key).or_default().push(desired.len());
                 desired.push(DesiredRecord {
                     prepared: PreparedRecord {
                         owner_name: record.owner_fqdn,
@@ -141,26 +149,45 @@ impl RecordService {
 
             let parsed_count = desired.len();
 
+            // Index existing records by owner name so each existing/desired
+            // record is reconciled against only same-name rows (previously a
+            // full scan of the zone per record).
+            let mut existing_by_name: HashMap<String, Vec<&Record>> = HashMap::new();
+            for record in &existing_records {
+                existing_by_name
+                    .entry(record.name.to_ascii_lowercase())
+                    .or_default()
+                    .push(record);
+            }
+
+            let desired_matches_existing = |e: &Record| {
+                desired_by_name
+                    .get(&e.name.to_ascii_lowercase())
+                    .is_some_and(|idxs| idxs.iter().any(|&i| desired_matches(e, &desired[i])))
+            };
+            let desired_key_matches_existing = |e: &Record| {
+                desired_by_name
+                    .get(&e.name.to_ascii_lowercase())
+                    .is_some_and(|idxs| {
+                        idxs.iter()
+                            .any(|&i| desired[i].prepared.record_type == e.record_type)
+                    })
+            };
+
             // Deletions implied by the mode.
             let dels: Vec<Record> = match mode {
                 ImportMode::Append => Vec::new(),
                 ImportMode::Replace => existing_records
                     .iter()
-                    .filter(|e| {
-                        !is_protected(&zone, e) && !desired.iter().any(|d| desired_matches(e, d))
-                    })
+                    .filter(|e| !is_protected(&zone, e) && !desired_matches_existing(e))
                     .cloned()
                     .collect(),
                 ImportMode::Upsert => existing_records
                     .iter()
                     .filter(|e| {
-                        let key_in_file = desired.iter().any(|d| {
-                            e.name.eq_ignore_ascii_case(&d.stored_name)
-                                && e.record_type == d.prepared.record_type
-                        });
-                        key_in_file
+                        desired_key_matches_existing(e)
                             && !is_protected(&zone, e)
-                            && !desired.iter().any(|d| desired_matches(e, d))
+                            && !desired_matches_existing(e)
                     })
                     .cloned()
                     .collect(),
@@ -171,7 +198,9 @@ impl RecordService {
             let adds: Vec<&DesiredRecord> = desired
                 .iter()
                 .filter(|d| {
-                    let present = existing_records.iter().any(|e| desired_matches(e, d));
+                    let present = existing_by_name
+                        .get(&d.stored_name.to_ascii_lowercase())
+                        .is_some_and(|es| es.iter().any(|&e| desired_matches(e, d)));
                     if present {
                         unchanged += 1;
                     }
@@ -180,15 +209,24 @@ impl RecordService {
                 .collect();
 
             // Validate additions against an in-memory copy so constraint
-            // violations are caught without writing anything.
-            let mut simulated: Vec<Record> = existing_records
-                .iter()
-                .filter(|e| !dels.iter().any(|d| d.id == e.id))
-                .cloned()
-                .collect();
+            // violations are caught without writing anything. Simulated records
+            // are indexed by name so each check scans only same-name candidates.
+            let del_ids: HashSet<i32> = dels.iter().map(|d| d.id).collect();
+            let mut simulated_by_name: HashMap<String, Vec<Record>> = HashMap::new();
+            for e in &existing_records {
+                if !del_ids.contains(&e.id) {
+                    simulated_by_name
+                        .entry(e.name.to_ascii_lowercase())
+                        .or_default()
+                        .push(e.clone());
+                }
+            }
             for add in &adds {
+                let same_name = simulated_by_name
+                    .entry(add.stored_name.to_ascii_lowercase())
+                    .or_default();
                 match validate_record_add_constraints_normalized(
-                    &simulated,
+                    same_name,
                     &add.prepared.owner_name,
                     &add.stored_name,
                     &add.prepared.record_type,
@@ -196,7 +234,7 @@ impl RecordService {
                     add.prepared.priority,
                     None,
                 ) {
-                    Ok(()) => simulated.push(synthetic_record(
+                    Ok(()) => same_name.push(synthetic_record(
                         &add.stored_name,
                         &add.prepared.record_type,
                         &add.prepared.value,

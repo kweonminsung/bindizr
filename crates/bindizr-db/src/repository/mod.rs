@@ -196,6 +196,14 @@ pub trait RecordRepository: Send + Sync {
         zone_id: i32,
         name: &str,
     ) -> Result<Vec<Record>, DatabaseError>;
+    /// Load records whose owner name is any of `names` (lowercased match). Used
+    /// by bulk insert to fetch only the rows that could conflict with the batch.
+    async fn get_by_zone_id_and_names_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        names: &[String],
+    ) -> Result<Vec<Record>, DatabaseError>;
     async fn get(
         &self,
         zone_id: Option<i32>,

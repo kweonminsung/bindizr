@@ -1,6 +1,11 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 
-use super::{RecordService, validation::validate_record_add_constraints};
+use super::{
+    RecordService,
+    validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
+};
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -159,37 +164,66 @@ impl RecordService {
         let apply_result = async {
             let zone = load_zone_tx(&mut tx, zone_name).await?;
 
-            let mut zone_records =
-                match RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await {
-                    Ok(records) => records,
-                    Err(e) => {
-                        log_error!("Failed to load zone records: {}", e);
-                        return Err(ServiceError::Internal(
-                            "Failed to create records".to_string(),
-                        ));
-                    }
-                };
+            // Only records whose owner name appears in the batch can conflict, so
+            // load just those instead of the whole zone. Normalization errors are
+            // ignored here; the validation loop below reports them authoritatively.
+            let mut batch_names: Vec<String> = prepared
+                .iter()
+                .filter_map(|p| normalize_record_owner_name(&p.owner_name, &zone.name).ok())
+                .map(|n| n.stored_name.to_ascii_lowercase())
+                .collect();
+            batch_names.sort();
+            batch_names.dedup();
+
+            let existing_records = match RepositoryService::get_records_by_zone_id_and_names_tx(
+                &mut tx,
+                zone.id,
+                &batch_names,
+            )
+            .await
+            {
+                Ok(records) => records,
+                Err(e) => {
+                    log_error!("Failed to load zone records: {}", e);
+                    return Err(ServiceError::Internal(
+                        "Failed to create records".to_string(),
+                    ));
+                }
+            };
 
             let new_serial = generate_serial(Some(zone.serial));
 
-            // Validate each record (including intra-batch conflicts) up front,
-            // then insert all rows and changes in one multi-row statement each.
-            // New records are appended to `zone_records` so each iteration's
-            // constraint check sees the ones before it.
-            let existing_count = zone_records.len();
-            zone_records.reserve(prepared.len());
+            // Index existing records by owner name so each record's constraint
+            // check scans only same-name records instead of the whole zone (an
+            // O(batch x zone) scan otherwise). Newly added records join the index
+            // as we go, so intra-batch conflicts are still detected.
+            let mut records_by_name: HashMap<String, Vec<Record>> = HashMap::new();
+            for record in existing_records {
+                records_by_name
+                    .entry(record.name.to_ascii_lowercase())
+                    .or_default()
+                    .push(record);
+            }
+
+            let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
-                let normalized_owner = validate_record_add_constraints(
-                    &zone,
-                    &zone_records,
+                let normalized_owner =
+                    normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
+                let same_name = records_by_name
+                    .entry(normalized_owner.stored_name.to_ascii_lowercase())
+                    .or_default();
+
+                validate_record_add_constraints_normalized(
+                    same_name,
                     &prepared_record.owner_name,
+                    &normalized_owner.stored_name,
                     &prepared_record.record_type,
                     &prepared_record.value,
                     prepared_record.priority,
                     None,
                 )?;
 
-                zone_records.push(Record {
+                let record = Record {
                     id: 0,
                     name: normalized_owner.stored_name,
                     record_type: prepared_record.record_type.clone(),
@@ -198,9 +232,10 @@ impl RecordService {
                     priority: prepared_record.priority,
                     zone_id: zone.id,
                     created_at: Utc::now(),
-                });
+                };
+                same_name.push(record.clone());
+                to_insert.push(record);
             }
-            let to_insert = zone_records.split_off(existing_count);
 
             let created_records =
                 insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;

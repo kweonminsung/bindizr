@@ -283,6 +283,51 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(records)
     }
 
+    async fn get_by_zone_id_and_names_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        names: &[String],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        // Only same-name rows can conflict, so match names lowercased (keeping the
+        // column function-free so idx_records_zone_name is used) and lock just those.
+        const CHUNK: usize = 500;
+        let mut out = Vec::new();
+        for chunk in names.chunks(CHUNK) {
+            let mut sql = String::from(
+                "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name IN (",
+            );
+            for i in 0..chunk.len() {
+                if i > 0 {
+                    sql.push(',');
+                }
+                sql.push_str(&format!("${}", i + 2));
+            }
+            sql.push_str(") FOR UPDATE");
+
+            let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+            for name in chunk {
+                query = query.bind(name.to_lowercase());
+            }
+            let mut rows = query.fetch_all(&mut **postgres_tx).await?;
+            out.append(&mut rows);
+        }
+        Ok(out)
+    }
+
     async fn get(
         &self,
         zone_id: Option<i32>,

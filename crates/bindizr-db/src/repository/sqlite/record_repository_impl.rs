@@ -274,6 +274,49 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
+    async fn get_by_zone_id_and_names_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        names: &[String],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        // Only same-name rows can conflict, so match names lowercased (keeping the
+        // column function-free so idx_records_zone_name is used) and chunk the IN
+        // list to stay under SQLite's bind-variable limit.
+        const CHUNK: usize = 400;
+        let mut out = Vec::new();
+        for chunk in names.chunks(CHUNK) {
+            let mut sql = String::from(
+                "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name IN (",
+            );
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 { "?" } else { ",?" });
+            }
+            sql.push(')');
+
+            let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+            for name in chunk {
+                query = query.bind(name.to_lowercase());
+            }
+            let mut rows = query.fetch_all(&mut **sqlite_tx).await?;
+            out.append(&mut rows);
+        }
+        Ok(out)
+    }
+
     async fn get(
         &self,
         zone_id: Option<i32>,
