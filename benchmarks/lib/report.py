@@ -1,14 +1,14 @@
 """Result persistence + final report generation (md / csv / json / png).
 
 Each runner appends a structured result via `save_result`. `build_report` then
-aggregates everything under results/ into performance.{json,csv,md} and renders
-graphs/*.png. Graph rendering is best-effort (skipped if matplotlib absent).
+aggregates everything under results_<timestamp>/ into performance.{json,csv,md}
+and renders graphs/*.png. Graph rendering is best-effort (skipped if matplotlib
+absent).
 """
 from __future__ import annotations
 
 import csv
 import json
-from pathlib import Path
 from typing import Any
 
 from .settings import GRAPHS_DIR, RESULTS_DIR

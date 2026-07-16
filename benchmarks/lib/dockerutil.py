@@ -40,10 +40,9 @@ class Compose:
     def down(self) -> None:
         import os
 
-        # Pass env (incl. COMPOSE_PROFILES) so profiled services — Bindizr's
-        # optional mysql/postgres — are also stopped and their volumes removed.
-        # Force COMPOSE_PROFILES to include all backends so `down` never leaves a
-        # profiled DB container running with stale data between runs.
+        # Force COMPOSE_PROFILES to include all backends so `down` also stops
+        # profiled DB services (Bindizr's optional mysql/postgres) and removes
+        # their volumes, never leaving a container with stale data between runs.
         env = {**os.environ, **self.env}
         env["COMPOSE_PROFILES"] = "mysql,postgres"
         subprocess.run(

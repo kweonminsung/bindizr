@@ -228,14 +228,14 @@ impl RecordService {
                 let to_insert: Vec<Record> = adds
                     .iter()
                     .map(|add| Record {
-                        id: 0, // Will be set by the database
+                        id: 0,
                         name: add.stored_name.clone(),
                         record_type: add.prepared.record_type.clone(),
                         value: add.prepared.value.clone(),
                         ttl: add.prepared.ttl,
                         priority: add.prepared.priority,
                         zone_id: zone.id,
-                        created_at: Utc::now(), // Will be set by the database
+                        created_at: Utc::now(),
                     })
                     .collect();
                 insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;

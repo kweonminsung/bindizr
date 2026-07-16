@@ -38,11 +38,6 @@ def _mem_total_gb() -> float:
     return 0.0
 
 
-def _image_version(image: str) -> str:
-    """Report the pinned image tag for a software component."""
-    return image
-
-
 def collect(cfg: dict) -> dict:
     import os
 

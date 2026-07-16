@@ -52,7 +52,6 @@ impl log::Log for Logger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let log_message = if self.log_level == Level::Debug {
-                // Include target in debug logs
                 format!(
                     "{} - {}: {}\n",
                     record.level(),
@@ -60,7 +59,6 @@ impl log::Log for Logger {
                     record.args()
                 )
             } else {
-                // Exclude target for other log levels
                 format!("{}: {}\n", record.level(), record.args())
             };
 

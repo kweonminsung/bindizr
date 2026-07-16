@@ -169,7 +169,6 @@ impl DatabasePool {
     }
 
     async fn create_tables(&self) -> Result<(), String> {
-        // Table creation queries vary by database backend.
         let queries = match self {
             DatabasePool::MySQL(_) => schema::get_mysql_table_creation_queries(),
             DatabasePool::PostgreSQL(_) => schema::get_postgres_table_creation_queries(),

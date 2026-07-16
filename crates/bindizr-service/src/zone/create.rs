@@ -61,7 +61,7 @@ impl ZoneService {
             let created_zone = RepositoryService::create_zone_tx(
                 &mut tx,
                 Zone {
-                    id: 0, // Will be set by the database
+                    id: 0,
                     name: validated.name.clone(),
                     primary_ns: validated.primary_ns.clone(),
                     admin_email: validated.admin_email.clone(),
@@ -71,7 +71,7 @@ impl ZoneService {
                     retry: timers.retry,
                     expire: timers.expire,
                     minimum_ttl: timers.minimum_ttl,
-                    created_at: Utc::now(), // Will be set by the database
+                    created_at: Utc::now(),
                 },
             )
             .await

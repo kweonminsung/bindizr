@@ -75,11 +75,7 @@ pub(crate) enum Command {
 
 /// Initialize config, logging, database, DNS, socket, and API servers, then run until Ctrl+C.
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
-    if let Some(file) = config_file {
-        config::initialize(Some(file));
-    } else {
-        config::initialize(None);
-    }
+    config::initialize(config_file);
 
     logger::initialize();
     service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;

@@ -2,13 +2,13 @@
 # Bindizr Benchmark Suite — single entrypoint.
 #
 # Runs the full comparison (or a subset), collects results, and writes the
-# report under results/ (performance.md/csv/json + graphs/). All state is torn
-# down on exit.
+# report under results_<timestamp>/ (performance.md/csv/json + graphs/). All
+# state is torn down on exit.
 #
 # Usage:
 #   ./benchmark.sh                       # all benchmarks, all enabled systems
 #   ./benchmark.sh -b b01_crud_tps       # one benchmark
-#   ./benchmark.sh -b b09_query_perf -s bindizr,bind9_native
+#   ./benchmark.sh -b b08_query_perf -s bindizr,bind9_native
 #   ./benchmark.sh --ci                  # small sizes for CI
 #   ./benchmark.sh --list                # list benchmarks
 #
@@ -58,4 +58,4 @@ trap cleanup EXIT INT TERM
 
 echo ">>> starting benchmark run"
 "$PYTHON" orchestrator.py "${ARGS[@]}"
-echo ">>> done. Results in $(pwd)/results/"
+echo ">>> done. Results written under results_<timestamp>/ (exact path printed above)."

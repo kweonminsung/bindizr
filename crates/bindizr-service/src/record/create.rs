@@ -103,14 +103,14 @@ impl RecordService {
             let created_record = RepositoryService::create_record_tx(
                 &mut tx,
                 Record {
-                    id: 0, // Will be set by the database
+                    id: 0,
                     name: normalized_owner.stored_name,
                     record_type,
                     value: record_value,
                     ttl: create_record_request.ttl,
                     priority: create_record_request.priority,
                     zone_id: zone.id,
-                    created_at: Utc::now(), // Will be set by the database
+                    created_at: Utc::now(),
                 },
             )
             .await

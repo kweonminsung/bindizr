@@ -190,14 +190,14 @@ impl RecordService {
                 )?;
 
                 zone_records.push(Record {
-                    id: 0, // Will be set by the database
+                    id: 0,
                     name: normalized_owner.stored_name,
                     record_type: prepared_record.record_type.clone(),
                     value: prepared_record.value.clone(),
                     ttl: prepared_record.ttl,
                     priority: prepared_record.priority,
                     zone_id: zone.id,
-                    created_at: Utc::now(), // Will be set by the database
+                    created_at: Utc::now(),
                 });
             }
             let to_insert = zone_records.split_off(existing_count);

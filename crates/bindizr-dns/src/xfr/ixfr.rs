@@ -75,7 +75,7 @@ pub(crate) async fn handle_ixfr(
         return send_up_to_date_response(stream, zone_name, query_id, &current_soa).await;
     }
 
-    // If client is ahead, this is an error
+    // Client is ahead of us: we can't build a delta, so fall back to AXFR.
     if client_serial > current_serial {
         log_warn!(
             "IXFR: Client serial {} > current serial {}, falling back to AXFR",

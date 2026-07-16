@@ -205,21 +205,20 @@ async fn add_record(
         return Ok(false);
     }
 
-    let ttl = if update.ttl > i32::MAX as u32 {
+    if update.ttl > i32::MAX as u32 {
         return Err(UpdateError::Refused(format!(
             "TTL value {} exceeds maximum allowed value ({})",
             update.ttl,
             i32::MAX
         )));
-    } else {
-        update.ttl as i32
-    };
+    }
+    let ttl = update.ttl as i32;
 
     let created = RecordService::create_tx(
         tx,
         Record {
             id: 0,
-            name: relative_name.clone(),
+            name: relative_name,
             record_type: record_type.clone(),
             value: value.clone(),
             ttl: Some(ttl),

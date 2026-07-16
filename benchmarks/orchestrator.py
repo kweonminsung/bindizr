@@ -17,13 +17,11 @@ import asyncio
 import importlib
 import os
 import traceback
-from pathlib import Path
 
 from adapters import registry
 from lib import env as envmod
 from lib import report, settings
 from lib.resources import ResourceSampler
-from lib import dockerutil
 
 ZONE = "bench.example."
 
@@ -53,14 +51,14 @@ def bindizr_notify_for(bench: str) -> bool:
     return bench not in NOTIFY_OFF_BENCHMARKS
 
 
-def project_name(bench: str, system: str) -> str:
+def project_name(system: str) -> str:
     return f"bench-{system}".replace("_", "-")
 
 
 async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
     label = settings.system_label(cfg, system)
     print(f"\n=== {bench} :: {label} ({system}) ===", flush=True)
-    proj = project_name(bench, system)
+    proj = project_name(system)
 
     # b07 manages its own adapters (one per DB backend) — skip generic setup.
     if bench == "b07_database":
