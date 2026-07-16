@@ -270,11 +270,13 @@ impl RecordRepository for PostgresRecordRepository {
             }
         };
 
+        // Owner names are stored lowercase, so match against a lowercased bind
+        // and keep the column function-free so idx_records_zone_name is used.
         let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND LOWER(name) = LOWER($2) ORDER BY name FOR UPDATE",
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name FOR UPDATE",
         )
         .bind(zone_id)
-        .bind(name)
+        .bind(name.to_lowercase())
         .fetch_all(&mut **postgres_tx)
         .await?;
 
