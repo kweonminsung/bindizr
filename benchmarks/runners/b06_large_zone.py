@@ -37,8 +37,20 @@ async def run(adapter, cfg, ctx) -> list:
         await adapter.bulk_import(zone, recs)
         populate_secs = time.monotonic() - t
 
-        # Wait for propagation, then time a full export (AXFR).
-        await asyncio.sleep(2)
+        # The BIND9 secondary pulls asynchronously — bulk_import returns after
+        # commit+NOTIFY, not after the transfer lands — so poll until the
+        # transferable count covers the set and stops growing before timing the
+        # export (AXFR).
+        deadline = time.monotonic() + 120
+        prev = -1
+        while time.monotonic() < deadline:
+            _, count, _ = await loop.run_in_executor(
+                None, dnsutil.axfr, zone, xe.host, xe.port, 300)
+            if count >= size and count == prev:
+                break
+            prev = count
+            await asyncio.sleep(1.0)
+
         export_secs, _, export_bytes = await loop.run_in_executor(
             None, dnsutil.axfr, zone, xe.host, xe.port, 300)
 

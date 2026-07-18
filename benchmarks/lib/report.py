@@ -274,11 +274,18 @@ def _render_markdown(env: dict, data: dict) -> str:
 
     if "b08_query_perf" in data:
         results = _rows(data, "b08_query_perf")
-        native = next((r for r in results if "Native" in r["system"]), None)
-        base = native["qps"] if native and native.get("qps") else None
+        # A failed query run emits a status/error row with no qps; keep those out
+        # of the numeric table and the overhead math (which divides by qps), and
+        # list them separately below.
+        def _ok(r):
+            return r.get("status") != "FAILED" and r.get("qps") is not None
+        failed = [r for r in results if not _ok(r)]
+        ok = [r for r in results if _ok(r)]
+        native = next((r for r in ok if "Native" in r["system"]), None)
+        base = native.get("qps") if native else None
         out.append("\n## Benchmark 8 — DNS Query Performance\n")
         rows = []
-        for r in results:
+        for r in ok:
             overhead = "baseline" if r is native else (
                 f'{(1 - r["qps"] / base) * 100:+.1f}%' if base else "-")
             rows.append([r["system"], r.get("qps", "-"), r.get("avg_latency_ms", "-"),
@@ -286,6 +293,10 @@ def _render_markdown(env: dict, data: dict) -> str:
         out.append(_md_table(
             ["Server", "QPS", "Avg latency (ms)", "p95 (ms)", "p99 (ms)",
              "Δ QPS vs Native BIND9"], rows))
+        if failed:
+            out.append("\n> ⚠️ Failed runs: " +
+                       ", ".join(f'{r.get("system", "?")} ({r.get("error", "?")})'
+                                 for r in failed) + "\n")
         out.append(
             "\n> **Bindizr introduces no measurable DNS query overhead because it "
             "is outside the DNS data plane.** Queries are served by the BIND9 "

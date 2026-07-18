@@ -38,10 +38,11 @@ RUNNERS = {
 }
 
 
-# NOTIFY is disabled only where propagation would confound the measurement.
-# Elsewhere Bindizr keeps it on, so it does the same propagation work its
-# integrated competitors always do.
-NOTIFY_OFF_BENCHMARKS = {"b07_database"}
+# Management-plane benchmarks isolate raw write throughput, so Bindizr runs them
+# with notify_after_update=false (per benchmarks/README.md); propagation itself is
+# measured separately in B3/B4/B5. (b07_database drives its own adapters and forces
+# NOTIFY off directly — listed here for documentation.)
+NOTIFY_OFF_BENCHMARKS = {"b01_crud_tps", "b02_bulk_import", "b07_database"}
 
 
 def bindizr_notify_for(bench: str) -> bool:
@@ -129,6 +130,14 @@ async def main_async(args) -> None:
     repeats = int(cfg.get("repeats", 1))
     benches = args.benchmarks or list(RUNNERS.keys())
 
+    # Systems whose required CLI tool is missing (set by benchmark.sh preflight,
+    # e.g. bind9_nsupdate when `nsupdate` is absent) are dropped from every
+    # benchmark's matrix rather than attempted and failed.
+    disabled = {s for s in os.environ.get("BENCH_DISABLE_SYSTEMS", "").split(",") if s}
+    if disabled:
+        print(f"Skipping systems (required tools unavailable): "
+              f"{', '.join(sorted(disabled))}", flush=True)
+
     # Clear only the raw files for the benchmarks about to run, so repeated
     # invocations never accumulate stale/duplicate rows, while a subset re-run
     # (e.g. -b b07_database) preserves the other benchmarks' existing results.
@@ -140,7 +149,8 @@ async def main_async(args) -> None:
     for bench in benches:
         systems = args.systems or cfg["benchmarks"].get(bench, [])
         systems = [s for s in systems
-                   if s == "bind9_native" or cfg["systems"].get(s, {}).get("enabled")]
+                   if (s == "bind9_native" or cfg["systems"].get(s, {}).get("enabled"))
+                   and s not in disabled]
         for system in systems:
             for rep in range(repeats):
                 if repeats > 1:

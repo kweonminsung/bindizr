@@ -39,7 +39,10 @@ done
 command -v docker >/dev/null || { echo "ERROR: docker not found" >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo "ERROR: docker daemon not reachable" >&2; exit 1; }
 command -v dig >/dev/null || { echo "ERROR: dig (dnsutils) not found" >&2; exit 1; }
-command -v nsupdate >/dev/null || echo "WARN: nsupdate not found; BIND9+nsupdate benchmark will be skipped"
+if ! command -v nsupdate >/dev/null; then
+  echo "WARN: nsupdate not found; the bind9_nsupdate system will be skipped" >&2
+  export BENCH_DISABLE_SYSTEMS="${BENCH_DISABLE_SYSTEMS:+$BENCH_DISABLE_SYSTEMS,}bind9_nsupdate"
+fi
 "$PYTHON" -c "import aiohttp, yaml, matplotlib" 2>/dev/null || {
   echo "ERROR: missing Python deps. Run: pip install -r requirements.txt" >&2; exit 1; }
 

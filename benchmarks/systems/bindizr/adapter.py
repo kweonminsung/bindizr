@@ -42,6 +42,14 @@ class BindizrAdapter(DnsAdapter):
                  zone_cache: bool | None = None):
         super().__init__(cfg, project)
         self.db_type = db_type
+        # Sample the DB container that is actually under test (mysql/postgres run
+        # as their own containers; sqlite is embedded in the bindizr process), so
+        # Benchmark 7's per-backend CPU/mem columns include the profiled backend.
+        self.resource_services = ["bindizr", "bind9"]
+        if db_type == "mysql":
+            self.resource_services.append("mysql")
+        elif db_type == "postgresql":
+            self.resource_services.append("postgres")
         self.notify_after_update = notify_after_update
         # None => Bindizr's own defaults (sync / 50 / true); see compose.yml.
         self.apply_mode = apply_mode or os.environ.get("BENCH_BINDIZR_APPLY_MODE", "sync")
@@ -158,15 +166,24 @@ class BindizrAdapter(DnsAdapter):
             item["priority"] = rec["priority"]
         return item
 
-    async def _post_with_retry(self, url: str, body: dict, count: int) -> int:
+    async def _post_with_retry(self, url: str, body: dict, count: int,
+                               check_applied: bool = False) -> int:
         """POST `body`, retrying transient failures. Returns the number of records
-        that failed after all retries (0 on success)."""
+        that failed after all retries (0 on success).
+
+        The zone-import endpoint returns HTTP 200 even when validation errors
+        leave `applied=false` and nothing is inserted; `check_applied` inspects
+        the response so a rejected chunk counts as failed instead of a silent
+        success. Rejection is deterministic, so it is not retried."""
         delay = 0.05
         for attempt in range(4):
             try:
                 async with self.session.post(url, json=body) as r:
                     if r.status in (200, 201):
-                        return 0
+                        if not check_applied:
+                            return 0
+                        data = await r.json()
+                        return 0 if data.get("applied") else count
             except Exception:
                 pass
             if attempt < 3:
@@ -202,7 +219,8 @@ class BindizrAdapter(DnsAdapter):
             chunk = records[start:start + self.import_chunk]
             content = "\n".join(self._zone_line(r) for r in chunk) + "\n"
             body = {"content": content, "mode": "append"}
-            self.import_errors += await self._post_with_retry(url, body, len(chunk))
+            self.import_errors += await self._post_with_retry(
+                url, body, len(chunk), check_applied=True)
 
     def dns_endpoint(self) -> Endpoint:
         return Endpoint("127.0.0.1", DNS_PORT)
