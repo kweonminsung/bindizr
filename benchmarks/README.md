@@ -87,6 +87,28 @@ BIND9` — i.e. **Bindizr introduces no measurable DNS query overhead**.
 - **Environment recorded.** CPU/mem/OS/Docker, per-container limits, repeats, and
   all image versions are written into every report.
 
+## Batch-size guidance (measured)
+
+Bulk/import clients choose how many records to send per request; Bindizr applies
+each request as one transaction + serial bump + NOTIFY. Sweeping SQLite at 100k
+with matched batch sizes (`BENCH_BINDIZR_BULK_CHUNK` / `BENCH_BINDIZR_IMPORT_CHUNK`):
+
+| records/request | JSON bulk | zone import | import rec/s | peak mem |
+|---|---:|---:|---:|---:|
+| 2,000 | 1.15s | 0.95s | ~106k | ~115 MB |
+| **5,000** | **0.97s** | **0.76s** | **~131k** | ~130 MB |
+| 10,000 | 0.94s | 0.75s | ~134k | ~156 MB |
+
+Per-record DB-write cost is flat (~4.1 µs); a larger batch only amortizes the
+per-request fixed cost (transaction, serial bump, snapshot, JSON decode). Gains
+flatten past ~5,000 (2k→5k ≈ −17%, 5k→10k ≈ −2.5% for +20% memory), so **~5,000
+records/request** is the recommended default.
+
+Backend caveat: measured on SQLite. PostgreSQL is ~1.7× and MySQL ~5.7× slower at
+100k; on MySQL the dominant per-request cost is the existing-record
+`SELECT … FOR UPDATE` lookup (~90–130 ms/chunk), not the insert — so on that
+backend batch size matters far less than the lookup does.
+
 ## Layout
 
 ```

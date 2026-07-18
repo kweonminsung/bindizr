@@ -35,13 +35,16 @@ class BindizrAdapter(DnsAdapter):
     bulk_chunk = 2000
     import_chunk = 5000
 
-    def __init__(self, cfg: dict, project: str, db_type: str = "sqlite",
+    def __init__(self, cfg: dict, project: str, db_type: str | None = None,
                  notify_after_update: bool = True,
                  apply_mode: str | None = None,
                  apply_batch_ms: int | None = None,
                  zone_cache: bool | None = None,
                  log_level: str | None = None):
         super().__init__(cfg, project)
+        # b07 passes db_type explicitly; b02/others fall back to the env knob so a
+        # single benchmark can be pointed at any backend (default sqlite).
+        db_type = db_type or os.environ.get("BENCH_BINDIZR_DB_TYPE", "sqlite")
         self.db_type = db_type
         # Sample the DB container that is actually under test (mysql/postgres run
         # as their own containers; sqlite is embedded in the bindizr process), so
