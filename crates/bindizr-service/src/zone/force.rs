@@ -19,7 +19,9 @@ impl ZoneService {
                 let mut bumped_zones = Vec::with_capacity(zones.len());
 
                 for zone in zones {
-                    bumped_zones.push(Self::force_increment_zone_serial(&zone.name).await?);
+                    // `list()` already returned the full zone, so bump it directly
+                    // instead of re-fetching each one by name.
+                    bumped_zones.push(Self::bump_zone_serial(zone).await?);
                 }
 
                 Ok(bumped_zones)
@@ -48,6 +50,46 @@ impl ZoneService {
                 }
             };
 
+            let new_serial = generate_serial(Some(zone.serial));
+            let updated_zone = RepositoryService::update_zone_tx(
+                &mut tx,
+                Zone {
+                    serial: new_serial,
+                    ..zone
+                },
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to force increment zone serial: {}", e);
+                ServiceError::Internal("Failed to force increment zone serial".to_string())
+            })?;
+
+            save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
+
+            Ok::<Zone, ServiceError>(updated_zone)
+        }
+        .await;
+
+        let updated_zone =
+            RepositoryService::finish_tx(tx, apply_result, "Failed to force increment zone serial")
+                .await?;
+
+        log_info!(
+            "event=zone_force_serial zone={} new_serial={} zone_id={}",
+            updated_zone.name,
+            updated_zone.serial,
+            updated_zone.id
+        );
+
+        Ok(updated_zone)
+    }
+
+    /// Bump an already-loaded zone's serial in its own transaction, without
+    /// re-fetching it — the bulk path passes zones straight from `list()`.
+    async fn bump_zone_serial(zone: Zone) -> Result<Zone, ServiceError> {
+        let mut tx = RepositoryService::begin_tx("Failed to force increment zone serial").await?;
+
+        let apply_result = async {
             let new_serial = generate_serial(Some(zone.serial));
             let updated_zone = RepositoryService::update_zone_tx(
                 &mut tx,
