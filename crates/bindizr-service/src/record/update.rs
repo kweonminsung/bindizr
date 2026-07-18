@@ -21,41 +21,13 @@ impl RecordService {
         record_id: i32,
         update_record_request: &UpdateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
-        let zone_id = match RepositoryService::get_record_by_id(record_id).await {
-            Ok(Some(record)) => record.zone_id,
-            Ok(None) => {
-                return Err(ServiceError::NotFound(format!(
-                    "Record with id '{}' not found",
-                    record_id
-                )));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::Internal("Failed to fetch record".to_string()));
-            }
-        };
-
         let mut tx = RepositoryService::begin_tx("Failed to update record").await?;
 
         let apply_result = async {
-            let zone = match RepositoryService::get_zone_by_id_tx(&mut tx, zone_id).await {
-                Ok(Some(zone)) => zone,
-                Ok(None) => {
-                    return Err(ServiceError::NotFound(format!(
-                        "Zone with id '{}' not found",
-                        zone_id
-                    )));
-                }
-                Err(e) => {
-                    log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
-                }
-            };
-
             let existing_record =
                 match RepositoryService::get_record_by_id_tx(&mut tx, record_id).await {
-                    Ok(Some(record)) if record.zone_id == zone.id => record,
-                    Ok(Some(_)) | Ok(None) => {
+                    Ok(Some(record)) => record,
+                    Ok(None) => {
                         return Err(ServiceError::NotFound(format!(
                             "Record with id '{}' not found",
                             record_id
@@ -66,6 +38,22 @@ impl RecordService {
                         return Err(ServiceError::Internal("Failed to fetch record".to_string()));
                     }
                 };
+
+            let zone = match RepositoryService::get_zone_by_id_tx(&mut tx, existing_record.zone_id)
+                .await
+            {
+                Ok(Some(zone)) => zone,
+                Ok(None) => {
+                    return Err(ServiceError::NotFound(format!(
+                        "Zone with id '{}' not found",
+                        existing_record.zone_id
+                    )));
+                }
+                Err(e) => {
+                    log_error!("Failed to fetch zone: {}", e);
+                    return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
+                }
+            };
 
             let record_type = update_record_request
                 .record_type
@@ -139,11 +127,8 @@ impl RecordService {
                     ServiceError::Internal("Failed to update zone serial".to_string())
                 })?;
 
-            // Record zone changes for IXFR
-
-            // Delete old record
-            RepositoryService::create_zone_change_tx(
-                &mut tx,
+            // Record DEL(old)+ADD(new) zone changes for IXFR in one batch.
+            let changes = vec![
                 ZoneChange {
                     id: 0,
                     zone_id: zone.id,
@@ -155,16 +140,6 @@ impl RecordService {
                     record_ttl: existing_record.ttl,
                     record_priority: existing_record.priority,
                 },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change (DEL): {}", e);
-                ServiceError::Internal("Failed to create zone change".to_string())
-            })?;
-
-            // Add new record
-            RepositoryService::create_zone_change_tx(
-                &mut tx,
                 ZoneChange {
                     id: 0,
                     zone_id: zone.id,
@@ -176,12 +151,13 @@ impl RecordService {
                     record_ttl: update_record_request.ttl,
                     record_priority: update_record_request.priority,
                 },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change (ADD): {}", e);
-                ServiceError::Internal("Failed to create zone change".to_string())
-            })?;
+            ];
+            RepositoryService::create_zone_changes_tx(&mut tx, &changes)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to create zone changes: {}", e);
+                    ServiceError::Internal("Failed to create zone change".to_string())
+                })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 

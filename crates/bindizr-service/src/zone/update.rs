@@ -91,13 +91,6 @@ impl ZoneService {
             None => generate_serial(Some(existing_zone.serial)),
         };
 
-        let zone_records = RepositoryService::get_records_by_zone_id(zone_id)
-            .await
-            .map_err(|e| {
-                log_error!("Failed to fetch zone records: {}", e);
-                ServiceError::Internal("Failed to update zone".to_string())
-            })?;
-
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
 
         let apply_result = async {
@@ -123,12 +116,28 @@ impl ZoneService {
                 ServiceError::Internal("Failed to update zone".to_string())
             })?;
 
-            // Record zone changes for IXFR
-            let has_primary_ns = zone_records.iter().any(|r| {
+            // A rename / primary_ns change must keep an apex NS matching the new
+            // primary_ns; only apex rows can satisfy that, so load just those.
+            let apex_records =
+                RepositoryService::get_records_by_zone_id_and_name_tx(&mut tx, zone_id, "@")
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to fetch apex records: {}", e);
+                        ServiceError::Internal("Failed to update zone".to_string())
+                    })?;
+            let has_primary_ns = apex_records.iter().any(|r| {
                 r.record_type == RecordType::NS
-                    && r.name == "@"
                     && to_fqdn(&r.value).eq_ignore_ascii_case(&to_fqdn(&updated_zone.primary_ns))
             });
+
+            let soa_rdata = |zone: &Zone| -> Result<String, ServiceError> {
+                zone.soa_rdata()
+                    .map_err(|e| ServiceError::BadRequest(e.to_string()))
+            };
+
+            // Collect the IXFR changes and write them in one batch: the new apex
+            // NS (when missing), then the SOA replacement (DEL old, ADD new).
+            let mut changes: Vec<ZoneChange> = Vec::new();
 
             if !has_primary_ns {
                 let primary_ns_record = Record {
@@ -149,73 +158,48 @@ impl ZoneService {
                         ServiceError::Internal("Failed to keep primary NS consistency".to_string())
                     })?;
 
-                RepositoryService::create_zone_change_tx(
-                    &mut tx,
-                    ZoneChange {
-                        id: 0,
-                        zone_id,
-                        serial: new_serial,
-                        operation: "ADD".to_string(),
-                        record_name: "@".to_string(),
-                        record_type: "NS".to_string(),
-                        record_value: updated_zone.primary_ns.clone(),
-                        record_ttl: Some(updated_zone.ttl),
-                        record_priority: None,
-                    },
-                )
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to create zone change (ADD NS): {}", e);
-                    ServiceError::Internal("Failed to create zone change".to_string())
-                })?;
-            }
-
-            let soa_rdata = |zone: &Zone| -> Result<String, ServiceError> {
-                zone.soa_rdata()
-                    .map_err(|e| ServiceError::BadRequest(e.to_string()))
-            };
-
-            // Delete old SOA record
-            RepositoryService::create_zone_change_tx(
-                &mut tx,
-                ZoneChange {
-                    id: 0,
-                    zone_id,
-                    serial: new_serial,
-                    operation: "DEL".to_string(),
-                    record_name: "@".to_string(),
-                    record_type: "SOA".to_string(),
-                    record_value: soa_rdata(&existing_zone)?,
-                    record_ttl: Some(existing_zone.ttl),
-                    record_priority: None,
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change (DEL SOA): {}", e);
-                ServiceError::Internal("Failed to create zone change".to_string())
-            })?;
-
-            // Add new SOA record
-            RepositoryService::create_zone_change_tx(
-                &mut tx,
-                ZoneChange {
+                changes.push(ZoneChange {
                     id: 0,
                     zone_id,
                     serial: new_serial,
                     operation: "ADD".to_string(),
                     record_name: "@".to_string(),
-                    record_type: "SOA".to_string(),
-                    record_value: soa_rdata(&updated_zone)?,
+                    record_type: "NS".to_string(),
+                    record_value: updated_zone.primary_ns.clone(),
                     record_ttl: Some(updated_zone.ttl),
                     record_priority: None,
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change (ADD SOA): {}", e);
-                ServiceError::Internal("Failed to create zone change".to_string())
-            })?;
+                });
+            }
+
+            changes.push(ZoneChange {
+                id: 0,
+                zone_id,
+                serial: new_serial,
+                operation: "DEL".to_string(),
+                record_name: "@".to_string(),
+                record_type: "SOA".to_string(),
+                record_value: soa_rdata(&existing_zone)?,
+                record_ttl: Some(existing_zone.ttl),
+                record_priority: None,
+            });
+            changes.push(ZoneChange {
+                id: 0,
+                zone_id,
+                serial: new_serial,
+                operation: "ADD".to_string(),
+                record_name: "@".to_string(),
+                record_type: "SOA".to_string(),
+                record_value: soa_rdata(&updated_zone)?,
+                record_ttl: Some(updated_zone.ttl),
+                record_priority: None,
+            });
+
+            RepositoryService::create_zone_changes_tx(&mut tx, &changes)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to create zone changes: {}", e);
+                    ServiceError::Internal("Failed to create zone change".to_string())
+                })?;
 
             save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
 

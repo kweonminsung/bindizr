@@ -12,41 +12,13 @@ impl RecordService {
 
     /// Delete a record by id, bumping the zone serial and recording a DEL change for IXFR.
     pub async fn delete_by_id(record_id: i32) -> Result<(), ServiceError> {
-        let zone_id = match RepositoryService::get_record_by_id(record_id).await {
-            Ok(Some(record)) => record.zone_id,
-            Ok(None) => {
-                return Err(ServiceError::NotFound(format!(
-                    "Record with id '{}' not found",
-                    record_id
-                )));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::Internal("Failed to fetch record".to_string()));
-            }
-        };
-
         let mut tx = RepositoryService::begin_tx("Failed to delete record").await?;
 
         let apply_result = async {
-            let zone = match RepositoryService::get_zone_by_id_tx(&mut tx, zone_id).await {
-                Ok(Some(zone)) => zone,
-                Ok(None) => {
-                    return Err(ServiceError::NotFound(format!(
-                        "Zone with id '{}' not found",
-                        zone_id
-                    )));
-                }
-                Err(e) => {
-                    log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
-                }
-            };
-
             let existing_record =
                 match RepositoryService::get_record_by_id_tx(&mut tx, record_id).await {
-                    Ok(Some(record)) if record.zone_id == zone.id => record,
-                    Ok(Some(_)) | Ok(None) => {
+                    Ok(Some(record)) => record,
+                    Ok(None) => {
                         return Err(ServiceError::NotFound(format!(
                             "Record with id '{}' not found",
                             record_id
@@ -57,6 +29,22 @@ impl RecordService {
                         return Err(ServiceError::Internal("Failed to fetch record".to_string()));
                     }
                 };
+
+            let zone = match RepositoryService::get_zone_by_id_tx(&mut tx, existing_record.zone_id)
+                .await
+            {
+                Ok(Some(zone)) => zone,
+                Ok(None) => {
+                    return Err(ServiceError::NotFound(format!(
+                        "Zone with id '{}' not found",
+                        existing_record.zone_id
+                    )));
+                }
+                Err(e) => {
+                    log_error!("Failed to fetch zone: {}", e);
+                    return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
+                }
+            };
 
             let record_name = existing_record.name.clone();
             let record_type_str = existing_record.record_type.to_string();
