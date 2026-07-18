@@ -10,12 +10,12 @@ pub struct Zone {
     pub name: String,
     pub primary_ns: String,
     pub admin_email: String,
-    pub ttl: i32,            // Default TTL in seconds
-    pub serial: i32,         // SOA serial number
-    pub refresh: i32,        // SOA refresh period in seconds
-    pub retry: i32,          // SOA retry period in seconds
-    pub expire: i32,         // SOA expire period in seconds
-    pub minimum_ttl: i32,    // SOA minimum TTL in seconds
+    pub ttl: i32,         // Default TTL in seconds
+    pub serial: i32,      // SOA serial number
+    pub refresh: i32,     // SOA refresh period in seconds
+    pub retry: i32,       // SOA retry period in seconds
+    pub expire: i32,      // SOA expire period in seconds
+    pub minimum_ttl: i32, // SOA minimum TTL in seconds
     pub created_at: DateTime<Utc>,
 }
 

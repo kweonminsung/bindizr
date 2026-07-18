@@ -244,7 +244,7 @@ pub(super) fn validate_record_update_constraints_normalized(
     updated_record: &Record,
     stored_name: &str,
 ) -> Result<(), ServiceError> {
-    // Preserve previous API semantics for SOA update attempts.
+    // SOA is managed via the zone's own fields and cannot be set on a record.
     if updated_record.record_type == RecordType::SOA {
         log_error!("Cannot update to SOA record type");
         return Err(ServiceError::BadRequest(
