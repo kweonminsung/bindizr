@@ -98,7 +98,8 @@ class PowerDnsAdapter(DnsAdapter):
             return r.status in (200, 204)
 
     async def create_record(self, zone: str, rec: dict) -> str:
-        await self._patch(zone, rec["name"], rec["type"], "REPLACE", rec)
+        if not await self._patch(zone, rec["name"], rec["type"], "REPLACE", rec):
+            raise RuntimeError(f'create_record failed for {rec["name"]} {rec["type"]}')
         return f'{self._fqdn(zone, rec["name"])}|{rec["type"]}'
 
     async def bulk_import(self, zone: str, records: list[dict]) -> None:

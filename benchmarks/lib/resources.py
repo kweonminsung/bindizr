@@ -46,6 +46,10 @@ class ResourceSampler:
         self._thread.start()
 
     def _loop(self) -> None:
+        # One `docker stats` snapshot per tick covers every container at once, so
+        # stamp each sample with its tick to let summary() total a stack across
+        # containers per interval (see summary()).
+        tick = 0
         while not self._stop.is_set():
             for row in dockerutil.stats(self.ids):
                 cpu = float(row.get("CPUPerc", "0%").rstrip("%") or 0)
@@ -54,6 +58,7 @@ class ResourceSampler:
                 blk = row.get("BlockIO", "0B / 0B").split("/")
                 self.samples.append(
                     {
+                        "tick": tick,
                         "name": row.get("Name", ""),
                         "cpu_pct": cpu,
                         "mem_bytes": mem_use,
@@ -63,6 +68,7 @@ class ResourceSampler:
                         "blk_w": _to_bytes(blk[1]) if len(blk) > 1 else 0,
                     }
                 )
+            tick += 1
             self._stop.wait(self.interval)
 
     def stop(self) -> dict:
@@ -75,7 +81,6 @@ class ResourceSampler:
         if not self.samples:
             return {"peak_cpu_pct": 0, "avg_cpu_pct": 0, "peak_mem_mb": 0, "avg_mem_mb": 0}
         cpus = [s["cpu_pct"] for s in self.samples]
-        mems = [s["mem_bytes"] for s in self.samples]
 
         # Per-container average CPU. `avg_cpu_pct` above pools every container into
         # one mean, which understates a multi-container stack (e.g. Bindizr's near-
@@ -88,12 +93,24 @@ class ResourceSampler:
             name: round(sum(v) / len(v), 2) for name, v in by_container.items()
         }
 
+        # Memory peak/avg are the whole stack's total, not one container. Taking
+        # max()/mean() over the flat sample list would report only the largest
+        # single container (peak) and the stack total divided by container count
+        # (avg), understating a multi-container stack. Sum each tick across
+        # containers first, then peak = max tick total, avg = mean tick total.
+        # Single-container systems have one sample per tick, so this collapses to
+        # the original values.
+        mem_by_tick: dict[int, float] = {}
+        for s in self.samples:
+            mem_by_tick[s["tick"]] = mem_by_tick.get(s["tick"], 0.0) + s["mem_bytes"]
+        mem_totals = list(mem_by_tick.values())
+
         return {
             "peak_cpu_pct": round(max(cpus), 2),
             "avg_cpu_pct": round(sum(cpus) / len(cpus), 2),
             "cpu_by_container": cpu_by_container,
-            "peak_mem_mb": round(max(mems) / 1024**2, 2),
-            "avg_mem_mb": round(sum(mems) / len(mems) / 1024**2, 2),
+            "peak_mem_mb": round(max(mem_totals) / 1024**2, 2),
+            "avg_mem_mb": round(sum(mem_totals) / len(mem_totals) / 1024**2, 2),
             "peak_net_tx_mb": round(max(s["net_tx"] for s in self.samples) / 1024**2, 2),
             "samples": len(self.samples),
         }

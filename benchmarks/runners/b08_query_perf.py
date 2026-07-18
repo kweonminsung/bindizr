@@ -9,12 +9,13 @@ should match — demonstrating zero query overhead.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
-from lib import dnsquery  # noqa: E402
+from lib import dnsquery, dnsutil  # noqa: E402
 
 
 async def run(adapter, cfg, ctx) -> dict:
@@ -31,9 +32,31 @@ async def run(adapter, cfg, ctx) -> dict:
     names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
     ep = adapter.dns_endpoint()
 
-    # Warm the resolver / let secondaries finish pulling the zone before measuring.
-    import asyncio
-    await asyncio.sleep(3)
+    # Wait until the imported zone is actually queryable before measuring. For
+    # Bindizr the bulk write only initiates async transfer to the BIND9 secondary,
+    # so a fixed sleep can start the load against a partially-populated secondary
+    # and count not-yet-transferred names as query errors (deflating QPS). Poll a
+    # few representative names — including the last record, which lands in the
+    # final (highest-serial) chunk, so once it resolves the whole zone is present.
+    # Integrated systems answer immediately, so this returns near-instantly.
+    loop = asyncio.get_event_loop()
+    p = cfg["propagation"]
+    probe_idxs = sorted({0, len(records) // 2, len(records) - 1}) if records else []
+    for idx in probe_idxs:
+        r = records[idx]
+        got = await loop.run_in_executor(
+            None, dnsutil.poll_until_visible,
+            f'{r["name"]}.{zone.rstrip(".")}', "A", r["value"],
+            ep.host, ep.port, p["poll_interval_ms"], p["timeout_secs"])
+        if got is None:
+            print(f'  [FAIL] b08: zone not queryable within '
+                  f'{p["timeout_secs"]}s for {ctx["label"]}')
+            return {
+                "system": ctx["label"],
+                "zone_records": len(records),
+                "status": "FAILED",
+                "error": "propagation timeout: imported zone not queryable",
+            }
 
     rec = await dnsquery.query_load(
         ep.host, ep.port, names, dnsquery.QTYPE["A"],

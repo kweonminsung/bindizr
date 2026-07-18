@@ -70,13 +70,28 @@ async def run(adapter, cfg, ctx) -> list:
             ci += 1
         await adapter.bulk_import(zone, batch)
 
-        # Wait for the serial to advance (propagation).
+        # Wait for the serial to advance (propagation). If it never does — the
+        # batch failed to apply, or the secondary never transferred it — an IXFR
+        # from the unchanged base_serial returns a tiny "up-to-date" SOA and would
+        # masquerade as an exceptionally efficient transfer, so record a failure
+        # instead of measuring.
         deadline = time.monotonic() + 60
+        propagated = False
         while time.monotonic() < deadline:
             s = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
-            if s is not None and base_serial is not None and s > base_serial:
+            if s is not None and s > base_serial:
+                propagated = True
                 break
             await asyncio.sleep(0.5)
+        if not propagated:
+            print(f"  [FAIL] b05: serial did not advance within 60s for {n}-change IXFR")
+            rows.append({
+                "system": ctx["label"],
+                "changes": n,
+                "status": "FAILED",
+                "error": "propagation timeout: serial did not advance within 60s",
+            })
+            continue
 
         secs, lines, nbytes = await loop.run_in_executor(
             None, dnsutil.ixfr, zone, xe.host, xe.port, base_serial)
