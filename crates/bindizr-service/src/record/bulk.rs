@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use chrono::Utc;
 
@@ -9,7 +10,7 @@ use super::{
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    log_error, log_info, log_warn,
+    log_debug, log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType, RecordWithZone},
         zone::Zone,
@@ -145,7 +146,10 @@ impl RecordService {
             ));
         }
 
+        let t_total = Instant::now();
+
         // Validate types and values up front so a malformed item fails fast.
+        let t = Instant::now();
         let prepared = items
             .iter()
             .map(|item| {
@@ -158,15 +162,28 @@ impl RecordService {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let prepare_ms = t.elapsed().as_secs_f64() * 1000.0;
+
+        // Per-stage timings, filled inside the transaction and emitted as a single
+        // debug summary after commit + NOTIFY (see log_debug! below).
+        let mut load_zone_ms = 0.0f64;
+        let mut load_existing_ms = 0.0f64;
+        let mut build_index_ms = 0.0f64;
+        let mut validate_ms = 0.0f64;
+        let mut db_write_ms = 0.0f64;
+        let mut serial_ms = 0.0f64;
 
         let mut tx = RepositoryService::begin_tx("Failed to create records").await?;
 
         let apply_result = async {
+            let t = Instant::now();
             let zone = load_zone_tx(&mut tx, zone_name).await?;
+            load_zone_ms = t.elapsed().as_secs_f64() * 1000.0;
 
             // Only records whose owner name appears in the batch can conflict, so
             // load just those instead of the whole zone. Normalization errors are
             // ignored here; the validation loop below reports them authoritatively.
+            let t = Instant::now();
             let mut batch_names: Vec<String> = prepared
                 .iter()
                 .filter_map(|p| normalize_record_owner_name(&p.owner_name, &zone.name).ok())
@@ -190,6 +207,7 @@ impl RecordService {
                     ));
                 }
             };
+            load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
 
             let new_serial = generate_serial(Some(zone.serial));
 
@@ -197,6 +215,7 @@ impl RecordService {
             // check scans only same-name records instead of the whole zone (an
             // O(batch x zone) scan otherwise). Newly added records join the index
             // as we go, so intra-batch conflicts are still detected.
+            let t = Instant::now();
             let mut records_by_name: HashMap<String, Vec<Record>> = HashMap::new();
             for record in existing_records {
                 records_by_name
@@ -204,7 +223,9 @@ impl RecordService {
                     .or_default()
                     .push(record);
             }
+            build_index_ms = t.elapsed().as_secs_f64() * 1000.0;
 
+            let t = Instant::now();
             let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
                 let normalized_owner =
@@ -236,11 +257,15 @@ impl RecordService {
                 same_name.push(record.clone());
                 to_insert.push(record);
             }
+            validate_ms = t.elapsed().as_secs_f64() * 1000.0;
 
+            let t = Instant::now();
             let created_records =
                 insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+            db_write_ms = t.elapsed().as_secs_f64() * 1000.0;
 
             // Increment zone serial once so IXFR consumers detect the batch
+            let t = Instant::now();
             RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
                 .await
                 .map_err(|e| {
@@ -249,6 +274,7 @@ impl RecordService {
                 })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            serial_ms = t.elapsed().as_secs_f64() * 1000.0;
 
             Ok::<(Vec<Record>, String), ServiceError>((created_records, zone.name))
         }
@@ -264,9 +290,30 @@ impl RecordService {
         );
 
         // Send NOTIFY to secondary servers
+        let t = Instant::now();
         if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
+        let notify_ms = t.elapsed().as_secs_f64() * 1000.0;
+
+        // Per-stage breakdown for profiling; debug-gated so it stays out of
+        // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
+        log_debug!(
+            "event=record_bulk_create_timing zone={} count={} prepare_ms={:.1} load_zone_ms={:.1} \
+             load_existing_ms={:.1} build_index_ms={:.1} validate_ms={:.1} db_write_ms={:.1} \
+             serial_ms={:.1} notify_ms={:.1} total_ms={:.1}",
+            zone_name,
+            created_records.len(),
+            prepare_ms,
+            load_zone_ms,
+            load_existing_ms,
+            build_index_ms,
+            validate_ms,
+            db_write_ms,
+            serial_ms,
+            notify_ms,
+            t_total.elapsed().as_secs_f64() * 1000.0,
+        );
 
         Ok(created_records
             .into_iter()

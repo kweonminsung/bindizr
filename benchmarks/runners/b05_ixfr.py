@@ -19,7 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
 from lib import dnsutil  # noqa: E402
 
-CHANGE_SIZES = [1, 10, 100, 1000]
+# Fallbacks used only when the config lacks the ixfr_* keys; a normal run
+# overrides both from settings.yaml (ixfr_change_sizes / ixfr_baseline).
+CHANGE_SIZES = [1, 10, 100, 1000, 10000]
 BASELINE = 1000
 
 
@@ -37,16 +39,31 @@ async def run(adapter, cfg, ctx) -> list:
     zone = ctx["zone"]
     xe = adapter.xfr_endpoint()
     loop = asyncio.get_event_loop()
+    change_sizes = cfg.get("ixfr_change_sizes", CHANGE_SIZES)
+    baseline = cfg.get("ixfr_baseline", BASELINE)
 
     await adapter.delete_zone(zone)
     await adapter.create_zone(zone)
-    await adapter.bulk_import(zone, generate(BASELINE, cfg["seed"], zone))
-    await asyncio.sleep(3)
+    await adapter.bulk_import(zone, generate(baseline, cfg["seed"], zone))
+
+    # Wait for the baseline zone to reach the secondary before reading serials: a
+    # large baseline may not transfer within a fixed sleep, and reading a
+    # pre-baseline serial would request IXFR from a serial with no delta history —
+    # a spurious full-AXFR outlier. Poll the AXFR count until it covers the set.
+    deadline = time.monotonic() + max(60, baseline / 500)
+    prev = -1
+    while time.monotonic() < deadline:
+        _, count, _ = await loop.run_in_executor(
+            None, dnsutil.axfr, zone, xe.host, xe.port, 300)
+        if count >= baseline and count == prev:
+            break
+        prev = count
+        await asyncio.sleep(1.0)
 
     rows = []
-    change_pool = generate(sum(CHANGE_SIZES) + BASELINE, cfg["seed"] + 50, zone)
+    change_pool = generate(sum(change_sizes) + baseline, cfg["seed"] + 50, zone)
     ci = 0
-    for n in CHANGE_SIZES:
+    for n in change_sizes:
         # Read the pre-change serial, retrying on a transient SOA-query miss.
         # Falling back to `base_serial or 1` would request IXFR from serial 1 — no
         # delta history — forcing a full AXFR and a spurious "huge IXFR" outlier.
@@ -73,7 +90,7 @@ async def run(adapter, cfg, ctx) -> list:
         # or the secondary never transferred it), an IXFR from the unchanged
         # base_serial returns a tiny "up-to-date" SOA that would masquerade as an
         # efficient transfer — so record a failure instead of measuring.
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + 120
         propagated = False
         while time.monotonic() < deadline:
             s = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
@@ -82,12 +99,12 @@ async def run(adapter, cfg, ctx) -> list:
                 break
             await asyncio.sleep(0.5)
         if not propagated:
-            print(f"  [FAIL] b05: serial did not advance within 60s for {n}-change IXFR")
+            print(f"  [FAIL] b05: serial did not advance within 120s for {n}-change IXFR")
             rows.append({
                 "system": ctx["label"],
                 "changes": n,
                 "status": "FAILED",
-                "error": "propagation timeout: serial did not advance within 60s",
+                "error": "propagation timeout: serial did not advance within 120s",
             })
             continue
 

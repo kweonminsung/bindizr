@@ -13,7 +13,7 @@ pub mod types;
 pub(crate) mod validation;
 pub mod zone;
 
-pub(crate) use bindizr_core::{log_error, log_info, log_warn, model};
+pub(crate) use bindizr_core::{log_debug, log_error, log_info, log_warn, model};
 pub(crate) use bindizr_db as database;
 use error::ServiceError;
 use repository::RepositoryService;

@@ -34,8 +34,9 @@ async def run(adapter, cfg, ctx) -> list:
 
         # Wait for the zone to be fully transferable (matters for Bindizr's
         # secondary, which pulls asynchronously). Poll until the AXFR record
-        # count stops growing and covers the imported set.
-        deadline = time.monotonic() + 120
+        # count stops growing and covers the imported set. Scale the bound with
+        # size so a 100k/1M transfer isn't cut off at a fixed 120s.
+        deadline = time.monotonic() + max(120, size / 500)
         prev = -1
         while time.monotonic() < deadline:
             _, count, _ = await _axfr_count(zone, xe.host, xe.port)

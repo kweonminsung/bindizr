@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use chrono::Utc;
 
@@ -14,7 +15,7 @@ use super::{
 };
 use crate::{
     error::ServiceError,
-    log_error, log_info, log_warn,
+    log_debug, log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType},
         zone::Zone,
@@ -77,25 +78,47 @@ impl RecordService {
         let mode = request.mode;
         let dry_run = request.dry_run;
 
+        let t_total = Instant::now();
+
+        // Per-stage timings, filled inside the transaction and emitted as a single
+        // debug summary after commit + NOTIFY (see log_debug! below). db_write/serial
+        // stay zero when the import is a dry run or a no-op.
+        let mut load_zone_ms = 0.0f64;
+        let mut load_existing_ms = 0.0f64;
+        let mut parse_ms = 0.0f64;
+        let mut normalize_ms = 0.0f64;
+        let mut build_index_ms = 0.0f64;
+        let mut reconcile_ms = 0.0f64;
+        let mut validate_ms = 0.0f64;
+        let mut db_write_ms = 0.0f64;
+        let mut serial_ms = 0.0f64;
+
         let mut tx = RepositoryService::begin_tx("Failed to import zone file").await?;
 
         let apply_result = async {
+            let t = Instant::now();
             let zone = load_zone_tx(&mut tx, zone_name).await?;
+            load_zone_ms = t.elapsed().as_secs_f64() * 1000.0;
 
+            let t = Instant::now();
             let existing_records = RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id)
                 .await
                 .map_err(|e| {
                     log_error!("Failed to load zone records: {}", e);
                     ServiceError::Internal("Failed to import zone file".to_string())
                 })?;
+            load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
 
+            let t = Instant::now();
             let parsed = parse_zone_file(&request.content, &zone.name, zone.ttl);
+            parse_ms = t.elapsed().as_secs_f64() * 1000.0;
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
 
             // Normalize parsed records and drop duplicates within the file.
             // Records are indexed by owner name so the dedup check (and the
             // reconciliation below) scans only same-name entries, not the whole set.
+            let t = Instant::now();
             let mut desired: Vec<DesiredRecord> = Vec::new();
             let mut desired_by_name: HashMap<String, Vec<usize>> = HashMap::new();
             for record in parsed.records {
@@ -155,11 +178,13 @@ impl RecordService {
                 });
             }
 
+            normalize_ms = t.elapsed().as_secs_f64() * 1000.0;
             let parsed_count = desired.len();
 
             // Lowercase each existing owner name once and reuse it across the
             // passes below (indexing, deletion reconciliation, add-validation)
             // instead of recomputing it per pass.
+            let t = Instant::now();
             let existing_lower: Vec<String> = existing_records
                 .iter()
                 .map(|e| e.name.to_ascii_lowercase())
@@ -174,7 +199,9 @@ impl RecordService {
                     .or_default()
                     .push(record);
             }
+            build_index_ms = t.elapsed().as_secs_f64() * 1000.0;
 
+            let t = Instant::now();
             let desired_matches_existing = |e: &Record, e_lower: &str| {
                 desired_by_name
                     .get(e_lower)
@@ -251,10 +278,12 @@ impl RecordService {
                     unchanged += 1;
                 }
             }
+            reconcile_ms = t.elapsed().as_secs_f64() * 1000.0;
 
             // Validate additions against an in-memory copy so constraint
             // violations are caught without writing anything. Simulated records
             // are indexed by name so each check scans only same-name candidates.
+            let t = Instant::now();
             let del_ids: HashSet<i32> = dels.iter().chain(&ttl_dels).map(|d| d.id).collect();
             let mut simulated_by_name: HashMap<String, Vec<Record>> = HashMap::new();
             for (i, e) in existing_records.iter().enumerate() {
@@ -290,6 +319,7 @@ impl RecordService {
                     Err(e) => return Err(e),
                 }
             }
+            validate_ms = t.elapsed().as_secs_f64() * 1000.0;
 
             let summary = ImportSummary {
                 parsed: parsed_count,
@@ -308,6 +338,7 @@ impl RecordService {
             if will_apply && has_changes {
                 let new_serial = generate_serial(Some(zone.serial));
 
+                let t = Instant::now();
                 let mut all_dels = dels;
                 all_dels.extend(ttl_dels);
                 delete_records_tx(&mut tx, zone.id, new_serial, &all_dels).await?;
@@ -326,7 +357,9 @@ impl RecordService {
                     })
                     .collect();
                 insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+                db_write_ms = t.elapsed().as_secs_f64() * 1000.0;
 
+                let t = Instant::now();
                 RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
                     .await
                     .map_err(|e| {
@@ -335,6 +368,7 @@ impl RecordService {
                     })?;
 
                 save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+                serial_ms = t.elapsed().as_secs_f64() * 1000.0;
             }
 
             let response = ImportZoneFileResponse {
@@ -368,9 +402,35 @@ impl RecordService {
             response.errors.len(),
         );
 
+        let t = Instant::now();
         if changed && let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
+        let notify_ms = t.elapsed().as_secs_f64() * 1000.0;
+
+        // Per-stage breakdown for profiling; debug-gated so it stays out of
+        // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
+        log_debug!(
+            "event=zone_import_timing zone={} mode={:?} parsed={} applied={} parse_ms={:.1} \
+             load_zone_ms={:.1} load_existing_ms={:.1} normalize_ms={:.1} build_index_ms={:.1} \
+             reconcile_ms={:.1} validate_ms={:.1} db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} \
+             total_ms={:.1}",
+            zone_name,
+            mode,
+            response.summary.parsed,
+            response.applied,
+            parse_ms,
+            load_zone_ms,
+            load_existing_ms,
+            normalize_ms,
+            build_index_ms,
+            reconcile_ms,
+            validate_ms,
+            db_write_ms,
+            serial_ms,
+            notify_ms,
+            t_total.elapsed().as_secs_f64() * 1000.0,
+        );
 
         Ok(response)
     }

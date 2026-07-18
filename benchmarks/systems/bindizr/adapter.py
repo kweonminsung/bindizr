@@ -39,7 +39,8 @@ class BindizrAdapter(DnsAdapter):
                  notify_after_update: bool = True,
                  apply_mode: str | None = None,
                  apply_batch_ms: int | None = None,
-                 zone_cache: bool | None = None):
+                 zone_cache: bool | None = None,
+                 log_level: str | None = None):
         super().__init__(cfg, project)
         self.db_type = db_type
         # Sample the DB container that is actually under test (mysql/postgres run
@@ -57,13 +58,22 @@ class BindizrAdapter(DnsAdapter):
             os.environ.get("BENCH_BINDIZR_APPLY_BATCH_MS", "50"))
         self.zone_cache = zone_cache if zone_cache is not None else (
             os.environ.get("BENCH_BINDIZR_ZONE_CACHE", "true").lower() == "true")
+        # Raise to "debug" to surface the server's per-stage timing lines
+        # (event=record_bulk_create_timing / event=zone_import_timing).
+        self.log_level = log_level or os.environ.get("BENCH_BINDIZR_LOG_LEVEL", "info")
+        # HTTP-level batch sizes, overridable so the JSON-bulk vs zone-import
+        # comparison can be run with matched chunks — each chunk is one
+        # transaction + serial bump + NOTIFY, so chunk count skews the totals.
+        self.bulk_chunk = int(os.environ.get("BENCH_BINDIZR_BULK_CHUNK", str(self.bulk_chunk)))
+        self.import_chunk = int(os.environ.get("BENCH_BINDIZR_IMPORT_CHUNK", str(self.import_chunk)))
         self.base = f"http://localhost:{API_PORT}"
         self.session: aiohttp.ClientSession | None = None
         env = {"BINDIZR_DB_TYPE": db_type,
                "BINDIZR_NOTIFY_AFTER_UPDATE": "true" if notify_after_update else "false",
                "BINDIZR_APPLY_MODE": self.apply_mode,
                "BINDIZR_APPLY_BATCH_MS": str(self.apply_batch_ms),
-               "BINDIZR_ZONE_CACHE": "true" if self.zone_cache else "false"}
+               "BINDIZR_ZONE_CACHE": "true" if self.zone_cache else "false",
+               "BINDIZR_LOG_LEVEL": self.log_level}
         if db_type == "mysql":
             env["COMPOSE_PROFILES"] = "mysql"
         elif db_type == "postgresql":

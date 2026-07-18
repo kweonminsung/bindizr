@@ -118,9 +118,15 @@ overrides (used by CI and quick runs):
 | `BENCH_CPU_LIMIT` / `BENCH_MEM_LIMIT` | per-SUT-container caps (default `4` / `4g`) |
 | `BENCH_REPEATS` | repeat each measurement N times and average (default `5`, CI `1`) |
 | `BENCH_DB_BULK_SIZES=10000,100000` | per-backend bulk-import sizes (Benchmark 7) |
+| `BENCH_BINDIZR_LOG_LEVEL=debug` | surface Bindizr's per-stage timing lines (`event=record_bulk_create_timing` / `event=zone_import_timing`) in the container logs |
+| `BENCH_BINDIZR_BULK_CHUNK` / `BENCH_BINDIZR_IMPORT_CHUNK` | records per JSON-bulk / zone-import request (default `2000` / `5000`); set equal to compare the two paths apples-to-apples, since each chunk is one transaction + serial bump + NOTIFY |
 
 The **1,000,000-record** size is heavy (time + disk) and excluded from CI; run it
 explicitly with `BENCH_SIZES=1000000`.
+
+To read the per-stage breakdown after a run, grep the Bindizr container logs (with
+`BENCH_BINDIZR_LOG_LEVEL=debug`) for `event=record_bulk_create_timing` /
+`event=zone_import_timing`; each line reports `*_ms` for every stage plus `total_ms`.
 
 ## Requirements
 

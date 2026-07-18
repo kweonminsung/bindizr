@@ -30,7 +30,8 @@ services:
       BINDIZR_ZONE_CACHE: ${BINDIZR_ZONE_CACHE:-true}
       BINDIZR_NOTIFY_RETRIES: "3"
       BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
-      BINDIZR_LOG_LEVEL: info
+      # debug surfaces the per-stage timing lines (event=*_timing) from bulk/import.
+      BINDIZR_LOG_LEVEL: ${BINDIZR_LOG_LEVEL:-info}
     ports:
       - "${BINDIZR_API_HOST_PORT:-18000}:8000/tcp"
     volumes:

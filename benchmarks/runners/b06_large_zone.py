@@ -40,8 +40,8 @@ async def run(adapter, cfg, ctx) -> list:
         # The BIND9 secondary pulls asynchronously — bulk_import returns after
         # commit+NOTIFY, not after the transfer lands — so poll until the
         # transferable count covers the set and stops growing before timing the
-        # export (AXFR).
-        deadline = time.monotonic() + 120
+        # export (AXFR). Scale the bound with size so 100k/1M isn't cut off at 120s.
+        deadline = time.monotonic() + max(120, size / 500)
         prev = -1
         while time.monotonic() < deadline:
             _, count, _ = await loop.run_in_executor(
