@@ -134,7 +134,10 @@ impl RecordService {
                     continue;
                 }
 
-                desired_by_name.entry(name_key).or_default().push(desired.len());
+                desired_by_name
+                    .entry(name_key)
+                    .or_default()
+                    .push(desired.len());
                 desired.push(DesiredRecord {
                     prepared: PreparedRecord {
                         owner_name: record.owner_fqdn,
@@ -193,25 +196,52 @@ impl RecordService {
                     .collect(),
             };
 
-            // Additions: desired records not already present.
+            // Absent records are added; a record already present is left in
+            // place unless upsert/replace needs to reconcile its TTL to the file
+            // (append leaves existing records untouched). A TTL change is applied
+            // as a delete of the stale row plus a re-insert of the desired form,
+            // reusing the batched delete/insert below so an import stays a single
+            // delete and a single insert however many records change. TTLs compare
+            // by effective value so a stored `None`, which serves the zone default,
+            // isn't seen as a change against a file TTL equal to that default.
+            let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
+            let default_ttl = zone.ttl;
+            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(default_ttl);
+
             let mut unchanged = 0usize;
-            let adds: Vec<&DesiredRecord> = desired
-                .iter()
-                .filter(|d| {
-                    let present = existing_by_name
-                        .get(&d.stored_name.to_ascii_lowercase())
-                        .is_some_and(|es| es.iter().any(|&e| desired_matches(e, d)));
-                    if present {
-                        unchanged += 1;
+            let mut updated = 0usize;
+            let mut ttl_dels: Vec<Record> = Vec::new();
+            let mut adds: Vec<&DesiredRecord> = Vec::new();
+            for d in &desired {
+                let desired_ttl = effective_ttl(d.prepared.ttl);
+                let mut present = false;
+                let mut stale = false;
+                if let Some(es) = existing_by_name.get(&d.stored_name.to_ascii_lowercase()) {
+                    for &e in es {
+                        if desired_matches(e, d) {
+                            present = true;
+                            if reconcile_ttl && effective_ttl(e.ttl) != desired_ttl {
+                                ttl_dels.push(e.clone());
+                                stale = true;
+                            }
+                        }
                     }
-                    !present
-                })
-                .collect();
+                }
+
+                if !present {
+                    adds.push(d);
+                } else if stale {
+                    updated += 1;
+                    adds.push(d);
+                } else {
+                    unchanged += 1;
+                }
+            }
 
             // Validate additions against an in-memory copy so constraint
             // violations are caught without writing anything. Simulated records
             // are indexed by name so each check scans only same-name candidates.
-            let del_ids: HashSet<i32> = dels.iter().map(|d| d.id).collect();
+            let del_ids: HashSet<i32> = dels.iter().chain(&ttl_dels).map(|d| d.id).collect();
             let mut simulated_by_name: HashMap<String, Vec<Record>> = HashMap::new();
             for e in &existing_records {
                 if !del_ids.contains(&e.id) {
@@ -249,19 +279,24 @@ impl RecordService {
 
             let summary = ImportSummary {
                 parsed: parsed_count,
-                added: adds.len(),
+                // `adds` also carries the re-inserted TTL-reconciled records,
+                // which are reported under `updated` instead.
+                added: adds.len() - updated,
                 deleted: dels.len(),
+                updated,
                 unchanged,
                 skipped,
             };
 
             let will_apply = errors.is_empty() && !dry_run;
-            let has_changes = !dels.is_empty() || !adds.is_empty();
+            let has_changes = !dels.is_empty() || !adds.is_empty() || !ttl_dels.is_empty();
 
             if will_apply && has_changes {
                 let new_serial = generate_serial(Some(zone.serial));
 
-                delete_records_tx(&mut tx, zone.id, new_serial, &dels).await?;
+                let mut all_dels = dels;
+                all_dels.extend(ttl_dels);
+                delete_records_tx(&mut tx, zone.id, new_serial, &all_dels).await?;
 
                 let to_insert: Vec<Record> = adds
                     .iter()
@@ -307,12 +342,13 @@ impl RecordService {
             RepositoryService::finish_tx(tx, apply_result, "Failed to import zone file").await?;
 
         log_info!(
-            "event=zone_import zone={} mode={:?} applied={} added={} deleted={} unchanged={} skipped={} errors={}",
+            "event=zone_import zone={} mode={:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",
             zone_name,
             mode,
             response.applied,
             response.summary.added,
             response.summary.deleted,
+            response.summary.updated,
             response.summary.unchanged,
             response.summary.skipped,
             response.errors.len(),

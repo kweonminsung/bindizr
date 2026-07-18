@@ -440,6 +440,89 @@ async fn zone_import_zone_file_replace_mode() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_import_zone_file_reconciles_ttl() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // Seed a record with an explicit TTL of 300.
+    app.request(
+        Method::POST,
+        &format!("/zones/{zone_name}/records/bulk"),
+        Some(json!({
+            "records": [
+                { "name": "www", "record_type": "A", "value": "192.0.2.1", "ttl": 300 }
+            ]
+        })),
+    )
+    .await;
+
+    let ttl_of = |body: &serde_json::Value| -> i64 {
+        body["items"].as_array().unwrap()[0]["ttl"]
+            .as_i64()
+            .unwrap()
+    };
+
+    // Upsert with only the TTL changed: reconciled in place, not left unchanged.
+    let content = "www 600 IN A 192.0.2.1\n";
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content, "mode": "upsert" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["summary"]["added"], 0);
+    assert_eq!(body["summary"]["deleted"], 0);
+    assert_eq!(body["summary"]["updated"], 1);
+    assert_eq!(body["summary"]["unchanged"], 0);
+
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=www"),
+            None,
+        )
+        .await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    assert_eq!(ttl_of(&body), 600);
+
+    // Re-importing the same TTL is idempotent: nothing to reconcile.
+    let (_, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content, "mode": "upsert" })),
+        )
+        .await;
+    assert_eq!(body["summary"]["updated"], 0);
+    assert_eq!(body["summary"]["unchanged"], 1);
+
+    // Append never modifies already-present records, TTL included.
+    let (_, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": "www 900 IN A 192.0.2.1\n", "mode": "append" })),
+        )
+        .await;
+    assert_eq!(body["summary"]["updated"], 0);
+    assert_eq!(body["summary"]["unchanged"], 1);
+
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=www"),
+            None,
+        )
+        .await;
+    assert_eq!(ttl_of(&body), 600);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_reports_validation_errors() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;

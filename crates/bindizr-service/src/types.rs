@@ -288,7 +288,9 @@ pub struct ImportZoneFileResponse {
     pub errors: Vec<String>,
 }
 
-/// Counts of records parsed, added, deleted, unchanged, and skipped during import.
+/// Counts of records parsed, added, deleted, updated, unchanged, and skipped
+/// during import. `updated` is a TTL-only reconcile and is never also counted
+/// as `unchanged`.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ImportSummary {
     #[schema(example = 12)]
@@ -297,6 +299,8 @@ pub struct ImportSummary {
     pub added: usize,
     #[schema(example = 2)]
     pub deleted: usize,
+    #[schema(example = 1)]
+    pub updated: usize,
     #[schema(example = 2)]
     pub unchanged: usize,
     #[schema(example = 0)]
