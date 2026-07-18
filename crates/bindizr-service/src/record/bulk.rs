@@ -169,6 +169,7 @@ impl RecordService {
         let mut load_zone_ms = 0.0f64;
         let mut load_existing_ms = 0.0f64;
         let mut build_index_ms = 0.0f64;
+        let mut normalize_ms = 0.0f64;
         let mut validate_ms = 0.0f64;
         let mut db_write_ms = 0.0f64;
         let mut serial_ms = 0.0f64;
@@ -225,15 +226,23 @@ impl RecordService {
             }
             build_index_ms = t.elapsed().as_secs_f64() * 1000.0;
 
-            let t = Instant::now();
+            // Time normalization and constraint validation separately: bulk does
+            // both per record here, so lumping them would inflate validate_ms
+            // versus zone import, which normalizes in an earlier pass.
+            let mut normalize_dur = std::time::Duration::ZERO;
+            let mut validate_dur = std::time::Duration::ZERO;
             let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
+                let t = Instant::now();
                 let normalized_owner =
                     normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
+                normalize_dur += t.elapsed();
+
                 let same_name = records_by_name
                     .entry(normalized_owner.stored_name.to_ascii_lowercase())
                     .or_default();
 
+                let t = Instant::now();
                 validate_record_add_constraints_normalized(
                     same_name,
                     &prepared_record.owner_name,
@@ -243,6 +252,7 @@ impl RecordService {
                     prepared_record.priority,
                     None,
                 )?;
+                validate_dur += t.elapsed();
 
                 let record = Record {
                     id: 0,
@@ -257,7 +267,8 @@ impl RecordService {
                 same_name.push(record.clone());
                 to_insert.push(record);
             }
-            validate_ms = t.elapsed().as_secs_f64() * 1000.0;
+            normalize_ms = normalize_dur.as_secs_f64() * 1000.0;
+            validate_ms = validate_dur.as_secs_f64() * 1000.0;
 
             let t = Instant::now();
             let created_records =
@@ -300,14 +311,15 @@ impl RecordService {
         // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
         log_debug!(
             "event=record_bulk_create_timing zone={} count={} prepare_ms={:.1} load_zone_ms={:.1} \
-             load_existing_ms={:.1} build_index_ms={:.1} validate_ms={:.1} db_write_ms={:.1} \
-             serial_ms={:.1} notify_ms={:.1} total_ms={:.1}",
+             load_existing_ms={:.1} build_index_ms={:.1} normalize_ms={:.1} validate_ms={:.1} \
+             db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} total_ms={:.1}",
             zone_name,
             created_records.len(),
             prepare_ms,
             load_zone_ms,
             load_existing_ms,
             build_index_ms,
+            normalize_ms,
             validate_ms,
             db_write_ms,
             serial_ms,

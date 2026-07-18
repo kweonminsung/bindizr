@@ -1,12 +1,37 @@
-use axum::{extract::rejection::JsonRejection, http::StatusCode, response::IntoResponse};
-use axum_macros::FromRequest;
-use bindizr_core::log_error;
+use std::time::Instant;
+
+use axum::{
+    Json,
+    extract::{FromRequest, Request, rejection::JsonRejection},
+    http::StatusCode,
+    response::IntoResponse,
+};
+use bindizr_core::{log_debug, log_error};
+use serde::de::DeserializeOwned;
 use serde_json::json;
 
-/// JSON body extractor that maps rejections to a JSON [`ApiError`] response.
-#[derive(FromRequest)]
-#[from_request(via(axum::Json), rejection(ApiError))]
+/// JSON body extractor that maps rejections to a JSON [`ApiError`] response and
+/// records deserialization time at debug level (`event=json_decode`), so the
+/// JSON transport cost can be compared against the zone-file text path.
 pub(crate) struct JsonBody<T>(pub T);
+
+impl<T, S> FromRequest<S> for JsonBody<T>
+where
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let start = Instant::now();
+        let Json(value) = Json::<T>::from_request(req, state).await?;
+        log_debug!(
+            "event=json_decode ms={:.1}",
+            start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok(Self(value))
+    }
+}
 
 /// Error returned when JSON body extraction fails.
 #[derive(Debug)]
