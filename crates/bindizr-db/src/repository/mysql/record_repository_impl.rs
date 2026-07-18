@@ -91,6 +91,17 @@ impl RecordRepository for MySqlRecordRepository {
             }
         };
 
+        // Auto-increment ids within one multi-row insert step by
+        // @@auto_increment_increment (1 by default, but >1 on multi-primary
+        // replication setups), so the ids are first, first+step, first+2*step,
+        // ... — not simply first+offset. Read it once for the whole batch.
+        let increment =
+            sqlx::query_scalar::<_, i64>("SELECT CAST(@@auto_increment_increment AS SIGNED)")
+                .fetch_one(&mut **mysql_tx)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
+                .max(1) as i32;
+
         const CHUNK: usize = 500;
         let mut out = Vec::with_capacity(records.len());
         for chunk in records.chunks(CHUNK) {
@@ -120,12 +131,13 @@ impl RecordRepository for MySqlRecordRepository {
                 .await
                 .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-            // For a multi-row insert MySQL returns the id of the FIRST row and
-            // assigns the rest consecutively (default innodb_autoinc_lock_mode).
+            // MySQL returns the id of the FIRST row of a multi-row insert; the
+            // ids are contiguous by `increment` for a simple insert under every
+            // innodb_autoinc_lock_mode.
             let first = result.last_insert_id() as i32;
             for (offset, r) in chunk.iter().enumerate() {
                 let mut rec = r.clone();
-                rec.id = first + offset as i32;
+                rec.id = first + offset as i32 * increment;
                 out.push(rec);
             }
         }
