@@ -241,15 +241,22 @@ async fn send_ixfr_response(
     changes: &[delta::ZoneChange],
     snapshots_by_serial: &HashMap<u32, delta::ZoneSnapshot>,
 ) -> Result<(), XfrError> {
+    // Stream across multiple TCP messages, flushing before the 64 KiB wire limit
+    // like AXFR; one message for the whole delta would force an AXFR fallback.
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
+    let mut messages_sent = 0usize;
 
-    // Add initial SOA record
     let current_snapshot = snapshots_by_serial
         .get(&delta::serial_to_u32(zone.serial)?)
         .ok_or_else(|| {
             XfrError::ProtocolError("Missing current serial SOA snapshot for IXFR".to_string())
         })?;
-    builder.add_soa_from_snapshot(current_snapshot)?;
+
+    // Initial SOA (current serial).
+    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        builder.add_soa_from_snapshot(current_snapshot)
+    })
+    .await?;
 
     // Group changes by serial
     let mut changes_by_serial: HashMap<u32, Vec<&delta::ZoneChange>> = HashMap::new();
@@ -278,29 +285,47 @@ async fn send_ixfr_response(
                 old_serial
             ))
         })?;
-        builder.add_soa_from_snapshot(old_soa)?;
+        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+            builder.add_soa_from_snapshot(old_soa)
+        })
+        .await?;
 
         // Add all DEL operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
-            add_change_to_builder(&mut builder, change, &zone.name)?;
+            messages_sent +=
+                wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+                    add_change_to_builder(builder, change, &zone.name)
+                })
+                .await?;
         }
 
         // Add new SOA (addition section marker)
         let new_soa = snapshots_by_serial.get(&serial).ok_or_else(|| {
             XfrError::ProtocolError(format!("Missing new SOA snapshot for serial {}", serial))
         })?;
-        builder.add_soa_from_snapshot(new_soa)?;
+        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+            builder.add_soa_from_snapshot(new_soa)
+        })
+        .await?;
 
         // Add all ADD operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
-            add_change_to_builder(&mut builder, change, &zone.name)?;
+            messages_sent +=
+                wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+                    add_change_to_builder(builder, change, &zone.name)
+                })
+                .await?;
         }
     }
 
-    // Add final SOA record to indicate end of transfer
-    builder.add_soa_from_snapshot(current_snapshot)?;
-    let message = builder.build();
-    wire::write_tcp_message(stream, &message).await?;
+    // Final SOA (current serial) closes the transfer.
+    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        builder.add_soa_from_snapshot(current_snapshot)
+    })
+    .await?;
+    messages_sent += wire::flush_message_if_not_empty(stream, &mut builder).await?;
+
+    log_info!("IXFR: sent response in {} DNS message(s)", messages_sent);
 
     Ok(())
 }

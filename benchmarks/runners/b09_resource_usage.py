@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
-from lib import dnsquery  # noqa: E402
+from lib import dnsquery, dnsutil  # noqa: E402
 from lib.resources import ResourceSampler  # noqa: E402
 
 LOAD_SECS = 20
@@ -26,7 +26,27 @@ async def run(adapter, cfg, ctx) -> dict:
     await adapter.bulk_import(zone, records)
     names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
     ep = adapter.dns_endpoint()
-    await asyncio.sleep(3)
+
+    # Wait until the zone is queryable before sampling: the bulk write only starts
+    # async transfer to the secondary, so a fixed sleep could sample a half-loaded
+    # zone. Probe the last record (highest-serial chunk) to confirm full presence.
+    loop = asyncio.get_event_loop()
+    p = cfg["propagation"]
+    probe_idxs = sorted({0, len(records) // 2, len(records) - 1}) if records else []
+    for idx in probe_idxs:
+        r = records[idx]
+        got = await loop.run_in_executor(
+            None, dnsutil.poll_until_visible,
+            f'{r["name"]}.{zone.rstrip(".")}', "A", r["value"],
+            ep.host, ep.port, p["poll_interval_ms"], p["timeout_secs"])
+        if got is None:
+            print(f'  [FAIL] b09: zone not queryable within '
+                  f'{p["timeout_secs"]}s for {ctx["label"]}')
+            return {
+                "system": ctx["label"],
+                "status": "FAILED",
+                "error": "propagation timeout: imported zone not queryable",
+            }
 
     ids = [i for i in (adapter.compose.container_id(s)
                        for s in adapter.resource_services) if i]

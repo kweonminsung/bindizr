@@ -196,6 +196,17 @@ def _rows(data: dict, key: str) -> list[dict]:
     return _aggregate(data[key]["results"]) if key in data else []
 
 
+def _union_headers(results: list[dict]) -> list[str]:
+    # Union columns across all rows (first-seen order) so a failure row's extra
+    # keys (e.g. status/error) aren't clipped to the first row's schema.
+    headers: list[str] = []
+    for r in results:
+        for h in r:
+            if not h.endswith("_std") and h not in headers:
+                headers.append(h)
+    return headers
+
+
 def _render_markdown(env: dict, data: dict) -> str:
     hw = env["hardware"]
     out = ["# Bindizr Benchmark Results\n"]
@@ -264,7 +275,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         if not results:
             continue
         out.append(f"\n## {title}\n")
-        headers = [h for h in results[0].keys() if not h.endswith("_std")]
+        headers = _union_headers(results)
         rows = [[r.get(h, "-") for h in headers] for r in results]
         out.append(_md_table(headers, rows))
 
@@ -307,7 +318,7 @@ def _render_markdown(env: dict, data: dict) -> str:
         results = _rows(data, "b09_resource_usage")
         if results:
             out.append("\n## Benchmark 9 — Resource Usage\n")
-            headers = [h for h in results[0].keys() if not h.endswith("_std")]
+            headers = _union_headers(results)
             rows = [[r.get(h, "-") for h in headers] for r in results]
             out.append(_md_table(headers, rows))
     return "\n".join(out)

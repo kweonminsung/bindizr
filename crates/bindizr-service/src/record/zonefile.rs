@@ -79,7 +79,21 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                     }
                 };
 
-                let value = match record.data() {
+                // Stored as i32; reject TTLs that would wrap negative (like the
+                // JSON and nsupdate paths) instead of silently corrupting them.
+                let ttl_secs = record.ttl().as_secs();
+                if ttl_secs > i32::MAX as u32 {
+                    errors.push(format!(
+                        "TTL {} for '{}' exceeds the maximum of {}",
+                        ttl_secs,
+                        record.owner(),
+                        i32::MAX
+                    ));
+                    continue;
+                }
+                let ttl = ttl_secs as i32;
+
+                let (value, priority) = match record.data() {
                     ZoneRecordData::Txt(txt) => {
                         // Preserve raw character-string octets. TXT RDATA can hold
                         // arbitrary bytes (BIND writes them as `\DDD` escapes, which
@@ -93,17 +107,41 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                             rdata.push(segment.len() as u8);
                             rdata.extend_from_slice(segment);
                         }
-                        ParsedValue::Encoded(encode_raw_txt_rdata(&rdata))
+                        (ParsedValue::Encoded(encode_raw_txt_rdata(&rdata)), None)
                     }
-                    other => ParsedValue::Request(RecordValueRequest::String(other.to_string())),
+                    other => {
+                        let raw = other.to_string();
+                        // Split MX/SRV priority (first field) into the priority
+                        // column like the JSON API, so filters/responses see it.
+                        // Both forms canonicalize equal, so no import churn.
+                        match record_type {
+                            RecordType::MX | RecordType::SRV => {
+                                let mut fields = raw.split_whitespace();
+                                match fields.next().and_then(|p| p.parse::<i32>().ok()) {
+                                    Some(prio) => {
+                                        let rest = fields.collect::<Vec<_>>().join(" ");
+                                        (
+                                            ParsedValue::Request(RecordValueRequest::String(rest)),
+                                            Some(prio),
+                                        )
+                                    }
+                                    None => (
+                                        ParsedValue::Request(RecordValueRequest::String(raw)),
+                                        None,
+                                    ),
+                                }
+                            }
+                            _ => (ParsedValue::Request(RecordValueRequest::String(raw)), None),
+                        }
+                    }
                 };
 
                 records.push(ParsedRecord {
                     owner_fqdn: record.owner().to_string().to_ascii_lowercase(),
                     record_type,
                     value,
-                    ttl: Some(record.ttl().as_secs() as i32),
-                    priority: None,
+                    ttl: Some(ttl),
+                    priority,
                 });
             }
             Ok(Some(Entry::Include { .. })) => {
