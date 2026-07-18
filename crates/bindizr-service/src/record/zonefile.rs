@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::to_fqdn_lowercase;
+use bindizr_core::dns::{name::to_fqdn_lowercase, txt::encode_raw_txt_rdata};
 use domain::{
     base::iana::Class,
     rdata::ZoneRecordData,
@@ -13,9 +13,18 @@ pub(super) struct ParsedRecord {
     /// Absolute owner name (e.g. `www.example.com.`).
     pub owner_fqdn: String,
     pub record_type: RecordType,
-    pub value: RecordValueRequest,
+    pub value: ParsedValue,
     pub ttl: Option<i32>,
     pub priority: Option<i32>,
+}
+
+/// The parsed value, ready to become a stored value. Non-TXT records carry a
+/// `Request` that import re-encodes per type; TXT is pre-`Encoded` here so its
+/// character-strings' raw octets — which may be non-UTF-8 (BIND `\DDD` escapes)
+/// — survive instead of being mangled by a lossy UTF-8 conversion.
+pub(super) enum ParsedValue {
+    Request(RecordValueRequest),
+    Encoded(String),
 }
 
 pub(super) struct ParsedZoneFile {
@@ -71,12 +80,22 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                 };
 
                 let value = match record.data() {
-                    ZoneRecordData::Txt(txt) => RecordValueRequest::Segments(
-                        txt.iter()
-                            .map(|segment| String::from_utf8_lossy(segment).into_owned())
-                            .collect(),
-                    ),
-                    other => RecordValueRequest::String(other.to_string()),
+                    ZoneRecordData::Txt(txt) => {
+                        // Preserve raw character-string octets. TXT RDATA can hold
+                        // arbitrary bytes (BIND writes them as `\DDD` escapes, which
+                        // the scanner has already decoded); a UTF-8 conversion would
+                        // replace non-UTF-8 bytes with U+FFFD and silently change the
+                        // data served over DNS. Build the length-prefixed RDATA
+                        // directly and store it byte-exact. Each character-string is
+                        // <=255 bytes by the CharStr invariant.
+                        let mut rdata = Vec::new();
+                        for segment in txt.iter() {
+                            rdata.push(segment.len() as u8);
+                            rdata.extend_from_slice(segment);
+                        }
+                        ParsedValue::Encoded(encode_raw_txt_rdata(&rdata))
+                    }
+                    other => ParsedValue::Request(RecordValueRequest::String(other.to_string())),
                 };
 
                 records.push(ParsedRecord {
@@ -99,4 +118,37 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
     }
 
     ParsedZoneFile { records, errors }
+}
+
+#[cfg(test)]
+mod tests {
+    use bindizr_core::dns::txt::decode_raw_txt_rdata;
+
+    use super::*;
+
+    #[test]
+    fn txt_preserves_non_utf8_octets() {
+        // `\255\254` decode to bytes 0xFF 0xFE, which are not valid UTF-8. The
+        // old `String::from_utf8_lossy` path turned them into U+FFFD; the stored
+        // RDATA must instead hold the exact octets.
+        let parsed = parse_zone_file("weird IN TXT \"\\255\\254\"\n", "example.com", 3600);
+        assert!(
+            parsed.errors.is_empty(),
+            "unexpected errors: {:?}",
+            parsed.errors
+        );
+
+        let rec = parsed
+            .records
+            .iter()
+            .find(|r| r.record_type == RecordType::TXT)
+            .expect("a TXT record");
+        let encoded = match &rec.value {
+            ParsedValue::Encoded(s) => s,
+            ParsedValue::Request(_) => panic!("TXT should be pre-encoded"),
+        };
+        let rdata = decode_raw_txt_rdata(encoded).expect("valid encoded TXT rdata");
+        // One character-string of length 2 carrying the exact bytes.
+        assert_eq!(rdata, vec![2u8, 0xFF, 0xFE]);
+    }
 }

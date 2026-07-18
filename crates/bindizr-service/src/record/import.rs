@@ -10,7 +10,7 @@ use super::{
         normalize_record_owner_name, validate_delete_constraints,
         validate_record_add_constraints_normalized,
     },
-    zonefile::parse_zone_file,
+    zonefile::{ParsedValue, parse_zone_file},
 };
 use crate::{
     error::ServiceError,
@@ -99,12 +99,17 @@ impl RecordService {
             let mut desired: Vec<DesiredRecord> = Vec::new();
             let mut desired_by_name: HashMap<String, Vec<usize>> = HashMap::new();
             for record in parsed.records {
-                let value = match record.value.to_storage_value(&record.record_type) {
-                    Ok(value) => value,
-                    Err(e) => {
-                        errors.push(format!("{}: {}", record.owner_fqdn, e));
-                        continue;
-                    }
+                // TXT is pre-encoded byte-exact by the parser; other types are
+                // encoded per record type here.
+                let value = match &record.value {
+                    ParsedValue::Encoded(value) => value.clone(),
+                    ParsedValue::Request(req) => match req.to_storage_value(&record.record_type) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            errors.push(format!("{}: {}", record.owner_fqdn, e));
+                            continue;
+                        }
+                    },
                 };
                 let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name)
                 {
