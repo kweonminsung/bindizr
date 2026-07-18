@@ -57,6 +57,21 @@ that merely restate the adjacent code. Specifically avoid:
 deliberate (trait surface consumed across crates / kept to satisfy lints) —
 leave it in place.
 
+### Clean installs only — no migrations or back-compat
+
+The project targets **clean installs exclusively** and does not support
+upgrading an existing deployment. **Do not add migration code, schema
+`ALTER`s, schema-version tracking, or shims for older data/config/API
+formats** — and remove any that appear. Breaking schema/API/config changes are
+fine; change the definition in place.
+
+Schema setup runs `CREATE TABLE/INDEX IF NOT EXISTS` at startup purely for
+idempotency (surviving restarts), **not** to migrate existing databases. This
+is why MySQL may define indexes inline in `CREATE TABLE` while Postgres/SQLite
+use separate `CREATE INDEX` statements — a per-backend syntax requirement, not
+a migration step. A reviewer flagging "the inline index won't reach existing
+databases" is a non-issue under this policy.
+
 ### Benchmark results folders
 
 Every benchmark run writes to its own timestamped directory,
