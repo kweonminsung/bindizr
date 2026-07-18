@@ -6,8 +6,7 @@ use crate::{
     socket::types::DaemonResponse,
 };
 
-/// Handle the `GetRecord` command by returning a record by ID.
-pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+fn parse_record_id(data: &serde_json::Value) -> Result<i32, String> {
     let record_id_i64 = data
         .get("id")
         .and_then(|v| v.as_i64())
@@ -17,6 +16,12 @@ pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
     if record_id < 0 {
         return Err("Record ID must be non-negative".to_string());
     }
+    Ok(record_id)
+}
+
+/// Handle the `GetRecord` command by returning a record by ID.
+pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+    let record_id = parse_record_id(data)?;
 
     match RecordService::get_by_id_with_zone(record_id).await {
         Ok(record) => {
@@ -78,15 +83,7 @@ pub(super) async fn create_record(data: &serde_json::Value) -> Result<DaemonResp
 
 /// Handle the `DeleteRecord` command by deleting a record by ID.
 pub(super) async fn delete_record(data: &serde_json::Value) -> Result<DaemonResponse, String> {
-    let record_id_i64 = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing or invalid 'id' field")?;
-    let record_id =
-        i32::try_from(record_id_i64).map_err(|_| "Record ID is out of range".to_string())?;
-    if record_id < 0 {
-        return Err("Record ID must be non-negative".to_string());
-    }
+    let record_id = parse_record_id(data)?;
 
     match RecordService::delete_by_id(record_id).await {
         Ok(_) => Ok(DaemonResponse {

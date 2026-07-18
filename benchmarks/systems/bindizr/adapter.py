@@ -127,16 +127,7 @@ class BindizrAdapter(DnsAdapter):
             await r.read()
 
     def _record_body(self, zone: str, rec: dict) -> dict:
-        body = {
-            "name": rec["name"],
-            "record_type": rec["type"],
-            "value": rec["value"],
-            "ttl": rec.get("ttl", 3600),
-            "zone_name": zone.rstrip("."),
-        }
-        if "priority" in rec:
-            body["priority"] = rec["priority"]
-        return body
+        return {**self._bulk_item(rec), "zone_name": zone.rstrip(".")}
 
     async def create_record(self, zone: str, rec: dict) -> str:
         async with self.session.post(self.base + "/records", json=self._record_body(zone, rec)) as r:
@@ -151,14 +142,7 @@ class BindizrAdapter(DnsAdapter):
             return r.status == 200
 
     async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
-        body = {
-            "name": rec["name"],
-            "record_type": rec["type"],
-            "value": rec["value"],
-            "ttl": rec.get("ttl", 3600),
-        }
-        if "priority" in rec:
-            body["priority"] = rec["priority"]
+        body = self._bulk_item(rec)
         async with self.session.put(self.base + f"/records/{handle}", json=body) as r:
             await r.read()
             return r.status == 200

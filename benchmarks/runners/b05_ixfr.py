@@ -77,7 +77,6 @@ async def run(adapter, cfg, ctx) -> list:
             print(f"  [SKIP] b05: could not read base serial for {n}-change IXFR")
             continue
 
-        # Apply n new records.
         batch = []
         for _ in range(n):
             rec = dict(change_pool[ci % len(change_pool)])

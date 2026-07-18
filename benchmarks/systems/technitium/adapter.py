@@ -66,8 +66,7 @@ class TechnitiumAdapter(DnsAdapter):
     async def _get(self, path: str, params: dict) -> dict:
         params = {"token": self.token, **params}
         async with self.session.get(self.base + path, params=params) as r:
-            data = await r.json()
-            return data
+            return await r.json()
 
     @staticmethod
     def _fqdn(zone: str, name: str) -> str:

@@ -120,34 +120,6 @@ pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
     name == zone || name.ends_with(&format!(".{}", zone))
 }
 
-/// Convert `fqdn` to a name relative to `zone_name`, or `@` for the apex.
-pub fn to_relative_domain(fqdn: &str, zone_name: &str) -> String {
-    let fqdn = to_fqdn(fqdn);
-    let zone = to_fqdn(zone_name);
-
-    if fqdn.eq_ignore_ascii_case(&zone) {
-        return "@".to_string();
-    }
-
-    let fqdn_lower = fqdn.to_ascii_lowercase();
-    let zone_lower = zone.to_ascii_lowercase();
-
-    if is_same_or_subdomain_fqdn(&fqdn_lower, &zone_lower) {
-        let relative_part = &fqdn[..fqdn.len() - zone.len()];
-        relative_part.trim_end_matches('.').to_string()
-    } else {
-        fqdn.trim_end_matches('.').to_string()
-    }
-}
-
-/// Whether `name` falls within `zone_name` (case-insensitive).
-pub fn is_in_bailiwick(name: &str, zone_name: &str) -> bool {
-    let name = to_fqdn(name).to_ascii_lowercase();
-    let zone = to_fqdn(zone_name).to_ascii_lowercase();
-
-    is_same_or_subdomain_fqdn(&name, &zone)
-}
-
 /// Whether `name` refers to the zone apex (`@` or the zone name itself).
 pub fn is_apex_name(name: &str, zone_name: &str) -> bool {
     name == "@" || to_fqdn(name).eq_ignore_ascii_case(&to_fqdn(zone_name))

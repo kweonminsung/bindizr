@@ -27,14 +27,12 @@ impl AuthService {
             }
         };
 
-        // Check if the token is expired
         if let Some(expires_at) = &stored_token.expires_at
             && Utc::now() >= *expires_at
         {
             return Err(ServiceError::Unauthorized("Token has expired".to_string()));
         }
 
-        // Update last_used_at to current time
         let updated_token = RepositoryService::update_api_token(ApiToken {
             id: stored_token.id,
             token: stored_token.token,

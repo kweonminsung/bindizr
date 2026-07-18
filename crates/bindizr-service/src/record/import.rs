@@ -1,5 +1,7 @@
-use std::collections::{HashMap, HashSet};
-use std::time::Instant;
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 use chrono::Utc;
 

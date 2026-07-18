@@ -31,7 +31,6 @@ impl RecordService {
     pub async fn create(
         create_record_request: &CreateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
-        // Validate record type
         let record_type = create_record_request
             .record_type
             .parse::<RecordType>()

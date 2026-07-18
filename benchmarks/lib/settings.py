@@ -73,10 +73,6 @@ def load(path: Path | None = None) -> dict[str, Any]:
     return cfg
 
 
-def enabled_systems(cfg: dict[str, Any]) -> list[str]:
-    return [k for k, v in cfg["systems"].items() if v.get("enabled")]
-
-
 def system_label(cfg: dict[str, Any], key: str) -> str:
     if key == "bind9_native":
         return "Native BIND9"

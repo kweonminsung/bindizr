@@ -11,12 +11,6 @@ use crate::socket::{
 /// Client for sending commands to the daemon over the Unix socket.
 pub(crate) struct DaemonSocketClient;
 
-impl Default for DaemonSocketClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DaemonSocketClient {
     /// Create a new [`DaemonSocketClient`].
     pub(crate) fn new() -> Self {

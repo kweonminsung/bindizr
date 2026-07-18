@@ -55,9 +55,6 @@ class Compose:
         p = run(self._base() + ["logs", "--tail", str(tail), service], check=False)
         return (p.stdout or "") + (p.stderr or "")
 
-    def ps(self) -> str:
-        return run(self._base() + ["ps"], check=False).stdout or ""
-
     def container_id(self, service: str) -> str | None:
         p = run(self._base() + ["ps", "-q", service], check=False)
         out = (p.stdout or "").strip()
