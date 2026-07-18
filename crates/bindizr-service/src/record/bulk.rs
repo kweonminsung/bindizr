@@ -9,7 +9,7 @@ use super::{
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    log_debug, log_error, log_info, log_warn,
+    log_debug, log_debug_enabled, log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType, RecordWithZone},
         zone::Zone,
@@ -227,21 +227,26 @@ impl RecordService {
 
             // Time normalization and constraint validation separately: bulk does
             // both per record here, so lumping them would inflate validate_ms
-            // versus zone import, which normalizes in an earlier pass.
+            // versus zone import, which normalizes in an earlier pass. Gated on
+            // debug logging (the only consumer of these numbers) so the two
+            // per-record clock reads stay off the hot path in info-level runs.
+            let timing = log_debug_enabled!();
             let mut normalize_dur = std::time::Duration::ZERO;
             let mut validate_dur = std::time::Duration::ZERO;
             let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
-                let t = Instant::now();
+                let t = timing.then(Instant::now);
                 let normalized_owner =
                     normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
-                normalize_dur += t.elapsed();
+                if let Some(t) = t {
+                    normalize_dur += t.elapsed();
+                }
 
                 let same_name = records_by_name
                     .entry(normalized_owner.stored_name.to_ascii_lowercase())
                     .or_default();
 
-                let t = Instant::now();
+                let t = timing.then(Instant::now);
                 validate_record_add_constraints_normalized(
                     same_name,
                     &prepared_record.owner_name,
@@ -251,7 +256,9 @@ impl RecordService {
                     prepared_record.priority,
                     None,
                 )?;
-                validate_dur += t.elapsed();
+                if let Some(t) = t {
+                    validate_dur += t.elapsed();
+                }
 
                 let record = Record {
                     id: 0,

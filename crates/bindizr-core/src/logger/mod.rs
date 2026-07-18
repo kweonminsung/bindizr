@@ -39,6 +39,15 @@ macro_rules! log_trace {
     };
 }
 
+/// Whether debug logging is enabled. Lets hot paths skip building debug-only
+/// data (e.g. per-record timing) when it would only be discarded.
+#[macro_export]
+macro_rules! log_debug_enabled {
+    () => {
+        log::log_enabled!(log::Level::Debug)
+    };
+}
+
 /// Simple `log` implementation that writes to stderr.
 pub struct Logger {
     log_level: Level,
