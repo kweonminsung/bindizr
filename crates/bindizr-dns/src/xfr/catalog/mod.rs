@@ -28,7 +28,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     let serial = generate_catalog_serial(&member_zones, &all_zones).await?;
 
     let catalog_zone = Zone {
-        id: 0, // Virtual zone ID
+        id: 0,
         name: CATALOG_ZONE_NAME.to_string(),
         primary_ns: "invalid".to_string(),
         admin_email: "invalid".to_string(),

@@ -7,9 +7,9 @@ use crate::dns::name::{NameError, email_to_soa_mailbox};
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Zone {
     pub id: i32,
-    pub name: String,        // Zone name (e.g. "example.com")
-    pub primary_ns: String,  // Primary name server (e.g. "ns1.example.com")
-    pub admin_email: String, // Admin email (e.g. "admin.example.com")
+    pub name: String,
+    pub primary_ns: String,
+    pub admin_email: String,
     pub ttl: i32,            // Default TTL in seconds
     pub serial: i32,         // SOA serial number
     pub refresh: i32,        // SOA refresh period in seconds

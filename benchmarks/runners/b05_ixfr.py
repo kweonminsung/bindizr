@@ -47,10 +47,9 @@ async def run(adapter, cfg, ctx) -> list:
     change_pool = generate(sum(CHANGE_SIZES) + BASELINE, cfg["seed"] + 50, zone)
     ci = 0
     for n in CHANGE_SIZES:
-        # Read the pre-change serial, retrying on a transient SOA-query miss. A
-        # single miss used to fall back to `base_serial or 1`, which requests
-        # IXFR from serial 1 — a serial with no delta history, forcing a full
-        # AXFR and a spurious "huge IXFR" outlier.
+        # Read the pre-change serial, retrying on a transient SOA-query miss.
+        # Falling back to `base_serial or 1` would request IXFR from serial 1 — no
+        # delta history — forcing a full AXFR and a spurious "huge IXFR" outlier.
         base_serial = None
         for _ in range(10):
             base_serial = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
@@ -70,11 +69,10 @@ async def run(adapter, cfg, ctx) -> list:
             ci += 1
         await adapter.bulk_import(zone, batch)
 
-        # Wait for the serial to advance (propagation). If it never does — the
-        # batch failed to apply, or the secondary never transferred it — an IXFR
-        # from the unchanged base_serial returns a tiny "up-to-date" SOA and would
-        # masquerade as an exceptionally efficient transfer, so record a failure
-        # instead of measuring.
+        # Wait for the serial to advance. If it never does (batch failed to apply,
+        # or the secondary never transferred it), an IXFR from the unchanged
+        # base_serial returns a tiny "up-to-date" SOA that would masquerade as an
+        # efficient transfer — so record a failure instead of measuring.
         deadline = time.monotonic() + 60
         propagated = False
         while time.monotonic() < deadline:

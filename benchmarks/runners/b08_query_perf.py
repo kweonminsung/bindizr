@@ -32,13 +32,12 @@ async def run(adapter, cfg, ctx) -> dict:
     names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
     ep = adapter.dns_endpoint()
 
-    # Wait until the imported zone is actually queryable before measuring. For
-    # Bindizr the bulk write only initiates async transfer to the BIND9 secondary,
-    # so a fixed sleep can start the load against a partially-populated secondary
-    # and count not-yet-transferred names as query errors (deflating QPS). Poll a
-    # few representative names — including the last record, which lands in the
-    # final (highest-serial) chunk, so once it resolves the whole zone is present.
-    # Integrated systems answer immediately, so this returns near-instantly.
+    # Wait until the imported zone is queryable before measuring. For Bindizr the
+    # bulk write only starts async transfer to the BIND9 secondary, so a fixed
+    # sleep could load a half-populated secondary and count missing names as
+    # errors (deflating QPS). Poll a few names including the last record, which
+    # lands in the final (highest-serial) chunk, so once it resolves the whole
+    # zone is present. Integrated systems return near-instantly.
     loop = asyncio.get_event_loop()
     p = cfg["propagation"]
     probe_idxs = sorted({0, len(records) // 2, len(records) - 1}) if records else []

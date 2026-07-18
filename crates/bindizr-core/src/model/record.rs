@@ -6,10 +6,10 @@ use sqlx::FromRow;
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Record {
     pub id: i32,
-    pub name: String, // Domain name (e.g. "www.example.com")
+    pub name: String,
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
-    pub value: String,         // Record value (e.g. IP address, CNAME target)
+    pub value: String,
     pub ttl: Option<i32>,      // TTL in seconds
     pub priority: Option<i32>, // Priority (MX and SRV records)
     pub created_at: DateTime<Utc>,
