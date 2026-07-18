@@ -157,29 +157,34 @@ impl RecordService {
 
             let parsed_count = desired.len();
 
+            // Lowercase each existing owner name once and reuse it across the
+            // passes below (indexing, deletion reconciliation, add-validation)
+            // instead of recomputing it per pass.
+            let existing_lower: Vec<String> = existing_records
+                .iter()
+                .map(|e| e.name.to_ascii_lowercase())
+                .collect();
+
             // Index existing records by owner name so each existing/desired
-            // record is reconciled against only same-name rows (previously a
-            // full scan of the zone per record).
+            // record is reconciled against only same-name rows.
             let mut existing_by_name: HashMap<String, Vec<&Record>> = HashMap::new();
-            for record in &existing_records {
+            for (i, record) in existing_records.iter().enumerate() {
                 existing_by_name
-                    .entry(record.name.to_ascii_lowercase())
+                    .entry(existing_lower[i].clone())
                     .or_default()
                     .push(record);
             }
 
-            let desired_matches_existing = |e: &Record| {
+            let desired_matches_existing = |e: &Record, e_lower: &str| {
                 desired_by_name
-                    .get(&e.name.to_ascii_lowercase())
+                    .get(e_lower)
                     .is_some_and(|idxs| idxs.iter().any(|&i| desired_matches(e, &desired[i])))
             };
-            let desired_key_matches_existing = |e: &Record| {
-                desired_by_name
-                    .get(&e.name.to_ascii_lowercase())
-                    .is_some_and(|idxs| {
-                        idxs.iter()
-                            .any(|&i| desired[i].prepared.record_type == e.record_type)
-                    })
+            let desired_key_matches_existing = |e: &Record, e_lower: &str| {
+                desired_by_name.get(e_lower).is_some_and(|idxs| {
+                    idxs.iter()
+                        .any(|&i| desired[i].prepared.record_type == e.record_type)
+                })
             };
 
             // Deletions implied by the mode.
@@ -187,17 +192,21 @@ impl RecordService {
                 ImportMode::Append => Vec::new(),
                 ImportMode::Replace => existing_records
                     .iter()
-                    .filter(|e| !is_protected(&zone, e) && !desired_matches_existing(e))
-                    .cloned()
+                    .enumerate()
+                    .filter(|(i, e)| {
+                        !is_protected(&zone, e) && !desired_matches_existing(e, &existing_lower[*i])
+                    })
+                    .map(|(_, e)| e.clone())
                     .collect(),
                 ImportMode::Upsert => existing_records
                     .iter()
-                    .filter(|e| {
-                        desired_key_matches_existing(e)
+                    .enumerate()
+                    .filter(|(i, e)| {
+                        desired_key_matches_existing(e, &existing_lower[*i])
                             && !is_protected(&zone, e)
-                            && !desired_matches_existing(e)
+                            && !desired_matches_existing(e, &existing_lower[*i])
                     })
-                    .cloned()
+                    .map(|(_, e)| e.clone())
                     .collect(),
             };
 
@@ -248,10 +257,10 @@ impl RecordService {
             // are indexed by name so each check scans only same-name candidates.
             let del_ids: HashSet<i32> = dels.iter().chain(&ttl_dels).map(|d| d.id).collect();
             let mut simulated_by_name: HashMap<String, Vec<Record>> = HashMap::new();
-            for e in &existing_records {
+            for (i, e) in existing_records.iter().enumerate() {
                 if !del_ids.contains(&e.id) {
                     simulated_by_name
-                        .entry(e.name.to_ascii_lowercase())
+                        .entry(existing_lower[i].clone())
                         .or_default()
                         .push(e.clone());
                 }
