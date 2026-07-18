@@ -21,13 +21,43 @@ impl RecordService {
         record_id: i32,
         update_record_request: &UpdateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
+        // Resolve zone_id with a non-locking read so the tx locks zone before
+        // record (the create/bulk/import order); the reverse can deadlock.
+        let zone_id = match RepositoryService::get_record_by_id(record_id).await {
+            Ok(Some(record)) => record.zone_id,
+            Ok(None) => {
+                return Err(ServiceError::NotFound(format!(
+                    "Record with id '{}' not found",
+                    record_id
+                )));
+            }
+            Err(e) => {
+                log_error!("Failed to fetch record: {}", e);
+                return Err(ServiceError::Internal("Failed to fetch record".to_string()));
+            }
+        };
+
         let mut tx = RepositoryService::begin_tx("Failed to update record").await?;
 
         let apply_result = async {
+            let zone = match RepositoryService::get_zone_by_id_tx(&mut tx, zone_id).await {
+                Ok(Some(zone)) => zone,
+                Ok(None) => {
+                    return Err(ServiceError::NotFound(format!(
+                        "Zone with id '{}' not found",
+                        zone_id
+                    )));
+                }
+                Err(e) => {
+                    log_error!("Failed to fetch zone: {}", e);
+                    return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
+                }
+            };
+
             let existing_record =
                 match RepositoryService::get_record_by_id_tx(&mut tx, record_id).await {
-                    Ok(Some(record)) => record,
-                    Ok(None) => {
+                    Ok(Some(record)) if record.zone_id == zone.id => record,
+                    Ok(Some(_)) | Ok(None) => {
                         return Err(ServiceError::NotFound(format!(
                             "Record with id '{}' not found",
                             record_id
@@ -38,22 +68,6 @@ impl RecordService {
                         return Err(ServiceError::Internal("Failed to fetch record".to_string()));
                     }
                 };
-
-            let zone = match RepositoryService::get_zone_by_id_tx(&mut tx, existing_record.zone_id)
-                .await
-            {
-                Ok(Some(zone)) => zone,
-                Ok(None) => {
-                    return Err(ServiceError::NotFound(format!(
-                        "Zone with id '{}' not found",
-                        existing_record.zone_id
-                    )));
-                }
-                Err(e) => {
-                    log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
-                }
-            };
 
             let record_type = update_record_request
                 .record_type
