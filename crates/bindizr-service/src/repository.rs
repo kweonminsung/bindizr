@@ -470,6 +470,17 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load snapshot: {}", e)))
     }
 
+    pub(super) async fn get_zone_snapshots_in_range(
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneSnapshot>, ServiceError> {
+        get_zone_snapshot_repository()
+            .get_by_zone_id_in_serial_range(zone_id, from_serial, to_serial)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load snapshots: {}", e)))
+    }
+
     pub(super) async fn create_api_token(token: ApiToken) -> Result<ApiToken, ServiceError> {
         get_api_token_repository()
             .create(token)

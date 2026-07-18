@@ -114,4 +114,25 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
+
+    async fn get_by_zone_id_in_serial_range(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneSnapshot>, DatabaseError> {
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            FROM zone_soa_history
+            WHERE zone_id = $1 AND serial >= $2 AND serial <= $3
+            "#,
+        )
+        .bind(zone_id)
+        .bind(from_serial)
+        .bind(to_serial)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
 }

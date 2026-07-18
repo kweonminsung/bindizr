@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub(crate) use bindizr_core::dns::CATALOG_ZONE_NAME;
 use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
@@ -53,6 +55,13 @@ async fn generate_catalog_serial(member_zones: &[String], zones: &[Zone]) -> Res
 }
 
 fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
+    // Index serials by lowercased name once so the per-member lookup below is
+    // O(1) instead of a full scan of `zones` per member.
+    let serial_by_name: HashMap<String, i32> = zones
+        .iter()
+        .map(|z| (z.name.to_ascii_lowercase(), z.serial))
+        .collect();
+
     let mut members = member_zones
         .iter()
         .map(|member| member.to_ascii_lowercase())
@@ -61,10 +70,10 @@ fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
 
     let mut hasher = Sha256::new();
     for member in members {
-        if let Some(zone) = zones.iter().find(|z| z.name.eq_ignore_ascii_case(&member)) {
+        if let Some(serial) = serial_by_name.get(&member) {
             hasher.update(member.as_bytes());
             hasher.update(b"\0");
-            hasher.update(zone.serial.to_string().as_bytes());
+            hasher.update(serial.to_string().as_bytes());
             hasher.update(b"\n");
         }
     }

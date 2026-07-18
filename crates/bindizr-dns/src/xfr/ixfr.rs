@@ -144,27 +144,12 @@ pub(crate) async fn handle_ixfr(
     let mut snapshots_by_serial: HashMap<u32, delta::ZoneSnapshot> = HashMap::new();
     snapshots_by_serial.reserve(serials_in_changes.len() + 1);
 
-    let mut required_snapshot_serials = serials_in_changes.clone();
-    required_snapshot_serials.push(client_serial);
-    required_snapshot_serials.sort_unstable();
-    required_snapshot_serials.dedup();
-
-    for serial in required_snapshot_serials {
-        match delta::get_zone_snapshot(zone.id, serial).await? {
-            Some(snapshot) => {
-                snapshots_by_serial.insert(serial, snapshot);
-            }
-            None => {
-                log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-                return axfr::handle_axfr_with_qtype(
-                    stream,
-                    zone_name,
-                    query_id,
-                    client_ip,
-                    Rtype::IXFR,
-                )
-                .await;
-            }
+    // All required serials fall within [client_serial, current_serial], so fetch
+    // the whole span in one query instead of one round-trip per serial. Any
+    // snapshot that is missing is caught by the chain validation below.
+    for snapshot in delta::get_zone_snapshots(zone.id, client_serial, current_serial).await? {
+        if let Ok(serial) = delta::serial_to_u32(snapshot.serial) {
+            snapshots_by_serial.insert(serial, snapshot);
         }
     }
 

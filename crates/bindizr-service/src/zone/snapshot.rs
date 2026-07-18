@@ -48,3 +48,12 @@ pub async fn get_by_serial(
 ) -> Result<Option<ZoneSnapshot>, ServiceError> {
     RepositoryService::get_zone_snapshot_by_serial(zone_id, serial).await
 }
+
+/// Fetch every SOA snapshot for a zone with serial in `[from_serial, to_serial]`.
+pub async fn get_in_range(
+    zone_id: i32,
+    from_serial: i32,
+    to_serial: i32,
+) -> Result<Vec<ZoneSnapshot>, ServiceError> {
+    RepositoryService::get_zone_snapshots_in_range(zone_id, from_serial, to_serial).await
+}

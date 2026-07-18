@@ -285,6 +285,13 @@ pub trait ZoneSnapshotRepository: Send + Sync {
         zone_id: i32,
         serial: i32,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
+    /// Fetch every snapshot for a zone whose serial is in `[from_serial, to_serial]`.
+    async fn get_by_zone_id_in_serial_range(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneSnapshot>, DatabaseError>;
 }
 
 /// Persistence operations for API tokens.
