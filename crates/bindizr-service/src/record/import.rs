@@ -101,15 +101,6 @@ impl RecordService {
             load_zone_ms = t.elapsed().as_secs_f64() * 1000.0;
 
             let t = Instant::now();
-            let existing_records = RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to load zone records: {}", e);
-                    ServiceError::Internal("Failed to import zone file".to_string())
-                })?;
-            load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
-
-            let t = Instant::now();
             let parsed = parse_zone_file(&request.content, &zone.name, zone.ttl);
             parse_ms = t.elapsed().as_secs_f64() * 1000.0;
             let mut errors = parsed.errors;
@@ -180,6 +171,32 @@ impl RecordService {
 
             normalize_ms = t.elapsed().as_secs_f64() * 1000.0;
             let parsed_count = desired.len();
+
+            // Append never deletes, so only rows sharing an owner name with the
+            // file can matter (duplicate detection + add-constraint checks); load
+            // just those, like create_bulk, instead of the whole zone. Replace and
+            // upsert must see every row to compute the deletions their modes imply.
+            let t = Instant::now();
+            let existing_records = match mode {
+                ImportMode::Append => {
+                    let mut names: Vec<String> = desired
+                        .iter()
+                        .map(|d| d.stored_name.to_ascii_lowercase())
+                        .collect();
+                    names.sort();
+                    names.dedup();
+                    RepositoryService::get_records_by_zone_id_and_names_tx(&mut tx, zone.id, &names)
+                        .await
+                }
+                ImportMode::Replace | ImportMode::Upsert => {
+                    RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await
+                }
+            }
+            .map_err(|e| {
+                log_error!("Failed to load zone records: {}", e);
+                ServiceError::Internal("Failed to import zone file".to_string())
+            })?;
+            load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
 
             // Lowercase each existing owner name once and reuse it across the
             // passes below (indexing, deletion reconciliation, add-validation)
