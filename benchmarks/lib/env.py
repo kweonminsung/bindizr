@@ -41,7 +41,7 @@ def _mem_total_gb() -> float:
 def collect(cfg: dict) -> dict:
     import os
 
-    total, used, free = shutil.disk_usage("/")
+    free = shutil.disk_usage("/").free
     return {
         "hardware": {
             "cpu": _cpu_model(),

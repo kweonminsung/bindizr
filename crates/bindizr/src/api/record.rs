@@ -99,7 +99,7 @@ pub(crate) async fn get_records(Query(query): Query<GetRecordsFilter>) -> impl I
         )
 )]
 /// Get a single DNS record by ID.
-pub(crate) async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
+pub(crate) async fn get_record(Path(params): Path<RecordIdParam>) -> impl IntoResponse {
     let raw_record = match RecordService::get_by_id_with_zone(params.record_id).await {
         Ok(record) => record,
         Err(err) => return ApiError::from(err).into_response(),
@@ -160,7 +160,7 @@ pub(crate) async fn create_record(
 )]
 /// Update an existing DNS record.
 pub(crate) async fn update_record(
-    Path(params): Path<UpdateRecordParam>,
+    Path(params): Path<RecordIdParam>,
     JsonBody(body): JsonBody<UpdateRecordRequest>,
 ) -> impl IntoResponse {
     let raw_record = match RecordService::update_by_id(params.record_id, &body).await {
@@ -190,7 +190,7 @@ pub(crate) async fn update_record(
         )
 )]
 /// Delete a DNS record.
-pub(crate) async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl IntoResponse {
+pub(crate) async fn delete_record(Path(params): Path<RecordIdParam>) -> impl IntoResponse {
     match RecordService::delete_by_id(params.record_id).await {
         Ok(_) => {
             let json_body = json!({ "message": "Record deleted successfully" });
@@ -244,20 +244,8 @@ pub(crate) struct ZoneScopedParam {
     zone_name: String,
 }
 
-/// Path parameters for fetching a record.
+/// Path parameters addressing a record by id.
 #[derive(Debug, Deserialize)]
-pub(crate) struct GetRecordParam {
-    record_id: i32,
-}
-
-/// Path parameters for updating a record.
-#[derive(Debug, Deserialize)]
-pub(crate) struct UpdateRecordParam {
-    record_id: i32,
-}
-
-/// Path parameters for deleting a record.
-#[derive(Debug, Deserialize)]
-pub(crate) struct DeleteRecordParam {
+pub(crate) struct RecordIdParam {
     record_id: i32,
 }

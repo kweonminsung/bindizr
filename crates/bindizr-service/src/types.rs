@@ -192,8 +192,9 @@ pub struct CreateZoneRequest {
     pub admin_email: String,
     #[schema(example = 3600)]
     pub ttl: i32,
+    /// Auto-generated if not provided.
     #[schema(example = 2025100101)]
-    pub serial: Option<i32>, // Optional: auto-generated if not provided
+    pub serial: Option<i32>,
     #[schema(example = 7200)]
     pub refresh: Option<i32>,
     #[schema(example = 3600)]

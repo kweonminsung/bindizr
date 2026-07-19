@@ -156,7 +156,6 @@ impl RecordService {
         let (created_record, zone_name) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create record").await?;
 
-        // Log record creation after commit
         log_info!(
             "event=record_create zone={} name={} type={} ttl={} priority={} record_id={}",
             zone_name,
@@ -171,7 +170,6 @@ impl RecordService {
             created_record.id
         );
 
-        // Send NOTIFY to secondary servers
         if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }

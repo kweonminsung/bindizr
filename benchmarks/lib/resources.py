@@ -86,7 +86,8 @@ class ResourceSampler:
 
         # Per-container average CPU. The pooled `avg_cpu_pct` above understates a
         # multi-container stack (Bindizr's idle control plane averaged with the
-        # BIND9 that serves queries); keep it for back-compat but expose the split.
+        # BIND9 that serves queries); the report rows still consume the pooled
+        # value, so keep both and expose the split alongside it.
         by_container: dict[str, list[float]] = {}
         for s in self.samples:
             by_container.setdefault(s["name"], []).append(s["cpu_pct"])

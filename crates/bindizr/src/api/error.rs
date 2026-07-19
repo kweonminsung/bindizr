@@ -31,17 +31,13 @@ impl ApiError {
             ApiError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
-
-    fn error_message(&self) -> String {
-        self.to_string()
-    }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let status = self.status_code();
         let body = Json(json!({
-            "error": self.error_message()
+            "error": self.to_string()
         }));
         (status, body).into_response()
     }

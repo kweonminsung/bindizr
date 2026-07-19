@@ -37,7 +37,6 @@ def load(path: Path | None = None) -> dict[str, Any]:
     with open(path) as fh:
         cfg = yaml.safe_load(fh)
 
-    # Environment overrides for CI.
     if os.environ.get("BENCH_CI") in ("1", "true"):
         cfg["sizes"] = cfg["sizes_ci"]
         cfg["repeats"] = cfg.get("repeats_ci", 1)

@@ -41,7 +41,6 @@ impl ZoneService {
 
         RepositoryService::finish_tx(tx, apply_result, "Failed to delete zone").await?;
 
-        // Log zone deletion after commit
         log_info!("event=zone_delete zone={} zone_id={}", zone_name, zone_id);
 
         // Send catalog NOTIFY so secondaries drop the removed zone

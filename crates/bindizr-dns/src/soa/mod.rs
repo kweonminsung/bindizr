@@ -91,7 +91,5 @@ async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<
     let mut builder = wire::DnsMessageBuilder::new(query_id, &zone_name, Rtype::SOA);
     builder.add_soa(&zone, zone.serial as u32)?;
 
-    log_info!("SOA response sent for zone {}", zone_name_str);
-
     Ok(builder.build())
 }

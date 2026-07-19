@@ -97,7 +97,7 @@ pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoR
 )]
 /// Get a single DNS zone, optionally including its records.
 pub(crate) async fn get_zone(
-    Path(params): Path<GetZoneParam>,
+    Path(params): Path<ZoneNameParam>,
     Query(query): Query<GetZoneQuery>,
 ) -> impl IntoResponse {
     let zone_name = params.name;
@@ -171,12 +171,10 @@ pub(crate) async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> 
 )]
 /// Update an existing DNS zone.
 pub(crate) async fn update_zone(
-    Path(params): Path<UpdateZoneParam>,
+    Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> impl IntoResponse {
-    let zone_name = params.name;
-
-    match ZoneService::update(&zone_name, &body).await {
+    match ZoneService::update(&params.name, &body).await {
         Ok(zone) => {
             let zone = GetZoneResponse::from_zone(&zone);
             let json_body = json!({ "zone": zone });
@@ -202,10 +200,8 @@ pub(crate) async fn update_zone(
         )
 )]
 /// Delete a DNS zone.
-pub(crate) async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl IntoResponse {
-    let zone_name = params.name;
-
-    match ZoneService::delete(&zone_name).await {
+pub(crate) async fn delete_zone(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
+    match ZoneService::delete(&params.name).await {
         Ok(_) => {
             let json_body = json!({ "message": "Zone deleted successfully" });
             (StatusCode::OK, Json(json_body)).into_response()
@@ -235,7 +231,7 @@ pub(crate) async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl Int
 )]
 /// Import a BIND zone file into a zone, reconciling records in one transaction.
 pub(crate) async fn import_zone(
-    Path(params): Path<ImportZoneParam>,
+    Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<ImportZoneFileRequest>,
 ) -> impl IntoResponse {
     match RecordService::import_zone_file(&params.name, &body).await {
@@ -244,15 +240,9 @@ pub(crate) async fn import_zone(
     }
 }
 
-/// Path parameters for importing a zone file.
+/// Path parameters addressing a zone by name.
 #[derive(Debug, Deserialize)]
-pub(crate) struct ImportZoneParam {
-    name: String,
-}
-
-/// Path parameters for fetching a zone.
-#[derive(Debug, Deserialize)]
-pub(crate) struct GetZoneParam {
+pub(crate) struct ZoneNameParam {
     name: String,
 }
 
@@ -260,16 +250,4 @@ pub(crate) struct GetZoneParam {
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetZoneQuery {
     records: Option<bool>,
-}
-
-/// Path parameters for updating a zone.
-#[derive(Debug, Deserialize)]
-pub(crate) struct UpdateZoneParam {
-    name: String,
-}
-
-/// Path parameters for deleting a zone.
-#[derive(Debug, Deserialize)]
-pub(crate) struct DeleteZoneParam {
-    name: String,
 }

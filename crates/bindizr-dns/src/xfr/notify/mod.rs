@@ -87,7 +87,6 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
 
     if !catalog::is_catalog_zone(zone_name) {
-        // Verify zone exists
         ZoneService::find(zone_name)
             .await
             .map_err(|e| XfrError::DatabaseError(e.to_string()))?
@@ -120,7 +119,6 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     let notify_timeout = Duration::from_secs(notify_config.notify_timeout_secs);
     let notify_retries = notify_config.notify_retries;
 
-    // Encode the zone name to DNS wire format.
     let mut zone_name_bytes = Vec::new();
     wire::encode_domain_name(zone_name, &mut zone_name_bytes)?;
     let qname = Name::from_octets(zone_name_bytes)
@@ -272,7 +270,6 @@ async fn send_notify_to_server_once(
 
 /// Builds a DNS NOTIFY message (RFC 1996).
 fn build_notify_message(zone_name: &Name<Vec<u8>>) -> Result<(u16, Vec<u8>), XfrError> {
-    // Create message builder with random ID
     let query_id = rand::random::<u16>();
     let mut msg = MessageBuilder::from_target(StaticCompressor::new(Vec::new()))
         .map_err(|e| XfrError::ProtocolError(format!("Failed to create message builder: {}", e)))?;
@@ -281,8 +278,8 @@ fn build_notify_message(zone_name: &Name<Vec<u8>>) -> Result<(u16, Vec<u8>), Xfr
     let header = msg.header_mut();
     header.set_id(query_id);
     header.set_opcode(Opcode::NOTIFY);
-    header.set_aa(true); // Authoritative
-    header.set_qr(false); // Query, not response
+    header.set_aa(true);
+    header.set_qr(false);
     header.set_rcode(Rcode::NOERROR);
 
     // Add question section (zone SOA)

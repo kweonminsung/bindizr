@@ -39,7 +39,6 @@ class Bind9RndcAdapter(DnsAdapter):
     key = "bind9_rndc"
     resource_services = ["bind9"]
     supports_ixfr = True
-    supports_bulk_api = True
 
     def __init__(self, cfg: dict, project: str):
         super().__init__(cfg, project)

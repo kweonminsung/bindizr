@@ -37,7 +37,6 @@ pub(super) struct UpdateRecord {
 
 #[derive(Debug, Clone)]
 pub(super) struct TsigRecord {
-    #[allow(dead_code)]
     pub name: String,
     pub name_canonical: Vec<u8>,
     pub algorithm: String,
@@ -448,10 +447,8 @@ fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError>
 
         if !jumped {
             consumed += 1 + label_len;
-            pos = label_end;
-        } else {
-            pos = label_end;
         }
+        pos = label_end;
     }
 
     let name = if labels.is_empty() {

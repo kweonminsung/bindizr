@@ -118,24 +118,17 @@ pub(super) async fn apply_update(
     };
 
     if changed {
-        if !config::get_bindizr_config().dns.notify_after_update {
-            log_info!(
-                "NSUPDATE committed for zone {} with serial {}",
-                zone.name,
-                new_serial
-            );
-            return Ok(UpdateResult::Applied { changed });
-        }
-
-        if let Err(e) = xfr::notify::send_notify(Some(&zone.name), false).await {
-            log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
-        }
-
         log_info!(
             "NSUPDATE committed for zone {} with serial {}",
             zone.name,
             new_serial
         );
+
+        if config::get_bindizr_config().dns.notify_after_update {
+            if let Err(e) = xfr::notify::send_notify(Some(&zone.name), false).await {
+                log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
+            }
+        }
     }
 
     Ok(UpdateResult::Applied { changed })

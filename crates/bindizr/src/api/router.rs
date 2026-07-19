@@ -29,7 +29,7 @@ impl ApiRouter {
             ));
         }
 
-        let mut router = Router::new().merge(api_router);
+        let mut router = api_router;
 
         #[cfg(debug_assertions)]
         {

@@ -65,7 +65,6 @@ pub(crate) async fn handle_axfr_with_qtype(
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
     let mut messages_sent = 0usize;
 
-    // Add initial SOA record
     let serial = delta::serial_to_u32(zone.serial)?;
     wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_soa(&zone, serial)

@@ -35,7 +35,6 @@ impl DnsMessageBuilder {
     pub(crate) fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
 
-        // Primary NS
         encode_domain_name(&zone.primary_ns, &mut rdata)?;
 
         // Admin email in DNS SOA mailbox format
@@ -43,7 +42,6 @@ impl DnsMessageBuilder {
             .map_err(|e| XfrError::ProtocolError(e.to_string()))?;
         encode_domain_name(&admin_email, &mut rdata)?;
 
-        // SERIAL, REFRESH, RETRY, EXPIRE, MINIMUM
         rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&(zone.refresh as u32).to_be_bytes());
         rdata.extend_from_slice(&(zone.retry as u32).to_be_bytes());
@@ -292,22 +290,11 @@ impl DnsMessageBuilder {
     ) -> Result<(), XfrError> {
         let mut answer = Vec::new();
 
-        // NAME
         encode_domain_name(name, &mut answer)?;
-
-        // TYPE
         answer.extend_from_slice(&rtype.to_be_bytes());
-
-        // CLASS (IN = 1)
-        answer.extend_from_slice(&1u16.to_be_bytes());
-
-        // TTL
+        answer.extend_from_slice(&1u16.to_be_bytes()); // CLASS (IN = 1)
         answer.extend_from_slice(&ttl.to_be_bytes());
-
-        // RDLENGTH
         answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
-
-        // RDATA
         answer.extend_from_slice(rdata);
 
         self.answers.push(answer);
@@ -566,7 +553,6 @@ pub(crate) fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
 
     let query_id = message.header().id();
 
-    // Extract the first question
     let question = message
         .first_question()
         .ok_or_else(|| XfrError::ProtocolError("No question in DNS query".to_string()))?;

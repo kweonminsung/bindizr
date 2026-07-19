@@ -106,7 +106,7 @@ impl RecordService {
             let mut candidate_updated = Record {
                 id: existing_record.id,
                 name: update_record_request.name.clone(),
-                record_type: record_type.clone(),
+                record_type,
                 value: record_value,
                 ttl: update_record_request.ttl,
                 priority: update_record_request.priority,
@@ -182,7 +182,6 @@ impl RecordService {
         let (updated_record, zone_name) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to update record").await?;
 
-        // Log record update after commit
         log_info!(
             "event=record_update zone={} name={} type={} ttl={} priority={} record_id={}",
             zone_name,
@@ -197,7 +196,6 @@ impl RecordService {
             updated_record.id
         );
 
-        // Send NOTIFY to secondary servers
         if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }

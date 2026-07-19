@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -18,8 +19,6 @@ from lib.metrics import LatencyRecorder  # noqa: E402
 
 
 async def run(adapter, cfg, ctx) -> dict:
-    import time
-
     zone = ctx["zone"]
     ep = adapter.dns_endpoint()
     p = cfg["propagation"]

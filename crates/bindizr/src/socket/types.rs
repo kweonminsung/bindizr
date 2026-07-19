@@ -9,17 +9,14 @@ pub(crate) enum DaemonCommandKind {
     TokenCreate,
     TokenList,
     TokenDelete,
-    // Zone commands
     GetZone,
     ListZones,
     CreateZone,
     DeleteZone,
-    // Record commands
     GetRecord,
     ListRecords,
     CreateRecord,
     DeleteRecord,
-    // Notify commands
     NotifyZone,
 }
 

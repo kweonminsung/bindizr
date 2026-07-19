@@ -32,7 +32,6 @@ class DnsAdapter(abc.ABC):
         self.cfg = cfg
         self.project = project
 
-    # --- lifecycle ----------------------------------------------------------
     @abc.abstractmethod
     async def setup(self) -> None:
         """Bring up containers and wait until ready."""
@@ -41,14 +40,12 @@ class DnsAdapter(abc.ABC):
     async def teardown(self) -> None:
         """Tear down containers and volumes."""
 
-    # --- zone ---------------------------------------------------------------
     @abc.abstractmethod
     async def create_zone(self, zone: str) -> None: ...
 
     @abc.abstractmethod
     async def delete_zone(self, zone: str) -> None: ...
 
-    # --- record CRUD --------------------------------------------------------
     @abc.abstractmethod
     async def create_record(self, zone: str, rec: dict) -> str:
         """Create a record; return a handle for later get/update/delete."""
@@ -63,7 +60,6 @@ class DnsAdapter(abc.ABC):
     @abc.abstractmethod
     async def delete_record(self, zone: str, handle: str) -> bool: ...
 
-    # --- bulk ---------------------------------------------------------------
     #: concurrency used by the default bulk_import
     bulk_concurrency: int = 32
 
@@ -104,7 +100,6 @@ class DnsAdapter(abc.ABC):
     #: populated by bulk_import
     bulk_errors: int = 0
 
-    # --- DNS data plane -----------------------------------------------------
     @abc.abstractmethod
     def dns_endpoint(self) -> Endpoint:
         """Resolver that answers queries for the managed zone."""
@@ -113,6 +108,4 @@ class DnsAdapter(abc.ABC):
         """Server that answers AXFR/IXFR for the managed zone (defaults to DNS)."""
         return self.dns_endpoint()
 
-    # --- capability flags ---------------------------------------------------
     supports_ixfr: bool = True
-    supports_bulk_api: bool = False

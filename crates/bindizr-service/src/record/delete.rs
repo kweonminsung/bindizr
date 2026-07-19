@@ -60,9 +60,6 @@ impl RecordService {
                     }
                 };
 
-            let record_name = existing_record.name.clone();
-            let record_type_str = existing_record.record_type.to_string();
-            let record_value = existing_record.value.clone();
             let new_serial = generate_serial(Some(zone.serial));
 
             validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
@@ -107,9 +104,9 @@ impl RecordService {
 
             Ok::<(String, String, String, String, i32), ServiceError>((
                 zone.name,
-                record_name,
-                record_type_str,
-                record_value,
+                existing_record.name,
+                existing_record.record_type.to_string(),
+                existing_record.value,
                 existing_record.id,
             ))
         }
@@ -118,7 +115,6 @@ impl RecordService {
         let (zone_name, record_name, record_type_str, record_value, deleted_record_id) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to delete record").await?;
 
-        // Log record deletion after commit
         log_info!(
             "event=record_delete zone={} name={} type={} value={} record_id={}",
             zone_name,
@@ -128,7 +124,6 @@ impl RecordService {
             deleted_record_id
         );
 
-        // Send NOTIFY to secondary servers
         if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }

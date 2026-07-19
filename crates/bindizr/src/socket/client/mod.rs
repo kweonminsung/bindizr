@@ -23,7 +23,7 @@ impl DaemonSocketClient {
         command: DaemonCommandKind,
         data: Option<serde_json::Value>,
     ) -> Result<DaemonResponse, String> {
-        let stream = connect_to_daemon_socket().await?;
+        let mut stream = connect_to_daemon_socket().await?;
 
         let cmd = DaemonCommand {
             command,
@@ -32,17 +32,16 @@ impl DaemonSocketClient {
         let json = serde_json::to_string(&cmd)
             .map_err(|e| format!("Failed to serialize command: {}", e))?;
 
-        let mut writer = stream;
-        writer
+        stream
             .write_all(json.as_bytes())
             .await
             .map_err(|e| format!("Failed to write to socket: {}", e))?;
-        writer
+        stream
             .write_all(b"\n")
             .await
             .map_err(|e| format!("Error writing newline to socket: {}", e))?;
 
-        let mut reader = BufReader::new(writer);
+        let mut reader = BufReader::new(stream);
         let mut response = String::new();
 
         reader

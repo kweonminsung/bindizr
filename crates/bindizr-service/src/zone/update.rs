@@ -68,7 +68,6 @@ impl ZoneService {
             },
         )?;
 
-        // Check if zone with the new name already exists (if name is being changed)
         match RepositoryService::get_zone_by_name(&validated.name).await {
             Ok(Some(zone)) => {
                 if zone.id != zone_id {
@@ -218,7 +217,6 @@ impl ZoneService {
         let updated_zone =
             RepositoryService::finish_tx(tx, apply_result, "Failed to update zone").await?;
 
-        // Log zone update after commit
         log_info!(
             "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",
             updated_zone.name,
@@ -227,7 +225,6 @@ impl ZoneService {
             updated_zone.id
         );
 
-        // Send NOTIFY to secondary servers
         if let Err(e) = crate::notify::send_notify_after_update(Some(&updated_zone.name)).await {
             log_warn!(
                 "Failed to send NOTIFY for zone {}: {}",

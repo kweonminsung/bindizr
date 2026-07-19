@@ -48,7 +48,6 @@ impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
             SELECT name, signature, serial, updated_at
             FROM catalog_zone_state
             WHERE name = ?
-            FOR UPDATE
             "#,
         )
         .bind(name)

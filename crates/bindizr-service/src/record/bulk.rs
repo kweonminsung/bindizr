@@ -307,7 +307,6 @@ impl RecordService {
             created_records.len()
         );
 
-        // Send NOTIFY to secondary servers
         let t = Instant::now();
         if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);

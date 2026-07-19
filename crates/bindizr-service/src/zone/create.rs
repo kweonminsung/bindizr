@@ -49,7 +49,6 @@ impl ZoneService {
             }
         };
 
-        // Generate serial if not provided
         let serial = match create_zone_request.serial {
             Some(s) => s,
             None => generate_serial(None),
@@ -108,7 +107,6 @@ impl ZoneService {
         let created_zone =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create zone").await?;
 
-        // Log zone creation after commit
         log_info!(
             "event=zone_create zone={} primary_ns={} serial={} zone_id={}",
             created_zone.name,

@@ -28,22 +28,18 @@ async fn handle_client(stream: UnixStream) {
 
         let raw_response = match parsed {
             Ok(cmd) => match cmd.command {
-                // General commands
                 DaemonCommandKind::Status => status::get_status(),
                 DaemonCommandKind::TokenCreate => token::create_token(&cmd.data).await,
                 DaemonCommandKind::TokenList => token::list_tokens().await,
                 DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
-                // Zone commands
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
                 DaemonCommandKind::DeleteZone => zone::delete_zone(&cmd.data).await,
-                // Record commands
                 DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
-                // Notify commands
                 DaemonCommandKind::NotifyZone => notify::handle_notify_zone(cmd.data).await,
             },
 

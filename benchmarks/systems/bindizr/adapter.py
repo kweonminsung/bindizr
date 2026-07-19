@@ -28,7 +28,6 @@ class BindizrAdapter(DnsAdapter):
     supports_ixfr = True
     # Bindizr exposes a native bulk-insert API and a BIND zone-file import API, so
     # it does not fall back to the base one-by-one bulk path.
-    supports_bulk_api = True
     supports_zone_import = True
     # Records per request: each bulk/import batch is one server-side transaction
     # (single serial bump + NOTIFY), so batch to bound memory and transaction size.

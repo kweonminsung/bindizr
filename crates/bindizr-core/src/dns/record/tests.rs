@@ -75,7 +75,7 @@ fn display_record_value_keeps_split_priority_forms() {
 
 #[test]
 fn display_record_value_leaves_wrong_field_count_unchanged() {
-    // Legacy rows whose field count cannot match any valid MX/SRV form must not be
+    // Values whose field count cannot match any valid MX/SRV form must not be
     // rewritten into a fake hostname (e.g. a trailing numeric field gaining a dot).
     for value in ["", "10 mail.example.com extra"] {
         assert_eq!(

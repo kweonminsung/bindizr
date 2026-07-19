@@ -35,8 +35,6 @@ def _load_all() -> dict[str, dict]:
     return data
 
 
-# --- Markdown table builders -------------------------------------------------
-
 def _md_table(headers: list[str], rows: list[list[Any]]) -> str:
     line = "| " + " | ".join(headers) + " |\n"
     line += "| " + " | ".join("---" for _ in headers) + " |\n"
