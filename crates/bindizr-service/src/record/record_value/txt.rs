@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 pub(super) struct TxtRecordValue<'a> {
     value: &'a str,
 }
@@ -7,7 +9,8 @@ impl<'a> TxtRecordValue<'a> {
         Self { value }
     }
 
-    pub(super) fn canonical(&self) -> String {
-        self.value.to_string()
+    /// TXT values are stored already canonical.
+    pub(super) fn canonical(&self) -> Cow<'a, str> {
+        Cow::Borrowed(self.value)
     }
 }

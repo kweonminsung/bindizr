@@ -175,6 +175,28 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
     }
 
+    pub(super) async fn get_records_by_zone_id_and_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        name: &str,
+    ) -> Result<Vec<Record>, ServiceError> {
+        get_record_repository()
+            .get_by_zone_id_and_name_tx(tx, zone_id, name)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
+    }
+
+    pub(super) async fn get_records_by_zone_id_and_names_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        names: &[String],
+    ) -> Result<Vec<Record>, ServiceError> {
+        get_record_repository()
+            .get_by_zone_id_and_names_tx(tx, zone_id, names)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load records: {}", e)))
+    }
+
     pub(super) async fn create_record(record: Record) -> Result<Record, ServiceError> {
         get_record_repository()
             .create(record)
@@ -190,6 +212,26 @@ impl RepositoryService {
             .create_tx(tx, record)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to create record: {}", e)))
+    }
+
+    pub(super) async fn create_records_tx(
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, ServiceError> {
+        get_record_repository()
+            .create_many_tx(tx, records)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to create records: {}", e)))
+    }
+
+    pub(super) async fn delete_records_tx(
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), ServiceError> {
+        get_record_repository()
+            .delete_many_tx(tx, ids)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to delete records: {}", e)))
     }
 
     pub(super) async fn update_record(record: Record) -> Result<Record, ServiceError> {
@@ -336,6 +378,16 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to create zone change: {}", e)))
     }
 
+    pub(super) async fn create_zone_changes_tx(
+        tx: &mut RepositoryTx<'_>,
+        changes: &[ZoneChange],
+    ) -> Result<(), ServiceError> {
+        get_zone_change_repository()
+            .create_many_tx(tx, changes)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to create zone changes: {}", e)))
+    }
+
     pub(super) async fn get_zone_changes_between_serials(
         zone_id: i32,
         from_serial: i32,
@@ -386,6 +438,18 @@ impl RepositoryService {
             .map_err(|e| ServiceError::Internal(format!("failed to update zone: {}", e)))
     }
 
+    /// Bump only the zone serial, leaving its other columns untouched.
+    pub(super) async fn update_zone_serial_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), ServiceError> {
+        get_zone_repository()
+            .update_serial_tx(tx, zone_id, serial)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to update zone serial: {}", e)))
+    }
+
     pub(super) async fn delete_zone_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -404,6 +468,17 @@ impl RepositoryService {
             .get_by_zone_id_and_serial(zone_id, serial)
             .await
             .map_err(|e| ServiceError::Internal(format!("failed to load snapshot: {}", e)))
+    }
+
+    pub(super) async fn get_zone_snapshots_in_range(
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneSnapshot>, ServiceError> {
+        get_zone_snapshot_repository()
+            .get_by_zone_id_in_serial_range(zone_id, from_serial, to_serial)
+            .await
+            .map_err(|e| ServiceError::Internal(format!("failed to load snapshots: {}", e)))
     }
 
     pub(super) async fn create_api_token(token: ApiToken) -> Result<ApiToken, ServiceError> {

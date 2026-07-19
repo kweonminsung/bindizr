@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
+/// Point-in-time snapshot of a zone's SOA fields at a given serial.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ZoneSnapshot {
     pub id: i32,

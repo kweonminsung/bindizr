@@ -39,6 +39,16 @@ macro_rules! log_trace {
     };
 }
 
+/// Whether debug logging is enabled. Lets hot paths skip building debug-only
+/// data (e.g. per-record timing) when it would only be discarded.
+#[macro_export]
+macro_rules! log_debug_enabled {
+    () => {
+        log::log_enabled!(log::Level::Debug)
+    };
+}
+
+/// Simple `log` implementation that writes to stderr.
 pub struct Logger {
     log_level: Level,
 }
@@ -51,7 +61,6 @@ impl log::Log for Logger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let log_message = if self.log_level == Level::Debug {
-                // Include target in debug logs
                 format!(
                     "{} - {}: {}\n",
                     record.level(),
@@ -59,7 +68,6 @@ impl log::Log for Logger {
                     record.args()
                 )
             } else {
-                // Exclude target for other log levels
                 format!("{}: {}\n", record.level(), record.args())
             };
 
@@ -73,6 +81,7 @@ impl log::Log for Logger {
     }
 }
 
+/// Install the global logger using the configured log level.
 pub fn initialize() {
     let log_level = match config::get_bindizr_config().logging.log_level {
         config::LogLevel::Error => Level::Error,

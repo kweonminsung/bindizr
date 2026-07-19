@@ -7,11 +7,13 @@ use crate::{
     repository::{RepositoryTx, RepositoryTxKind, ZoneFilter, ZoneRepository},
 };
 
+/// SQLite-backed implementation of `ZoneRepository`.
 pub struct SqliteZoneRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteZoneRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -338,6 +340,29 @@ impl ZoneRepository for SqliteZoneRepository {
             .execute(&mut *conn)
             .await?;
 
+        Ok(())
+    }
+
+    async fn update_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), DatabaseError> {
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query("UPDATE zones SET serial = ? WHERE id = ?")
+            .bind(serial)
+            .bind(zone_id)
+            .execute(&mut **sqlite_tx)
+            .await?;
         Ok(())
     }
 

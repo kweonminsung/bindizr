@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use tabled::Tabled;
 
-// Helper function to display Option<i32> in tables
+// Display Option<i32> in tables, using "-" for None.
 fn display_option_i32(opt: &Option<i32>) -> String {
     match opt {
         Some(val) => val.to_string(),
@@ -9,7 +9,7 @@ fn display_option_i32(opt: &Option<i32>) -> String {
     }
 }
 
-// deserialize record value, which can be a string or an array of strings
+// Deserialize a record value, which may be a string or an array of strings.
 fn deserialize_record_value<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -29,7 +29,7 @@ where
     })
 }
 
-/// Table row for zone display
+/// Table row for zone display.
 #[derive(Debug, Deserialize, Tabled)]
 pub(crate) struct ZoneRow {
     #[tabled(rename = "ID")]
@@ -47,7 +47,7 @@ pub(crate) struct ZoneRow {
     pub serial: Option<i32>,
 }
 
-/// Table row for record display
+/// Table row for record display.
 #[derive(Debug, Deserialize, Tabled)]
 pub(crate) struct RecordRow {
     #[tabled(rename = "ID")]
@@ -70,12 +70,14 @@ pub(crate) struct RecordRow {
 }
 
 impl ZoneRow {
+    /// Build a [`ZoneRow`] from a JSON value.
     pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse zone: {}", e))
     }
 }
 
 impl RecordRow {
+    /// Build a [`RecordRow`] from a JSON value.
     pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse record: {}", e))
     }

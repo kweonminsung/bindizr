@@ -1,0 +1,26 @@
+// BIND9 secondary for the Bindizr benchmark.
+// Zones are auto-configured via Bindizr's catalog zone (RFC 9432); the only
+// static config is the catalog secondary itself, pointing at the Bindizr XFR
+// server at a fixed compose IP.
+options {
+    directory "/var/cache/bind";
+    listen-on port 53 { any; };
+    listen-on-v6 port 53 { any; };
+    recursion no;
+    allow-query { any; };
+    allow-transfer { any; };  // let the AXFR benchmark pull the propagated zone
+    allow-notify { any; };
+    dnssec-validation no;
+
+    ixfr-from-differences yes;
+    catalog-zones {
+        zone "catalog.bind" default-primaries { __BINDIZR_IP__ port 53; };
+    };
+};
+
+zone "catalog.bind" {
+    type secondary;
+    primaries { __BINDIZR_IP__ port 53; };
+    file "/var/cache/bind/catalog.bind.zone";
+    ixfr-from-differences yes;
+};

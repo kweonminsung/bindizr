@@ -4,6 +4,7 @@ use serde_json::json;
 
 use crate::socket::types::DaemonResponse;
 
+/// Request payload for the `NotifyZone` daemon command.
 #[derive(Serialize, Deserialize, Debug)]
 pub(super) struct NotifyZoneRequest {
     pub zone_name: Option<String>,
@@ -11,6 +12,7 @@ pub(super) struct NotifyZoneRequest {
     pub force: bool,
 }
 
+/// Handle the `NotifyZone` command by sending DNS NOTIFY for a zone or all zones.
 pub(super) async fn handle_notify_zone(data: serde_json::Value) -> Result<DaemonResponse, String> {
     let request: NotifyZoneRequest = match serde_json::from_value(data) {
         Ok(req) => req,

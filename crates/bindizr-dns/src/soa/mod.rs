@@ -1,3 +1,6 @@
+//! Serves SOA queries over TCP and UDP, used by secondaries to poll the
+//! primary's serial.
+
 use std::net::{IpAddr, SocketAddr};
 
 use domain::base::iana::Rtype;
@@ -14,18 +17,8 @@ pub(crate) async fn handle_tcp_soa(
     client_addr: SocketAddr,
     query_data: &[u8],
 ) -> Result<(), XfrError> {
-    let client_ip = client_addr.ip();
-
-    let response = match build_soa_response(query_data, client_ip).await {
-        Ok(response) => response,
-        Err(XfrError::ZoneNotFound(_)) => {
-            let (zone_name, qtype, _, query_id) = wire::parse_query(query_data)?;
-            wire::build_error_response(query_id, &zone_name, qtype, crate::protocol::RCODE_NOTAUTH)
-        }
-        Err(err) => return Err(err),
-    };
+    let response = soa_response_bytes(query_data, client_addr.ip()).await?;
     wire::write_tcp_message(stream, &response).await?;
-
     Ok(())
 }
 
@@ -34,19 +27,27 @@ pub(crate) async fn handle_udp_soa(
     client_addr: SocketAddr,
     query_data: &[u8],
 ) -> Result<(), XfrError> {
-    let client_ip = client_addr.ip();
+    let response = soa_response_bytes(query_data, client_addr.ip()).await?;
+    socket.send_to(&response, client_addr).await?;
+    Ok(())
+}
 
-    let response = match build_soa_response(query_data, client_ip).await {
-        Ok(response) => response,
+/// Build the SOA response bytes, mapping an unknown zone to a NOTAUTH response
+/// (TCP and UDP send identical bytes).
+async fn soa_response_bytes(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<u8>, XfrError> {
+    match build_soa_response(query_data, client_ip).await {
+        Ok(response) => Ok(response),
         Err(XfrError::ZoneNotFound(_)) => {
             let (zone_name, qtype, _, query_id) = wire::parse_query(query_data)?;
-            wire::build_error_response(query_id, &zone_name, qtype, crate::protocol::RCODE_NOTAUTH)
+            Ok(wire::build_error_response(
+                query_id,
+                &zone_name,
+                qtype,
+                crate::protocol::RCODE_NOTAUTH,
+            ))
         }
-        Err(err) => return Err(err),
-    };
-    socket.send_to(&response, client_addr).await?;
-
-    Ok(())
+        Err(err) => Err(err),
+    }
 }
 
 async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<u8>, XfrError> {

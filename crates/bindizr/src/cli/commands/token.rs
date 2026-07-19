@@ -4,6 +4,7 @@ use serde_json::json;
 
 use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
 
+/// Subcommands for managing API tokens.
 #[derive(Subcommand, Debug)]
 pub(crate) enum TokenCommand {
     /// Create a new API token
@@ -24,6 +25,7 @@ pub(crate) enum TokenCommand {
     },
 }
 
+/// Handle the `token` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
@@ -42,7 +44,6 @@ async fn create_token(
     description: Option<String>,
     expires_in_days: Option<i64>,
 ) -> Result<(), String> {
-    // Create socket request
     let res = client
         .send_command(
             DaemonCommandKind::TokenCreate,
@@ -58,7 +59,6 @@ async fn create_token(
     let token: ApiToken = serde_json::from_value(res.data)
         .map_err(|e| format!("Failed to parse token creation response: {}", e))?;
 
-    // Print token details
     println!("API token created successfully:");
     println!("ID: {}", token.id);
     println!("Token: {}", token.token);
@@ -79,7 +79,6 @@ async fn create_token(
 }
 
 async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
-    // Create socket request
     let res = client
         .send_command(DaemonCommandKind::TokenList, None)
         .await?;
@@ -112,7 +111,6 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
 }
 
 async fn delete_token(client: &DaemonSocketClient, token_id: i32) -> Result<(), String> {
-    // Create socket request
     let res = client
         .send_command(
             DaemonCommandKind::TokenDelete,

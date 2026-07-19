@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
+/// Tracked state of the BIND catalog zone used to detect changes.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct CatalogZoneState {
     pub name: String,

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub(crate) use bindizr_core::dns::CATALOG_ZONE_NAME;
 use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
@@ -7,7 +9,7 @@ use tokio::net::TcpStream;
 use super::{delta, error::XfrError, wire};
 use crate::{log_info, model::zone::Zone, service::zone::ZoneService};
 
-/// Generate the catalog zone and its member list
+/// Generates the catalog zone and its member zone list.
 pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
     log_info!("Generating catalog zone: {}", CATALOG_ZONE_NAME);
 
@@ -15,7 +17,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
 
-    // Filter out catalog zone itself
+    // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = all_zones
         .iter()
         .map(|z| z.name.clone())
@@ -24,11 +26,11 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
 
     log_info!("Catalog zone contains {} member zones", member_zones.len());
 
-    // Create catalog zone metadata. This is a virtual zone
+    // The catalog zone is virtual (no DB row); build its metadata in memory.
     let serial = generate_catalog_serial(&member_zones, &all_zones).await?;
 
     let catalog_zone = Zone {
-        id: 0, // Virtual zone ID
+        id: 0,
         name: CATALOG_ZONE_NAME.to_string(),
         primary_ns: "invalid".to_string(),
         admin_email: "invalid".to_string(),
@@ -53,6 +55,13 @@ async fn generate_catalog_serial(member_zones: &[String], zones: &[Zone]) -> Res
 }
 
 fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
+    // Index serials by lowercased name once so the per-member lookup below is
+    // O(1) instead of a full scan of `zones` per member.
+    let serial_by_name: HashMap<String, i32> = zones
+        .iter()
+        .map(|z| (z.name.to_ascii_lowercase(), z.serial))
+        .collect();
+
     let mut members = member_zones
         .iter()
         .map(|member| member.to_ascii_lowercase())
@@ -61,10 +70,10 @@ fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
 
     let mut hasher = Sha256::new();
     for member in members {
-        if let Some(zone) = zones.iter().find(|z| z.name.eq_ignore_ascii_case(&member)) {
+        if let Some(serial) = serial_by_name.get(&member) {
             hasher.update(member.as_bytes());
             hasher.update(b"\0");
-            hasher.update(zone.serial.to_string().as_bytes());
+            hasher.update(serial.to_string().as_bytes());
             hasher.update(b"\n");
         }
     }
@@ -90,28 +99,28 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     let mut messages_sent = 0usize;
     let serial = delta::serial_to_u32(catalog_zone.serial)?;
 
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_catalog_soa(&catalog_zone, serial)
     })
     .await?;
 
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_catalog_ns(&catalog_zone)
     })
     .await?;
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_catalog_version(&catalog_zone)
     })
     .await?;
 
     for member_zone in &member_zones {
-        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
             builder.add_catalog_ptr(&catalog_zone, member_zone)
         })
         .await?;
     }
 
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_catalog_soa(&catalog_zone, serial)
     })
     .await?;

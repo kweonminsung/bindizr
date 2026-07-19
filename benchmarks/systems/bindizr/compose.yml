@@ -1,0 +1,131 @@
+# Bindizr + one BIND9 secondary. BIND resolves Bindizr's IP at startup (no fixed
+# subnet). Database backend is selectable for Benchmark 8 via env:
+#   BINDIZR_DB_TYPE = sqlite (default) | mysql | postgresql
+# mysql/postgresql services are activated by matching COMPOSE_PROFILES.
+services:
+  bindizr:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    image: bindizr:local
+    environment:
+      BINDIZR_DATABASE_TYPE: ${BINDIZR_DB_TYPE:-sqlite}
+      # ?mode=rwc lets sqlx create the DB file on first connect (create_if_missing
+      # is off by default in Bindizr, which otherwise expects a pre-existing file).
+      BINDIZR_SQLITE_FILE_PATH: /var/lib/bindizr/bindizr.db?mode=rwc
+      BINDIZR_MYSQL_SERVER_URL: ${BINDIZR_MYSQL_URL:-mysql://bindizr:bindizr@mysql:3306/bindizr}
+      BINDIZR_POSTGRESQL_SERVER_URL: ${BINDIZR_PG_URL:-postgresql://bindizr:bindizr@postgres:5432/bindizr}
+      BINDIZR_API_LISTEN_ADDR: "0.0.0.0"
+      BINDIZR_API_PORT: "8000"
+      BINDIZR_API_REQUIRE_AUTHENTICATION: "false"
+      BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
+      BINDIZR_DNS_PORT: "53"
+      BINDIZR_SECONDARY_ADDRS: bind9:53
+      BINDIZR_NOTIFY_AFTER_UPDATE: ${BINDIZR_NOTIFY_AFTER_UPDATE:-true}
+      # sync = reload/NOTIFY inline on the write path; async = queued to a
+      # background worker that coalesces NOTIFYs per zone over apply_batch_ms.
+      BINDIZR_APPLY_MODE: ${BINDIZR_APPLY_MODE:-sync}
+      BINDIZR_APPLY_BATCH_MS: ${BINDIZR_APPLY_BATCH_MS:-50}
+      # Cache rendered zone records by serial so repeated AXFRs skip the DB read.
+      BINDIZR_ZONE_CACHE: ${BINDIZR_ZONE_CACHE:-true}
+      BINDIZR_NOTIFY_RETRIES: "3"
+      BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
+      # debug surfaces the per-stage timing lines (event=*_timing) from bulk/import.
+      BINDIZR_LOG_LEVEL: ${BINDIZR_LOG_LEVEL:-info}
+    ports:
+      - "${BINDIZR_API_HOST_PORT:-18000}:8000/tcp"
+    volumes:
+      - bindizr-data:/var/lib/bindizr
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    healthcheck:
+      test: ["CMD-SHELL", "bindizr status >/dev/null 2>&1 || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  bind9:
+    image: internetsystemsconsortium/bind9:9.21
+    # Resolve Bindizr's (dynamic) IP at startup and template it into named.conf,
+    # so no fixed subnet is needed (avoids subnet clashes when stacks run back to
+    # back, e.g. Benchmark 8's per-backend runs).
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        IP=$$(getent hosts bindizr | awk '{print $$1; exit}')
+        sed "s/__BINDIZR_IP__/$$IP/g" /etc/bind/named.conf.template > /tmp/named.conf
+        # Drop to the bind user (owns /var/cache/bind) after templating as root.
+        exec named -u bind -g -c /tmp/named.conf
+    depends_on:
+      bindizr:
+        condition: service_started
+    ports:
+      - "${BINDIZR_DNS_HOST_PORT:-15353}:53/tcp"
+      - "${BINDIZR_DNS_HOST_PORT:-15353}:53/udp"
+    volumes:
+      - ./named.conf.template:/etc/bind/named.conf.template:ro
+      - bind9-cache:/var/cache/bind
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:9.7
+    profiles: ["mysql"]
+    environment:
+      MYSQL_DATABASE: bindizr
+      MYSQL_USER: bindizr
+      MYSQL_PASSWORD: bindizr
+      MYSQL_ROOT_PASSWORD: bindizr-root
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -ubindizr -pbindizr --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_DB: bindizr
+      POSTGRES_USER: bindizr
+      POSTGRES_PASSWORD: bindizr
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bindizr"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
+networks:
+  bench-net:
+
+volumes:
+  bindizr-data:
+  bind9-cache:

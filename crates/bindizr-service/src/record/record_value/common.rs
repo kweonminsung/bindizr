@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::{split_presentation_labels, to_fqdn};
+use bindizr_core::dns::name::{presentation_labels, to_fqdn_lowercase};
 
 use crate::{
     error::ServiceError,
@@ -74,7 +74,7 @@ pub(super) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
         )));
     }
 
-    for label in split_presentation_labels(without_trailing_dot)
+    for label in presentation_labels(without_trailing_dot)
         .map_err(|e| ServiceError::BadRequest(e.to_string()))?
     {
         validate_domain_record_label(field, &label)?;
@@ -119,5 +119,5 @@ fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceE
 }
 
 pub(super) fn canonical_domain_value(value: &str) -> String {
-    to_fqdn(value).to_ascii_lowercase()
+    to_fqdn_lowercase(value)
 }

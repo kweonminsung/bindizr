@@ -1,3 +1,6 @@
+//! RFC 2136 dynamic DNS update (nsupdate) handling, including TSIG-authenticated
+//! requests.
+
 mod auth;
 mod parser;
 mod prerequisite;
@@ -154,7 +157,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
     }
 }
 
-/// Returns the end offset of the first question (zone) section, or None if the message is invalid
+/// Returns the end offset of the first question (zone) section, or None if the message is invalid.
 fn zone_section_end(message: &[u8]) -> Option<usize> {
     let mut offset = DNS_HEADER_LEN;
 

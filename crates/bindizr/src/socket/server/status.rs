@@ -4,6 +4,7 @@ use bindizr_core::config;
 
 use crate::socket::types::{DaemonResponse, DaemonStatusResponse};
 
+/// Handle the `Status` command by returning the daemon's PID, version, and config.
 pub(super) fn get_status() -> Result<DaemonResponse, String> {
     let pid = Some(process::id());
     let version = env!("CARGO_PKG_VERSION");

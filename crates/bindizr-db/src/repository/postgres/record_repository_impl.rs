@@ -7,11 +7,13 @@ use crate::{
     repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
 };
 
+/// PostgreSQL-backed implementation of `RecordRepository`.
 pub struct PostgresRecordRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresRecordRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Postgres>) -> Self {
         PostgresRecordRepository { pool }
     }
@@ -75,6 +77,69 @@ impl RecordRepository for PostgresRecordRepository {
 
         record.id = result.get::<i32, _>(0);
         Ok(record)
+    }
+
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        const CHUNK: usize = 500;
+        let mut out = Vec::with_capacity(records.len());
+        for chunk in records.chunks(CHUNK) {
+            let mut sql = String::from(
+                "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
+            );
+            let mut p = 1;
+            for i in 0..chunk.len() {
+                if i > 0 {
+                    sql.push(',');
+                }
+                sql.push_str(&format!(
+                    "(${}, ${}, ${}, ${}, ${}, ${})",
+                    p,
+                    p + 1,
+                    p + 2,
+                    p + 3,
+                    p + 4,
+                    p + 5
+                ));
+                p += 6;
+            }
+            sql.push_str(" RETURNING id");
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for r in chunk {
+                query = query
+                    .bind(r.name.clone())
+                    .bind(r.record_type.to_string())
+                    .bind(r.value.clone())
+                    .bind(r.ttl)
+                    .bind(r.priority)
+                    .bind(r.zone_id);
+            }
+            let rows = query
+                .fetch_all(&mut **postgres_tx)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            // Postgres returns RETURNING rows in the order the VALUES were given.
+            for (r, row) in chunk.iter().zip(rows) {
+                let mut rec = r.clone();
+                rec.id = row.get::<i32, _>(0);
+                out.push(rec);
+            }
+        }
+        Ok(out)
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
@@ -188,6 +253,81 @@ impl RecordRepository for PostgresRecordRepository {
         .await?;
 
         Ok(records)
+    }
+
+    async fn get_by_zone_id_and_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        name: &str,
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        // Owner names are stored lowercase, so match against a lowercased bind
+        // and keep the column function-free so idx_records_zone_name is used.
+        let records = sqlx::query_as::<_, Record>(
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name FOR UPDATE",
+        )
+        .bind(zone_id)
+        .bind(name.to_lowercase())
+        .fetch_all(&mut **postgres_tx)
+        .await?;
+
+        Ok(records)
+    }
+
+    async fn get_by_zone_id_and_names_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        names: &[String],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        // Only same-name rows can conflict, so match names lowercased (keeping the
+        // column function-free so idx_records_zone_name is used) and lock just those.
+        // One round-trip per chunk; keep it large (dominated bulk-import time on
+        // networked backends). 5000 is well under the 65535 placeholder limit.
+        const CHUNK: usize = 5000;
+        let mut out = Vec::new();
+        for chunk in names.chunks(CHUNK) {
+            let mut sql = String::from(
+                "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name IN (",
+            );
+            for i in 0..chunk.len() {
+                if i > 0 {
+                    sql.push(',');
+                }
+                sql.push_str(&format!("${}", i + 2));
+            }
+            sql.push_str(") FOR UPDATE");
+
+            let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+            for name in chunk {
+                query = query.bind(name.to_lowercase());
+            }
+            let mut rows = query.fetch_all(&mut **postgres_tx).await?;
+            out.append(&mut rows);
+        }
+        Ok(out)
     }
 
     async fn get(
@@ -543,6 +683,31 @@ impl RecordRepository for PostgresRecordRepository {
 
         sqlx::query("DELETE FROM records WHERE id = $1")
             .bind(id)
+            .execute(&mut **postgres_tx)
+            .await?;
+        Ok(())
+    }
+
+    async fn delete_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), DatabaseError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query("DELETE FROM records WHERE id = ANY($1)")
+            .bind(ids)
             .execute(&mut **postgres_tx)
             .await?;
         Ok(())

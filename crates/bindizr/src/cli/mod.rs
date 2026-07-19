@@ -27,6 +27,7 @@ impl service::notify::NotifySender for DnsNotifySender {
     }
 }
 
+/// Top-level CLI argument parser.
 #[derive(Parser, Debug)]
 #[command(name = "bindizr", version, about)]
 pub(crate) struct Args {
@@ -34,6 +35,7 @@ pub(crate) struct Args {
     pub command: Command,
 }
 
+/// Top-level CLI subcommands.
 #[derive(Subcommand, Debug)]
 pub(crate) enum Command {
     /// Start bindizr on foreground
@@ -71,18 +73,13 @@ pub(crate) enum Command {
     },
 }
 
+/// Initialize config, logging, database, DNS, socket, and API servers, then run until Ctrl+C.
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
-    // Initialize Configuration
-    if let Some(file) = config_file {
-        // Load configuration from the specified file
-        config::initialize(Some(file));
-    } else {
-        // Use default configuration file
-        config::initialize(None);
-    }
+    config::initialize(config_file);
 
     logger::initialize();
     service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
+    service::notify::init_apply_worker();
     database::initialize().await;
     dns::initialize().await;
 
@@ -100,7 +97,6 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     socket::server::initialize().await?;
     api::initialize().await?;
 
-    // Wait only for Ctrl+C signal, ignore all stdin input
     tokio::signal::ctrl_c()
         .await
         .map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
@@ -110,10 +106,10 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+/// Parse CLI arguments and dispatch to the matching command handler.
 pub async fn execute() {
     let args = Args::parse();
 
-    // Execute command
     if let Err(e) = match args.command {
         Command::Start { config } => commands::start::handle_command(config).await,
         Command::Status => commands::status::handle_command().await,

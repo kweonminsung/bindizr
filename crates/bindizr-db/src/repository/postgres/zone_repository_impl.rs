@@ -7,11 +7,13 @@ use crate::{
     repository::{RepositoryTx, RepositoryTxKind, ZoneFilter, ZoneRepository},
 };
 
+/// PostgreSQL-backed implementation of `ZoneRepository`.
 pub struct PostgresZoneRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresZoneRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -343,6 +345,29 @@ impl ZoneRepository for PostgresZoneRepository {
             .execute(&mut *conn)
             .await?;
 
+        Ok(())
+    }
+
+    async fn update_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), DatabaseError> {
+        let postgres_tx = match &mut tx.0 {
+            RepositoryTxKind::PostgreSQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query("UPDATE zones SET serial = $1 WHERE id = $2")
+            .bind(serial)
+            .bind(zone_id)
+            .execute(&mut **postgres_tx)
+            .await?;
         Ok(())
     }
 

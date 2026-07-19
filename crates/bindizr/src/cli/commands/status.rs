@@ -5,10 +5,10 @@ use crate::socket::{
     types::{DaemonCommandKind, DaemonStatusResponse},
 };
 
+/// Handle the `status` subcommand by querying the daemon and printing its status.
 pub(crate) async fn handle_command() -> Result<(), String> {
     let client = DaemonSocketClient::new();
 
-    // Create socket request
     let res = client.send_command(DaemonCommandKind::Status, None).await?;
 
     log_debug!("Status command result: {:?}", res);

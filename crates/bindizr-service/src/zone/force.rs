@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl ZoneService {
+    /// Force-increment the serial of one zone by name, or of every zone when `None`.
     pub async fn force_increment_serial(
         zone_name: Option<&str>,
     ) -> Result<Vec<Zone>, ServiceError> {
@@ -18,6 +19,9 @@ impl ZoneService {
                 let mut bumped_zones = Vec::with_capacity(zones.len());
 
                 for zone in zones {
+                    // Bump each zone in its own transaction so the new serial
+                    // derives from the current row and a concurrent edit to other
+                    // fields is not clobbered.
                     bumped_zones.push(Self::force_increment_zone_serial(&zone.name).await?);
                 }
 
@@ -52,7 +56,7 @@ impl ZoneService {
                 &mut tx,
                 Zone {
                     serial: new_serial,
-                    ..zone.clone()
+                    ..zone
                 },
             )
             .await

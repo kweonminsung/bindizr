@@ -4,11 +4,14 @@ use utoipa::{
 };
 
 use super::types::{
-    CreateRecordRequest, CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse,
-    MessageResponse, NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse,
-    RecordValueRequest, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+    BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
+    CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, ImportMode,
+    ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse,
+    NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse, RecordValueRequest,
+    UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
 };
 
+/// OpenAPI document for the HTTP API (debug builds only).
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -22,14 +25,23 @@ use super::types::{
         super::record::create_record,
         super::record::update_record,
         super::record::delete_record,
+        super::record::create_records_bulk,
+        super::zone::import_zone,
         super::notify::notify_zones
     ),
     components(schemas(
+        BulkRecordItem,
+        BulkRecordsResponse,
+        CreateBulkRecordsRequest,
         CreateRecordRequest,
         CreateZoneRequest,
         ErrorResponse,
         GetRecordResponse,
         GetZoneResponse,
+        ImportMode,
+        ImportSummary,
+        ImportZoneFileRequest,
+        ImportZoneFileResponse,
         MessageResponse,
         NotifyZoneRequest,
         Pagination,

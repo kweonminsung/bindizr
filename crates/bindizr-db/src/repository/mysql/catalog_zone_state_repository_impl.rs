@@ -7,11 +7,13 @@ use crate::{
     repository::{CatalogZoneStateRepository, RepositoryTx, RepositoryTxKind},
 };
 
+/// MySQL-backed implementation of `CatalogZoneStateRepository`.
 pub struct MySqlCatalogZoneStateRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlCatalogZoneStateRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }

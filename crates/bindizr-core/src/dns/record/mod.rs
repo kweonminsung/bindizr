@@ -1,6 +1,7 @@
 use super::{name::to_fqdn_lowercase, txt};
 use crate::model::record::RecordType;
 
+/// Resolve a stored owner name to its display FQDN within `zone_name`.
 pub fn display_record_owner_name(stored_name: &str, zone_name: &str) -> String {
     let zone_fqdn = to_fqdn_lowercase(zone_name);
     let trimmed = stored_name.trim();
@@ -21,6 +22,7 @@ pub fn display_record_owner_name(stored_name: &str, zone_name: &str) -> String {
     }
 }
 
+/// Format a stored record value for display according to its `record_type`.
 pub fn display_record_value(value: &str, record_type: &RecordType) -> String {
     if *record_type == RecordType::TXT {
         return match txt::decode_raw_txt_value(value) {

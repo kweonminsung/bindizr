@@ -3,6 +3,7 @@ use std::fmt;
 use serde::Serialize;
 use tabled::{Table, Tabled, settings::Style};
 
+/// Output format for CLI results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputFormat {
     Json,
@@ -36,7 +37,7 @@ impl std::str::FromStr for OutputFormat {
     }
 }
 
-/// Print output with table support
+/// Print serialized output as JSON, YAML, or a formatted table.
 pub(crate) fn print_output_with_table<T, U>(
     data: &T,
     format: OutputFormat,

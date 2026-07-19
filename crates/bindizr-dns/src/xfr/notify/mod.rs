@@ -14,8 +14,8 @@ use crate::{
     service::zone::ZoneService,
 };
 
-/// Send DNS NOTIFY to all configured DNS servers for a zone.
-/// If zone_name is None, sends NOTIFY for all zones. If force is true, increments the target zone serial before notifying.
+/// Sends DNS NOTIFY to all configured secondary servers.
+/// A `None` zone_name notifies all zones; `force` bumps the target serial first.
 pub async fn send_notify(zone_name: Option<&str>, force: bool) -> Result<(), XfrError> {
     if force {
         force_increment_serial(zone_name).await?;
@@ -50,7 +50,7 @@ async fn force_increment_serial(zone_name: Option<&str>) -> Result<(), XfrError>
     Ok(())
 }
 
-/// Send DNS NOTIFY for all zones
+/// Sends DNS NOTIFY for every zone.
 async fn send_notify_for_all_zones() -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for all zones");
 
@@ -82,7 +82,7 @@ async fn send_notify_for_all_zones() -> Result<(), XfrError> {
     }
 }
 
-/// Send DNS NOTIFY to all configured DNS servers for a specific zone
+/// Sends DNS NOTIFY to all configured secondary servers for one zone.
 async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
 
@@ -94,7 +94,7 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
             .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;
     }
 
-    // Get secondary servers from config (comma-separated list)
+    // Secondary servers come from config as a comma-separated list.
     let secondary_servers_str = &config::get_bindizr_config().dns.secondary_addrs;
     if secondary_servers_str.trim().is_empty() {
         log_info!("No secondary DNS servers configured");
@@ -120,13 +120,12 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     let notify_timeout = Duration::from_secs(notify_config.notify_timeout_secs);
     let notify_retries = notify_config.notify_retries;
 
-    // Parse zone name - encode to DNS wire format
+    // Encode the zone name to DNS wire format.
     let mut zone_name_bytes = Vec::new();
     wire::encode_domain_name(zone_name, &mut zone_name_bytes)?;
     let qname = Name::from_octets(zone_name_bytes)
         .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
 
-    // Send NOTIFY to each secondary DNS server
     for server_addr in server_addresses {
         match send_notify_to_server(&qname, server_addr, notify_timeout, notify_retries).await {
             Ok(()) => {
@@ -183,7 +182,7 @@ fn format_failures(failures: &[String]) -> String {
     }
 }
 
-/// Send a single NOTIFY message to a server
+/// Sends a NOTIFY to one server, retrying up to the configured limit.
 async fn send_notify_to_server(
     zone_name: &Name<Vec<u8>>,
     server_addr: SocketAddr,
@@ -221,10 +220,9 @@ async fn send_notify_to_server_once(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<(), XfrError> {
-    // Build NOTIFY message
     let (query_id, notify_message) = build_notify_message(zone_name)?;
 
-    // Bind to appropriate address based on target
+    // Bind a local socket matching the target's address family.
     let bind_addr = if server_addr.is_ipv4() {
         "0.0.0.0:0"
     } else {
@@ -239,7 +237,6 @@ async fn send_notify_to_server_once(
         .await
         .map_err(XfrError::IoError)?;
 
-    // Send NOTIFY with timeout
     let sent = tokio::time::timeout(timeout, socket.send(&notify_message))
         .await
         .map_err(|_| XfrError::ProtocolError("NOTIFY send timeout".to_string()))?
@@ -273,7 +270,7 @@ async fn send_notify_to_server_once(
     Ok(())
 }
 
-/// Build a DNS NOTIFY message (RFC 1996)
+/// Builds a DNS NOTIFY message (RFC 1996).
 fn build_notify_message(zone_name: &Name<Vec<u8>>) -> Result<(u16, Vec<u8>), XfrError> {
     // Create message builder with random ID
     let query_id = rand::random::<u16>();

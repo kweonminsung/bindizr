@@ -3,6 +3,7 @@ pub const MAX_DNS_LABEL_LEN: usize = 63;
 /// Maximum length of a domain name, in bytes (RFC 1035).
 pub const MAX_DOMAIN_LEN: usize = 253;
 
+/// Errors from parsing domain names or email addresses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NameError {
     DanglingEscape,
@@ -20,6 +21,35 @@ impl std::fmt::Display for NameError {
 
 impl std::error::Error for NameError {}
 
+/// Labels of a presentation-format name.
+pub enum PresentationLabels<'a> {
+    Borrowed(std::str::Split<'a, char>),
+    Owned(std::vec::IntoIter<String>),
+}
+
+impl<'a> Iterator for PresentationLabels<'a> {
+    type Item = std::borrow::Cow<'a, str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Borrowed(labels) => labels.next().map(std::borrow::Cow::Borrowed),
+            Self::Owned(labels) => labels.next().map(std::borrow::Cow::Owned),
+        }
+    }
+}
+
+/// Iterate a presentation-format name's labels, honoring `\` escapes.
+pub fn presentation_labels(name: &str) -> Result<PresentationLabels<'_>, NameError> {
+    if name.contains('\\') {
+        Ok(PresentationLabels::Owned(
+            split_presentation_labels(name)?.into_iter(),
+        ))
+    } else {
+        Ok(PresentationLabels::Borrowed(name.split('.')))
+    }
+}
+
+/// Split a presentation-format name into labels, honoring `\` escapes.
 pub fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
     let mut labels = Vec::new();
     let mut label = String::new();
@@ -50,6 +80,7 @@ pub fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
     Ok(labels)
 }
 
+/// Return `value` as a lowercase, trailing-dot FQDN.
 pub fn to_fqdn_lowercase(value: &str) -> String {
     format!(
         "{}.",
@@ -57,6 +88,7 @@ pub fn to_fqdn_lowercase(value: &str) -> String {
     )
 }
 
+/// Return `value` with a single trailing dot, preserving case.
 pub fn to_fqdn(value: &str) -> String {
     format!("{}.", value.trim_end_matches('.'))
 }
@@ -83,40 +115,18 @@ pub fn to_owner_fqdn(name: &str, zone: &str) -> String {
     format!("{}.{}.", owner_trimmed, zone_trimmed)
 }
 
+/// Whether `name` equals `zone` or is a subdomain of it (exact string match).
 pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
     name == zone || name.ends_with(&format!(".{}", zone))
 }
 
-pub fn to_relative_domain(fqdn: &str, zone_name: &str) -> String {
-    let fqdn = to_fqdn(fqdn);
-    let zone = to_fqdn(zone_name);
-
-    if fqdn.eq_ignore_ascii_case(&zone) {
-        return "@".to_string();
-    }
-
-    let fqdn_lower = fqdn.to_ascii_lowercase();
-    let zone_lower = zone.to_ascii_lowercase();
-
-    if is_same_or_subdomain_fqdn(&fqdn_lower, &zone_lower) {
-        let relative_part = &fqdn[..fqdn.len() - zone.len()];
-        relative_part.trim_end_matches('.').to_string()
-    } else {
-        fqdn.trim_end_matches('.').to_string()
-    }
-}
-
-pub fn is_in_bailiwick(name: &str, zone_name: &str) -> bool {
-    let name = to_fqdn(name).to_ascii_lowercase();
-    let zone = to_fqdn(zone_name).to_ascii_lowercase();
-
-    is_same_or_subdomain_fqdn(&name, &zone)
-}
-
+/// Whether `name` refers to the zone apex (`@` or the zone name itself).
 pub fn is_apex_name(name: &str, zone_name: &str) -> bool {
     name == "@" || to_fqdn(name).eq_ignore_ascii_case(&to_fqdn(zone_name))
 }
 
+/// Convert an email address into SOA RNAME mailbox form, escaping the
+/// local part's dots.
 pub fn email_to_soa_mailbox(value: &str) -> Result<String, NameError> {
     if value.matches('@').count() != 1 {
         return Err(NameError::InvalidEmail);

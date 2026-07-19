@@ -6,7 +6,7 @@ use axum::{
 use serde_json::json;
 use thiserror::Error;
 
-/// API-specific error type that can be converted to HTTP responses
+/// API error type that can be converted into an HTTP response.
 #[derive(Debug, Error)]
 pub(crate) enum ApiError {
     #[error("Bad request: {0}")]

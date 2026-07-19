@@ -1,4 +1,7 @@
-use super::{RecordService, validation::validate_record_update_constraints};
+use super::{
+    RecordService,
+    validation::{normalize_record_owner_name, validate_record_update_constraints_normalized},
+};
 use crate::{
     error::ServiceError,
     log_error, log_info, log_warn,
@@ -13,10 +16,13 @@ use crate::{
 };
 
 impl RecordService {
+    /// Update a record by id, bumping the zone serial and recording DEL+ADD changes for IXFR.
     pub async fn update_by_id(
         record_id: i32,
         update_record_request: &UpdateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
+        // Resolve zone_id with a non-locking read so the tx locks zone before
+        // record (the create/bulk/import order); the reverse can deadlock.
         let zone_id = match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => record.zone_id,
             Ok(None) => {
@@ -77,16 +83,25 @@ impl RecordService {
                 .to_storage_value(&record_type)
                 .map_err(ServiceError::BadRequest)?;
 
-            let zone_records =
-                match RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await {
-                    Ok(records) => records,
-                    Err(e) => {
-                        log_error!("Failed to load zone records: {}", e);
-                        return Err(ServiceError::Internal(
-                            "Failed to update record".to_string(),
-                        ));
-                    }
-                };
+            // Only records sharing the new owner name can conflict, so load just
+            // those instead of the whole zone.
+            let lookup_owner =
+                normalize_record_owner_name(&update_record_request.name, &zone.name)?;
+            let zone_records = match RepositoryService::get_records_by_zone_id_and_name_tx(
+                &mut tx,
+                zone.id,
+                &lookup_owner.stored_name,
+            )
+            .await
+            {
+                Ok(records) => records,
+                Err(e) => {
+                    log_error!("Failed to load zone records: {}", e);
+                    return Err(ServiceError::Internal(
+                        "Failed to update record".to_string(),
+                    ));
+                }
+            };
 
             let mut candidate_updated = Record {
                 id: existing_record.id,
@@ -99,13 +114,14 @@ impl RecordService {
                 created_at: existing_record.created_at,
             };
 
-            let normalized_owner = validate_record_update_constraints(
+            validate_record_update_constraints_normalized(
                 &zone,
                 &zone_records,
                 &existing_record,
                 &candidate_updated,
+                &lookup_owner.stored_name,
             )?;
-            candidate_updated.name = normalized_owner.stored_name;
+            candidate_updated.name = lookup_owner.stored_name;
 
             let new_serial = generate_serial(Some(zone.serial));
             let zone_name = zone.name.clone();
@@ -118,24 +134,15 @@ impl RecordService {
                 })?;
 
             // Increment zone serial so IXFR consumers can detect this change
-            RepositoryService::update_zone_tx(
-                &mut tx,
-                crate::model::zone::Zone {
-                    serial: new_serial,
-                    ..zone.clone()
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
-                ServiceError::Internal("Failed to update zone serial".to_string())
-            })?;
+            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to update zone serial: {}", e);
+                    ServiceError::Internal("Failed to update zone serial".to_string())
+                })?;
 
-            // Record zone changes for IXFR
-
-            // Delete old record
-            RepositoryService::create_zone_change_tx(
-                &mut tx,
+            // Record DEL(old)+ADD(new) zone changes for IXFR in one batch.
+            let changes = vec![
                 ZoneChange {
                     id: 0,
                     zone_id: zone.id,
@@ -147,16 +154,6 @@ impl RecordService {
                     record_ttl: existing_record.ttl,
                     record_priority: existing_record.priority,
                 },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change (DEL): {}", e);
-                ServiceError::Internal("Failed to create zone change".to_string())
-            })?;
-
-            // Add new record
-            RepositoryService::create_zone_change_tx(
-                &mut tx,
                 ZoneChange {
                     id: 0,
                     zone_id: zone.id,
@@ -168,12 +165,13 @@ impl RecordService {
                     record_ttl: update_record_request.ttl,
                     record_priority: update_record_request.priority,
                 },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change (ADD): {}", e);
-                ServiceError::Internal("Failed to create zone change".to_string())
-            })?;
+            ];
+            RepositoryService::create_zone_changes_tx(&mut tx, &changes)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to create zone changes: {}", e);
+                    ServiceError::Internal("Failed to create zone change".to_string())
+                })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 

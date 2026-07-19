@@ -1,0 +1,27 @@
+# Technitium DNS Server — integrated authoritative server with an HTTP API.
+services:
+  technitium:
+    image: technitium/dns-server:latest
+    environment:
+      DNS_SERVER_ADMIN_PASSWORD: "admin"
+      DNS_SERVER_WEB_SERVICE_HTTP_PORT: "5380"
+    ports:
+      - "${TECHNITIUM_API_HOST_PORT:-15380}:5380/tcp"
+      - "${TECHNITIUM_DNS_HOST_PORT:-15355}:53/tcp"
+      - "${TECHNITIUM_DNS_HOST_PORT:-15355}:53/udp"
+    volumes:
+      - technitium-config:/etc/dns
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
+networks:
+  bench-net:
+
+volumes:
+  technitium-config:

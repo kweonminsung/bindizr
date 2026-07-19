@@ -1,3 +1,7 @@
+//! Per-record-type parsing, validation, and storage encoding of record values.
+
+use std::borrow::Cow;
+
 use crate::{error::ServiceError, model::record::RecordType};
 
 mod a;
@@ -59,36 +63,37 @@ pub(super) fn is_null_mx_record_value(value: &str, priority: Option<i32>) -> boo
         .unwrap_or(false)
 }
 
-fn canonical_record_value(
-    value: &str,
+/// Canonical form used only to compare two values, never to store them.
+fn canonical_record_value<'a>(
+    value: &'a str,
     fallback_priority: Option<i32>,
     record_type: &RecordType,
-) -> String {
+) -> Cow<'a, str> {
     match record_type {
         RecordType::A => ARecordValue::parse(value)
-            .map(|parsed| parsed.canonical())
-            .unwrap_or_else(|_| value.to_string()),
+            .map(|parsed| Cow::Owned(parsed.canonical()))
+            .unwrap_or(Cow::Borrowed(value)),
         RecordType::AAAA => AaaaRecordValue::parse(value)
-            .map(|parsed| parsed.canonical())
-            .unwrap_or_else(|_| value.to_string()),
+            .map(|parsed| Cow::Owned(parsed.canonical()))
+            .unwrap_or(Cow::Borrowed(value)),
         RecordType::CNAME => CnameRecordValue::parse(value)
-            .map(|parsed| parsed.canonical())
-            .unwrap_or_else(|_| common::canonical_domain_value(value)),
+            .map(|parsed| Cow::Owned(parsed.canonical()))
+            .unwrap_or_else(|_| Cow::Owned(common::canonical_domain_value(value))),
         RecordType::MX => MxRecordValue::parse(value, fallback_priority)
-            .map(|parsed| parsed.canonical())
-            .unwrap_or_else(|_| value.to_string()),
+            .map(|parsed| Cow::Owned(parsed.canonical()))
+            .unwrap_or(Cow::Borrowed(value)),
         RecordType::TXT => TxtRecordValue::parse(value).canonical(),
         RecordType::NS => NsRecordValue::parse(value)
-            .map(|parsed| parsed.canonical())
-            .unwrap_or_else(|_| common::canonical_domain_value(value)),
+            .map(|parsed| Cow::Owned(parsed.canonical()))
+            .unwrap_or_else(|_| Cow::Owned(common::canonical_domain_value(value))),
         RecordType::SOA => SoaRecordValue::parse(value)
-            .map(|parsed| parsed.canonical())
-            .unwrap_or_else(|_| value.to_string()),
+            .map(|parsed| Cow::Owned(parsed.canonical()))
+            .unwrap_or(Cow::Borrowed(value)),
         RecordType::SRV => SrvRecordValue::parse(value, fallback_priority)
-            .map(|parsed| parsed.canonical())
-            .unwrap_or_else(|_| value.to_string()),
+            .map(|parsed| Cow::Owned(parsed.canonical()))
+            .unwrap_or(Cow::Borrowed(value)),
         RecordType::PTR => PtrRecordValue::parse(value)
-            .map(|parsed| parsed.canonical())
-            .unwrap_or_else(|_| common::canonical_domain_value(value)),
+            .map(|parsed| Cow::Owned(parsed.canonical()))
+            .unwrap_or_else(|_| Cow::Owned(common::canonical_domain_value(value))),
     }
 }

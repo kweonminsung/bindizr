@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Path, Query},
+    extract::{DefaultBodyLimit, Path, Query},
     http::StatusCode,
     response::IntoResponse,
     routing,
@@ -11,16 +11,19 @@ use serde_json::json;
 
 use crate::api::{
     error::ApiError,
-    middleware::body_parser::JsonBody,
+    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
-        CreateRecordRequest, ErrorResponse, GetRecordResponse, GetRecordsFilter, MessageResponse,
-        RecordListResponse, RecordResponse, UpdateRecordRequest,
+        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
+        GetRecordResponse, GetRecordsFilter, MessageResponse, RecordListResponse, RecordResponse,
+        UpdateRecordRequest,
     },
 };
 
+/// Route group for record endpoints.
 pub(crate) struct RecordApi;
 
 impl RecordApi {
+    /// Build the router for record endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/records", routing::get(get_records))
@@ -28,6 +31,11 @@ impl RecordApi {
             .route("/records", routing::post(create_record))
             .route("/records/{record_id}", routing::put(update_record))
             .route("/records/{record_id}", routing::delete(delete_record))
+            .route(
+                "/zones/{zone_name}/records/bulk",
+                routing::post(create_records_bulk)
+                    .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+            )
     }
 }
 
@@ -58,6 +66,7 @@ impl RecordApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// List DNS records, optionally filtered and paginated.
 pub(crate) async fn get_records(Query(query): Query<GetRecordsFilter>) -> impl IntoResponse {
     let raw_records = match RecordService::list_with_zone_by_filter(query).await {
         Ok(records) => records,
@@ -89,6 +98,7 @@ pub(crate) async fn get_records(Query(query): Query<GetRecordsFilter>) -> impl I
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Get a single DNS record by ID.
 pub(crate) async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoResponse {
     let raw_record = match RecordService::get_by_id_with_zone(params.record_id).await {
         Ok(record) => record,
@@ -115,6 +125,7 @@ pub(crate) async fn get_record(Path(params): Path<GetRecordParam>) -> impl IntoR
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Create a new DNS record.
 pub(crate) async fn create_record(
     JsonBody(body): JsonBody<CreateRecordRequest>,
 ) -> impl IntoResponse {
@@ -147,6 +158,7 @@ pub(crate) async fn create_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Update an existing DNS record.
 pub(crate) async fn update_record(
     Path(params): Path<UpdateRecordParam>,
     JsonBody(body): JsonBody<UpdateRecordRequest>,
@@ -177,6 +189,7 @@ pub(crate) async fn update_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Delete a DNS record.
 pub(crate) async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl IntoResponse {
     match RecordService::delete_by_id(params.record_id).await {
         Ok(_) => {
@@ -187,16 +200,63 @@ pub(crate) async fn delete_record(Path(params): Path<DeleteRecordParam>) -> impl
     }
 }
 
+#[utoipa::path(
+        post,
+        path = "/zones/{zone_name}/records/bulk",
+        tag = "Record",
+        summary = "Bulk insert DNS records into a zone",
+        description = "Insert many records into a single zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are.",
+        params(
+            ("zone_name" = String, Path, description = "The name of the DNS zone to insert records into.")
+        ),
+        request_body = CreateBulkRecordsRequest,
+        responses(
+            (status = 201, description = "DNS records created successfully", body = BulkRecordsResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Bulk insert DNS records into a zone in a single transaction.
+pub(crate) async fn create_records_bulk(
+    Path(params): Path<ZoneScopedParam>,
+    JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
+) -> impl IntoResponse {
+    let raw_records = match RecordService::create_bulk(&params.zone_name, &body.records).await {
+        Ok(records) => records,
+        Err(err) => return ApiError::from(err).into_response(),
+    };
+
+    let records = raw_records
+        .iter()
+        .map(GetRecordResponse::from_record_with_zone)
+        .collect::<Vec<_>>();
+
+    let json_body = json!({ "inserted": records.len(), "records": records });
+    (StatusCode::CREATED, Json(json_body)).into_response()
+}
+
+/// Path parameters scoped to a zone.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ZoneScopedParam {
+    zone_name: String,
+}
+
+/// Path parameters for fetching a record.
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetRecordParam {
     record_id: i32,
 }
 
+/// Path parameters for updating a record.
 #[derive(Debug, Deserialize)]
 pub(crate) struct UpdateRecordParam {
     record_id: i32,
 }
 
+/// Path parameters for deleting a record.
 #[derive(Debug, Deserialize)]
 pub(crate) struct DeleteRecordParam {
     record_id: i32,

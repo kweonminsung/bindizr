@@ -1,3 +1,6 @@
+//! DNS front end: the authoritative TCP/UDP server plus zone transfer
+//! (AXFR/IXFR), NOTIFY, SOA queries, RFC 2136 nsupdate, and secondary ACLs.
+
 pub(crate) mod acl;
 pub(crate) mod address;
 pub(crate) mod nsupdate;
@@ -26,6 +29,7 @@ enum QueryRoute {
     Other(Rtype),
 }
 
+/// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
 pub async fn initialize() {
     xfr::initialize().await;
 

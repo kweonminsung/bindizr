@@ -289,12 +289,14 @@ dependencies = [
  "bindizr-core",
  "bindizr-db",
  "chrono",
+ "domain",
  "hex",
  "log",
  "rand",
  "serde",
  "sha2 0.11.0",
  "thiserror",
+ "tokio",
  "utoipa",
 ]
 
@@ -728,6 +730,7 @@ dependencies = [
  "jiff",
  "octseq",
  "rand",
+ "serde",
 ]
 
 [[package]]

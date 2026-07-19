@@ -14,10 +14,12 @@ use crate::{
 };
 
 impl RecordService {
+    /// List all records in a zone by zone id.
     pub async fn list_by_zone_id(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
         RepositoryService::get_records_by_zone_id(zone_id).await
     }
 
+    /// List all records in a zone by zone id, within the caller's transaction.
     pub async fn list_by_zone_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -25,6 +27,7 @@ impl RecordService {
         RepositoryService::get_records_by_zone_id_tx(tx, zone_id).await
     }
 
+    /// Find a single matching record within the caller's transaction.
     pub async fn find_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: Option<i32>,
@@ -46,12 +49,12 @@ impl RecordService {
         .await
     }
 
+    /// List records for a zone by name, or all records when `None`.
     pub async fn list(zone_name: Option<String>) -> Result<Vec<Record>, ServiceError> {
         match zone_name {
             Some(name) => {
                 let lookup_name = normalize_zone_name(&name)?;
 
-                // Check if zone exists and get zone_id
                 let zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
                     Ok(Some(z)) => z,
                     Ok(None) => {
@@ -66,7 +69,6 @@ impl RecordService {
                     }
                 };
 
-                // Fetch records by zone_id
                 match RepositoryService::get_records_by_zone_id(zone.id).await {
                     Ok(records) => Ok(records),
                     Err(e) => {
@@ -78,21 +80,19 @@ impl RecordService {
                     }
                 }
             }
-            None => {
-                // Fetch all records
-                match RepositoryService::get_all_records().await {
-                    Ok(records) => Ok(records),
-                    Err(e) => {
-                        log_error!("Failed to fetch all records: {}", e);
-                        Err(ServiceError::Internal(
-                            "Failed to fetch all records".to_string(),
-                        ))
-                    }
+            None => match RepositoryService::get_all_records().await {
+                Ok(records) => Ok(records),
+                Err(e) => {
+                    log_error!("Failed to fetch all records: {}", e);
+                    Err(ServiceError::Internal(
+                        "Failed to fetch all records".to_string(),
+                    ))
                 }
-            }
+            },
         }
     }
 
+    /// List records with their zone name for a zone by name, or all records when `None`.
     pub async fn list_with_zone(
         zone_name: Option<String>,
     ) -> Result<Vec<RecordWithZone>, ServiceError> {
@@ -137,6 +137,7 @@ impl RecordService {
         }
     }
 
+    /// List records with their zone name matching `filter`, returning a paginated response.
     pub async fn list_with_zone_by_filter(
         filter: GetRecordsFilter,
     ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
@@ -213,6 +214,7 @@ impl RecordService {
         })
     }
 
+    /// Fetch a record by id, returning `NotFound` if it does not exist.
     pub async fn get_by_id(record_id: i32) -> Result<Record, ServiceError> {
         match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => Ok(record),
@@ -227,6 +229,7 @@ impl RecordService {
         }
     }
 
+    /// Fetch a record with its zone name by id, returning `NotFound` if it does not exist.
     pub async fn get_by_id_with_zone(record_id: i32) -> Result<RecordWithZone, ServiceError> {
         match RepositoryService::get_record_by_id_with_zone(record_id).await {
             Ok(Some(record)) => Ok(record),

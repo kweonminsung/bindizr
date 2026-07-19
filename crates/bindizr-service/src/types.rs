@@ -11,6 +11,7 @@ use crate::model::{
     zone::Zone,
 };
 
+/// A page of items together with its pagination metadata.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
@@ -18,6 +19,7 @@ pub struct PaginatedResponse<T> {
 }
 
 impl<T> PaginatedResponse<T> {
+    /// Map each item to a new type, preserving the pagination metadata.
     pub fn map_items<U>(self, mut f: impl FnMut(T) -> U) -> PaginatedResponse<U> {
         PaginatedResponse {
             items: self.items.into_iter().map(&mut f).collect(),
@@ -26,6 +28,7 @@ impl<T> PaginatedResponse<T> {
     }
 }
 
+/// Pagination window and total count for a list response.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct Pagination {
     #[schema(example = 50)]
@@ -36,6 +39,7 @@ pub struct Pagination {
     pub total: u64,
 }
 
+/// API representation of a zone.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct GetZoneResponse {
     #[schema(example = 1)]
@@ -60,6 +64,7 @@ pub struct GetZoneResponse {
     pub minimum_ttl: i32,
 }
 impl GetZoneResponse {
+    /// Build a response from a [`Zone`].
     pub fn from_zone(zone: &Zone) -> Self {
         GetZoneResponse {
             id: zone.id,
@@ -76,6 +81,7 @@ impl GetZoneResponse {
     }
 }
 
+/// API representation of a record, optionally carrying its zone name.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct GetRecordResponse {
     #[schema(example = 1)]
@@ -97,6 +103,7 @@ pub struct GetRecordResponse {
     pub zone_name: Option<String>,
 }
 impl GetRecordResponse {
+    /// Build a response from a [`Record`], leaving names in stored form and `zone_name` unset.
     pub fn from_record(record: &Record) -> Self {
         GetRecordResponse {
             id: record.id,
@@ -110,6 +117,7 @@ impl GetRecordResponse {
         }
     }
 
+    /// Build a response from a [`Record`], rendering owner/value as display names within `zone_name`.
     pub fn from_record_and_zone_name(record: &Record, zone_name: &str) -> Self {
         GetRecordResponse {
             id: record.id,
@@ -123,6 +131,7 @@ impl GetRecordResponse {
         }
     }
 
+    /// Build a response from a [`RecordWithZone`].
     pub fn from_record_with_zone(record: &RecordWithZone) -> Self {
         Self::from_record_and_zone_name(&record.record(), &record.zone_name)
     }
@@ -144,6 +153,7 @@ fn record_response_value(record: &Record, display_names: bool) -> RecordValueReq
     }
 }
 
+/// A record value as sent by the client: a single string or TXT segments.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(untagged)]
 pub enum RecordValueRequest {
@@ -154,6 +164,7 @@ pub enum RecordValueRequest {
 }
 
 impl RecordValueRequest {
+    /// Encode the request value into its stored form for the given record type.
     pub fn to_storage_value(&self, record_type: &RecordType) -> Result<String, String> {
         match (record_type, self) {
             (RecordType::TXT, RecordValueRequest::String(value)) => {
@@ -170,6 +181,7 @@ impl RecordValueRequest {
     }
 }
 
+/// Request body for creating or updating a zone.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct CreateZoneRequest {
     #[schema(example = "example.com")]
@@ -192,6 +204,7 @@ pub struct CreateZoneRequest {
     pub minimum_ttl: Option<i32>,
 }
 
+/// Request body for creating a record in a named zone.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct CreateRecordRequest {
     #[schema(example = "sub")]
@@ -207,6 +220,94 @@ pub struct CreateRecordRequest {
     pub zone_name: String,
 }
 
+/// A single record entry for bulk insertion. The zone is taken from the request
+/// path, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct BulkRecordItem {
+    #[schema(example = "sub")]
+    pub name: String,
+    #[schema(example = "A")]
+    pub record_type: String,
+    pub value: RecordValueRequest,
+    #[schema(example = 3600)]
+    pub ttl: Option<i32>,
+    #[schema(example = 10)]
+    pub priority: Option<i32>,
+}
+
+/// Request body for bulk-inserting records into a zone.
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct CreateBulkRecordsRequest {
+    pub records: Vec<BulkRecordItem>,
+}
+
+/// Response for a bulk insert: the count inserted and the created records.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct BulkRecordsResponse {
+    #[schema(example = 3)]
+    pub inserted: usize,
+    pub records: Vec<GetRecordResponse>,
+}
+
+/// How parsed records are reconciled with the records already in the zone.
+#[derive(Clone, Copy, Debug, Default, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ImportMode {
+    /// Add parsed records; records already present are left untouched.
+    #[default]
+    Append,
+    /// Replace every RRset (name + type) that appears in the file with the
+    /// parsed records, leaving other RRsets untouched.
+    Upsert,
+    /// Replace all non-protected records in the zone with the parsed records.
+    Replace,
+}
+
+/// Request body for importing a BIND zone file into a zone.
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct ImportZoneFileRequest {
+    /// Raw BIND zone file text.
+    #[schema(example = "www IN A 192.0.2.1\nmail IN A 192.0.2.2\n")]
+    pub content: String,
+    #[serde(default)]
+    pub mode: ImportMode,
+    /// When true, parse and validate without applying any change.
+    #[serde(default, alias = "dryRun")]
+    pub dry_run: bool,
+}
+
+/// Result of a zone-file import, including a summary and any validation errors.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ImportZoneFileResponse {
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
+    pub summary: ImportSummary,
+    /// Per-record validation errors. When non-empty nothing is applied.
+    pub errors: Vec<String>,
+}
+
+/// Counts of records parsed, added, deleted, updated, unchanged, and skipped
+/// during import. `updated` is a TTL-only reconcile and is never also counted
+/// as `unchanged`.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ImportSummary {
+    #[schema(example = 12)]
+    pub parsed: usize,
+    #[schema(example = 8)]
+    pub added: usize,
+    #[schema(example = 2)]
+    pub deleted: usize,
+    #[schema(example = 1)]
+    pub updated: usize,
+    #[schema(example = 2)]
+    pub unchanged: usize,
+    #[schema(example = 0)]
+    pub skipped: usize,
+}
+
+/// Query filters and pagination for listing zones.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
 pub struct GetZonesFilter {
     #[schema(example = "example.com")]
@@ -234,6 +335,7 @@ pub struct GetZonesFilter {
     pub offset: Option<u64>,
 }
 
+/// Query filters and pagination for listing records.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
 pub struct GetRecordsFilter {
     #[schema(example = "example.com")]
@@ -269,11 +371,13 @@ pub struct GetRecordsFilter {
 }
 
 impl GetRecordsFilter {
+    /// Return the effective zone name, preferring `zone_name` over the `zone` alias.
     pub fn resolved_zone_name(&self) -> Option<String> {
         self.zone_name.clone().or_else(|| self.zone.clone())
     }
 }
 
+/// Request body for updating an existing record.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct UpdateRecordRequest {
     #[schema(example = "sub")]
@@ -287,6 +391,7 @@ pub struct UpdateRecordRequest {
     pub priority: Option<i32>,
 }
 
+/// Request body for triggering a NOTIFY, optionally scoped to one zone.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct NotifyZoneRequest {
     #[schema(example = "example.com")]
@@ -296,40 +401,47 @@ pub struct NotifyZoneRequest {
     pub force: bool,
 }
 
+/// Paginated list of zones.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ZoneListResponse {
     pub items: Vec<GetZoneResponse>,
     pub pagination: Pagination,
 }
 
+/// A zone together with all of its records.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ZoneDetailResponse {
     pub zone: GetZoneResponse,
     pub records: Vec<GetRecordResponse>,
 }
 
+/// A single zone wrapped in a response envelope.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ZoneResponse {
     pub zone: GetZoneResponse,
 }
 
+/// Paginated list of records.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct RecordListResponse {
     pub items: Vec<GetRecordResponse>,
     pub pagination: Pagination,
 }
 
+/// A single record wrapped in a response envelope.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct RecordResponse {
     pub record: GetRecordResponse,
 }
 
+/// Generic success message response.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct MessageResponse {
     #[schema(example = "Deleted successfully")]
     pub message: String,
 }
 
+/// Generic error message response.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ErrorResponse {
     #[schema(example = "Bad request: invalid input data")]

@@ -1,6 +1,9 @@
 use chrono::Utc;
 
-use super::{RecordService, validation::validate_record_add_constraints};
+use super::{
+    RecordService,
+    validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
+};
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -16,6 +19,7 @@ use crate::{
 };
 
 impl RecordService {
+    /// Insert a record within the caller's transaction.
     pub async fn create_tx(
         tx: &mut RepositoryTx<'_>,
         record: Record,
@@ -23,10 +27,10 @@ impl RecordService {
         RepositoryService::create_record_tx(tx, record).await
     }
 
+    /// Create a record, bumping the zone serial and recording an ADD change for IXFR.
     pub async fn create(
         create_record_request: &CreateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
-        // Validate record type
         let record_type = create_record_request
             .record_type
             .parse::<RecordType>()
@@ -62,8 +66,18 @@ impl RecordService {
                     }
                 };
 
-            let existing_records_in_zone =
-                match RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await {
+            // Only records sharing the owner name can conflict, so load just
+            // those instead of the whole zone.
+            let normalized_owner =
+                normalize_record_owner_name(&create_record_request.name, &zone.name)?;
+            let existing_records_with_name =
+                match RepositoryService::get_records_by_zone_id_and_name_tx(
+                    &mut tx,
+                    zone.id,
+                    &normalized_owner.stored_name,
+                )
+                .await
+                {
                     Ok(records) => records,
                     Err(e) => {
                         log_error!("Failed to check existing records: {}", e);
@@ -73,10 +87,10 @@ impl RecordService {
                     }
                 };
 
-            let normalized_owner = validate_record_add_constraints(
-                &zone,
-                &existing_records_in_zone,
+            validate_record_add_constraints_normalized(
+                &existing_records_with_name,
                 &create_record_request.name,
+                &normalized_owner.stored_name,
                 &record_type,
                 &record_value,
                 create_record_request.priority,
@@ -84,19 +98,18 @@ impl RecordService {
             )?;
 
             let new_serial = generate_serial(Some(zone.serial));
-            let zone_name = zone.name.clone();
 
             let created_record = RepositoryService::create_record_tx(
                 &mut tx,
                 Record {
-                    id: 0, // Will be set by the database
+                    id: 0,
                     name: normalized_owner.stored_name,
                     record_type,
-                    value: record_value.clone(),
+                    value: record_value,
                     ttl: create_record_request.ttl,
                     priority: create_record_request.priority,
                     zone_id: zone.id,
-                    created_at: Utc::now(), // Will be set by the database
+                    created_at: Utc::now(),
                 },
             )
             .await
@@ -106,18 +119,12 @@ impl RecordService {
             })?;
 
             // Increment zone serial so IXFR consumers can detect this change
-            RepositoryService::update_zone_tx(
-                &mut tx,
-                crate::model::zone::Zone {
-                    serial: new_serial,
-                    ..zone.clone()
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
-                ServiceError::Internal("Failed to update zone serial".to_string())
-            })?;
+            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to update zone serial: {}", e);
+                    ServiceError::Internal("Failed to update zone serial".to_string())
+                })?;
 
             // Record zone change for IXFR
             RepositoryService::create_zone_change_tx(
@@ -142,7 +149,7 @@ impl RecordService {
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
-            Ok::<(Record, String), ServiceError>((created_record, zone_name))
+            Ok::<(Record, String), ServiceError>((created_record, zone.name))
         }
         .await;
 

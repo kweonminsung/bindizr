@@ -38,9 +38,10 @@ async fn chunked_tcp_writer_splits_large_answer_sets() {
     let qname = Name::from_octets(qname).unwrap();
     let mut builder = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR);
     let mut writer = Vec::new();
+    let mut sent = 0usize;
 
     for index in 0..4000 {
-        add_answer_and_flush_if_needed(&mut writer, &mut builder, |builder| {
+        add_answer_and_flush_if_needed(&mut writer, &mut builder, &mut sent, |builder| {
             builder.add_a_record(
                 &format!("host-{}.example.com.", index),
                 3600,

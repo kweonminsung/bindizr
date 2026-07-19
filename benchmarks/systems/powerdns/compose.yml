@@ -1,0 +1,39 @@
+# PowerDNS Authoritative with a gsqlite3 backend. The command initialises the
+# SQLite schema on first boot (idempotent) then execs pdns_server.
+services:
+  powerdns:
+    image: powerdns/pdns-auth-49:latest
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        DB=/var/lib/powerdns/pdns.sqlite3
+        if [ ! -s "$$DB" ]; then
+          sqlite3 "$$DB" < /usr/local/share/doc/pdns/schema.sqlite3.sql
+        fi
+        exec pdns_server --config-dir=/etc/powerdns
+    volumes:
+      - ./pdns.conf:/etc/powerdns/pdns.conf:ro
+      - powerdns-data:/var/lib/powerdns
+    ports:
+      - "${PDNS_API_HOST_PORT:-18081}:8081/tcp"
+      - "${PDNS_DNS_HOST_PORT:-15354}:53/tcp"
+      - "${PDNS_DNS_HOST_PORT:-15354}:53/udp"
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    healthcheck:
+      test: ["CMD-SHELL", "pdns_control uptime >/dev/null 2>&1 || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+networks:
+  bench-net:
+
+volumes:
+  powerdns-data:

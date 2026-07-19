@@ -1,3 +1,6 @@
+//! Backend-agnostic repository traits, the cross-backend transaction type, and
+//! the factory that builds per-backend implementations.
+
 pub mod mysql;
 pub mod postgres;
 pub mod sqlite;
@@ -15,6 +18,7 @@ use super::model::{
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
 
+/// Optional criteria for querying zones.
 #[derive(Clone, Debug, Default)]
 pub struct ZoneFilter {
     pub name: Option<String>,
@@ -30,6 +34,7 @@ pub struct ZoneFilter {
     pub offset: Option<u64>,
 }
 
+/// Optional criteria for querying records.
 #[derive(Clone, Debug, Default)]
 pub struct RecordFilter {
     pub zone_name: Option<String>,
@@ -47,6 +52,7 @@ pub struct RecordFilter {
     pub offset: Option<u64>,
 }
 
+/// A database transaction spanning any of the supported backends.
 pub struct RepositoryTx<'a>(RepositoryTxKind<'a>);
 
 enum RepositoryTxKind<'a> {
@@ -55,6 +61,7 @@ enum RepositoryTxKind<'a> {
     SQLite(sqlx::Transaction<'a, Sqlite>),
 }
 
+/// Begin a transaction on the global database pool.
 pub async fn begin_transaction() -> Result<RepositoryTx<'static>, DatabaseError> {
     match get_pool() {
         DatabasePool::MySQL(pool) => pool
@@ -76,6 +83,7 @@ pub async fn begin_transaction() -> Result<RepositoryTx<'static>, DatabaseError>
 }
 
 impl<'a> RepositoryTx<'a> {
+    /// Commit the transaction.
     pub async fn commit(self) -> Result<(), DatabaseError> {
         match self.0 {
             RepositoryTxKind::MySQL(tx) => tx
@@ -93,6 +101,7 @@ impl<'a> RepositoryTx<'a> {
         }
     }
 
+    /// Roll back the transaction.
     pub async fn rollback(self) -> Result<(), DatabaseError> {
         match self.0 {
             RepositoryTxKind::MySQL(tx) => tx
@@ -111,7 +120,7 @@ impl<'a> RepositoryTx<'a> {
     }
 }
 
-// Zone Repository Trait
+/// Persistence operations for zones.
 #[allow(dead_code)]
 #[async_trait]
 pub trait ZoneRepository: Send + Sync {
@@ -136,11 +145,18 @@ pub trait ZoneRepository: Send + Sync {
     async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
+    /// Bump only the serial, leaving the zone's other columns untouched.
+    async fn update_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
 }
 
-// Record Repository Trait
+/// Persistence operations for records.
 #[allow(dead_code)]
 #[async_trait]
 pub trait RecordRepository: Send + Sync {
@@ -150,6 +166,13 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError>;
+    /// Insert many records in one chunked statement, returning them with their
+    /// assigned ids in input order.
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
     async fn get_by_id_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError>;
     async fn get_by_id_tx(
@@ -166,6 +189,20 @@ pub trait RecordRepository: Send + Sync {
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
+    ) -> Result<Vec<Record>, DatabaseError>;
+    async fn get_by_zone_id_and_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        name: &str,
+    ) -> Result<Vec<Record>, DatabaseError>;
+    /// Load records whose owner name is any of `names` (lowercased match). Used
+    /// by bulk insert to fetch only the rows that could conflict with the batch.
+    async fn get_by_zone_id_and_names_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        names: &[String],
     ) -> Result<Vec<Record>, DatabaseError>;
     async fn get(
         &self,
@@ -201,9 +238,15 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<Record, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
+    /// Delete many records in as few statements as the backend's bind limit allows.
+    async fn delete_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), DatabaseError>;
 }
 
-// Zone Change Repository Trait
+/// Persistence operations for zone changes.
 #[allow(dead_code)]
 #[async_trait]
 pub trait ZoneChangeRepository: Send + Sync {
@@ -213,6 +256,12 @@ pub trait ZoneChangeRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_change: ZoneChange,
     ) -> Result<ZoneChange, DatabaseError>;
+    /// Insert many zone changes in one statement (chunked). Ids are not returned.
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        changes: &[ZoneChange],
+    ) -> Result<(), DatabaseError>;
     async fn get_changes_between_serials(
         &self,
         zone_id: i32,
@@ -221,6 +270,7 @@ pub trait ZoneChangeRepository: Send + Sync {
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
 }
 
+/// Persistence operations for zone snapshots.
 #[allow(dead_code)]
 #[async_trait]
 pub trait ZoneSnapshotRepository: Send + Sync {
@@ -235,9 +285,16 @@ pub trait ZoneSnapshotRepository: Send + Sync {
         zone_id: i32,
         serial: i32,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
+    /// Fetch every snapshot for a zone whose serial is in `[from_serial, to_serial]`.
+    async fn get_by_zone_id_in_serial_range(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneSnapshot>, DatabaseError>;
 }
 
-// API Token Repository Trait
+/// Persistence operations for API tokens.
 #[async_trait]
 pub trait ApiTokenRepository: Send + Sync {
     async fn create(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
@@ -248,6 +305,7 @@ pub trait ApiTokenRepository: Send + Sync {
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
+/// Persistence operations for catalog zone state.
 #[async_trait]
 pub trait CatalogZoneStateRepository: Send + Sync {
     async fn update_serial_for_signature(
@@ -265,10 +323,11 @@ pub trait CatalogZoneStateRepository: Send + Sync {
     ) -> Result<CatalogZoneState, DatabaseError>;
 }
 
-// Repository Factory
+/// Builds backend-specific repository implementations for a given pool.
 pub struct RepositoryFactory;
 
 impl RepositoryFactory {
+    /// Create a zone repository for the given pool's backend.
     pub fn create_zone_repository(pool: &DatabasePool) -> Box<dyn ZoneRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -283,6 +342,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create a record repository for the given pool's backend.
     pub fn create_record_repository(pool: &DatabasePool) -> Box<dyn RecordRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -297,6 +357,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create an API token repository for the given pool's backend.
     pub fn create_api_token_repository(pool: &DatabasePool) -> Box<dyn ApiTokenRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -311,6 +372,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create a zone change repository for the given pool's backend.
     pub fn create_zone_change_repository(pool: &DatabasePool) -> Box<dyn ZoneChangeRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -325,6 +387,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create a zone snapshot repository for the given pool's backend.
     pub fn create_zone_snapshot_repository(pool: &DatabasePool) -> Box<dyn ZoneSnapshotRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -339,6 +402,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create a catalog zone state repository for the given pool's backend.
     pub fn create_catalog_zone_state_repository(
         pool: &DatabasePool,
     ) -> Box<dyn CatalogZoneStateRepository> {

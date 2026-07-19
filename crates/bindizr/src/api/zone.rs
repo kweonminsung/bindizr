@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Path, Query},
+    extract::{DefaultBodyLimit, Path, Query},
     http::StatusCode,
     response::IntoResponse,
     routing,
@@ -11,16 +11,19 @@ use serde_json::json;
 
 use crate::api::{
     error::ApiError,
-    middleware::body_parser::JsonBody,
+    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        MessageResponse, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, ZoneDetailResponse,
+        ZoneListResponse, ZoneResponse,
     },
 };
 
+/// Route group for zone endpoints.
 pub(crate) struct ZoneApi;
 
 impl ZoneApi {
+    /// Build the router for zone endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/zones", routing::get(get_zones))
@@ -28,6 +31,10 @@ impl ZoneApi {
             .route("/zones", routing::post(create_zone))
             .route("/zones/{name}", routing::put(update_zone))
             .route("/zones/{name}", routing::delete(delete_zone))
+            .route(
+                "/zones/{name}/imports",
+                routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+            )
     }
 }
 
@@ -56,6 +63,7 @@ impl ZoneApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// List DNS zones, optionally filtered and paginated.
 pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoResponse {
     match ZoneService::list_by_filter(query).await {
         Ok(response) => {
@@ -87,6 +95,7 @@ pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoR
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Get a single DNS zone, optionally including its records.
 pub(crate) async fn get_zone(
     Path(params): Path<GetZoneParam>,
     Query(query): Query<GetZoneQuery>,
@@ -130,6 +139,7 @@ pub(crate) async fn get_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Create a new DNS zone.
 pub(crate) async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> impl IntoResponse {
     match ZoneService::create(&body).await {
         Ok(zone) => {
@@ -159,6 +169,7 @@ pub(crate) async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> 
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Update an existing DNS zone.
 pub(crate) async fn update_zone(
     Path(params): Path<UpdateZoneParam>,
     JsonBody(body): JsonBody<CreateZoneRequest>,
@@ -190,6 +201,7 @@ pub(crate) async fn update_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Delete a DNS zone.
 pub(crate) async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl IntoResponse {
     let zone_name = params.name;
 
@@ -202,21 +214,61 @@ pub(crate) async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl Int
     }
 }
 
+#[utoipa::path(
+        post,
+        path = "/zones/{name}/imports",
+        tag = "Zone",
+        summary = "Import a BIND zone file into a zone",
+        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone to import records into.")
+        ),
+        request_body = ImportZoneFileRequest,
+        responses(
+            (status = 200, description = "Import summary and validation errors", body = ImportZoneFileResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Import a BIND zone file into a zone, reconciling records in one transaction.
+pub(crate) async fn import_zone(
+    Path(params): Path<ImportZoneParam>,
+    JsonBody(body): JsonBody<ImportZoneFileRequest>,
+) -> impl IntoResponse {
+    match RecordService::import_zone_file(&params.name, &body).await {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(err) => ApiError::from(err).into_response(),
+    }
+}
+
+/// Path parameters for importing a zone file.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ImportZoneParam {
+    name: String,
+}
+
+/// Path parameters for fetching a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetZoneParam {
     name: String,
 }
 
+/// Query parameters for fetching a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetZoneQuery {
     records: Option<bool>,
 }
 
+/// Path parameters for updating a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct UpdateZoneParam {
     name: String,
 }
 
+/// Path parameters for deleting a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct DeleteZoneParam {
     name: String,

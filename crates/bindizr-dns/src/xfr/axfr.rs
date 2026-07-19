@@ -3,13 +3,10 @@ use std::net::IpAddr;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;
 
-use super::{catalog, delta, error::XfrError, wire};
-use crate::{
-    log_info,
-    service::{record::RecordService, zone::ZoneService},
-};
+use super::{catalog, delta, error::XfrError, wire, zone_cache};
+use crate::{log_info, service::zone::ZoneService};
 
-/// Handle AXFR
+/// Handles an AXFR request.
 pub(crate) async fn handle_axfr(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -19,8 +16,8 @@ pub(crate) async fn handle_axfr(
     handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::AXFR).await
 }
 
-/// Handle AXFR payload with a specific response question type.
-/// IXFR fallback should keep QTYPE=IXFR to match the original query.
+/// Handles an AXFR payload with a specific response question type.
+/// IXFR fallback keeps QTYPE=IXFR to match the original query.
 pub(crate) async fn handle_axfr_with_qtype(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -37,7 +34,7 @@ pub(crate) async fn handle_axfr_with_qtype(
     let zone_name_owned = zone_name.to_string();
     let zone_name_str = zone_name_owned.trim_end_matches('.');
 
-    // Check if this is a catalog zone request
+    // Catalog zone requests are handled separately.
     if catalog::is_catalog_zone(zone_name_str) {
         return catalog::handle_catalog_axfr_with_qtype(
             stream,
@@ -53,7 +50,7 @@ pub(crate) async fn handle_axfr_with_qtype(
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
-    let records = RecordService::list_by_zone_id(zone.id)
+    let records = zone_cache::list_records(zone.id, zone.serial)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
 
@@ -70,21 +67,20 @@ pub(crate) async fn handle_axfr_with_qtype(
 
     // Add initial SOA record
     let serial = delta::serial_to_u32(zone.serial)?;
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_soa(&zone, serial)
     })
     .await?;
 
-    // Add all records
-    for record in &records {
-        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    for record in records.iter() {
+        wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
             builder.add_record(record, &zone.name)
         })
         .await?;
     }
 
     // Add final SOA record to indicate end of transfer
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_soa(&zone, serial)
     })
     .await?;

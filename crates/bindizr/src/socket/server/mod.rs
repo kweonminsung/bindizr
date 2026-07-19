@@ -65,6 +65,7 @@ async fn handle_client(stream: UnixStream) {
     }
 }
 
+/// Bind the daemon's Unix socket and spawn the connection accept loop.
 pub(crate) async fn initialize() -> Result<(), String> {
     let (socket_path, listener) = bind_daemon_socket().await?;
 
@@ -88,32 +89,36 @@ pub(crate) async fn initialize() -> Result<(), String> {
     Ok(())
 }
 
-async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
-    match bind_socket(SOCKET_FILE_PATH).await {
-        Ok(listener) => Ok((SOCKET_FILE_PATH.to_string(), listener)),
-        Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {
-            log_warn!(
-                "Cannot use default Unix socket path '{}': {}. Falling back to '{}'.",
-                SOCKET_FILE_PATH,
-                err,
-                FALLBACK_SOCKET_FILE_PATH
-            );
+/// Socket paths tried in order when the daemon starts.
+const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH];
 
-            bind_socket(FALLBACK_SOCKET_FILE_PATH)
-                .await
-                .map(|listener| (FALLBACK_SOCKET_FILE_PATH.to_string(), listener))
-                .map_err(|err| {
-                    format!(
-                        "Failed to use fallback Unix socket path '{}': {}",
-                        FALLBACK_SOCKET_FILE_PATH, err
-                    )
-                })
+async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
+    let mut failures = Vec::new();
+
+    for (i, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
+        let err = match bind_socket(path).await {
+            Ok(listener) => return Ok(((*path).to_string(), listener)),
+            // Another daemon already owns this socket. Trying the next candidate
+            // would start a second daemon instead of reporting the conflict.
+            Err(err) if err.kind() == io::ErrorKind::AddrInUse => return Err(err.to_string()),
+            Err(err) => err,
+        };
+
+        if let Some(next) = SOCKET_PATH_CANDIDATES.get(i + 1) {
+            log_warn!(
+                "Cannot use Unix socket path '{}': {}. Falling back to '{}'.",
+                path,
+                err,
+                next
+            );
         }
-        Err(err) => Err(format!(
-            "Failed to use Unix socket path '{}': {}",
-            SOCKET_FILE_PATH, err
-        )),
+        failures.push(format!("'{}': {}", path, err));
     }
+
+    Err(format!(
+        "Failed to bind the daemon Unix socket ({})",
+        failures.join("; ")
+    ))
 }
 
 async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {

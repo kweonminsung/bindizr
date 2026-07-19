@@ -5,11 +5,15 @@ use crate::{
 };
 
 impl RecordService {
+    /// Delete a record by id within the caller's transaction.
     pub async fn delete_tx(tx: &mut RepositoryTx<'_>, record_id: i32) -> Result<(), ServiceError> {
         RepositoryService::delete_record_tx(tx, record_id).await
     }
 
+    /// Delete a record by id, bumping the zone serial and recording a DEL change for IXFR.
     pub async fn delete_by_id(record_id: i32) -> Result<(), ServiceError> {
+        // Resolve zone_id with a non-locking read so the tx locks zone before
+        // record (the create/bulk/import order); the reverse can deadlock.
         let zone_id = match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => record.zone_id,
             Ok(None) => {
@@ -71,18 +75,12 @@ impl RecordService {
                 })?;
 
             // Increment zone serial so IXFR consumers can detect this change
-            RepositoryService::update_zone_tx(
-                &mut tx,
-                crate::model::zone::Zone {
-                    serial: new_serial,
-                    ..zone.clone()
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
-                ServiceError::Internal("Failed to update zone serial".to_string())
-            })?;
+            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to update zone serial: {}", e);
+                    ServiceError::Internal("Failed to update zone serial".to_string())
+                })?;
 
             // Record zone change for IXFR
             RepositoryService::create_zone_change_tx(

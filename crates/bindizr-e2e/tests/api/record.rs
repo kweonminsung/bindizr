@@ -649,3 +649,94 @@ async fn record_reject_cname_conflicts() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let bulk_request = json!({
+        "records": [
+            { "name": "bulk1", "record_type": "A", "value": "192.0.2.1" },
+            { "name": "bulk2", "record_type": "A", "value": "192.0.2.2", "ttl": 1800 },
+            { "name": "bulkcname", "record_type": "CNAME", "value": "bulk1" },
+            { "name": "@", "record_type": "MX", "value": "mail", "priority": 10 }
+        ]
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["inserted"], 4);
+    assert_eq!(body["records"].as_array().unwrap().len(), 4);
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert_is_all_or_nothing() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // The second record has an invalid type, so the whole batch must fail.
+    let bulk_request = json!({
+        "records": [
+            { "name": "ok", "record_type": "A", "value": "192.0.2.5" },
+            { "name": "bad", "record_type": "NOPE", "value": "192.0.2.6" }
+        ]
+    });
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Nothing from the failed batch should have been persisted.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=ok"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert_unknown_zone_returns_not_found() {
+    let app = TestApp::start().await;
+    let missing_zone = app.zone_name("missing.example.com");
+
+    let bulk_request = json!({
+        "records": [ { "name": "a", "record_type": "A", "value": "192.0.2.1" } ]
+    });
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{missing_zone}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

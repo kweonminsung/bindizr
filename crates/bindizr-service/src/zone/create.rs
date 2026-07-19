@@ -20,6 +20,7 @@ use crate::{
 };
 
 impl ZoneService {
+    /// Create a new zone with an apex NS record and NOTIFY the catalog zone.
     pub async fn create(create_zone_request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
         let validated = validate_create_zone_request(create_zone_request)?;
         let timers = resolve_soa_timers(
@@ -54,14 +55,13 @@ impl ZoneService {
             None => generate_serial(None),
         };
 
-        // Create zone
         let mut tx = RepositoryService::begin_tx("Failed to create zone").await?;
 
         let apply_result = async {
             let created_zone = RepositoryService::create_zone_tx(
                 &mut tx,
                 Zone {
-                    id: 0, // Will be set by the database
+                    id: 0,
                     name: validated.name.clone(),
                     primary_ns: validated.primary_ns.clone(),
                     admin_email: validated.admin_email.clone(),
@@ -71,7 +71,7 @@ impl ZoneService {
                     retry: timers.retry,
                     expire: timers.expire,
                     minimum_ttl: timers.minimum_ttl,
-                    created_at: Utc::now(), // Will be set by the database
+                    created_at: Utc::now(),
                 },
             )
             .await
@@ -108,7 +108,7 @@ impl ZoneService {
         let created_zone =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create zone").await?;
 
-        // Log zone creation after commit (structured logging)
+        // Log zone creation after commit
         log_info!(
             "event=zone_create zone={} primary_ns={} serial={} zone_id={}",
             created_zone.name,
@@ -117,6 +117,7 @@ impl ZoneService {
             created_zone.id
         );
 
+        // Send catalog NOTIFY so secondaries pick up the new zone
         if let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await {
             log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }

@@ -205,21 +205,20 @@ async fn add_record(
         return Ok(false);
     }
 
-    let ttl = if update.ttl > i32::MAX as u32 {
+    if update.ttl > i32::MAX as u32 {
         return Err(UpdateError::Refused(format!(
             "TTL value {} exceeds maximum allowed value ({})",
             update.ttl,
             i32::MAX
         )));
-    } else {
-        update.ttl as i32
-    };
+    }
+    let ttl = update.ttl as i32;
 
     let created = RecordService::create_tx(
         tx,
         Record {
             id: 0,
-            name: relative_name.clone(),
+            name: relative_name,
             record_type: record_type.clone(),
             value: value.clone(),
             ttl: Some(ttl),
@@ -311,7 +310,6 @@ async fn delete_records(
         return Ok(false);
     }
 
-    // Validate delete constraints
     validate_delete_constraints(zone, &matched).map_err(|e| UpdateError::Refused(e.to_string()))?;
 
     for record in &matched {
@@ -509,7 +507,9 @@ pub(super) fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<Strin
 
     let rel_len = owner.len() - zone.len() - 1;
     let rel = owner[..rel_len].trim_end_matches('.');
-    Ok(rel.to_string())
+    // Store lowercase like the JSON/CLI path: owner names are case-insensitive and
+    // the scoped conflict lookups bind lowercased, so mixed case would escape them.
+    Ok(rel.to_ascii_lowercase())
 }
 
 fn trim_dot(name: &str) -> &str {

@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+/// Errors returned by the service layer, mapped to HTTP status by the caller.
 #[derive(Debug, Error)]
 pub enum ServiceError {
     #[error("bad request: {0}")]

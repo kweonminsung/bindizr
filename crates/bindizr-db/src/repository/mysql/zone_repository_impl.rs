@@ -7,11 +7,13 @@ use crate::{
     repository::{RepositoryTx, RepositoryTxKind, ZoneFilter, ZoneRepository},
 };
 
+/// MySQL-backed implementation of `ZoneRepository`.
 pub struct MySqlZoneRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlZoneRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
@@ -343,6 +345,29 @@ impl ZoneRepository for MySqlZoneRepository {
             .execute(&mut *conn)
             .await?;
 
+        Ok(())
+    }
+
+    async fn update_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), DatabaseError> {
+        let mysql_tx = match &mut tx.0 {
+            RepositoryTxKind::MySQL(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected MySQL)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query("UPDATE zones SET serial = ? WHERE id = ?")
+            .bind(serial)
+            .bind(zone_id)
+            .execute(&mut **mysql_tx)
+            .await?;
         Ok(())
     }
 

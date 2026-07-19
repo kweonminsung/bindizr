@@ -1,3 +1,5 @@
+//! Table-creation DDL for each backend, run at startup to bring the schema up.
+
 pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
@@ -8,8 +10,8 @@ pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             admin_email VARCHAR(255) NOT NULL,
             ttl INT NOT NULL,
             serial INT NOT NULL,
-            refresh INT NOT NULL DEFAULT 86400,
-            retry INT NOT NULL DEFAULT 7200,
+            refresh INT NOT NULL DEFAULT 300,
+            retry INT NOT NULL DEFAULT 60,
             expire INT NOT NULL DEFAULT 3600000,
             minimum_ttl INT NOT NULL DEFAULT 86400,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -25,7 +27,8 @@ pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             priority INT,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INT NOT NULL,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            INDEX idx_records_zone_name (zone_id, name)
         );
         "#,
         r#"
@@ -92,8 +95,8 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             admin_email VARCHAR(255) NOT NULL,
             ttl INTEGER NOT NULL,
             serial INTEGER NOT NULL,
-            refresh INTEGER NOT NULL DEFAULT 86400,
-            retry INTEGER NOT NULL DEFAULT 7200,
+            refresh INTEGER NOT NULL DEFAULT 300,
+            retry INTEGER NOT NULL DEFAULT 60,
             expire INTEGER NOT NULL DEFAULT 3600000,
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -111,6 +114,9 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             zone_id INTEGER NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_records_zone_name ON records(zone_id, name);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS zone_changes (
@@ -178,8 +184,8 @@ pub(super) fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             admin_email TEXT NOT NULL,
             ttl INTEGER NOT NULL,
             serial INTEGER NOT NULL,
-            refresh INTEGER NOT NULL DEFAULT 86400,
-            retry INTEGER NOT NULL DEFAULT 7200,
+            refresh INTEGER NOT NULL DEFAULT 300,
+            retry INTEGER NOT NULL DEFAULT 60,
             expire INTEGER NOT NULL DEFAULT 3600000,
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -197,6 +203,9 @@ pub(super) fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             zone_id INTEGER NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_records_zone_name ON records(zone_id, name);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS zone_changes (

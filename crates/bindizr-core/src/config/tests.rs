@@ -8,16 +8,14 @@ use crate::config::{
 };
 
 fn create_temp_config_file(content: &str) -> (tempfile::TempDir, String) {
-    // Create a temporary directory
     let dir = tempdir().unwrap();
     let config_path = dir.path().join("bindizr.conf.toml");
 
-    // Create a test config file
     let mut file = StdFile::create(&config_path).unwrap();
     write!(file, "{}", content).unwrap();
-    file.flush().unwrap(); // Ensure content is written to disk
+    file.flush().unwrap();
 
-    // Return both the directory (to keep it alive) and the path
+    // Return the directory too, to keep it alive until the caller drops it.
     (dir, config_path.to_str().unwrap().to_string())
 }
 
