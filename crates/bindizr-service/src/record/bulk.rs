@@ -216,7 +216,8 @@ impl RecordService {
             // O(batch x zone) scan otherwise). Newly added records join the index
             // as we go, so intra-batch conflicts are still detected.
             let t = Instant::now();
-            let mut records_by_name: HashMap<String, Vec<Record>> = HashMap::new();
+            let mut records_by_name: HashMap<String, Vec<Record>> =
+                HashMap::with_capacity(existing_records.len());
             for record in existing_records {
                 records_by_name
                     .entry(record.name.to_ascii_lowercase())

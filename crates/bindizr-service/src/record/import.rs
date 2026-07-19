@@ -112,8 +112,9 @@ impl RecordService {
             // Records are indexed by owner name so the dedup check (and the
             // reconciliation below) scans only same-name entries, not the whole set.
             let t = Instant::now();
-            let mut desired: Vec<DesiredRecord> = Vec::new();
-            let mut desired_by_name: HashMap<String, Vec<usize>> = HashMap::new();
+            let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
+            let mut desired_by_name: HashMap<String, Vec<usize>> =
+                HashMap::with_capacity(parsed.records.len());
             for record in parsed.records {
                 // TXT is pre-encoded byte-exact by the parser; other types are
                 // encoded per record type here.
@@ -211,7 +212,8 @@ impl RecordService {
 
             // Index existing records by owner name so each existing/desired
             // record is reconciled against only same-name rows.
-            let mut existing_by_name: HashMap<String, Vec<&Record>> = HashMap::new();
+            let mut existing_by_name: HashMap<String, Vec<&Record>> =
+                HashMap::with_capacity(existing_records.len());
             for (i, record) in existing_records.iter().enumerate() {
                 existing_by_name
                     .entry(existing_lower[i].clone())
@@ -304,7 +306,8 @@ impl RecordService {
             // are indexed by name so each check scans only same-name candidates.
             let t = Instant::now();
             let del_ids: HashSet<i32> = dels.iter().chain(&ttl_dels).map(|d| d.id).collect();
-            let mut simulated_by_name: HashMap<String, Vec<Record>> = HashMap::new();
+            let mut simulated_by_name: HashMap<String, Vec<Record>> =
+                HashMap::with_capacity(existing_records.len());
             for (i, e) in existing_records.iter().enumerate() {
                 if !del_ids.contains(&e.id) {
                     simulated_by_name
