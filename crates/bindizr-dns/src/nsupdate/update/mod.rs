@@ -507,7 +507,11 @@ pub(super) fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<Strin
 
     let rel_len = owner.len() - zone.len() - 1;
     let rel = owner[..rel_len].trim_end_matches('.');
-    Ok(rel.to_string())
+    // Store lowercase like the JSON/CLI path. DNS owner names are
+    // case-insensitive, and the scoped conflict lookups match a lowercased bind
+    // against the raw column (to stay index-sargable), so a mixed-case name here
+    // would slip past duplicate/CNAME validation.
+    Ok(rel.to_ascii_lowercase())
 }
 
 fn trim_dot(name: &str) -> &str {
