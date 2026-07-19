@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Path, Query},
+    extract::{DefaultBodyLimit, Path, Query},
     http::StatusCode,
     response::IntoResponse,
     routing,
@@ -11,7 +11,7 @@ use serde_json::json;
 
 use crate::api::{
     error::ApiError,
-    middleware::body_parser::JsonBody,
+    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
         ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, ZoneDetailResponse,
@@ -31,7 +31,10 @@ impl ZoneApi {
             .route("/zones", routing::post(create_zone))
             .route("/zones/{name}", routing::put(update_zone))
             .route("/zones/{name}", routing::delete(delete_zone))
-            .route("/zones/{name}/imports", routing::post(import_zone))
+            .route(
+                "/zones/{name}/imports",
+                routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+            )
     }
 }
 

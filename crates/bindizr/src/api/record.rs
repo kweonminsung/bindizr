@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Path, Query},
+    extract::{DefaultBodyLimit, Path, Query},
     http::StatusCode,
     response::IntoResponse,
     routing,
@@ -11,7 +11,7 @@ use serde_json::json;
 
 use crate::api::{
     error::ApiError,
-    middleware::body_parser::JsonBody,
+    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
         GetRecordResponse, GetRecordsFilter, MessageResponse, RecordListResponse, RecordResponse,
@@ -33,7 +33,8 @@ impl RecordApi {
             .route("/records/{record_id}", routing::delete(delete_record))
             .route(
                 "/zones/{zone_name}/records/bulk",
-                routing::post(create_records_bulk),
+                routing::post(create_records_bulk)
+                    .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
     }
 }
