@@ -190,7 +190,7 @@ pub(crate) async fn handle_ixfr(
         current_serial
     );
 
-    if let Err(err) = send_ixfr_response(
+    match send_ixfr_response(
         stream,
         zone_name,
         query_id,
@@ -201,12 +201,31 @@ pub(crate) async fn handle_ixfr(
     )
     .await
     {
-        log_warn!(
-            "IXFR: Failed to build incremental response ({}), falling back to AXFR",
-            err
-        );
-        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
+        Ok(()) => {}
+        // Nothing was written yet, so a full AXFR is still a valid response.
+        Err(IxfrSendError::NotStarted(err)) => {
+            log_warn!(
+                "IXFR: Failed to build incremental response ({}), falling back to AXFR",
+                err
+            );
+            return axfr::handle_axfr_with_qtype(
+                stream,
+                zone_name,
+                query_id,
+                client_ip,
+                Rtype::IXFR,
+            )
             .await;
+        }
+        // A partial IXFR is already on the wire; appending an AXFR would corrupt
+        // the transfer, so fail the connection and let the secondary retry.
+        Err(IxfrSendError::Partial(err)) => {
+            log_warn!(
+                "IXFR: aborting after partial send, not falling back: {}",
+                err
+            );
+            return Err(err);
+        }
     }
 
     log_info!("IXFR completed for zone {}", zone_name_str);
@@ -231,7 +250,18 @@ async fn send_up_to_date_response(
     Ok(())
 }
 
-/// Sends an IXFR response with incremental changes.
+/// Outcome of a failed IXFR stream: whether any bytes reached the client yet.
+enum IxfrSendError {
+    /// Failed before writing anything — safe to fall back to AXFR.
+    NotStarted(XfrError),
+    /// Failed after at least one message was flushed. The stream is mid-transfer,
+    /// so the caller must not fall back (that would append an AXFR to a partial
+    /// IXFR and corrupt the transfer).
+    Partial(XfrError),
+}
+
+/// Sends an IXFR response with incremental changes, reporting whether a failure
+/// left the stream dirty so the caller can decide about AXFR fallback.
 async fn send_ixfr_response(
     stream: &mut TcpStream,
     zone_name: &Name<Vec<u8>>,
@@ -240,12 +270,45 @@ async fn send_ixfr_response(
     client_serial: u32,
     changes: &[delta::ZoneChange],
     snapshots_by_serial: &HashMap<u32, delta::ZoneSnapshot>,
-) -> Result<(), XfrError> {
-    // Stream across multiple TCP messages, flushing before the 64 KiB wire limit
-    // like AXFR; one message for the whole delta would force an AXFR fallback.
+) -> Result<(), IxfrSendError> {
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
     let mut messages_sent = 0usize;
 
+    let result = stream_ixfr_body(
+        stream,
+        &mut builder,
+        &mut messages_sent,
+        zone,
+        client_serial,
+        changes,
+        snapshots_by_serial,
+    )
+    .await;
+
+    match result {
+        Ok(()) => {
+            log_info!("IXFR: sent response in {} DNS message(s)", messages_sent);
+            Ok(())
+        }
+        // A failure after the first flush leaves the stream mid-transfer.
+        Err(err) if messages_sent > 0 => Err(IxfrSendError::Partial(err)),
+        Err(err) => Err(IxfrSendError::NotStarted(err)),
+    }
+}
+
+/// Streams the IXFR answer sequence across one or more TCP messages, flushing
+/// before the 64 KiB wire limit like AXFR; one message for the whole delta would
+/// force an AXFR fallback. `messages_sent` counts flushed messages so the caller
+/// can tell a pre-write failure from a mid-stream one.
+async fn stream_ixfr_body(
+    stream: &mut TcpStream,
+    builder: &mut wire::DnsMessageBuilder,
+    messages_sent: &mut usize,
+    zone: &crate::model::zone::Zone,
+    client_serial: u32,
+    changes: &[delta::ZoneChange],
+    snapshots_by_serial: &HashMap<u32, delta::ZoneSnapshot>,
+) -> Result<(), XfrError> {
     let current_snapshot = snapshots_by_serial
         .get(&delta::serial_to_u32(zone.serial)?)
         .ok_or_else(|| {
@@ -253,7 +316,7 @@ async fn send_ixfr_response(
         })?;
 
     // Initial SOA (current serial).
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
         builder.add_soa_from_snapshot(current_snapshot)
     })
     .await?;
@@ -285,47 +348,43 @@ async fn send_ixfr_response(
                 old_serial
             ))
         })?;
-        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
             builder.add_soa_from_snapshot(old_soa)
         })
         .await?;
 
         // Add all DEL operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
-            messages_sent +=
-                wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
-                    add_change_to_builder(builder, change, &zone.name)
-                })
-                .await?;
+            *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
+                add_change_to_builder(builder, change, &zone.name)
+            })
+            .await?;
         }
 
         // Add new SOA (addition section marker)
         let new_soa = snapshots_by_serial.get(&serial).ok_or_else(|| {
             XfrError::ProtocolError(format!("Missing new SOA snapshot for serial {}", serial))
         })?;
-        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
             builder.add_soa_from_snapshot(new_soa)
         })
         .await?;
 
         // Add all ADD operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
-            messages_sent +=
-                wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
-                    add_change_to_builder(builder, change, &zone.name)
-                })
-                .await?;
+            *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
+                add_change_to_builder(builder, change, &zone.name)
+            })
+            .await?;
         }
     }
 
     // Final SOA (current serial) closes the transfer.
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
         builder.add_soa_from_snapshot(current_snapshot)
     })
     .await?;
-    messages_sent += wire::flush_message_if_not_empty(stream, &mut builder).await?;
-
-    log_info!("IXFR: sent response in {} DNS message(s)", messages_sent);
+    *messages_sent += wire::flush_message_if_not_empty(stream, builder).await?;
 
     Ok(())
 }
