@@ -15,7 +15,9 @@ from . import dockerutil
 
 def _to_bytes(s: str) -> float:
     s = s.strip()
-    m = re.match(r"([\d.]+)\s*([KMGT]?i?B)", s)
+    # Docker uses a lowercase SI 'k' for NET/BLOCK IO (e.g. "2.48kB") and binary
+    # MiB/GiB for memory; accept both.
+    m = re.match(r"([\d.]+)\s*([kKMGT]?i?B)", s)
     if not m:
         return 0.0
     val, unit = float(m.group(1)), m.group(2)
@@ -25,6 +27,7 @@ def _to_bytes(s: str) -> float:
         "MiB": 1024**2,
         "GiB": 1024**3,
         "TiB": 1024**4,
+        "kB": 1000,
         "KB": 1000,
         "MB": 1000**2,
         "GB": 1000**3,
@@ -101,12 +104,20 @@ class ResourceSampler:
             mem_by_tick[s["tick"]] = mem_by_tick.get(s["tick"], 0.0) + s["mem_bytes"]
         mem_totals = list(mem_by_tick.values())
 
+        # net_tx is Docker's cumulative TX counter, so bytes sent during the
+        # measured window are last - first per container (summed), not the absolute
+        # max — which would include setup/import/propagation traffic.
+        net_by_container: dict[str, list[float]] = {}
+        for s in self.samples:
+            net_by_container.setdefault(s["name"], []).append(s["net_tx"])
+        net_tx_delta = sum(max(v) - min(v) for v in net_by_container.values())
+
         return {
             "peak_cpu_pct": round(max(cpus), 2),
             "avg_cpu_pct": round(sum(cpus) / len(cpus), 2),
             "cpu_by_container": cpu_by_container,
             "peak_mem_mb": round(max(mem_totals) / 1024**2, 2),
             "avg_mem_mb": round(sum(mem_totals) / len(mem_totals) / 1024**2, 2),
-            "peak_net_tx_mb": round(max(s["net_tx"] for s in self.samples) / 1024**2, 2),
+            "peak_net_tx_mb": round(net_tx_delta / 1024**2, 2),
             "samples": len(self.samples),
         }

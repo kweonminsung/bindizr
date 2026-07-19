@@ -38,12 +38,27 @@ async def run(adapter, cfg, ctx) -> list:
         # size so a 100k/1M transfer isn't cut off at a fixed 120s.
         deadline = time.monotonic() + max(120, size / 500)
         prev = -1
+        propagated = False
         while time.monotonic() < deadline:
             _, count, _ = await _axfr_count(zone, xe.host, xe.port)
             if count >= size and count == prev:
+                propagated = True
                 break
             prev = count
             await asyncio.sleep(1.0)
+
+        # A timed-out poll means the secondary never fully received the zone (or
+        # AXFR is refused); record a failure instead of a misleading partial row.
+        if not propagated:
+            print(f'  [FAIL] b04: zone not fully transferable within deadline '
+                  f'for {ctx["label"]}')
+            rows.append({
+                "system": ctx["label"],
+                "size": size,
+                "status": "FAILED",
+                "error": "propagation timeout: zone not fully transferable",
+            })
+            continue
 
         # Clean measured transfer.
         secs, count, nbytes = await _axfr_count(zone, xe.host, xe.port)
