@@ -103,7 +103,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:17
+    image: postgres:18
     profiles: ["postgres"]
     environment:
       POSTGRES_DB: bindizr
