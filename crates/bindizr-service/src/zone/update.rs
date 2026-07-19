@@ -85,8 +85,17 @@ impl ZoneService {
             }
         };
 
-        // Auto-increment serial if not provided, or use existing if no change
+        // The update always rewrites the SOA (and maybe the apex NS), so the
+        // serial must advance — secondaries and the serial-keyed record cache
+        // detect the change only when it does. Reject an explicit serial that
+        // does not move past the current one; the auto path always advances.
         let new_serial = match update_zone_request.serial {
+            Some(s) if s <= existing_zone.serial => {
+                return Err(ServiceError::BadRequest(format!(
+                    "serial {} must be greater than the current serial {}",
+                    s, existing_zone.serial
+                )));
+            }
             Some(s) => s,
             None => generate_serial(Some(existing_zone.serial)),
         };
