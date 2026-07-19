@@ -450,8 +450,9 @@ fn parse_u16_field(value: &str, field: &str) -> Result<u16, XfrError> {
 pub(crate) async fn add_answer_and_flush_if_needed<W, F>(
     writer: &mut W,
     builder: &mut DnsMessageBuilder,
+    messages_sent: &mut usize,
     add_answer: F,
-) -> Result<usize, XfrError>
+) -> Result<(), XfrError>
 where
     W: tokio::io::AsyncWriteExt + Unpin,
     F: FnOnce(&mut DnsMessageBuilder) -> Result<(), XfrError>,
@@ -459,7 +460,7 @@ where
     add_answer(builder)?;
 
     if builder.message_len() <= DNS_TCP_MAX_SIZE {
-        return Ok(0);
+        return Ok(());
     }
 
     let last_answer = builder.pop_last_answer().ok_or_else(|| {
@@ -474,7 +475,9 @@ where
         )));
     }
 
-    let sent = flush_message_if_not_empty(writer, builder).await?;
+    // Count the flush before the size check below, so a caller can tell that
+    // bytes reached the client even when this call then returns an error.
+    *messages_sent += flush_message_if_not_empty(writer, builder).await?;
 
     builder.push_answer(last_answer);
     if builder.message_len() > DNS_TCP_MAX_SIZE {
@@ -484,7 +487,7 @@ where
         )));
     }
 
-    Ok(sent)
+    Ok(())
 }
 
 pub(crate) async fn flush_message_if_not_empty<W>(

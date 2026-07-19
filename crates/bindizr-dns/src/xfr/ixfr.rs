@@ -310,7 +310,7 @@ async fn stream_ixfr_body(
         })?;
 
     // Initial SOA (current serial).
-    *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
         builder.add_soa_from_snapshot(current_snapshot)
     })
     .await?;
@@ -342,14 +342,14 @@ async fn stream_ixfr_body(
                 old_serial
             ))
         })?;
-        *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
+        wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
             builder.add_soa_from_snapshot(old_soa)
         })
         .await?;
 
         // Add all DEL operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
-            *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
+            wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
                 add_change_to_builder(builder, change, &zone.name)
             })
             .await?;
@@ -359,14 +359,14 @@ async fn stream_ixfr_body(
         let new_soa = snapshots_by_serial.get(&serial).ok_or_else(|| {
             XfrError::ProtocolError(format!("Missing new SOA snapshot for serial {}", serial))
         })?;
-        *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
+        wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
             builder.add_soa_from_snapshot(new_soa)
         })
         .await?;
 
         // Add all ADD operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
-            *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
+            wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
                 add_change_to_builder(builder, change, &zone.name)
             })
             .await?;
@@ -374,7 +374,7 @@ async fn stream_ixfr_body(
     }
 
     // Final SOA (current serial) closes the transfer.
-    *messages_sent += wire::add_answer_and_flush_if_needed(stream, builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
         builder.add_soa_from_snapshot(current_snapshot)
     })
     .await?;

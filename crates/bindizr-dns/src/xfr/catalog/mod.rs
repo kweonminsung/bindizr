@@ -99,28 +99,28 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     let mut messages_sent = 0usize;
     let serial = delta::serial_to_u32(catalog_zone.serial)?;
 
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_catalog_soa(&catalog_zone, serial)
     })
     .await?;
 
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_catalog_ns(&catalog_zone)
     })
     .await?;
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_catalog_version(&catalog_zone)
     })
     .await?;
 
     for member_zone in &member_zones {
-        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
             builder.add_catalog_ptr(&catalog_zone, member_zone)
         })
         .await?;
     }
 
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_catalog_soa(&catalog_zone, serial)
     })
     .await?;

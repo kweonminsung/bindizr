@@ -67,20 +67,20 @@ pub(crate) async fn handle_axfr_with_qtype(
 
     // Add initial SOA record
     let serial = delta::serial_to_u32(zone.serial)?;
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_soa(&zone, serial)
     })
     .await?;
 
     for record in records.iter() {
-        messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+        wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
             builder.add_record(record, &zone.name)
         })
         .await?;
     }
 
     // Add final SOA record to indicate end of transfer
-    messages_sent += wire::add_answer_and_flush_if_needed(stream, &mut builder, |builder| {
+    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_soa(&zone, serial)
     })
     .await?;
