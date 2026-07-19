@@ -111,9 +111,8 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                     }
                     other => {
                         let raw = other.to_string();
-                        // Split MX/SRV priority (first field) into the priority
-                        // column like the JSON API, so filters/responses see it.
-                        // Both forms canonicalize equal, so no import churn.
+                        // Move the MX/SRV priority (first field) into the priority
+                        // column like the JSON API; both forms canonicalize equal.
                         match record_type {
                             RecordType::MX | RecordType::SRV => {
                                 let mut fields = raw.split_whitespace();

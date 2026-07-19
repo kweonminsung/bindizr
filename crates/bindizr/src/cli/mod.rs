@@ -97,7 +97,6 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     socket::server::initialize().await?;
     api::initialize().await?;
 
-    // Wait only for Ctrl+C signal, ignore all stdin input
     tokio::signal::ctrl_c()
         .await
         .map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;

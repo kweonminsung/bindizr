@@ -85,10 +85,9 @@ impl ZoneService {
             }
         };
 
-        // The update always rewrites the SOA (and maybe the apex NS), so the
-        // serial must advance — secondaries and the serial-keyed record cache
-        // detect the change only when it does. Reject an explicit serial that
-        // does not move past the current one; the auto path always advances.
+        // The update rewrites the SOA, so the serial must advance for secondaries
+        // (and the serial-keyed cache) to detect it. Reject a non-advancing
+        // explicit serial; the auto path always advances.
         let new_serial = match update_zone_request.serial {
             Some(s) if s <= existing_zone.serial => {
                 return Err(ServiceError::BadRequest(format!(
@@ -237,6 +236,7 @@ impl ZoneService {
             );
         }
 
+        // Re-send catalog NOTIFY when the zone was renamed
         if existing_zone.name != updated_zone.name
             && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
         {

@@ -44,6 +44,7 @@ impl ZoneService {
         // Log zone deletion after commit
         log_info!("event=zone_delete zone={} zone_id={}", zone_name, zone_id);
 
+        // Send catalog NOTIFY so secondaries drop the removed zone
         if let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await {
             log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }

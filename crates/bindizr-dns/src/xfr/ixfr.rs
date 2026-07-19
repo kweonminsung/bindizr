@@ -39,7 +39,6 @@ pub(crate) async fn handle_ixfr(
 
     let current_serial = delta::serial_to_u32(zone.serial)?;
 
-    // If no client serial provided, fallback to AXFR
     let client_serial = match client_serial {
         Some(s) => s,
         None => {
@@ -89,7 +88,6 @@ pub(crate) async fn handle_ixfr(
     // Try to get changes from zone_changes table
     let changes = delta::get_zone_changes(zone.id, client_serial, current_serial).await?;
 
-    // If no changes available, fallback to AXFR
     if changes.is_empty() {
         log_warn!(
             "IXFR: No history available for serial {} to {}, falling back to AXFR",
@@ -217,8 +215,7 @@ pub(crate) async fn handle_ixfr(
             )
             .await;
         }
-        // A partial IXFR is already on the wire; appending an AXFR would corrupt
-        // the transfer, so fail the connection and let the secondary retry.
+        // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
         Err(IxfrSendError::Partial(err)) => {
             log_warn!(
                 "IXFR: aborting after partial send, not falling back: {}",
@@ -254,9 +251,7 @@ async fn send_up_to_date_response(
 enum IxfrSendError {
     /// Failed before writing anything — safe to fall back to AXFR.
     NotStarted(XfrError),
-    /// Failed after at least one message was flushed. The stream is mid-transfer,
-    /// so the caller must not fall back (that would append an AXFR to a partial
-    /// IXFR and corrupt the transfer).
+    /// Failed mid-stream; falling back to AXFR would corrupt the partial IXFR.
     Partial(XfrError),
 }
 
@@ -296,10 +291,9 @@ async fn send_ixfr_response(
     }
 }
 
-/// Streams the IXFR answer sequence across one or more TCP messages, flushing
-/// before the 64 KiB wire limit like AXFR; one message for the whole delta would
-/// force an AXFR fallback. `messages_sent` counts flushed messages so the caller
-/// can tell a pre-write failure from a mid-stream one.
+/// Streams the IXFR answers across multiple TCP messages, flushing before the
+/// 64 KiB wire limit like AXFR. `messages_sent` lets the caller tell a pre-write
+/// failure from a mid-stream one.
 async fn stream_ixfr_body(
     stream: &mut TcpStream,
     builder: &mut wire::DnsMessageBuilder,

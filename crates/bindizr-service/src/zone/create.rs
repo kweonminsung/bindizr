@@ -117,6 +117,7 @@ impl ZoneService {
             created_zone.id
         );
 
+        // Send catalog NOTIFY so secondaries pick up the new zone
         if let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await {
             log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }

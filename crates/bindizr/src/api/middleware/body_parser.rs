@@ -10,10 +10,8 @@ use bindizr_core::{log_debug, log_error};
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
-/// Body-size cap for endpoints that take a whole zone file or bulk record set in
-/// one request (zone import, bulk create). Above axum's 2 MiB `DefaultBodyLimit`
-/// so realistic zones aren't rejected before the handler runs, but bounded to
-/// limit per-request memory.
+/// Body cap for whole-zone-file / bulk uploads (import, bulk create) — above
+/// axum's 2 MiB default, but bounded to limit per-request memory.
 pub(crate) const MAX_UPLOAD_BODY_BYTES: usize = 32 * 1024 * 1024;
 
 /// JSON body extractor that maps rejections to a JSON [`ApiError`] response and
