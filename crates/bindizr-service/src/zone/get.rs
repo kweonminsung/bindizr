@@ -6,8 +6,9 @@ use crate::{
     error::ServiceError,
     log_error,
     model::{zone::Zone, zone_change::ZoneChange},
+    pagination::paginated_response,
     repository::RepositoryService,
-    types::{GetZonesFilter, PaginatedResponse, Pagination},
+    types::{GetZonesFilter, PaginatedResponse},
 };
 
 impl ZoneService {
@@ -71,17 +72,7 @@ impl ZoneService {
 
         let total = RepositoryService::count_zones_by_filter(zone_filter.clone()).await?;
         let zones = RepositoryService::get_zones_by_filter(zone_filter).await?;
-        let offset = offset.unwrap_or(0);
-        let limit = limit.unwrap_or_else(|| total.min(u64::from(u32::MAX)) as u32);
-
-        Ok(PaginatedResponse {
-            items: zones,
-            pagination: Pagination {
-                limit,
-                offset,
-                total,
-            },
-        })
+        Ok(paginated_response(zones, limit, offset, total))
     }
 
     /// Fetch a zone by name, returning `NotFound` if it does not exist.

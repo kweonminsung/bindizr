@@ -41,7 +41,7 @@ impl std::str::FromStr for OutputFormat {
 pub(crate) fn print_output_with_table<T, U>(
     data: &T,
     format: OutputFormat,
-    to_table_rows: impl Fn(&T) -> Vec<U>,
+    to_table_rows: impl Fn(&T) -> Result<Vec<U>, String>,
 ) -> Result<(), String>
 where
     T: Serialize,
@@ -59,7 +59,7 @@ where
             println!("{}", yaml);
         }
         OutputFormat::Table => {
-            let rows = to_table_rows(data);
+            let rows = to_table_rows(data)?;
             if rows.is_empty() {
                 println!("No resources found.");
             } else {

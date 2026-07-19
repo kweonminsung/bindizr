@@ -28,7 +28,8 @@ pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
             let response = GetRecordResponse::from_record_with_zone(&record);
             Ok(DaemonResponse {
                 message: "Record retrieved successfully".to_string(),
-                data: serde_json::to_value(response).unwrap(),
+                data: serde_json::to_value(response)
+                    .map_err(|e| format!("Failed to serialize response: {}", e))?,
             })
         }
         Err(e) => Err(e.to_string()),
@@ -74,7 +75,8 @@ pub(super) async fn create_record(data: &serde_json::Value) -> Result<DaemonResp
 
             Ok(DaemonResponse {
                 message: "Record created successfully".to_string(),
-                data: serde_json::to_value(response).unwrap(),
+                data: serde_json::to_value(response)
+                    .map_err(|e| format!("Failed to serialize response: {}", e))?,
             })
         }
         Err(e) => Err(e.to_string()),

@@ -14,7 +14,8 @@ pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 
     let response = DaemonResponse {
         message: "Token created successfully".to_string(),
-        data: serde_json::to_value(created_token).unwrap(),
+        data: serde_json::to_value(created_token)
+            .map_err(|e| format!("Failed to serialize response: {}", e))?,
     };
     Ok(response)
 }
@@ -31,7 +32,8 @@ pub(super) async fn list_tokens() -> Result<DaemonResponse, String> {
 
     let response = DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
-        data: serde_json::to_value(tokens).unwrap(),
+        data: serde_json::to_value(tokens)
+            .map_err(|e| format!("Failed to serialize response: {}", e))?,
     };
     Ok(response)
 }
