@@ -1,0 +1,9 @@
+$TTL 3600
+@       IN SOA  ns1.bench.example. admin.bench.example. (
+                        1          ; serial
+                        3600       ; refresh
+                        600        ; retry
+                        604800     ; expire
+                        3600 )     ; minimum
+@       IN NS   ns1.bench.example.
+ns1     IN A    127.0.0.1

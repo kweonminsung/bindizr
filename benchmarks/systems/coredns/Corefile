@@ -1,0 +1,20 @@
+# CoreDNS as an authoritative server for the benchmark zone.
+#
+# CoreDNS has no management API and no RFC 2136 dynamic update: records are
+# served from a zone file. The `file` plugin re-reads that file on an mtime
+# poll, so `reload 1s` is the tightest practical write-visibility interval —
+# there is no immediate reload signal equivalent to `rndc reload`.
+bench.example:53 {
+    file /zones/bench.example.zone {
+        reload 1s
+    }
+    # Allow AXFR from anywhere so Benchmark 4 can pull the zone.
+    transfer {
+        to *
+    }
+    errors
+}
+
+.:53 {
+    errors
+}
