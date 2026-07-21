@@ -110,6 +110,10 @@ impl TestApp {
         &self.namespace
     }
 
+    pub(crate) fn has_dns_secondaries(&self) -> bool {
+        !self.dns_secondary_ports.is_empty()
+    }
+
     pub(crate) async fn request(
         &self,
         method: Method,

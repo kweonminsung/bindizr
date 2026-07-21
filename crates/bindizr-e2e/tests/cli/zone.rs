@@ -323,3 +323,38 @@ async fn zone_snapshots_and_rollback_flow() {
     let output = app.run_cli(&args).await;
     assert_cli_failure_contains(&args, &output, "must be less than the current serial");
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_status_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("status.example");
+    let primary_ns = format!("ns1.{zone_name}");
+    app.run_cli_success(&[
+        "zone",
+        "create",
+        "--name",
+        &zone_name,
+        "--primary-ns",
+        &primary_ns,
+        "--admin-email",
+        "hostmaster@status.example",
+        "--ttl",
+        "3600",
+    ])
+    .await;
+
+    let status = app.run_cli_success(&["zone", "status", &zone_name]).await;
+    assert!(status.contains(&format!("Zone {} (serial 1)", zone_name)));
+
+    let json_output = app
+        .run_cli_success(&["zone", "status", &zone_name, "--output", "json"])
+        .await;
+    let parsed: Value = serde_json::from_str(&json_output).expect("CLI did not return valid JSON");
+    assert_eq!(parsed["zone"], zone_name);
+    assert_eq!(parsed["serial"].as_i64().unwrap(), 1);
+    if !app.has_dns_secondaries() {
+        assert!(status.contains("No secondaries configured."));
+        assert!(parsed["secondaries"].as_array().unwrap().is_empty());
+    }
+}

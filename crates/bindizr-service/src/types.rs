@@ -567,6 +567,32 @@ pub struct RollbackZoneResponse {
     pub summary: RollbackSummary,
 }
 
+/// Sync state of one configured secondary for a zone.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SecondaryStatusResponse {
+    #[schema(example = "10.0.1.10:53")]
+    pub address: String,
+    /// `in_sync` | `lagging` | `ahead` | `unreachable`
+    #[schema(example = "in_sync")]
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = 42)]
+    pub visible_serial: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// A zone's serial and the sync state of every configured secondary, probed
+/// live via SOA queries.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ZoneStatusResponse {
+    #[schema(example = "example.com")]
+    pub zone: String,
+    #[schema(example = 42)]
+    pub serial: i32,
+    pub secondaries: Vec<SecondaryStatusResponse>,
+}
+
 /// Generic error response: a plain description plus a machine-readable code.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ErrorResponse {

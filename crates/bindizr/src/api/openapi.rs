@@ -8,9 +8,9 @@ use super::types::{
     CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, ImportMode,
     ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse,
     NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse, RecordValueRequest,
-    RollbackSummary, RollbackZoneRequest, RollbackZoneResponse, SnapshotDetailResponse,
-    SnapshotListResponse, SnapshotRecordResponse, UpdateRecordRequest, ZoneDetailResponse,
-    ZoneListResponse, ZoneResponse, ZoneSnapshotResponse,
+    RollbackSummary, RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse,
+    SnapshotDetailResponse, SnapshotListResponse, SnapshotRecordResponse, UpdateRecordRequest,
+    ZoneDetailResponse, ZoneListResponse, ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
 };
 
 /// OpenAPI document for the HTTP API (debug builds only).
@@ -32,6 +32,7 @@ use super::types::{
         super::zone::list_zone_snapshots,
         super::zone::get_zone_snapshot,
         super::zone::rollback_zone,
+        super::zone::get_zone_status,
         super::notify::notify_zones
     ),
     components(schemas(
@@ -56,6 +57,7 @@ use super::types::{
         RollbackSummary,
         RollbackZoneRequest,
         RollbackZoneResponse,
+        SecondaryStatusResponse,
         SnapshotDetailResponse,
         SnapshotListResponse,
         SnapshotRecordResponse,
@@ -63,7 +65,8 @@ use super::types::{
         ZoneDetailResponse,
         ZoneListResponse,
         ZoneResponse,
-        ZoneSnapshotResponse
+        ZoneSnapshotResponse,
+        ZoneStatusResponse
     )),
     modifiers(&SecurityAddon),
     tags(

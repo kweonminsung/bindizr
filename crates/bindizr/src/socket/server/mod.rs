@@ -54,6 +54,7 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ListZoneSnapshots => zone::list_zone_snapshots(&cmd.data).await,
                 DaemonCommandKind::GetZoneSnapshot => zone::get_zone_snapshot(&cmd.data).await,
                 DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
+                DaemonCommandKind::ZoneStatus => zone::zone_status(&cmd.data).await,
             },
 
             Err(e) => {

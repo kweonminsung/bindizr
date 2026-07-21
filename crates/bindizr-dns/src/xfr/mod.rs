@@ -7,6 +7,7 @@ pub(crate) mod delta;
 pub mod error;
 pub(crate) mod ixfr;
 pub mod notify;
+pub mod soa_probe;
 pub(crate) mod wire;
 pub(crate) mod zone_cache;
 

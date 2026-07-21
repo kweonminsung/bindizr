@@ -5,7 +5,10 @@ use axum::{
     response::IntoResponse,
     routing,
 };
-use bindizr_service::{record::RecordService, zone::ZoneService};
+use bindizr_core::model::zone::Zone;
+use bindizr_dns as dns;
+use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneService};
+use dns::xfr::soa_probe::SecondaryProbe;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -15,8 +18,9 @@ use crate::api::{
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
         ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, RollbackZoneRequest,
-        RollbackZoneResponse, SnapshotDetailResponse, SnapshotListResponse, SnapshotRecordResponse,
-        ZoneDetailResponse, ZoneListResponse, ZoneResponse, ZoneSnapshotResponse,
+        RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
+        SnapshotListResponse, SnapshotRecordResponse, ZoneDetailResponse, ZoneListResponse,
+        ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
     },
 };
 
@@ -42,6 +46,72 @@ impl ZoneApi {
                 routing::get(get_zone_snapshot),
             )
             .route("/zones/{name}/rollback", routing::post(rollback_zone))
+            .route("/zones/{name}/status", routing::get(get_zone_status))
+    }
+}
+
+/// Assemble the per-secondary sync report by comparing each probe result with
+/// the zone's serial. Shared by the HTTP and daemon-socket handlers.
+pub(crate) fn build_zone_status(zone: &Zone, probes: Vec<SecondaryProbe>) -> ZoneStatusResponse {
+    let secondaries = probes
+        .into_iter()
+        .map(|probe| match probe.result {
+            Ok(visible) => {
+                let visible = i64::from(visible);
+                let status = match visible.cmp(&i64::from(zone.serial)) {
+                    std::cmp::Ordering::Equal => "in_sync",
+                    std::cmp::Ordering::Less => "lagging",
+                    std::cmp::Ordering::Greater => "ahead",
+                };
+                SecondaryStatusResponse {
+                    address: probe.address,
+                    status: status.to_string(),
+                    visible_serial: Some(visible),
+                    error: None,
+                }
+            }
+            Err(error) => SecondaryStatusResponse {
+                address: probe.address,
+                status: "unreachable".to_string(),
+                visible_serial: None,
+                error: Some(error),
+            },
+        })
+        .collect();
+
+    ZoneStatusResponse {
+        zone: zone.name.clone(),
+        serial: zone.serial,
+        secondaries,
+    }
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/status",
+        tag = "Zone",
+        summary = "Check how far each secondary has caught up with a zone",
+        description = "Queries every configured secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no secondaries configured the list is empty.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        responses(
+            (status = 200, description = "The zone's secondary sync status", body = ZoneStatusResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Report the sync state of every configured secondary for a zone.
+pub(crate) async fn get_zone_status(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
+    let zone = match ZoneService::get_by_name(&params.name).await {
+        Ok(zone) => zone,
+        Err(err) => return ApiError::from(err).into_response(),
+    };
+
+    match dns::xfr::soa_probe::probe_secondaries(&zone.name).await {
+        Ok(probes) => (StatusCode::OK, Json(build_zone_status(&zone, probes))).into_response(),
+        Err(err) => ApiError(ServiceError::internal(err.to_string())).into_response(),
     }
 }
 

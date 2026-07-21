@@ -200,6 +200,40 @@ pub(super) async fn rollback_zone(
     })
 }
 
+/// Handle the `ZoneStatus` command by probing every configured secondary for
+/// the SOA serial it serves and comparing it with the zone's serial.
+pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+
+    let zone = ZoneService::get_by_name(name).await?;
+    let probes = bindizr_dns::xfr::soa_probe::probe_secondaries(&zone.name)
+        .await
+        .map_err(|e| ServiceError::internal(e.to_string()))?;
+    let response = crate::api::zone::build_zone_status(&zone, probes);
+
+    let in_sync = response
+        .secondaries
+        .iter()
+        .filter(|s| s.status == "in_sync")
+        .count();
+    let message = if response.secondaries.is_empty() {
+        "No secondaries configured".to_string()
+    } else {
+        format!(
+            "{} of {} secondaries in sync with serial {}",
+            in_sync,
+            response.secondaries.len(),
+            response.serial
+        )
+    };
+
+    Ok(DaemonResponse {
+        message,
+        data: serde_json::to_value(response)
+            .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))?,
+    })
+}
+
 /// Handle the `DeleteZone` command by deleting a zone by name.
 pub(super) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let name = required_name(data)?;

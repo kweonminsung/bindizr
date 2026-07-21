@@ -74,6 +74,7 @@ bindizr zone list
 bindizr zone import example.com db.example.com --mode upsert
 bindizr zone snapshots example.com
 bindizr zone rollback example.com 7 --dry-run
+bindizr zone status example.com
 bindizr record list --zone example.com
 bindizr record bulk records.json --zone example.com
 bindizr zone notify example.com

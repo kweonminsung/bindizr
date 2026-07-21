@@ -5,8 +5,8 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ImportSummaryRow, OutputFormat, RollbackSummaryRow, SnapshotRecordRow, SnapshotRow,
-            ZoneRow, print_output_with_table,
+            ImportSummaryRow, OutputFormat, RollbackSummaryRow, SecondaryStatusRow,
+            SnapshotRecordRow, SnapshotRow, ZoneRow, print_output_with_table,
         },
     },
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
@@ -130,6 +130,15 @@ pub(crate) enum ZoneCommand {
         /// Compute and report the rollback without applying any change
         #[arg(long)]
         dry_run: bool,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
+    /// Show how far each secondary has caught up with a zone
+    Status {
+        /// The name of the zone
+        name: String,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -377,6 +386,31 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             }
             print_output_with_table(&response.data, output, |data| {
                 RollbackSummaryRow::from_json(data).map(|row| vec![row])
+            })?;
+        }
+        ZoneCommand::Status { name, output } => {
+            let response = client
+                .send_command(DaemonCommandKind::ZoneStatus, Some(json!({ "name": name })))
+                .await?;
+
+            if output == OutputFormat::Table {
+                let zone = response.data.get("zone").and_then(|v| v.as_str());
+                let serial = response.data.get("serial").and_then(|v| v.as_i64());
+                if let (Some(zone), Some(serial)) = (zone, serial) {
+                    println!("Zone {} (serial {})", zone, serial);
+                }
+                let has_secondaries = response
+                    .data
+                    .get("secondaries")
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|arr| !arr.is_empty());
+                if !has_secondaries {
+                    println!("No secondaries configured.");
+                    return Ok(());
+                }
+            }
+            print_output_with_table(&response.data, output, |data| {
+                SecondaryStatusRow::rows_from_status(data)
             })?;
         }
         ZoneCommand::Notify(args) => {

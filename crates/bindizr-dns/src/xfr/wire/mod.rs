@@ -634,7 +634,7 @@ fn extract_ixfr_serial_from_query(data: &[u8]) -> Option<u32> {
     None
 }
 
-fn skip_rr(data: &[u8], pos: usize) -> Option<usize> {
+pub(crate) fn skip_rr(data: &[u8], pos: usize) -> Option<usize> {
     let name_len = skip_name(data, pos)?;
     let header_pos = pos.checked_add(name_len)?;
     if header_pos.checked_add(10)? > data.len() {
@@ -648,7 +648,7 @@ fn skip_rr(data: &[u8], pos: usize) -> Option<usize> {
     Some(next)
 }
 
-fn skip_name(data: &[u8], start: usize) -> Option<usize> {
+pub(crate) fn skip_name(data: &[u8], start: usize) -> Option<usize> {
     if start >= data.len() {
         return None;
     }

@@ -23,6 +23,7 @@ pub(crate) enum DaemonCommandKind {
     ListZoneSnapshots,
     GetZoneSnapshot,
     RollbackZone,
+    ZoneStatus,
 }
 
 /// A command and its payload sent to the daemon.

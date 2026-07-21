@@ -285,6 +285,9 @@ $ bindizr zone snapshots <ZONE_NAME> <SERIAL>
 # Roll a zone back to a previous serial (the serial still advances)
 $ bindizr zone rollback <ZONE_NAME> <SERIAL> [--dry-run]
 
+# Check how far each secondary has caught up with a zone
+$ bindizr zone status <ZONE_NAME>
+
 # Show help information
 $ bindizr --help
 ```

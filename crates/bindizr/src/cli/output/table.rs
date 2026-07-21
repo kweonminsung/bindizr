@@ -152,6 +152,59 @@ impl RollbackSummaryRow {
     }
 }
 
+/// Table row for per-secondary zone sync status.
+#[derive(Debug, Tabled)]
+pub(crate) struct SecondaryStatusRow {
+    #[tabled(rename = "ADDRESS")]
+    pub address: String,
+    #[tabled(rename = "STATUS")]
+    pub status: String,
+    #[tabled(rename = "VISIBLE-SERIAL")]
+    pub visible_serial: String,
+    #[tabled(rename = "LAG")]
+    pub lag: String,
+}
+
+impl SecondaryStatusRow {
+    /// Build rows from a `ZoneStatusResponse` JSON payload, deriving each
+    /// secondary's lag from the zone serial.
+    pub(crate) fn rows_from_status(data: &serde_json::Value) -> Result<Vec<Self>, String> {
+        let serial = data
+            .get("serial")
+            .and_then(|v| v.as_i64())
+            .ok_or("Missing serial in response")?;
+        let secondaries = data
+            .get("secondaries")
+            .and_then(|v| v.as_array())
+            .ok_or("Missing secondaries in response")?;
+
+        Ok(secondaries
+            .iter()
+            .map(|entry| {
+                let visible = entry.get("visible_serial").and_then(|v| v.as_i64());
+                let status = entry
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let detail = match (status, entry.get("error").and_then(|v| v.as_str())) {
+                    ("unreachable", Some(error)) => format!("unreachable ({})", error),
+                    _ => status.to_string(),
+                };
+                SecondaryStatusRow {
+                    address: entry
+                        .get("address")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("-")
+                        .to_string(),
+                    status: detail,
+                    visible_serial: visible.map_or_else(|| "-".to_string(), |v| v.to_string()),
+                    lag: visible.map_or_else(|| "-".to_string(), |v| (serial - v).to_string()),
+                }
+            })
+            .collect())
+    }
+}
+
 /// Table row for zone-file import summaries.
 #[derive(Debug, Deserialize, Tabled)]
 pub(crate) struct ImportSummaryRow {
