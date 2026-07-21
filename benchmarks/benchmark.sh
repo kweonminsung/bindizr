@@ -48,10 +48,15 @@ fi
 
 # --- cleanup on exit ---------------------------------------------------------
 cleanup() {
+  # Preserve the script's real exit status: on a clean run the `grep` below finds
+  # no leftover stacks and returns 1, which would otherwise become the script's
+  # exit code (a spurious failure) since this runs from the EXIT trap.
+  local rc=$?
   echo ">>> tearing down any leftover benchmark stacks..."
   for p in $(docker compose ls -q 2>/dev/null | grep '^bench-' || true); do
     docker compose -p "$p" down -v --remove-orphans >/dev/null 2>&1 || true
   done
+  return $rc
 }
 trap cleanup EXIT INT TERM
 
