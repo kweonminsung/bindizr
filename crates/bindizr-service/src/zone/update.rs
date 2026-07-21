@@ -82,19 +82,14 @@ impl ZoneService {
             }
         };
 
-        // The update rewrites the SOA, so the serial must advance for secondaries
-        // (and the serial-keyed cache) to detect it. Reject a non-advancing
-        // explicit serial; the auto path always advances.
-        let new_serial = match update_zone_request.serial {
-            Some(s) if s <= existing_zone.serial => {
-                return Err(ServiceError::invalid_zone(format!(
-                    "serial {} must be greater than the current serial {}",
-                    s, existing_zone.serial
-                )));
-            }
-            Some(s) => s,
-            None => generate_serial(Some(existing_zone.serial)),
-        };
+        // The serial is a system-managed version counter (snapshot/rollback key);
+        // after creation it can only advance through the generator.
+        if update_zone_request.serial.is_some() {
+            return Err(ServiceError::invalid_input(
+                "serial is managed automatically and cannot be set on update",
+            ));
+        }
+        let new_serial = generate_serial(Some(existing_zone.serial));
 
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
 

@@ -276,6 +276,15 @@ $ bindizr status
 # Send NOTIFY to secondary DNS servers for a zone
 $ bindizr zone notify <ZONE_NAME>
 
+# List a zone's snapshots (SOA serials are a plain counter starting at 1)
+$ bindizr zone snapshots <ZONE_NAME>
+
+# Inspect the zone state captured at a serial
+$ bindizr zone snapshots <ZONE_NAME> <SERIAL>
+
+# Roll a zone back to a previous serial (the serial still advances)
+$ bindizr zone rollback <ZONE_NAME> <SERIAL> [--dry-run]
+
 # Show help information
 $ bindizr --help
 ```

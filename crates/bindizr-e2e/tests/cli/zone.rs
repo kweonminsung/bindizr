@@ -205,3 +205,121 @@ async fn zone_import_zone_file_from_stdin() {
         2
     );
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_snapshots_and_rollback_flow() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("history.example");
+    let primary_ns = format!("ns1.{zone_name}");
+    app.run_cli_success(&[
+        "zone",
+        "create",
+        "--name",
+        &zone_name,
+        "--primary-ns",
+        &primary_ns,
+        "--admin-email",
+        "hostmaster@history.example",
+        "--ttl",
+        "3600",
+    ])
+    .await;
+
+    let zone = app
+        .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
+        .await;
+    let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
+    assert_eq!(zone["serial"].as_i64().unwrap(), 1);
+
+    app.run_cli_success(&[
+        "record",
+        "create",
+        "--name",
+        "www",
+        "--type",
+        "A",
+        "--value",
+        "192.0.2.80",
+        "--zone",
+        &zone_name,
+    ])
+    .await;
+    let target_serial = "2"; // zone create = 1, record create = 2
+    app.run_cli_success(&[
+        "record",
+        "create",
+        "--name",
+        "extra",
+        "--type",
+        "A",
+        "--value",
+        "192.0.2.81",
+        "--zone",
+        &zone_name,
+    ])
+    .await;
+
+    let snapshots = app
+        .run_cli_success(&["zone", "snapshots", &zone_name, "--output", "json"])
+        .await;
+    let snapshots: Value = serde_json::from_str(&snapshots).expect("CLI did not return valid JSON");
+    let serials: Vec<i64> = snapshots["items"]
+        .as_array()
+        .expect("missing snapshot items")
+        .iter()
+        .map(|item| item["serial"].as_i64().unwrap())
+        .collect();
+    assert_eq!(serials, [3, 2, 1]);
+
+    let detail = app
+        .run_cli_success(&[
+            "zone",
+            "snapshots",
+            &zone_name,
+            target_serial,
+            "--output",
+            "json",
+        ])
+        .await;
+    let detail: Value = serde_json::from_str(&detail).expect("CLI did not return valid JSON");
+    let a_records: Vec<&str> = detail["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|record| record["record_type"] == "A")
+        .map(|record| record["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(a_records, ["www"]);
+
+    let dry_run = app
+        .run_cli_success(&["zone", "rollback", &zone_name, target_serial, "--dry-run"])
+        .await;
+    assert!(dry_run.contains("Dry run"));
+    assert!(dry_run.contains("nothing applied"));
+
+    let rolled_back = app
+        .run_cli_success(&["zone", "rollback", &zone_name, target_serial])
+        .await;
+    assert!(rolled_back.contains("Zone rolled back to serial 2 (new serial 4)"));
+
+    let records = app
+        .run_cli_success(&[
+            "record", "list", "--zone", &zone_name, "--type", "A", "--output", "json",
+        ])
+        .await;
+    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    let names: Vec<&str> = records["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| record["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names.len(), 1);
+    assert!(names[0].starts_with("www."));
+
+    // Rolling back to the current serial is rejected with a hint.
+    let args = ["zone", "rollback", &zone_name, "4"];
+    let output = app.run_cli(&args).await;
+    assert_cli_failure_contains(&args, &output, "must be less than the current serial");
+}

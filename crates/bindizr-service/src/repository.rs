@@ -481,6 +481,47 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load snapshots: {}", e)))
     }
 
+    pub(super) async fn list_zone_snapshots(
+        zone_id: i32,
+        limit: u32,
+        offset: u64,
+    ) -> Result<Vec<ZoneSnapshot>, ServiceError> {
+        get_zone_snapshot_repository()
+            .list_by_zone_id(zone_id, limit, offset)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to list snapshots: {}", e)))
+    }
+
+    pub(super) async fn count_zone_snapshots(zone_id: i32) -> Result<u64, ServiceError> {
+        get_zone_snapshot_repository()
+            .count_by_zone_id(zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count snapshots: {}", e)))
+    }
+
+    pub(super) async fn get_zone_snapshot_by_serial_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<Option<ZoneSnapshot>, ServiceError> {
+        get_zone_snapshot_repository()
+            .get_by_zone_id_and_serial_tx(tx, zone_id, serial)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load snapshot: {}", e)))
+    }
+
+    pub(super) async fn get_zone_changes_between_serials_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneChange>, ServiceError> {
+        get_zone_change_repository()
+            .get_changes_between_serials_tx(tx, zone_id, from_serial, to_serial)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
+    }
+
     pub(super) async fn create_api_token(token: ApiToken) -> Result<ApiToken, ServiceError> {
         get_api_token_repository()
             .create(token)

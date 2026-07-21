@@ -14,8 +14,9 @@ use crate::api::{
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, ZoneDetailResponse,
-        ZoneListResponse, ZoneResponse,
+        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, RollbackZoneRequest,
+        RollbackZoneResponse, SnapshotDetailResponse, SnapshotListResponse, SnapshotRecordResponse,
+        ZoneDetailResponse, ZoneListResponse, ZoneResponse, ZoneSnapshotResponse,
     },
 };
 
@@ -35,7 +36,138 @@ impl ZoneApi {
                 "/zones/{name}/imports",
                 routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
+            .route("/zones/{name}/snapshots", routing::get(list_zone_snapshots))
+            .route(
+                "/zones/{name}/snapshots/{serial}",
+                routing::get(get_zone_snapshot),
+            )
+            .route("/zones/{name}/rollback", routing::post(rollback_zone))
     }
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/snapshots",
+        tag = "Zone",
+        summary = "List a zone's snapshots (serial history)",
+        description = "Every zone mutation records a snapshot of the zone's SOA metadata keyed by serial. Snapshots are returned newest serial first.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("limit" = Option<u32>, Query, description = "Maximum number of snapshots to return."),
+            ("offset" = Option<u64>, Query, description = "Number of snapshots to skip.")
+        ),
+        responses(
+            (status = 200, description = "A list of zone snapshots", body = SnapshotListResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// List a zone's snapshots, newest serial first.
+pub(crate) async fn list_zone_snapshots(
+    Path(params): Path<ZoneNameParam>,
+    Query(query): Query<SnapshotListQuery>,
+) -> impl IntoResponse {
+    match ZoneService::list_snapshots(&params.name, query.limit, query.offset).await {
+        Ok(response) => {
+            let mut items = Vec::with_capacity(response.items.len());
+            for snapshot in &response.items {
+                match ZoneSnapshotResponse::from_snapshot(snapshot) {
+                    Ok(item) => items.push(item),
+                    Err(err) => return ApiError::from(err).into_response(),
+                }
+            }
+            let json_body = json!({ "items": items, "pagination": response.pagination });
+            (StatusCode::OK, Json(json_body)).into_response()
+        }
+        Err(err) => ApiError::from(err).into_response(),
+    }
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/snapshots/{serial}",
+        tag = "Zone",
+        summary = "Get the zone state captured at a snapshot serial",
+        description = "Returns the SOA snapshot at the given serial together with the zone's record set at that serial, reconstructed from the change history.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("serial" = i32, Path, description = "The snapshot serial to inspect.")
+        ),
+        responses(
+            (status = 200, description = "The snapshot and its reconstructed records", body = SnapshotDetailResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone or snapshot not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Get one snapshot plus the reconstructed record set at that serial.
+pub(crate) async fn get_zone_snapshot(Path(params): Path<ZoneSnapshotParam>) -> impl IntoResponse {
+    match ZoneService::get_snapshot(&params.name, params.serial).await {
+        Ok((snapshot, records)) => {
+            let snapshot = match ZoneSnapshotResponse::from_snapshot(&snapshot) {
+                Ok(snapshot) => snapshot,
+                Err(err) => return ApiError::from(err).into_response(),
+            };
+            let records = records
+                .into_iter()
+                .map(|record| SnapshotRecordResponse {
+                    name: record.name,
+                    record_type: record.record_type.to_string(),
+                    value: record.value,
+                    ttl: record.ttl,
+                    priority: record.priority,
+                })
+                .collect::<Vec<_>>();
+            let response = SnapshotDetailResponse { snapshot, records };
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(err) => ApiError::from(err).into_response(),
+    }
+}
+
+#[utoipa::path(
+        post,
+        path = "/zones/{name}/rollback",
+        tag = "Zone",
+        summary = "Roll a zone back to a snapshot serial",
+        description = "Restores the zone's record set and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a snapshot and is never changed. With dry_run the rollback is computed and reported without applying any change.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone to roll back.")
+        ),
+        request_body = RollbackZoneRequest,
+        responses(
+            (status = 200, description = "Rollback result", body = RollbackZoneResponse),
+            (status = 400, description = "Bad request, invalid target serial", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone or snapshot not found", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Roll a zone back to the state captured at a snapshot serial.
+pub(crate) async fn rollback_zone(
+    Path(params): Path<ZoneNameParam>,
+    JsonBody(body): JsonBody<RollbackZoneRequest>,
+) -> impl IntoResponse {
+    match ZoneService::rollback(&params.name, body.serial, body.dry_run).await {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(err) => ApiError::from(err).into_response(),
+    }
+}
+
+/// Query parameters for listing zone snapshots.
+#[derive(Debug, Deserialize)]
+pub(crate) struct SnapshotListQuery {
+    limit: Option<u32>,
+    offset: Option<u64>,
+}
+
+/// Path parameters addressing a zone snapshot by zone name and serial.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ZoneSnapshotParam {
+    name: String,
+    serial: i32,
 }
 
 #[utoipa::path(

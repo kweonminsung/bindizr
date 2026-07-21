@@ -52,7 +52,7 @@ pub struct GetZoneResponse {
     pub admin_email: String,
     #[schema(example = 3600)]
     pub ttl: i32,
-    #[schema(example = 2025100101)]
+    #[schema(example = 42)]
     pub serial: Option<i32>,
     #[schema(example = 7200)]
     pub refresh: i32,
@@ -193,7 +193,7 @@ pub struct CreateZoneRequest {
     #[schema(example = 3600)]
     pub ttl: i32,
     /// Auto-generated if not provided.
-    #[schema(example = 2025100101)]
+    #[schema(example = 42)]
     pub serial: Option<i32>,
     #[schema(example = 7200)]
     pub refresh: Option<i32>,
@@ -334,7 +334,7 @@ pub struct GetZonesFilter {
     pub min_ttl: Option<i32>,
     #[schema(example = 86400)]
     pub max_ttl: Option<i32>,
-    #[schema(example = 2025100101)]
+    #[schema(example = 42)]
     pub serial: Option<i32>,
     #[serde(alias = "q")]
     #[schema(example = "example")]
@@ -449,6 +449,123 @@ pub struct RecordResponse {
 pub struct MessageResponse {
     #[schema(example = "Deleted successfully")]
     pub message: String,
+}
+
+/// One entry of a zone's serial history, with SOA metadata in API form
+/// (`admin_email` converted back from SOA mailbox form).
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ZoneSnapshotResponse {
+    #[schema(example = 7)]
+    pub serial: i32,
+    #[schema(example = "ns1.example.com")]
+    pub primary_ns: String,
+    #[schema(example = "admin@example.com")]
+    pub admin_email: String,
+    #[schema(example = 3600)]
+    pub ttl: i32,
+    #[schema(example = 7200)]
+    pub refresh: i32,
+    #[schema(example = 3600)]
+    pub retry: i32,
+    #[schema(example = 604800)]
+    pub expire: i32,
+    #[schema(example = 3600)]
+    pub minimum_ttl: i32,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl ZoneSnapshotResponse {
+    pub fn from_snapshot(
+        snapshot: &crate::model::zone_snapshot::ZoneSnapshot,
+    ) -> Result<Self, crate::error::ServiceError> {
+        let admin_email = bindizr_core::dns::name::soa_mailbox_to_email(&snapshot.admin_email)
+            .map_err(|e| {
+                crate::error::ServiceError::internal(format!(
+                    "Failed to decode snapshot admin email: {}",
+                    e
+                ))
+            })?;
+        Ok(ZoneSnapshotResponse {
+            serial: snapshot.serial,
+            primary_ns: snapshot.primary_ns.clone(),
+            admin_email,
+            ttl: snapshot.ttl,
+            refresh: snapshot.refresh,
+            retry: snapshot.retry,
+            expire: snapshot.expire,
+            minimum_ttl: snapshot.minimum_ttl,
+            created_at: snapshot.created_at,
+        })
+    }
+}
+
+/// A page of zone snapshots.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotListResponse {
+    pub items: Vec<ZoneSnapshotResponse>,
+    pub pagination: Pagination,
+}
+
+/// A record reconstructed from the zone's change history; unlike stored
+/// records it has no database id.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotRecordResponse {
+    #[schema(example = "www")]
+    pub name: String,
+    #[schema(example = "A")]
+    pub record_type: String,
+    #[schema(example = "192.0.2.1")]
+    pub value: String,
+    #[schema(example = 3600)]
+    pub ttl: Option<i32>,
+    #[schema(example = 10)]
+    pub priority: Option<i32>,
+}
+
+/// One snapshot plus the reconstructed record set at that serial.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotDetailResponse {
+    pub snapshot: ZoneSnapshotResponse,
+    pub records: Vec<SnapshotRecordResponse>,
+}
+
+/// Request body for rolling a zone back to a snapshot serial.
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct RollbackZoneRequest {
+    #[schema(example = 7)]
+    pub serial: i32,
+    /// When true, compute and report the rollback without applying any change.
+    #[serde(default, alias = "dryRun")]
+    pub dry_run: bool,
+}
+
+/// Counts of what a rollback changes. TTL-only differences count as one
+/// delete plus one add.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct RollbackSummary {
+    #[schema(example = 2)]
+    pub records_added: usize,
+    #[schema(example = 3)]
+    pub records_deleted: usize,
+    #[schema(example = 5)]
+    pub records_unchanged: usize,
+    #[schema(example = true)]
+    pub soa_changed: bool,
+}
+
+/// Result of a zone rollback. The zone's state returns to `target_serial`
+/// while its serial advances to `new_serial` (serials never go backward).
+#[derive(Serialize, Debug, ToSchema)]
+pub struct RollbackZoneResponse {
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
+    #[schema(example = 7)]
+    pub target_serial: i32,
+    #[schema(example = 13)]
+    pub new_serial: i32,
+    pub summary: RollbackSummary,
 }
 
 /// Generic error response: a plain description plus a machine-readable code.

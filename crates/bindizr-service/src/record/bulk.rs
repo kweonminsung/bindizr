@@ -78,7 +78,7 @@ fn zone_changes_for(
 }
 
 /// Insert records that the caller has already validated, with their ADD zone changes.
-pub(super) async fn insert_validated_records_tx(
+pub(crate) async fn insert_validated_records_tx(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
     new_serial: i32,
@@ -95,7 +95,7 @@ pub(super) async fn insert_validated_records_tx(
 }
 
 /// Delete records, with their DEL zone changes.
-pub(super) async fn delete_records_tx(
+pub(crate) async fn delete_records_tx(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
     new_serial: i32,
@@ -113,7 +113,7 @@ pub(super) async fn delete_records_tx(
 }
 
 /// Load the target zone inside the transaction, returning `NotFound` if missing.
-pub(super) async fn load_zone_tx(
+pub(crate) async fn load_zone_tx(
     tx: &mut RepositoryTx<'_>,
     zone_name: &str,
 ) -> Result<Zone, ServiceError> {

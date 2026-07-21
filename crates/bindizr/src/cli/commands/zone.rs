@@ -4,7 +4,10 @@ use serde_json::json;
 use crate::{
     cli::{
         error::CliError,
-        output::{ImportSummaryRow, OutputFormat, ZoneRow, print_output_with_table},
+        output::{
+            ImportSummaryRow, OutputFormat, RollbackSummaryRow, SnapshotRecordRow, SnapshotRow,
+            ZoneRow, print_output_with_table,
+        },
     },
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
@@ -94,6 +97,37 @@ pub(crate) enum ZoneCommand {
         #[arg(long, value_enum, default_value_t = ImportMode::Append)]
         mode: ImportMode,
         /// Parse and validate without applying any change
+        #[arg(long)]
+        dry_run: bool,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
+    /// List a zone's snapshots (serial history), or inspect one serial's state
+    Snapshots {
+        /// The name of the zone
+        name: String,
+        /// Snapshot serial to inspect (omit to list all snapshots)
+        serial: Option<i32>,
+        /// Maximum number of snapshots to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of snapshots to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
+    /// Roll a zone back to the state captured at a snapshot serial
+    Rollback {
+        /// The name of the zone
+        name: String,
+        /// Target snapshot serial (the zone serial still advances)
+        serial: i32,
+        /// Compute and report the rollback without applying any change
         #[arg(long)]
         dry_run: bool,
         /// Output format (json, yaml, table)
@@ -265,6 +299,84 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     .ok_or("Missing import summary in response".to_string())
                     .and_then(ImportSummaryRow::from_json)
                     .map(|row| vec![row])
+            })?;
+        }
+        ZoneCommand::Snapshots {
+            name,
+            serial,
+            limit,
+            offset,
+            output,
+        } => match serial {
+            None => {
+                let data = client
+                    .send_command(
+                        DaemonCommandKind::ListZoneSnapshots,
+                        Some(json!({ "name": name, "limit": limit, "offset": offset })),
+                    )
+                    .await?
+                    .data;
+
+                print_output_with_table(&data, output, |data| {
+                    data.get("items")
+                        .and_then(|value| value.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| SnapshotRow::from_json(v).ok())
+                                .collect()
+                        })
+                        .ok_or_else(|| "Missing snapshot items in response".to_string())
+                })?;
+            }
+            Some(serial) => {
+                let data = client
+                    .send_command(
+                        DaemonCommandKind::GetZoneSnapshot,
+                        Some(json!({ "name": name, "serial": serial })),
+                    )
+                    .await?
+                    .data;
+
+                if output == OutputFormat::Table {
+                    print_output_with_table(&data, output, |data| {
+                        data.get("snapshot")
+                            .ok_or("Missing snapshot in response".to_string())
+                            .and_then(SnapshotRow::from_json)
+                            .map(|row| vec![row])
+                    })?;
+                    print_output_with_table(&data, output, |data| {
+                        data.get("records")
+                            .and_then(|value| value.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| SnapshotRecordRow::from_json(v).ok())
+                                    .collect()
+                            })
+                            .ok_or_else(|| "Missing records in response".to_string())
+                    })?;
+                } else {
+                    print_output_with_table(&data, output, |_| Ok(Vec::<SnapshotRow>::new()))?;
+                }
+            }
+        },
+        ZoneCommand::Rollback {
+            name,
+            serial,
+            dry_run,
+            output,
+        } => {
+            let response = client
+                .send_command(
+                    DaemonCommandKind::RollbackZone,
+                    Some(json!({ "name": name, "serial": serial, "dry_run": dry_run })),
+                )
+                .await?;
+
+            if output == OutputFormat::Table {
+                println!("{}", response.message);
+            }
+            print_output_with_table(&response.data, output, |data| {
+                RollbackSummaryRow::from_json(data).map(|row| vec![row])
             })?;
         }
         ZoneCommand::Notify(args) => {

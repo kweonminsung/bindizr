@@ -123,7 +123,7 @@ pub(super) fn validate_record_add_constraints(
 
 /// Validate an add whose owner name has already been normalized to `stored_name`.
 /// `owner_name` is the caller's original spelling, used only in error messages.
-pub(super) fn validate_record_add_constraints_normalized(
+pub(crate) fn validate_record_add_constraints_normalized(
     zone_records: &[Record],
     owner_name: &str,
     stored_name: &str,

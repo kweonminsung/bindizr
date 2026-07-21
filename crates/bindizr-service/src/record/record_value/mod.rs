@@ -46,7 +46,7 @@ pub(super) fn validate_record_value(
     }
 }
 
-pub(super) fn record_values_equal(
+pub(crate) fn record_values_equal(
     left: &str,
     left_priority: Option<i32>,
     right: &str,

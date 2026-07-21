@@ -173,7 +173,7 @@ impl TestApp {
             "primary_ns": format!("ns1.{zone_name}"),
             "admin_email": "admin@example.com",
             "ttl": 3600,
-            "serial": 2023010101,
+            "serial": 10,
             "refresh": 7200,
             "retry": 3600,
             "expire": 604800,
@@ -235,7 +235,7 @@ impl TestApp {
                 args,
                 [
                     "zone" | "record",
-                    "create" | "bulk" | "delete" | "import" | "notify",
+                    "create" | "bulk" | "delete" | "import" | "notify" | "rollback",
                     ..
                 ]
             )

@@ -69,6 +69,89 @@ pub(crate) struct RecordRow {
     pub zone_name: String,
 }
 
+/// Table row for zone snapshot display.
+#[derive(Debug, Deserialize, Tabled)]
+pub(crate) struct SnapshotRow {
+    #[tabled(rename = "SERIAL")]
+    pub serial: i32,
+    #[tabled(rename = "PRIMARY-NS")]
+    pub primary_ns: String,
+    #[tabled(rename = "ADMIN-EMAIL")]
+    pub admin_email: String,
+    #[tabled(rename = "TTL")]
+    pub ttl: i32,
+    #[tabled(rename = "CREATED-AT")]
+    pub created_at: String,
+}
+
+impl SnapshotRow {
+    /// Build a [`SnapshotRow`] from a JSON value.
+    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
+        serde_json::from_value(value.clone())
+            .map_err(|e| format!("Failed to parse snapshot: {}", e))
+    }
+}
+
+/// Table row for records reconstructed at a snapshot serial (no database id).
+#[derive(Debug, Deserialize, Tabled)]
+pub(crate) struct SnapshotRecordRow {
+    #[tabled(rename = "NAME")]
+    pub name: String,
+    #[tabled(rename = "TYPE")]
+    pub record_type: String,
+    #[tabled(rename = "VALUE")]
+    pub value: String,
+    #[tabled(rename = "TTL", display = "display_option_i32")]
+    #[serde(default)]
+    pub ttl: Option<i32>,
+    #[tabled(rename = "PRIORITY", display = "display_option_i32")]
+    #[serde(default)]
+    pub priority: Option<i32>,
+}
+
+impl SnapshotRecordRow {
+    /// Build a [`SnapshotRecordRow`] from a JSON value.
+    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
+        serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse record: {}", e))
+    }
+}
+
+/// Table row for rollback result summaries.
+#[derive(Debug, Deserialize, Tabled)]
+pub(crate) struct RollbackSummaryRow {
+    #[tabled(rename = "TARGET-SERIAL")]
+    pub target_serial: i32,
+    #[tabled(rename = "NEW-SERIAL")]
+    pub new_serial: i32,
+    #[tabled(rename = "APPLIED")]
+    pub applied: bool,
+    #[tabled(rename = "ADDED")]
+    pub records_added: usize,
+    #[tabled(rename = "DELETED")]
+    pub records_deleted: usize,
+    #[tabled(rename = "UNCHANGED")]
+    pub records_unchanged: usize,
+    #[tabled(rename = "SOA-CHANGED")]
+    pub soa_changed: bool,
+}
+
+impl RollbackSummaryRow {
+    /// Build a [`RollbackSummaryRow`] from a JSON value, flattening the summary.
+    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
+        let mut flattened = value.clone();
+        if let (Some(object), Some(summary)) = (
+            flattened.as_object_mut(),
+            value.get("summary").and_then(|v| v.as_object()).cloned(),
+        ) {
+            for (key, entry) in summary {
+                object.insert(key, entry);
+            }
+        }
+        serde_json::from_value(flattened)
+            .map_err(|e| format!("Failed to parse rollback result: {}", e))
+    }
+}
+
 /// Table row for zone-file import summaries.
 #[derive(Debug, Deserialize, Tabled)]
 pub(crate) struct ImportSummaryRow {

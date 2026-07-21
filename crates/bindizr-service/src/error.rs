@@ -15,6 +15,7 @@ pub enum ErrorCode {
     ZoneNotFound,
     RecordNotFound,
     TokenNotFound,
+    SnapshotNotFound,
     Unauthorized,
     InvalidToken,
     UnsupportedMediaType,
@@ -34,6 +35,7 @@ impl ErrorCode {
             ErrorCode::ZoneNotFound => "ZONE_NOT_FOUND",
             ErrorCode::RecordNotFound => "RECORD_NOT_FOUND",
             ErrorCode::TokenNotFound => "TOKEN_NOT_FOUND",
+            ErrorCode::SnapshotNotFound => "SNAPSHOT_NOT_FOUND",
             ErrorCode::Unauthorized => "UNAUTHORIZED",
             ErrorCode::InvalidToken => "INVALID_TOKEN",
             ErrorCode::UnsupportedMediaType => "UNSUPPORTED_MEDIA_TYPE",
@@ -55,6 +57,7 @@ impl ErrorCode {
             "ZONE_NOT_FOUND" => ErrorCode::ZoneNotFound,
             "RECORD_NOT_FOUND" => ErrorCode::RecordNotFound,
             "TOKEN_NOT_FOUND" => ErrorCode::TokenNotFound,
+            "SNAPSHOT_NOT_FOUND" => ErrorCode::SnapshotNotFound,
             "UNAUTHORIZED" => ErrorCode::Unauthorized,
             "INVALID_TOKEN" => ErrorCode::InvalidToken,
             "UNSUPPORTED_MEDIA_TYPE" => ErrorCode::UnsupportedMediaType,
@@ -71,7 +74,10 @@ impl ErrorCode {
             | ErrorCode::InvalidRecordValue
             | ErrorCode::InvalidJsonBody => 400,
             ErrorCode::Unauthorized | ErrorCode::InvalidToken => 401,
-            ErrorCode::ZoneNotFound | ErrorCode::RecordNotFound | ErrorCode::TokenNotFound => 404,
+            ErrorCode::ZoneNotFound
+            | ErrorCode::RecordNotFound
+            | ErrorCode::TokenNotFound
+            | ErrorCode::SnapshotNotFound => 404,
             ErrorCode::ZoneConflict | ErrorCode::RecordConflict => 409,
             ErrorCode::UnsupportedMediaType => 415,
             ErrorCode::Internal => 500,
@@ -156,5 +162,15 @@ impl ServiceError {
 
     pub fn token_not_found() -> Self {
         Self::new(ErrorCode::TokenNotFound, "Token not found")
+    }
+
+    pub fn snapshot_not_found(zone_name: &str, serial: i32) -> Self {
+        Self::new(
+            ErrorCode::SnapshotNotFound,
+            format!(
+                "No snapshot with serial '{}' for zone '{}'",
+                serial, zone_name
+            ),
+        )
     }
 }

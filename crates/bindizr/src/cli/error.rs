@@ -34,6 +34,9 @@ impl CliError {
                 Some("Run 'bindizr record list' to see available records.")
             }
             ErrorCode::TokenNotFound => Some("Run 'bindizr token list' to see available tokens."),
+            ErrorCode::SnapshotNotFound => {
+                Some("Run 'bindizr zone snapshots <NAME>' to see available serials.")
+            }
             ErrorCode::Internal => Some("Check the daemon logs for details."),
             _ => None,
         }

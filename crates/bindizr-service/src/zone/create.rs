@@ -51,6 +51,12 @@ impl ZoneService {
         };
 
         let serial = match create_zone_request.serial {
+            Some(s) if s < 1 => {
+                return Err(ServiceError::invalid_zone(format!(
+                    "serial {} must be a positive integer",
+                    s
+                )));
+            }
             Some(s) => s,
             None => generate_serial(None),
         };

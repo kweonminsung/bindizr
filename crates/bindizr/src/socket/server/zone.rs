@@ -2,9 +2,26 @@ use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneServ
 use serde_json::json;
 
 use crate::{
-    api::types::{CreateZoneRequest, GetZoneResponse, GetZonesFilter, ImportZoneFileRequest},
+    api::types::{
+        CreateZoneRequest, GetZoneResponse, GetZonesFilter, ImportZoneFileRequest,
+        SnapshotDetailResponse, SnapshotRecordResponse, ZoneSnapshotResponse,
+    },
     socket::types::DaemonResponse,
 };
+
+fn required_name(data: &serde_json::Value) -> Result<&str, ServiceError> {
+    data.get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'name' field"))
+}
+
+fn required_serial(data: &serde_json::Value) -> Result<i32, ServiceError> {
+    let serial = data
+        .get("serial")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'serial' field"))?;
+    i32::try_from(serial).map_err(|_| ServiceError::invalid_input("Serial is out of range"))
+}
 
 /// Handle the `GetZone` command by returning a zone by name.
 pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
@@ -103,6 +120,96 @@ pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
         }
         Err(e) => Err(e),
     }
+}
+
+/// Handle the `ListZoneSnapshots` command by returning a zone's serial history.
+pub(super) async fn list_zone_snapshots(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+    let limit = data
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v.min(u64::from(u32::MAX)) as u32);
+    let offset = data.get("offset").and_then(|v| v.as_u64());
+
+    let response = ZoneService::list_snapshots(name, limit, offset).await?;
+    let items = response
+        .items
+        .iter()
+        .map(ZoneSnapshotResponse::from_snapshot)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(DaemonResponse {
+        message: format!("Found {} snapshot(s)", items.len()),
+        data: json!({
+            "items": items,
+            "pagination": response.pagination,
+        }),
+    })
+}
+
+/// Handle the `GetZoneSnapshot` command by returning one snapshot with its
+/// reconstructed record set.
+pub(super) async fn get_zone_snapshot(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+    let serial = required_serial(data)?;
+
+    let (snapshot, records) = ZoneService::get_snapshot(name, serial).await?;
+    let response = SnapshotDetailResponse {
+        snapshot: ZoneSnapshotResponse::from_snapshot(&snapshot)?,
+        records: records
+            .into_iter()
+            .map(|record| SnapshotRecordResponse {
+                name: record.name,
+                record_type: record.record_type.to_string(),
+                value: record.value,
+                ttl: record.ttl,
+                priority: record.priority,
+            })
+            .collect(),
+    };
+
+    Ok(DaemonResponse {
+        message: format!("Snapshot '{}' retrieved successfully", serial),
+        data: serde_json::to_value(response)
+            .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))?,
+    })
+}
+
+/// Handle the `RollbackZone` command by rolling a zone back to a snapshot serial.
+pub(super) async fn rollback_zone(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+    let serial = required_serial(data)?;
+    let dry_run = data
+        .get("dry_run")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let response = ZoneService::rollback(name, serial, dry_run).await?;
+    let message = if response.dry_run {
+        format!(
+            "Dry run: rollback to serial {} would add {} and delete {} record(s); nothing applied",
+            response.target_serial,
+            response.summary.records_added,
+            response.summary.records_deleted
+        )
+    } else {
+        format!(
+            "Zone rolled back to serial {} (new serial {})",
+            response.target_serial, response.new_serial
+        )
+    };
+
+    Ok(DaemonResponse {
+        message,
+        data: serde_json::to_value(response)
+            .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))?,
+    })
 }
 
 /// Handle the `DeleteZone` command by deleting a zone by name.

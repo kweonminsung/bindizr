@@ -20,6 +20,9 @@ pub(crate) enum DaemonCommandKind {
     DeleteRecord,
     NotifyZone,
     ImportZoneFile,
+    ListZoneSnapshots,
+    GetZoneSnapshot,
+    RollbackZone,
 }
 
 /// A command and its payload sent to the daemon.

@@ -3,6 +3,7 @@ mod create;
 mod delete;
 mod force;
 mod get;
+pub mod history;
 pub mod snapshot;
 mod update;
 pub(crate) mod validation;
