@@ -240,11 +240,20 @@ pub struct BulkRecordItem {
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct CreateBulkRecordsRequest {
     pub records: Vec<BulkRecordItem>,
+    /// When true, parse and validate without applying any change.
+    #[serde(default, alias = "dryRun")]
+    pub dry_run: bool,
 }
 
-/// Response for a bulk insert: the count inserted and the created records.
+/// Response for a bulk insert: the count inserted and the created records. On a
+/// dry run `records` holds the validated would-be records (with placeholder
+/// IDs) and nothing is inserted.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct BulkRecordsResponse {
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
     #[schema(example = 3)]
     pub inserted: usize,
     pub records: Vec<GetRecordResponse>,

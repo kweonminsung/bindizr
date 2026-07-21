@@ -134,10 +134,14 @@ pub(super) async fn load_zone_tx(
 impl RecordService {
     /// Insert many records into a zone in one transaction. The zone serial is
     /// incremented once, a single snapshot is saved, and a single NOTIFY is sent
-    /// after commit. Either every record is inserted or none is.
+    /// after commit. Either every record is inserted or none is. On `dry_run`
+    /// the same validation runs but nothing is written and no NOTIFY is sent;
+    /// the returned records are the validated would-be records (placeholder
+    /// IDs).
     pub async fn create_bulk(
         zone_name: &str,
         items: &[BulkRecordItem],
+        dry_run: bool,
     ) -> Result<Vec<RecordWithZone>, ServiceError> {
         if items.is_empty() {
             return Err(ServiceError::BadRequest(
@@ -277,6 +281,10 @@ impl RecordService {
             normalize_ms = normalize_dur.as_secs_f64() * 1000.0;
             validate_ms = validate_dur.as_secs_f64() * 1000.0;
 
+            if dry_run {
+                return Ok((to_insert, zone.name));
+            }
+
             let t = Instant::now();
             let created_records =
                 insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
@@ -302,13 +310,15 @@ impl RecordService {
             RepositoryService::finish_tx(tx, apply_result, "Failed to create records").await?;
 
         log_info!(
-            "event=record_bulk_create zone={} count={}",
+            "event=record_bulk_create zone={} count={} dry_run={}",
             zone_name,
-            created_records.len()
+            created_records.len(),
+            dry_run
         );
 
         let t = Instant::now();
-        if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
+        if !dry_run && let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await
+        {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
         let notify_ms = t.elapsed().as_secs_f64() * 1000.0;

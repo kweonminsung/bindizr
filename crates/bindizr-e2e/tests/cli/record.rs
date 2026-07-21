@@ -191,6 +191,27 @@ async fn record_bulk_insert_from_stdin() {
         { "name": "mail", "record_type": "A", "value": "192.0.2.21", "ttl": 300 },
     ])
     .to_string();
+    let dry_run = app
+        .run_cli_success_with_input(
+            &["record", "bulk", "-", "--zone", &zone_name, "--dry-run"],
+            &records,
+        )
+        .await;
+    assert!(dry_run.contains("Dry run: 2 record(s) validated; nothing applied"));
+
+    let listed = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    assert!(
+        listed["items"]
+            .as_array()
+            .expect("missing record items")
+            .iter()
+            .all(|record| record["record_type"] != "A"),
+        "dry run must not persist records"
+    );
+
     let inserted = app
         .run_cli_success_with_input(&["record", "bulk", "-", "--zone", &zone_name], &records)
         .await;

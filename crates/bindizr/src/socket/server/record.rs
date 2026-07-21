@@ -3,7 +3,8 @@ use serde_json::json;
 
 use crate::{
     api::types::{
-        CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse, GetRecordsFilter,
+        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
+        GetRecordsFilter,
     },
     socket::types::DaemonResponse,
 };
@@ -97,19 +98,32 @@ pub(super) async fn bulk_create_records(
     let request: CreateBulkRecordsRequest =
         serde_json::from_value(data.clone()).map_err(|e| format!("Invalid request data: {}", e))?;
 
-    match RecordService::create_bulk(zone_name, &request.records).await {
+    match RecordService::create_bulk(zone_name, &request.records, request.dry_run).await {
         Ok(records) => {
-            let response = records
+            let records = records
                 .iter()
                 .map(GetRecordResponse::from_record_with_zone)
                 .collect::<Vec<_>>();
 
+            let message = if request.dry_run {
+                format!(
+                    "Dry run: {} record(s) validated; nothing applied",
+                    records.len()
+                )
+            } else {
+                format!("Inserted {} record(s)", records.len())
+            };
+            let response = BulkRecordsResponse {
+                applied: !request.dry_run,
+                dry_run: request.dry_run,
+                inserted: if request.dry_run { 0 } else { records.len() },
+                records,
+            };
+
             Ok(DaemonResponse {
-                message: format!("Inserted {} record(s)", response.len()),
-                data: json!({
-                    "inserted": response.len(),
-                    "records": response,
-                }),
+                message,
+                data: serde_json::to_value(response)
+                    .map_err(|e| format!("Failed to serialize response: {}", e))?,
             })
         }
         Err(e) => Err(e.to_string()),

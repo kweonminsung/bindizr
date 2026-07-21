@@ -86,6 +86,9 @@ pub(crate) enum RecordCommand {
         /// Zone name
         #[arg(short, long)]
         zone: String,
+        /// Parse and validate without applying any change
+        #[arg(long)]
+        dry_run: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -189,7 +192,12 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), Stri
 
             print_records(&data, output)?;
         }
-        RecordCommand::Bulk { file, zone, output } => {
+        RecordCommand::Bulk {
+            file,
+            zone,
+            dry_run,
+            output,
+        } => {
             let content = super::read_input(&file)?;
             // YAML is a superset of JSON, so one parse accepts both formats.
             let parsed: serde_json::Value = serde_yaml::from_str(&content)
@@ -210,7 +218,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), Stri
             let response = client
                 .send_command(
                     DaemonCommandKind::BulkCreateRecords,
-                    Some(json!({ "zone_name": zone, "records": records })),
+                    Some(json!({ "zone_name": zone, "records": records, "dry_run": dry_run })),
                 )
                 .await?;
 

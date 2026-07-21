@@ -205,13 +205,14 @@ pub(crate) async fn delete_record(Path(params): Path<RecordIdParam>) -> impl Int
         path = "/zones/{zone_name}/records/bulk",
         tag = "Record",
         summary = "Bulk insert DNS records into a zone",
-        description = "Insert many records into a single zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are.",
+        description = "Insert many records into a single zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.",
         params(
             ("zone_name" = String, Path, description = "The name of the DNS zone to insert records into.")
         ),
         request_body = CreateBulkRecordsRequest,
         responses(
             (status = 201, description = "DNS records created successfully", body = BulkRecordsResponse),
+            (status = 200, description = "Dry run validated successfully, nothing applied", body = BulkRecordsResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
@@ -224,18 +225,29 @@ pub(crate) async fn create_records_bulk(
     Path(params): Path<ZoneScopedParam>,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
 ) -> impl IntoResponse {
-    let raw_records = match RecordService::create_bulk(&params.zone_name, &body.records).await {
-        Ok(records) => records,
-        Err(err) => return ApiError::from(err).into_response(),
-    };
+    let raw_records =
+        match RecordService::create_bulk(&params.zone_name, &body.records, body.dry_run).await {
+            Ok(records) => records,
+            Err(err) => return ApiError::from(err).into_response(),
+        };
 
     let records = raw_records
         .iter()
         .map(GetRecordResponse::from_record_with_zone)
         .collect::<Vec<_>>();
 
-    let json_body = json!({ "inserted": records.len(), "records": records });
-    (StatusCode::CREATED, Json(json_body)).into_response()
+    let response = BulkRecordsResponse {
+        applied: !body.dry_run,
+        dry_run: body.dry_run,
+        inserted: if body.dry_run { 0 } else { records.len() },
+        records,
+    };
+    let status = if body.dry_run {
+        StatusCode::OK
+    } else {
+        StatusCode::CREATED
+    };
+    (status, Json(response)).into_response()
 }
 
 /// Path parameters scoped to a zone.
