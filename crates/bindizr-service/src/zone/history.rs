@@ -18,7 +18,7 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     record::{
-        delete_records_tx, insert_validated_records_tx, load_zone_tx, record_values_equal,
+        canonical_record_value, delete_records_tx, insert_validated_records_tx, load_zone_tx,
         validate_delete_constraints, validate_record_add_constraints_normalized,
     },
     repository::RepositoryService,
@@ -61,16 +61,18 @@ impl From<ReconstructedRecord> for crate::types::SnapshotRecordResponse {
     }
 }
 
-fn matches_reconstructed(record: &Record, target: &ReconstructedRecord) -> bool {
-    record.name.eq_ignore_ascii_case(&target.name)
-        && record.record_type == target.record_type
-        && record_values_equal(
-            &record.value,
-            record.priority,
-            &target.value,
-            target.priority,
-            &target.record_type,
-        )
+/// Hash key identifying a record for set matching: lowercased owner name,
+/// type, and the canonical comparison form of the value(+priority). Computed
+/// once per row so matching stays linear instead of re-canonicalizing on every
+/// pairwise comparison.
+type MatchKey = (String, String, String);
+
+fn match_key(name: &str, record_type: &RecordType, value: &str, priority: Option<i32>) -> MatchKey {
+    (
+        name.to_ascii_lowercase(),
+        record_type.to_string(),
+        canonical_record_value(value, priority, record_type).into_owned(),
+    )
 }
 
 /// Reverse-apply the zone's change history in `(target_serial, current_serial]`
@@ -82,12 +84,16 @@ async fn reconstruct_records_at_serial(
     target_serial: i32,
     current_serial: i32,
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
-    let mut state: Vec<ReconstructedRecord> =
-        RepositoryService::get_records_by_zone_id_tx(tx, zone_id)
-            .await?
-            .into_iter()
-            .map(ReconstructedRecord::from)
-            .collect();
+    let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
+    for record in RepositoryService::get_records_by_zone_id_tx(tx, zone_id).await? {
+        let key = match_key(
+            &record.name,
+            &record.record_type,
+            &record.value,
+            record.priority,
+        );
+        state.entry(key).or_default().push(record.into());
+    }
 
     let changes = RepositoryService::get_zone_changes_between_serials_tx(
         tx,
@@ -112,36 +118,27 @@ async fn reconstruct_records_at_serial(
                 continue;
             }
         };
+        let key = match_key(
+            &change.record_name,
+            &record_type,
+            &change.record_value,
+            change.record_priority,
+        );
 
         match change.operation.as_str() {
-            "ADD" => {
-                let position = state.iter().position(|record| {
-                    record.name.eq_ignore_ascii_case(&change.record_name)
-                        && record.record_type == record_type
-                        && record_values_equal(
-                            &record.value,
-                            record.priority,
-                            &change.record_value,
-                            change.record_priority,
-                            &record_type,
-                        )
-                });
-                match position {
-                    Some(position) => {
-                        state.swap_remove(position);
-                    }
-                    // Tolerated: history anomalies (e.g. rows removed outside
-                    // the change log) must not brick reconstruction.
-                    None => log_warn!(
-                        "No matching record to undo ADD of '{}' {} during reconstruction",
-                        change.record_name,
-                        change.record_type
-                    ),
-                }
-            }
+            "ADD" => match state.get_mut(&key).and_then(Vec::pop) {
+                Some(_) => {}
+                // Tolerated: history anomalies (e.g. rows removed outside
+                // the change log) must not brick reconstruction.
+                None => log_warn!(
+                    "No matching record to undo ADD of '{}' {} during reconstruction",
+                    change.record_name,
+                    change.record_type
+                ),
+            },
             "DEL" => {
                 // The recorded row existed before this serial; restore it.
-                state.push(ReconstructedRecord {
+                state.entry(key).or_default().push(ReconstructedRecord {
                     name: change.record_name.clone(),
                     record_type,
                     value: change.record_value.clone(),
@@ -156,7 +153,20 @@ async fn reconstruct_records_at_serial(
         }
     }
 
-    Ok(state)
+    let mut records: Vec<ReconstructedRecord> = state.into_values().flatten().collect();
+    sort_records(&mut records);
+    Ok(records)
+}
+
+/// Deterministic output order (hash-map iteration order is not).
+fn sort_records(records: &mut [ReconstructedRecord]) {
+    records.sort_by(|a, b| {
+        (&a.name, a.record_type.to_string(), &a.value).cmp(&(
+            &b.name,
+            b.record_type.to_string(),
+            &b.value,
+        ))
+    });
 }
 
 /// Build the zone as it should look after rolling back to `snapshot`: SOA
@@ -236,11 +246,14 @@ impl ZoneService {
                     .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, serial))?;
 
             let records = if serial == zone.serial {
-                RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id)
-                    .await?
-                    .into_iter()
-                    .map(ReconstructedRecord::from)
-                    .collect()
+                let mut records: Vec<ReconstructedRecord> =
+                    RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id)
+                        .await?
+                        .into_iter()
+                        .map(ReconstructedRecord::from)
+                        .collect();
+                sort_records(&mut records);
+                records
             } else {
                 reconstruct_records_at_serial(&mut tx, zone.id, serial, zone.serial).await?
             };
@@ -290,18 +303,30 @@ impl ZoneService {
             // Diff current vs target, import-Replace style. Protection is
             // evaluated against the restored zone so the restored primary_ns's
             // apex NS is kept and the newer one becomes deletable.
-            let mut matched_target: Vec<bool> = vec![false; target_records.len()];
+            let mut target_by_key: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
+            for target in target_records {
+                let key = match_key(
+                    &target.name,
+                    &target.record_type,
+                    &target.value,
+                    target.priority,
+                );
+                target_by_key.entry(key).or_default().push(target);
+            }
+
             let mut dels: Vec<Record> = Vec::new();
             let mut unchanged = 0usize;
             let mut to_add: Vec<ReconstructedRecord> = Vec::new();
 
             for record in &current_records {
-                let matched = target_records.iter().enumerate().find(|(index, target)| {
-                    !matched_target[*index] && matches_reconstructed(record, target)
-                });
-                match matched {
-                    Some((index, target)) => {
-                        matched_target[index] = true;
+                let key = match_key(
+                    &record.name,
+                    &record.record_type,
+                    &record.value,
+                    record.priority,
+                );
+                match target_by_key.get_mut(&key).and_then(Vec::pop) {
+                    Some(target) => {
                         // TTL-only difference: replace the row (DEL + ADD).
                         let current_ttl = record.ttl.unwrap_or(restored_zone.ttl);
                         let target_ttl = target.ttl.unwrap_or(restored_zone.ttl);
@@ -313,7 +338,7 @@ impl ZoneService {
                             .is_ok()
                         {
                             dels.push(record.clone());
-                            to_add.push(target.clone());
+                            to_add.push(target);
                         } else {
                             unchanged += 1;
                         }
@@ -330,11 +355,7 @@ impl ZoneService {
                     }
                 }
             }
-            for (index, target) in target_records.iter().enumerate() {
-                if !matched_target[index] {
-                    to_add.push(target.clone());
-                }
-            }
+            to_add.extend(target_by_key.into_values().flatten());
 
             // Defensive apex-NS guarantee (mirrors zone update): the restored
             // primary_ns must keep a matching apex NS record.
@@ -344,9 +365,11 @@ impl ZoneService {
                     && name == "@"
                     && to_fqdn(value).to_ascii_lowercase() == restored_ns_fqdn
             };
+            let deleted_ids: std::collections::HashSet<i32> =
+                dels.iter().map(|del| del.id).collect();
             let has_primary_ns = current_records
                 .iter()
-                .filter(|record| !dels.iter().any(|del| del.id == record.id))
+                .filter(|record| !deleted_ids.contains(&record.id))
                 .any(|record| {
                     is_restored_apex_ns(&record.record_type, &record.name, &record.value)
                 })
@@ -367,7 +390,7 @@ impl ZoneService {
             // (mirrors the import reconcile).
             let mut records_by_name: HashMap<String, Vec<Record>> = HashMap::new();
             for record in &current_records {
-                if dels.iter().any(|del| del.id == record.id) {
+                if deleted_ids.contains(&record.id) {
                     continue;
                 }
                 records_by_name
