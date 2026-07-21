@@ -13,7 +13,7 @@ services:
       - coredns-zones:/zones
 
   coredns:
-    image: coredns/coredns:1.11.3
+    image: coredns/coredns:1.14.6
     command: ["-conf", "/etc/coredns/Corefile"]
     depends_on:
       seed:
