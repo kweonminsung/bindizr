@@ -27,6 +27,8 @@ _CLASS = {
     "bind9_nsupdate": "Bind9NsupdateAdapter",
     "bind9_rndc": "Bind9RndcAdapter",
     "bind9_native": "Bind9NativeAdapter",
+    "coredns": "CoreDnsAdapter",
+    "knot": "KnotAdapter",
 }
 
 

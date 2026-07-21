@@ -24,23 +24,37 @@ tables), `performance.csv`, `performance.json`, and `graphs/*.png`.
 | `bind9_nsupdate` | BIND9 + nsupdate | RFC 2136 dynamic updates |
 | `bind9_rndc` | BIND9 + rndc | zone-file edits + `rndc reload` |
 | `bind9_native` | Native BIND9 | plain authoritative primary (query baseline) |
+| `knot` | Knot DNS | RFC 2136 dynamic updates + journal-backed IXFR |
+| `coredns` | CoreDNS | zone file + `file` plugin mtime-poll reload (no management API) |
 
 > Multi-master scalability (original Benchmark 6) is **omitted** — it needs
 > Kubernetes/clustering that this Docker-only harness does not cover.
+
+> **CoreDNS scope.** CoreDNS has no management API and no RFC 2136 dynamic
+> update — a write means rewriting the zone file and waiting for the `file`
+> plugin's mtime poll (`reload 1s`; there is no `rndc reload` equivalent). It
+> therefore runs only where that is a fair measurement: **bulk** (one reload for
+> the whole set), **AXFR**, **query**, and **resources**. Its bulk number
+> includes that reload latency, so read it as *write-visibility* cost, not
+> record throughput. It is excluded from per-record CRUD (B1) and propagation
+> (B3), where the poll interval rather than the server would dominate, and from
+> IXFR (B5) — CoreDNS keeps no journal and answers IXFR with a full transfer.
 
 ## Benchmarks
 
 | # | Key | What it measures | Systems |
 | --- | --- | --- | --- |
-| 1 | `b01_crud_tps` | Record Create/Read/Update/Delete TPS, p50/p95/p99, error rate | bindizr, powerdns, technitium, bind9_nsupdate |
-| 2 | `b02_bulk_import` | Import 1K–1M records: time, records/sec, peak mem/CPU | bindizr, powerdns, technitium, bind9_rndc |
-| 3 | `b03_propagation` | Create → API done → **DNS-visible** latency (p50/p95/p99) | bindizr, powerdns, technitium, bind9_nsupdate |
-| 4 | `b04_axfr` | Full zone transfer time, size, records/sec | bindizr, powerdns, technitium |
-| 5 | `b05_ixfr` | Incremental transfer size/time for 1–1000 changes | bindizr, powerdns, technitium |
+| 1 | `b01_crud_tps` | Record Create/Read/Update/Delete TPS, p50/p95/p99, error rate | bindizr, powerdns, technitium, bind9_nsupdate, knot |
+| 2 | `b02_bulk_import` | Import 1K–1M records: time, records/sec, peak mem/CPU | bindizr, powerdns, technitium, bind9_rndc, knot, coredns* |
+| 3 | `b03_propagation` | Create → API done → **DNS-visible** latency (p50/p95/p99) | bindizr, powerdns, technitium, bind9_nsupdate, knot |
+| 4 | `b04_axfr` | Full zone transfer time, size, records/sec | bindizr, powerdns, technitium, knot, coredns |
+| 5 | `b05_ixfr` | Incremental transfer size/time for 1–1000 changes | bindizr, powerdns, technitium, knot |
 | 6 | `b06_large_zone` | Zone create/populate/export/delete + mem/CPU by size | bindizr |
 | 7 | `b07_database` | Bindizr CRUD **and bulk import (10k/100k)** across SQLite / MySQL / PostgreSQL | bindizr |
-| 8 | `b08_query_perf` | DNS **QPS** + latency; proves zero query-path overhead | native, bindizr, powerdns, technitium |
-| 9 | `b09_resource_usage` | CPU/mem/net under steady query load | bindizr, powerdns, technitium |
+| 8 | `b08_query_perf` | DNS **QPS** + latency; proves zero query-path overhead | native, bindizr, powerdns, technitium, knot, coredns |
+| 9 | `b09_resource_usage` | CPU/mem/net under steady query load | bindizr, powerdns, technitium, knot, coredns |
+
+<sub>\* CoreDNS's bulk number includes its zone-file reload poll — see the CoreDNS scope note above.</sub>
 
 > The original multi-master scalability benchmark (Kubernetes/clustering) is
 > omitted, so benchmarks are numbered 1–9 with no gap.
