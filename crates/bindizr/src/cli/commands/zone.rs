@@ -337,13 +337,15 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     .await?
                     .data;
 
+                // Table output shows two tables (snapshot, then its records);
+                // json/yaml print the whole payload once.
+                print_output_with_table(&data, output, |data| {
+                    data.get("snapshot")
+                        .ok_or("Missing snapshot in response".to_string())
+                        .and_then(SnapshotRow::from_json)
+                        .map(|row| vec![row])
+                })?;
                 if output == OutputFormat::Table {
-                    print_output_with_table(&data, output, |data| {
-                        data.get("snapshot")
-                            .ok_or("Missing snapshot in response".to_string())
-                            .and_then(SnapshotRow::from_json)
-                            .map(|row| vec![row])
-                    })?;
                     print_output_with_table(&data, output, |data| {
                         data.get("records")
                             .and_then(|value| value.as_array())
@@ -354,8 +356,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                             })
                             .ok_or_else(|| "Missing records in response".to_string())
                     })?;
-                } else {
-                    print_output_with_table(&data, output, |_| Ok(Vec::<SnapshotRow>::new()))?;
                 }
             }
         },

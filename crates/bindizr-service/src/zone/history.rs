@@ -1,7 +1,9 @@
 //! Zone serial history: snapshot listing, point-in-time record reconstruction,
 //! and serial-based rollback.
 
-use bindizr_core::dns::name::soa_mailbox_to_email;
+use std::collections::HashMap;
+
+use bindizr_core::dns::name::{soa_mailbox_to_email, to_fqdn};
 use chrono::Utc;
 
 use super::{ZoneService, snapshot::save_zone_snapshot_tx, validation::normalize_zone_name};
@@ -35,6 +37,30 @@ pub struct ReconstructedRecord {
     pub priority: Option<i32>,
 }
 
+impl From<Record> for ReconstructedRecord {
+    fn from(record: Record) -> Self {
+        ReconstructedRecord {
+            name: record.name,
+            record_type: record.record_type,
+            value: record.value,
+            ttl: record.ttl,
+            priority: record.priority,
+        }
+    }
+}
+
+impl From<ReconstructedRecord> for crate::types::SnapshotRecordResponse {
+    fn from(record: ReconstructedRecord) -> Self {
+        crate::types::SnapshotRecordResponse {
+            name: record.name,
+            record_type: record.record_type.to_string(),
+            value: record.value,
+            ttl: record.ttl,
+            priority: record.priority,
+        }
+    }
+}
+
 fn matches_reconstructed(record: &Record, target: &ReconstructedRecord) -> bool {
     record.name.eq_ignore_ascii_case(&target.name)
         && record.record_type == target.record_type
@@ -60,13 +86,7 @@ async fn reconstruct_records_at_serial(
         RepositoryService::get_records_by_zone_id_tx(tx, zone_id)
             .await?
             .into_iter()
-            .map(|record| ReconstructedRecord {
-                name: record.name,
-                record_type: record.record_type,
-                value: record.value,
-                ttl: record.ttl,
-                priority: record.priority,
-            })
+            .map(ReconstructedRecord::from)
             .collect();
 
     let changes = RepositoryService::get_zone_changes_between_serials_tx(
@@ -95,7 +115,6 @@ async fn reconstruct_records_at_serial(
 
         match change.operation.as_str() {
             "ADD" => {
-                // Undo an addition: remove the matching row from the state.
                 let position = state.iter().position(|record| {
                     record.name.eq_ignore_ascii_case(&change.record_name)
                         && record.record_type == record_type
@@ -121,7 +140,7 @@ async fn reconstruct_records_at_serial(
                 }
             }
             "DEL" => {
-                // Undo a deletion: the recorded row existed before this serial.
+                // The recorded row existed before this serial; restore it.
                 state.push(ReconstructedRecord {
                     name: change.record_name.clone(),
                     record_type,
@@ -220,13 +239,7 @@ impl ZoneService {
                 RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id)
                     .await?
                     .into_iter()
-                    .map(|record| ReconstructedRecord {
-                        name: record.name,
-                        record_type: record.record_type,
-                        value: record.value,
-                        ttl: record.ttl,
-                        priority: record.priority,
-                    })
+                    .map(ReconstructedRecord::from)
                     .collect()
             } else {
                 reconstruct_records_at_serial(&mut tx, zone.id, serial, zone.serial).await?
@@ -325,22 +338,20 @@ impl ZoneService {
 
             // Defensive apex-NS guarantee (mirrors zone update): the restored
             // primary_ns must keep a matching apex NS record.
-            let restored_ns_fqdn =
-                bindizr_core::dns::name::to_fqdn(&restored_zone.primary_ns).to_ascii_lowercase();
+            let restored_ns_fqdn = to_fqdn(&restored_zone.primary_ns).to_ascii_lowercase();
+            let is_restored_apex_ns = |record_type: &RecordType, name: &str, value: &str| {
+                *record_type == RecordType::NS
+                    && name == "@"
+                    && to_fqdn(value).to_ascii_lowercase() == restored_ns_fqdn
+            };
             let has_primary_ns = current_records
                 .iter()
                 .filter(|record| !dels.iter().any(|del| del.id == record.id))
                 .any(|record| {
-                    record.record_type == RecordType::NS
-                        && record.name == "@"
-                        && bindizr_core::dns::name::to_fqdn(&record.value).to_ascii_lowercase()
-                            == restored_ns_fqdn
+                    is_restored_apex_ns(&record.record_type, &record.name, &record.value)
                 })
                 || to_add.iter().any(|record| {
-                    record.record_type == RecordType::NS
-                        && record.name == "@"
-                        && bindizr_core::dns::name::to_fqdn(&record.value).to_ascii_lowercase()
-                            == restored_ns_fqdn
+                    is_restored_apex_ns(&record.record_type, &record.name, &record.value)
                 });
             if !has_primary_ns {
                 to_add.push(ReconstructedRecord {
@@ -354,8 +365,7 @@ impl ZoneService {
 
             // Validate the adds in-memory against the post-delete record set
             // (mirrors the import reconcile).
-            let mut records_by_name: std::collections::HashMap<String, Vec<Record>> =
-                std::collections::HashMap::new();
+            let mut records_by_name: HashMap<String, Vec<Record>> = HashMap::new();
             for record in &current_records {
                 if dels.iter().any(|del| del.id == record.id) {
                     continue;

@@ -111,13 +111,7 @@ pub(crate) async fn get_zone_snapshot(Path(params): Path<ZoneSnapshotParam>) -> 
             };
             let records = records
                 .into_iter()
-                .map(|record| SnapshotRecordResponse {
-                    name: record.name,
-                    record_type: record.record_type.to_string(),
-                    value: record.value,
-                    ttl: record.ttl,
-                    priority: record.priority,
-                })
+                .map(SnapshotRecordResponse::from)
                 .collect::<Vec<_>>();
             let response = SnapshotDetailResponse { snapshot, records };
             (StatusCode::OK, Json(response)).into_response()

@@ -1,14 +1,19 @@
 use bindizr_core::dns::{
-    name::to_fqdn_lowercase,
+    name::{soa_mailbox_to_email, to_fqdn_lowercase},
     record::{display_record_owner_name, display_record_value},
     txt,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::model::{
-    record::{Record, RecordType, RecordWithZone},
-    zone::Zone,
+use crate::{
+    error::ServiceError,
+    model::{
+        record::{Record, RecordType, RecordWithZone},
+        zone::Zone,
+        zone_snapshot::ZoneSnapshot,
+    },
 };
 
 /// A page of items together with its pagination metadata.
@@ -471,20 +476,14 @@ pub struct ZoneSnapshotResponse {
     pub expire: i32,
     #[schema(example = 3600)]
     pub minimum_ttl: i32,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: DateTime<Utc>,
 }
 
 impl ZoneSnapshotResponse {
-    pub fn from_snapshot(
-        snapshot: &crate::model::zone_snapshot::ZoneSnapshot,
-    ) -> Result<Self, crate::error::ServiceError> {
-        let admin_email = bindizr_core::dns::name::soa_mailbox_to_email(&snapshot.admin_email)
-            .map_err(|e| {
-                crate::error::ServiceError::internal(format!(
-                    "Failed to decode snapshot admin email: {}",
-                    e
-                ))
-            })?;
+    pub fn from_snapshot(snapshot: &ZoneSnapshot) -> Result<Self, ServiceError> {
+        let admin_email = soa_mailbox_to_email(&snapshot.admin_email).map_err(|e| {
+            ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
+        })?;
         Ok(ZoneSnapshotResponse {
             serial: snapshot.serial,
             primary_ns: snapshot.primary_ns.clone(),
@@ -578,7 +577,7 @@ pub struct ErrorResponse {
 }
 
 impl ErrorResponse {
-    pub fn new(err: &crate::error::ServiceError) -> Self {
+    pub fn new(err: &ServiceError) -> Self {
         ErrorResponse {
             error: err.message.clone(),
             code: err.code.as_str().to_string(),

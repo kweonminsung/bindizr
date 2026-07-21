@@ -1,5 +1,5 @@
 use super::validate_expires_in_days;
-use crate::error::{ErrorCode, ServiceError};
+use crate::error::ErrorCode;
 
 #[test]
 fn validate_expires_in_days_accepts_none_and_positive_values() {

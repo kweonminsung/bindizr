@@ -172,6 +172,13 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     }
 }
 
+/// Extract the required `zone_name` string field from a command payload.
+pub(super) fn required_zone_name(data: &serde_json::Value) -> Result<&str, ServiceError> {
+    data.get("zone_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'zone_name' field"))
+}
+
 fn json_response_error(err: &ServiceError) -> String {
     json!({
         "error": err.message,

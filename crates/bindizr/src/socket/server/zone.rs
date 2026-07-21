@@ -25,10 +25,7 @@ fn required_serial(data: &serde_json::Value) -> Result<i32, ServiceError> {
 
 /// Handle the `GetZone` command by returning a zone by name.
 pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let name = data
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'name' field"))?;
+    let name = required_name(data)?;
 
     match ZoneService::get_by_name(name).await {
         Ok(zone) => {
@@ -91,10 +88,7 @@ pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
 /// Handle the `ImportZoneFile` command by reconciling BIND zone file text with
 /// a zone in a single transaction.
 pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let zone_name = data
-        .get("zone_name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'zone_name' field"))?;
+    let zone_name = super::required_zone_name(data)?;
     let request: ImportZoneFileRequest = serde_json::from_value(data.clone())
         .map_err(|e| ServiceError::invalid_input(format!("Invalid request data: {}", e)))?;
 
@@ -162,13 +156,7 @@ pub(super) async fn get_zone_snapshot(
         snapshot: ZoneSnapshotResponse::from_snapshot(&snapshot)?,
         records: records
             .into_iter()
-            .map(|record| SnapshotRecordResponse {
-                name: record.name,
-                record_type: record.record_type.to_string(),
-                value: record.value,
-                ttl: record.ttl,
-                priority: record.priority,
-            })
+            .map(SnapshotRecordResponse::from)
             .collect(),
     };
 
@@ -214,10 +202,7 @@ pub(super) async fn rollback_zone(
 
 /// Handle the `DeleteZone` command by deleting a zone by name.
 pub(super) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let name = data
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'name' field"))?;
+    let name = required_name(data)?;
 
     match ZoneService::delete(name).await {
         Ok(_) => Ok(DaemonResponse {

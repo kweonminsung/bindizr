@@ -98,10 +98,7 @@ pub(super) async fn create_record(
 pub(super) async fn bulk_create_records(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let zone_name = data
-        .get("zone_name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'zone_name' field"))?;
+    let zone_name = super::required_zone_name(data)?;
     let request: CreateBulkRecordsRequest = serde_json::from_value(data.clone())
         .map_err(|e| ServiceError::invalid_input(format!("Invalid request data: {}", e)))?;
 
