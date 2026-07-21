@@ -2,7 +2,7 @@
 services:
   # Seeded with busybox, not the CoreDNS image, which ships without a shell.
   seed:
-    image: busybox:1.36
+    image: busybox:1.38
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
