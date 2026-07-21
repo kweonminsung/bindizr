@@ -69,10 +69,10 @@ Use the CLI to inspect and manage resources:
 ```bash
 bindizr status
 bindizr token create --description admin
-bindizr create zone --name example.com --primary-ns ns1.example.com --admin-email admin.example.com --ttl 3600
-bindizr get zones
-bindizr get records --zone example.com
-bindizr notify zone example.com
+bindizr zone create --name example.com --primary-ns ns1.example.com --admin-email admin.example.com --ttl 3600
+bindizr zone list
+bindizr record list --zone example.com
+bindizr zone notify example.com
 ```
 
 ## Packages

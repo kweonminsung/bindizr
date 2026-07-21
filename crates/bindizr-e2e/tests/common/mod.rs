@@ -185,11 +185,11 @@ impl TestApp {
 
     pub(crate) async fn run_cli(&self, args: &[&str]) -> std::process::Output {
         let previous_dns_key = match args {
-            ["delete", "record", record_id, ..] => {
+            ["record", "delete", record_id, ..] => {
                 self.previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }
-            ["delete", "zone", zone_name, ..] => Some((zone_name.to_string(), 6)),
+            ["zone", "delete", zone_name, ..] => Some((zone_name.to_string(), 6)),
             _ => None,
         };
         let mut command = match self.runtime.as_ref().expect("test runtime is missing") {
@@ -204,7 +204,10 @@ impl TestApp {
             .expect("failed to run bindizr CLI");
 
         if output.status.success()
-            && matches!(args.first().copied(), Some("create" | "delete" | "notify"))
+            && matches!(
+                args,
+                ["zone" | "record", "create" | "delete" | "notify", ..]
+            )
         {
             self.assert_dns_matches_api(previous_dns_key).await;
         }

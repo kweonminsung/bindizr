@@ -15,8 +15,8 @@ async fn zone_create_read_delete() {
 
     let created = app
         .run_cli_success(&[
-            "create",
             "zone",
+            "create",
             "--name",
             &zone_name,
             "--primary-ns",
@@ -30,16 +30,16 @@ async fn zone_create_read_delete() {
     assert!(created.contains("Zone created successfully"));
 
     let zone = app
-        .run_cli_success(&["get", "zones", &zone_name, "--output", "json"])
+        .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
         .await;
     let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
     assert_eq!(zone["name"], zone_name);
     assert_eq!(zone["primary_ns"], primary_ns);
 
-    let deleted = app.run_cli_success(&["delete", "zone", &zone_name]).await;
+    let deleted = app.run_cli_success(&["zone", "delete", &zone_name]).await;
     assert!(deleted.contains("deleted successfully"));
 
-    let args = ["get", "zones", &zone_name, "--output", "json"];
+    let args = ["zone", "get", &zone_name, "--output", "json"];
     let missing = app.run_cli(&args).await;
     assert_cli_failure_contains(
         &args,
@@ -57,8 +57,8 @@ async fn zone_filter_and_paginate() {
 
     for (name, ttl) in [(&first_zone, "3600"), (&filtered_zone, "7200")] {
         app.run_cli_success(&[
-            "create",
             "zone",
+            "create",
             "--name",
             name,
             "--primary-ns",
@@ -73,8 +73,8 @@ async fn zone_filter_and_paginate() {
 
     let zones = app
         .run_cli_success(&[
-            "get",
-            "zones",
+            "zone",
+            "list",
             "--search",
             app.namespace(),
             "--min-ttl",
@@ -92,8 +92,8 @@ async fn zone_filter_and_paginate() {
 
     let page = app
         .run_cli_success(&[
-            "get",
-            "zones",
+            "zone",
+            "list",
             "--search",
             app.namespace(),
             "--limit",
@@ -124,8 +124,8 @@ async fn zone_reject_invalid_name_and_ttl() {
         let primary_ns = format!("ns1.{name}");
         let admin_email = format!("hostmaster@{name}");
         let args = [
-            "create",
             "zone",
+            "create",
             "--name",
             name,
             "--primary-ns",

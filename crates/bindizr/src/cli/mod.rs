@@ -12,7 +12,7 @@ use clap::{Parser, Subcommand};
 
 use crate::{
     api,
-    cli::commands::{notify::NotifyCommand, token::TokenCommand},
+    cli::commands::{record::RecordCommand, token::TokenCommand, zone::ZoneCommand},
     socket,
 };
 
@@ -51,25 +51,15 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: TokenCommand,
     },
-    /// Get resources
-    Get {
+    /// Manage zones
+    Zone {
         #[command(subcommand)]
-        subcommand: commands::get::GetCommand,
+        subcommand: ZoneCommand,
     },
-    /// Create resources
-    Create {
+    /// Manage records
+    Record {
         #[command(subcommand)]
-        subcommand: commands::create::CreateCommand,
-    },
-    /// Delete resources
-    Delete {
-        #[command(subcommand)]
-        subcommand: commands::delete::DeleteCommand,
-    },
-    /// Send NOTIFY to secondary servers
-    Notify {
-        #[command(subcommand)]
-        subcommand: NotifyCommand,
+        subcommand: RecordCommand,
     },
 }
 
@@ -114,10 +104,8 @@ pub async fn execute() {
         Command::Start { config } => commands::start::handle_command(config).await,
         Command::Status => commands::status::handle_command().await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
-        Command::Get { subcommand } => commands::get::handle_command(subcommand).await,
-        Command::Create { subcommand } => commands::create::handle_command(subcommand).await,
-        Command::Delete { subcommand } => commands::delete::handle_command(subcommand).await,
-        Command::Notify { subcommand } => commands::notify::handle_notify(&subcommand).await,
+        Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
+        Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
     } {
         eprintln!("Error: {}", e);
         std::process::exit(1);

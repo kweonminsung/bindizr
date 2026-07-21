@@ -11,8 +11,8 @@ async fn record_create_read_delete() {
 
     let created_zone = app
         .run_cli_success(&[
-            "create",
             "zone",
+            "create",
             "--name",
             &zone_name,
             "--primary-ns",
@@ -27,8 +27,8 @@ async fn record_create_read_delete() {
 
     let created_record = app
         .run_cli_success(&[
-            "create",
             "record",
+            "create",
             "--name",
             "www",
             "--type",
@@ -44,7 +44,7 @@ async fn record_create_read_delete() {
     assert!(created_record.contains("Record created successfully"));
 
     let records = app
-        .run_cli_success(&["get", "records", "--zone", &zone_name, "--output", "json"])
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     let record = records
@@ -59,10 +59,10 @@ async fn record_create_read_delete() {
         .expect("created record did not contain an ID")
         .to_string();
 
-    let deleted_record = app.run_cli_success(&["delete", "record", &record_id]).await;
+    let deleted_record = app.run_cli_success(&["record", "delete", &record_id]).await;
     assert!(deleted_record.contains("deleted successfully"));
 
-    let deleted_zone = app.run_cli_success(&["delete", "zone", &zone_name]).await;
+    let deleted_zone = app.run_cli_success(&["zone", "delete", &zone_name]).await;
     assert!(deleted_zone.contains("deleted successfully"));
 }
 
@@ -75,8 +75,8 @@ async fn record_filter_by_zone_and_type() {
 
     for zone in [&one_zone, &two_zone] {
         app.run_cli_success(&[
-            "create",
             "zone",
+            "create",
             "--name",
             zone,
             "--primary-ns",
@@ -95,8 +95,8 @@ async fn record_filter_by_zone_and_type() {
         ("www", "A", "192.0.2.2", two_zone.as_str()),
     ] {
         app.run_cli_success(&[
-            "create",
             "record",
+            "create",
             "--name",
             name,
             "--type",
@@ -113,7 +113,7 @@ async fn record_filter_by_zone_and_type() {
 
     let records = app
         .run_cli_success(&[
-            "get", "records", "--zone", &one_zone, "--type", "A", "--output", "json",
+            "record", "list", "--zone", &one_zone, "--type", "A", "--output", "json",
         ])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
@@ -130,8 +130,8 @@ async fn record_reject_invalid_values() {
     let zone_name = app.zone_name("validation.example");
     let primary_ns = format!("ns1.{zone_name}");
     app.run_cli_success(&[
-        "create",
         "zone",
+        "create",
         "--name",
         &zone_name,
         "--primary-ns",
@@ -148,8 +148,8 @@ async fn record_reject_invalid_values() {
         ("CNAME", "bad target.example", "must not contain whitespace"),
     ] {
         let args = [
-            "create",
             "record",
+            "create",
             "--name",
             "invalid",
             "--type",
