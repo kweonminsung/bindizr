@@ -88,6 +88,15 @@ pub(crate) enum ZoneCommand {
     },
 
     /// Import a BIND zone file into a zone
+    #[command(after_help = "\
+The file is standard BIND zone file text, for example:
+  www    300  IN A   192.0.2.1
+  mail        IN A   192.0.2.2
+  @           IN MX  10 mail.example.com.
+
+Relative names resolve against the zone and missing TTLs fall back to the
+zone TTL. SOA lines are ignored (SOA metadata is managed by bindizr) and
+$INCLUDE is not supported.")]
     Import {
         /// The name of the zone
         name: String,

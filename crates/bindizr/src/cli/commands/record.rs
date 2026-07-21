@@ -82,6 +82,24 @@ pub(crate) enum RecordCommand {
     },
 
     /// Bulk insert records into a zone from a JSON or YAML file
+    #[command(after_help = "\
+Input format (JSON or YAML): an array of records, or an object with a
+'records' array. Fields per record:
+  name         owner name relative to the zone, or '@' for the apex (required)
+  record_type  A, AAAA, CNAME, MX, NS, PTR, SRV, TXT (required)
+  value        record value; TXT also accepts an array of strings (required)
+  ttl          seconds (optional; defaults to the zone TTL)
+  priority     MX/SRV priority (optional)
+
+JSON example:
+  [{\"name\": \"www\", \"record_type\": \"A\", \"value\": \"192.0.2.1\", \"ttl\": 300},
+   {\"name\": \"@\", \"record_type\": \"MX\", \"value\": \"mail\", \"priority\": 10}]
+
+YAML example:
+  - name: www
+    record_type: A
+    value: 192.0.2.1
+    ttl: 300")]
     Bulk {
         /// Path to a JSON or YAML file (an array of records, or an object with
         /// a 'records' array), or '-' to read from stdin
