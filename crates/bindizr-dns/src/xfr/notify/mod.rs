@@ -35,11 +35,12 @@ async fn force_increment_serial(zone_name: Option<&str>) -> Result<(), XfrError>
 
     let bumped_zones = ZoneService::force_increment_serial(zone_name)
         .await
-        .map_err(|e| match e {
-            crate::service::error::ServiceError::NotFound(_) => {
+        .map_err(|e| {
+            if e.code == crate::service::error::ErrorCode::ZoneNotFound {
                 XfrError::ZoneNotFound(zone_name.unwrap_or_default().to_string())
+            } else {
+                XfrError::DatabaseError(e.to_string())
             }
-            other => XfrError::DatabaseError(other.to_string()),
         })?;
 
     log_info!(

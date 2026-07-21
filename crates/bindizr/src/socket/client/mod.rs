@@ -1,11 +1,15 @@
+use bindizr_service::error::ErrorCode;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
 };
 
-use crate::socket::{
-    FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
-    types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
+use crate::{
+    cli::error::CliError,
+    socket::{
+        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
+        types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
+    },
 };
 
 /// Client for sending commands to the daemon over the Unix socket.
@@ -22,7 +26,7 @@ impl DaemonSocketClient {
         &self,
         command: DaemonCommandKind,
         data: Option<serde_json::Value>,
-    ) -> Result<DaemonResponse, String> {
+    ) -> Result<DaemonResponse, CliError> {
         let mut stream = connect_to_daemon_socket().await?;
 
         let cmd = DaemonCommand {
@@ -52,14 +56,22 @@ impl DaemonSocketClient {
         let response: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| format!("Failed to parse response: {}", e))?;
         if let Some(error) = response.get("error").and_then(serde_json::Value::as_str) {
-            return Err(error.to_string());
+            let code = response
+                .get("code")
+                .and_then(serde_json::Value::as_str)
+                .and_then(ErrorCode::parse);
+            return Err(CliError {
+                code,
+                message: error.to_string(),
+            });
         }
 
-        serde_json::from_value(response).map_err(|e| format!("Failed to parse response: {}", e))
+        Ok(serde_json::from_value(response)
+            .map_err(|e| format!("Failed to parse response: {}", e))?)
     }
 }
 
-async fn connect_to_daemon_socket() -> Result<UnixStream, String> {
+async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     match UnixStream::connect(SOCKET_FILE_PATH).await {
         Ok(stream) => Ok(stream),
         Err(err)
@@ -73,15 +85,15 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, String> {
             UnixStream::connect(FALLBACK_SOCKET_FILE_PATH)
                 .await
                 .map_err(|fallback_err| {
-                format!(
+                CliError::from(format!(
                     "Could not connect to the daemon socket at '{}' or fallback '{}': {}; fallback error: {}\nIs the bindizr daemon running?",
                     SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH, err, fallback_err
-                )
+                ))
             })
         }
-        Err(err) => Err(format!(
+        Err(err) => Err(CliError::from(format!(
             "Could not connect to the daemon socket at '{}': {}\nIs the bindizr daemon running?",
             SOCKET_FILE_PATH, err
-        )),
+        ))),
     }
 }

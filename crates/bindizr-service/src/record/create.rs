@@ -35,7 +35,7 @@ impl RecordService {
             .record_type
             .parse::<RecordType>()
             .map_err(|_| {
-                ServiceError::BadRequest(format!(
+                ServiceError::invalid_input(format!(
                     "Invalid record type: {}",
                     create_record_request.record_type
                 ))
@@ -43,7 +43,7 @@ impl RecordService {
         let record_value = create_record_request
             .value
             .to_storage_value(&record_type)
-            .map_err(ServiceError::BadRequest)?;
+            .map_err(ServiceError::invalid_record_value)?;
 
         let mut tx = RepositoryService::begin_tx("Failed to create record").await?;
 
@@ -53,14 +53,13 @@ impl RecordService {
                 match RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_zone_name).await {
                     Ok(Some(zone)) => zone,
                     Ok(None) => {
-                        return Err(ServiceError::NotFound(format!(
-                            "Zone with name '{}' not found",
-                            create_record_request.zone_name
-                        )));
+                        return Err(ServiceError::zone_not_found(
+                            &create_record_request.zone_name,
+                        ));
                     }
                     Err(e) => {
                         log_error!("Failed to fetch zone: {}", e);
-                        return Err(ServiceError::Internal(
+                        return Err(ServiceError::internal(
                             "Failed to create record".to_string(),
                         ));
                     }
@@ -81,7 +80,7 @@ impl RecordService {
                     Ok(records) => records,
                     Err(e) => {
                         log_error!("Failed to check existing records: {}", e);
-                        return Err(ServiceError::Internal(
+                        return Err(ServiceError::internal(
                             "Failed to create record".to_string(),
                         ));
                     }
@@ -115,7 +114,7 @@ impl RecordService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create record: {}", e);
-                ServiceError::Internal("Failed to create record".to_string())
+                ServiceError::internal("Failed to create record".to_string())
             })?;
 
             // Increment zone serial so IXFR consumers can detect this change
@@ -123,7 +122,7 @@ impl RecordService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::Internal("Failed to update zone serial".to_string())
+                    ServiceError::internal("Failed to update zone serial".to_string())
                 })?;
 
             // Record zone change for IXFR
@@ -144,7 +143,7 @@ impl RecordService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone change: {}", e);
-                ServiceError::Internal("Failed to create zone change".to_string())
+                ServiceError::internal("Failed to create zone change".to_string())
             })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;

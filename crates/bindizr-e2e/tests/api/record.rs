@@ -463,7 +463,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
     let (status, _) = app
         .request(Method::POST, "/records", Some(in_bailiwick_duplicate))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let in_bailiwick_different_value = json!({
         "name": format!("a1.{zone_name}"),
@@ -607,7 +607,7 @@ async fn record_reject_cname_conflicts() {
     let (status, _) = app
         .request(Method::POST, "/records", Some(cname_record_request))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let cname_record_request = json!({
         "name": "cname-test",
@@ -632,7 +632,7 @@ async fn record_reject_cname_conflicts() {
     let (status, _) = app
         .request(Method::POST, "/records", Some(a_record_request))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let update_cname_request = json!({
         "name": "test",
@@ -647,7 +647,7 @@ async fn record_reject_cname_conflicts() {
             Some(update_cname_request),
         )
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 }
 
 #[tokio::test]

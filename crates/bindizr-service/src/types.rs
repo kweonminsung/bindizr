@@ -451,9 +451,20 @@ pub struct MessageResponse {
     pub message: String,
 }
 
-/// Generic error message response.
+/// Generic error response: a plain description plus a machine-readable code.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ErrorResponse {
-    #[schema(example = "Bad request: invalid input data")]
+    #[schema(example = "Zone with name 'example.com' not found")]
     pub error: String,
+    #[schema(example = "ZONE_NOT_FOUND")]
+    pub code: String,
+}
+
+impl ErrorResponse {
+    pub fn new(err: &crate::error::ServiceError) -> Self {
+        ErrorResponse {
+            error: err.message.clone(),
+            code: err.code.as_str().to_string(),
+        }
+    }
 }

@@ -131,8 +131,10 @@ impl RecordService {
                 let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name)
                 {
                     Ok(normalized) => normalized.stored_name,
-                    Err(ServiceError::BadRequest(msg)) => {
-                        errors.push(format!("{}: {}", record.owner_fqdn, msg));
+                    // Collect any client-input error (4xx) per record; only
+                    // internal failures abort the whole import.
+                    Err(e) if e.code.http_status() < 500 => {
+                        errors.push(format!("{}: {}", record.owner_fqdn, e.message));
                         continue;
                     }
                     Err(e) => return Err(e),
@@ -197,7 +199,7 @@ impl RecordService {
             }
             .map_err(|e| {
                 log_error!("Failed to load zone records: {}", e);
-                ServiceError::Internal("Failed to import zone file".to_string())
+                ServiceError::internal("Failed to import zone file".to_string())
             })?;
             load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
 
@@ -335,8 +337,8 @@ impl RecordService {
                         &add.prepared.value,
                         add.prepared.priority,
                     )),
-                    Err(ServiceError::BadRequest(msg)) => {
-                        errors.push(format!("{}: {}", add.prepared.owner_name, msg))
+                    Err(e) if e.code.http_status() < 500 => {
+                        errors.push(format!("{}: {}", add.prepared.owner_name, e.message))
                     }
                     Err(e) => return Err(e),
                 }
@@ -386,7 +388,7 @@ impl RecordService {
                     .await
                     .map_err(|e| {
                         log_error!("Failed to update zone serial: {}", e);
-                        ServiceError::Internal("Failed to update zone serial".to_string())
+                        ServiceError::internal("Failed to update zone serial".to_string())
                     })?;
 
                 save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;

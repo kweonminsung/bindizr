@@ -182,7 +182,7 @@ async fn zone_validate_and_normalize() {
     let (status, _) = app
         .request(Method::POST, "/zones", Some(duplicate_zone_request))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let second_zone = json!({
         "name": second_zone_name,
@@ -211,13 +211,22 @@ async fn zone_validate_and_normalize() {
     assert_eq!(body["zone"]["primary_ns"], format!("ns1.{zone_name}"));
     assert_eq!(body["zone"]["admin_email"], "Host.Master@example.com");
 
+    let rename_onto_existing = json!({
+        "name": format!("{}.", second_zone_name.to_ascii_uppercase()),
+        "primary_ns": format!("ns1.{zone_name}"),
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(rename_onto_existing),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
     for invalid_update in [
-        json!({
-            "name": format!("{}.", second_zone_name.to_ascii_uppercase()),
-            "primary_ns": format!("ns1.{zone_name}"),
-            "admin_email": "hostmaster@example.com",
-            "ttl": 3600
-        }),
         json!({
             "name": format!("{}..example.com", app.namespace()),
             "primary_ns": format!("ns1.{zone_name}"),

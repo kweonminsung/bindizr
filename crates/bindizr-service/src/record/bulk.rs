@@ -39,12 +39,12 @@ pub(super) fn prepare_record(
     ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Result<PreparedRecord, ServiceError> {
-    let record_type = record_type
-        .parse::<RecordType>()
-        .map_err(|_| ServiceError::BadRequest(format!("Invalid record type: {}", record_type)))?;
+    let record_type = record_type.parse::<RecordType>().map_err(|_| {
+        ServiceError::invalid_input(format!("Invalid record type: {}", record_type))
+    })?;
     let value = value
         .to_storage_value(&record_type)
-        .map_err(ServiceError::BadRequest)?;
+        .map_err(ServiceError::invalid_record_value)?;
 
     Ok(PreparedRecord {
         owner_name: name.to_string(),
@@ -120,13 +120,10 @@ pub(super) async fn load_zone_tx(
     let lookup_zone_name = normalize_zone_name(zone_name)?;
     match RepositoryService::get_zone_by_name_tx(tx, &lookup_zone_name).await {
         Ok(Some(zone)) => Ok(zone),
-        Ok(None) => Err(ServiceError::NotFound(format!(
-            "Zone with name '{}' not found",
-            zone_name
-        ))),
+        Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
         Err(e) => {
             log_error!("Failed to fetch zone: {}", e);
-            Err(ServiceError::Internal("Failed to fetch zone".to_string()))
+            Err(ServiceError::internal("Failed to fetch zone".to_string()))
         }
     }
 }
@@ -144,7 +141,7 @@ impl RecordService {
         dry_run: bool,
     ) -> Result<Vec<RecordWithZone>, ServiceError> {
         if items.is_empty() {
-            return Err(ServiceError::BadRequest(
+            return Err(ServiceError::invalid_input(
                 "no records provided for bulk insert".to_string(),
             ));
         }
@@ -206,7 +203,7 @@ impl RecordService {
                 Ok(records) => records,
                 Err(e) => {
                     log_error!("Failed to load zone records: {}", e);
-                    return Err(ServiceError::Internal(
+                    return Err(ServiceError::internal(
                         "Failed to create records".to_string(),
                     ));
                 }
@@ -296,7 +293,7 @@ impl RecordService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::Internal("Failed to update zone serial".to_string())
+                    ServiceError::internal("Failed to update zone serial".to_string())
                 })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;

@@ -2,7 +2,10 @@ use clap::Subcommand;
 use serde_json::json;
 
 use crate::{
-    cli::output::{OutputFormat, RecordRow, print_output_with_table},
+    cli::{
+        error::CliError,
+        output::{OutputFormat, RecordRow, print_output_with_table},
+    },
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
 
@@ -111,7 +114,7 @@ pub(crate) enum RecordCommand {
 }
 
 /// Handle the `record` subcommand by forwarding it to the daemon over the socket.
-pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), String> {
+pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
 
     match subcommand {
@@ -209,8 +212,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), Stri
                     .ok_or("Input object must contain a 'records' array")?,
                 _ => {
                     return Err(
-                        "Expected an array of records or an object with a 'records' array"
-                            .to_string(),
+                        "Expected an array of records or an object with a 'records' array".into(),
                     );
                 }
             };

@@ -1,4 +1,5 @@
 mod commands;
+pub(crate) mod error;
 mod output;
 
 use std::sync::Arc;
@@ -101,13 +102,18 @@ pub async fn execute() {
     let args = Args::parse();
 
     if let Err(e) = match args.command {
-        Command::Start { config } => commands::start::handle_command(config).await,
+        Command::Start { config } => commands::start::handle_command(config)
+            .await
+            .map_err(error::CliError::from),
         Command::Status => commands::status::handle_command().await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
         Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
     } {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {}", e.message);
+        if let Some(hint) = e.hint() {
+            eprintln!("Hint: {}", hint);
+        }
         std::process::exit(1);
     }
 }

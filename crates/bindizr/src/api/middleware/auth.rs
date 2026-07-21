@@ -1,13 +1,13 @@
 use axum::{
-    Json,
     body::Body,
     http::{Request, StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use bindizr_core::log_debug;
-use bindizr_service::auth::AuthService;
-use serde_json::json;
+use bindizr_service::{auth::AuthService, error::ServiceError};
+
+use crate::api::error::ApiError;
 
 /// Validate the request's Bearer token, rejecting unauthorized requests.
 pub(crate) async fn auth_middleware(
@@ -39,12 +39,11 @@ pub(crate) async fn auth_middleware(
         }
         Err(err) => {
             log_debug!("Token validation error: {}", err);
-            Ok(unauthorized("Invalid or expired token"))
+            Ok(ApiError::from(err).into_response())
         }
     }
 }
 
 fn unauthorized(message: &str) -> Response {
-    let json_body = json!({ "error": message });
-    (StatusCode::UNAUTHORIZED, Json(json_body)).into_response()
+    ApiError(ServiceError::unauthorized(message)).into_response()
 }

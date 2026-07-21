@@ -48,8 +48,15 @@ pub(crate) async fn notify_zones(JsonBody(body): JsonBody<NotifyZoneRequest>) ->
             (StatusCode::OK, Json(json!({ "message": message }))).into_response()
         }
         Err(dns::xfr::error::XfrError::ZoneNotFound(zone_name)) => {
-            ApiError::NotFound(format!("Zone not found: {}", zone_name)).into_response()
+            ApiError(bindizr_service::error::ServiceError::new(
+                bindizr_service::error::ErrorCode::ZoneNotFound,
+                format!("Zone not found: {}", zone_name),
+            ))
+            .into_response()
         }
-        Err(err) => ApiError::InternalServerError(err.to_string()).into_response(),
+        Err(err) => ApiError(bindizr_service::error::ServiceError::internal(
+            err.to_string(),
+        ))
+        .into_response(),
     }
 }

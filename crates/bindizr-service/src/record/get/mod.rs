@@ -63,7 +63,7 @@ impl RecordService {
                     Ok(records) => Ok(records),
                     Err(e) => {
                         log_error!("Failed to fetch records for zone {}: {}", name, e);
-                        Err(ServiceError::Internal(format!(
+                        Err(ServiceError::internal(format!(
                             "Failed to fetch records for zone {}",
                             name
                         )))
@@ -74,7 +74,7 @@ impl RecordService {
                 Ok(records) => Ok(records),
                 Err(e) => {
                     log_error!("Failed to fetch all records: {}", e);
-                    Err(ServiceError::Internal(
+                    Err(ServiceError::internal(
                         "Failed to fetch all records".to_string(),
                     ))
                 }
@@ -95,7 +95,7 @@ impl RecordService {
                     Ok(records) => Ok(records),
                     Err(e) => {
                         log_error!("Failed to fetch records for zone {}: {}", name, e);
-                        Err(ServiceError::Internal(format!(
+                        Err(ServiceError::internal(format!(
                             "Failed to fetch records for zone {}",
                             name
                         )))
@@ -106,7 +106,7 @@ impl RecordService {
                 Ok(records) => Ok(records),
                 Err(e) => {
                     log_error!("Failed to fetch all records: {}", e);
-                    Err(ServiceError::Internal(
+                    Err(ServiceError::internal(
                         "Failed to fetch all records".to_string(),
                     ))
                 }
@@ -173,13 +173,10 @@ impl RecordService {
     pub async fn get_by_id(record_id: i32) -> Result<Record, ServiceError> {
         match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(ServiceError::NotFound(format!(
-                "Record with id '{}' not found",
-                record_id
-            ))),
+            Ok(None) => Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ServiceError::Internal("Failed to fetch record".to_string()))
+                Err(ServiceError::internal("Failed to fetch record".to_string()))
             }
         }
     }
@@ -188,13 +185,10 @@ impl RecordService {
     pub async fn get_by_id_with_zone(record_id: i32) -> Result<RecordWithZone, ServiceError> {
         match RepositoryService::get_record_by_id_with_zone(record_id).await {
             Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(ServiceError::NotFound(format!(
-                "Record with id '{}' not found",
-                record_id
-            ))),
+            Ok(None) => Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                Err(ServiceError::Internal("Failed to fetch record".to_string()))
+                Err(ServiceError::internal("Failed to fetch record".to_string()))
             }
         }
     }
@@ -205,13 +199,10 @@ impl RecordService {
 async fn require_zone_by_name(lookup_name: &str, display_name: &str) -> Result<Zone, ServiceError> {
     match RepositoryService::get_zone_by_name(lookup_name).await {
         Ok(Some(zone)) => Ok(zone),
-        Ok(None) => Err(ServiceError::NotFound(format!(
-            "Zone with name '{}' not found",
-            display_name
-        ))),
+        Ok(None) => Err(ServiceError::zone_not_found(display_name)),
         Err(e) => {
             log_error!("Failed to fetch zone: {}", e);
-            Err(ServiceError::Internal("Failed to fetch zone".to_string()))
+            Err(ServiceError::internal("Failed to fetch zone".to_string()))
         }
     }
 }

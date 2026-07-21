@@ -7,6 +7,7 @@ mod zone;
 use std::{io, os::unix::fs::FileTypeExt, path::Path};
 
 use bindizr_core::{log_error, log_info, log_warn};
+use bindizr_service::error::ServiceError;
 use serde_json::json;
 use tokio::{
     fs,
@@ -54,13 +55,14 @@ async fn handle_client(stream: UnixStream) {
 
             Err(e) => {
                 log_error!("Failed to parse command: {}", e);
-                Err("Failed to parse command".to_string())
+                Err(ServiceError::invalid_input("Failed to parse command"))
             }
         };
 
         let response = match raw_response {
-            Ok(res) => serde_json::to_string(&res)
-                .unwrap_or_else(|_| json_response_error("Failed to serialize response")),
+            Ok(res) => serde_json::to_string(&res).unwrap_or_else(|_| {
+                json_response_error(&ServiceError::internal("Failed to serialize response"))
+            }),
             Err(e) => json_response_error(&e),
         };
 
@@ -167,9 +169,10 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     }
 }
 
-fn json_response_error(msg: &str) -> String {
+fn json_response_error(err: &ServiceError) -> String {
     json!({
-        "error": msg
+        "error": err.message,
+        "code": err.code.as_str(),
     })
     .to_string()
 }

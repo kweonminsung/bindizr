@@ -2,7 +2,10 @@ use clap::{Args, Subcommand, ValueEnum};
 use serde_json::json;
 
 use crate::{
-    cli::output::{ImportSummaryRow, OutputFormat, ZoneRow, print_output_with_table},
+    cli::{
+        error::CliError,
+        output::{ImportSummaryRow, OutputFormat, ZoneRow, print_output_with_table},
+    },
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
 
@@ -137,7 +140,7 @@ pub(crate) struct NotifyArgs {
 }
 
 /// Handle the `zone` subcommand by forwarding it to the daemon over the socket.
-pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), String> {
+pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
 
     match subcommand {
@@ -242,10 +245,18 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), String
                 .await?;
 
             if output == OutputFormat::Table {
-                println!("{}", response.message);
-                if let Some(errors) = response.data.get("errors").and_then(|v| v.as_array()) {
-                    for error in errors.iter().filter_map(|e| e.as_str()) {
-                        println!("  - {}", error);
+                let errors: Vec<&str> = response
+                    .data
+                    .get("errors")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|e| e.as_str()).collect())
+                    .unwrap_or_default();
+                if errors.is_empty() {
+                    println!("{}", response.message);
+                } else {
+                    eprintln!("{}", response.message);
+                    for error in errors {
+                        eprintln!("  - {}", error);
                     }
                 }
             }
