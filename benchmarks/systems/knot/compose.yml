@@ -2,7 +2,7 @@
 services:
   # Seeded with busybox so the zone file is owned/readable by knot (uid 53).
   seed:
-    image: busybox:1.36
+    image: busybox:1.38
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
