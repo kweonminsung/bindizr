@@ -206,7 +206,7 @@ pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonRespon
     let name = required_name(data)?;
 
     let zone = ZoneService::get_by_name(name).await?;
-    let probes = bindizr_dns::xfr::soa_probe::probe_secondaries(&zone.name)
+    let probes = bindizr_dns::client::probe::probe_secondaries(&zone.name)
         .await
         .map_err(|e| ServiceError::internal(e.to_string()))?;
     let response = crate::api::zone::build_zone_status(&zone, probes);

@@ -19,7 +19,7 @@ use crate::{
         serial::generate_serial,
         zone::{ZoneService, snapshot::save_zone_snapshot_tx},
     },
-    txt, xfr,
+    txt,
 };
 
 #[derive(Debug)]
@@ -125,7 +125,7 @@ pub(super) async fn apply_update(
         );
 
         if config::get_bindizr_config().dns.notify_after_update {
-            if let Err(e) = xfr::notify::send_notify(Some(&zone.name), false).await {
+            if let Err(e) = crate::client::notify::send_notify(Some(&zone.name), false).await {
                 log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
             }
         }

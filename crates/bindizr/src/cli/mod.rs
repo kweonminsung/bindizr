@@ -22,7 +22,7 @@ struct DnsNotifySender;
 #[async_trait]
 impl service::notify::NotifySender for DnsNotifySender {
     async fn send_notify(&self, zone_name: Option<&str>) -> Result<(), String> {
-        dns::xfr::notify::send_notify(zone_name, false)
+        dns::client::notify::send_notify(zone_name, false)
             .await
             .map_err(|e| e.to_string())
     }
@@ -75,7 +75,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     dns::initialize().await;
 
     if config::get_bindizr_config().dns.notify_on_startup {
-        match dns::xfr::notify::send_notify(None, false).await {
+        match dns::client::notify::send_notify(None, false).await {
             Ok(()) => log_info!("Startup DNS NOTIFY completed."),
             Err(e) => log_error!("Startup DNS NOTIFY failed: {}", e),
         }

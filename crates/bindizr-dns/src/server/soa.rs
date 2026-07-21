@@ -6,11 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use domain::base::iana::Rtype;
 use tokio::net::{TcpStream, UdpSocket};
 
-use crate::{
-    log_info,
-    service::zone::ZoneService,
-    xfr::{catalog, error::XfrError, wire},
-};
+use crate::{error::XfrError, log_info, server::catalog, service::zone::ZoneService, wire};
 
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,

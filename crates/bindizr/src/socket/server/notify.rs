@@ -27,7 +27,7 @@ pub(super) async fn handle_notify_zone(
         }
     };
 
-    match dns::xfr::notify::send_notify(request.zone_name.as_deref(), request.force).await {
+    match dns::client::notify::send_notify(request.zone_name.as_deref(), request.force).await {
         Ok(()) => Ok(DaemonResponse {
             message: match request.zone_name {
                 Some(ref name) if request.force => {

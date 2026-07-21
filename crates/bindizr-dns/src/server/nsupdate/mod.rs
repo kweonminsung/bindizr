@@ -45,7 +45,7 @@ pub(crate) async fn handle_tcp_nsupdate(
     let response = build_response(query_data, result)
         .ok_or_else(|| "Failed to build NSUPDATE TCP response".to_string())?;
 
-    super::xfr::wire::write_tcp_message(stream, &response)
+    crate::wire::write_tcp_message(stream, &response)
         .await
         .map_err(|e| format!("Failed to write NSUPDATE TCP response: {}", e))
 }

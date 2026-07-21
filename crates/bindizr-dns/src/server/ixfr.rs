@@ -4,8 +4,8 @@ use bindizr_core::dns::name::to_owner_fqdn;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;
 
-use super::{axfr, catalog, delta, error::XfrError, wire};
-use crate::{log_info, log_warn, service::zone::ZoneService};
+use super::{axfr, catalog, delta};
+use crate::{error::XfrError, log_info, log_warn, service::zone::ZoneService, wire};
 
 /// Handles an IXFR request.
 pub(crate) async fn handle_ixfr(

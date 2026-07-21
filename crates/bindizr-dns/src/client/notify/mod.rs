@@ -1,18 +1,12 @@
 use std::{net::SocketAddr, time::Duration};
 
+use bindizr_core::dns::is_catalog_zone;
 use domain::base::{
-    Name, Rtype, StaticCompressor,
+    Name,
     iana::{Opcode, Rcode},
-    message_builder::MessageBuilder,
 };
-use tokio::net::{UdpSocket, lookup_host};
 
-use super::{catalog, error::XfrError, wire};
-use crate::{
-    address::{ParsedAddress, parse_address_target},
-    config, log_error, log_info,
-    service::zone::ZoneService,
-};
+use crate::{config, error::XfrError, log_error, log_info, service::zone::ZoneService, wire};
 
 /// Sends DNS NOTIFY to all configured secondary servers.
 /// A `None` zone_name notifies all zones; `force` bumps the target serial first.
@@ -28,7 +22,7 @@ pub async fn send_notify(zone_name: Option<&str>, force: bool) -> Result<(), Xfr
 }
 
 async fn force_increment_serial(zone_name: Option<&str>) -> Result<(), XfrError> {
-    if matches!(zone_name, Some(name) if catalog::is_catalog_zone(name)) {
+    if matches!(zone_name, Some(name) if is_catalog_zone(name)) {
         log_info!("Skipping forced serial increment for virtual catalog zone");
         return Ok(());
     }
@@ -87,7 +81,7 @@ async fn send_notify_for_all_zones() -> Result<(), XfrError> {
 async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
 
-    if !catalog::is_catalog_zone(zone_name) {
+    if !is_catalog_zone(zone_name) {
         ZoneService::find(zone_name)
             .await
             .map_err(|e| XfrError::DatabaseError(e.to_string()))?
@@ -152,21 +146,10 @@ async fn resolve_secondary_servers(raw: &str) -> (Vec<SocketAddr>, Vec<String>) 
     let mut addrs = Vec::new();
     let mut failures = Vec::new();
 
-    for item in raw.split(',') {
-        let trimmed = item.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        match parse_address_target(trimmed, 53) {
-            ParsedAddress::SocketAddr(addr) => addrs.push(addr),
-            ParsedAddress::HostPort(host_port) => match lookup_host(&host_port).await {
-                Ok(resolved) => addrs.extend(resolved),
-                Err(e) => {
-                    log_error!("Invalid server address '{}': {}", trimmed, e);
-                    failures.push(format!("{}: {}", trimmed, e));
-                }
-            },
+    for (entry, result) in super::resolve_secondary_entries(raw).await {
+        match result {
+            Ok(resolved) => addrs.extend(resolved),
+            Err(e) => failures.push(format!("{}: {}", entry, e)),
         }
     }
 
@@ -219,36 +202,10 @@ async fn send_notify_to_server_once(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<(), XfrError> {
-    let (query_id, notify_message) = build_notify_message(zone_name)?;
+    let (query_id, notify_message) = super::build_question(Opcode::NOTIFY, true, zone_name)?;
 
-    // Bind a local socket matching the target's address family.
-    let bind_addr = if server_addr.is_ipv4() {
-        "0.0.0.0:0"
-    } else {
-        "[::]:0"
-    };
-
-    let socket = UdpSocket::bind(bind_addr)
-        .await
-        .map_err(XfrError::IoError)?;
-    socket
-        .connect(server_addr)
-        .await
-        .map_err(XfrError::IoError)?;
-
-    let sent = tokio::time::timeout(timeout, socket.send(&notify_message))
-        .await
-        .map_err(|_| XfrError::ProtocolError("NOTIFY send timeout".to_string()))?
-        .map_err(XfrError::IoError)?;
-
-    if sent != notify_message.len() {
-        return Err(XfrError::ProtocolError(format!(
-            "Incomplete NOTIFY send to {}: sent {} of {} bytes",
-            server_addr,
-            sent,
-            notify_message.len()
-        )));
-    }
+    let (received, response) =
+        super::udp_exchange(server_addr, timeout, &notify_message, "NOTIFY").await?;
 
     log_info!(
         "NOTIFY message sent to {} ({} bytes)",
@@ -256,43 +213,9 @@ async fn send_notify_to_server_once(
         notify_message.len()
     );
 
-    let mut response = [0u8; 512];
-    let received = tokio::time::timeout(timeout, socket.recv(&mut response))
-        .await
-        .map_err(|_| {
-            XfrError::ProtocolError(format!("NOTIFY response timeout from {}", server_addr))
-        })?
-        .map_err(XfrError::IoError)?;
-
     validate_notify_response(query_id, &response[..received])?;
 
     Ok(())
-}
-
-/// Builds a DNS NOTIFY message (RFC 1996).
-fn build_notify_message(zone_name: &Name<Vec<u8>>) -> Result<(u16, Vec<u8>), XfrError> {
-    let query_id = rand::random::<u16>();
-    let mut msg = MessageBuilder::from_target(StaticCompressor::new(Vec::new()))
-        .map_err(|e| XfrError::ProtocolError(format!("Failed to create message builder: {}", e)))?;
-
-    // Set NOTIFY opcode (opcode = 4, AA flag set, QR flag clear)
-    let header = msg.header_mut();
-    header.set_id(query_id);
-    header.set_opcode(Opcode::NOTIFY);
-    header.set_aa(true);
-    header.set_qr(false);
-    header.set_rcode(Rcode::NOERROR);
-
-    // Add question section (zone SOA)
-    let mut question = msg.question();
-    question
-        .push((zone_name, Rtype::SOA))
-        .map_err(|e| XfrError::ProtocolError(format!("Failed to add question: {}", e)))?;
-
-    // Get answer section (but leave it empty)
-    let answer = question.answer();
-
-    Ok((query_id, answer.finish().into_target().as_slice().to_vec()))
 }
 
 fn validate_notify_response(query_id: u16, response: &[u8]) -> Result<(), XfrError> {

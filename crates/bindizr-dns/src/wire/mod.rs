@@ -8,8 +8,8 @@ use bindizr_core::dns::name::{
 };
 use domain::base::{Message, Name, ToName, iana::Rtype};
 
-use super::error::XfrError;
 use crate::{
+    error::XfrError,
     model::{record::Record, zone::Zone},
     protocol::DNS_TCP_MAX_SIZE,
     txt,
@@ -72,14 +72,14 @@ impl DnsMessageBuilder {
     /// Adds an SOA from a serial-specific snapshot.
     pub(crate) fn add_soa_from_snapshot(
         &mut self,
-        soa: &super::delta::ZoneSnapshot,
+        soa: &crate::server::delta::ZoneSnapshot,
     ) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
 
         encode_domain_name(&soa.primary_ns, &mut rdata)?;
         encode_domain_name(&soa.admin_email, &mut rdata)?;
 
-        let serial = super::delta::serial_to_u32(soa.serial)?;
+        let serial = crate::server::delta::serial_to_u32(soa.serial)?;
         rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&(soa.refresh as u32).to_be_bytes());
         rdata.extend_from_slice(&(soa.retry as u32).to_be_bytes());
@@ -229,7 +229,7 @@ impl DnsMessageBuilder {
         zone: &Zone,
         member_zone: &str,
     ) -> Result<(), XfrError> {
-        let member_id = super::catalog::zone_name_to_member_id(member_zone);
+        let member_id = crate::server::catalog::zone_name_to_member_id(member_zone);
         let ptr_name = format!("{}.zones.{}.", member_id, zone.name.trim_end_matches('.'));
         let ptr_target = to_fqdn(member_zone);
         self.add_ptr_record(&ptr_name, zone.ttl as u32, &ptr_target)?;

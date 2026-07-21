@@ -3,18 +3,9 @@
 
 use std::{net::SocketAddr, time::Duration};
 
-use domain::base::{
-    Name, Rtype, StaticCompressor,
-    iana::{Opcode, Rcode},
-    message_builder::MessageBuilder,
-};
-use tokio::net::{UdpSocket, lookup_host};
+use domain::base::{Name, Rtype, iana::Opcode};
 
-use super::{error::XfrError, wire};
-use crate::{
-    address::{ParsedAddress, parse_address_target},
-    config, log_error,
-};
+use crate::{config, error::XfrError, wire};
 
 /// Result of probing one configured secondary: the serial its SOA answer
 /// carries, or the reason the probe failed.
@@ -41,32 +32,19 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, X
 
     let mut probes = Vec::new();
     let mut tasks = Vec::new();
-    for item in raw.split(',') {
-        let trimmed = item.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let target = match parse_address_target(trimmed, 53) {
-            ParsedAddress::SocketAddr(addr) => Some(addr),
-            ParsedAddress::HostPort(host_port) => match lookup_host(&host_port).await {
-                Ok(mut resolved) => resolved.next(),
-                Err(e) => {
-                    log_error!("Invalid secondary address '{}': {}", trimmed, e);
-                    probes.push(SecondaryProbe {
-                        address: trimmed.to_string(),
-                        result: Err(format!("failed to resolve: {}", e)),
-                    });
-                    continue;
-                }
-            },
-        };
-        let Some(addr) = target else {
-            probes.push(SecondaryProbe {
-                address: trimmed.to_string(),
-                result: Err("failed to resolve: no addresses".to_string()),
-            });
-            continue;
+    for (entry, result) in super::resolve_secondary_entries(&raw).await {
+        // One probe per configured entry: hostname entries use their first
+        // resolved address.
+        let addr = match result.map(|addrs| addrs.into_iter().next()) {
+            Ok(Some(addr)) => addr,
+            Ok(None) => unreachable!("resolve_secondary_entries never yields an empty Ok"),
+            Err(e) => {
+                probes.push(SecondaryProbe {
+                    address: entry,
+                    result: Err(format!("failed to resolve: {}", e)),
+                });
+                continue;
+            }
         };
 
         let qname = qname.clone();
@@ -91,56 +69,14 @@ async fn probe_one(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<u32, String> {
-    let (query_id, query) = build_soa_query(qname).map_err(|e| e.to_string())?;
+    let (query_id, query) =
+        super::build_question(Opcode::QUERY, false, qname).map_err(|e| e.to_string())?;
 
-    let bind_addr = if server_addr.is_ipv4() {
-        "0.0.0.0:0"
-    } else {
-        "[::]:0"
-    };
-    let socket = UdpSocket::bind(bind_addr)
+    let (received, response) = super::udp_exchange(server_addr, timeout, &query, "SOA probe")
         .await
-        .map_err(|e| e.to_string())?;
-    socket
-        .connect(server_addr)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    tokio::time::timeout(timeout, socket.send(&query))
-        .await
-        .map_err(|_| "send timeout".to_string())?
-        .map_err(|e| e.to_string())?;
-
-    let mut response = [0u8; 512];
-    let received = tokio::time::timeout(timeout, socket.recv(&mut response))
-        .await
-        .map_err(|_| "timeout".to_string())?
         .map_err(|e| e.to_string())?;
 
     extract_soa_serial(query_id, &response[..received])
-}
-
-/// Builds a standard SOA query (QR=0, RD=0) for the zone.
-fn build_soa_query(qname: &Name<Vec<u8>>) -> Result<(u16, Vec<u8>), XfrError> {
-    let query_id = rand::random::<u16>();
-    let mut msg = MessageBuilder::from_target(StaticCompressor::new(Vec::new()))
-        .map_err(|e| XfrError::ProtocolError(format!("Failed to create message builder: {}", e)))?;
-
-    let header = msg.header_mut();
-    header.set_id(query_id);
-    header.set_opcode(Opcode::QUERY);
-    header.set_qr(false);
-    header.set_rcode(Rcode::NOERROR);
-
-    let mut question = msg.question();
-    question
-        .push((qname, Rtype::SOA))
-        .map_err(|e| XfrError::ProtocolError(format!("Failed to add question: {}", e)))?;
-
-    Ok((
-        query_id,
-        question.answer().finish().into_target().as_slice().to_vec(),
-    ))
 }
 
 /// Validates a SOA query response and extracts the serial from the first SOA

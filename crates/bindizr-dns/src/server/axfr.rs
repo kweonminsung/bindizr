@@ -3,8 +3,8 @@ use std::net::IpAddr;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;
 
-use super::{catalog, delta, error::XfrError, wire, zone_cache};
-use crate::{log_info, service::zone::ZoneService};
+use super::{catalog, delta, zone_cache};
+use crate::{error::XfrError, log_info, service::zone::ZoneService, wire};
 
 /// Handles an AXFR request.
 pub(crate) async fn handle_axfr(

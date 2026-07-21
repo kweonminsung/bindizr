@@ -1,24 +1,22 @@
 //! Zone-transfer subsystem: dispatches AXFR/IXFR requests and drives NOTIFY,
 //! SOA responses, and catalog-zone generation.
 
+pub(crate) mod acl;
 pub(crate) mod axfr;
 pub(crate) mod catalog;
 pub(crate) mod delta;
-pub mod error;
 pub(crate) mod ixfr;
-pub mod notify;
-pub mod soa_probe;
-pub(crate) mod wire;
+pub(crate) mod nsupdate;
+pub(crate) mod soa;
 pub(crate) mod zone_cache;
 
 use std::net::{IpAddr, SocketAddr};
 
 use catalog::generate_catalog_zone;
 use domain::base::iana::Rtype;
-use error::XfrError;
 use tokio::net::TcpStream;
 
-use crate::{acl, log_info, log_warn};
+use crate::{error::XfrError, log_info, log_warn, wire};
 
 /// Initializes XFR support by ensuring the catalog zone exists.
 pub async fn initialize() {

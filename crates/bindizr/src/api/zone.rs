@@ -8,7 +8,7 @@ use axum::{
 use bindizr_core::model::zone::Zone;
 use bindizr_dns as dns;
 use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneService};
-use dns::xfr::soa_probe::SecondaryProbe;
+use dns::client::probe::SecondaryProbe;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -109,7 +109,7 @@ pub(crate) async fn get_zone_status(Path(params): Path<ZoneNameParam>) -> impl I
         Err(err) => return ApiError::from(err).into_response(),
     };
 
-    match dns::xfr::soa_probe::probe_secondaries(&zone.name).await {
+    match dns::client::probe::probe_secondaries(&zone.name).await {
         Ok(probes) => (StatusCode::OK, Json(build_zone_status(&zone, probes))).into_response(),
         Err(err) => ApiError(ServiceError::internal(err.to_string())).into_response(),
     }
