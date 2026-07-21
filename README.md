@@ -77,7 +77,7 @@ Use the default `docker-compose.yml` with Docker Swarm for a containerized Bindi
 $ docker stack deploy -c docker-compose.yml bindizr
 ```
 
-The stack runs Bindizr, MySQL, and BIND9 on an overlay network, using Docker configs for BIND9 configuration.
+The stack runs Bindizr, PostgreSQL, and BIND9 on an overlay network, using Docker configs for BIND9 configuration.
 
 ### Manual Installation
 
