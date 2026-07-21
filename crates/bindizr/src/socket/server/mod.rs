@@ -7,10 +7,11 @@ mod zone;
 use std::{io, os::unix::fs::FileTypeExt, path::Path};
 
 use bindizr_core::{log_error, log_info, log_warn};
+use bindizr_service::error::ServiceError;
 use serde_json::json;
 use tokio::{
     fs,
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
 };
 
@@ -19,8 +20,13 @@ use crate::socket::{
     types::{DaemonCommand, DaemonCommandKind},
 };
 
+/// Upper bound on a single command line, so a buggy or malicious client cannot
+/// force unbounded allocation. Sized above the HTTP upload cap (32 MB) because
+/// zone-file content arrives JSON-escaped, roughly doubling in the worst case.
+const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
+
 async fn handle_client(stream: UnixStream) {
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
 
     if reader.read_line(&mut line).await.is_ok() {
@@ -28,38 +34,43 @@ async fn handle_client(stream: UnixStream) {
 
         let raw_response = match parsed {
             Ok(cmd) => match cmd.command {
-                // General commands
                 DaemonCommandKind::Status => status::get_status(),
                 DaemonCommandKind::TokenCreate => token::create_token(&cmd.data).await,
                 DaemonCommandKind::TokenList => token::list_tokens().await,
                 DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
-                // Zone commands
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
                 DaemonCommandKind::DeleteZone => zone::delete_zone(&cmd.data).await,
-                // Record commands
                 DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
+                DaemonCommandKind::BulkCreateRecords => {
+                    record::bulk_create_records(&cmd.data).await
+                }
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
-                // Notify commands
                 DaemonCommandKind::NotifyZone => notify::handle_notify_zone(cmd.data).await,
+                DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
+                DaemonCommandKind::ListZoneSnapshots => zone::list_zone_snapshots(&cmd.data).await,
+                DaemonCommandKind::GetZoneSnapshot => zone::get_zone_snapshot(&cmd.data).await,
+                DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
+                DaemonCommandKind::ZoneStatus => zone::zone_status(&cmd.data).await,
             },
 
             Err(e) => {
                 log_error!("Failed to parse command: {}", e);
-                Err("Failed to parse command".to_string())
+                Err(ServiceError::invalid_input("Failed to parse command"))
             }
         };
 
         let response = match raw_response {
-            Ok(res) => serde_json::to_string(&res)
-                .unwrap_or_else(|_| json_response_error("Failed to serialize response")),
+            Ok(res) => serde_json::to_string(&res).unwrap_or_else(|_| {
+                json_response_error(&ServiceError::internal("Failed to serialize response"))
+            }),
             Err(e) => json_response_error(&e),
         };
 
-        let mut stream = reader.into_inner();
+        let mut stream = reader.into_inner().into_inner();
         let _ = stream.write_all(response.as_bytes()).await;
         let _ = stream.write_all(b"\n").await;
     }
@@ -162,9 +173,17 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     }
 }
 
-fn json_response_error(msg: &str) -> String {
+/// Extract the required `zone_name` string field from a command payload.
+pub(super) fn required_zone_name(data: &serde_json::Value) -> Result<&str, ServiceError> {
+    data.get("zone_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'zone_name' field"))
+}
+
+fn json_response_error(err: &ServiceError) -> String {
     json!({
-        "error": msg
+        "error": err.message,
+        "code": err.code.as_str(),
     })
     .to_string()
 }

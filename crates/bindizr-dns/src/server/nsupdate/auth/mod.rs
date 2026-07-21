@@ -157,7 +157,7 @@ fn decode_tsig_secret(raw: &str) -> Result<Vec<u8>, UpdateError> {
 
 fn encode_canonical_name(name: &str) -> Result<Vec<u8>, UpdateError> {
     let mut out = Vec::new();
-    crate::xfr::wire::encode_domain_name(&name.to_ascii_lowercase(), &mut out)
+    crate::wire::encode_domain_name(&name.to_ascii_lowercase(), &mut out)
         .map_err(|e| UpdateError::Internal(e.to_string()))?;
     Ok(out)
 }

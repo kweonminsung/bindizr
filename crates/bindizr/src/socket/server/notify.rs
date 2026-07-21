@@ -1,4 +1,5 @@
 use bindizr_dns as dns;
+use bindizr_service::error::ServiceError;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -13,7 +14,9 @@ pub(super) struct NotifyZoneRequest {
 }
 
 /// Handle the `NotifyZone` command by sending DNS NOTIFY for a zone or all zones.
-pub(super) async fn handle_notify_zone(data: serde_json::Value) -> Result<DaemonResponse, String> {
+pub(super) async fn handle_notify_zone(
+    data: serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
     let request: NotifyZoneRequest = match serde_json::from_value(data) {
         Ok(req) => req,
         Err(e) => {
@@ -24,7 +27,7 @@ pub(super) async fn handle_notify_zone(data: serde_json::Value) -> Result<Daemon
         }
     };
 
-    match dns::xfr::notify::send_notify(request.zone_name.as_deref(), request.force).await {
+    match dns::client::notify::send_notify(request.zone_name.as_deref(), request.force).await {
         Ok(()) => Ok(DaemonResponse {
             message: match request.zone_name {
                 Some(ref name) if request.force => {

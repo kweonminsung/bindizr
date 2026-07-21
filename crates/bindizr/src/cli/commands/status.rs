@@ -1,12 +1,15 @@
 use bindizr_core::log_debug;
 
-use crate::socket::{
-    client::DaemonSocketClient,
-    types::{DaemonCommandKind, DaemonStatusResponse},
+use crate::{
+    cli::error::CliError,
+    socket::{
+        client::DaemonSocketClient,
+        types::{DaemonCommandKind, DaemonStatusResponse},
+    },
 };
 
 /// Handle the `status` subcommand by querying the daemon and printing its status.
-pub(crate) async fn handle_command() -> Result<(), String> {
+pub(crate) async fn handle_command() -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
 
     let res = client.send_command(DaemonCommandKind::Status, None).await?;

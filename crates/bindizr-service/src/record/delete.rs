@@ -1,7 +1,11 @@
 use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
-    RepositoryTx, error::ServiceError, log_error, log_info, log_warn,
-    repository::RepositoryService, serial::generate_serial, zone::snapshot::save_zone_snapshot_tx,
+    RepositoryTx,
+    error::{ErrorCode, ServiceError},
+    log_error, log_info, log_warn,
+    repository::RepositoryService,
+    serial::generate_serial,
+    zone::snapshot::save_zone_snapshot_tx,
 };
 
 impl RecordService {
@@ -17,14 +21,11 @@ impl RecordService {
         let zone_id = match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => record.zone_id,
             Ok(None) => {
-                return Err(ServiceError::NotFound(format!(
-                    "Record with id '{}' not found",
-                    record_id
-                )));
+                return Err(ServiceError::record_not_found(record_id));
             }
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::Internal("Failed to fetch record".to_string()));
+                return Err(ServiceError::internal("Failed to fetch record".to_string()));
             }
         };
 
@@ -34,14 +35,14 @@ impl RecordService {
             let zone = match RepositoryService::get_zone_by_id_tx(&mut tx, zone_id).await {
                 Ok(Some(zone)) => zone,
                 Ok(None) => {
-                    return Err(ServiceError::NotFound(format!(
-                        "Zone with id '{}' not found",
-                        zone_id
-                    )));
+                    return Err(ServiceError::new(
+                        ErrorCode::ZoneNotFound,
+                        format!("Zone with id '{}' not found", zone_id),
+                    ));
                 }
                 Err(e) => {
                     log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::Internal("Failed to fetch zone".to_string()));
+                    return Err(ServiceError::internal("Failed to fetch zone".to_string()));
                 }
             };
 
@@ -49,20 +50,14 @@ impl RecordService {
                 match RepositoryService::get_record_by_id_tx(&mut tx, record_id).await {
                     Ok(Some(record)) if record.zone_id == zone.id => record,
                     Ok(Some(_)) | Ok(None) => {
-                        return Err(ServiceError::NotFound(format!(
-                            "Record with id '{}' not found",
-                            record_id
-                        )));
+                        return Err(ServiceError::record_not_found(record_id));
                     }
                     Err(e) => {
                         log_error!("Failed to fetch record: {}", e);
-                        return Err(ServiceError::Internal("Failed to fetch record".to_string()));
+                        return Err(ServiceError::internal("Failed to fetch record".to_string()));
                     }
                 };
 
-            let record_name = existing_record.name.clone();
-            let record_type_str = existing_record.record_type.to_string();
-            let record_value = existing_record.value.clone();
             let new_serial = generate_serial(Some(zone.serial));
 
             validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
@@ -71,7 +66,7 @@ impl RecordService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to delete record: {}", e);
-                    ServiceError::Internal("Failed to delete record".to_string())
+                    ServiceError::internal("Failed to delete record".to_string())
                 })?;
 
             // Increment zone serial so IXFR consumers can detect this change
@@ -79,7 +74,7 @@ impl RecordService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::Internal("Failed to update zone serial".to_string())
+                    ServiceError::internal("Failed to update zone serial".to_string())
                 })?;
 
             // Record zone change for IXFR
@@ -100,16 +95,16 @@ impl RecordService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone change: {}", e);
-                ServiceError::Internal("Failed to create zone change".to_string())
+                ServiceError::internal("Failed to create zone change".to_string())
             })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
             Ok::<(String, String, String, String, i32), ServiceError>((
                 zone.name,
-                record_name,
-                record_type_str,
-                record_value,
+                existing_record.name,
+                existing_record.record_type.to_string(),
+                existing_record.value,
                 existing_record.id,
             ))
         }
@@ -118,7 +113,6 @@ impl RecordService {
         let (zone_name, record_name, record_type_str, record_value, deleted_record_id) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to delete record").await?;
 
-        // Log record deletion after commit
         log_info!(
             "event=record_delete zone={} name={} type={} value={} record_id={}",
             zone_name,
@@ -128,7 +122,6 @@ impl RecordService {
             deleted_record_id
         );
 
-        // Send NOTIFY to secondary servers
         if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }

@@ -463,7 +463,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
     let (status, _) = app
         .request(Method::POST, "/records", Some(in_bailiwick_duplicate))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let in_bailiwick_different_value = json!({
         "name": format!("a1.{zone_name}"),
@@ -607,7 +607,7 @@ async fn record_reject_cname_conflicts() {
     let (status, _) = app
         .request(Method::POST, "/records", Some(cname_record_request))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let cname_record_request = json!({
         "name": "cname-test",
@@ -632,7 +632,7 @@ async fn record_reject_cname_conflicts() {
     let (status, _) = app
         .request(Method::POST, "/records", Some(a_record_request))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let update_cname_request = json!({
         "name": "test",
@@ -647,7 +647,7 @@ async fn record_reject_cname_conflicts() {
             Some(update_cname_request),
         )
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 }
 
 #[tokio::test]
@@ -739,4 +739,71 @@ async fn record_bulk_insert_unknown_zone_returns_not_found() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert_dry_run_then_apply() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let bulk_request = json!({
+        "records": [
+            { "name": "dry1", "record_type": "A", "value": "192.0.2.40" },
+            { "name": "dry2", "record_type": "A", "value": "192.0.2.41", "ttl": 1800 }
+        ],
+        "dry_run": true
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], false);
+    assert_eq!(body["dry_run"], true);
+    assert_eq!(body["inserted"], 0);
+    assert_eq!(body["records"].as_array().unwrap().len(), 2);
+
+    // The dry run must not have persisted anything.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 0);
+
+    let bulk_request = json!({
+        "records": [
+            { "name": "dry1", "record_type": "A", "value": "192.0.2.40" },
+            { "name": "dry2", "record_type": "A", "value": "192.0.2.41", "ttl": 1800 }
+        ]
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["dry_run"], false);
+    assert_eq!(body["inserted"], 2);
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
 }

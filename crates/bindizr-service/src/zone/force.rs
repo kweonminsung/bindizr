@@ -38,14 +38,11 @@ impl ZoneService {
             let zone = match RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_name).await {
                 Ok(Some(zone)) => zone,
                 Ok(None) => {
-                    return Err(ServiceError::NotFound(format!(
-                        "Zone with name '{}' not found",
-                        zone_name
-                    )));
+                    return Err(ServiceError::zone_not_found(zone_name));
                 }
                 Err(e) => {
                     log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::Internal(
+                    return Err(ServiceError::internal(
                         "Failed to force increment zone serial".to_string(),
                     ));
                 }
@@ -62,7 +59,7 @@ impl ZoneService {
             .await
             .map_err(|e| {
                 log_error!("Failed to force increment zone serial: {}", e);
-                ServiceError::Internal("Failed to force increment zone serial".to_string())
+                ServiceError::internal("Failed to force increment zone serial".to_string())
             })?;
 
             save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;

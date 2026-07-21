@@ -6,11 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use domain::base::iana::Rtype;
 use tokio::net::{TcpStream, UdpSocket};
 
-use crate::{
-    log_info,
-    service::zone::ZoneService,
-    xfr::{catalog, error::XfrError, wire},
-};
+use crate::{error::XfrError, log_info, server::catalog, service::zone::ZoneService, wire};
 
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
@@ -90,8 +86,6 @@ async fn build_soa_response(query_data: &[u8], client_ip: IpAddr) -> Result<Vec<
 
     let mut builder = wire::DnsMessageBuilder::new(query_id, &zone_name, Rtype::SOA);
     builder.add_soa(&zone, zone.serial as u32)?;
-
-    log_info!("SOA response sent for zone {}", zone_name_str);
 
     Ok(builder.build())
 }

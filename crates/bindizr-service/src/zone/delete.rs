@@ -12,14 +12,11 @@ impl ZoneService {
             Ok(Some(z)) => z,
             Ok(None) => {
                 log_error!("Zone with name '{}' not found", zone_name);
-                return Err(ServiceError::NotFound(format!(
-                    "Zone with name '{}' not found",
-                    zone_name
-                )));
+                return Err(ServiceError::zone_not_found(zone_name));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ServiceError::Internal("Failed to delete zone".to_string()));
+                return Err(ServiceError::internal("Failed to delete zone".to_string()));
             }
         };
 
@@ -33,7 +30,7 @@ impl ZoneService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to delete zone: {}", e);
-                    ServiceError::Internal("Failed to delete zone".to_string())
+                    ServiceError::internal("Failed to delete zone".to_string())
                 })?;
             Ok::<(), ServiceError>(())
         }
@@ -41,7 +38,6 @@ impl ZoneService {
 
         RepositoryService::finish_tx(tx, apply_result, "Failed to delete zone").await?;
 
-        // Log zone deletion after commit
         log_info!("event=zone_delete zone={} zone_id={}", zone_name, zone_id);
 
         // Send catalog NOTIFY so secondaries drop the removed zone

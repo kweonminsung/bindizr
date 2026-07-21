@@ -33,7 +33,7 @@ impl<'a> SrvRecordValue<'a> {
                 port: parse_u16_record_field("SRV port", port)?,
                 target,
             }),
-            _ => Err(ServiceError::BadRequest(format!(
+            _ => Err(ServiceError::invalid_record_value(format!(
                 "SRV record value must be '<priority> <weight> <port> <target>' or '<weight> <port> <target>': {value}"
             ))),
         }

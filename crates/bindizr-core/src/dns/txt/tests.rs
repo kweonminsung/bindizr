@@ -9,7 +9,7 @@ fn raw_txt_rdata_encode_decode() {
 }
 
 #[test]
-fn txt_segments_encode_reversible_json() {
+fn txt_segments_encode_reversible() {
     let encoded = super::encode_txt_segments(["a", "bc"]).unwrap();
 
     assert_eq!(

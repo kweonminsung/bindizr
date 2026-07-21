@@ -38,19 +38,25 @@ impl ZoneService {
         match RepositoryService::get_zone_by_name(&validated.name).await {
             Ok(Some(_)) => {
                 log_error!("Zone with name {} already exists", validated.name);
-                return Err(ServiceError::BadRequest(
-                    "zone name already exists".to_string(),
-                ));
+                return Err(ServiceError::zone_conflict(format!(
+                    "Zone with name '{}' already exists",
+                    validated.name
+                )));
             }
             Ok(None) => {}
             Err(e) => {
                 log_error!("Failed to check existing zone: {}", e);
-                return Err(ServiceError::Internal("Failed to create zone".to_string()));
+                return Err(ServiceError::internal("Failed to create zone".to_string()));
             }
         };
 
-        // Generate serial if not provided
         let serial = match create_zone_request.serial {
+            Some(s) if s < 1 => {
+                return Err(ServiceError::invalid_zone(format!(
+                    "serial {} must be a positive integer",
+                    s
+                )));
+            }
             Some(s) => s,
             None => generate_serial(None),
         };
@@ -77,7 +83,7 @@ impl ZoneService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone: {}", e);
-                ServiceError::Internal("Failed to create zone".to_string())
+                ServiceError::internal("Failed to create zone".to_string())
             })?;
 
             // Keep zones.primary_ns aligned with at least one apex NS record in records table.
@@ -96,7 +102,7 @@ impl ZoneService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to create primary NS record: {}", e);
-                    ServiceError::Internal("Failed to create primary NS record".to_string())
+                    ServiceError::internal("Failed to create primary NS record".to_string())
                 })?;
 
             save_zone_snapshot_tx(&mut tx, &created_zone, created_zone.serial).await?;
@@ -108,7 +114,6 @@ impl ZoneService {
         let created_zone =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create zone").await?;
 
-        // Log zone creation after commit
         log_info!(
             "event=zone_create zone={} primary_ns={} serial={} zone_id={}",
             created_zone.name,

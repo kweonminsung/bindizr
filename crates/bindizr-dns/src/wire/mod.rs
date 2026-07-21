@@ -8,8 +8,8 @@ use bindizr_core::dns::name::{
 };
 use domain::base::{Message, Name, ToName, iana::Rtype};
 
-use super::error::XfrError;
 use crate::{
+    error::XfrError,
     model::{record::Record, zone::Zone},
     protocol::DNS_TCP_MAX_SIZE,
     txt,
@@ -35,7 +35,6 @@ impl DnsMessageBuilder {
     pub(crate) fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
 
-        // Primary NS
         encode_domain_name(&zone.primary_ns, &mut rdata)?;
 
         // Admin email in DNS SOA mailbox format
@@ -43,7 +42,6 @@ impl DnsMessageBuilder {
             .map_err(|e| XfrError::ProtocolError(e.to_string()))?;
         encode_domain_name(&admin_email, &mut rdata)?;
 
-        // SERIAL, REFRESH, RETRY, EXPIRE, MINIMUM
         rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&(zone.refresh as u32).to_be_bytes());
         rdata.extend_from_slice(&(zone.retry as u32).to_be_bytes());
@@ -74,14 +72,14 @@ impl DnsMessageBuilder {
     /// Adds an SOA from a serial-specific snapshot.
     pub(crate) fn add_soa_from_snapshot(
         &mut self,
-        soa: &super::delta::ZoneSnapshot,
+        soa: &crate::server::delta::ZoneSnapshot,
     ) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
 
         encode_domain_name(&soa.primary_ns, &mut rdata)?;
         encode_domain_name(&soa.admin_email, &mut rdata)?;
 
-        let serial = super::delta::serial_to_u32(soa.serial)?;
+        let serial = crate::server::delta::serial_to_u32(soa.serial)?;
         rdata.extend_from_slice(&serial.to_be_bytes());
         rdata.extend_from_slice(&(soa.refresh as u32).to_be_bytes());
         rdata.extend_from_slice(&(soa.retry as u32).to_be_bytes());
@@ -231,7 +229,7 @@ impl DnsMessageBuilder {
         zone: &Zone,
         member_zone: &str,
     ) -> Result<(), XfrError> {
-        let member_id = super::catalog::zone_name_to_member_id(member_zone);
+        let member_id = crate::server::catalog::zone_name_to_member_id(member_zone);
         let ptr_name = format!("{}.zones.{}.", member_id, zone.name.trim_end_matches('.'));
         let ptr_target = to_fqdn(member_zone);
         self.add_ptr_record(&ptr_name, zone.ttl as u32, &ptr_target)?;
@@ -292,22 +290,11 @@ impl DnsMessageBuilder {
     ) -> Result<(), XfrError> {
         let mut answer = Vec::new();
 
-        // NAME
         encode_domain_name(name, &mut answer)?;
-
-        // TYPE
         answer.extend_from_slice(&rtype.to_be_bytes());
-
-        // CLASS (IN = 1)
-        answer.extend_from_slice(&1u16.to_be_bytes());
-
-        // TTL
+        answer.extend_from_slice(&1u16.to_be_bytes()); // CLASS (IN = 1)
         answer.extend_from_slice(&ttl.to_be_bytes());
-
-        // RDLENGTH
         answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
-
-        // RDATA
         answer.extend_from_slice(rdata);
 
         self.answers.push(answer);
@@ -566,7 +553,6 @@ pub(crate) fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
 
     let query_id = message.header().id();
 
-    // Extract the first question
     let question = message
         .first_question()
         .ok_or_else(|| XfrError::ProtocolError("No question in DNS query".to_string()))?;
@@ -648,7 +634,7 @@ fn extract_ixfr_serial_from_query(data: &[u8]) -> Option<u32> {
     None
 }
 
-fn skip_rr(data: &[u8], pos: usize) -> Option<usize> {
+pub(crate) fn skip_rr(data: &[u8], pos: usize) -> Option<usize> {
     let name_len = skip_name(data, pos)?;
     let header_pos = pos.checked_add(name_len)?;
     if header_pos.checked_add(10)? > data.len() {
@@ -662,7 +648,7 @@ fn skip_rr(data: &[u8], pos: usize) -> Option<usize> {
     Some(next)
 }
 
-fn skip_name(data: &[u8], start: usize) -> Option<usize> {
+pub(crate) fn skip_name(data: &[u8], start: usize) -> Option<usize> {
     if start >= data.len() {
         return None;
     }

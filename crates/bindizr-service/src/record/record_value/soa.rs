@@ -43,7 +43,7 @@ impl<'a> SoaRecordValue<'a> {
                 expire: parse_u32_record_field("SOA expire", expire)?,
                 minimum: parse_u32_record_field("SOA minimum", minimum)?,
             }),
-            _ => Err(ServiceError::BadRequest(format!(
+            _ => Err(ServiceError::invalid_record_value(format!(
                 "SOA record value must be '<mname> <rname> <serial> <refresh> <retry> <expire> <minimum>': {value}"
             ))),
         }

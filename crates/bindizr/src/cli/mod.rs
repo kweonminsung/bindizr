@@ -1,4 +1,5 @@
 mod commands;
+pub(crate) mod error;
 mod output;
 
 use std::sync::Arc;
@@ -12,7 +13,7 @@ use clap::{Parser, Subcommand};
 
 use crate::{
     api,
-    cli::commands::{notify::NotifyCommand, token::TokenCommand},
+    cli::commands::{record::RecordCommand, token::TokenCommand, zone::ZoneCommand},
     socket,
 };
 
@@ -21,7 +22,7 @@ struct DnsNotifySender;
 #[async_trait]
 impl service::notify::NotifySender for DnsNotifySender {
     async fn send_notify(&self, zone_name: Option<&str>) -> Result<(), String> {
-        dns::xfr::notify::send_notify(zone_name, false)
+        dns::client::notify::send_notify(zone_name, false)
             .await
             .map_err(|e| e.to_string())
     }
@@ -51,25 +52,15 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: TokenCommand,
     },
-    /// Get resources
-    Get {
+    /// Manage zones
+    Zone {
         #[command(subcommand)]
-        subcommand: commands::get::GetCommand,
+        subcommand: ZoneCommand,
     },
-    /// Create resources
-    Create {
+    /// Manage records
+    Record {
         #[command(subcommand)]
-        subcommand: commands::create::CreateCommand,
-    },
-    /// Delete resources
-    Delete {
-        #[command(subcommand)]
-        subcommand: commands::delete::DeleteCommand,
-    },
-    /// Send NOTIFY to secondary servers
-    Notify {
-        #[command(subcommand)]
-        subcommand: NotifyCommand,
+        subcommand: RecordCommand,
     },
 }
 
@@ -84,7 +75,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     dns::initialize().await;
 
     if config::get_bindizr_config().dns.notify_on_startup {
-        match dns::xfr::notify::send_notify(None, false).await {
+        match dns::client::notify::send_notify(None, false).await {
             Ok(()) => log_info!("Startup DNS NOTIFY completed."),
             Err(e) => log_error!("Startup DNS NOTIFY failed: {}", e),
         }
@@ -111,15 +102,18 @@ pub async fn execute() {
     let args = Args::parse();
 
     if let Err(e) = match args.command {
-        Command::Start { config } => commands::start::handle_command(config).await,
+        Command::Start { config } => commands::start::handle_command(config)
+            .await
+            .map_err(error::CliError::from),
         Command::Status => commands::status::handle_command().await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
-        Command::Get { subcommand } => commands::get::handle_command(subcommand).await,
-        Command::Create { subcommand } => commands::create::handle_command(subcommand).await,
-        Command::Delete { subcommand } => commands::delete::handle_command(subcommand).await,
-        Command::Notify { subcommand } => commands::notify::handle_notify(&subcommand).await,
+        Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
+        Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
     } {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {}", e.message);
+        if let Some(hint) = e.hint() {
+            eprintln!("Hint: {}", hint);
+        }
         std::process::exit(1);
     }
 }

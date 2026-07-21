@@ -182,7 +182,7 @@ async fn zone_validate_and_normalize() {
     let (status, _) = app
         .request(Method::POST, "/zones", Some(duplicate_zone_request))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let second_zone = json!({
         "name": second_zone_name,
@@ -211,13 +211,22 @@ async fn zone_validate_and_normalize() {
     assert_eq!(body["zone"]["primary_ns"], format!("ns1.{zone_name}"));
     assert_eq!(body["zone"]["admin_email"], "Host.Master@example.com");
 
+    let rename_onto_existing = json!({
+        "name": format!("{}.", second_zone_name.to_ascii_uppercase()),
+        "primary_ns": format!("ns1.{zone_name}"),
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600
+    });
+    let (status, _) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(rename_onto_existing),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
     for invalid_update in [
-        json!({
-            "name": format!("{}.", second_zone_name.to_ascii_uppercase()),
-            "primary_ns": format!("ns1.{zone_name}"),
-            "admin_email": "hostmaster@example.com",
-            "ttl": 3600
-        }),
         json!({
             "name": format!("{}..example.com", app.namespace()),
             "primary_ns": format!("ns1.{zone_name}"),
@@ -757,4 +766,351 @@ async fn zone_import_append_into_populated_zone_isolates_names() {
             "expected exactly one record for {name}"
         );
     }
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_snapshots_list_and_get() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let base_serial = zone["serial"].as_i64().unwrap();
+
+    // serial +1: add record A; serial +2: add record B.
+    let record_a = json!({
+        "name": "www", "record_type": "A", "value": "192.0.2.50",
+        "ttl": 300, "zone_name": zone_name
+    });
+    let (status, _) = app.request(Method::POST, "/records", Some(record_a)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let record_b = json!({
+        "name": "mail", "record_type": "A", "value": "192.0.2.51",
+        "ttl": 300, "zone_name": zone_name
+    });
+    let (status, _) = app.request(Method::POST, "/records", Some(record_b)).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/snapshots"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().expect("missing snapshot items");
+    assert!(items.len() >= 2);
+    let serials: Vec<i64> = items
+        .iter()
+        .map(|item| item["serial"].as_i64().unwrap())
+        .collect();
+    assert!(
+        serials.windows(2).all(|pair| pair[0] > pair[1]),
+        "snapshots must be newest first: {serials:?}"
+    );
+    assert_eq!(serials[0], base_serial + 2);
+    assert!(items[0]["admin_email"].as_str().unwrap().contains('@'));
+
+    let (status, page) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/snapshots?limit=1&offset=1"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["items"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        page["items"][0]["serial"].as_i64().unwrap(),
+        base_serial + 1
+    );
+
+    // At base_serial + 1 only record A existed.
+    let (status, detail) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/snapshots/{}", base_serial + 1),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        detail["snapshot"]["serial"].as_i64().unwrap(),
+        base_serial + 1
+    );
+    let a_records: Vec<&str> = detail["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|record| record["record_type"] == "A")
+        .map(|record| record["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(a_records, ["www"]);
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/snapshots/999999"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "SNAPSHOT_NOT_FOUND");
+
+    let missing_zone = app.zone_name("missing.example");
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{missing_zone}/snapshots"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "ZONE_NOT_FOUND");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_rollback_dry_run_then_apply() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let keep_record = json!({
+        "name": "keep", "record_type": "A", "value": "192.0.2.60",
+        "ttl": 300, "zone_name": zone_name
+    });
+    let (status, _) = app
+        .request(Method::POST, "/records", Some(keep_record))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // Capture the state to roll back to.
+    let (_, zone_at_target) = app
+        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
+
+    // Mutate past the target: add a record and change the SOA TTL.
+    let extra_record = json!({
+        "name": "extra", "record_type": "A", "value": "192.0.2.61",
+        "ttl": 300, "zone_name": zone_name
+    });
+    let (status, _) = app
+        .request(Method::POST, "/records", Some(extra_record))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let soa_update = json!({
+        "name": zone_name,
+        "primary_ns": zone["primary_ns"].as_str().unwrap(),
+        "admin_email": "changed@example.com",
+        "ttl": 7200
+    });
+    let (status, _) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(soa_update),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, current) = app
+        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    let current_serial = current["zone"]["serial"].as_i64().unwrap();
+
+    // Dry run: nothing applied.
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/rollback"),
+            Some(json!({ "serial": target_serial, "dry_run": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], false);
+    assert_eq!(body["dry_run"], true);
+    assert_eq!(body["summary"]["soa_changed"], true);
+    let (_, after_dry) = app
+        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    assert_eq!(
+        after_dry["zone"]["serial"].as_i64().unwrap(),
+        current_serial
+    );
+    assert_eq!(after_dry["zone"]["ttl"].as_i64().unwrap(), 7200);
+
+    // Real rollback: state returns to target, serial advances.
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/rollback"),
+            Some(json!({ "serial": target_serial })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["target_serial"].as_i64().unwrap(), target_serial);
+    assert_eq!(body["new_serial"].as_i64().unwrap(), current_serial + 1);
+
+    let (_, restored) = app
+        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    assert_eq!(restored["zone"]["name"], zone_name);
+    assert_eq!(
+        restored["zone"]["serial"].as_i64().unwrap(),
+        current_serial + 1
+    );
+    assert_eq!(restored["zone"]["ttl"].as_i64().unwrap(), 3600);
+    assert_eq!(restored["zone"]["admin_email"], "admin@example.com");
+
+    let (status, records) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = records["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| record["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names.len(), 1);
+    assert!(names[0].starts_with("keep."));
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_rollback_rejects_bad_serials() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let current_serial = zone["serial"].as_i64().unwrap();
+
+    for (serial, expected_status, expected_code) in [
+        (current_serial, StatusCode::BAD_REQUEST, "INVALID_INPUT"),
+        (
+            current_serial + 100,
+            StatusCode::BAD_REQUEST,
+            "INVALID_INPUT",
+        ),
+        (0, StatusCode::BAD_REQUEST, "INVALID_INPUT"),
+        (-5, StatusCode::BAD_REQUEST, "INVALID_INPUT"),
+        (
+            current_serial - 1,
+            StatusCode::NOT_FOUND,
+            "SNAPSHOT_NOT_FOUND",
+        ),
+    ] {
+        let (status, body) = app
+            .request(
+                Method::POST,
+                &format!("/zones/{zone_name}/rollback"),
+                Some(json!({ "serial": serial })),
+            )
+            .await;
+        assert_eq!(status, expected_status, "serial {serial}");
+        assert_eq!(body["code"], expected_code, "serial {serial}");
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("counter.example");
+
+    let request = json!({
+        "name": zone_name,
+        "primary_ns": format!("ns1.{zone_name}"),
+        "admin_email": "hostmaster@counter.example",
+        "ttl": 3600
+    });
+    let (status, body) = app.request(Method::POST, "/zones", Some(request)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["zone"]["serial"].as_i64().unwrap(), 1);
+
+    let record = json!({
+        "name": "www", "record_type": "A", "value": "192.0.2.70",
+        "ttl": 300, "zone_name": zone_name
+    });
+    let (status, _) = app.request(Method::POST, "/records", Some(record)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (_, after) = app
+        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    assert_eq!(after["zone"]["serial"].as_i64().unwrap(), 2);
+
+    let update_with_serial = json!({
+        "name": zone_name,
+        "primary_ns": format!("ns1.{zone_name}"),
+        "admin_email": "hostmaster@counter.example",
+        "ttl": 3600,
+        "serial": 99
+    });
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(update_with_serial),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("managed automatically")
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_status_reports_secondaries() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, body) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/status"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["zone"], zone_name);
+    assert_eq!(
+        body["serial"].as_i64().unwrap(),
+        zone["serial"].as_i64().unwrap()
+    );
+
+    let secondaries = body["secondaries"].as_array().expect("missing secondaries");
+    if app.has_dns_secondaries() {
+        // Compose mode: both BIND9 secondaries must converge to in_sync.
+        assert_eq!(secondaries.len(), 2);
+        let mut attempts = 0;
+        loop {
+            let (_, body) = app
+                .request(Method::GET, &format!("/zones/{zone_name}/status"), None)
+                .await;
+            let all_in_sync = body["secondaries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|s| s["status"] == "in_sync");
+            if all_in_sync {
+                break;
+            }
+            attempts += 1;
+            assert!(attempts < 60, "secondaries never reached in_sync: {body}");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    } else {
+        // Local mode has no secondaries configured.
+        assert!(secondaries.is_empty());
+    }
+
+    let missing_zone = app.zone_name("missing.example");
+    let (status, body) = app
+        .request(Method::GET, &format!("/zones/{missing_zone}/status"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }

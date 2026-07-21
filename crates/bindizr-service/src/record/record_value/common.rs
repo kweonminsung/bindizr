@@ -10,7 +10,7 @@ pub(super) fn reject_duplicate_priority_field(
     fallback_priority: Option<i32>,
 ) -> Result<(), ServiceError> {
     if fallback_priority.is_some() {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_record_value(format!(
             "{record_type} priority must be provided either inline or in the priority field, not both"
         )));
     }
@@ -22,13 +22,14 @@ pub(super) fn parse_optional_u16_record_field(
     field: &str,
     value: Option<i32>,
 ) -> Result<u16, ServiceError> {
-    u16::try_from(value.unwrap_or(10))
-        .map_err(|_| ServiceError::BadRequest(format!("{field} must be between 0 and 65535")))
+    u16::try_from(value.unwrap_or(10)).map_err(|_| {
+        ServiceError::invalid_record_value(format!("{field} must be between 0 and 65535"))
+    })
 }
 
 pub(super) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, ServiceError> {
     value.parse::<u16>().map_err(|_| {
-        ServiceError::BadRequest(format!(
+        ServiceError::invalid_record_value(format!(
             "{field} must be an unsigned 16-bit integer: {value}"
         ))
     })
@@ -36,7 +37,7 @@ pub(super) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, Se
 
 pub(super) fn parse_u32_record_field(field: &str, value: &str) -> Result<u32, ServiceError> {
     value.parse::<u32>().map_err(|_| {
-        ServiceError::BadRequest(format!(
+        ServiceError::invalid_record_value(format!(
             "{field} must be an unsigned 32-bit integer: {value}"
         ))
     })
@@ -46,14 +47,14 @@ pub(super) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
     let trimmed = value.trim();
 
     if trimmed.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_record_value(format!(
             "{} must not be empty",
             field
         )));
     }
 
     if has_whitespace_or_control(value) {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_record_value(format!(
             "{} must not contain whitespace or control characters",
             field
         )));
@@ -61,21 +62,21 @@ pub(super) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
 
     let without_trailing_dot = trimmed.strip_suffix('.').unwrap_or(trimmed);
     if without_trailing_dot.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_record_value(format!(
             "{} must not be the root zone",
             field
         )));
     }
 
     if without_trailing_dot.len() > MAX_DOMAIN_LEN {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_record_value(format!(
             "{} must be 253 bytes or fewer",
             field
         )));
     }
 
     for label in presentation_labels(without_trailing_dot)
-        .map_err(|e| ServiceError::BadRequest(e.to_string()))?
+        .map_err(|e| ServiceError::invalid_record_value(e.to_string()))?
     {
         validate_domain_record_label(field, &label)?;
     }
@@ -85,14 +86,14 @@ pub(super) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
 
 fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceError> {
     if label.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_record_value(format!(
             "{} must not contain empty labels",
             field
         )));
     }
 
     if label.len() > MAX_DNS_LABEL_LEN {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_record_value(format!(
             "{} labels must be 63 bytes or fewer",
             field
         )));
@@ -102,14 +103,14 @@ fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceE
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_record_value(format!(
             "{} labels must contain only ASCII letters, digits, hyphens, or underscores",
             field
         )));
     }
 
     if label.starts_with('-') || label.ends_with('-') {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_record_value(format!(
             "{} labels must not start or end with hyphens",
             field
         )));

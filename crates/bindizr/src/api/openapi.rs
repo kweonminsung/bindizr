@@ -8,7 +8,9 @@ use super::types::{
     CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, ImportMode,
     ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse,
     NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse, RecordValueRequest,
-    UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+    RollbackSummary, RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse,
+    SnapshotDetailResponse, SnapshotListResponse, SnapshotRecordResponse, UpdateRecordRequest,
+    ZoneDetailResponse, ZoneListResponse, ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
 };
 
 /// OpenAPI document for the HTTP API (debug builds only).
@@ -27,6 +29,10 @@ use super::types::{
         super::record::delete_record,
         super::record::create_records_bulk,
         super::zone::import_zone,
+        super::zone::list_zone_snapshots,
+        super::zone::get_zone_snapshot,
+        super::zone::rollback_zone,
+        super::zone::get_zone_status,
         super::notify::notify_zones
     ),
     components(schemas(
@@ -48,10 +54,19 @@ use super::types::{
         RecordListResponse,
         RecordResponse,
         RecordValueRequest,
+        RollbackSummary,
+        RollbackZoneRequest,
+        RollbackZoneResponse,
+        SecondaryStatusResponse,
+        SnapshotDetailResponse,
+        SnapshotListResponse,
+        SnapshotRecordResponse,
         UpdateRecordRequest,
         ZoneDetailResponse,
         ZoneListResponse,
-        ZoneResponse
+        ZoneResponse,
+        ZoneSnapshotResponse,
+        ZoneStatusResponse
     )),
     modifiers(&SecurityAddon),
     tags(

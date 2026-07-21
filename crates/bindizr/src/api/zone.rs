@@ -5,7 +5,10 @@ use axum::{
     response::IntoResponse,
     routing,
 };
-use bindizr_service::{record::RecordService, zone::ZoneService};
+use bindizr_core::model::zone::Zone;
+use bindizr_dns as dns;
+use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneService};
+use dns::client::probe::SecondaryProbe;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -14,8 +17,10 @@ use crate::api::{
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, ZoneDetailResponse,
-        ZoneListResponse, ZoneResponse,
+        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, RollbackZoneRequest,
+        RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
+        SnapshotListResponse, SnapshotRecordResponse, ZoneDetailResponse, ZoneListResponse,
+        ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
     },
 };
 
@@ -35,7 +40,198 @@ impl ZoneApi {
                 "/zones/{name}/imports",
                 routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
+            .route("/zones/{name}/snapshots", routing::get(list_zone_snapshots))
+            .route(
+                "/zones/{name}/snapshots/{serial}",
+                routing::get(get_zone_snapshot),
+            )
+            .route("/zones/{name}/rollback", routing::post(rollback_zone))
+            .route("/zones/{name}/status", routing::get(get_zone_status))
     }
+}
+
+/// Assemble the per-secondary sync report by comparing each probe result with
+/// the zone's serial. Shared by the HTTP and daemon-socket handlers.
+pub(crate) fn build_zone_status(zone: &Zone, probes: Vec<SecondaryProbe>) -> ZoneStatusResponse {
+    let secondaries = probes
+        .into_iter()
+        .map(|probe| match probe.result {
+            Ok(visible) => {
+                let visible = i64::from(visible);
+                let status = match visible.cmp(&i64::from(zone.serial)) {
+                    std::cmp::Ordering::Equal => "in_sync",
+                    std::cmp::Ordering::Less => "lagging",
+                    std::cmp::Ordering::Greater => "ahead",
+                };
+                SecondaryStatusResponse {
+                    address: probe.address,
+                    status: status.to_string(),
+                    visible_serial: Some(visible),
+                    error: None,
+                }
+            }
+            Err(error) => SecondaryStatusResponse {
+                address: probe.address,
+                status: "unreachable".to_string(),
+                visible_serial: None,
+                error: Some(error),
+            },
+        })
+        .collect();
+
+    ZoneStatusResponse {
+        zone: zone.name.clone(),
+        serial: zone.serial,
+        secondaries,
+    }
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/status",
+        tag = "Zone",
+        summary = "Check how far each secondary has caught up with a zone",
+        description = "Queries every configured secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no secondaries configured the list is empty.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        responses(
+            (status = 200, description = "The zone's secondary sync status", body = ZoneStatusResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Report the sync state of every configured secondary for a zone.
+pub(crate) async fn get_zone_status(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
+    let zone = match ZoneService::get_by_name(&params.name).await {
+        Ok(zone) => zone,
+        Err(err) => return ApiError::from(err).into_response(),
+    };
+
+    match dns::client::probe::probe_secondaries(&zone.name).await {
+        Ok(probes) => (StatusCode::OK, Json(build_zone_status(&zone, probes))).into_response(),
+        Err(err) => ApiError(ServiceError::internal(err.to_string())).into_response(),
+    }
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/snapshots",
+        tag = "Zone",
+        summary = "List a zone's snapshots (serial history)",
+        description = "Every zone mutation records a snapshot of the zone's SOA metadata keyed by serial. Snapshots are returned newest serial first.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("limit" = Option<u32>, Query, description = "Maximum number of snapshots to return."),
+            ("offset" = Option<u64>, Query, description = "Number of snapshots to skip.")
+        ),
+        responses(
+            (status = 200, description = "A list of zone snapshots", body = SnapshotListResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// List a zone's snapshots, newest serial first.
+pub(crate) async fn list_zone_snapshots(
+    Path(params): Path<ZoneNameParam>,
+    Query(query): Query<SnapshotListQuery>,
+) -> impl IntoResponse {
+    match ZoneService::list_snapshots(&params.name, query.limit, query.offset).await {
+        Ok(response) => {
+            let mut items = Vec::with_capacity(response.items.len());
+            for snapshot in &response.items {
+                match ZoneSnapshotResponse::from_snapshot(snapshot) {
+                    Ok(item) => items.push(item),
+                    Err(err) => return ApiError::from(err).into_response(),
+                }
+            }
+            let json_body = json!({ "items": items, "pagination": response.pagination });
+            (StatusCode::OK, Json(json_body)).into_response()
+        }
+        Err(err) => ApiError::from(err).into_response(),
+    }
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/snapshots/{serial}",
+        tag = "Zone",
+        summary = "Get the zone state captured at a snapshot serial",
+        description = "Returns the SOA snapshot at the given serial together with the zone's record set at that serial, reconstructed from the change history.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("serial" = i32, Path, description = "The snapshot serial to inspect.")
+        ),
+        responses(
+            (status = 200, description = "The snapshot and its reconstructed records", body = SnapshotDetailResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone or snapshot not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Get one snapshot plus the reconstructed record set at that serial.
+pub(crate) async fn get_zone_snapshot(Path(params): Path<ZoneSnapshotParam>) -> impl IntoResponse {
+    match ZoneService::get_snapshot(&params.name, params.serial).await {
+        Ok((snapshot, records)) => {
+            let snapshot = match ZoneSnapshotResponse::from_snapshot(&snapshot) {
+                Ok(snapshot) => snapshot,
+                Err(err) => return ApiError::from(err).into_response(),
+            };
+            let records = records
+                .into_iter()
+                .map(SnapshotRecordResponse::from)
+                .collect::<Vec<_>>();
+            let response = SnapshotDetailResponse { snapshot, records };
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(err) => ApiError::from(err).into_response(),
+    }
+}
+
+#[utoipa::path(
+        post,
+        path = "/zones/{name}/rollback",
+        tag = "Zone",
+        summary = "Roll a zone back to a snapshot serial",
+        description = "Restores the zone's record set and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a snapshot and is never changed. With dry_run the rollback is computed and reported without applying any change.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone to roll back.")
+        ),
+        request_body = RollbackZoneRequest,
+        responses(
+            (status = 200, description = "Rollback result", body = RollbackZoneResponse),
+            (status = 400, description = "Bad request, invalid target serial", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone or snapshot not found", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Roll a zone back to the state captured at a snapshot serial.
+pub(crate) async fn rollback_zone(
+    Path(params): Path<ZoneNameParam>,
+    JsonBody(body): JsonBody<RollbackZoneRequest>,
+) -> impl IntoResponse {
+    match ZoneService::rollback(&params.name, body.serial, body.dry_run).await {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(err) => ApiError::from(err).into_response(),
+    }
+}
+
+/// Query parameters for listing zone snapshots.
+#[derive(Debug, Deserialize)]
+pub(crate) struct SnapshotListQuery {
+    limit: Option<u32>,
+    offset: Option<u64>,
+}
+
+/// Path parameters addressing a zone snapshot by zone name and serial.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ZoneSnapshotParam {
+    name: String,
+    serial: i32,
 }
 
 #[utoipa::path(
@@ -97,7 +293,7 @@ pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoR
 )]
 /// Get a single DNS zone, optionally including its records.
 pub(crate) async fn get_zone(
-    Path(params): Path<GetZoneParam>,
+    Path(params): Path<ZoneNameParam>,
     Query(query): Query<GetZoneQuery>,
 ) -> impl IntoResponse {
     let zone_name = params.name;
@@ -171,12 +367,10 @@ pub(crate) async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> 
 )]
 /// Update an existing DNS zone.
 pub(crate) async fn update_zone(
-    Path(params): Path<UpdateZoneParam>,
+    Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> impl IntoResponse {
-    let zone_name = params.name;
-
-    match ZoneService::update(&zone_name, &body).await {
+    match ZoneService::update(&params.name, &body).await {
         Ok(zone) => {
             let zone = GetZoneResponse::from_zone(&zone);
             let json_body = json!({ "zone": zone });
@@ -202,10 +396,8 @@ pub(crate) async fn update_zone(
         )
 )]
 /// Delete a DNS zone.
-pub(crate) async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl IntoResponse {
-    let zone_name = params.name;
-
-    match ZoneService::delete(&zone_name).await {
+pub(crate) async fn delete_zone(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
+    match ZoneService::delete(&params.name).await {
         Ok(_) => {
             let json_body = json!({ "message": "Zone deleted successfully" });
             (StatusCode::OK, Json(json_body)).into_response()
@@ -235,7 +427,7 @@ pub(crate) async fn delete_zone(Path(params): Path<DeleteZoneParam>) -> impl Int
 )]
 /// Import a BIND zone file into a zone, reconciling records in one transaction.
 pub(crate) async fn import_zone(
-    Path(params): Path<ImportZoneParam>,
+    Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<ImportZoneFileRequest>,
 ) -> impl IntoResponse {
     match RecordService::import_zone_file(&params.name, &body).await {
@@ -244,15 +436,9 @@ pub(crate) async fn import_zone(
     }
 }
 
-/// Path parameters for importing a zone file.
+/// Path parameters addressing a zone by name.
 #[derive(Debug, Deserialize)]
-pub(crate) struct ImportZoneParam {
-    name: String,
-}
-
-/// Path parameters for fetching a zone.
-#[derive(Debug, Deserialize)]
-pub(crate) struct GetZoneParam {
+pub(crate) struct ZoneNameParam {
     name: String,
 }
 
@@ -260,16 +446,4 @@ pub(crate) struct GetZoneParam {
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetZoneQuery {
     records: Option<bool>,
-}
-
-/// Path parameters for updating a zone.
-#[derive(Debug, Deserialize)]
-pub(crate) struct UpdateZoneParam {
-    name: String,
-}
-
-/// Path parameters for deleting a zone.
-#[derive(Debug, Deserialize)]
-pub(crate) struct DeleteZoneParam {
-    name: String,
 }

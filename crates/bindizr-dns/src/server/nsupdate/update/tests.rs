@@ -4,8 +4,8 @@ use super::{
 };
 use crate::{
     model::record::RecordType,
-    nsupdate::parser::UpdateRecord,
     protocol::{CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY},
+    server::nsupdate::parser::UpdateRecord,
 };
 
 #[test]

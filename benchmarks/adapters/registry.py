@@ -20,7 +20,6 @@ def _load_adapter_module(key: str):
     return mod
 
 
-# Adapter class name per system key.
 _CLASS = {
     "bindizr": "BindizrAdapter",
     "powerdns": "PowerDnsAdapter",

@@ -1,14 +1,19 @@
 use bindizr_core::dns::{
-    name::to_fqdn_lowercase,
+    name::{soa_mailbox_to_email, to_fqdn_lowercase},
     record::{display_record_owner_name, display_record_value},
     txt,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::model::{
-    record::{Record, RecordType, RecordWithZone},
-    zone::Zone,
+use crate::{
+    error::ServiceError,
+    model::{
+        record::{Record, RecordType, RecordWithZone},
+        zone::Zone,
+        zone_snapshot::ZoneSnapshot,
+    },
 };
 
 /// A page of items together with its pagination metadata.
@@ -16,16 +21,6 @@ use crate::model::{
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
     pub pagination: Pagination,
-}
-
-impl<T> PaginatedResponse<T> {
-    /// Map each item to a new type, preserving the pagination metadata.
-    pub fn map_items<U>(self, mut f: impl FnMut(T) -> U) -> PaginatedResponse<U> {
-        PaginatedResponse {
-            items: self.items.into_iter().map(&mut f).collect(),
-            pagination: self.pagination,
-        }
-    }
 }
 
 /// Pagination window and total count for a list response.
@@ -52,7 +47,7 @@ pub struct GetZoneResponse {
     pub admin_email: String,
     #[schema(example = 3600)]
     pub ttl: i32,
-    #[schema(example = 2025100101)]
+    #[schema(example = 42)]
     pub serial: Option<i32>,
     #[schema(example = 7200)]
     pub refresh: i32,
@@ -192,8 +187,9 @@ pub struct CreateZoneRequest {
     pub admin_email: String,
     #[schema(example = 3600)]
     pub ttl: i32,
-    #[schema(example = 2025100101)]
-    pub serial: Option<i32>, // Optional: auto-generated if not provided
+    /// Auto-generated if not provided.
+    #[schema(example = 42)]
+    pub serial: Option<i32>,
     #[schema(example = 7200)]
     pub refresh: Option<i32>,
     #[schema(example = 3600)]
@@ -239,11 +235,20 @@ pub struct BulkRecordItem {
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct CreateBulkRecordsRequest {
     pub records: Vec<BulkRecordItem>,
+    /// When true, parse and validate without applying any change.
+    #[serde(default, alias = "dryRun")]
+    pub dry_run: bool,
 }
 
-/// Response for a bulk insert: the count inserted and the created records.
+/// Response for a bulk insert: the count inserted and the created records. On a
+/// dry run `records` holds the validated would-be records (with placeholder
+/// IDs) and nothing is inserted.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct BulkRecordsResponse {
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
     #[schema(example = 3)]
     pub inserted: usize,
     pub records: Vec<GetRecordResponse>,
@@ -324,7 +329,7 @@ pub struct GetZonesFilter {
     pub min_ttl: Option<i32>,
     #[schema(example = 86400)]
     pub max_ttl: Option<i32>,
-    #[schema(example = 2025100101)]
+    #[schema(example = 42)]
     pub serial: Option<i32>,
     #[serde(alias = "q")]
     #[schema(example = "example")]
@@ -441,9 +446,157 @@ pub struct MessageResponse {
     pub message: String,
 }
 
-/// Generic error message response.
+/// One entry of a zone's serial history, with SOA metadata in API form
+/// (`admin_email` converted back from SOA mailbox form).
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ZoneSnapshotResponse {
+    #[schema(example = 7)]
+    pub serial: i32,
+    #[schema(example = "ns1.example.com")]
+    pub primary_ns: String,
+    #[schema(example = "admin@example.com")]
+    pub admin_email: String,
+    #[schema(example = 3600)]
+    pub ttl: i32,
+    #[schema(example = 7200)]
+    pub refresh: i32,
+    #[schema(example = 3600)]
+    pub retry: i32,
+    #[schema(example = 604800)]
+    pub expire: i32,
+    #[schema(example = 3600)]
+    pub minimum_ttl: i32,
+    pub created_at: DateTime<Utc>,
+}
+
+impl ZoneSnapshotResponse {
+    pub fn from_snapshot(snapshot: &ZoneSnapshot) -> Result<Self, ServiceError> {
+        let admin_email = soa_mailbox_to_email(&snapshot.admin_email).map_err(|e| {
+            ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
+        })?;
+        Ok(ZoneSnapshotResponse {
+            serial: snapshot.serial,
+            primary_ns: snapshot.primary_ns.clone(),
+            admin_email,
+            ttl: snapshot.ttl,
+            refresh: snapshot.refresh,
+            retry: snapshot.retry,
+            expire: snapshot.expire,
+            minimum_ttl: snapshot.minimum_ttl,
+            created_at: snapshot.created_at,
+        })
+    }
+}
+
+/// A page of zone snapshots.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotListResponse {
+    pub items: Vec<ZoneSnapshotResponse>,
+    pub pagination: Pagination,
+}
+
+/// A record reconstructed from the zone's change history; unlike stored
+/// records it has no database id.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotRecordResponse {
+    #[schema(example = "www")]
+    pub name: String,
+    #[schema(example = "A")]
+    pub record_type: String,
+    #[schema(example = "192.0.2.1")]
+    pub value: String,
+    #[schema(example = 3600)]
+    pub ttl: Option<i32>,
+    #[schema(example = 10)]
+    pub priority: Option<i32>,
+}
+
+/// One snapshot plus the reconstructed record set at that serial.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotDetailResponse {
+    pub snapshot: ZoneSnapshotResponse,
+    pub records: Vec<SnapshotRecordResponse>,
+}
+
+/// Request body for rolling a zone back to a snapshot serial.
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct RollbackZoneRequest {
+    #[schema(example = 7)]
+    pub serial: i32,
+    /// When true, compute and report the rollback without applying any change.
+    #[serde(default, alias = "dryRun")]
+    pub dry_run: bool,
+}
+
+/// Counts of what a rollback changes. TTL-only differences count as one
+/// delete plus one add.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct RollbackSummary {
+    #[schema(example = 2)]
+    pub records_added: usize,
+    #[schema(example = 3)]
+    pub records_deleted: usize,
+    #[schema(example = 5)]
+    pub records_unchanged: usize,
+    #[schema(example = true)]
+    pub soa_changed: bool,
+}
+
+/// Result of a zone rollback. The zone's state returns to `target_serial`
+/// while its serial advances to `new_serial` (serials never go backward).
+#[derive(Serialize, Debug, ToSchema)]
+pub struct RollbackZoneResponse {
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
+    #[schema(example = 7)]
+    pub target_serial: i32,
+    #[schema(example = 13)]
+    pub new_serial: i32,
+    pub summary: RollbackSummary,
+}
+
+/// Sync state of one configured secondary for a zone.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SecondaryStatusResponse {
+    #[schema(example = "10.0.1.10:53")]
+    pub address: String,
+    /// `in_sync` | `lagging` | `ahead` | `unreachable`
+    #[schema(example = "in_sync")]
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = 42)]
+    pub visible_serial: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// A zone's serial and the sync state of every configured secondary, probed
+/// live via SOA queries.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ZoneStatusResponse {
+    #[schema(example = "example.com")]
+    pub zone: String,
+    #[schema(example = 42)]
+    pub serial: i32,
+    pub secondaries: Vec<SecondaryStatusResponse>,
+}
+
+/// Generic error response: a plain description plus a machine-readable code.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ErrorResponse {
-    #[schema(example = "Bad request: invalid input data")]
+    #[schema(example = "Zone with name 'example.com' not found")]
     pub error: String,
+    #[schema(example = "ZONE_NOT_FOUND")]
+    pub code: String,
+}
+
+impl ErrorResponse {
+    pub fn new(err: &ServiceError) -> Self {
+        ErrorResponse {
+            error: err.message.clone(),
+            code: err.code.as_str().to_string(),
+        }
+    }
 }

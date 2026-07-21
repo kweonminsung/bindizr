@@ -268,6 +268,15 @@ pub trait ZoneChangeRepository: Send + Sync {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
+    /// Tx variant of [`Self::get_changes_between_serials`], for reads that must
+    /// be consistent with a mutation in the same transaction.
+    async fn get_changes_between_serials_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneChange>, DatabaseError>;
 }
 
 /// Persistence operations for zone snapshots.
@@ -292,6 +301,22 @@ pub trait ZoneSnapshotRepository: Send + Sync {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneSnapshot>, DatabaseError>;
+    /// List snapshots for a zone, newest serial first, paginated.
+    async fn list_by_zone_id(
+        &self,
+        zone_id: i32,
+        limit: u32,
+        offset: u64,
+    ) -> Result<Vec<ZoneSnapshot>, DatabaseError>;
+    async fn count_by_zone_id(&self, zone_id: i32) -> Result<u64, DatabaseError>;
+    /// Tx variant of [`Self::get_by_zone_id_and_serial`], for reads that must
+    /// be consistent with a mutation in the same transaction.
+    async fn get_by_zone_id_and_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
 }
 
 /// Persistence operations for API tokens.

@@ -65,6 +65,19 @@ impl fmt::Display for DatabaseType {
     }
 }
 
+impl std::str::FromStr for DatabaseType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "mysql" => Ok(DatabaseType::Mysql),
+            "sqlite" => Ok(DatabaseType::Sqlite),
+            "postgresql" => Ok(DatabaseType::Postgresql),
+            _ => Err("expected mysql, postgresql, or sqlite".to_string()),
+        }
+    }
+}
+
 /// MySQL connection settings.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct MysqlConfig {
@@ -149,6 +162,18 @@ impl fmt::Display for ApplyMode {
     }
 }
 
+impl std::str::FromStr for ApplyMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "sync" => Ok(ApplyMode::Sync),
+            "async" => Ok(ApplyMode::Async),
+            _ => Err("expected sync or async".to_string()),
+        }
+    }
+}
+
 fn default_notify_retries() -> u32 {
     3
 }
@@ -184,6 +209,21 @@ impl fmt::Display for LogLevel {
             LogLevel::Error => "error",
         };
         write!(f, "{}", value)
+    }
+}
+
+impl std::str::FromStr for LogLevel {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "trace" => Ok(LogLevel::Trace),
+            "debug" => Ok(LogLevel::Debug),
+            "info" => Ok(LogLevel::Info),
+            "warn" => Ok(LogLevel::Warn),
+            "error" => Ok(LogLevel::Error),
+            _ => Err("expected trace, debug, info, warn, or error".to_string()),
+        }
     }
 }
 
@@ -252,7 +292,7 @@ fn apply_env_overrides_from(
             parse_env_value("BINDIZR_API_REQUIRE_AUTHENTICATION", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
-        config.database.database_type = parse_database_type_env("BINDIZR_DATABASE_TYPE", &value)?;
+        config.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_MYSQL_SERVER_URL") {
         config.database.mysql.server_url = value;
@@ -291,7 +331,7 @@ fn apply_env_overrides_from(
         config.dns.notify_after_update = parse_env_value("BINDIZR_NOTIFY_AFTER_UPDATE", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_APPLY_MODE") {
-        config.dns.apply_mode = parse_apply_mode_env("BINDIZR_APPLY_MODE", &value)?;
+        config.dns.apply_mode = parse_env_value("BINDIZR_APPLY_MODE", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_APPLY_BATCH_MS") {
         config.dns.apply_batch_ms = parse_env_value("BINDIZR_APPLY_BATCH_MS", &value)?;
@@ -309,7 +349,7 @@ fn apply_env_overrides_from(
         config.dns.notify_timeout_secs = parse_env_value("BINDIZR_NOTIFY_TIMEOUT_SECS", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
-        config.logging.log_level = parse_log_level_env("BINDIZR_LOG_LEVEL", &value)?;
+        config.logging.log_level = parse_env_value("BINDIZR_LOG_LEVEL", &value)?;
     }
 
     Ok(())
@@ -323,43 +363,6 @@ where
     value
         .parse::<T>()
         .map_err(|e| format!("Invalid {} environment variable '{}': {}", name, value, e))
-}
-
-fn parse_database_type_env(name: &str, value: &str) -> Result<DatabaseType, String> {
-    match value {
-        "mysql" => Ok(DatabaseType::Mysql),
-        "postgresql" => Ok(DatabaseType::Postgresql),
-        "sqlite" => Ok(DatabaseType::Sqlite),
-        _ => Err(format!(
-            "Invalid {} environment variable '{}': expected mysql, postgresql, or sqlite",
-            name, value
-        )),
-    }
-}
-
-fn parse_apply_mode_env(name: &str, value: &str) -> Result<ApplyMode, String> {
-    match value {
-        "sync" => Ok(ApplyMode::Sync),
-        "async" => Ok(ApplyMode::Async),
-        _ => Err(format!(
-            "Invalid {} environment variable '{}': expected sync or async",
-            name, value
-        )),
-    }
-}
-
-fn parse_log_level_env(name: &str, value: &str) -> Result<LogLevel, String> {
-    match value {
-        "trace" => Ok(LogLevel::Trace),
-        "debug" => Ok(LogLevel::Debug),
-        "info" => Ok(LogLevel::Info),
-        "warn" => Ok(LogLevel::Warn),
-        "error" => Ok(LogLevel::Error),
-        _ => Err(format!(
-            "Invalid {} environment variable '{}': expected trace, debug, info, warn, or error",
-            name, value
-        )),
-    }
 }
 
 fn validate_database_config(config: &DatabaseConfig) -> Result<(), String> {

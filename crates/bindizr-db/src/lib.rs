@@ -144,7 +144,7 @@ impl DatabasePool {
         let pool = SqlitePoolOptions::new()
             .after_connect(|conn, _| {
                 Box::pin(async move {
-                    // Enable foreign key constraints for SQLite
+                    // SQLite enforces foreign keys only when enabled per connection.
                     sqlx::query("PRAGMA foreign_keys = ON")
                         .execute(conn)
                         .await
@@ -169,15 +169,9 @@ impl DatabasePool {
     }
 
     async fn create_tables(&self) -> Result<(), String> {
-        let queries = match self {
-            DatabasePool::MySQL(_) => schema::get_mysql_table_creation_queries(),
-            DatabasePool::PostgreSQL(_) => schema::get_postgres_table_creation_queries(),
-            DatabasePool::SQLite(_) => schema::get_sqlite_table_creation_queries(),
-        };
-
         match self {
             DatabasePool::MySQL(pool) => {
-                for query in queries {
+                for query in schema::get_mysql_table_creation_queries() {
                     let mut conn = pool.acquire().await.map_err(|e| {
                         log_error!("Failed to acquire MySQL connection: {}", e);
                         e.to_string()
@@ -189,7 +183,7 @@ impl DatabasePool {
                 }
             }
             DatabasePool::PostgreSQL(pool) => {
-                for query in queries {
+                for query in schema::get_postgres_table_creation_queries() {
                     let mut conn = pool.acquire().await.map_err(|e| {
                         log_error!("Failed to acquire PostgreSQL connection: {}", e);
                         e.to_string()
@@ -201,7 +195,7 @@ impl DatabasePool {
                 }
             }
             DatabasePool::SQLite(pool) => {
-                for query in queries {
+                for query in schema::get_sqlite_table_creation_queries() {
                     let mut conn = pool.acquire().await.map_err(|e| {
                         log_error!("Failed to acquire SQLite connection: {}", e);
                         e.to_string()
@@ -216,8 +210,6 @@ impl DatabasePool {
         Ok(())
     }
 }
-
-// Repository accessors returning trait objects for runtime dispatch.
 
 /// Return a zone repository backed by the global pool.
 pub fn get_zone_repository() -> Box<dyn repository::ZoneRepository> {

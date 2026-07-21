@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
-pub(crate) use bindizr_core::dns::CATALOG_ZONE_NAME;
+pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
 use chrono::Utc;
 use domain::base::{Name, iana::Rtype};
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
-use super::{delta, error::XfrError, wire};
-use crate::{log_info, model::zone::Zone, service::zone::ZoneService};
+use super::delta;
+use crate::{error::XfrError, log_info, model::zone::Zone, service::zone::ZoneService, wire};
 
 /// Generates the catalog zone and its member zone list.
 pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
@@ -133,10 +133,6 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     );
 
     Ok(())
-}
-
-pub(crate) fn is_catalog_zone(zone_name: &str) -> bool {
-    zone_name == CATALOG_ZONE_NAME
 }
 
 pub(crate) fn zone_name_to_member_id(zone_name: &str) -> String {

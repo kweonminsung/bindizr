@@ -4,8 +4,8 @@ use bindizr_core::dns::name::to_owner_fqdn;
 use domain::base::{Name, iana::Rtype};
 use tokio::net::TcpStream;
 
-use super::{axfr, catalog, delta, error::XfrError, wire};
-use crate::{log_info, log_warn, service::zone::ZoneService};
+use super::{axfr, catalog, delta};
+use crate::{error::XfrError, log_info, log_warn, service::zone::ZoneService, wire};
 
 /// Handles an IXFR request.
 pub(crate) async fn handle_ixfr(
@@ -85,7 +85,6 @@ pub(crate) async fn handle_ixfr(
             .await;
     }
 
-    // Try to get changes from zone_changes table
     let changes = delta::get_zone_changes(zone.id, client_serial, current_serial).await?;
 
     if changes.is_empty() {
@@ -315,7 +314,6 @@ async fn stream_ixfr_body(
     })
     .await?;
 
-    // Group changes by serial
     let mut changes_by_serial: HashMap<u32, Vec<&delta::ZoneChange>> = HashMap::new();
     for change in changes {
         let serial = delta::serial_to_u32(change.serial)?;
@@ -328,7 +326,6 @@ async fn stream_ixfr_body(
     for (idx, &serial) in serials.iter().enumerate() {
         let serial_changes = &changes_by_serial[&serial];
 
-        // Old serial (previous serial or client serial for first change)
         let old_serial = if idx == 0 {
             client_serial
         } else {
@@ -347,7 +344,6 @@ async fn stream_ixfr_body(
         })
         .await?;
 
-        // Add all DEL operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
             wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
                 add_change_to_builder(builder, change, &zone.name)
@@ -364,7 +360,6 @@ async fn stream_ixfr_body(
         })
         .await?;
 
-        // Add all ADD operations for this serial
         for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
             wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
                 add_change_to_builder(builder, change, &zone.name)

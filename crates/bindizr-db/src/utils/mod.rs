@@ -4,7 +4,6 @@ pub(super) fn to_sqlite_url(file_path: &str) -> Result<String, String> {
         return Err("File path cannot be empty".to_string());
     }
 
-    // Keep existing sqlite URL
     if file_path.starts_with("sqlite:") {
         return Ok(file_path.to_string());
     }

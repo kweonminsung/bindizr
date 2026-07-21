@@ -1,61 +1,51 @@
 use axum::{
     Json,
+    extract::rejection::JsonRejection,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde_json::json;
-use thiserror::Error;
+use bindizr_core::log_error;
+use bindizr_service::error::{ErrorCode, ServiceError};
 
-/// API error type that can be converted into an HTTP response.
-#[derive(Debug, Error)]
-pub(crate) enum ApiError {
-    #[error("Bad request: {0}")]
-    BadRequest(String),
+use crate::api::types::ErrorResponse;
 
-    #[error("Not found: {0}")]
-    NotFound(String),
+/// Newtype over [`ServiceError`] so the service error can be converted into an
+/// HTTP response (orphan rules forbid implementing `IntoResponse` directly).
+#[derive(Debug)]
+pub(crate) struct ApiError(pub ServiceError);
 
-    #[error("Unauthorized: {0}")]
-    Unauthorized(String),
-
-    #[error("Internal server error: {0}")]
-    InternalServerError(String),
-}
-
-impl ApiError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
-            ApiError::NotFound(_) => StatusCode::NOT_FOUND,
-            ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
-            ApiError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-
-    fn error_message(&self) -> String {
-        self.to_string()
+impl From<ServiceError> for ApiError {
+    fn from(value: ServiceError) -> Self {
+        ApiError(value)
     }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let status = self.status_code();
-        let body = Json(json!({
-            "error": self.error_message()
-        }));
-        (status, body).into_response()
+        let status = StatusCode::from_u16(self.0.code.http_status())
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        (status, Json(ErrorResponse::new(&self.0))).into_response()
     }
 }
 
-impl From<bindizr_service::error::ServiceError> for ApiError {
-    fn from(value: bindizr_service::error::ServiceError) -> Self {
-        match value {
-            bindizr_service::error::ServiceError::BadRequest(msg) => ApiError::BadRequest(msg),
-            bindizr_service::error::ServiceError::NotFound(msg) => ApiError::NotFound(msg),
-            bindizr_service::error::ServiceError::Unauthorized(msg) => ApiError::Unauthorized(msg),
-            bindizr_service::error::ServiceError::Internal(msg) => {
-                ApiError::InternalServerError(msg)
+impl From<JsonRejection> for ApiError {
+    fn from(rejection: JsonRejection) -> Self {
+        log_error!("JSON Rejection: {:?}", rejection);
+
+        let error = match rejection {
+            JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
+                ServiceError::new(
+                    ErrorCode::InvalidJsonBody,
+                    format!("Invalid JSON body: {}", rejection.body_text()),
+                )
             }
-        }
+            JsonRejection::MissingJsonContentType(_) => ServiceError::new(
+                ErrorCode::UnsupportedMediaType,
+                "Unsupported media type: expected 'Content-Type: application/json'",
+            ),
+            _ => ServiceError::internal("Failed to read request body"),
+        };
+
+        ApiError(error)
     }
 }

@@ -159,4 +159,66 @@ impl ZoneSnapshotRepository for SqliteZoneSnapshotRepository {
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
+
+    async fn list_by_zone_id(
+        &self,
+        zone_id: i32,
+        limit: u32,
+        offset: u64,
+    ) -> Result<Vec<ZoneSnapshot>, DatabaseError> {
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            FROM zone_soa_history
+            WHERE zone_id = ?
+            ORDER BY serial DESC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(zone_id)
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn count_by_zone_id(&self, zone_id: i32) -> Result<u64, DatabaseError> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM zone_soa_history WHERE zone_id = ?")
+                .bind(zone_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(count as u64)
+    }
+
+    async fn get_by_zone_id_and_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            FROM zone_soa_history
+            WHERE zone_id = ? AND serial = ?
+            "#,
+        )
+        .bind(zone_id)
+        .bind(serial)
+        .fetch_optional(&mut **sqlite_tx)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
 }

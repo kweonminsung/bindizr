@@ -171,4 +171,36 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
+
+    async fn get_changes_between_serials_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneChange>, DatabaseError> {
+        let sqlite_tx = match &mut tx.0 {
+            RepositoryTxKind::SQLite(tx) => tx,
+            _ => {
+                return Err(DatabaseError::TransactionFailed(
+                    "transaction kind mismatch (expected SQLite)".to_string(),
+                ));
+            }
+        };
+
+        sqlx::query_as::<_, ZoneChange>(
+            r#"
+            SELECT id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
+            FROM zone_changes
+            WHERE zone_id = ? AND serial > ? AND serial <= ?
+            ORDER BY serial, id
+            "#
+        )
+        .bind(zone_id)
+        .bind(from_serial)
+        .bind(to_serial)
+        .fetch_all(&mut **sqlite_tx)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
 }

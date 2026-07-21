@@ -45,14 +45,11 @@ impl ZoneService {
             Ok(Some(zone)) => zone,
             Ok(None) => {
                 log_error!("Zone with name '{}' not found", zone_name);
-                return Err(ServiceError::NotFound(format!(
-                    "Zone with name '{}' not found",
-                    zone_name
-                )));
+                return Err(ServiceError::zone_not_found(zone_name));
             }
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                return Err(ServiceError::Internal("Failed to update zone".to_string()));
+                return Err(ServiceError::internal("Failed to update zone".to_string()));
             }
         };
         let zone_id = existing_zone.id;
@@ -68,36 +65,31 @@ impl ZoneService {
             },
         )?;
 
-        // Check if zone with the new name already exists (if name is being changed)
         match RepositoryService::get_zone_by_name(&validated.name).await {
             Ok(Some(zone)) => {
                 if zone.id != zone_id {
                     log_error!("Zone with name {} already exists", validated.name);
-                    return Err(ServiceError::BadRequest(
-                        "Zone name already exists".to_string(),
-                    ));
+                    return Err(ServiceError::zone_conflict(format!(
+                        "Zone with name '{}' already exists",
+                        validated.name
+                    )));
                 }
             }
             Ok(None) => {}
             Err(e) => {
                 log_error!("Failed to check existing zone: {}", e);
-                return Err(ServiceError::Internal("Failed to update zone".to_string()));
+                return Err(ServiceError::internal("Failed to update zone".to_string()));
             }
         };
 
-        // The update rewrites the SOA, so the serial must advance for secondaries
-        // (and the serial-keyed cache) to detect it. Reject a non-advancing
-        // explicit serial; the auto path always advances.
-        let new_serial = match update_zone_request.serial {
-            Some(s) if s <= existing_zone.serial => {
-                return Err(ServiceError::BadRequest(format!(
-                    "serial {} must be greater than the current serial {}",
-                    s, existing_zone.serial
-                )));
-            }
-            Some(s) => s,
-            None => generate_serial(Some(existing_zone.serial)),
-        };
+        // The serial is a system-managed version counter (snapshot/rollback key);
+        // after creation it can only advance through the generator.
+        if update_zone_request.serial.is_some() {
+            return Err(ServiceError::invalid_input(
+                "serial is managed automatically and cannot be set on update",
+            ));
+        }
+        let new_serial = generate_serial(Some(existing_zone.serial));
 
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
 
@@ -121,7 +113,7 @@ impl ZoneService {
             .await
             .map_err(|e| {
                 log_error!("Failed to update zone: {}", e);
-                ServiceError::Internal("Failed to update zone".to_string())
+                ServiceError::internal("Failed to update zone".to_string())
             })?;
 
             // A rename / primary_ns change must keep an apex NS matching the new
@@ -131,7 +123,7 @@ impl ZoneService {
                     .await
                     .map_err(|e| {
                         log_error!("Failed to fetch apex records: {}", e);
-                        ServiceError::Internal("Failed to update zone".to_string())
+                        ServiceError::internal("Failed to update zone".to_string())
                     })?;
             let has_primary_ns = apex_records.iter().any(|r| {
                 r.record_type == RecordType::NS
@@ -140,7 +132,7 @@ impl ZoneService {
 
             let soa_rdata = |zone: &Zone| -> Result<String, ServiceError> {
                 zone.soa_rdata()
-                    .map_err(|e| ServiceError::BadRequest(e.to_string()))
+                    .map_err(|e| ServiceError::invalid_zone(e.to_string()))
             };
 
             // Collect the IXFR changes and write them in one batch: the new apex
@@ -163,7 +155,7 @@ impl ZoneService {
                     .await
                     .map_err(|e| {
                         log_error!("Failed to create primary NS record during update: {}", e);
-                        ServiceError::Internal("Failed to keep primary NS consistency".to_string())
+                        ServiceError::internal("Failed to keep primary NS consistency".to_string())
                     })?;
 
                 changes.push(ZoneChange {
@@ -206,7 +198,7 @@ impl ZoneService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to create zone changes: {}", e);
-                    ServiceError::Internal("Failed to create zone change".to_string())
+                    ServiceError::internal("Failed to create zone change".to_string())
                 })?;
 
             save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
@@ -218,7 +210,6 @@ impl ZoneService {
         let updated_zone =
             RepositoryService::finish_tx(tx, apply_result, "Failed to update zone").await?;
 
-        // Log zone update after commit
         log_info!(
             "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",
             updated_zone.name,
@@ -227,7 +218,6 @@ impl ZoneService {
             updated_zone.id
         );
 
-        // Send NOTIFY to secondary servers
         if let Err(e) = crate::notify::send_notify_after_update(Some(&updated_zone.name)).await {
             log_warn!(
                 "Failed to send NOTIFY for zone {}: {}",

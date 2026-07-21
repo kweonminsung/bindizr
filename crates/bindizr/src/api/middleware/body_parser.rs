@@ -2,13 +2,12 @@ use std::time::Instant;
 
 use axum::{
     Json,
-    extract::{FromRequest, Request, rejection::JsonRejection},
-    http::StatusCode,
-    response::IntoResponse,
+    extract::{FromRequest, Request},
 };
-use bindizr_core::{log_debug, log_error};
+use bindizr_core::log_debug;
 use serde::de::DeserializeOwned;
-use serde_json::json;
+
+use crate::api::error::ApiError;
 
 /// Body cap for whole-zone-file / bulk uploads (import, bulk create) — above
 /// axum's 2 MiB default, but bounded to limit per-request memory.
@@ -34,40 +33,5 @@ where
             start.elapsed().as_secs_f64() * 1000.0
         );
         Ok(Self(value))
-    }
-}
-
-/// Error returned when JSON body extraction fails.
-#[derive(Debug)]
-pub(crate) struct ApiError {
-    code: StatusCode,
-    message: String,
-}
-
-impl From<JsonRejection> for ApiError {
-    fn from(rejection: JsonRejection) -> Self {
-        let code = match rejection {
-            JsonRejection::JsonDataError(_) => StatusCode::BAD_REQUEST,
-            JsonRejection::JsonSyntaxError(_) => StatusCode::BAD_REQUEST,
-            JsonRejection::MissingJsonContentType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-
-        log_error!("JSON Rejection: {:?}", rejection);
-
-        Self {
-            code,
-            message: "Invalid or malformed JSON body".to_string(),
-        }
-    }
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> axum::response::Response {
-        let payload = json!({
-            "error": self.message,
-        });
-
-        (self.code, axum::Json(payload)).into_response()
     }
 }

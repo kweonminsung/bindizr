@@ -39,12 +39,12 @@ pub(super) fn prepare_record(
     ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Result<PreparedRecord, ServiceError> {
-    let record_type = record_type
-        .parse::<RecordType>()
-        .map_err(|_| ServiceError::BadRequest(format!("Invalid record type: {}", record_type)))?;
+    let record_type = record_type.parse::<RecordType>().map_err(|_| {
+        ServiceError::invalid_input(format!("Invalid record type: {}", record_type))
+    })?;
     let value = value
         .to_storage_value(&record_type)
-        .map_err(ServiceError::BadRequest)?;
+        .map_err(ServiceError::invalid_record_value)?;
 
     Ok(PreparedRecord {
         owner_name: name.to_string(),
@@ -78,7 +78,7 @@ fn zone_changes_for(
 }
 
 /// Insert records that the caller has already validated, with their ADD zone changes.
-pub(super) async fn insert_validated_records_tx(
+pub(crate) async fn insert_validated_records_tx(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
     new_serial: i32,
@@ -95,7 +95,7 @@ pub(super) async fn insert_validated_records_tx(
 }
 
 /// Delete records, with their DEL zone changes.
-pub(super) async fn delete_records_tx(
+pub(crate) async fn delete_records_tx(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
     new_serial: i32,
@@ -113,20 +113,17 @@ pub(super) async fn delete_records_tx(
 }
 
 /// Load the target zone inside the transaction, returning `NotFound` if missing.
-pub(super) async fn load_zone_tx(
+pub(crate) async fn load_zone_tx(
     tx: &mut RepositoryTx<'_>,
     zone_name: &str,
 ) -> Result<Zone, ServiceError> {
     let lookup_zone_name = normalize_zone_name(zone_name)?;
     match RepositoryService::get_zone_by_name_tx(tx, &lookup_zone_name).await {
         Ok(Some(zone)) => Ok(zone),
-        Ok(None) => Err(ServiceError::NotFound(format!(
-            "Zone with name '{}' not found",
-            zone_name
-        ))),
+        Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
         Err(e) => {
             log_error!("Failed to fetch zone: {}", e);
-            Err(ServiceError::Internal("Failed to fetch zone".to_string()))
+            Err(ServiceError::internal("Failed to fetch zone".to_string()))
         }
     }
 }
@@ -134,13 +131,17 @@ pub(super) async fn load_zone_tx(
 impl RecordService {
     /// Insert many records into a zone in one transaction. The zone serial is
     /// incremented once, a single snapshot is saved, and a single NOTIFY is sent
-    /// after commit. Either every record is inserted or none is.
+    /// after commit. Either every record is inserted or none is. On `dry_run`
+    /// the same validation runs but nothing is written and no NOTIFY is sent;
+    /// the returned records are the validated would-be records (placeholder
+    /// IDs).
     pub async fn create_bulk(
         zone_name: &str,
         items: &[BulkRecordItem],
+        dry_run: bool,
     ) -> Result<Vec<RecordWithZone>, ServiceError> {
         if items.is_empty() {
-            return Err(ServiceError::BadRequest(
+            return Err(ServiceError::invalid_input(
                 "no records provided for bulk insert".to_string(),
             ));
         }
@@ -202,7 +203,7 @@ impl RecordService {
                 Ok(records) => records,
                 Err(e) => {
                     log_error!("Failed to load zone records: {}", e);
-                    return Err(ServiceError::Internal(
+                    return Err(ServiceError::internal(
                         "Failed to create records".to_string(),
                     ));
                 }
@@ -277,6 +278,10 @@ impl RecordService {
             normalize_ms = normalize_dur.as_secs_f64() * 1000.0;
             validate_ms = validate_dur.as_secs_f64() * 1000.0;
 
+            if dry_run {
+                return Ok((to_insert, zone.name));
+            }
+
             let t = Instant::now();
             let created_records =
                 insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
@@ -288,7 +293,7 @@ impl RecordService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::Internal("Failed to update zone serial".to_string())
+                    ServiceError::internal("Failed to update zone serial".to_string())
                 })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
@@ -302,14 +307,15 @@ impl RecordService {
             RepositoryService::finish_tx(tx, apply_result, "Failed to create records").await?;
 
         log_info!(
-            "event=record_bulk_create zone={} count={}",
+            "event=record_bulk_create zone={} count={} dry_run={}",
             zone_name,
-            created_records.len()
+            created_records.len(),
+            dry_run
         );
 
-        // Send NOTIFY to secondary servers
         let t = Instant::now();
-        if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
+        if !dry_run && let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await
+        {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
         let notify_ms = t.elapsed().as_secs_f64() * 1000.0;

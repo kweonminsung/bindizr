@@ -69,10 +69,15 @@ Use the CLI to inspect and manage resources:
 ```bash
 bindizr status
 bindizr token create --description admin
-bindizr create zone --name example.com --primary-ns ns1.example.com --admin-email admin.example.com --ttl 3600
-bindizr get zones
-bindizr get records --zone example.com
-bindizr notify zone example.com
+bindizr zone create --name example.com --primary-ns ns1.example.com --admin-email admin.example.com --ttl 3600
+bindizr zone list
+bindizr zone import example.com db.example.com --mode upsert
+bindizr zone snapshots example.com
+bindizr zone rollback example.com 7 --dry-run
+bindizr zone status example.com
+bindizr record list --zone example.com
+bindizr record bulk records.json --zone example.com
+bindizr zone notify example.com
 ```
 
 ## Packages

@@ -15,13 +15,13 @@ impl AuthService {
         let stored_token = match RepositoryService::get_api_token_by_token(&token_hash).await {
             Ok(Some(token)) => token,
             Ok(None) => {
-                return Err(ServiceError::Unauthorized(
+                return Err(ServiceError::invalid_token(
                     "Invalid or expired token".to_string(),
                 ));
             }
             Err(e) => {
                 log_error!("Failed to validate token: {}", e);
-                return Err(ServiceError::Internal(
+                return Err(ServiceError::internal(
                     "Failed to validate token".to_string(),
                 ));
             }
@@ -30,7 +30,7 @@ impl AuthService {
         if let Some(expires_at) = &stored_token.expires_at
             && Utc::now() >= *expires_at
         {
-            return Err(ServiceError::Unauthorized("Token has expired".to_string()));
+            return Err(ServiceError::invalid_token("Token has expired".to_string()));
         }
 
         let updated_token = RepositoryService::update_api_token(ApiToken {
@@ -44,7 +44,7 @@ impl AuthService {
         .await
         .map_err(|e| {
             log_error!("Failed to update last_used_at: {}", e);
-            ServiceError::Internal("Failed to update last_used_at".to_string())
+            ServiceError::internal("Failed to update last_used_at".to_string())
         })?;
 
         Ok(updated_token)

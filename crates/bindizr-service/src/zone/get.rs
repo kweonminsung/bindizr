@@ -6,8 +6,9 @@ use crate::{
     error::ServiceError,
     log_error,
     model::{zone::Zone, zone_change::ZoneChange},
+    pagination::paginated_response,
     repository::RepositoryService,
-    types::{GetZonesFilter, PaginatedResponse, Pagination},
+    types::{GetZonesFilter, PaginatedResponse},
 };
 
 impl ZoneService {
@@ -44,7 +45,7 @@ impl ZoneService {
     pub async fn list() -> Result<Vec<Zone>, ServiceError> {
         RepositoryService::get_all_zones().await.map_err(|e| {
             log_error!("Failed to fetch zones: {}", e);
-            ServiceError::Internal("Failed to fetch zones".to_string())
+            ServiceError::internal("Failed to fetch zones".to_string())
         })
     }
 
@@ -71,17 +72,7 @@ impl ZoneService {
 
         let total = RepositoryService::count_zones_by_filter(zone_filter.clone()).await?;
         let zones = RepositoryService::get_zones_by_filter(zone_filter).await?;
-        let offset = offset.unwrap_or(0);
-        let limit = limit.unwrap_or_else(|| total.min(u64::from(u32::MAX)) as u32);
-
-        Ok(PaginatedResponse {
-            items: zones,
-            pagination: Pagination {
-                limit,
-                offset,
-                total,
-            },
-        })
+        Ok(paginated_response(zones, limit, offset, total))
     }
 
     /// Fetch a zone by name, returning `NotFound` if it does not exist.
@@ -90,13 +81,10 @@ impl ZoneService {
 
         match RepositoryService::get_zone_by_name(&lookup_name).await {
             Ok(Some(zone)) => Ok(zone),
-            Ok(None) => Err(ServiceError::NotFound(format!(
-                "Zone with name '{}' not found",
-                zone_name
-            ))),
+            Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
             Err(e) => {
                 log_error!("Failed to fetch zone: {}", e);
-                Err(ServiceError::Internal("Failed to fetch zone".to_string()))
+                Err(ServiceError::internal("Failed to fetch zone".to_string()))
             }
         }
     }

@@ -37,7 +37,6 @@ pub(super) struct UpdateRecord {
 
 #[derive(Debug, Clone)]
 pub(super) struct TsigRecord {
-    #[allow(dead_code)]
     pub name: String,
     pub name_canonical: Vec<u8>,
     pub algorithm: String,
@@ -315,12 +314,18 @@ fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseEr
     ))
 }
 
-fn decode_name_canonical(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), ParseError> {
+/// Walks a (possibly compressed) wire-format name at `start`, calling
+/// `on_label` with each raw label, and returns the octets consumed at `start`
+/// (a compression pointer consumes 2 regardless of where it points).
+fn walk_name(
+    data: &[u8],
+    start: usize,
+    mut on_label: impl FnMut(&[u8]) -> Result<(), ParseError>,
+) -> Result<usize, ParseError> {
     if start >= data.len() {
         return Err(ParseError::InvalidName);
     }
 
-    let mut out = Vec::new();
     let mut pos = start;
     let mut consumed = 0usize;
     let mut jumped = false;
@@ -356,7 +361,6 @@ fn decode_name_canonical(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), 
         }
 
         if len == 0 {
-            out.push(0);
             if !jumped {
                 consumed += 1;
             }
@@ -371,12 +375,7 @@ fn decode_name_canonical(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), 
             return Err(ParseError::InvalidName);
         }
 
-        out.push(len);
-        out.extend(
-            data[label_start..label_end]
-                .iter()
-                .map(u8::to_ascii_lowercase),
-        );
+        on_label(&data[label_start..label_end])?;
 
         if !jumped {
             consumed += 1 + label_len;
@@ -384,75 +383,29 @@ fn decode_name_canonical(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), 
         pos = label_end;
     }
 
+    Ok(consumed)
+}
+
+/// Decodes a name into lowercased uncompressed wire form (for TSIG signing).
+fn decode_name_canonical(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), ParseError> {
+    let mut out = Vec::new();
+    let consumed = walk_name(data, start, |label| {
+        out.push(label.len() as u8);
+        out.extend(label.iter().map(u8::to_ascii_lowercase));
+        Ok(())
+    })?;
+    out.push(0);
     Ok((out, consumed))
 }
 
+/// Decodes a name into dotted presentation form with a trailing dot.
 fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError> {
-    if start >= data.len() {
-        return Err(ParseError::InvalidName);
-    }
-
     let mut labels: Vec<String> = Vec::new();
-    let mut pos = start;
-    let mut consumed = 0usize;
-    let mut jumped = false;
-    let mut jumps = 0usize;
-
-    loop {
-        if pos >= data.len() {
-            return Err(ParseError::InvalidName);
-        }
-
-        let len = data[pos];
-        if len & DNS_COMPRESSION_POINTER_MASK == DNS_COMPRESSION_POINTER_MASK {
-            if pos + 1 >= data.len() {
-                return Err(ParseError::InvalidName);
-            }
-
-            let ptr = (((len as u16 & 0x3F) << 8) | data[pos + 1] as u16) as usize;
-            if ptr >= pos {
-                return Err(ParseError::InvalidName);
-            }
-
-            if !jumped {
-                consumed += 2;
-                jumped = true;
-            }
-
-            pos = ptr;
-            jumps += 1;
-            if jumps > data.len() {
-                return Err(ParseError::InvalidName);
-            }
-            continue;
-        }
-
-        if len == 0 {
-            if !jumped {
-                consumed += 1;
-            }
-            break;
-        }
-
-        let label_len = len as usize;
-        let label_start = pos + 1;
-        let label_end = label_start + label_len;
-
-        if label_end > data.len() || label_len > MAX_DNS_LABEL_LEN {
-            return Err(ParseError::InvalidName);
-        }
-
-        let label = std::str::from_utf8(&data[label_start..label_end])
-            .map_err(|_| ParseError::InvalidName)?;
+    let consumed = walk_name(data, start, |label| {
+        let label = std::str::from_utf8(label).map_err(|_| ParseError::InvalidName)?;
         labels.push(label.to_string());
-
-        if !jumped {
-            consumed += 1 + label_len;
-            pos = label_end;
-        } else {
-            pos = label_end;
-        }
-    }
+        Ok(())
+    })?;
 
     let name = if labels.is_empty() {
         ".".to_string()

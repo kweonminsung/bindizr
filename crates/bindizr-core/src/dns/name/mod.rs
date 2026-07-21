@@ -154,5 +154,33 @@ fn escape_soa_local_part(local: &str) -> String {
     escaped
 }
 
+/// Inverse of [`email_to_soa_mailbox`]: convert an SOA RNAME mailbox back into
+/// an email address. The first unescaped '.' separates the local part from the
+/// domain; `\.` and `\\` in the local part are unescaped.
+pub fn soa_mailbox_to_email(value: &str) -> Result<String, NameError> {
+    let mailbox = value.trim_end_matches('.');
+    let mut local = String::with_capacity(mailbox.len());
+    let mut chars = mailbox.chars();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => match chars.next() {
+                Some(escaped) => local.push(escaped),
+                None => return Err(NameError::DanglingEscape),
+            },
+            '.' => {
+                let domain: String = chars.collect();
+                if local.is_empty() || domain.is_empty() {
+                    return Err(NameError::InvalidEmail);
+                }
+                return Ok(format!("{}@{}", local, domain));
+            }
+            c => local.push(c),
+        }
+    }
+
+    Err(NameError::InvalidEmail)
+}
+
 #[cfg(test)]
 mod tests;

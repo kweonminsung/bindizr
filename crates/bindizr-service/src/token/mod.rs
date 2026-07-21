@@ -59,7 +59,7 @@ impl TokenService {
     pub async fn delete_token(token_id: i32) -> Result<(), ServiceError> {
         let exists = RepositoryService::get_api_token_by_id(token_id).await?;
         if exists.is_none() {
-            return Err(ServiceError::NotFound("Token not found".to_string()));
+            return Err(ServiceError::token_not_found());
         }
 
         RepositoryService::delete_api_token(token_id).await
@@ -70,8 +70,8 @@ fn validate_expires_in_days(expires_in_days: Option<i64>) -> Result<(), ServiceE
     if let Some(days) = expires_in_days
         && days <= 0
     {
-        return Err(ServiceError::BadRequest(
-            "expires_in_days must be greater than 0".to_string(),
+        return Err(ServiceError::invalid_input(
+            "expires_in_days must be greater than 0",
         ));
     }
 

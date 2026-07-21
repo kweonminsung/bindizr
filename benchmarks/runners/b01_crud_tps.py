@@ -37,7 +37,6 @@ async def run(adapter, cfg, ctx) -> dict:
     for rec in pool_recs:
         pool_handles.append(await adapter.create_record(zone, rec))
 
-    # --- CREATE ---
     create_recs = generate(200_000, cfg["seed"] + 3)
     created: list[str] = []
 
@@ -50,7 +49,6 @@ async def run(adapter, cfg, ctx) -> dict:
 
     create_rec = await loadgen.run_closed_loop(create_step, conc, dur, warm)
 
-    # --- READ ---
     async def read_step(seq: int) -> bool:
         return await adapter.get_record(zone, pool_handles[seq % len(pool_handles)])
 

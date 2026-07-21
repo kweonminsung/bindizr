@@ -7,7 +7,7 @@ pub(super) struct ARecordValue(Ipv4Addr);
 impl ARecordValue {
     pub(super) fn parse(value: &str) -> Result<Self, ServiceError> {
         value.parse::<Ipv4Addr>().map(Self).map_err(|_| {
-            ServiceError::BadRequest(format!(
+            ServiceError::invalid_record_value(format!(
                 "A record value must be a valid IPv4 address: {}",
                 value
             ))

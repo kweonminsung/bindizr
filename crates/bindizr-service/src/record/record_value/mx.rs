@@ -27,7 +27,7 @@ impl<'a> MxRecordValue<'a> {
                 priority: parse_optional_u16_record_field("MX priority", fallback_priority)?,
                 target,
             }),
-            _ => Err(ServiceError::BadRequest(format!(
+            _ => Err(ServiceError::invalid_record_value(format!(
                 "MX record value must be '<priority> <target>' or '<target>': {value}"
             ))),
         }
@@ -45,7 +45,7 @@ impl<'a> MxRecordValue<'a> {
 fn validate_mx_record_target(target: &str, priority: u16) -> Result<(), ServiceError> {
     if target.trim() == "." {
         if priority != 0 {
-            return Err(ServiceError::BadRequest(
+            return Err(ServiceError::invalid_record_value(
                 "Null MX record target '.' must use priority 0".to_string(),
             ));
         }

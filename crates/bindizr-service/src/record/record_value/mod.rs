@@ -46,7 +46,7 @@ pub(super) fn validate_record_value(
     }
 }
 
-pub(super) fn record_values_equal(
+pub(crate) fn record_values_equal(
     left: &str,
     left_priority: Option<i32>,
     right: &str,
@@ -64,7 +64,7 @@ pub(super) fn is_null_mx_record_value(value: &str, priority: Option<i32>) -> boo
 }
 
 /// Canonical form used only to compare two values, never to store them.
-fn canonical_record_value<'a>(
+pub(crate) fn canonical_record_value<'a>(
     value: &'a str,
     fallback_priority: Option<i32>,
     record_type: &RecordType,

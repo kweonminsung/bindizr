@@ -23,7 +23,7 @@ pub async fn save_zone_snapshot_tx(
             primary_ns: zone.primary_ns.clone(),
             admin_email: zone
                 .soa_mailbox()
-                .map_err(|e| ServiceError::BadRequest(e.to_string()))?,
+                .map_err(|e| ServiceError::invalid_zone(e.to_string()))?,
             ttl: zone.ttl,
             refresh: zone.refresh,
             retry: zone.retry,
@@ -35,7 +35,7 @@ pub async fn save_zone_snapshot_tx(
     .await
     .map_err(|e| {
         log_error!("Failed to save SOA snapshot: {}", e);
-        ServiceError::Internal("Failed to save SOA snapshot".to_string())
+        ServiceError::internal("Failed to save SOA snapshot".to_string())
     })?;
 
     Ok(())

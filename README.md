@@ -274,7 +274,19 @@ $ bindizr start -c <FILE>
 $ bindizr status
 
 # Send NOTIFY to secondary DNS servers for a zone
-$ bindizr notify zone <ZONE_NAME>
+$ bindizr zone notify <ZONE_NAME>
+
+# List a zone's snapshots (SOA serials are a plain counter starting at 1)
+$ bindizr zone snapshots <ZONE_NAME>
+
+# Inspect the zone state captured at a serial
+$ bindizr zone snapshots <ZONE_NAME> <SERIAL>
+
+# Roll a zone back to a previous serial (the serial still advances)
+$ bindizr zone rollback <ZONE_NAME> <SERIAL> [--dry-run]
+
+# Check how far each secondary has caught up with a zone
+$ bindizr zone status <ZONE_NAME>
 
 # Show help information
 $ bindizr --help
@@ -336,7 +348,40 @@ This project relies on the following core dependencies:
 - [`utoipa`](https://docs.rs/utoipa/latest/utoipa/) - Compile-time OpenAPI generation for Rust APIs.
 - [`sqlx`](https://docs.rs/sqlx/latest/sqlx/) - An async, pure Rust SQL crate featuring compile-time checked queries without a DSL.
 
+## Roadmap
 
+The following features are planned for future releases. The roadmap may change based on implementation complexity and community feedback.
+
+* [ ] **`bindizr doctor`**
+
+  * Diagnose configuration, database connectivity, file permissions, BIND9 connectivity, and DNS synchronization issues.
+  * Provide actionable warnings and recommended fixes.
+
+* [ ] **DNS over HTTPS (DoH)**
+
+  * Provide an RFC-compliant DNS-over-HTTPS endpoint.
+  * Support configurable listener addresses, TLS termination, access control, and query limits.
+  * Evaluate DNS over TLS (DoT) support as a related feature.
+
+* [ ] **Prometheus metrics**
+
+  * Expose operational metrics through a `/metrics` endpoint.
+  * Include API request latency, database operation duration, zone synchronization status, reload results, NOTIFY results, and error counts.
+  * Provide example Prometheus scrape configuration and Grafana dashboards.
+
+* [ ] **DNSSEC support**
+
+  * Support DNSSEC signing and key lifecycle management.
+  * Provide configurable KSK/ZSK generation, rotation, and rollover policies.
+  * Expose DS records and signing status through the API and CLI.
+  * Support integration with externally managed keys and BIND9 DNSSEC tooling.
+
+* [ ] **Per-zone TSIG configuration**
+
+  * Assign different TSIG keys to individual zones for dynamic DNS updates.
+  * Allow multiple zones to share a key while supporting zone-specific overrides.
+  * Support key rotation without modifying global Bindizr configuration.
+  * Retain an optional global default key for backward compatibility.
 
 ### License
 
