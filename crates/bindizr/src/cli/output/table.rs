@@ -69,6 +69,31 @@ pub(crate) struct RecordRow {
     pub zone_name: String,
 }
 
+/// Table row for zone-file import summaries.
+#[derive(Debug, Deserialize, Tabled)]
+pub(crate) struct ImportSummaryRow {
+    #[tabled(rename = "PARSED")]
+    pub parsed: usize,
+    #[tabled(rename = "ADDED")]
+    pub added: usize,
+    #[tabled(rename = "DELETED")]
+    pub deleted: usize,
+    #[tabled(rename = "UPDATED")]
+    pub updated: usize,
+    #[tabled(rename = "UNCHANGED")]
+    pub unchanged: usize,
+    #[tabled(rename = "SKIPPED")]
+    pub skipped: usize,
+}
+
+impl ImportSummaryRow {
+    /// Build an [`ImportSummaryRow`] from a JSON value.
+    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
+        serde_json::from_value(value.clone())
+            .map_err(|e| format!("Failed to parse import summary: {}", e))
+    }
+}
+
 impl ZoneRow {
     /// Build a [`ZoneRow`] from a JSON value.
     pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {

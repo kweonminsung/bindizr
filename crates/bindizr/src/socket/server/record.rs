@@ -2,7 +2,9 @@ use bindizr_service::record::RecordService;
 use serde_json::json;
 
 use crate::{
-    api::types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
+    api::types::{
+        CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse, GetRecordsFilter,
+    },
     socket::types::DaemonResponse,
 };
 
@@ -77,6 +79,37 @@ pub(super) async fn create_record(data: &serde_json::Value) -> Result<DaemonResp
                 message: "Record created successfully".to_string(),
                 data: serde_json::to_value(response)
                     .map_err(|e| format!("Failed to serialize response: {}", e))?,
+            })
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Handle the `BulkCreateRecords` command by inserting records into a zone in
+/// a single transaction.
+pub(super) async fn bulk_create_records(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, String> {
+    let zone_name = data
+        .get("zone_name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'zone_name' field")?;
+    let request: CreateBulkRecordsRequest =
+        serde_json::from_value(data.clone()).map_err(|e| format!("Invalid request data: {}", e))?;
+
+    match RecordService::create_bulk(zone_name, &request.records).await {
+        Ok(records) => {
+            let response = records
+                .iter()
+                .map(GetRecordResponse::from_record_with_zone)
+                .collect::<Vec<_>>();
+
+            Ok(DaemonResponse {
+                message: format!("Inserted {} record(s)", response.len()),
+                data: json!({
+                    "inserted": response.len(),
+                    "records": response,
+                }),
             })
         }
         Err(e) => Err(e.to_string()),

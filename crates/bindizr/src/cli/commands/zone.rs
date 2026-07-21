@@ -1,8 +1,8 @@
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use serde_json::json;
 
 use crate::{
-    cli::output::{OutputFormat, ZoneRow, print_output_with_table},
+    cli::output::{ImportSummaryRow, OutputFormat, ZoneRow, print_output_with_table},
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
 
@@ -81,8 +81,48 @@ pub(crate) enum ZoneCommand {
         name: String,
     },
 
+    /// Import a BIND zone file into a zone
+    Import {
+        /// The name of the zone
+        name: String,
+        /// Path to a BIND zone file, or '-' to read from stdin
+        file: String,
+        /// How parsed records are reconciled with existing records
+        #[arg(long, value_enum, default_value_t = ImportMode::Append)]
+        mode: ImportMode,
+        /// Parse and validate without applying any change
+        #[arg(long)]
+        dry_run: bool,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
     /// Send NOTIFY messages to secondary servers for a zone
     Notify(NotifyArgs),
+}
+
+/// How `zone import` reconciles parsed records with the records already in the
+/// zone. Mirrors the service-layer `ImportMode`; serialized as its lowercase
+/// wire name.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub(crate) enum ImportMode {
+    /// Add parsed records; records already present are left untouched
+    Append,
+    /// Replace every RRset (name + type) that appears in the file
+    Upsert,
+    /// Replace all non-protected records in the zone
+    Replace,
+}
+
+impl ImportMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            ImportMode::Append => "append",
+            ImportMode::Upsert => "upsert",
+            ImportMode::Replace => "replace",
+        }
+    }
 }
 
 /// Arguments for the `zone notify` subcommand.
@@ -180,6 +220,41 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), String
                 .send_command(DaemonCommandKind::DeleteZone, Some(json!({ "name": name })))
                 .await?;
             println!("{}", response.message);
+        }
+        ZoneCommand::Import {
+            name,
+            file,
+            mode,
+            dry_run,
+            output,
+        } => {
+            let content = super::read_input(&file)?;
+            let response = client
+                .send_command(
+                    DaemonCommandKind::ImportZoneFile,
+                    Some(json!({
+                        "zone_name": name,
+                        "content": content,
+                        "mode": mode.as_str(),
+                        "dry_run": dry_run,
+                    })),
+                )
+                .await?;
+
+            if output == OutputFormat::Table {
+                println!("{}", response.message);
+                if let Some(errors) = response.data.get("errors").and_then(|v| v.as_array()) {
+                    for error in errors.iter().filter_map(|e| e.as_str()) {
+                        println!("  - {}", error);
+                    }
+                }
+            }
+            print_output_with_table(&response.data, output, |data| {
+                data.get("summary")
+                    .ok_or("Missing import summary in response".to_string())
+                    .and_then(ImportSummaryRow::from_json)
+                    .map(|row| vec![row])
+            })?;
         }
         ZoneCommand::Notify(args) => {
             let response = client

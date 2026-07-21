@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     env, fs,
+    io::Write,
     net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -184,6 +185,15 @@ impl TestApp {
     }
 
     pub(crate) async fn run_cli(&self, args: &[&str]) -> std::process::Output {
+        self.run_cli_with_input(args, None).await
+    }
+
+    /// Run the CLI, optionally piping `input` to its stdin (for `-` file args).
+    pub(crate) async fn run_cli_with_input(
+        &self,
+        args: &[&str],
+        input: Option<&str>,
+    ) -> std::process::Output {
         let previous_dns_key = match args {
             ["record", "delete", record_id, ..] => {
                 self.previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
@@ -196,17 +206,38 @@ impl TestApp {
             TestRuntime::Local { .. } => Command::new(env!("CARGO_BIN_EXE_bindizr")),
             TestRuntime::Compose(stack) => stack.cli_command(),
         };
+        command.args(args);
 
-        let output = command
-            .args(args)
-            .stdin(Stdio::null())
-            .output()
-            .expect("failed to run bindizr CLI");
+        let output = match input {
+            Some(input) => {
+                let mut child = command
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .expect("failed to start bindizr CLI");
+                child
+                    .stdin
+                    .take()
+                    .expect("missing CLI stdin")
+                    .write_all(input.as_bytes())
+                    .expect("failed to write to CLI stdin");
+                child.wait_with_output().expect("failed to run bindizr CLI")
+            }
+            None => command
+                .stdin(Stdio::null())
+                .output()
+                .expect("failed to run bindizr CLI"),
+        };
 
         if output.status.success()
             && matches!(
                 args,
-                ["zone" | "record", "create" | "delete" | "notify", ..]
+                [
+                    "zone" | "record",
+                    "create" | "bulk" | "delete" | "import" | "notify",
+                    ..
+                ]
             )
         {
             self.assert_dns_matches_api(previous_dns_key).await;
@@ -217,6 +248,12 @@ impl TestApp {
 
     pub(crate) async fn run_cli_success(&self, args: &[&str]) -> String {
         let output = self.run_cli(args).await;
+        assert_cli_success(args, &output);
+        String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
+    }
+
+    pub(crate) async fn run_cli_success_with_input(&self, args: &[&str], input: &str) -> String {
+        let output = self.run_cli_with_input(args, Some(input)).await;
         assert_cli_success(args, &output);
         String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
     }

@@ -10,7 +10,7 @@ use bindizr_core::{log_error, log_info, log_warn};
 use serde_json::json;
 use tokio::{
     fs,
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
 };
 
@@ -19,8 +19,13 @@ use crate::socket::{
     types::{DaemonCommand, DaemonCommandKind},
 };
 
+/// Upper bound on a single command line, so a buggy or malicious client cannot
+/// force unbounded allocation. Sized above the HTTP upload cap (32 MB) because
+/// zone-file content arrives JSON-escaped, roughly doubling in the worst case.
+const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
+
 async fn handle_client(stream: UnixStream) {
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
 
     if reader.read_line(&mut line).await.is_ok() {
@@ -39,8 +44,12 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
+                DaemonCommandKind::BulkCreateRecords => {
+                    record::bulk_create_records(&cmd.data).await
+                }
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
                 DaemonCommandKind::NotifyZone => notify::handle_notify_zone(cmd.data).await,
+                DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
             },
 
             Err(e) => {
@@ -55,7 +64,7 @@ async fn handle_client(stream: UnixStream) {
             Err(e) => json_response_error(&e),
         };
 
-        let mut stream = reader.into_inner();
+        let mut stream = reader.into_inner().into_inner();
         let _ = stream.write_all(response.as_bytes()).await;
         let _ = stream.write_all(b"\n").await;
     }

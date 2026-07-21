@@ -1,8 +1,8 @@
-use bindizr_service::zone::ZoneService;
+use bindizr_service::{record::RecordService, zone::ZoneService};
 use serde_json::json;
 
 use crate::{
-    api::types::{CreateZoneRequest, GetZoneResponse, GetZonesFilter},
+    api::types::{CreateZoneRequest, GetZoneResponse, GetZonesFilter, ImportZoneFileRequest},
     socket::types::DaemonResponse,
 };
 
@@ -60,6 +60,39 @@ pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
             let response = GetZoneResponse::from_zone(&zone);
             Ok(DaemonResponse {
                 message: "Zone created successfully".to_string(),
+                data: serde_json::to_value(response)
+                    .map_err(|e| format!("Failed to serialize response: {}", e))?,
+            })
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Handle the `ImportZoneFile` command by reconciling BIND zone file text with
+/// a zone in a single transaction.
+pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, String> {
+    let zone_name = data
+        .get("zone_name")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'zone_name' field")?;
+    let request: ImportZoneFileRequest =
+        serde_json::from_value(data.clone()).map_err(|e| format!("Invalid request data: {}", e))?;
+
+    match RecordService::import_zone_file(zone_name, &request).await {
+        Ok(response) => {
+            let message = if !response.errors.is_empty() {
+                format!(
+                    "Import validation failed with {} error(s); nothing applied",
+                    response.errors.len()
+                )
+            } else if response.dry_run {
+                "Dry run completed; no changes applied".to_string()
+            } else {
+                "Zone file imported successfully".to_string()
+            };
+
+            Ok(DaemonResponse {
+                message,
                 data: serde_json::to_value(response)
                     .map_err(|e| format!("Failed to serialize response: {}", e))?,
             })

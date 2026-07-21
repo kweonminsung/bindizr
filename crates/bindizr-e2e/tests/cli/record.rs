@@ -165,3 +165,50 @@ async fn record_reject_invalid_values() {
         assert_cli_failure_contains(&args, &output, expected_error);
     }
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert_from_stdin() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("bulk.example");
+    let primary_ns = format!("ns1.{zone_name}");
+    app.run_cli_success(&[
+        "zone",
+        "create",
+        "--name",
+        &zone_name,
+        "--primary-ns",
+        &primary_ns,
+        "--admin-email",
+        "hostmaster@bulk.example",
+        "--ttl",
+        "3600",
+    ])
+    .await;
+
+    let records = serde_json::json!([
+        { "name": "www", "record_type": "A", "value": "192.0.2.20", "ttl": 300 },
+        { "name": "mail", "record_type": "A", "value": "192.0.2.21", "ttl": 300 },
+    ])
+    .to_string();
+    let inserted = app
+        .run_cli_success_with_input(&["record", "bulk", "-", "--zone", &zone_name], &records)
+        .await;
+    assert!(inserted.contains("Inserted 2 record(s)"));
+
+    let listed = app
+        .run_cli_success(&[
+            "record", "list", "--zone", &zone_name, "--type", "A", "--output", "json",
+        ])
+        .await;
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    let names: Vec<String> = listed["items"]
+        .as_array()
+        .expect("missing record items")
+        .iter()
+        .map(|record| record["name"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(names.len(), 2);
+    assert!(names.contains(&format!("www.{zone_name}.")));
+    assert!(names.contains(&format!("mail.{zone_name}.")));
+}

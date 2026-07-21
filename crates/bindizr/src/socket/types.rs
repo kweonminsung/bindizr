@@ -16,8 +16,10 @@ pub(crate) enum DaemonCommandKind {
     GetRecord,
     ListRecords,
     CreateRecord,
+    BulkCreateRecords,
     DeleteRecord,
     NotifyZone,
+    ImportZoneFile,
 }
 
 /// A command and its payload sent to the daemon.

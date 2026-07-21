@@ -78,6 +78,19 @@ pub(crate) enum RecordCommand {
         output: OutputFormat,
     },
 
+    /// Bulk insert records into a zone from a JSON file
+    Bulk {
+        /// Path to a JSON file (an array of records, or an object with a
+        /// 'records' array), or '-' to read from stdin
+        file: String,
+        /// Zone name
+        #[arg(short, long)]
+        zone: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
     /// Get a record by ID
     Get {
         /// The record ID
@@ -175,6 +188,44 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), Stri
                 .data;
 
             print_records(&data, output)?;
+        }
+        RecordCommand::Bulk { file, zone, output } => {
+            let content = super::read_input(&file)?;
+            let parsed: serde_json::Value = serde_json::from_str(&content)
+                .map_err(|e| format!("Invalid JSON in '{}': {}", file, e))?;
+            let records = match parsed {
+                serde_json::Value::Array(_) => parsed,
+                serde_json::Value::Object(mut obj) => obj
+                    .remove("records")
+                    .ok_or("JSON object must contain a 'records' array")?,
+                _ => {
+                    return Err(
+                        "Expected a JSON array of records or an object with a 'records' array"
+                            .to_string(),
+                    );
+                }
+            };
+
+            let response = client
+                .send_command(
+                    DaemonCommandKind::BulkCreateRecords,
+                    Some(json!({ "zone_name": zone, "records": records })),
+                )
+                .await?;
+
+            if output == OutputFormat::Table {
+                println!("{}", response.message);
+            }
+            print_output_with_table(&response.data, output, |data| {
+                data.get("records")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| RecordRow::from_json(v).ok())
+                            .collect()
+                    })
+                    .ok_or_else(|| "Missing created records in response".to_string())
+            })?;
         }
         RecordCommand::Get { id, output } => {
             let data = client
