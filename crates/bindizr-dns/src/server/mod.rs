@@ -1,5 +1,5 @@
-//! Zone-transfer subsystem: dispatches AXFR/IXFR requests and drives NOTIFY,
-//! SOA responses, and catalog-zone generation.
+//! Inbound DNS serving: AXFR/IXFR dispatch with ACL gating, SOA responses,
+//! catalog-zone generation, and RFC 2136 nsupdate handling.
 
 pub(crate) mod acl;
 pub(crate) mod axfr;

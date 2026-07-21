@@ -88,7 +88,6 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
             .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;
     }
 
-    // Secondary servers come from config as a comma-separated list.
     let secondary_servers_str = &config::get_bindizr_config().dns.secondary_addrs;
     if secondary_servers_str.trim().is_empty() {
         log_info!("No secondary DNS servers configured");

@@ -23,16 +23,6 @@ pub struct PaginatedResponse<T> {
     pub pagination: Pagination,
 }
 
-impl<T> PaginatedResponse<T> {
-    /// Map each item to a new type, preserving the pagination metadata.
-    pub fn map_items<U>(self, mut f: impl FnMut(T) -> U) -> PaginatedResponse<U> {
-        PaginatedResponse {
-            items: self.items.into_iter().map(&mut f).collect(),
-            pagination: self.pagination,
-        }
-    }
-}
-
 /// Pagination window and total count for a list response.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct Pagination {

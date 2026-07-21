@@ -1,7 +1,7 @@
 //! Zone serial history: snapshot listing, point-in-time record reconstruction,
 //! and serial-based rollback.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bindizr_core::dns::name::{soa_mailbox_to_email, to_fqdn};
 use chrono::Utc;
@@ -62,9 +62,7 @@ impl From<ReconstructedRecord> for crate::types::SnapshotRecordResponse {
 }
 
 /// Hash key identifying a record for set matching: lowercased owner name,
-/// type, and the canonical comparison form of the value(+priority). Computed
-/// once per row so matching stays linear instead of re-canonicalizing on every
-/// pairwise comparison.
+/// type, and the canonical comparison form of the value(+priority).
 type MatchKey = (String, String, String);
 
 fn match_key(name: &str, record_type: &RecordType, value: &str, priority: Option<i32>) -> MatchKey {
@@ -72,6 +70,15 @@ fn match_key(name: &str, record_type: &RecordType, value: &str, priority: Option
         name.to_ascii_lowercase(),
         record_type.to_string(),
         canonical_record_value(value, priority, record_type).into_owned(),
+    )
+}
+
+fn record_match_key(record: &Record) -> MatchKey {
+    match_key(
+        &record.name,
+        &record.record_type,
+        &record.value,
+        record.priority,
     )
 }
 
@@ -86,13 +93,10 @@ async fn reconstruct_records_at_serial(
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
     for record in RepositoryService::get_records_by_zone_id_tx(tx, zone_id).await? {
-        let key = match_key(
-            &record.name,
-            &record.record_type,
-            &record.value,
-            record.priority,
-        );
-        state.entry(key).or_default().push(record.into());
+        state
+            .entry(record_match_key(&record))
+            .or_default()
+            .push(record.into());
     }
 
     let changes = RepositoryService::get_zone_changes_between_serials_tx(
@@ -319,12 +323,7 @@ impl ZoneService {
             let mut to_add: Vec<ReconstructedRecord> = Vec::new();
 
             for record in &current_records {
-                let key = match_key(
-                    &record.name,
-                    &record.record_type,
-                    &record.value,
-                    record.priority,
-                );
+                let key = record_match_key(record);
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
                         // TTL-only difference: replace the row (DEL + ADD).
@@ -365,8 +364,7 @@ impl ZoneService {
                     && name == "@"
                     && to_fqdn(value).to_ascii_lowercase() == restored_ns_fqdn
             };
-            let deleted_ids: std::collections::HashSet<i32> =
-                dels.iter().map(|del| del.id).collect();
+            let deleted_ids: HashSet<i32> = dels.iter().map(|del| del.id).collect();
             let has_primary_ns = current_records
                 .iter()
                 .filter(|record| !deleted_ids.contains(&record.id))

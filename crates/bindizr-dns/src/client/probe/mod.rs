@@ -33,8 +33,6 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, X
     let mut probes = Vec::new();
     let mut tasks = Vec::new();
     for (entry, result) in super::resolve_secondary_entries(&raw).await {
-        // One probe per configured entry: hostname entries use their first
-        // resolved address.
         let addr = match result.map(|addrs| addrs.into_iter().next()) {
             Ok(Some(addr)) => addr,
             Ok(None) => unreachable!("resolve_secondary_entries never yields an empty Ok"),
