@@ -78,10 +78,10 @@ pub(crate) enum RecordCommand {
         output: OutputFormat,
     },
 
-    /// Bulk insert records into a zone from a JSON file
+    /// Bulk insert records into a zone from a JSON or YAML file
     Bulk {
-        /// Path to a JSON file (an array of records, or an object with a
-        /// 'records' array), or '-' to read from stdin
+        /// Path to a JSON or YAML file (an array of records, or an object with
+        /// a 'records' array), or '-' to read from stdin
         file: String,
         /// Zone name
         #[arg(short, long)]
@@ -191,16 +191,17 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), Stri
         }
         RecordCommand::Bulk { file, zone, output } => {
             let content = super::read_input(&file)?;
-            let parsed: serde_json::Value = serde_json::from_str(&content)
-                .map_err(|e| format!("Invalid JSON in '{}': {}", file, e))?;
+            // YAML is a superset of JSON, so one parse accepts both formats.
+            let parsed: serde_json::Value = serde_yaml::from_str(&content)
+                .map_err(|e| format!("Invalid JSON/YAML in '{}': {}", file, e))?;
             let records = match parsed {
                 serde_json::Value::Array(_) => parsed,
                 serde_json::Value::Object(mut obj) => obj
                     .remove("records")
-                    .ok_or("JSON object must contain a 'records' array")?,
+                    .ok_or("Input object must contain a 'records' array")?,
                 _ => {
                     return Err(
-                        "Expected a JSON array of records or an object with a 'records' array"
+                        "Expected an array of records or an object with a 'records' array"
                             .to_string(),
                     );
                 }

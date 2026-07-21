@@ -196,6 +196,12 @@ async fn record_bulk_insert_from_stdin() {
         .await;
     assert!(inserted.contains("Inserted 2 record(s)"));
 
+    let yaml_records = "- name: ftp\n  record_type: A\n  value: 192.0.2.22\n  ttl: 300\n";
+    let inserted_yaml = app
+        .run_cli_success_with_input(&["record", "bulk", "-", "--zone", &zone_name], yaml_records)
+        .await;
+    assert!(inserted_yaml.contains("Inserted 1 record(s)"));
+
     let listed = app
         .run_cli_success(&[
             "record", "list", "--zone", &zone_name, "--type", "A", "--output", "json",
@@ -208,7 +214,8 @@ async fn record_bulk_insert_from_stdin() {
         .iter()
         .map(|record| record["name"].as_str().unwrap_or_default().to_string())
         .collect();
-    assert_eq!(names.len(), 2);
+    assert_eq!(names.len(), 3);
     assert!(names.contains(&format!("www.{zone_name}.")));
     assert!(names.contains(&format!("mail.{zone_name}.")));
+    assert!(names.contains(&format!("ftp.{zone_name}.")));
 }
