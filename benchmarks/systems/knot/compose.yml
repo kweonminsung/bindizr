@@ -14,7 +14,7 @@ services:
       - knot-storage:/storage
 
   knot:
-    image: cznic/knot:3.4
+    image: cznic/knot:3.5
     command: ["knotd", "-c", "/config/knot.conf"]
     depends_on:
       seed:
