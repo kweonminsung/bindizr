@@ -532,13 +532,6 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to create TSIG key: {}", e)))
     }
 
-    pub(super) async fn get_tsig_key_by_id(id: i32) -> Result<Option<TsigKey>, ServiceError> {
-        get_tsig_key_repository()
-            .get_by_id(id)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
-    }
-
     pub(super) async fn get_tsig_key_by_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
         get_tsig_key_repository()
             .get_by_name(name)

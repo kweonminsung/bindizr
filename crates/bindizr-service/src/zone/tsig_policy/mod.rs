@@ -11,7 +11,7 @@ use crate::{
 };
 
 /// Pattern/type values granting unrestricted rights.
-pub const MATCH_ANY: &str = "*";
+const MATCH_ANY: &str = "*";
 
 /// A zone TSIG policy joined with the name of the key it grants.
 #[derive(Debug, Clone)]
@@ -107,16 +107,6 @@ impl ZoneTsigPolicyService {
     }
 }
 
-/// Look up a TSIG key by (wire) name within the caller's transaction. Used by
-/// the nsupdate path to resolve the key named in an incoming TSIG record.
-pub async fn find_tsig_key_by_name_tx(
-    tx: &mut RepositoryTx<'_>,
-    name: &str,
-) -> Result<Option<TsigKey>, ServiceError> {
-    let name = name.trim().trim_end_matches('.').to_ascii_lowercase();
-    RepositoryService::get_tsig_key_by_name_tx(tx, &name).await
-}
-
 /// Whether any policy authorizes an update of `record_type` at the relative
 /// owner name. `record_type` is `None` for whole-name deletes (wire TYPE ANY),
 /// which only a policy with unrestricted types may authorize.
@@ -134,7 +124,7 @@ pub fn authorize_update(
 /// Match a relative owner name (`@`, `www`, `a.b`, ...) against a policy
 /// pattern: `*` (any name), `@` (apex only), `*.sub` (sub and everything under
 /// it), or an exact relative name.
-pub fn pattern_matches_name(pattern: &str, relative_name: &str) -> bool {
+fn pattern_matches_name(pattern: &str, relative_name: &str) -> bool {
     let name = relative_name.to_ascii_lowercase();
 
     if pattern == MATCH_ANY {
@@ -176,7 +166,7 @@ async fn find_key(key_name: &str) -> Result<TsigKey, ServiceError> {
 }
 
 /// Normalize and validate a record name pattern; `None` grants all names.
-pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceError> {
+fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceError> {
     let raw = match value.map(str::trim) {
         None | Some("") => return Ok(MATCH_ANY.to_string()),
         Some(raw) => raw,
@@ -229,7 +219,7 @@ fn validate_relative_name(name: &str) -> Result<(), ServiceError> {
 }
 
 /// Normalize and validate a record type list; `None` grants all types.
-pub(crate) fn normalize_types(value: Option<&str>) -> Result<String, ServiceError> {
+fn normalize_types(value: Option<&str>) -> Result<String, ServiceError> {
     let raw = match value.map(str::trim) {
         None | Some("") => return Ok(MATCH_ANY.to_string()),
         Some(raw) => raw,

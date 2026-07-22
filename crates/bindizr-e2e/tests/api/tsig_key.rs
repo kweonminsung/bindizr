@@ -35,7 +35,6 @@ async fn tsig_key_create_read_delete() {
     assert_eq!(keys.len(), 1);
     assert!(keys[0].get("secret").is_none());
 
-    // Duplicate names conflict.
     let (status, _) = app
         .request(
             Method::POST,
@@ -76,7 +75,6 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha512");
     assert_eq!(body["tsig_key"]["secret"], "bWktc2VjcmV0LWtleQ==");
 
-    // Invalid base64 secrets and unsupported algorithms are rejected.
     let (status, _) = app
         .request(
             Method::POST,
@@ -101,7 +99,6 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
 async fn global_tsig_key_lifecycle() {
     let app = TestApp::start().await;
 
-    // A global key may update every zone without any policy; fixed at creation.
     let (status, body) = app
         .request(
             Method::POST,
@@ -112,7 +109,6 @@ async fn global_tsig_key_lifecycle() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["tsig_key"]["global"], true);
 
-    // Omitting the flag creates a regular (non-global) key.
     let (status, body) = app
         .request(
             Method::POST,
@@ -195,7 +191,6 @@ async fn zone_tsig_policy_lifecycle_and_delete_guard() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    // Grant the key rights over A/AAAA under *.dyn plus everything at the apex.
     let (status, body) = app
         .request(
             Method::POST,
@@ -234,7 +229,6 @@ async fn zone_tsig_policy_lifecycle_and_delete_guard() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["tsig_policies"].as_array().unwrap().len(), 2);
 
-    // Unknown keys and invalid patterns/types are rejected.
     let (status, _) = app
         .request(
             Method::POST,

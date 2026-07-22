@@ -15,6 +15,7 @@ use crate::{
         RepositoryTx,
         record::{RecordService, validate_add_constraints_tx, validate_delete_constraints},
         serial::generate_serial,
+        tsig_key::TsigKeyService,
         zone::{
             ZoneService,
             snapshot::save_zone_snapshot_tx,
@@ -158,7 +159,7 @@ async fn authorize_request(
         }
     };
 
-    let key = tsig_policy::find_tsig_key_by_name_tx(tx, &tsig.name)
+    let key = TsigKeyService::find_by_name_tx(tx, &tsig.name)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?
         .ok_or_else(|| super::auth::unknown_key_error(tsig))?;
