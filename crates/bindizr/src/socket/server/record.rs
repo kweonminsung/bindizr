@@ -6,7 +6,7 @@ use crate::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
         GetRecordsFilter,
     },
-    socket::types::DaemonResponse,
+    socket::{server::to_response_data, types::DaemonResponse},
 };
 
 fn parse_record_id(data: &serde_json::Value) -> Result<i32, ServiceError> {
@@ -33,9 +33,7 @@ pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
             let response = GetRecordResponse::from_record_with_zone(&record);
             Ok(DaemonResponse {
                 message: "Record retrieved successfully".to_string(),
-                data: serde_json::to_value(response).map_err(|e| {
-                    ServiceError::internal(format!("Failed to serialize response: {}", e))
-                })?,
+                data: to_response_data(response)?,
             })
         }
         Err(e) => Err(e),
@@ -84,9 +82,7 @@ pub(super) async fn create_record(
 
             Ok(DaemonResponse {
                 message: "Record created successfully".to_string(),
-                data: serde_json::to_value(response).map_err(|e| {
-                    ServiceError::internal(format!("Failed to serialize response: {}", e))
-                })?,
+                data: to_response_data(response)?,
             })
         }
         Err(e) => Err(e),
@@ -126,9 +122,7 @@ pub(super) async fn bulk_create_records(
 
             Ok(DaemonResponse {
                 message,
-                data: serde_json::to_value(response).map_err(|e| {
-                    ServiceError::internal(format!("Failed to serialize response: {}", e))
-                })?,
+                data: to_response_data(response)?,
             })
         }
         Err(e) => Err(e),

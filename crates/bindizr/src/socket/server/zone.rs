@@ -6,7 +6,7 @@ use crate::{
         CreateZoneRequest, GetZoneResponse, GetZonesFilter, ImportZoneFileRequest,
         SnapshotDetailResponse, SnapshotRecordResponse, ZoneSnapshotResponse,
     },
-    socket::types::DaemonResponse,
+    socket::{server::to_response_data, types::DaemonResponse},
 };
 
 fn required_name(data: &serde_json::Value) -> Result<&str, ServiceError> {
@@ -32,9 +32,7 @@ pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse,
             let response = GetZoneResponse::from_zone(&zone);
             Ok(DaemonResponse {
                 message: "Zone retrieved successfully".to_string(),
-                data: serde_json::to_value(response).map_err(|e| {
-                    ServiceError::internal(format!("Failed to serialize response: {}", e))
-                })?,
+                data: to_response_data(response)?,
             })
         }
         Err(e) => Err(e),
@@ -76,9 +74,7 @@ pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
             let response = GetZoneResponse::from_zone(&zone);
             Ok(DaemonResponse {
                 message: "Zone created successfully".to_string(),
-                data: serde_json::to_value(response).map_err(|e| {
-                    ServiceError::internal(format!("Failed to serialize response: {}", e))
-                })?,
+                data: to_response_data(response)?,
             })
         }
         Err(e) => Err(e),
@@ -107,9 +103,7 @@ pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
 
             Ok(DaemonResponse {
                 message,
-                data: serde_json::to_value(response).map_err(|e| {
-                    ServiceError::internal(format!("Failed to serialize response: {}", e))
-                })?,
+                data: to_response_data(response)?,
             })
         }
         Err(e) => Err(e),
@@ -162,8 +156,7 @@ pub(super) async fn get_zone_snapshot(
 
     Ok(DaemonResponse {
         message: format!("Snapshot '{}' retrieved successfully", serial),
-        data: serde_json::to_value(response)
-            .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))?,
+        data: to_response_data(response)?,
     })
 }
 
@@ -195,8 +188,7 @@ pub(super) async fn rollback_zone(
 
     Ok(DaemonResponse {
         message,
-        data: serde_json::to_value(response)
-            .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))?,
+        data: to_response_data(response)?,
     })
 }
 
@@ -229,8 +221,7 @@ pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonRespon
 
     Ok(DaemonResponse {
         message,
-        data: serde_json::to_value(response)
-            .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))?,
+        data: to_response_data(response)?,
     })
 }
 

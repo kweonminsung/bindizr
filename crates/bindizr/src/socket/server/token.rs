@@ -2,7 +2,10 @@ use bindizr_core::log_error;
 use bindizr_service::{error::ServiceError, token::TokenService};
 use serde::Deserialize;
 
-use crate::socket::{server::parse_params, types::DaemonResponse};
+use crate::socket::{
+    server::{parse_params, to_response_data},
+    types::DaemonResponse,
+};
 
 #[derive(Deserialize)]
 struct CreateTokenParams {
@@ -24,8 +27,7 @@ pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 
     let response = DaemonResponse {
         message: "Token created successfully".to_string(),
-        data: serde_json::to_value(created_token)
-            .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))?,
+        data: to_response_data(created_token)?,
     };
     Ok(response)
 }
@@ -42,8 +44,7 @@ pub(super) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
 
     let response = DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
-        data: serde_json::to_value(tokens)
-            .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))?,
+        data: to_response_data(tokens)?,
     };
     Ok(response)
 }

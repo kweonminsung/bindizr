@@ -3,7 +3,10 @@ use std::process;
 use bindizr_core::config;
 use bindizr_service::error::ServiceError;
 
-use crate::socket::types::{DaemonResponse, DaemonStatusResponse};
+use crate::socket::{
+    server::to_response_data,
+    types::{DaemonResponse, DaemonStatusResponse},
+};
 
 /// Handle the `Status` command by returning the daemon's PID, version, and config.
 pub(super) fn get_status() -> Result<DaemonResponse, ServiceError> {
@@ -17,9 +20,7 @@ pub(super) fn get_status() -> Result<DaemonResponse, ServiceError> {
 
     let response = DaemonResponse {
         message: "Status retrieved successfully".to_string(),
-        data: serde_json::to_value(status).map_err(|e| {
-            ServiceError::internal(format!("Failed to serialize status response: {}", e))
-        })?,
+        data: to_response_data(status)?,
     };
     Ok(response)
 }

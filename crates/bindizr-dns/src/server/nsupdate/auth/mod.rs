@@ -49,7 +49,7 @@ impl TsigSigner {
     fn into_badtime(mut self, client_time: u64, server_time: u64) -> Self {
         self.error = TSIG_ERROR_BADTIME;
         self.time_signed = Some(client_time);
-        self.other_data = encode_u48(server_time);
+        self.other_data = encode_u48(server_time).to_vec();
         self
     }
 
@@ -89,17 +89,26 @@ impl TsigSigner {
         rdata.extend_from_slice(&(u16::try_from(self.other_data.len()).ok()?).to_be_bytes());
         rdata.extend_from_slice(&self.other_data);
 
-        let arcount = u16::from_be_bytes([response[10], response[11]]).checked_add(1)?;
-        response.extend_from_slice(&self.name_canonical);
-        response.extend_from_slice(&TYPE_TSIG.to_be_bytes());
-        response.extend_from_slice(&CLASS_ANY.to_be_bytes());
-        response.extend_from_slice(&0u32.to_be_bytes());
-        response.extend_from_slice(&(u16::try_from(rdata.len()).ok()?).to_be_bytes());
-        response.extend_from_slice(&rdata);
-        response[10..12].copy_from_slice(&arcount.to_be_bytes());
-
-        Some(())
+        append_tsig_rr(response, &self.name_canonical, &rdata)
     }
+}
+
+/// Append a TSIG RR (owner name, fixed header, rdata) to a response message
+/// and bump its ARCOUNT.
+pub(super) fn append_tsig_rr(
+    response: &mut Vec<u8>,
+    name_canonical: &[u8],
+    rdata: &[u8],
+) -> Option<()> {
+    let arcount = u16::from_be_bytes([response[10], response[11]]).checked_add(1)?;
+    response.extend_from_slice(name_canonical);
+    response.extend_from_slice(&TYPE_TSIG.to_be_bytes());
+    response.extend_from_slice(&CLASS_ANY.to_be_bytes());
+    response.extend_from_slice(&0u32.to_be_bytes());
+    response.extend_from_slice(&(u16::try_from(rdata.len()).ok()?).to_be_bytes());
+    response.extend_from_slice(rdata);
+    response[10..12].copy_from_slice(&arcount.to_be_bytes());
+    Some(())
 }
 
 fn now_unix() -> Option<u64> {
@@ -187,10 +196,7 @@ pub(super) fn validate_tsig(
         other_data: Vec::new(),
     };
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| UpdateError::Internal(format!("system time error: {}", e)))?
-        .as_secs();
+    let now = now_unix().ok_or_else(|| UpdateError::Internal("system time error".to_string()))?;
     let skew = now.abs_diff(tsig.time_signed);
     if skew > u64::from(tsig.fudge) {
         return Err(UpdateError::NotAuth {
@@ -272,8 +278,8 @@ fn tsig_notauth(
     }
 }
 
-fn encode_u48(value: u64) -> Vec<u8> {
-    vec![
+pub(super) fn encode_u48(value: u64) -> [u8; 6] {
+    [
         ((value >> 40) & 0xff) as u8,
         ((value >> 32) & 0xff) as u8,
         ((value >> 24) & 0xff) as u8,

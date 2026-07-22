@@ -14,9 +14,9 @@ use update::{ResponseTsig, TsigErrorResponse};
 use crate::{
     log_info, log_warn,
     protocol::{
-        CLASS_ANY, DNS_COMPRESSION_POINTER_MASK, DNS_HEADER_LEN, DNS_OPCODE_UPDATE, RCODE_FORMERR,
+        DNS_COMPRESSION_POINTER_MASK, DNS_HEADER_LEN, DNS_OPCODE_UPDATE, RCODE_FORMERR,
         RCODE_NOERROR, RCODE_NOTAUTH, RCODE_NOTZONE, RCODE_NXDOMAIN, RCODE_NXRRSET, RCODE_REFUSED,
-        RCODE_SERVFAIL, RCODE_YXDOMAIN, RCODE_YXRRSET, TYPE_TSIG,
+        RCODE_SERVFAIL, RCODE_YXDOMAIN, RCODE_YXRRSET,
     },
 };
 
@@ -243,7 +243,6 @@ fn build_response(query_data: &[u8], result: NsupdateResponse) -> Option<Vec<u8>
     match result.tsig {
         Some(ResponseTsig::Unsigned(tsig)) => {
             append_tsig_error(&mut response, &tsig)?;
-            response[10..12].copy_from_slice(&1u16.to_be_bytes());
         }
         Some(ResponseTsig::Signed(signer)) => {
             signer.sign_response(&mut response)?;
@@ -254,10 +253,11 @@ fn build_response(query_data: &[u8], result: NsupdateResponse) -> Option<Vec<u8>
     Some(response)
 }
 
+/// Append an unsigned TSIG error record (MAC size 0, RFC 8945 §5.3.2).
 fn append_tsig_error(response: &mut Vec<u8>, tsig: &TsigErrorResponse) -> Option<()> {
     let mut rdata = Vec::new();
     rdata.extend_from_slice(&tsig.algorithm_canonical);
-    rdata.extend_from_slice(&encode_u48(tsig.time_signed));
+    rdata.extend_from_slice(&auth::encode_u48(tsig.time_signed));
     rdata.extend_from_slice(&tsig.fudge.to_be_bytes());
     rdata.extend_from_slice(&0u16.to_be_bytes());
     rdata.extend_from_slice(&tsig.original_id.to_be_bytes());
@@ -265,25 +265,7 @@ fn append_tsig_error(response: &mut Vec<u8>, tsig: &TsigErrorResponse) -> Option
     rdata.extend_from_slice(&(u16::try_from(tsig.other_data.len()).ok()?).to_be_bytes());
     rdata.extend_from_slice(&tsig.other_data);
 
-    response.extend_from_slice(&tsig.name_canonical);
-    response.extend_from_slice(&TYPE_TSIG.to_be_bytes());
-    response.extend_from_slice(&CLASS_ANY.to_be_bytes());
-    response.extend_from_slice(&0u32.to_be_bytes());
-    response.extend_from_slice(&(u16::try_from(rdata.len()).ok()?).to_be_bytes());
-    response.extend_from_slice(&rdata);
-
-    Some(())
-}
-
-fn encode_u48(value: u64) -> [u8; 6] {
-    [
-        ((value >> 40) & 0xff) as u8,
-        ((value >> 32) & 0xff) as u8,
-        ((value >> 24) & 0xff) as u8,
-        ((value >> 16) & 0xff) as u8,
-        ((value >> 8) & 0xff) as u8,
-        (value & 0xff) as u8,
-    ]
+    auth::append_tsig_rr(response, &tsig.name_canonical, &rdata)
 }
 
 #[cfg(test)]

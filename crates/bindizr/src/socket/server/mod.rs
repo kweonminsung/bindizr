@@ -203,6 +203,14 @@ pub(super) fn parse_params<T: serde::de::DeserializeOwned>(
         .map_err(|e| ServiceError::invalid_input(format!("Invalid command payload: {}", e)))
 }
 
+/// Serialize a handler result into the `DaemonResponse` data payload.
+pub(super) fn to_response_data<T: serde::Serialize>(
+    value: T,
+) -> Result<serde_json::Value, ServiceError> {
+    serde_json::to_value(value)
+        .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))
+}
+
 fn json_response_error(err: &ServiceError) -> String {
     json!({
         "error": err.message,

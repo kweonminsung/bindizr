@@ -8,7 +8,10 @@ use crate::{
         CreateTsigKeyRequest, CreateZoneTsigPolicyRequest, GetTsigKeyResponse,
         GetZoneTsigPolicyResponse,
     },
-    socket::{server::parse_params, types::DaemonResponse},
+    socket::{
+        server::{parse_params, to_response_data},
+        types::DaemonResponse,
+    },
 };
 
 #[derive(Deserialize)]
@@ -32,11 +35,6 @@ struct AddZoneTsigPolicyParams {
 struct RemoveZoneTsigPolicyParams {
     zone_name: String,
     id: i32,
-}
-
-fn to_response_data<T: serde::Serialize>(value: T) -> Result<serde_json::Value, ServiceError> {
-    serde_json::to_value(value)
-        .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))
 }
 
 /// Handle the `TsigKeyCreate` command by creating (or importing) a TSIG key.

@@ -1,4 +1,5 @@
 use super::*;
+use crate::protocol::TYPE_TSIG;
 
 fn minimal_update_query() -> Vec<u8> {
     let mut message = Vec::new();
