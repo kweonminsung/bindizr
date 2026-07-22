@@ -194,6 +194,15 @@ pub(super) fn required_zone_name(data: &serde_json::Value) -> Result<&str, Servi
         .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'zone_name' field"))
 }
 
+/// Deserialize a command payload into its typed parameter struct, so missing
+/// and wrongly typed fields are rejected instead of silently defaulting.
+pub(super) fn parse_params<T: serde::de::DeserializeOwned>(
+    data: &serde_json::Value,
+) -> Result<T, ServiceError> {
+    serde_json::from_value(data.clone())
+        .map_err(|e| ServiceError::invalid_input(format!("Invalid command payload: {}", e)))
+}
+
 fn json_response_error(err: &ServiceError) -> String {
     json!({
         "error": err.message,

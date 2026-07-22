@@ -1,14 +1,26 @@
 use bindizr_core::log_error;
 use bindizr_service::{error::ServiceError, token::TokenService};
+use serde::Deserialize;
 
-use crate::socket::types::DaemonResponse;
+use crate::socket::{server::parse_params, types::DaemonResponse};
+
+#[derive(Deserialize)]
+struct CreateTokenParams {
+    description: Option<String>,
+    expires_in_days: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct DeleteTokenParams {
+    id: i32,
+}
 
 /// Handle the `TokenCreate` command by creating a new API token.
 pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let description = data.get("description").and_then(|v| v.as_str());
-    let expires_in_days = data.get("expires_in_days").and_then(|v| v.as_i64());
+    let params: CreateTokenParams = parse_params(data)?;
 
-    let created_token = TokenService::create_token(description, expires_in_days).await?;
+    let created_token =
+        TokenService::create_token(params.description.as_deref(), params.expires_in_days).await?;
 
     let response = DaemonResponse {
         message: "Token created successfully".to_string(),
@@ -38,19 +50,13 @@ pub(super) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
 
 /// Handle the `TokenDelete` command by deleting an API token by ID.
 pub(super) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let token_id_i64 = data
-        .get("id")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| ServiceError::invalid_input("Token ID is required"))?;
+    let params: DeleteTokenParams = parse_params(data)?;
 
-    let token_id = i32::try_from(token_id_i64)
-        .map_err(|_| ServiceError::invalid_input("Token ID is out of range"))?;
-
-    if token_id < 0 {
+    if params.id < 0 {
         return Err(ServiceError::invalid_input("Token ID must be non-negative"));
     }
 
-    TokenService::delete_token(token_id).await?;
+    TokenService::delete_token(params.id).await?;
 
     let response = DaemonResponse {
         message: "Token deleted successfully".to_string(),

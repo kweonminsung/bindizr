@@ -1,23 +1,37 @@
 use bindizr_service::{
     error::ServiceError, tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService,
 };
+use serde::Deserialize;
 
 use crate::{
-    api::types::{GetTsigKeyResponse, GetZoneTsigPolicyResponse},
-    socket::types::DaemonResponse,
+    api::types::{
+        CreateTsigKeyRequest, CreateZoneTsigPolicyRequest, GetTsigKeyResponse,
+        GetZoneTsigPolicyResponse,
+    },
+    socket::{server::parse_params, types::DaemonResponse},
 };
 
-fn required_str<'a>(
-    data: &'a serde_json::Value,
-    field: &'static str,
-) -> Result<&'a str, ServiceError> {
-    data.get(field)
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ServiceError::invalid_input(format!("Missing or invalid '{}' field", field)))
+#[derive(Deserialize)]
+struct TsigKeyNameParams {
+    name: String,
 }
 
-fn optional_str<'a>(data: &'a serde_json::Value, field: &'static str) -> Option<&'a str> {
-    data.get(field).and_then(|v| v.as_str())
+#[derive(Deserialize)]
+struct ZoneNameParams {
+    zone_name: String,
+}
+
+#[derive(Deserialize)]
+struct AddZoneTsigPolicyParams {
+    zone_name: String,
+    #[serde(flatten)]
+    request: CreateZoneTsigPolicyRequest,
+}
+
+#[derive(Deserialize)]
+struct RemoveZoneTsigPolicyParams {
+    zone_name: String,
+    id: i32,
 }
 
 fn to_response_data<T: serde::Serialize>(value: T) -> Result<serde_json::Value, ServiceError> {
@@ -29,15 +43,15 @@ fn to_response_data<T: serde::Serialize>(value: T) -> Result<serde_json::Value, 
 pub(super) async fn create_tsig_key(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let name = required_str(data, "name")?;
-    let algorithm = optional_str(data, "algorithm");
-    let secret = optional_str(data, "secret");
-    let is_global = data
-        .get("global")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let request: CreateTsigKeyRequest = parse_params(data)?;
 
-    let key = TsigKeyService::create(name, algorithm, secret, is_global).await?;
+    let key = TsigKeyService::create(
+        &request.name,
+        request.algorithm.as_deref(),
+        request.secret.as_deref(),
+        request.global,
+    )
+    .await?;
 
     Ok(DaemonResponse {
         message: "TSIG key created successfully".to_string(),
@@ -58,9 +72,9 @@ pub(super) async fn list_tsig_keys() -> Result<DaemonResponse, ServiceError> {
 
 /// Handle the `TsigKeyGet` command by returning one TSIG key with its secret.
 pub(super) async fn get_tsig_key(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let name = required_str(data, "name")?;
+    let params: TsigKeyNameParams = parse_params(data)?;
 
-    let key = TsigKeyService::get(name).await?;
+    let key = TsigKeyService::get(&params.name).await?;
 
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),
@@ -72,9 +86,9 @@ pub(super) async fn get_tsig_key(data: &serde_json::Value) -> Result<DaemonRespo
 pub(super) async fn delete_tsig_key(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let name = required_str(data, "name")?;
+    let params: TsigKeyNameParams = parse_params(data)?;
 
-    TsigKeyService::delete(name).await?;
+    TsigKeyService::delete(&params.name).await?;
 
     Ok(DaemonResponse {
         message: "TSIG key deleted successfully".to_string(),
@@ -86,12 +100,15 @@ pub(super) async fn delete_tsig_key(
 pub(super) async fn add_zone_tsig_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let zone_name = required_str(data, "zone_name")?;
-    let key_name = required_str(data, "tsig_key")?;
-    let pattern = optional_str(data, "record_name_pattern");
-    let types = optional_str(data, "record_types");
+    let params: AddZoneTsigPolicyParams = parse_params(data)?;
 
-    let policy = ZoneTsigPolicyService::add(zone_name, key_name, pattern, types).await?;
+    let policy = ZoneTsigPolicyService::add(
+        &params.zone_name,
+        &params.request.tsig_key,
+        params.request.record_name_pattern.as_deref(),
+        params.request.record_types.as_deref(),
+    )
+    .await?;
 
     Ok(DaemonResponse {
         message: "TSIG policy created successfully".to_string(),
@@ -103,9 +120,9 @@ pub(super) async fn add_zone_tsig_policy(
 pub(super) async fn list_zone_tsig_policies(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let zone_name = required_str(data, "zone_name")?;
+    let params: ZoneNameParams = parse_params(data)?;
 
-    let policies = ZoneTsigPolicyService::list(zone_name).await?;
+    let policies = ZoneTsigPolicyService::list(&params.zone_name).await?;
     let policies: Vec<GetZoneTsigPolicyResponse> = policies
         .iter()
         .map(GetZoneTsigPolicyResponse::from_policy)
@@ -121,20 +138,12 @@ pub(super) async fn list_zone_tsig_policies(
 pub(super) async fn remove_zone_tsig_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let zone_name = required_str(data, "zone_name")?;
-    let policy_id = required_policy_id(data)?;
+    let params: RemoveZoneTsigPolicyParams = parse_params(data)?;
 
-    ZoneTsigPolicyService::remove(zone_name, policy_id).await?;
+    ZoneTsigPolicyService::remove(&params.zone_name, params.id).await?;
 
     Ok(DaemonResponse {
         message: "TSIG policy deleted successfully".to_string(),
         data: serde_json::Value::Null,
     })
-}
-
-fn required_policy_id(data: &serde_json::Value) -> Result<i32, ServiceError> {
-    data.get("id")
-        .and_then(|v| v.as_i64())
-        .and_then(|v| i32::try_from(v).ok())
-        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'id' field"))
 }
