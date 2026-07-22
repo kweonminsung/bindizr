@@ -41,9 +41,10 @@ fn parse_algorithm_rejects_unsupported_names() {
 
 #[test]
 fn validate_secret_accepts_base64_and_rejects_garbage() {
+    // 32-byte imported secret, whitespace trimmed.
     assert_eq!(
-        validate_secret(" c2VjcmV0 ").unwrap(),
-        "c2VjcmV0".to_string()
+        validate_secret(" bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU= ").unwrap(),
+        "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=".to_string()
     );
 
     let invalid = validate_secret("not base64!!").unwrap_err();
@@ -51,6 +52,25 @@ fn validate_secret_accepts_base64_and_rejects_garbage() {
 
     let empty = validate_secret("").unwrap_err();
     assert_eq!(empty.code, ErrorCode::InvalidInput);
+}
+
+#[test]
+fn validate_secret_enforces_length_bounds() {
+    // 6 decoded bytes: far below the 128-bit minimum.
+    let short = validate_secret("c2VjcmV0").unwrap_err();
+    assert_eq!(short.code, ErrorCode::InvalidInput);
+    assert!(short.message.contains("at least 16 bytes"));
+
+    // Exactly 16 decoded bytes passes.
+    let sixteen = base64::engine::general_purpose::STANDARD.encode([0x42u8; 16]);
+    validate_secret(&sixteen).unwrap();
+
+    // The base64 form must fit the VARCHAR(255) column.
+    let oversized = base64::engine::general_purpose::STANDARD.encode([0x42u8; 200]);
+    assert!(oversized.len() > 255);
+    let too_long = validate_secret(&oversized).unwrap_err();
+    assert_eq!(too_long.code, ErrorCode::InvalidInput);
+    assert!(too_long.message.contains("at most 255"));
 }
 
 #[test]

@@ -67,19 +67,32 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
             Some(json!({
                 "name": "imported-key",
                 "algorithm": "hmac-sha512",
-                "secret": "bWktc2VjcmV0LWtleQ==",
+                "secret": "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=",
             })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha512");
-    assert_eq!(body["tsig_key"]["secret"], "bWktc2VjcmV0LWtleQ==");
+    assert_eq!(
+        body["tsig_key"]["secret"],
+        "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
+    );
 
     let (status, _) = app
         .request(
             Method::POST,
             "/tsig-keys",
             Some(json!({ "name": "bad-secret", "secret": "not base64!!" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Secrets under 16 decoded bytes are refused.
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/tsig-keys",
+            Some(json!({ "name": "short-secret", "secret": "c2VjcmV0" })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

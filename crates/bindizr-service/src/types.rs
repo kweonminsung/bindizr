@@ -87,7 +87,7 @@ pub struct CreateTsigKeyRequest {
     #[schema(example = "hmac-sha256")]
     pub algorithm: Option<String>,
     /// Existing base64 secret to import; omit to generate a random one.
-    #[schema(example = "bWktc2VjcmV0LWtleQ==")]
+    #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: Option<String>,
     /// Make the key global: it may update every zone (all names, all types)
     /// without any policy. Fixed at creation.
@@ -107,7 +107,7 @@ pub struct GetTsigKeyResponse {
     #[schema(example = "hmac-sha256")]
     pub algorithm: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = "bWktc2VjcmV0LWtleQ==")]
+    #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: Option<String>,
     /// Whether the key may update every zone without any policy.
     #[schema(example = false)]

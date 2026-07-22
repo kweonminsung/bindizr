@@ -122,8 +122,20 @@ fn parse_algorithm(value: Option<&str>) -> Result<TsigAlgorithm, ServiceError> {
     }
 }
 
+/// HMAC security degrades to the key length, so refuse imports under 128 bits.
+const MIN_IMPORTED_SECRET_BYTES: usize = 16;
+/// The base64 form must fit the `tsig_keys.secret` VARCHAR(255) column.
+const MAX_SECRET_BASE64_LEN: usize = 255;
+
 fn validate_secret(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
+
+    if trimmed.len() > MAX_SECRET_BASE64_LEN {
+        return Err(ServiceError::invalid_input(format!(
+            "TSIG key secret must be at most {} base64 characters",
+            MAX_SECRET_BASE64_LEN
+        )));
+    }
 
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(trimmed)
@@ -131,10 +143,12 @@ fn validate_secret(value: &str) -> Result<String, ServiceError> {
             ServiceError::invalid_input(format!("TSIG key secret must be valid base64: {}", e))
         })?;
 
-    if decoded.is_empty() {
-        return Err(ServiceError::invalid_input(
-            "TSIG key secret must not decode to an empty key",
-        ));
+    if decoded.len() < MIN_IMPORTED_SECRET_BYTES {
+        return Err(ServiceError::invalid_input(format!(
+            "TSIG key secret must decode to at least {} bytes ({} bits)",
+            MIN_IMPORTED_SECRET_BYTES,
+            MIN_IMPORTED_SECRET_BYTES * 8
+        )));
     }
 
     Ok(trimmed.to_string())

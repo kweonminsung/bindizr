@@ -315,7 +315,7 @@ partially applied.
 $ bindizr tsig-key create --name update-key
 
 # Or import an existing base64 secret / pick another HMAC algorithm
-$ bindizr tsig-key create --name legacy-key --algorithm hmac-sha512 --secret "bWktc2VjcmV0"
+$ bindizr tsig-key create --name legacy-key --algorithm hmac-sha512 --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
 
 # Or create a global key that may update every zone, including future ones,
 # without any policy. This is write access to all DNS data — use sparingly.

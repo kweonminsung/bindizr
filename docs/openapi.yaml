@@ -1382,7 +1382,7 @@ components:
           - string
           - 'null'
           description: Existing base64 secret to import; omit to generate a random one.
-          example: bWktc2VjcmV0LWtleQ==
+          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
     CreateZoneRequest:
       type: object
       description: Request body for creating or updating a zone.
@@ -1549,7 +1549,7 @@ components:
           type:
           - string
           - 'null'
-          example: bWktc2VjcmV0LWtleQ==
+          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
     GetZoneResponse:
       type: object
       description: API representation of a zone.
