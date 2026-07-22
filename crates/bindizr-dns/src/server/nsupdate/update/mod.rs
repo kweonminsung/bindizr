@@ -1,11 +1,15 @@
 use bindizr_core::{config, dns::name::to_fqdn};
 use chrono::Utc;
 
-use super::parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata};
+use super::{
+    auth::TsigSigner,
+    parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata},
+};
 use crate::{
     log_error, log_info,
     model::{
         record::{Record, RecordType},
+        tsig_key::TsigKey,
         zone::Zone,
         zone_change::ZoneChange,
     },
@@ -30,7 +34,7 @@ pub(super) enum UpdateError {
     Refused(String),
     NotAuth {
         msg: String,
-        tsig: Option<TsigErrorResponse>,
+        tsig: Option<Box<ResponseTsig>>,
     },
     YxDomain(String),
     YxRrset(String),
@@ -38,6 +42,15 @@ pub(super) enum UpdateError {
     NxRrset(String),
     NotZone(String),
     Internal(String),
+}
+
+/// TSIG record to append to a response. Responses to a validated request are
+/// signed (RFC 8945 §5.3); BADKEY/BADSIG errors carry an unsigned TSIG error
+/// record instead, since no verified MAC exists to sign with (§5.3.2).
+#[derive(Debug)]
+pub(super) enum ResponseTsig {
+    Unsigned(TsigErrorResponse),
+    Signed(TsigSigner),
 }
 
 #[derive(Debug, Clone)]
@@ -55,9 +68,21 @@ pub(super) enum UpdateResult {
     Applied { changed: bool },
 }
 
+/// Apply an UPDATE request. The returned signer is `Some` once the request's
+/// TSIG was validated, so the response — success or failure — can be signed.
 pub(super) async fn apply_update(
     request: UpdateRequest,
     query_data: &[u8],
+) -> (Result<UpdateResult, UpdateError>, Option<TsigSigner>) {
+    let mut signer = None;
+    let result = apply_update_inner(request, query_data, &mut signer).await;
+    (result, signer)
+}
+
+async fn apply_update_inner(
+    request: UpdateRequest,
+    query_data: &[u8],
+    signer: &mut Option<TsigSigner>,
 ) -> Result<UpdateResult, UpdateError> {
     let zone_name = trim_dot(&request.zone_name);
     if zone_name.is_empty() {
@@ -71,12 +96,16 @@ pub(super) async fn apply_update(
         .map_err(|e| UpdateError::Internal(e.to_string()))?;
 
     let apply_result = async {
+        // Authenticate before the zone lookup: keys are zone-independent, and
+        // this lets even NOTZONE/REFUSED responses be signed.
+        let key = authenticate_request(&mut tx, &request, query_data, signer).await?;
+
         let zone = ZoneService::find_tx(&mut tx, zone_name)
             .await
             .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
             .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
 
-        authorize_request(&mut tx, &zone, &request, query_data).await?;
+        authorize_key(&mut tx, &zone, key.as_ref(), &request).await?;
 
         super::prerequisite::evaluate_prerequisites_tx(
             &mut tx,
@@ -136,22 +165,21 @@ pub(super) async fn apply_update(
     Ok(UpdateResult::Applied { changed })
 }
 
-/// Authenticate the request's TSIG signature, then authorize it: global keys
-/// may update anything, other keys need a zone policy matching every update
-/// RR. Unsigned requests are accepted only when `dns.nsupdate_allow_unsigned`
-/// is set (not recommended in production); signed requests are always
-/// verified.
-async fn authorize_request(
+/// Verify the request's TSIG signature and record the response-signing
+/// context. Returns the signing key, or `None` for an unsigned request
+/// accepted via `dns.nsupdate_allow_unsigned` (not recommended in
+/// production); signed requests are always verified.
+async fn authenticate_request(
     tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
     request: &UpdateRequest,
     query_data: &[u8],
-) -> Result<(), UpdateError> {
+    signer: &mut Option<TsigSigner>,
+) -> Result<Option<TsigKey>, UpdateError> {
     let tsig = match &request.tsig {
         Some(tsig) => tsig,
         None => {
             if config::get_bindizr_config().dns.nsupdate_allow_unsigned {
-                return Ok(());
+                return Ok(None);
             }
             return Err(UpdateError::Refused(
                 "unsigned NSUPDATE refused: no TSIG record present".to_string(),
@@ -164,11 +192,25 @@ async fn authorize_request(
         .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?
         .ok_or_else(|| super::auth::unknown_key_error(tsig))?;
 
-    super::auth::validate_tsig(tsig, query_data, &key)?;
+    *signer = Some(super::auth::validate_tsig(tsig, query_data, &key)?);
 
-    if key.is_global {
-        return Ok(());
-    }
+    Ok(Some(key))
+}
+
+/// Authorize an authenticated request: global keys may update anything, other
+/// keys need a zone policy matching every update RR. `key` is `None` for an
+/// accepted unsigned request, which skips authorization entirely.
+async fn authorize_key(
+    tx: &mut RepositoryTx<'_>,
+    zone: &Zone,
+    key: Option<&TsigKey>,
+    request: &UpdateRequest,
+) -> Result<(), UpdateError> {
+    let key = match key {
+        None => return Ok(()),
+        Some(key) if key.is_global => return Ok(()),
+        Some(key) => key,
+    };
 
     let policies = ZoneTsigPolicyService::get_by_zone_and_key_tx(tx, zone.id, key.id)
         .await

@@ -1,4 +1,7 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fmt,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
@@ -6,12 +9,105 @@ use sha2::{Sha256, Sha384, Sha512};
 
 use super::{
     parser::TsigRecord,
-    update::{TsigErrorResponse, UpdateError},
+    update::{ResponseTsig, TsigErrorResponse, UpdateError},
 };
 use crate::{
     model::tsig_key::{TsigAlgorithm, TsigKey},
-    protocol::{TSIG_ERROR_BADKEY, TSIG_ERROR_BADSIG, TSIG_ERROR_BADTIME},
+    protocol::{CLASS_ANY, TSIG_ERROR_BADKEY, TSIG_ERROR_BADSIG, TSIG_ERROR_BADTIME, TYPE_TSIG},
 };
+
+/// Context for signing a response to a validated TSIG request. RFC 8945 §5.3
+/// requires every response to a signed request to be signed with the same key;
+/// the response MAC covers the request MAC, the response message, and the TSIG
+/// variables.
+pub(super) struct TsigSigner {
+    algorithm: TsigAlgorithm,
+    key_bytes: Vec<u8>,
+    request_mac: Vec<u8>,
+    name_canonical: Vec<u8>,
+    algorithm_canonical: Vec<u8>,
+    original_id: u16,
+    fudge: u16,
+    error: u16,
+    /// `None` signs with the current time; BADTIME echoes the client's time.
+    time_signed: Option<u64>,
+    other_data: Vec<u8>,
+}
+
+impl fmt::Debug for TsigSigner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TsigSigner")
+            .field("algorithm", &self.algorithm)
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+impl TsigSigner {
+    /// RFC 8945 §5.2.3: BADTIME responses are signed, echo the client's time
+    /// in the time-signed field, and carry the server's time in other data.
+    fn into_badtime(mut self, client_time: u64, server_time: u64) -> Self {
+        self.error = TSIG_ERROR_BADTIME;
+        self.time_signed = Some(client_time);
+        self.other_data = encode_u48(server_time);
+        self
+    }
+
+    /// Append a signed TSIG RR to `response` and bump its ARCOUNT. The MAC is
+    /// computed over the message as it stands (without the TSIG RR).
+    pub(super) fn sign_response(&self, response: &mut Vec<u8>) -> Option<()> {
+        if response.len() < 12 {
+            return None;
+        }
+
+        let time_signed = self.time_signed.or_else(now_unix)?;
+
+        let mut signed_data = Vec::with_capacity(2 + self.request_mac.len() + response.len() + 64);
+        signed_data.extend_from_slice(&(u16::try_from(self.request_mac.len()).ok()?).to_be_bytes());
+        signed_data.extend_from_slice(&self.request_mac);
+        signed_data.extend_from_slice(response);
+        signed_data.extend_from_slice(&self.name_canonical);
+        signed_data.extend_from_slice(&CLASS_ANY.to_be_bytes());
+        signed_data.extend_from_slice(&0u32.to_be_bytes());
+        signed_data.extend_from_slice(&self.algorithm_canonical);
+        signed_data.extend_from_slice(&encode_u48(time_signed));
+        signed_data.extend_from_slice(&self.fudge.to_be_bytes());
+        signed_data.extend_from_slice(&self.error.to_be_bytes());
+        signed_data.extend_from_slice(&(self.other_data.len() as u16).to_be_bytes());
+        signed_data.extend_from_slice(&self.other_data);
+
+        let mac = compute_mac(self.algorithm, &self.key_bytes, &signed_data).ok()?;
+
+        let mut rdata = Vec::new();
+        rdata.extend_from_slice(&self.algorithm_canonical);
+        rdata.extend_from_slice(&encode_u48(time_signed));
+        rdata.extend_from_slice(&self.fudge.to_be_bytes());
+        rdata.extend_from_slice(&(u16::try_from(mac.len()).ok()?).to_be_bytes());
+        rdata.extend_from_slice(&mac);
+        rdata.extend_from_slice(&self.original_id.to_be_bytes());
+        rdata.extend_from_slice(&self.error.to_be_bytes());
+        rdata.extend_from_slice(&(u16::try_from(self.other_data.len()).ok()?).to_be_bytes());
+        rdata.extend_from_slice(&self.other_data);
+
+        let arcount = u16::from_be_bytes([response[10], response[11]]).checked_add(1)?;
+        response.extend_from_slice(&self.name_canonical);
+        response.extend_from_slice(&TYPE_TSIG.to_be_bytes());
+        response.extend_from_slice(&CLASS_ANY.to_be_bytes());
+        response.extend_from_slice(&0u32.to_be_bytes());
+        response.extend_from_slice(&(u16::try_from(rdata.len()).ok()?).to_be_bytes());
+        response.extend_from_slice(&rdata);
+        response[10..12].copy_from_slice(&arcount.to_be_bytes());
+
+        Some(())
+    }
+}
+
+fn now_unix() -> Option<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
+}
 
 /// NOTAUTH/BADKEY error for a TSIG record naming a key bindizr does not hold.
 pub(super) fn unknown_key_error(tsig: &TsigRecord) -> UpdateError {
@@ -27,11 +123,12 @@ pub(super) fn unknown_key_error(tsig: &TsigRecord) -> UpdateError {
 /// Verify a TSIG-signed nsupdate request against the key it names (RFC 8945).
 /// The key was already resolved from the TSIG record's key name; this checks
 /// the algorithm, the MAC over the unsigned message, and the signing time.
+/// Returns the context for signing the response.
 pub(super) fn validate_tsig(
     tsig: &TsigRecord,
     query_data: &[u8],
     key: &TsigKey,
-) -> Result<(), UpdateError> {
+) -> Result<TsigSigner, UpdateError> {
     match tsig.algorithm.parse::<TsigAlgorithm>() {
         Ok(algorithm) if algorithm == key.algorithm => {}
         _ => {
@@ -77,22 +174,34 @@ pub(super) fn validate_tsig(
         ),
     })?;
 
+    let signer = TsigSigner {
+        algorithm: key.algorithm,
+        key_bytes,
+        request_mac: tsig.mac.clone(),
+        name_canonical: tsig.name_canonical.clone(),
+        algorithm_canonical: tsig.algorithm_canonical.clone(),
+        original_id: tsig.original_id,
+        fudge: tsig.fudge,
+        error: 0,
+        time_signed: None,
+        other_data: Vec::new(),
+    };
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| UpdateError::Internal(format!("system time error: {}", e)))?
         .as_secs();
     let skew = now.abs_diff(tsig.time_signed);
     if skew > u64::from(tsig.fudge) {
-        return Err(tsig_notauth(
-            format!("TSIG time skew too large: {}s (fudge={})", skew, tsig.fudge),
-            tsig,
-            TSIG_ERROR_BADTIME,
-            now,
-            encode_u48(now),
-        ));
+        return Err(UpdateError::NotAuth {
+            msg: format!("TSIG time skew too large: {}s (fudge={})", skew, tsig.fudge),
+            tsig: Some(Box::new(ResponseTsig::Signed(
+                signer.into_badtime(tsig.time_signed, now),
+            ))),
+        });
     }
 
-    Ok(())
+    Ok(signer)
 }
 
 enum MacError {
@@ -123,6 +232,25 @@ fn verify_mac(
     }
 }
 
+fn compute_mac(algorithm: TsigAlgorithm, key_bytes: &[u8], data: &[u8]) -> Result<Vec<u8>, String> {
+    macro_rules! mac_with {
+        ($digest:ty) => {{
+            let mut mac = Hmac::<$digest>::new_from_slice(key_bytes)
+                .map_err(|e| format!("invalid TSIG key: {}", e))?;
+            mac.update(data);
+            Ok(mac.finalize().into_bytes().to_vec())
+        }};
+    }
+
+    match algorithm {
+        TsigAlgorithm::HmacSha256 => mac_with!(Sha256),
+        TsigAlgorithm::HmacSha384 => mac_with!(Sha384),
+        TsigAlgorithm::HmacSha512 => mac_with!(Sha512),
+    }
+}
+
+/// NOTAUTH error carrying an unsigned TSIG error record (RFC 8945 §5.3.2):
+/// used for BADKEY/BADSIG, where no verified MAC exists to sign with.
 fn tsig_notauth(
     msg: String,
     tsig: &TsigRecord,
@@ -132,7 +260,7 @@ fn tsig_notauth(
 ) -> UpdateError {
     UpdateError::NotAuth {
         msg,
-        tsig: Some(TsigErrorResponse {
+        tsig: Some(Box::new(ResponseTsig::Unsigned(TsigErrorResponse {
             name_canonical: tsig.name_canonical.clone(),
             algorithm_canonical: tsig.algorithm_canonical.clone(),
             original_id: tsig.original_id,
@@ -140,7 +268,7 @@ fn tsig_notauth(
             fudge: tsig.fudge,
             error,
             other_data,
-        }),
+        }))),
     }
 }
 

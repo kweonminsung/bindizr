@@ -90,7 +90,10 @@ fn tsig_error_code(err: UpdateError) -> u16 {
     match err {
         UpdateError::NotAuth {
             tsig: Some(tsig), ..
-        } => tsig.error,
+        } => match *tsig {
+            ResponseTsig::Unsigned(tsig) => tsig.error,
+            ResponseTsig::Signed(signer) => signer.error,
+        },
         other => panic!("expected NotAuth with TSIG error, got {:?}", other),
     }
 }
@@ -134,12 +137,102 @@ fn validate_tsig_rejects_unsupported_wire_algorithm_with_badkey() {
 }
 
 #[test]
-fn validate_tsig_rejects_stale_time_with_badtime() {
+fn validate_tsig_rejects_stale_time_with_signed_badtime() {
     let stale = now_secs() - 3600;
     let (query, tsig) = signed_request(TsigAlgorithm::HmacSha256, stale);
 
     let err = validate_tsig(&tsig, &query, &test_key(TsigAlgorithm::HmacSha256)).unwrap_err();
-    assert_eq!(tsig_error_code(err), TSIG_ERROR_BADTIME);
+    // RFC 8945 §5.2.3: BADTIME responses are signed, echo the client's time,
+    // and carry the server's time in other data.
+    match err {
+        UpdateError::NotAuth {
+            tsig: Some(tsig), ..
+        } => match *tsig {
+            ResponseTsig::Signed(signer) => {
+                assert_eq!(signer.error, TSIG_ERROR_BADTIME);
+                assert_eq!(signer.time_signed, Some(stale));
+                assert_eq!(signer.other_data.len(), 6);
+            }
+            other => panic!("expected signed BADTIME response, got {:?}", other),
+        },
+        other => panic!("expected signed BADTIME response, got {:?}", other),
+    }
+}
+
+#[test]
+fn sign_response_appends_verifiable_tsig() {
+    let (query, tsig) = signed_request(TsigAlgorithm::HmacSha256, now_secs());
+    let key = test_key(TsigAlgorithm::HmacSha256);
+    let signer = validate_tsig(&tsig, &query, &key).unwrap();
+
+    // Minimal NOERROR response header echoing the request ID.
+    let mut response = vec![0u8; 12];
+    response[0] = 0x12;
+    response[1] = 0x34;
+    response[2] = 0x80 | 0x28;
+    let unsigned = response.clone();
+
+    signer.sign_response(&mut response).unwrap();
+
+    assert_eq!(u16::from_be_bytes([response[10], response[11]]), 1);
+
+    // Parse the appended TSIG RR.
+    let mut off = unsigned.len();
+    assert_eq!(
+        &response[off..off + tsig.name_canonical.len()],
+        &tsig.name_canonical[..]
+    );
+    off += tsig.name_canonical.len();
+    assert_eq!(
+        u16::from_be_bytes([response[off], response[off + 1]]),
+        crate::protocol::TYPE_TSIG
+    );
+    off += 2 + 2 + 4 + 2; // type, class, ttl, rdlen
+    assert_eq!(
+        &response[off..off + tsig.algorithm_canonical.len()],
+        &tsig.algorithm_canonical[..]
+    );
+    off += tsig.algorithm_canonical.len();
+    let time_signed = response[off..off + 6]
+        .iter()
+        .fold(0u64, |acc, b| (acc << 8) | u64::from(*b));
+    off += 6;
+    let fudge = u16::from_be_bytes([response[off], response[off + 1]]);
+    off += 2;
+    assert_eq!(fudge, tsig.fudge);
+    let mac_len = u16::from_be_bytes([response[off], response[off + 1]]) as usize;
+    off += 2;
+    let mac = response[off..off + mac_len].to_vec();
+    off += mac_len;
+    assert_eq!(
+        u16::from_be_bytes([response[off], response[off + 1]]),
+        0x1234
+    );
+    off += 2;
+    assert_eq!(u16::from_be_bytes([response[off], response[off + 1]]), 0); // error
+    off += 2;
+    assert_eq!(u16::from_be_bytes([response[off], response[off + 1]]), 0); // other len
+    off += 2;
+    assert_eq!(off, response.len());
+
+    // Recompute the MAC per RFC 8945 §4.3.3: request MAC (length-prefixed),
+    // the unsigned response, then the TSIG variables.
+    let mut data = Vec::new();
+    data.extend_from_slice(&(tsig.mac.len() as u16).to_be_bytes());
+    data.extend_from_slice(&tsig.mac);
+    data.extend_from_slice(&unsigned);
+    data.extend_from_slice(&tsig.name_canonical);
+    data.extend_from_slice(&crate::protocol::CLASS_ANY.to_be_bytes());
+    data.extend_from_slice(&0u32.to_be_bytes());
+    data.extend_from_slice(&tsig.algorithm_canonical);
+    data.extend_from_slice(&encode_u48(time_signed));
+    data.extend_from_slice(&tsig.fudge.to_be_bytes());
+    data.extend_from_slice(&0u16.to_be_bytes());
+    data.extend_from_slice(&0u16.to_be_bytes());
+
+    let mut expected = Hmac::<Sha256>::new_from_slice(SECRET).unwrap();
+    expected.update(&data);
+    assert_eq!(mac, expected.finalize().into_bytes().to_vec());
 }
 
 #[test]

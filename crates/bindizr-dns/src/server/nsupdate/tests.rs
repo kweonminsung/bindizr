@@ -22,7 +22,7 @@ fn build_response_appends_tsig_error_rr() {
         &minimal_update_query(),
         NsupdateResponse {
             rcode: RCODE_NOTAUTH,
-            tsig: Some(TsigErrorResponse {
+            tsig: Some(ResponseTsig::Unsigned(TsigErrorResponse {
                 name_canonical: vec![3, b'k', b'e', b'y', 0],
                 algorithm_canonical: vec![
                     11, b'h', b'm', b'a', b'c', b'-', b's', b'h', b'a', b'2', b'5', b'6', 0,
@@ -32,7 +32,7 @@ fn build_response_appends_tsig_error_rr() {
                 fudge: 300,
                 error: 16,
                 other_data: Vec::new(),
-            }),
+            })),
         },
     )
     .unwrap();

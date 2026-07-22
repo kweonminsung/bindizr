@@ -9,7 +9,7 @@ mod update;
 use std::net::SocketAddr;
 
 use tokio::net::{TcpStream, UdpSocket};
-use update::TsigErrorResponse;
+use update::{ResponseTsig, TsigErrorResponse};
 
 use crate::{
     log_info, log_warn,
@@ -22,7 +22,7 @@ use crate::{
 
 struct NsupdateResponse {
     rcode: u8,
-    tsig: Option<TsigErrorResponse>,
+    tsig: Option<ResponseTsig>,
 }
 
 pub(crate) fn is_nsupdate(message: &[u8]) -> bool {
@@ -86,7 +86,13 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         }
     };
 
-    match update::apply_update(parsed, query_data).await {
+    let (result, signer) = update::apply_update(parsed, query_data).await;
+    // Once the request's TSIG was validated, every response — success or
+    // failure — must be signed (RFC 8945 §5.3). NOTAUTH errors carry their own
+    // response TSIG (unsigned for BADKEY/BADSIG, signed for BADTIME).
+    let signed = signer.map(ResponseTsig::Signed);
+
+    match result {
         Ok(update::UpdateResult::Applied { changed }) => {
             log_info!(
                 "NSUPDATE applied from {} (changed={})",
@@ -95,63 +101,63 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
             );
             NsupdateResponse {
                 rcode: RCODE_NOERROR,
-                tsig: None,
+                tsig: signed,
             }
         }
         Err(update::UpdateError::Refused(msg)) => {
             log_warn!("NSUPDATE refused from {}: {}", client_addr, msg);
             NsupdateResponse {
                 rcode: RCODE_REFUSED,
-                tsig: None,
+                tsig: signed,
             }
         }
         Err(update::UpdateError::NotAuth { msg, tsig }) => {
             log_warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
             NsupdateResponse {
                 rcode: RCODE_NOTAUTH,
-                tsig,
+                tsig: tsig.map(|tsig| *tsig),
             }
         }
         Err(update::UpdateError::YxDomain(msg)) => {
             log_warn!("NSUPDATE yxdomain from {}: {}", client_addr, msg);
             NsupdateResponse {
                 rcode: RCODE_YXDOMAIN,
-                tsig: None,
+                tsig: signed,
             }
         }
         Err(update::UpdateError::YxRrset(msg)) => {
             log_warn!("NSUPDATE yxrrset from {}: {}", client_addr, msg);
             NsupdateResponse {
                 rcode: RCODE_YXRRSET,
-                tsig: None,
+                tsig: signed,
             }
         }
         Err(update::UpdateError::NxDomain(msg)) => {
             log_warn!("NSUPDATE nxdomain from {}: {}", client_addr, msg);
             NsupdateResponse {
                 rcode: RCODE_NXDOMAIN,
-                tsig: None,
+                tsig: signed,
             }
         }
         Err(update::UpdateError::NxRrset(msg)) => {
             log_warn!("NSUPDATE nxrrset from {}: {}", client_addr, msg);
             NsupdateResponse {
                 rcode: RCODE_NXRRSET,
-                tsig: None,
+                tsig: signed,
             }
         }
         Err(update::UpdateError::NotZone(msg)) => {
             log_warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
             NsupdateResponse {
                 rcode: RCODE_NOTZONE,
-                tsig: None,
+                tsig: signed,
             }
         }
         Err(update::UpdateError::Internal(msg)) => {
             log_warn!("NSUPDATE internal error from {}: {}", client_addr, msg);
             NsupdateResponse {
                 rcode: RCODE_SERVFAIL,
-                tsig: None,
+                tsig: signed,
             }
         }
     }
@@ -234,9 +240,15 @@ fn build_response(query_data: &[u8], result: NsupdateResponse) -> Option<Vec<u8>
         response[DNS_HEADER_LEN..end].copy_from_slice(&query_data[DNS_HEADER_LEN..end]);
     }
 
-    if let Some(tsig) = result.tsig {
-        append_tsig_error(&mut response, &tsig)?;
-        response[10..12].copy_from_slice(&1u16.to_be_bytes());
+    match result.tsig {
+        Some(ResponseTsig::Unsigned(tsig)) => {
+            append_tsig_error(&mut response, &tsig)?;
+            response[10..12].copy_from_slice(&1u16.to_be_bytes());
+        }
+        Some(ResponseTsig::Signed(signer)) => {
+            signer.sign_response(&mut response)?;
+        }
+        None => {}
     }
 
     Some(response)
