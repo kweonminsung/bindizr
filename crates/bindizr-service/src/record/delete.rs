@@ -8,6 +8,15 @@ use crate::{
     zone::snapshot::save_zone_snapshot_tx,
 };
 
+/// Identity of the deleted record, carried out of the transaction for logging.
+struct DeletedRecord {
+    zone_name: String,
+    record_name: String,
+    record_type: String,
+    record_value: String,
+    record_id: i32,
+}
+
 impl RecordService {
     /// Delete a record by id within the caller's transaction.
     pub async fn delete_tx(tx: &mut RepositoryTx<'_>, record_id: i32) -> Result<(), ServiceError> {
@@ -31,7 +40,7 @@ impl RecordService {
 
         let mut tx = RepositoryService::begin_tx("Failed to delete record").await?;
 
-        let apply_result = async {
+        let apply_result: Result<DeletedRecord, ServiceError> = async {
             let zone = match RepositoryService::get_zone_by_id_tx(&mut tx, zone_id).await {
                 Ok(Some(zone)) => zone,
                 Ok(None) => {
@@ -100,26 +109,31 @@ impl RecordService {
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
-            Ok::<(String, String, String, String, i32), ServiceError>((
-                zone.name,
-                existing_record.name,
-                existing_record.record_type.to_string(),
-                existing_record.value,
-                existing_record.id,
-            ))
+            Ok(DeletedRecord {
+                zone_name: zone.name,
+                record_name: existing_record.name,
+                record_type: existing_record.record_type.to_string(),
+                record_value: existing_record.value,
+                record_id: existing_record.id,
+            })
         }
         .await;
 
-        let (zone_name, record_name, record_type_str, record_value, deleted_record_id) =
-            RepositoryService::finish_tx(tx, apply_result, "Failed to delete record").await?;
+        let DeletedRecord {
+            zone_name,
+            record_name,
+            record_type,
+            record_value,
+            record_id,
+        } = RepositoryService::finish_tx(tx, apply_result, "Failed to delete record").await?;
 
         log_info!(
             "event=record_delete zone={} name={} type={} value={} record_id={}",
             zone_name,
             record_name,
-            record_type_str,
+            record_type,
             record_value,
-            deleted_record_id
+            record_id
         );
 
         if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {

@@ -68,6 +68,13 @@ pub(super) enum UpdateResult {
     Applied { changed: bool },
 }
 
+/// Outcome of the transactional part of an applied update.
+struct AppliedUpdate {
+    changed: bool,
+    zone: Zone,
+    new_serial: i32,
+}
+
 /// Apply an UPDATE request. The returned signer is `Some` once the request's
 /// TSIG was validated, so the response — success or failure — can be signed.
 pub(super) async fn apply_update(
@@ -95,7 +102,7 @@ async fn apply_update_inner(
         .await
         .map_err(|e| UpdateError::Internal(e.to_string()))?;
 
-    let apply_result = async {
+    let apply_result: Result<AppliedUpdate, UpdateError> = async {
         // Authenticate before the zone lookup: keys are zone-independent, and
         // this lets even NOTZONE/REFUSED responses be signed.
         let key = authenticate_request(&mut tx, &request, query_data, signer).await?;
@@ -129,11 +136,19 @@ async fn apply_update_inner(
             save_zone_snapshot(&mut tx, &zone, new_serial).await?;
         }
 
-        Ok::<(bool, Zone, i32), UpdateError>((changed, zone, new_serial))
+        Ok(AppliedUpdate {
+            changed,
+            zone,
+            new_serial,
+        })
     }
     .await;
 
-    let (changed, zone, new_serial) = match apply_result {
+    let AppliedUpdate {
+        changed,
+        zone,
+        new_serial,
+    } = match apply_result {
         Ok(result) => {
             tx.commit().await.map_err(|e| {
                 UpdateError::Internal(format!("failed to commit NSUPDATE transaction: {}", e))
