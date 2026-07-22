@@ -1,13 +1,17 @@
 mod api_token_repository_impl;
 mod catalog_zone_state_repository_impl;
 mod record_repository_impl;
+mod tsig_key_repository_impl;
 mod zone_change_repository_impl;
 mod zone_repository_impl;
 mod zone_snapshot_repository_impl;
+mod zone_tsig_policy_repository_impl;
 
 pub use api_token_repository_impl::MySqlApiTokenRepository;
 pub use catalog_zone_state_repository_impl::MySqlCatalogZoneStateRepository;
 pub use record_repository_impl::MySqlRecordRepository;
+pub use tsig_key_repository_impl::MySqlTsigKeyRepository;
 pub use zone_change_repository_impl::MySqlZoneChangeRepository;
 pub use zone_repository_impl::MySqlZoneRepository;
 pub use zone_snapshot_repository_impl::MySqlZoneSnapshotRepository;
+pub use zone_tsig_policy_repository_impl::MySqlZoneTsigPolicyRepository;

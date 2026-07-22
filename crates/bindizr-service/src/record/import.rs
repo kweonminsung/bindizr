@@ -69,6 +69,13 @@ fn is_protected(zone: &Zone, record: &Record) -> bool {
     validate_delete_constraints(zone, std::slice::from_ref(record)).is_err()
 }
 
+/// Outcome of the transactional part of a zone-file import.
+struct AppliedImport {
+    response: ImportZoneFileResponse,
+    zone_name: String,
+    changed: bool,
+}
+
 impl RecordService {
     /// Import a BIND zone file into an existing zone, reconciling it by mode. On
     /// apply the zone serial is incremented once and a single NOTIFY is sent. If
@@ -97,7 +104,7 @@ impl RecordService {
 
         let mut tx = RepositoryService::begin_tx("Failed to import zone file").await?;
 
-        let apply_result = async {
+        let apply_result: Result<AppliedImport, ServiceError> = async {
             let t = Instant::now();
             let zone = load_zone_tx(&mut tx, zone_name).await?;
             load_zone_ms = t.elapsed().as_secs_f64() * 1000.0;
@@ -402,16 +409,19 @@ impl RecordService {
                 errors,
             };
 
-            Ok::<(ImportZoneFileResponse, String, bool), ServiceError>((
+            Ok(AppliedImport {
                 response,
-                zone.name,
-                will_apply && has_changes,
-            ))
+                zone_name: zone.name,
+                changed: will_apply && has_changes,
+            })
         }
         .await;
 
-        let (response, zone_name, changed) =
-            RepositoryService::finish_tx(tx, apply_result, "Failed to import zone file").await?;
+        let AppliedImport {
+            response,
+            zone_name,
+            changed,
+        } = RepositoryService::finish_tx(tx, apply_result, "Failed to import zone file").await?;
 
         log_info!(
             "event=zone_import zone={} mode={:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",

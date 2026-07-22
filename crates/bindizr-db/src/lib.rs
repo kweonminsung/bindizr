@@ -223,6 +223,18 @@ pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
     repository::RepositoryFactory::create_record_repository(pool)
 }
 
+/// Return a TSIG key repository backed by the global pool.
+pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_tsig_key_repository(pool)
+}
+
+/// Return a zone TSIG policy repository backed by the global pool.
+pub fn get_zone_tsig_policy_repository() -> Box<dyn repository::ZoneTsigPolicyRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_zone_tsig_policy_repository(pool)
+}
+
 /// Return an API token repository backed by the global pool.
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();

@@ -5,6 +5,7 @@ mod force;
 mod get;
 pub mod history;
 pub mod snapshot;
+pub mod tsig_policy;
 mod update;
 pub(crate) mod validation;
 

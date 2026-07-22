@@ -48,8 +48,7 @@ notify_after_update = false
 notify_on_startup = true
 notify_retries = 4
 notify_timeout_secs = 9
-nsupdate_tsig_key_name = "nsupdate-key"
-nsupdate_tsig_key = ""
+nsupdate_allow_unsigned = true
 
 [logging]
 log_level = "debug"
@@ -74,13 +73,13 @@ log_level = "debug"
     assert!(parsed.dns.notify_on_startup);
     assert_eq!(parsed.dns.notify_retries, 4);
     assert_eq!(parsed.dns.notify_timeout_secs, 9);
-    assert_eq!(parsed.dns.nsupdate_tsig_key_name, "nsupdate-key");
+    assert!(parsed.dns.nsupdate_allow_unsigned);
 
     drop(dir);
 }
 
 #[test]
-fn parse_bindizr_config_defaults_missing_nsupdate_tsig_key() {
+fn parse_bindizr_config_defaults_missing_optional_dns_fields() {
     let (dir, config_path) = create_temp_config_file(
         r#"
 [api]
@@ -117,12 +116,11 @@ log_level = "debug"
 
     let parsed = parse_bindizr_config_with_env(config, |_| None).unwrap();
 
-    assert_eq!(parsed.dns.nsupdate_tsig_key, "");
     assert!(parsed.dns.notify_after_update);
     assert!(!parsed.dns.notify_on_startup);
     assert_eq!(parsed.dns.notify_retries, 3);
     assert_eq!(parsed.dns.notify_timeout_secs, 5);
-    assert_eq!(parsed.dns.nsupdate_tsig_key_name, "");
+    assert!(!parsed.dns.nsupdate_allow_unsigned);
 
     drop(dir);
 }
@@ -146,7 +144,6 @@ file_path = "file::memory:?cache=shared"
 listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = "127.0.0.1:53"
-nsupdate_tsig_key = ""
 
 [logging]
 log_level = "debug"
@@ -195,7 +192,6 @@ server_url = ""
 listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = ""
-nsupdate_tsig_key = ""
 
 [logging]
 log_level = "debug"
@@ -239,7 +235,6 @@ server_url = ""
 listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = ""
-nsupdate_tsig_key = ""
 
 [logging]
 log_level = "debug"
@@ -283,7 +278,6 @@ server_url = ""
 listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = ""
-nsupdate_tsig_key = ""
 
 [logging]
 log_level = "debug"
@@ -307,8 +301,7 @@ log_level = "debug"
         "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
         "BINDIZR_DNS_PORT" => Some("5353".to_string()),
         "BINDIZR_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
-        "BINDIZR_NSUPDATE_TSIG_KEY" => Some("secret#with&chars".to_string()),
-        "BINDIZR_NSUPDATE_TSIG_KEY_NAME" => Some("nsupdate-key".to_string()),
+        "BINDIZR_NSUPDATE_ALLOW_UNSIGNED" => Some("true".to_string()),
         "BINDIZR_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
         "BINDIZR_NOTIFY_ON_STARTUP" => Some("true".to_string()),
         "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
@@ -335,8 +328,7 @@ log_level = "debug"
         overridden.dns.secondary_addrs,
         "192.0.2.10:53,192.0.2.11:53"
     );
-    assert_eq!(overridden.dns.nsupdate_tsig_key, "secret#with&chars");
-    assert_eq!(overridden.dns.nsupdate_tsig_key_name, "nsupdate-key");
+    assert!(overridden.dns.nsupdate_allow_unsigned);
     assert!(!overridden.dns.notify_after_update);
     assert!(overridden.dns.notify_on_startup);
     assert_eq!(overridden.dns.notify_retries, 7);
@@ -365,7 +357,6 @@ file_path = "file::memory:?cache=shared"
 listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = ""
-nsupdate_tsig_key = ""
 
 [logging]
 log_level = "debug"

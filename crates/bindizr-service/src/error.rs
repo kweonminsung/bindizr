@@ -16,6 +16,10 @@ pub enum ErrorCode {
     RecordNotFound,
     TokenNotFound,
     SnapshotNotFound,
+    TsigKeyNotFound,
+    TsigKeyConflict,
+    TsigKeyInUse,
+    TsigPolicyNotFound,
     Unauthorized,
     InvalidToken,
     UnsupportedMediaType,
@@ -36,6 +40,10 @@ impl ErrorCode {
             ErrorCode::RecordNotFound => "RECORD_NOT_FOUND",
             ErrorCode::TokenNotFound => "TOKEN_NOT_FOUND",
             ErrorCode::SnapshotNotFound => "SNAPSHOT_NOT_FOUND",
+            ErrorCode::TsigKeyNotFound => "TSIG_KEY_NOT_FOUND",
+            ErrorCode::TsigKeyConflict => "TSIG_KEY_CONFLICT",
+            ErrorCode::TsigKeyInUse => "TSIG_KEY_IN_USE",
+            ErrorCode::TsigPolicyNotFound => "TSIG_POLICY_NOT_FOUND",
             ErrorCode::Unauthorized => "UNAUTHORIZED",
             ErrorCode::InvalidToken => "INVALID_TOKEN",
             ErrorCode::UnsupportedMediaType => "UNSUPPORTED_MEDIA_TYPE",
@@ -58,6 +66,10 @@ impl ErrorCode {
             "RECORD_NOT_FOUND" => ErrorCode::RecordNotFound,
             "TOKEN_NOT_FOUND" => ErrorCode::TokenNotFound,
             "SNAPSHOT_NOT_FOUND" => ErrorCode::SnapshotNotFound,
+            "TSIG_KEY_NOT_FOUND" => ErrorCode::TsigKeyNotFound,
+            "TSIG_KEY_CONFLICT" => ErrorCode::TsigKeyConflict,
+            "TSIG_KEY_IN_USE" => ErrorCode::TsigKeyInUse,
+            "TSIG_POLICY_NOT_FOUND" => ErrorCode::TsigPolicyNotFound,
             "UNAUTHORIZED" => ErrorCode::Unauthorized,
             "INVALID_TOKEN" => ErrorCode::InvalidToken,
             "UNSUPPORTED_MEDIA_TYPE" => ErrorCode::UnsupportedMediaType,
@@ -77,8 +89,13 @@ impl ErrorCode {
             ErrorCode::ZoneNotFound
             | ErrorCode::RecordNotFound
             | ErrorCode::TokenNotFound
-            | ErrorCode::SnapshotNotFound => 404,
-            ErrorCode::ZoneConflict | ErrorCode::RecordConflict => 409,
+            | ErrorCode::SnapshotNotFound
+            | ErrorCode::TsigKeyNotFound
+            | ErrorCode::TsigPolicyNotFound => 404,
+            ErrorCode::ZoneConflict
+            | ErrorCode::RecordConflict
+            | ErrorCode::TsigKeyConflict
+            | ErrorCode::TsigKeyInUse => 409,
             ErrorCode::UnsupportedMediaType => 415,
             ErrorCode::Internal => 500,
         }
@@ -162,6 +179,39 @@ impl ServiceError {
 
     pub fn token_not_found() -> Self {
         Self::new(ErrorCode::TokenNotFound, "Token not found")
+    }
+
+    pub fn tsig_key_not_found(name: &str) -> Self {
+        Self::new(
+            ErrorCode::TsigKeyNotFound,
+            format!("TSIG key with name '{}' not found", name),
+        )
+    }
+
+    pub fn tsig_key_conflict(name: &str) -> Self {
+        Self::new(
+            ErrorCode::TsigKeyConflict,
+            format!("TSIG key with name '{}' already exists", name),
+        )
+    }
+
+    pub fn tsig_key_in_use(name: &str, policy_count: u64) -> Self {
+        Self::new(
+            ErrorCode::TsigKeyInUse,
+            format!(
+                "TSIG key '{}' is referenced by {} TSIG polic{}",
+                name,
+                policy_count,
+                if policy_count == 1 { "y" } else { "ies" }
+            ),
+        )
+    }
+
+    pub fn tsig_policy_not_found(id: i32) -> Self {
+        Self::new(
+            ErrorCode::TsigPolicyNotFound,
+            format!("TSIG policy with id '{}' not found", id),
+        )
     }
 
     pub fn snapshot_not_found(zone_name: &str, serial: i32) -> Self {

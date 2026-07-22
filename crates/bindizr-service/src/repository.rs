@@ -1,15 +1,19 @@
-use super::error::ServiceError;
+use super::error::{ErrorCode, ServiceError};
 pub use crate::database::repository::RepositoryTx;
 use crate::{
     database::{
+        error::DatabaseError,
         get_api_token_repository, get_catalog_zone_state_repository, get_record_repository,
-        get_zone_change_repository, get_zone_repository, get_zone_snapshot_repository,
+        get_tsig_key_repository, get_zone_change_repository, get_zone_repository,
+        get_zone_snapshot_repository, get_zone_tsig_policy_repository,
         model::{
             api_token::ApiToken,
             record::{Record, RecordType, RecordWithZone},
+            tsig_key::TsigKey,
             zone::Zone,
             zone_change::ZoneChange,
             zone_snapshot::ZoneSnapshot,
+            zone_tsig_policy::ZoneTsigPolicy,
         },
         repository as db_repository,
         repository::{RecordFilter, ZoneFilter},
@@ -18,6 +22,17 @@ use crate::{
 };
 
 pub(super) struct RepositoryService;
+
+/// Map a zone insert/update failure: the UNIQUE(name) backstop catches
+/// check-then-act races on the zone name and becomes the same conflict error
+/// the service-level pre-check produces; anything else stays internal.
+fn zone_name_race_error(name: &str, action: &str, e: DatabaseError) -> ServiceError {
+    if e.is_unique_violation() {
+        ServiceError::zone_conflict(format!("Zone with name '{}' already exists", name))
+    } else {
+        ServiceError::internal(format!("failed to {} zone: {}", action, e))
+    }
+}
 
 #[allow(dead_code)]
 impl RepositoryService {
@@ -129,17 +144,19 @@ impl RepositoryService {
     }
 
     pub(super) async fn update_zone(zone: Zone) -> Result<Zone, ServiceError> {
+        let name = zone.name.clone();
         get_zone_repository()
             .update(zone)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to update zone: {}", e)))
+            .map_err(|e| zone_name_race_error(&name, "update", e))
     }
 
     pub(super) async fn create_zone(zone: Zone) -> Result<Zone, ServiceError> {
+        let name = zone.name.clone();
         get_zone_repository()
             .create(zone)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to create zone: {}", e)))
+            .map_err(|e| zone_name_race_error(&name, "create", e))
     }
 
     pub(super) async fn delete_zone(zone_id: i32) -> Result<(), ServiceError> {
@@ -422,20 +439,22 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         zone: Zone,
     ) -> Result<Zone, ServiceError> {
+        let name = zone.name.clone();
         get_zone_repository()
             .create_tx(tx, zone)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to create zone: {}", e)))
+            .map_err(|e| zone_name_race_error(&name, "create", e))
     }
 
     pub(super) async fn update_zone_tx(
         tx: &mut RepositoryTx<'_>,
         zone: Zone,
     ) -> Result<Zone, ServiceError> {
+        let name = zone.name.clone();
         get_zone_repository()
             .update_tx(tx, zone)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to update zone: {}", e)))
+            .map_err(|e| zone_name_race_error(&name, "update", e))
     }
 
     /// Bump only the zone serial, leaving its other columns untouched.
@@ -520,6 +539,120 @@ impl RepositoryService {
             .get_changes_between_serials_tx(tx, zone_id, from_serial, to_serial)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
+    }
+
+    pub(super) async fn create_tsig_key(key: TsigKey) -> Result<TsigKey, ServiceError> {
+        let name = key.name.clone();
+        get_tsig_key_repository().create(key).await.map_err(|e| {
+            // A concurrent create can slip past the service-level name check;
+            // surface the UNIQUE(name) backstop as the same conflict error.
+            if e.is_unique_violation() {
+                ServiceError::tsig_key_conflict(&name)
+            } else {
+                ServiceError::internal(format!("failed to create TSIG key: {}", e))
+            }
+        })
+    }
+
+    pub(super) async fn get_tsig_key_by_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
+        get_tsig_key_repository()
+            .get_by_name(name)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
+    }
+
+    pub(super) async fn get_tsig_key_by_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+    ) -> Result<Option<TsigKey>, ServiceError> {
+        get_tsig_key_repository()
+            .get_by_name_tx(tx, name)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
+    }
+
+    pub(super) async fn get_all_tsig_keys() -> Result<Vec<TsigKey>, ServiceError> {
+        get_tsig_key_repository()
+            .get_all()
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG keys: {}", e)))
+    }
+
+    pub(super) async fn delete_tsig_key(id: i32) -> Result<(), ServiceError> {
+        get_tsig_key_repository().delete(id).await.map_err(|e| {
+            // A policy created between the service-level count and this delete
+            // trips the FK; surface it as the in-use conflict.
+            if e.is_foreign_key_violation() {
+                ServiceError::new(
+                    ErrorCode::TsigKeyInUse,
+                    "TSIG key is still referenced by zone TSIG policies",
+                )
+            } else {
+                ServiceError::internal(format!("failed to delete TSIG key: {}", e))
+            }
+        })
+    }
+
+    pub(super) async fn create_zone_tsig_policy(
+        policy: ZoneTsigPolicy,
+    ) -> Result<ZoneTsigPolicy, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .create(policy)
+            .await
+            .map_err(|e| {
+                // The zone or key can be deleted between the service-level
+                // existence checks and this insert; the FK reports it.
+                if e.is_foreign_key_violation() {
+                    ServiceError::new(ErrorCode::ZoneNotFound, "Zone or TSIG key no longer exists")
+                } else {
+                    ServiceError::internal(format!("failed to create TSIG policy: {}", e))
+                }
+            })
+    }
+
+    pub(super) async fn get_zone_tsig_policy_by_id(
+        id: i32,
+    ) -> Result<Option<ZoneTsigPolicy>, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .get_by_id(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG policy: {}", e)))
+    }
+
+    pub(super) async fn get_zone_tsig_policies_by_zone_id(
+        zone_id: i32,
+    ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .get_by_zone_id(zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
+    }
+
+    pub(super) async fn get_zone_tsig_policies_by_zone_and_key_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        tsig_key_id: i32,
+    ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .get_by_zone_and_key_tx(tx, zone_id, tsig_key_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
+    }
+
+    pub(super) async fn count_zone_tsig_policies_by_key_id(
+        tsig_key_id: i32,
+    ) -> Result<u64, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .count_by_key_id(tsig_key_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count TSIG policies: {}", e)))
+    }
+
+    pub(super) async fn delete_zone_tsig_policy(id: i32) -> Result<(), ServiceError> {
+        get_zone_tsig_policy_repository()
+            .delete(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete TSIG policy: {}", e)))
     }
 
     pub(super) async fn create_api_token(token: ApiToken) -> Result<ApiToken, ServiceError> {

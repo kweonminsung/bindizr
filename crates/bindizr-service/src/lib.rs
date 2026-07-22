@@ -9,6 +9,7 @@ pub mod record;
 mod repository;
 pub mod serial;
 pub mod token;
+pub mod tsig_key;
 pub mod types;
 pub(crate) mod validation;
 pub mod zone;

@@ -13,7 +13,9 @@ use clap::{Parser, Subcommand};
 
 use crate::{
     api,
-    cli::commands::{record::RecordCommand, token::TokenCommand, zone::ZoneCommand},
+    cli::commands::{
+        record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+    },
     socket,
 };
 
@@ -51,6 +53,11 @@ pub(crate) enum Command {
     Token {
         #[command(subcommand)]
         subcommand: TokenCommand,
+    },
+    /// Manage TSIG keys for nsupdate authentication
+    TsigKey {
+        #[command(subcommand)]
+        subcommand: TsigKeyCommand,
     },
     /// Manage zones
     Zone {
@@ -107,6 +114,7 @@ pub async fn execute() {
             .map_err(error::CliError::from),
         Command::Status => commands::status::handle_command().await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
+        Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
         Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
     } {

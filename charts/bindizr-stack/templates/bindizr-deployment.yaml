@@ -69,14 +69,8 @@ spec:
               value: {{ .Values.bindizr.dns.notifyRetries | quote }}
             - name: BINDIZR_NOTIFY_TIMEOUT_SECS
               value: {{ .Values.bindizr.dns.notifyTimeoutSecs | quote }}
-            - name: BINDIZR_NSUPDATE_TSIG_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "bindizr-stack.tsigSecretName" . }}
-                  key: {{ .Values.tsig.keyName }}
-                  optional: true
-            - name: BINDIZR_NSUPDATE_TSIG_KEY_NAME
-              value: {{ .Values.tsig.keyName | quote }}
+            - name: BINDIZR_NSUPDATE_ALLOW_UNSIGNED
+              value: {{ .Values.bindizr.dns.nsupdateAllowUnsigned | quote }}
             - name: BINDIZR_LOG_LEVEL
               value: {{ .Values.bindizr.logging.level | quote }}
           {{- with .Values.bindizr.securityContext }}

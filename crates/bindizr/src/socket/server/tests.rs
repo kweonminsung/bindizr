@@ -1,5 +1,22 @@
 use super::*;
 
+#[test]
+fn parse_params_rejects_wrongly_typed_fields() {
+    use crate::api::types::CreateTsigKeyRequest;
+
+    // Absent/null optional fields deserialize as their defaults...
+    let ok: CreateTsigKeyRequest =
+        parse_params(&json!({ "name": "k", "algorithm": null, "secret": null })).unwrap();
+    assert!(!ok.global);
+
+    // ...but a present field of the wrong type is rejected instead of being
+    // silently dropped (which would e.g. generate a secret instead of
+    // importing one).
+    let err =
+        parse_params::<CreateTsigKeyRequest>(&json!({ "name": "k", "secret": 123 })).unwrap_err();
+    assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
+}
+
 #[tokio::test]
 async fn prepare_socket_path_creates_parent_directory() {
     let dir = tempfile::tempdir().unwrap();

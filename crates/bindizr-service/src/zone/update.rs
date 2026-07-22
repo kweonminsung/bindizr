@@ -4,7 +4,7 @@ use chrono::Utc;
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
-    error::ServiceError,
+    error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType},
@@ -19,6 +19,13 @@ use crate::{
         validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
     },
 };
+
+/// Outcome of the transactional part of a zone update.
+struct AppliedZoneUpdate {
+    zone: Zone,
+    previous_name: String,
+    new_serial: i32,
+}
 
 impl ZoneService {
     /// Persist a zone within the caller's transaction.
@@ -40,47 +47,7 @@ impl ZoneService {
         update_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-
-        let existing_zone = match RepositoryService::get_zone_by_name(&lookup_name).await {
-            Ok(Some(zone)) => zone,
-            Ok(None) => {
-                log_error!("Zone with name '{}' not found", zone_name);
-                return Err(ServiceError::zone_not_found(zone_name));
-            }
-            Err(e) => {
-                log_error!("Failed to fetch zone: {}", e);
-                return Err(ServiceError::internal("Failed to update zone".to_string()));
-            }
-        };
-        let zone_id = existing_zone.id;
         let validated = validate_create_zone_request(update_zone_request)?;
-        // Preserve the zone's current SOA timers when the request omits them.
-        let timers = resolve_soa_timers(
-            update_zone_request,
-            ResolvedSoaTimers {
-                refresh: existing_zone.refresh,
-                retry: existing_zone.retry,
-                expire: existing_zone.expire,
-                minimum_ttl: existing_zone.minimum_ttl,
-            },
-        )?;
-
-        match RepositoryService::get_zone_by_name(&validated.name).await {
-            Ok(Some(zone)) => {
-                if zone.id != zone_id {
-                    log_error!("Zone with name {} already exists", validated.name);
-                    return Err(ServiceError::zone_conflict(format!(
-                        "Zone with name '{}' already exists",
-                        validated.name
-                    )));
-                }
-            }
-            Ok(None) => {}
-            Err(e) => {
-                log_error!("Failed to check existing zone: {}", e);
-                return Err(ServiceError::internal("Failed to update zone".to_string()));
-            }
-        };
 
         // The serial is a system-managed version counter (snapshot/rollback key);
         // after creation it can only advance through the generator.
@@ -89,11 +56,57 @@ impl ZoneService {
                 "serial is managed automatically and cannot be set on update",
             ));
         }
-        let new_serial = generate_serial(Some(existing_zone.serial));
 
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
 
-        let apply_result = async {
+        let apply_result: Result<AppliedZoneUpdate, ServiceError> = async {
+            // Lock the zone row so the serial computed below stays ahead of
+            // concurrent record mutations and nsupdate on the same zone.
+            let existing_zone = RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_name)
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to fetch zone: {}", e);
+                    ServiceError::internal("Failed to update zone".to_string())
+                })?
+                .ok_or_else(|| {
+                    log_error!("Zone with name '{}' not found", zone_name);
+                    ServiceError::zone_not_found(zone_name)
+                })?;
+            let zone_id = existing_zone.id;
+
+            // Preserve the zone's current SOA timers when the request omits them.
+            let timers = resolve_soa_timers(
+                update_zone_request,
+                ResolvedSoaTimers {
+                    refresh: existing_zone.refresh,
+                    retry: existing_zone.retry,
+                    expire: existing_zone.expire,
+                    minimum_ttl: existing_zone.minimum_ttl,
+                },
+            )?;
+
+            // Friendly rename-conflict check (unlocked read to avoid ordering
+            // deadlocks); renames that race past it hit the UNIQUE(name)
+            // backstop, which maps to the same conflict error.
+            if validated.name != existing_zone.name {
+                match RepositoryService::get_zone_by_name(&validated.name).await {
+                    Ok(Some(zone)) if zone.id != zone_id => {
+                        log_error!("Zone with name {} already exists", validated.name);
+                        return Err(ServiceError::zone_conflict(format!(
+                            "Zone with name '{}' already exists",
+                            validated.name
+                        )));
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        log_error!("Failed to check existing zone: {}", e);
+                        return Err(ServiceError::internal("Failed to update zone".to_string()));
+                    }
+                }
+            }
+
+            let new_serial = generate_serial(Some(existing_zone.serial));
+
             let updated_zone = RepositoryService::update_zone_tx(
                 &mut tx,
                 Zone {
@@ -113,7 +126,13 @@ impl ZoneService {
             .await
             .map_err(|e| {
                 log_error!("Failed to update zone: {}", e);
-                ServiceError::internal("Failed to update zone".to_string())
+                // Keep the conflict mapped from the UNIQUE(name) backstop; it
+                // covers renames that raced past the pre-check above.
+                if e.code == ErrorCode::ZoneConflict {
+                    e
+                } else {
+                    ServiceError::internal("Failed to update zone".to_string())
+                }
             })?;
 
             // A rename / primary_ns change must keep an apex NS matching the new
@@ -203,12 +222,19 @@ impl ZoneService {
 
             save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
 
-            Ok::<Zone, ServiceError>(updated_zone)
+            Ok(AppliedZoneUpdate {
+                zone: updated_zone,
+                previous_name: existing_zone.name,
+                new_serial,
+            })
         }
         .await;
 
-        let updated_zone =
-            RepositoryService::finish_tx(tx, apply_result, "Failed to update zone").await?;
+        let AppliedZoneUpdate {
+            zone: updated_zone,
+            previous_name,
+            new_serial,
+        } = RepositoryService::finish_tx(tx, apply_result, "Failed to update zone").await?;
 
         log_info!(
             "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",
@@ -227,7 +253,7 @@ impl ZoneService {
         }
 
         // Re-send catalog NOTIFY when the zone was renamed
-        if existing_zone.name != updated_zone.name
+        if previous_name != updated_zone.name
             && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
         {
             log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);

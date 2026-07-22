@@ -5,12 +5,14 @@ use utoipa::{
 
 use super::types::{
     BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
-    CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, ImportMode,
+    CreateTsigKeyRequest, CreateZoneRequest, CreateZoneTsigPolicyRequest, ErrorResponse,
+    GetRecordResponse, GetTsigKeyResponse, GetZoneResponse, GetZoneTsigPolicyResponse, ImportMode,
     ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse,
     NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse, RecordValueRequest,
     RollbackSummary, RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse,
-    SnapshotDetailResponse, SnapshotListResponse, SnapshotRecordResponse, UpdateRecordRequest,
-    ZoneDetailResponse, ZoneListResponse, ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
+    SnapshotDetailResponse, SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse,
+    TsigKeyResponse, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+    ZoneSnapshotResponse, ZoneStatusResponse, ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
 };
 
 /// OpenAPI document for the HTTP API (debug builds only).
@@ -33,17 +35,28 @@ use super::types::{
         super::zone::get_zone_snapshot,
         super::zone::rollback_zone,
         super::zone::get_zone_status,
-        super::notify::notify_zones
+        super::notify::notify_zones,
+        super::tsig_key::get_tsig_keys,
+        super::tsig_key::create_tsig_key,
+        super::tsig_key::get_tsig_key,
+        super::tsig_key::delete_tsig_key,
+        super::tsig_key::get_zone_tsig_policies,
+        super::tsig_key::create_zone_tsig_policy,
+        super::tsig_key::delete_zone_tsig_policy
     ),
     components(schemas(
         BulkRecordItem,
         BulkRecordsResponse,
         CreateBulkRecordsRequest,
         CreateRecordRequest,
+        CreateTsigKeyRequest,
         CreateZoneRequest,
+        CreateZoneTsigPolicyRequest,
         ErrorResponse,
         GetRecordResponse,
+        GetTsigKeyResponse,
         GetZoneResponse,
+        GetZoneTsigPolicyResponse,
         ImportMode,
         ImportSummary,
         ImportZoneFileRequest,
@@ -61,18 +74,23 @@ use super::types::{
         SnapshotDetailResponse,
         SnapshotListResponse,
         SnapshotRecordResponse,
+        TsigKeyListResponse,
+        TsigKeyResponse,
         UpdateRecordRequest,
         ZoneDetailResponse,
         ZoneListResponse,
         ZoneResponse,
         ZoneSnapshotResponse,
-        ZoneStatusResponse
+        ZoneStatusResponse,
+        ZoneTsigPolicyListResponse,
+        ZoneTsigPolicyResponse
     )),
     modifiers(&SecurityAddon),
     tags(
         (name = "Zone", description = "Manage DNS zones including creation, update, deletion, and retrieval."),
         (name = "Record", description = "Manage DNS records including creation, update, deletion, and retrieval."),
-        (name = "Notify", description = "Send DNS NOTIFY messages to secondary servers.")
+        (name = "Notify", description = "Send DNS NOTIFY messages to secondary servers."),
+        (name = "TSIG", description = "Manage TSIG keys and per-zone TSIG policies for nsupdate authentication.")
     ),
     info(
         title = "Bindizr HTTP API",

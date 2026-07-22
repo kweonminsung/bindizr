@@ -3,7 +3,7 @@ use chrono::Utc;
 
 use super::ZoneService;
 use crate::{
-    error::ServiceError,
+    error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType},
@@ -83,7 +83,13 @@ impl ZoneService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone: {}", e);
-                ServiceError::internal("Failed to create zone".to_string())
+                // Keep the conflict mapped from the UNIQUE(name) backstop; it
+                // covers creates that raced past the pre-check above.
+                if e.code == ErrorCode::ZoneConflict {
+                    e
+                } else {
+                    ServiceError::internal("Failed to create zone".to_string())
+                }
             })?;
 
             // Keep zones.primary_ns aligned with at least one apex NS record in records table.

@@ -119,11 +119,10 @@ pub struct DnsConfig {
     pub notify_retries: u32,
     #[serde(default = "default_notify_timeout_secs")]
     pub notify_timeout_secs: u64,
-    /// Both name and key must be non-empty to enable nsupdate TSIG authentication.
+    /// Accept unsigned nsupdate requests. Not recommended in production;
+    /// signed requests are always verified.
     #[serde(default)]
-    pub nsupdate_tsig_key_name: String,
-    #[serde(default)]
-    pub nsupdate_tsig_key: String,
+    pub nsupdate_allow_unsigned: bool,
 }
 
 fn default_notify_after_update() -> bool {
@@ -319,13 +318,9 @@ fn apply_env_overrides_from(
     if let Some(value) = get_env("BINDIZR_SECONDARY_ADDRS") {
         config.dns.secondary_addrs = value;
     }
-    if let Some(value) = get_env("BINDIZR_NSUPDATE_TSIG_KEY") {
-        config.dns.nsupdate_tsig_key = value;
-    } else if let Some(value) = get_env("TSIG_SECRET") {
-        config.dns.nsupdate_tsig_key = value;
-    }
-    if let Some(value) = get_env("BINDIZR_NSUPDATE_TSIG_KEY_NAME") {
-        config.dns.nsupdate_tsig_key_name = value;
+    if let Some(value) = get_env("BINDIZR_NSUPDATE_ALLOW_UNSIGNED") {
+        config.dns.nsupdate_allow_unsigned =
+            parse_env_value("BINDIZR_NSUPDATE_ALLOW_UNSIGNED", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_NOTIFY_AFTER_UPDATE") {
         config.dns.notify_after_update = parse_env_value("BINDIZR_NOTIFY_AFTER_UPDATE", &value)?;

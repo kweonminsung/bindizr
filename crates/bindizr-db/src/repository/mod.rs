@@ -12,9 +12,11 @@ use super::model::{
     api_token::ApiToken,
     catalog_zone_state::CatalogZoneState,
     record::{Record, RecordType, RecordWithZone},
+    tsig_key::TsigKey,
     zone::Zone,
     zone_change::ZoneChange,
     zone_snapshot::ZoneSnapshot,
+    zone_tsig_policy::ZoneTsigPolicy,
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
 
@@ -154,6 +156,41 @@ pub trait ZoneRepository: Send + Sync {
     ) -> Result<(), DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
+}
+
+/// Persistence operations for TSIG keys.
+#[allow(dead_code)]
+#[async_trait]
+pub trait TsigKeyRepository: Send + Sync {
+    async fn create(&self, key: TsigKey) -> Result<TsigKey, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<TsigKey>, DatabaseError>;
+    async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError>;
+    async fn get_by_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+    ) -> Result<Option<TsigKey>, DatabaseError>;
+    async fn get_all(&self) -> Result<Vec<TsigKey>, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
+/// Persistence operations for zone TSIG policies.
+#[allow(dead_code)]
+#[async_trait]
+pub trait ZoneTsigPolicyRepository: Send + Sync {
+    async fn create(&self, policy: ZoneTsigPolicy) -> Result<ZoneTsigPolicy, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError>;
+    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
+    /// Policies granting `tsig_key_id` rights in `zone_id`, for nsupdate
+    /// authorization inside the update transaction.
+    async fn get_by_zone_and_key_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        tsig_key_id: i32,
+    ) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
+    async fn count_by_key_id(&self, tsig_key_id: i32) -> Result<u64, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 /// Persistence operations for records.
@@ -379,6 +416,38 @@ impl RepositoryFactory {
             DatabasePool::SQLite(sqlite_pool) => {
                 Box::new(sqlite::SqliteRecordRepository::new(sqlite_pool.clone()))
             }
+        }
+    }
+
+    /// Create a TSIG key repository for the given pool's backend.
+    pub fn create_tsig_key_repository(pool: &DatabasePool) -> Box<dyn TsigKeyRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlTsigKeyRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresTsigKeyRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteTsigKeyRepository::new(sqlite_pool.clone()))
+            }
+        }
+    }
+
+    /// Create a zone TSIG policy repository for the given pool's backend.
+    pub fn create_zone_tsig_policy_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn ZoneTsigPolicyRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => Box::new(mysql::MySqlZoneTsigPolicyRepository::new(
+                mysql_pool.clone(),
+            )),
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresZoneTsigPolicyRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteZoneTsigPolicyRepository::new(sqlite_pool.clone()),
+            ),
         }
     }
 

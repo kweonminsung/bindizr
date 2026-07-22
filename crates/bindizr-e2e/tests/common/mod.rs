@@ -526,7 +526,7 @@ notify_after_update = false
 notify_on_startup = false
 notify_retries = 0
 notify_timeout_secs = 1
-nsupdate_tsig_key = ""
+nsupdate_allow_unsigned = false
 
 [logging]
 log_level = "error"

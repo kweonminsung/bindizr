@@ -9,7 +9,7 @@ use utoipa::OpenApi;
 
 #[cfg(debug_assertions)]
 use super::openapi::ApiDoc;
-use super::{notify::NotifyApi, record::RecordApi, zone::ZoneApi};
+use super::{notify::NotifyApi, record::RecordApi, tsig_key::TsigKeyApi, zone::ZoneApi};
 
 /// HTTP API router assembling all route groups.
 pub(crate) struct ApiRouter;
@@ -21,6 +21,7 @@ impl ApiRouter {
             .merge(ZoneApi::routes().await)
             .merge(RecordApi::routes().await)
             .merge(NotifyApi::routes().await)
+            .merge(TsigKeyApi::routes().await)
             .route("/", routing::get(ApiRouter::get_home));
 
         if config::get_bindizr_config().api.require_authentication {

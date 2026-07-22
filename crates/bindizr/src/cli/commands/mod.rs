@@ -2,6 +2,7 @@ pub(super) mod record;
 pub(super) mod start;
 pub(super) mod status;
 pub(super) mod token;
+pub(super) mod tsig_key;
 pub(super) mod zone;
 
 /// Read command input from a file path, or from stdin when the path is `-`.
