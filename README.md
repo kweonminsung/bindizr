@@ -334,9 +334,10 @@ send
 EOF
 ```
 
-A zone with no policies refuses nsupdate entirely. Setting
-`dns.nsupdate_allow_unsigned = true` accepts unsigned requests for such zones;
-this is not recommended in production (signed requests are always verified).
+A zone with no policies refuses nsupdate, except from global keys, which may
+update any zone. Setting `dns.nsupdate_allow_unsigned = true` accepts unsigned
+requests for every zone, regardless of its policies; this is not recommended
+in production (signed requests are always verified).
 
 ### TSIG Key Management
 
