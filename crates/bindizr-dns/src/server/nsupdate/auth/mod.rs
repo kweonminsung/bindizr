@@ -1,61 +1,51 @@
-use std::{
-    net::SocketAddr,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha256;
+use sha2::{Sha256, Sha384, Sha512};
 
 use super::{
-    parser::{TsigRecord, UpdateRequest},
+    parser::TsigRecord,
     update::{TsigErrorResponse, UpdateError},
 };
 use crate::{
-    config,
+    model::tsig_key::{TsigAlgorithm, TsigKey},
     protocol::{TSIG_ERROR_BADKEY, TSIG_ERROR_BADSIG, TSIG_ERROR_BADTIME},
 };
 
-type HmacSha256 = Hmac<Sha256>;
+/// NOTAUTH/BADKEY error for a TSIG record naming a key bindizr does not hold.
+pub(super) fn unknown_key_error(tsig: &TsigRecord) -> UpdateError {
+    tsig_notauth(
+        format!("unknown TSIG key: {}", tsig.name),
+        tsig,
+        TSIG_ERROR_BADKEY,
+        tsig.time_signed,
+        Vec::new(),
+    )
+}
 
+/// Verify a TSIG-signed nsupdate request against the key it names (RFC 8945).
+/// The key was already resolved from the TSIG record's key name; this checks
+/// the algorithm, the MAC over the unsigned message, and the signing time.
 pub(super) fn validate_tsig(
-    request: &UpdateRequest,
+    tsig: &TsigRecord,
     query_data: &[u8],
-    client_addr: SocketAddr,
+    key: &TsigKey,
 ) -> Result<(), UpdateError> {
-    let dns_config = &config::get_bindizr_config().dns;
-    let expected_key_name = dns_config.nsupdate_tsig_key_name.trim().to_string();
-    let secret = dns_config.nsupdate_tsig_key.trim().to_string();
-
-    if expected_key_name.is_empty() || secret.is_empty() {
-        return Ok(());
-    }
-
-    let tsig = request
-        .tsig
-        .as_ref()
-        .ok_or_else(|| UpdateError::Refused(format!("missing TSIG record from {}", client_addr)))?;
-
-    let expected_key_canonical = encode_canonical_name(&expected_key_name)?;
-    if tsig.name_canonical != expected_key_canonical {
-        return Err(tsig_notauth(
-            format!("unexpected TSIG key name: {}", tsig.name),
-            tsig,
-            TSIG_ERROR_BADKEY,
-            tsig.time_signed,
-            Vec::new(),
-        ));
-    }
-
-    let algorithm = tsig.algorithm.trim_end_matches('.').to_ascii_lowercase();
-    if algorithm != "hmac-sha256" && algorithm != "hmac-sha256.sig-alg.reg.int" {
-        return Err(tsig_notauth(
-            format!("unsupported TSIG algorithm: {}", tsig.algorithm),
-            tsig,
-            TSIG_ERROR_BADKEY,
-            tsig.time_signed,
-            Vec::new(),
-        ));
+    match tsig.algorithm.parse::<TsigAlgorithm>() {
+        Ok(algorithm) if algorithm == key.algorithm => {}
+        _ => {
+            return Err(tsig_notauth(
+                format!(
+                    "TSIG algorithm '{}' does not match key '{}' ({})",
+                    tsig.algorithm, key.name, key.algorithm
+                ),
+                tsig,
+                TSIG_ERROR_BADKEY,
+                tsig.time_signed,
+                Vec::new(),
+            ));
+        }
     }
 
     if query_data.len() < 12 {
@@ -73,20 +63,18 @@ pub(super) fn validate_tsig(
         ));
     }
 
-    let key_bytes = decode_tsig_secret(&secret)?;
+    let key_bytes = decode_tsig_secret(&key.secret)?;
     let signed_data = build_tsig_signed_data(query_data, tsig)?;
 
-    let mut mac = HmacSha256::new_from_slice(&key_bytes)
-        .map_err(|e| UpdateError::Internal(format!("invalid TSIG key: {}", e)))?;
-    mac.update(&signed_data);
-    mac.verify_slice(&tsig.mac).map_err(|_| {
-        tsig_notauth(
+    verify_mac(key.algorithm, &key_bytes, &signed_data, &tsig.mac).map_err(|e| match e {
+        MacError::InvalidKey(msg) => UpdateError::Internal(msg),
+        MacError::Mismatch => tsig_notauth(
             "TSIG MAC verification failed".to_string(),
             tsig,
             TSIG_ERROR_BADSIG,
             tsig.time_signed,
             Vec::new(),
-        )
+        ),
     })?;
 
     let now = SystemTime::now()
@@ -105,6 +93,34 @@ pub(super) fn validate_tsig(
     }
 
     Ok(())
+}
+
+enum MacError {
+    InvalidKey(String),
+    Mismatch,
+}
+
+fn verify_mac(
+    algorithm: TsigAlgorithm,
+    key_bytes: &[u8],
+    signed_data: &[u8],
+    expected_mac: &[u8],
+) -> Result<(), MacError> {
+    macro_rules! verify_with {
+        ($digest:ty) => {{
+            let mut mac = Hmac::<$digest>::new_from_slice(key_bytes)
+                .map_err(|e| MacError::InvalidKey(format!("invalid TSIG key: {}", e)))?;
+            mac.update(signed_data);
+            mac.verify_slice(expected_mac)
+                .map_err(|_| MacError::Mismatch)
+        }};
+    }
+
+    match algorithm {
+        TsigAlgorithm::HmacSha256 => verify_with!(Sha256),
+        TsigAlgorithm::HmacSha384 => verify_with!(Sha384),
+        TsigAlgorithm::HmacSha512 => verify_with!(Sha512),
+    }
 }
 
 fn tsig_notauth(
@@ -143,23 +159,16 @@ fn decode_tsig_secret(raw: &str) -> Result<Vec<u8>, UpdateError> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(raw)
         .map_err(|e| {
-            UpdateError::Internal(format!("dns.nsupdate_tsig_key must be valid base64: {}", e))
+            UpdateError::Internal(format!("stored TSIG secret is not valid base64: {}", e))
         })?;
 
     if bytes.is_empty() {
         return Err(UpdateError::Internal(
-            "dns.nsupdate_tsig_key must not decode to an empty key".to_string(),
+            "stored TSIG secret decodes to an empty key".to_string(),
         ));
     }
 
     Ok(bytes)
-}
-
-fn encode_canonical_name(name: &str) -> Result<Vec<u8>, UpdateError> {
-    let mut out = Vec::new();
-    crate::wire::encode_domain_name(&name.to_ascii_lowercase(), &mut out)
-        .map_err(|e| UpdateError::Internal(e.to_string()))?;
-    Ok(out)
 }
 
 fn build_tsig_signed_data(query_data: &[u8], tsig: &TsigRecord) -> Result<Vec<u8>, UpdateError> {

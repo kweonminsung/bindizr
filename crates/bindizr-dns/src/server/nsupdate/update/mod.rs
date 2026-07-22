@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use bindizr_core::{config, dns::name::to_fqdn};
 use chrono::Utc;
 
@@ -17,7 +15,11 @@ use crate::{
         RepositoryTx,
         record::{RecordService, validate_add_constraints_tx, validate_delete_constraints},
         serial::generate_serial,
-        zone::{ZoneService, snapshot::save_zone_snapshot_tx},
+        zone::{
+            ZoneService,
+            snapshot::save_zone_snapshot_tx,
+            tsig_policy::{self, ZoneTsigPolicyService},
+        },
     },
     txt,
 };
@@ -55,10 +57,7 @@ pub(super) enum UpdateResult {
 pub(super) async fn apply_update(
     request: UpdateRequest,
     query_data: &[u8],
-    client_addr: SocketAddr,
 ) -> Result<UpdateResult, UpdateError> {
-    super::auth::validate_tsig(&request, query_data, client_addr)?;
-
     let zone_name = trim_dot(&request.zone_name);
     if zone_name.is_empty() {
         return Err(UpdateError::NotZone(
@@ -75,6 +74,8 @@ pub(super) async fn apply_update(
             .await
             .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
             .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
+
+        authorize_request(&mut tx, &zone, &request, query_data).await?;
 
         super::prerequisite::evaluate_prerequisites_tx(
             &mut tx,
@@ -132,6 +133,77 @@ pub(super) async fn apply_update(
     }
 
     Ok(UpdateResult::Applied { changed })
+}
+
+/// Authenticate the request's TSIG signature, then authorize it: global keys
+/// may update anything, other keys need a zone policy matching every update
+/// RR. Unsigned requests are accepted only when `dns.nsupdate_allow_unsigned`
+/// is set (not recommended in production); signed requests are always
+/// verified.
+async fn authorize_request(
+    tx: &mut RepositoryTx<'_>,
+    zone: &Zone,
+    request: &UpdateRequest,
+    query_data: &[u8],
+) -> Result<(), UpdateError> {
+    let tsig = match &request.tsig {
+        Some(tsig) => tsig,
+        None => {
+            if config::get_bindizr_config().dns.nsupdate_allow_unsigned {
+                return Ok(());
+            }
+            return Err(UpdateError::Refused(
+                "unsigned NSUPDATE refused: no TSIG record present".to_string(),
+            ));
+        }
+    };
+
+    let key = tsig_policy::find_tsig_key_by_name_tx(tx, &tsig.name)
+        .await
+        .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?
+        .ok_or_else(|| super::auth::unknown_key_error(tsig))?;
+
+    super::auth::validate_tsig(tsig, query_data, &key)?;
+
+    if key.is_global {
+        return Ok(());
+    }
+
+    let policies = ZoneTsigPolicyService::get_by_zone_and_key_tx(tx, zone.id, key.id)
+        .await
+        .map_err(|e| UpdateError::Internal(format!("failed to load TSIG policies: {}", e)))?;
+
+    if policies.is_empty() {
+        return Err(UpdateError::Refused(format!(
+            "TSIG key '{}' is not authorized for zone '{}'",
+            key.name, zone.name
+        )));
+    }
+
+    for update in &request.updates {
+        let owner_name = normalize_owner_name(&update.name, &zone.name)?;
+        let relative_name = absolute_to_relative(&owner_name, &zone.name)?;
+        let record_type = if update.rr_type == TYPE_ANY {
+            None
+        } else {
+            Some(rr_type_to_record_type(update.rr_type)?)
+        };
+
+        if !tsig_policy::authorize_update(&policies, &relative_name, record_type.as_ref()) {
+            return Err(UpdateError::Refused(format!(
+                "TSIG key '{}' is not authorized to update '{}' ({}) in zone '{}'",
+                key.name,
+                relative_name,
+                record_type
+                    .as_ref()
+                    .map(|record_type| record_type.as_str())
+                    .unwrap_or("ANY"),
+                zone.name
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 async fn apply_single_update(

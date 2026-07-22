@@ -26,8 +26,7 @@ zone_cache = true
 notify_on_startup = false
 notify_retries = 3
 notify_timeout_secs = 3
-nsupdate_tsig_key_name = "nsupdate-key"
-nsupdate_tsig_key = ""
+nsupdate_allow_unsigned = false
 
 [logging]
 log_level = "info"

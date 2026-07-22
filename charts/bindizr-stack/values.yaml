@@ -23,6 +23,9 @@ bindizr:
     notifyOnStartup: false
     notifyRetries: 3
     notifyTimeoutSecs: 3
+    # Accept unsigned nsupdate requests (not recommended in production). TSIG
+    # keys and policies are managed at runtime via the bindizr CLI or HTTP API.
+    nsupdateAllowUnsigned: false
     service:
       port: 53
 
@@ -101,6 +104,9 @@ bind9:
   tolerations: []
   affinity: {}
 
+# Declares a `key` block in the bundled BIND9's named.conf. bindizr's own
+# nsupdate TSIG keys and per-zone policies are managed at runtime via the
+# bindizr CLI or HTTP API, not through these values.
 tsig:
   existingSecret: ""
   keyName: nsupdate-key

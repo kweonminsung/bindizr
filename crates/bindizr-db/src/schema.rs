@@ -82,6 +82,30 @@ pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         );
         "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS tsig_keys (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            algorithm VARCHAR(32) NOT NULL,
+            secret VARCHAR(255) NOT NULL,
+            is_global BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_tsig_policies (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            zone_id INT NOT NULL,
+            tsig_key_id INT NOT NULL,
+            record_name_pattern VARCHAR(255) NOT NULL,
+            record_types VARCHAR(255) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id),
+            INDEX idx_zone_tsig_policies_zone (zone_id),
+            INDEX idx_zone_tsig_policies_key (tsig_key_id)
+        );
+        "#,
     ]
 }
 
@@ -171,6 +195,34 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS tsig_keys (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            algorithm VARCHAR(32) NOT NULL,
+            secret VARCHAR(255) NOT NULL,
+            is_global BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_tsig_policies (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            tsig_key_id INTEGER NOT NULL,
+            record_name_pattern VARCHAR(255) NOT NULL,
+            record_types VARCHAR(255) NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id)
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_zone ON zone_tsig_policies(zone_id);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_key ON zone_tsig_policies(tsig_key_id);
+        "#,
     ]
 }
 
@@ -259,6 +311,34 @@ pub(super) fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
             serial INTEGER NOT NULL,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS tsig_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            algorithm TEXT NOT NULL,
+            secret TEXT NOT NULL,
+            is_global BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_tsig_policies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            zone_id INTEGER NOT NULL,
+            tsig_key_id INTEGER NOT NULL,
+            record_name_pattern TEXT NOT NULL,
+            record_types TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id)
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_zone ON zone_tsig_policies(zone_id);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_key ON zone_tsig_policies(tsig_key_id);
         "#,
     ]
 }

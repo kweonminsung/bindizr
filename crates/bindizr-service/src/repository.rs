@@ -3,13 +3,16 @@ pub use crate::database::repository::RepositoryTx;
 use crate::{
     database::{
         get_api_token_repository, get_catalog_zone_state_repository, get_record_repository,
-        get_zone_change_repository, get_zone_repository, get_zone_snapshot_repository,
+        get_tsig_key_repository, get_zone_change_repository, get_zone_repository,
+        get_zone_snapshot_repository, get_zone_tsig_policy_repository,
         model::{
             api_token::ApiToken,
             record::{Record, RecordType, RecordWithZone},
+            tsig_key::TsigKey,
             zone::Zone,
             zone_change::ZoneChange,
             zone_snapshot::ZoneSnapshot,
+            zone_tsig_policy::ZoneTsigPolicy,
         },
         repository as db_repository,
         repository::{RecordFilter, ZoneFilter},
@@ -520,6 +523,105 @@ impl RepositoryService {
             .get_changes_between_serials_tx(tx, zone_id, from_serial, to_serial)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
+    }
+
+    pub(super) async fn create_tsig_key(key: TsigKey) -> Result<TsigKey, ServiceError> {
+        get_tsig_key_repository()
+            .create(key)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to create TSIG key: {}", e)))
+    }
+
+    pub(super) async fn get_tsig_key_by_id(id: i32) -> Result<Option<TsigKey>, ServiceError> {
+        get_tsig_key_repository()
+            .get_by_id(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
+    }
+
+    pub(super) async fn get_tsig_key_by_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
+        get_tsig_key_repository()
+            .get_by_name(name)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
+    }
+
+    pub(super) async fn get_tsig_key_by_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+    ) -> Result<Option<TsigKey>, ServiceError> {
+        get_tsig_key_repository()
+            .get_by_name_tx(tx, name)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
+    }
+
+    pub(super) async fn get_all_tsig_keys() -> Result<Vec<TsigKey>, ServiceError> {
+        get_tsig_key_repository()
+            .get_all()
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG keys: {}", e)))
+    }
+
+    pub(super) async fn delete_tsig_key(id: i32) -> Result<(), ServiceError> {
+        get_tsig_key_repository()
+            .delete(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete TSIG key: {}", e)))
+    }
+
+    pub(super) async fn create_zone_tsig_policy(
+        policy: ZoneTsigPolicy,
+    ) -> Result<ZoneTsigPolicy, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .create(policy)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to create TSIG policy: {}", e)))
+    }
+
+    pub(super) async fn get_zone_tsig_policy_by_id(
+        id: i32,
+    ) -> Result<Option<ZoneTsigPolicy>, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .get_by_id(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG policy: {}", e)))
+    }
+
+    pub(super) async fn get_zone_tsig_policies_by_zone_id(
+        zone_id: i32,
+    ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .get_by_zone_id(zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
+    }
+
+    pub(super) async fn get_zone_tsig_policies_by_zone_and_key_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        tsig_key_id: i32,
+    ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .get_by_zone_and_key_tx(tx, zone_id, tsig_key_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
+    }
+
+    pub(super) async fn count_zone_tsig_policies_by_key_id(
+        tsig_key_id: i32,
+    ) -> Result<u64, ServiceError> {
+        get_zone_tsig_policy_repository()
+            .count_by_key_id(tsig_key_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count TSIG policies: {}", e)))
+    }
+
+    pub(super) async fn delete_zone_tsig_policy(id: i32) -> Result<(), ServiceError> {
+        get_zone_tsig_policy_repository()
+            .delete(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete TSIG policy: {}", e)))
     }
 
     pub(super) async fn create_api_token(token: ApiToken) -> Result<ApiToken, ServiceError> {

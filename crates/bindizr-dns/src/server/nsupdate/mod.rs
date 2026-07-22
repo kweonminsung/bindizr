@@ -86,7 +86,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         }
     };
 
-    match update::apply_update(parsed, query_data, client_addr).await {
+    match update::apply_update(parsed, query_data).await {
         Ok(update::UpdateResult::Applied { changed }) => {
             log_info!(
                 "NSUPDATE applied from {} (changed={})",

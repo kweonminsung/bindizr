@@ -2,6 +2,7 @@ mod notify;
 mod record;
 mod status;
 mod token;
+mod tsig_key;
 mod zone;
 
 use std::{io, os::unix::fs::FileTypeExt, path::Path};
@@ -38,6 +39,19 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::TokenCreate => token::create_token(&cmd.data).await,
                 DaemonCommandKind::TokenList => token::list_tokens().await,
                 DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
+                DaemonCommandKind::TsigKeyCreate => tsig_key::create_tsig_key(&cmd.data).await,
+                DaemonCommandKind::TsigKeyList => tsig_key::list_tsig_keys().await,
+                DaemonCommandKind::TsigKeyGet => tsig_key::get_tsig_key(&cmd.data).await,
+                DaemonCommandKind::TsigKeyDelete => tsig_key::delete_tsig_key(&cmd.data).await,
+                DaemonCommandKind::ZoneTsigPolicyAdd => {
+                    tsig_key::add_zone_tsig_policy(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneTsigPolicyList => {
+                    tsig_key::list_zone_tsig_policies(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneTsigPolicyRemove => {
+                    tsig_key::remove_zone_tsig_policy(&cmd.data).await
+                }
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
