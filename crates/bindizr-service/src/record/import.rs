@@ -115,9 +115,8 @@ impl RecordService {
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
 
-            // Normalize parsed records and drop duplicates within the file.
-            // Records are indexed by owner name so the dedup check (and the
-            // reconciliation below) scans only same-name entries, not the whole set.
+            // Normalize parsed records and drop duplicates within the file,
+            // indexed by owner name so the dedup check scans only same-name entries.
             let t = Instant::now();
             let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
             let mut desired_by_name: HashMap<String, Vec<usize>> =
@@ -185,9 +184,8 @@ impl RecordService {
             let parsed_count = desired.len();
 
             // Append never deletes, so only rows sharing an owner name with the
-            // file can matter (duplicate detection + add-constraint checks); load
-            // just those, like create_bulk, instead of the whole zone. Replace and
-            // upsert must see every row to compute the deletions their modes imply.
+            // file can matter; load just those. Replace and upsert must see
+            // every row to compute their implied deletions.
             let t = Instant::now();
             let existing_records = match mode {
                 ImportMode::Append => {
@@ -266,14 +264,10 @@ impl RecordService {
                     .collect(),
             };
 
-            // Absent records are added; a record already present is left in
-            // place unless upsert/replace needs to reconcile its TTL to the
-            // file. A TTL change is applied as a delete of the stale row plus a
-            // re-insert of the desired form, reusing the batched delete/insert
-            // below so an import stays a single delete and a single insert
-            // however many records change. TTLs compare by effective value so a
-            // stored `None`, which serves the zone default, isn't seen as a
-            // change against a file TTL equal to that default.
+            // A present record is left in place unless upsert/replace reconciles
+            // its TTL: a change becomes DEL + re-ADD via the batched paths below.
+            // TTLs compare by effective value so a stored `None` isn't a change
+            // against a file TTL equal to the zone default.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
             let default_ttl = zone.ttl;
             let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(default_ttl);

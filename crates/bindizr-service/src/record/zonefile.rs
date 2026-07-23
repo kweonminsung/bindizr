@@ -19,9 +19,9 @@ pub(super) struct ParsedRecord {
 }
 
 /// The parsed value, ready to become a stored value. Non-TXT records carry a
-/// `Request` that import re-encodes per type; TXT is pre-`Encoded` here so its
-/// character-strings' raw octets — which may be non-UTF-8 (BIND `\DDD` escapes)
-/// — survive instead of being mangled by a lossy UTF-8 conversion.
+/// `Request` that import re-encodes per type; TXT is pre-`Encoded` so its raw
+/// octets (possibly non-UTF-8, from BIND `\DDD` escapes) never pass through a
+/// lossy UTF-8 conversion.
 pub(super) enum ParsedValue {
     Request(RecordValueRequest),
     Encoded(String),
@@ -95,12 +95,8 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
 
                 let (value, priority) = match record.data() {
                     ZoneRecordData::Txt(txt) => {
-                        // TXT RDATA can hold arbitrary bytes (BIND writes them as
-                        // `\DDD` escapes, which the scanner already decoded); a
-                        // UTF-8 conversion would replace non-UTF-8 bytes with
-                        // U+FFFD and silently change the data served over DNS, so
-                        // store the RDATA byte-exact. Each character-string is
-                        // <=255 bytes by the CharStr invariant.
+                        // Store the RDATA byte-exact (see `ParsedValue`); each
+                        // character-string is <=255 bytes by the CharStr invariant.
                         let mut rdata = Vec::new();
                         for segment in txt.iter() {
                             rdata.push(segment.len() as u8);

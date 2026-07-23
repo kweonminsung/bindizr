@@ -576,9 +576,8 @@ async fn zone_import_zone_file_reports_validation_errors() {
 }
 
 // --- append fast-path adversarial tests -------------------------------------
-// Append imports load only rows sharing an owner name with the file (not the
-// whole zone). These verify that constraint checks against records that already
-// exist *in the DB* (not in the imported file) still hold.
+// Append imports load only rows sharing an owner name with the file; these
+// verify that constraint checks against records existing only in the DB still hold.
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
