@@ -15,15 +15,15 @@ pub(crate) async fn handle_ixfr(
     client_serial: Option<u32>,
     client_ip: IpAddr,
 ) -> Result<(), XfrError> {
+    let zone_name_owned = zone_name.to_string();
+    let zone_name_str = zone_name_owned.trim_end_matches('.');
+
     log_info!(
         "IXFR request for zone {:?} from {}, client_serial={:?}",
-        zone_name.to_string(),
+        zone_name_owned,
         client_ip,
         client_serial
     );
-
-    let zone_name_str = zone_name.to_string();
-    let zone_name_str = zone_name_str.trim_end_matches('.');
 
     // Catalog zones fall back to AXFR.
     if catalog::is_catalog_zone(zone_name_str) {
@@ -239,9 +239,7 @@ async fn send_up_to_date_response(
     let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
 
     builder.add_soa_from_snapshot(current_soa)?;
-
-    let message = builder.build();
-    wire::write_tcp_message(stream, &message).await?;
+    wire::flush_message_if_not_empty(stream, &mut builder).await?;
 
     Ok(())
 }

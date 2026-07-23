@@ -50,14 +50,14 @@ async fn build_soa_response(
     query: &wire::ParsedQuery,
     client_ip: IpAddr,
 ) -> Result<Vec<u8>, XfrError> {
-    log_info!(
-        "SOA query for zone {:?} from {}",
-        query.qname.to_string(),
-        client_ip
-    );
-
     let zone_name_owned = query.qname.to_string();
     let zone_name_str = zone_name_owned.trim_end_matches('.');
+
+    log_info!(
+        "SOA query for zone {:?} from {}",
+        zone_name_owned,
+        client_ip
+    );
 
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("SOA query for catalog zone: {}", catalog::CATALOG_ZONE_NAME);

@@ -94,8 +94,15 @@ impl DnsMessageBuilder {
         rdata.extend_from_slice(&(soa.minimum_ttl as u32).to_be_bytes());
 
         // IXFR SOA owner should be the transfer QNAME.
-        let wire_qname = self.qname.clone();
-        self.add_answer_raw_wire_name(&wire_qname, 6, soa.ttl as u32, &rdata)?;
+        let mut answer = Vec::with_capacity(self.qname.len() + 10 + rdata.len());
+        answer.extend_from_slice(&self.qname);
+        answer.extend_from_slice(&6u16.to_be_bytes()); // TYPE (SOA)
+        answer.extend_from_slice(&1u16.to_be_bytes()); // CLASS (IN = 1)
+        answer.extend_from_slice(&(soa.ttl as u32).to_be_bytes());
+        answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+        answer.extend_from_slice(&rdata);
+
+        self.push_answer(answer);
         Ok(())
     }
 
@@ -300,26 +307,6 @@ impl DnsMessageBuilder {
         encode_domain_name(name, &mut answer)?;
         answer.extend_from_slice(&rtype.to_be_bytes());
         answer.extend_from_slice(&1u16.to_be_bytes()); // CLASS (IN = 1)
-        answer.extend_from_slice(&ttl.to_be_bytes());
-        answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
-        answer.extend_from_slice(rdata);
-
-        self.push_answer(answer);
-        Ok(())
-    }
-
-    fn add_answer_raw_wire_name(
-        &mut self,
-        wire_name: &[u8],
-        rtype: u16,
-        ttl: u32,
-        rdata: &[u8],
-    ) -> Result<(), XfrError> {
-        let mut answer = Vec::new();
-
-        answer.extend_from_slice(wire_name);
-        answer.extend_from_slice(&rtype.to_be_bytes());
-        answer.extend_from_slice(&1u16.to_be_bytes());
         answer.extend_from_slice(&ttl.to_be_bytes());
         answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
         answer.extend_from_slice(rdata);

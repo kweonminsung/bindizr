@@ -25,14 +25,14 @@ pub(crate) async fn handle_axfr_with_qtype(
     client_ip: IpAddr,
     response_qtype: Rtype,
 ) -> Result<(), XfrError> {
-    log_info!(
-        "AXFR request for zone {:?} from {}",
-        zone_name.to_string(),
-        client_ip
-    );
-
     let zone_name_owned = zone_name.to_string();
     let zone_name_str = zone_name_owned.trim_end_matches('.');
+
+    log_info!(
+        "AXFR request for zone {:?} from {}",
+        zone_name_owned,
+        client_ip
+    );
 
     // Catalog zone requests are handled separately.
     if catalog::is_catalog_zone(zone_name_str) {
