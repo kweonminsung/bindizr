@@ -44,8 +44,11 @@ cargo +nightly fmt                                         # format (needs night
 ### Comments
 
 Keep comments that explain **why**, document non-obvious behavior/invariants,
-protocol/wire-format details, or public-API contracts (`///`). Remove comments
-that merely restate the adjacent code. Specifically avoid:
+protocol/wire-format details, or public-API contracts (`///`) — but keep them
+**terse**: state the reason in one or two lines, without spelling out
+consequences the reader can derive, restating an already-made point, or
+enumerating what the code shows. Remove comments that merely restate the
+adjacent code. Specifically avoid:
 
 - Trailing scaffolding notes like `id: 0, // Will be set by the database` — the
   placeholder pattern is used throughout and needs no annotation.
