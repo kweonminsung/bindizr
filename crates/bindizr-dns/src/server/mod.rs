@@ -47,31 +47,27 @@ pub(crate) async fn handle_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
     secondary_acl: &acl::SecondaryAcl,
-    query_data: &[u8],
+    query: &wire::ParsedQuery,
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
 
     validate_secondary_acl(client_ip, secondary_acl).await?;
 
-    let (zone_name, qtype, client_serial, query_id) = wire::parse_query(query_data)?;
-
     log_info!(
         "XFR TCP query: zone={:?}, qtype={:?}, from={}",
-        zone_name.to_string(),
-        qtype,
+        query.zone_name,
+        query.qtype,
         client_ip
     );
 
-    let result = match qtype {
-        Rtype::AXFR => axfr::handle_axfr(stream, &zone_name, query_id, client_ip).await,
-        Rtype::IXFR => {
-            ixfr::handle_ixfr(stream, &zone_name, query_id, client_serial, client_ip).await
-        }
+    let result = match query.qtype {
+        Rtype::AXFR => axfr::handle_axfr(stream, query, client_ip).await,
+        Rtype::IXFR => ixfr::handle_ixfr(stream, query, client_ip).await,
         _ => {
-            log_warn!("Unsupported query type: {:?}", qtype);
+            log_warn!("Unsupported query type: {:?}", query.qtype);
             return Err(XfrError::InvalidQuery(format!(
                 "Unsupported query type: {:?}",
-                qtype
+                query.qtype
             )));
         }
     };
@@ -79,9 +75,9 @@ pub(crate) async fn handle_tcp_query(
     if let Err(err) = result {
         if matches!(err, XfrError::ZoneNotFound(_)) {
             let response = wire::build_error_response(
-                query_id,
-                &zone_name,
-                qtype,
+                query.query_id,
+                &query.qname,
+                query.qtype,
                 crate::protocol::RCODE_NOTAUTH,
             );
             wire::write_tcp_message(stream, &response).await?;
@@ -97,19 +93,17 @@ pub(crate) async fn handle_tcp_query(
 pub(crate) async fn handle_udp_query(
     client_addr: SocketAddr,
     secondary_acl: &acl::SecondaryAcl,
-    query_data: &[u8],
+    query: &wire::ParsedQuery,
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
 
     validate_secondary_acl(client_ip, secondary_acl).await?;
 
-    let (zone_name, qtype, _, _) = wire::parse_query(query_data)?;
-
-    if is_xfr_query_type(qtype) {
+    if is_xfr_query_type(query.qtype) {
         log_warn!(
             "XFR-like UDP query is not supported (zone={:?}, qtype={:?}, from={})",
-            zone_name.to_string(),
-            qtype,
+            query.zone_name,
+            query.qtype,
             client_ip
         );
 
@@ -120,7 +114,7 @@ pub(crate) async fn handle_udp_query(
 
     Err(XfrError::InvalidQuery(format!(
         "Unsupported query type: {:?}",
-        qtype
+        query.qtype
     )))
 }
 

@@ -1,6 +1,6 @@
 use bindizr_core::dns::{name::to_fqdn_lowercase, txt::encode_raw_txt_rdata};
 use domain::{
-    base::iana::Class,
+    base::iana::{Class, Rtype},
     rdata::ZoneRecordData,
     zonefile::inplace::{Entry, Zonefile},
 };
@@ -65,14 +65,20 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                     continue;
                 }
 
-                let rtype = record.rtype().to_string();
-                let record_type = match rtype.parse::<RecordType>() {
-                    Ok(RecordType::SOA) => continue, // managed via zone fields
-                    Ok(record_type) => record_type,
-                    Err(_) => {
+                let record_type = match record.rtype() {
+                    Rtype::SOA => continue, // managed via zone fields
+                    Rtype::A => RecordType::A,
+                    Rtype::AAAA => RecordType::AAAA,
+                    Rtype::CNAME => RecordType::CNAME,
+                    Rtype::MX => RecordType::MX,
+                    Rtype::TXT => RecordType::TXT,
+                    Rtype::NS => RecordType::NS,
+                    Rtype::SRV => RecordType::SRV,
+                    Rtype::PTR => RecordType::PTR,
+                    other => {
                         errors.push(format!(
                             "unsupported record type '{}' for '{}'",
-                            rtype,
+                            other,
                             record.owner()
                         ));
                         continue;

@@ -1,12 +1,12 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 use bindizr_core::dns::is_catalog_zone;
 use domain::base::{
-    Name,
+    Message, Name,
     iana::{Opcode, Rcode},
 };
 
-use crate::{config, error::XfrError, log_error, log_info, service::zone::ZoneService, wire};
+use crate::{config, error::XfrError, log_error, log_info, service::zone::ZoneService};
 
 /// Sends DNS NOTIFY to all configured secondary servers.
 /// A `None` zone_name notifies all zones; `force` bumps the target serial first.
@@ -113,9 +113,7 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     let notify_timeout = Duration::from_secs(notify_config.notify_timeout_secs);
     let notify_retries = notify_config.notify_retries;
 
-    let mut zone_name_bytes = Vec::new();
-    wire::encode_domain_name(zone_name, &mut zone_name_bytes)?;
-    let qname = Name::from_octets(zone_name_bytes)
+    let qname = Name::<Vec<u8>>::from_str(zone_name)
         .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
 
     for server_addr in server_addresses {
@@ -201,7 +199,7 @@ async fn send_notify_to_server_once(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<(), XfrError> {
-    let (query_id, notify_message) = super::build_question(Opcode::NOTIFY, true, zone_name)?;
+    let (query_id, notify_message) = super::build_question(Opcode::NOTIFY, true, zone_name);
 
     let (received, response) =
         super::udp_exchange(server_addr, timeout, &notify_message, "NOTIFY").await?;
@@ -218,42 +216,36 @@ async fn send_notify_to_server_once(
 }
 
 fn validate_notify_response(query_id: u16, response: &[u8]) -> Result<(), XfrError> {
-    if response.len() < 12 {
-        return Err(XfrError::ProtocolError(format!(
-            "NOTIFY response is too short: {} bytes",
-            response.len()
-        )));
-    }
+    let message = Message::from_octets(response)
+        .map_err(|e| XfrError::ProtocolError(format!("NOTIFY response is malformed: {}", e)))?;
 
-    let response_id = u16::from_be_bytes([response[0], response[1]]);
-    if response_id != query_id {
+    let header = message.header();
+    if header.id() != query_id {
         return Err(XfrError::ProtocolError(format!(
             "NOTIFY response ID mismatch: expected {}, got {}",
-            query_id, response_id
+            query_id,
+            header.id()
         )));
     }
 
-    let flags = u16::from_be_bytes([response[2], response[3]]);
-    if flags & 0x8000 == 0 {
+    if !header.qr() {
         return Err(XfrError::ProtocolError(
             "NOTIFY response does not have QR bit set".to_string(),
         ));
     }
 
-    let opcode = (flags >> 11) & 0x0f;
-    if opcode != Opcode::NOTIFY.to_int() as u16 {
+    if header.opcode() != Opcode::NOTIFY {
         return Err(XfrError::ProtocolError(format!(
             "NOTIFY response opcode mismatch: expected {}, got {}",
             Opcode::NOTIFY.to_int(),
-            opcode
+            header.opcode().to_int()
         )));
     }
 
-    let rcode = flags & 0x0f;
-    if rcode != Rcode::NOERROR.to_int() as u16 {
+    if header.rcode() != Rcode::NOERROR {
         return Err(XfrError::ProtocolError(format!(
             "NOTIFY response returned RCODE {}",
-            rcode
+            header.rcode().to_int()
         )));
     }
 
