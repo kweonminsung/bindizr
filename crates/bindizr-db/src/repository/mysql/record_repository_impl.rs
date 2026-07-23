@@ -91,10 +91,8 @@ impl RecordRepository for MySqlRecordRepository {
             }
         };
 
-        // Auto-increment ids within one multi-row insert step by
-        // @@auto_increment_increment (1 by default, but >1 on multi-primary
-        // replication setups), so the ids are first, first+step, first+2*step,
-        // ... — not simply first+offset. Read it once for the whole batch.
+        // Ids in a multi-row insert step by @@auto_increment_increment,
+        // which is >1 on multi-primary replication setups.
         let increment =
             sqlx::query_scalar::<_, i64>("SELECT CAST(@@auto_increment_increment AS SIGNED)")
                 .fetch_one(&mut **mysql_tx)

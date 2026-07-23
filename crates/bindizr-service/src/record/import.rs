@@ -211,8 +211,7 @@ impl RecordService {
             load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
 
             // Lowercase each existing owner name once and reuse it across the
-            // passes below (indexing, deletion reconciliation, add-validation)
-            // instead of recomputing it per pass.
+            // passes below instead of recomputing it per pass.
             let t = Instant::now();
             let existing_lower: Vec<String> = existing_records
                 .iter()
@@ -268,13 +267,13 @@ impl RecordService {
             };
 
             // Absent records are added; a record already present is left in
-            // place unless upsert/replace needs to reconcile its TTL to the file
-            // (append leaves existing records untouched). A TTL change is applied
-            // as a delete of the stale row plus a re-insert of the desired form,
-            // reusing the batched delete/insert below so an import stays a single
-            // delete and a single insert however many records change. TTLs compare
-            // by effective value so a stored `None`, which serves the zone default,
-            // isn't seen as a change against a file TTL equal to that default.
+            // place unless upsert/replace needs to reconcile its TTL to the
+            // file. A TTL change is applied as a delete of the stale row plus a
+            // re-insert of the desired form, reusing the batched delete/insert
+            // below so an import stays a single delete and a single insert
+            // however many records change. TTLs compare by effective value so a
+            // stored `None`, which serves the zone default, isn't seen as a
+            // change against a file TTL equal to that default.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
             let default_ttl = zone.ttl;
             let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(default_ttl);

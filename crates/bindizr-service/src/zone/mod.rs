@@ -12,8 +12,7 @@ pub(crate) mod validation;
 // Default SOA timing fields (seconds) applied when a request omits them.
 // Bindizr drives propagation with NOTIFY, so keep refresh/retry short: they
 // only bound how long a secondary stays stale if a (UDP) NOTIFY is ever lost,
-// not the happy-path latency. Long values would leave a missed NOTIFY unnoticed
-// for up to a full refresh interval.
+// not the happy-path latency.
 pub(crate) const DEFAULT_REFRESH: i32 = 300;
 pub(crate) const DEFAULT_RETRY: i32 = 60;
 pub(crate) const DEFAULT_EXPIRE: i32 = 3_600_000;

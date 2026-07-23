@@ -213,9 +213,9 @@ impl RecordService {
             let new_serial = generate_serial(Some(zone.serial));
 
             // Index existing records by owner name so each record's constraint
-            // check scans only same-name records instead of the whole zone (an
-            // O(batch x zone) scan otherwise). Newly added records join the index
-            // as we go, so intra-batch conflicts are still detected.
+            // check scans only same-name records instead of the whole zone.
+            // Newly added records join the index as we go, so intra-batch
+            // conflicts are still detected.
             let t = Instant::now();
             let mut records_by_name: HashMap<String, Vec<Record>> =
                 HashMap::with_capacity(existing_records.len());
@@ -230,8 +230,8 @@ impl RecordService {
             // Time normalization and constraint validation separately: bulk does
             // both per record here, so lumping them would inflate validate_ms
             // versus zone import, which normalizes in an earlier pass. Gated on
-            // debug logging (the only consumer of these numbers) so the two
-            // per-record clock reads stay off the hot path in info-level runs.
+            // debug logging (the only consumer of these numbers) to keep the
+            // per-record clock reads off the hot path.
             let timing = log_debug_enabled!();
             let mut normalize_dur = std::time::Duration::ZERO;
             let mut validate_dur = std::time::Duration::ZERO;

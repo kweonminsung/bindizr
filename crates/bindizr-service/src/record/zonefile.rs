@@ -95,12 +95,11 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
 
                 let (value, priority) = match record.data() {
                     ZoneRecordData::Txt(txt) => {
-                        // Preserve raw character-string octets. TXT RDATA can hold
-                        // arbitrary bytes (BIND writes them as `\DDD` escapes, which
-                        // the scanner has already decoded); a UTF-8 conversion would
-                        // replace non-UTF-8 bytes with U+FFFD and silently change the
-                        // data served over DNS. Build the length-prefixed RDATA
-                        // directly and store it byte-exact. Each character-string is
+                        // TXT RDATA can hold arbitrary bytes (BIND writes them as
+                        // `\DDD` escapes, which the scanner already decoded); a
+                        // UTF-8 conversion would replace non-UTF-8 bytes with
+                        // U+FFFD and silently change the data served over DNS, so
+                        // store the RDATA byte-exact. Each character-string is
                         // <=255 bytes by the CharStr invariant.
                         let mut rdata = Vec::new();
                         for segment in txt.iter() {
