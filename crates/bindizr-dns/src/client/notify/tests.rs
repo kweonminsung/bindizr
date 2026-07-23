@@ -13,6 +13,7 @@ fn notify_response(query_id: u16, flags: u16) -> Vec<u8> {
 
 #[test]
 fn validate_notify_response_accepts_matching_noerror_response() {
+    // 0xa000 = QR set + opcode NOTIFY, NOERROR.
     let response = notify_response(1234, 0xa000);
 
     assert!(validate_notify_response(1234, &response).is_ok());
@@ -29,6 +30,7 @@ fn validate_notify_response_rejects_id_mismatch() {
 
 #[test]
 fn validate_notify_response_rejects_error_rcode() {
+    // 0xa005 adds RCODE 5 (REFUSED).
     let response = notify_response(1234, 0xa005);
 
     let err = validate_notify_response(1234, &response).unwrap_err();

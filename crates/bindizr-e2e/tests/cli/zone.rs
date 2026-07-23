@@ -13,20 +13,7 @@ async fn zone_create_read_delete() {
     assert!(status.contains("BINDIZR STATUS"));
     assert!(status.contains("Running"));
 
-    let created = app
-        .run_cli_success(&[
-            "zone",
-            "create",
-            "--name",
-            &zone_name,
-            "--primary-ns",
-            &primary_ns,
-            "--admin-email",
-            "hostmaster@cli-zone.example",
-            "--ttl",
-            "3600",
-        ])
-        .await;
+    let created = app.create_zone_cli(&zone_name, "3600").await;
     assert!(created.contains("Zone created successfully"));
 
     let zone = app
@@ -56,19 +43,7 @@ async fn zone_filter_and_paginate() {
     let filtered_zone = app.zone_name("filtered.example");
 
     for (name, ttl) in [(&first_zone, "3600"), (&filtered_zone, "7200")] {
-        app.run_cli_success(&[
-            "zone",
-            "create",
-            "--name",
-            name,
-            "--primary-ns",
-            &format!("ns1.{name}"),
-            "--admin-email",
-            &format!("hostmaster@{name}"),
-            "--ttl",
-            ttl,
-        ])
-        .await;
+        app.create_zone_cli(name, ttl).await;
     }
 
     let zones = app
@@ -148,20 +123,7 @@ async fn zone_reject_invalid_name_and_ttl() {
 async fn zone_import_zone_file_from_stdin() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import.example");
-    let primary_ns = format!("ns1.{zone_name}");
-    app.run_cli_success(&[
-        "zone",
-        "create",
-        "--name",
-        &zone_name,
-        "--primary-ns",
-        &primary_ns,
-        "--admin-email",
-        "hostmaster@import.example",
-        "--ttl",
-        "3600",
-    ])
-    .await;
+    app.create_zone_cli(&zone_name, "3600").await;
 
     let imported = app
         .run_cli_success_with_input(
@@ -211,20 +173,7 @@ async fn zone_import_zone_file_from_stdin() {
 async fn zone_snapshots_and_rollback_flow() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");
-    let primary_ns = format!("ns1.{zone_name}");
-    app.run_cli_success(&[
-        "zone",
-        "create",
-        "--name",
-        &zone_name,
-        "--primary-ns",
-        &primary_ns,
-        "--admin-email",
-        "hostmaster@history.example",
-        "--ttl",
-        "3600",
-    ])
-    .await;
+    app.create_zone_cli(&zone_name, "3600").await;
 
     let zone = app
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
@@ -329,20 +278,7 @@ async fn zone_snapshots_and_rollback_flow() {
 async fn zone_status_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("status.example");
-    let primary_ns = format!("ns1.{zone_name}");
-    app.run_cli_success(&[
-        "zone",
-        "create",
-        "--name",
-        &zone_name,
-        "--primary-ns",
-        &primary_ns,
-        "--admin-email",
-        "hostmaster@status.example",
-        "--ttl",
-        "3600",
-    ])
-    .await;
+    app.create_zone_cli(&zone_name, "3600").await;
 
     let status = app.run_cli_success(&["zone", "status", &zone_name]).await;
     assert!(status.contains(&format!("Zone {} (serial 1)", zone_name)));

@@ -36,6 +36,9 @@ fn normalize_owner_name_rejects_out_of_zone_suffix_matches() {
     }
 }
 
+// Delete-update wire shapes are fixed by RFC 2136: delete-RRset is CLASS ANY +
+// TTL 0 + empty RDATA (§2.5.2), delete-specific-RR is CLASS NONE + TTL 0 +
+// RDATA present (§2.5.4); every other combination must be refused.
 #[test]
 fn validate_delete_update_shape_accepts_any_class_rrset_delete() {
     let update = update_record(RecordType::A.wire_code(), CLASS_ANY, 0, Vec::new());

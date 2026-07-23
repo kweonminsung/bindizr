@@ -7,22 +7,8 @@ use crate::common::{TestApp, assert_cli_failure_contains};
 async fn record_create_read_delete() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli.example");
-    let primary_ns = format!("ns1.{zone_name}");
 
-    let created_zone = app
-        .run_cli_success(&[
-            "zone",
-            "create",
-            "--name",
-            &zone_name,
-            "--primary-ns",
-            &primary_ns,
-            "--admin-email",
-            "hostmaster@cli.example",
-            "--ttl",
-            "3600",
-        ])
-        .await;
+    let created_zone = app.create_zone_cli(&zone_name, "3600").await;
     assert!(created_zone.contains("Zone created successfully"));
 
     let created_record = app
@@ -74,19 +60,7 @@ async fn record_filter_by_zone_and_type() {
     let two_zone = app.zone_name("two.example");
 
     for zone in [&one_zone, &two_zone] {
-        app.run_cli_success(&[
-            "zone",
-            "create",
-            "--name",
-            zone,
-            "--primary-ns",
-            &format!("ns1.{zone}"),
-            "--admin-email",
-            &format!("hostmaster@{zone}"),
-            "--ttl",
-            "3600",
-        ])
-        .await;
+        app.create_zone_cli(zone, "3600").await;
     }
 
     for (name, record_type, value, zone) in [
@@ -128,20 +102,7 @@ async fn record_filter_by_zone_and_type() {
 async fn record_reject_invalid_values() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("validation.example");
-    let primary_ns = format!("ns1.{zone_name}");
-    app.run_cli_success(&[
-        "zone",
-        "create",
-        "--name",
-        &zone_name,
-        "--primary-ns",
-        &primary_ns,
-        "--admin-email",
-        "hostmaster@validation.example",
-        "--ttl",
-        "3600",
-    ])
-    .await;
+    app.create_zone_cli(&zone_name, "3600").await;
 
     for (record_type, value, expected_error) in [
         ("A", "not-an-ip", "valid IPv4"),
@@ -171,20 +132,7 @@ async fn record_reject_invalid_values() {
 async fn record_bulk_insert_from_stdin() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("bulk.example");
-    let primary_ns = format!("ns1.{zone_name}");
-    app.run_cli_success(&[
-        "zone",
-        "create",
-        "--name",
-        &zone_name,
-        "--primary-ns",
-        &primary_ns,
-        "--admin-email",
-        "hostmaster@bulk.example",
-        "--ttl",
-        "3600",
-    ])
-    .await;
+    app.create_zone_cli(&zone_name, "3600").await;
 
     let records = serde_json::json!([
         { "name": "www", "record_type": "A", "value": "192.0.2.20", "ttl": 300 },
@@ -203,6 +151,8 @@ async fn record_bulk_insert_from_stdin() {
         .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
         .await;
     let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    // A fresh zone holds only its auto-created NS record, so the absence of A
+    // records proves the dry run persisted nothing.
     assert!(
         listed["items"]
             .as_array()

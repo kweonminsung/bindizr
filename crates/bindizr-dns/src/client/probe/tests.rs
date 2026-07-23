@@ -45,6 +45,7 @@ fn build_soa_response(query_id: u16, flags: u16, with_answer: bool, serial: u32)
 
 #[test]
 fn extracts_serial_from_soa_answer() {
+    // 0x8400 = QR + AA, NOERROR.
     let response = build_soa_response(42, 0x8400, true, 2026);
     assert_eq!(extract_soa_serial(42, &response).unwrap(), 2026);
 }

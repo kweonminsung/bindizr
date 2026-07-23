@@ -18,7 +18,6 @@ use tempfile::TempDir;
 
 mod assertions;
 mod dns;
-pub(crate) mod notify;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 use dns::{dns_expected_value, dns_key_from_record, dns_record_type, wait_for_dns_records};
@@ -186,6 +185,26 @@ impl TestApp {
         let (status, body) = self.request(Method::POST, "/zones", Some(request)).await;
         assert_eq!(status, StatusCode::CREATED);
         body["zone"].clone()
+    }
+
+    /// CLI-side twin of `create_test_zone`: create a zone via `zone create` and
+    /// return the CLI output.
+    pub(crate) async fn create_zone_cli(&self, zone_name: &str, ttl: &str) -> String {
+        let primary_ns = format!("ns1.{zone_name}");
+        let admin_email = format!("hostmaster@{zone_name}");
+        self.run_cli_success(&[
+            "zone",
+            "create",
+            "--name",
+            zone_name,
+            "--primary-ns",
+            &primary_ns,
+            "--admin-email",
+            &admin_email,
+            "--ttl",
+            ttl,
+        ])
+        .await
     }
 
     pub(crate) async fn run_cli(&self, args: &[&str]) -> std::process::Output {

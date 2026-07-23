@@ -1,6 +1,6 @@
 use super::{ParseError, decode_name_from_rdata, parse_update_request};
 
-fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
+pub(crate) fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
     let mut message = Vec::new();
     message.extend_from_slice(&[
         0x12, 0x34, // ID
@@ -31,25 +31,7 @@ fn append_opt_rr(message: &mut Vec<u8>) {
 }
 
 fn append_tsig_rr(message: &mut Vec<u8>) {
-    let mut rdata = Vec::new();
-    rdata.extend_from_slice(&[
-        0x0b, b'h', b'm', b'a', b'c', b'-', b's', b'h', b'a', b'2', b'5', b'6', 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x01, // Time signed
-        0x01, 0x2c, // Fudge
-        0x00, 0x00, // MAC size
-        0x12, 0x34, // Original ID
-        0x00, 0x00, // Error
-        0x00, 0x00, // Other len
-    ]);
-
-    message.extend_from_slice(&[
-        0x03, b'k', b'e', b'y', 0x00, // Owner name
-        0x00, 0xfa, // TYPE TSIG
-        0x00, 0xff, // CLASS ANY
-        0x00, 0x00, 0x00, 0x00, // TTL
-    ]);
-    message.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
-    message.extend_from_slice(&rdata);
+    append_tsig_rr_with_owner(message, &[0x03, b'k', b'e', b'y', 0x00]);
 }
 
 fn append_tsig_rr_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
@@ -92,24 +74,19 @@ fn decode_name_from_rdata_handles_compression_pointer() {
 }
 
 #[test]
-fn decode_name_from_rdata_rejects_forward_compression_pointer() {
-    let message = [
+fn decode_name_from_rdata_rejects_non_backward_compression_pointers() {
+    let forward = [
         0xC0, 0x02, // Pointer to the root label after this pointer
         0x00,
     ];
-
-    let err = decode_name_from_rdata(&message, 0, 2).unwrap_err();
-    assert!(matches!(err, ParseError::InvalidName));
-}
-
-#[test]
-fn decode_name_from_rdata_rejects_self_compression_pointer() {
-    let message = [
+    let self_referential = [
         0xC0, 0x00, // Pointer to itself
     ];
 
-    let err = decode_name_from_rdata(&message, 0, 2).unwrap_err();
-    assert!(matches!(err, ParseError::InvalidName));
+    for message in [&forward[..], &self_referential[..]] {
+        let err = decode_name_from_rdata(message, 0, 2).unwrap_err();
+        assert!(matches!(err, ParseError::InvalidName));
+    }
 }
 
 #[test]

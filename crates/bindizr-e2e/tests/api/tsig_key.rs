@@ -3,6 +3,23 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Create a zone under the given name with minimal fields.
+async fn create_named_zone(app: &TestApp, zone_name: &str) {
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "primary_ns": format!("ns1.{zone_name}"),
+                "admin_email": "admin@test.com",
+                "ttl": 3600,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+}
+
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tsig_key_create_read_delete() {
@@ -97,6 +114,8 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
+    // hmac-md5 is a valid TSIG algorithm on the wire (RFC 8945) but is
+    // deliberately unsupported here.
     let (status, _) = app
         .request(
             Method::POST,
@@ -140,19 +159,7 @@ async fn global_tsig_key_lifecycle() {
 
     // A global key already covers every zone, so zone policies are rejected.
     let zone_name = app.zone_name("global-key.example");
-    let (status, _) = app
-        .request(
-            Method::POST,
-            "/zones",
-            Some(json!({
-                "name": zone_name,
-                "primary_ns": format!("ns1.{zone_name}"),
-                "admin_email": "admin@test.com",
-                "ttl": 3600,
-            })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
+    create_named_zone(&app, &zone_name).await;
 
     let (status, _) = app
         .request(
@@ -180,20 +187,7 @@ async fn global_tsig_key_lifecycle() {
 async fn zone_tsig_policy_lifecycle_and_delete_guard() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("tsig-zone.example");
-
-    let (status, _) = app
-        .request(
-            Method::POST,
-            "/zones",
-            Some(json!({
-                "name": zone_name,
-                "primary_ns": format!("ns1.{zone_name}"),
-                "admin_email": "admin@test.com",
-                "ttl": 3600,
-            })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
+    create_named_zone(&app, &zone_name).await;
 
     let (status, _) = app
         .request(

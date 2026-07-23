@@ -454,4 +454,4 @@ pub(super) fn decode_txt_from_rdata(rdata: &[u8]) -> Result<String, ParseError> 
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -36,19 +36,7 @@ async fn zone_tsig_policy_add_list_remove() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-tsig.example");
 
-    app.run_cli_success(&[
-        "zone",
-        "create",
-        "--name",
-        &zone_name,
-        "--primary-ns",
-        &format!("ns1.{zone_name}"),
-        "--admin-email",
-        &format!("hostmaster@{zone_name}"),
-        "--ttl",
-        "3600",
-    ])
-    .await;
+    app.create_zone_cli(&zone_name, "3600").await;
 
     app.run_cli_success(&["tsig-key", "create", "--name", "cli-policy-key"])
         .await;
@@ -81,6 +69,7 @@ async fn zone_tsig_policy_add_list_remove() {
     let refused = app.run_cli(&delete_args).await;
     assert_cli_failure_contains(&delete_args, &refused, "referenced by 1 TSIG policy");
 
+    // The first whitespace-separated column of the list output is the policy ID.
     let policy_id = listed
         .lines()
         .find(|line| line.contains("cli-policy-key"))

@@ -33,6 +33,7 @@ async fn notify_zone_all_and_force() {
     assert_eq!(status, StatusCode::OK);
     let before_serial = before["zone"]["serial"].as_i64().unwrap();
 
+    // force bumps the serial so secondaries transfer even when nothing changed.
     let request = json!({ "zone_name": zone_name, "force": true });
     let (status, body) = app
         .request(Method::POST, "/notify/zones", Some(request))

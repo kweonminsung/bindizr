@@ -76,6 +76,8 @@ fn record_values_equal_normalizes_name_like_values() {
         None,
         &RecordType::MX
     ));
+    // Split-priority and inline forms compare equal, with numeric fields
+    // compared by value ("010" == 10) — the wire encoding is identical.
     assert!(record_values_equal(
         "mail.example.com",
         Some(10),
@@ -119,25 +121,8 @@ fn validate_cname_value_accepts_underscore_labels() {
 }
 
 #[test]
-fn validate_cname_value_rejects_invalid_domain_forms() {
-    for value in [
-        "",
-        ".",
-        "bad target.example.com",
-        "bad..example.com",
-        "-bad.example.com",
-        "bad-.example.com",
-    ] {
-        assert!(
-            validate_record_value(&RecordType::CNAME, value, None).is_err(),
-            "{value:?} should be rejected"
-        );
-    }
-}
-
-#[test]
-fn validate_ns_and_ptr_values_reject_invalid_domain_forms() {
-    for record_type in [RecordType::NS, RecordType::PTR] {
+fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
+    for record_type in [RecordType::CNAME, RecordType::NS, RecordType::PTR] {
         for value in [
             "",
             ".",

@@ -1,7 +1,19 @@
 use reqwest::{Method, StatusCode};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::common::TestApp;
+
+/// Seed records directly in the DB via the bulk endpoint.
+async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(json!({ "records": records })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+}
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -139,6 +151,8 @@ async fn zone_validate_and_normalize() {
     let zone_name = app.zone_name("test.example.com");
     let second_zone_name = app.zone_name("second.example.com");
 
+    // The second entry is already in SOA-mailbox form: the API accepts email
+    // addresses only and must not pass a mailbox through untranslated.
     for invalid_admin_email in [
         json!({
             "name": "invalid-admin-email.com",
@@ -171,6 +185,8 @@ async fn zone_validate_and_normalize() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["zone"]["name"], zone_name);
     assert_eq!(body["zone"]["primary_ns"], format!("ns1.{zone_name}"));
+    // Only the domain part of the email is case-normalized; the local part is
+    // case-significant and must be preserved.
     assert_eq!(body["zone"]["admin_email"], "Host.Master@example.com");
 
     let duplicate_zone_request = json!({
@@ -306,6 +322,8 @@ async fn zone_reject_invalid_name_and_ttl() {
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
+    // These look suspicious but are legal: a primary NS outside the zone
+    // (out-of-bailiwick) and an NS name unrelated to the zone.
     for valid_zone in [
         json!({
             "name": app.zone_name("bailiwick.example.com"),
@@ -401,15 +419,13 @@ async fn zone_import_zone_file_replace_mode() {
     let zone_name = zone["name"].as_str().unwrap();
 
     // Seed two A records.
-    app.request(
-        Method::POST,
-        &format!("/zones/{zone_name}/records/bulk"),
-        Some(json!({
-            "records": [
-                { "name": "keep", "record_type": "A", "value": "192.0.2.1" },
-                { "name": "drop", "record_type": "A", "value": "192.0.2.2" }
-            ]
-        })),
+    seed_records(
+        &app,
+        zone_name,
+        json!([
+            { "name": "keep", "record_type": "A", "value": "192.0.2.1" },
+            { "name": "drop", "record_type": "A", "value": "192.0.2.2" }
+        ]),
     )
     .await;
 
@@ -455,14 +471,12 @@ async fn zone_import_zone_file_reconciles_ttl() {
     let zone_name = zone["name"].as_str().unwrap();
 
     // Seed a record with an explicit TTL of 300.
-    app.request(
-        Method::POST,
-        &format!("/zones/{zone_name}/records/bulk"),
-        Some(json!({
-            "records": [
-                { "name": "www", "record_type": "A", "value": "192.0.2.1", "ttl": 300 }
-            ]
-        })),
+    seed_records(
+        &app,
+        zone_name,
+        json!([
+            { "name": "www", "record_type": "A", "value": "192.0.2.1", "ttl": 300 }
+        ]),
     )
     .await;
 
@@ -573,23 +587,24 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Seed an A record directly in the DB.
-    app.request(
-        Method::POST,
-        &format!("/zones/{zone_name}/records/bulk"),
-        Some(json!({ "records": [
+    // Seed an A record directly in the DB (stored under the lowercased name).
+    seed_records(
+        &app,
+        zone_name,
+        json!([
             { "name": "www", "record_type": "A", "value": "192.0.2.1" }
-        ] })),
+        ]),
     )
     .await;
 
-    // Append a CNAME for the same owner: the scoped load must fetch the existing
-    // A so CNAME exclusivity rejects it. Nothing is applied.
+    // Append a CNAME for the same owner, spelled in a different case: the scoped
+    // load must match the existing A case-insensitively so CNAME exclusivity
+    // rejects it. Nothing is applied.
     let (status, body) = app
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/imports"),
-            Some(json!({ "content": "www IN CNAME target\n", "mode": "append" })),
+            Some(json!({ "content": "WWW IN CNAME target\n", "mode": "append" })),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -618,12 +633,12 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
     let zone_name = zone["name"].as_str().unwrap();
 
     // Seed a CNAME directly in the DB.
-    app.request(
-        Method::POST,
-        &format!("/zones/{zone_name}/records/bulk"),
-        Some(json!({ "records": [
+    seed_records(
+        &app,
+        zone_name,
+        json!([
             { "name": "alias", "record_type": "CNAME", "value": "target.example.com." }
-        ] })),
+        ]),
     )
     .await;
 
@@ -658,12 +673,12 @@ async fn zone_import_append_dedups_against_existing_db_record() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    app.request(
-        Method::POST,
-        &format!("/zones/{zone_name}/records/bulk"),
-        Some(json!({ "records": [
+    seed_records(
+        &app,
+        zone_name,
+        json!([
             { "name": "www", "record_type": "A", "value": "192.0.2.1" }
-        ] })),
+        ]),
     )
     .await;
 
@@ -692,50 +707,19 @@ async fn zone_import_append_dedups_against_existing_db_record() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_append_matches_existing_case_insensitively() {
-    let app = TestApp::start().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-
-    // Existing record stored under the lowercased name.
-    app.request(
-        Method::POST,
-        &format!("/zones/{zone_name}/records/bulk"),
-        Some(json!({ "records": [
-            { "name": "www", "record_type": "A", "value": "192.0.2.1" }
-        ] })),
-    )
-    .await;
-
-    // A different-case owner in the file must still match the existing row via
-    // the scoped load, so CNAME exclusivity rejects it.
-    let (status, body) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{zone_name}/imports"),
-            Some(json!({ "content": "WWW IN CNAME target\n", "mode": "append" })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["applied"], false);
-    assert!(!body["errors"].as_array().unwrap().is_empty());
-}
-
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
 async fn zone_import_append_into_populated_zone_isolates_names() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
     // Populate two unrelated names.
-    app.request(
-        Method::POST,
-        &format!("/zones/{zone_name}/records/bulk"),
-        Some(json!({ "records": [
+    seed_records(
+        &app,
+        zone_name,
+        json!([
             { "name": "a1", "record_type": "A", "value": "192.0.2.1" },
             { "name": "b1", "record_type": "A", "value": "192.0.2.2" }
-        ] })),
+        ]),
     )
     .await;
 
@@ -987,6 +971,8 @@ async fn zone_rollback_rejects_bad_serials() {
     let zone_name = zone["name"].as_str().unwrap();
     let current_serial = zone["serial"].as_i64().unwrap();
 
+    // Serials >= current and non-positive ones are invalid input; a serial in
+    // the valid range that predates the first stored snapshot is a 404.
     for (serial, expected_status, expected_code) in [
         (current_serial, StatusCode::BAD_REQUEST, "INVALID_INPUT"),
         (

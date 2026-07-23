@@ -312,6 +312,8 @@ async fn record_filter_and_paginate() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["record_type"], "MX");
 
+    // The CNAME was created as "Target.Example.Com": the value filter matches
+    // against the normalized (lowercased, dot-terminated) stored value.
     let (status, body) = app
         .request(
             Method::GET,
@@ -324,6 +326,8 @@ async fn record_filter_and_paginate() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["record_type"], "CNAME");
 
+    // Filters accept denormalized inputs too: a trailing-dot zone name and an
+    // owner in FQDN form without the trailing dot.
     let (status, body) = app
         .request(
             Method::GET,
@@ -362,6 +366,8 @@ async fn record_preserve_txt_segments_and_case() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
+    // TXT comparison is byte-exact, so two values differing only in case must
+    // coexist under one name instead of colliding as duplicates.
     for value in ["Token=ABC", "Token=abc"] {
         let create_record_request = json!({
             "name": "case-sensitive",
@@ -418,6 +424,8 @@ async fn record_preserve_txt_segments_and_case() {
             .contains("TXT record must contain at least one character-string")
     );
 
+    // A DNS character-string holds at most 255 octets (RFC 1035 §3.3), so a
+    // 300-char value must be stored split into 255 + 45.
     let long_txt = json!({
         "name": "long-txt",
         "record_type": "TXT",
@@ -453,6 +461,8 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["record"]["name"], format!("a1.{zone_name}."));
 
+    // The FQDN spelling resolves to the same stored owner as the relative
+    // "a1" above, so it must be detected as a duplicate.
     let in_bailiwick_duplicate = json!({
         "name": format!("a1.{zone_name}."),
         "record_type": "A",
@@ -568,6 +578,7 @@ async fn record_create_supported_types() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
+    // 5 created here + the apex NS record auto-created with the zone.
     assert_eq!(records.len(), 6);
     for record_type in ["MX", "SRV", "TXT", "AAAA", "CNAME"] {
         assert!(
@@ -634,6 +645,8 @@ async fn record_reject_cname_conflicts() {
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
 
+    // Renaming the CNAME onto an owner that already holds an A record must
+    // hit the same exclusivity check through the update path.
     let update_cname_request = json!({
         "name": "test",
         "record_type": "CNAME",
