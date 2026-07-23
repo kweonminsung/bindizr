@@ -6,7 +6,10 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use bindizr_core::dns::name::{
     MAX_DNS_LABEL_LEN, email_to_soa_mailbox, presentation_labels, to_fqdn, to_owner_fqdn,
 };
-use domain::base::{Message, Name, ToName, iana::Rtype};
+use domain::{
+    base::{Message, Name, ToName, iana::Rtype},
+    rdata::Soa,
+};
 
 use crate::{
     error::XfrError,
@@ -20,6 +23,9 @@ pub(crate) struct DnsMessageBuilder {
     qname: Vec<u8>,
     qtype: u16,
     answers: Vec<Vec<u8>>,
+    /// Total byte length of `answers`, kept incrementally because
+    /// `message_len` runs after every appended answer.
+    answers_len: usize,
 }
 
 impl DnsMessageBuilder {
@@ -29,6 +35,7 @@ impl DnsMessageBuilder {
             qname: qname.as_slice().to_vec(),
             qtype: qtype.to_int(),
             answers: Vec::new(),
+            answers_len: 0,
         }
     }
 
@@ -297,7 +304,7 @@ impl DnsMessageBuilder {
         answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
         answer.extend_from_slice(rdata);
 
-        self.answers.push(answer);
+        self.push_answer(answer);
         Ok(())
     }
 
@@ -317,7 +324,7 @@ impl DnsMessageBuilder {
         answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
         answer.extend_from_slice(rdata);
 
-        self.answers.push(answer);
+        self.push_answer(answer);
         Ok(())
     }
 
@@ -326,25 +333,28 @@ impl DnsMessageBuilder {
     }
 
     pub(crate) fn message_len(&self) -> usize {
-        12 + self.qname.len() + 4 + self.answers.iter().map(Vec::len).sum::<usize>()
+        12 + self.qname.len() + 4 + self.answers_len
     }
 
     pub(crate) fn pop_last_answer(&mut self) -> Option<Vec<u8>> {
-        self.answers.pop()
+        let answer = self.answers.pop();
+        if let Some(answer) = &answer {
+            self.answers_len -= answer.len();
+        }
+        answer
     }
 
     pub(crate) fn push_answer(&mut self, answer: Vec<u8>) {
+        self.answers_len += answer.len();
         self.answers.push(answer);
     }
 
     pub(crate) fn clear_answers(&mut self) {
         self.answers.clear();
+        self.answers_len = 0;
     }
 
-    /// Serializes the header, question, and answers into a DNS message.
-    pub(crate) fn build_message(&self) -> Vec<u8> {
-        let mut message = Vec::new();
-
+    fn build_message_into(&self, message: &mut Vec<u8>) {
         // Header (12 bytes)
         message.extend_from_slice(&self.query_id.to_be_bytes()); // ID
         message.push(0x84); // QR=1, Opcode=0, AA=1, TC=0, RD=0
@@ -363,8 +373,31 @@ impl DnsMessageBuilder {
         for answer in &self.answers {
             message.extend_from_slice(answer);
         }
+    }
 
+    /// Serializes the header, question, and answers into a DNS message.
+    pub(crate) fn build_message(&self) -> Vec<u8> {
+        let mut message = Vec::with_capacity(self.message_len());
+        self.build_message_into(&mut message);
         message
+    }
+
+    /// Serializes straight into a length-prefixed TCP frame, skipping the
+    /// intermediate message buffer `build_message` + `encode_tcp_message`
+    /// would copy through.
+    pub(crate) fn build_tcp_frame(&self) -> Result<Vec<u8>, XfrError> {
+        let len = self.message_len();
+        if len > DNS_TCP_MAX_SIZE {
+            return Err(XfrError::ProtocolError(format!(
+                "Message too large: {} bytes",
+                len
+            )));
+        }
+
+        let mut frame = Vec::with_capacity(2 + len);
+        frame.extend_from_slice(&(len as u16).to_be_bytes());
+        self.build_message_into(&mut frame);
+        Ok(frame)
     }
 
     /// Consumes the builder and returns the serialized DNS message.
@@ -489,8 +522,9 @@ where
         return Ok(0);
     }
 
-    let message = builder.build_message();
-    write_tcp_message(writer, &message).await?;
+    let frame = builder.build_tcp_frame()?;
+    writer.write_all(&frame).await.map_err(XfrError::IoError)?;
+    writer.flush().await.map_err(XfrError::IoError)?;
     builder.clear_answers();
 
     Ok(1)
@@ -544,10 +578,15 @@ pub(crate) fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), Xf
     Ok(())
 }
 
-type ParseQueryResult = (Name<Vec<u8>>, Rtype, Option<u32>, u16);
+/// A DNS query parsed once at the listener and handed to every handler.
+pub(crate) struct ParsedQuery {
+    pub(crate) qname: Name<Vec<u8>>,
+    pub(crate) qtype: Rtype,
+    pub(crate) client_serial: Option<u32>,
+    pub(crate) query_id: u16,
+}
 
-/// Parses a DNS query, returning qname, qtype, optional IXFR serial, and query ID.
-pub(crate) fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
+pub(crate) fn parse_query(data: &[u8]) -> Result<ParsedQuery, XfrError> {
     let message = Message::from_octets(data)
         .map_err(|e| XfrError::ProtocolError(format!("Failed to parse DNS message: {}", e)))?;
 
@@ -560,135 +599,29 @@ pub(crate) fn parse_query(data: &[u8]) -> Result<ParseQueryResult, XfrError> {
     let qname = question.qname().to_name::<Vec<u8>>();
     let qtype = question.qtype();
 
-    // For IXFR, try to extract SOA from authority section (client serial)
+    // An IXFR query carries the client's current serial in an
+    // authority-section SOA (RFC 1995 §2).
     let client_serial = if qtype == Rtype::IXFR {
-        extract_ixfr_serial_from_query(data)
+        extract_ixfr_serial(&message)
     } else {
         None
     };
 
-    Ok((qname, qtype, client_serial, query_id))
+    Ok(ParsedQuery {
+        qname,
+        qtype,
+        client_serial,
+        query_id,
+    })
 }
 
-fn extract_ixfr_serial_from_query(data: &[u8]) -> Option<u32> {
-    if data.len() < 12 {
-        return None;
-    }
-
-    let qdcount = u16::from_be_bytes([data[4], data[5]]) as usize;
-    let ancount = u16::from_be_bytes([data[6], data[7]]) as usize;
-    let nscount = u16::from_be_bytes([data[8], data[9]]) as usize;
-
-    let mut pos = 12usize;
-
-    // Skip questions
-    for _ in 0..qdcount {
-        let qname_len = skip_name(data, pos)?;
-        pos = pos.checked_add(qname_len + 4)?;
-        if pos > data.len() {
-            return None;
-        }
-    }
-
-    // Skip answers
-    for _ in 0..ancount {
-        pos = skip_rr(data, pos)?;
-    }
-
-    // Inspect authority records for SOA
-    for _ in 0..nscount {
-        let name_len = skip_name(data, pos)?;
-        pos = pos.checked_add(name_len)?;
-        if pos.checked_add(10)? > data.len() {
-            return None;
-        }
-
-        let rtype = u16::from_be_bytes([data[pos], data[pos + 1]]);
-        let rdlen = u16::from_be_bytes([data[pos + 8], data[pos + 9]]) as usize;
-        let rdata_start = pos + 10;
-        let rdata_end = rdata_start.checked_add(rdlen)?;
-        if rdata_end > data.len() {
-            return None;
-        }
-
-        // SOA
-        if rtype == 6 {
-            let mname_len = skip_name(data, rdata_start)?;
-            let rname_pos = rdata_start.checked_add(mname_len)?;
-            let rname_len = skip_name(data, rname_pos)?;
-            let serial_pos = rname_pos.checked_add(rname_len)?;
-            if serial_pos.checked_add(4)? <= rdata_end {
-                return Some(u32::from_be_bytes([
-                    data[serial_pos],
-                    data[serial_pos + 1],
-                    data[serial_pos + 2],
-                    data[serial_pos + 3],
-                ]));
-            }
-            return None;
-        }
-
-        pos = rdata_end;
-    }
-
-    None
-}
-
-pub(crate) fn skip_rr(data: &[u8], pos: usize) -> Option<usize> {
-    let name_len = skip_name(data, pos)?;
-    let header_pos = pos.checked_add(name_len)?;
-    if header_pos.checked_add(10)? > data.len() {
-        return None;
-    }
-    let rdlen = u16::from_be_bytes([data[header_pos + 8], data[header_pos + 9]]) as usize;
-    let next = header_pos.checked_add(10 + rdlen)?;
-    if next > data.len() {
-        return None;
-    }
-    Some(next)
-}
-
-pub(crate) fn skip_name(data: &[u8], start: usize) -> Option<usize> {
-    if start >= data.len() {
-        return None;
-    }
-
-    let mut pos = start;
-    let mut consumed = 0usize;
-    let mut guard = 0usize;
-
-    loop {
-        if pos >= data.len() || guard > data.len() {
-            return None;
-        }
-        guard += 1;
-
-        let len = data[pos];
-        if len & 0xC0 == 0xC0 {
-            if pos + 1 >= data.len() {
-                return None;
-            }
-            consumed = consumed.checked_add(2)?;
-            return Some(consumed);
-        }
-
-        if len == 0 {
-            consumed = consumed.checked_add(1)?;
-            return Some(consumed);
-        }
-
-        let label_len = len as usize;
-        if label_len > MAX_DNS_LABEL_LEN {
-            return None;
-        }
-
-        if pos.checked_add(1 + label_len)? > data.len() {
-            return None;
-        }
-
-        pos += 1 + label_len;
-        consumed = consumed.checked_add(1 + label_len)?;
-    }
+fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<u32> {
+    message
+        .authority()
+        .ok()?
+        .limit_to::<Soa<_>>()
+        .find_map(|record| record.ok())
+        .map(|record| record.data().serial().into_int())
 }
 
 pub(crate) fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, XfrError> {

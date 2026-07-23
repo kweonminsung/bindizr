@@ -1,11 +1,17 @@
 //! Client-side SOA probing of configured secondaries, used to report how far
 //! each secondary has caught up with a zone.
 
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use domain::base::{Name, Rtype, iana::Opcode};
+use domain::{
+    base::{
+        Message, Name,
+        iana::{Opcode, Rcode},
+    },
+    rdata::Soa,
+};
 
-use crate::{config, error::XfrError, wire};
+use crate::{config, error::XfrError};
 
 /// Result of probing one configured secondary: the serial its SOA answer
 /// carries, or the reason the probe failed.
@@ -25,9 +31,7 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, X
     }
     let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
 
-    let mut zone_name_bytes = Vec::new();
-    wire::encode_domain_name(zone_name, &mut zone_name_bytes)?;
-    let qname = Name::from_octets(zone_name_bytes)
+    let qname = Name::<Vec<u8>>::from_str(zone_name)
         .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
 
     let mut probes = Vec::new();
@@ -80,80 +84,35 @@ async fn probe_one(
 /// Validates a SOA query response and extracts the serial from the first SOA
 /// record in the answer section.
 fn extract_soa_serial(query_id: u16, response: &[u8]) -> Result<u32, String> {
-    if response.len() < 12 {
-        return Err(format!("response too short: {} bytes", response.len()));
-    }
+    let message =
+        Message::from_octets(response).map_err(|e| format!("malformed response: {}", e))?;
 
-    let response_id = u16::from_be_bytes([response[0], response[1]]);
-    if response_id != query_id {
+    let header = message.header();
+    if header.id() != query_id {
         return Err(format!(
             "response ID mismatch: expected {}, got {}",
-            query_id, response_id
+            query_id,
+            header.id()
         ));
     }
-
-    let flags = u16::from_be_bytes([response[2], response[3]]);
-    if flags & 0x8000 == 0 {
+    if !header.qr() {
         return Err("response does not have QR bit set".to_string());
     }
-    if flags & 0x0200 != 0 {
+    if header.tc() {
         return Err("truncated response".to_string());
     }
-    let rcode = flags & 0x000f;
-    if rcode != 0 {
-        return Err(format!("RCODE {}", rcode));
+    if header.rcode() != Rcode::NOERROR {
+        return Err(format!("RCODE {}", header.rcode().to_int()));
     }
 
-    let qdcount = u16::from_be_bytes([response[4], response[5]]) as usize;
-    let ancount = u16::from_be_bytes([response[6], response[7]]) as usize;
-
-    let mut pos = 12usize;
-    for _ in 0..qdcount {
-        let name_len = wire::skip_name(response, pos).ok_or("malformed question name")?;
-        pos = pos
-            .checked_add(name_len + 4)
-            .filter(|end| *end <= response.len())
-            .ok_or("malformed question section")?;
-    }
-
-    for _ in 0..ancount {
-        let name_len = wire::skip_name(response, pos).ok_or("malformed answer name")?;
-        let header_pos = pos.checked_add(name_len).ok_or("malformed answer")?;
-        if header_pos + 10 > response.len() {
-            return Err("malformed answer header".to_string());
-        }
-
-        let rtype = u16::from_be_bytes([response[header_pos], response[header_pos + 1]]);
-        let rdlen =
-            u16::from_be_bytes([response[header_pos + 8], response[header_pos + 9]]) as usize;
-        let rdata_start = header_pos + 10;
-        let rdata_end = rdata_start
-            .checked_add(rdlen)
-            .filter(|end| *end <= response.len())
-            .ok_or("malformed answer rdata")?;
-
-        if rtype == Rtype::SOA.to_int() {
-            let mname_len = wire::skip_name(response, rdata_start).ok_or("malformed SOA mname")?;
-            let rname_pos = rdata_start
-                .checked_add(mname_len)
-                .ok_or("malformed SOA rdata")?;
-            let rname_len = wire::skip_name(response, rname_pos).ok_or("malformed SOA rname")?;
-            let serial_pos = rname_pos
-                .checked_add(rname_len)
-                .filter(|p| p + 4 <= rdata_end)
-                .ok_or("SOA rdata too short for serial")?;
-            return Ok(u32::from_be_bytes([
-                response[serial_pos],
-                response[serial_pos + 1],
-                response[serial_pos + 2],
-                response[serial_pos + 3],
-            ]));
-        }
-
-        pos = rdata_end;
-    }
-
-    Err("no SOA record in answer".to_string())
+    let answer = message
+        .answer()
+        .map_err(|e| format!("malformed answer section: {}", e))?;
+    answer
+        .limit_to::<Soa<_>>()
+        .find_map(|record| record.ok())
+        .map(|record| record.data().serial().into_int())
+        .ok_or_else(|| "no SOA record in answer".to_string())
 }
 
 #[cfg(test)]

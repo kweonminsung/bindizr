@@ -22,13 +22,6 @@ use tokio::{
 
 const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
-enum QueryRoute {
-    Nsupdate,
-    Soa,
-    Xfr,
-    Other(Rtype),
-}
-
 /// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
 pub async fn initialize() {
     server::initialize().await;
@@ -118,30 +111,34 @@ async fn handle_tcp_query(
     secondary_acl: &SecondaryAcl,
     query_data: &[u8],
 ) -> Result<(), String> {
-    match classify_query_route(query_data) {
-        Ok(QueryRoute::Nsupdate) => {
-            server::nsupdate::handle_tcp_nsupdate(stream, query_data, client_addr).await?;
-        }
-        Ok(QueryRoute::Soa) => {
-            server::soa::handle_tcp_soa(stream, client_addr, query_data)
-                .await
-                .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
-        }
-        Ok(QueryRoute::Xfr) => {
-            server::handle_tcp_query(stream, client_addr, secondary_acl, query_data)
-                .await
-                .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
-        }
-        Ok(QueryRoute::Other(qtype)) => {
-            log_info!(
-                "Ignoring non-XFR DNS TCP query from {} (qtype={:?})",
-                client_addr,
-                qtype
-            );
-        }
+    // nsupdate is routed off the raw header (its handler owns parsing,
+    // including TSIG); everything else shares one upfront parse.
+    if server::nsupdate::is_nsupdate(query_data) {
+        return server::nsupdate::handle_tcp_nsupdate(stream, query_data, client_addr).await;
+    }
+
+    let query = match wire::parse_query(query_data) {
+        Ok(query) => query,
         Err(e) => {
             log_warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);
+            return Ok(());
         }
+    };
+
+    if query.qtype == Rtype::SOA {
+        server::soa::handle_tcp_soa(stream, client_addr, &query)
+            .await
+            .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
+    } else if server::is_xfr_query_type(query.qtype) {
+        server::handle_tcp_query(stream, client_addr, secondary_acl, &query)
+            .await
+            .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
+    } else {
+        log_info!(
+            "Ignoring non-XFR DNS TCP query from {} (qtype={:?})",
+            client_addr,
+            query.qtype
+        );
     }
 
     Ok(())
@@ -170,45 +167,28 @@ async fn run_udp_server(
 
         let query_data = &buf[..len];
 
-        match classify_query_route(query_data) {
-            Ok(QueryRoute::Nsupdate) => {
-                if let Err(e) =
-                    server::nsupdate::handle_udp_nsupdate(&socket, query_data, client_addr).await
-                {
-                    log_error!("NSUPDATE UDP handler failed for {}: {}", client_addr, e);
-                }
+        if server::nsupdate::is_nsupdate(query_data) {
+            if let Err(e) =
+                server::nsupdate::handle_udp_nsupdate(&socket, query_data, client_addr).await
+            {
+                log_error!("NSUPDATE UDP handler failed for {}: {}", client_addr, e);
             }
-            Ok(QueryRoute::Soa) => {
-                if let Err(e) = server::soa::handle_udp_soa(&socket, client_addr, query_data).await
-                {
-                    log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
-                }
-            }
-            Ok(QueryRoute::Xfr) => {
-                if let Err(e) =
-                    server::handle_udp_query(client_addr, &secondary_acl, query_data).await
-                {
-                    log_warn!("Failed to handle XFR UDP query from {}: {}", client_addr, e);
-                }
-            }
-            Ok(QueryRoute::Other(_)) => {}
-            Err(_) => {}
+            continue;
         }
-    }
-}
 
-fn classify_query_route(query_data: &[u8]) -> Result<QueryRoute, String> {
-    if server::nsupdate::is_nsupdate(query_data) {
-        return Ok(QueryRoute::Nsupdate);
-    }
+        let query = match wire::parse_query(query_data) {
+            Ok(query) => query,
+            Err(_) => continue,
+        };
 
-    let (_, qtype, _, _) = crate::wire::parse_query(query_data).map_err(|e| e.to_string())?;
-
-    if qtype == Rtype::SOA {
-        Ok(QueryRoute::Soa)
-    } else if server::is_xfr_query_type(qtype) {
-        Ok(QueryRoute::Xfr)
-    } else {
-        Ok(QueryRoute::Other(qtype))
+        if query.qtype == Rtype::SOA {
+            if let Err(e) = server::soa::handle_udp_soa(&socket, client_addr, &query).await {
+                log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
+            }
+        } else if server::is_xfr_query_type(query.qtype) {
+            if let Err(e) = server::handle_udp_query(client_addr, &secondary_acl, &query).await {
+                log_warn!("Failed to handle XFR UDP query from {}: {}", client_addr, e);
+            }
+        }
     }
 }
