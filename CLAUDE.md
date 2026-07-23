@@ -57,6 +57,37 @@ that merely restate the adjacent code. Specifically avoid:
 deliberate (trait surface consumed across crates / kept to satisfy lints) —
 leave it in place.
 
+The same rule applies in tests: the test **name** states *what* behavior is
+verified (never restate it in a comment); comments are for *why* the case
+exists when that isn't derivable — the regression or protocol rule it guards
+(cite the RFC section for wire-format cases), format assumptions the test
+relies on, and phase markers in long multi-step e2e flows.
+
+### Test helpers — extraction and visibility
+
+Test code optimizes for standalone readability, not DRY. Extract a helper only
+when it hides **mechanics** (how to invoke the CLI, build a config, POST a
+request) while the test's meaningful **data and assertions stay inline at the
+call site** — and only for blocks that are large or repeated many times and
+change in lockstep. Small struct-literal fixtures (`test_record()`-style) stay
+local to each test file even when several files have near-identical copies; do
+**not** collect them into shared fixture modules.
+
+Import/export rules for helpers that are shared (narrowest visibility that
+compiles, never bare `pub`):
+
+1. **Default**: a private `fn` inside the test file that uses it.
+2. **Same crate, across modules**: export from the owning module's
+   `#[cfg(test)]` tests module with at most `pub(crate)` (e.g.
+   `nsupdate/parser/tests.rs::minimal_update_with_ztype`). No crate-wide
+   `test_util` grab-bag modules.
+3. **e2e suite**: shared helpers live in `tests/common/` as `pub(crate)`
+   (`pub(super)` for common-internal ones); the single harness `e2e.rs`
+   declares plain private `mod`s. `common/` holds helpers only — test
+   functions belong under `api/` / `cli/`.
+4. **Never across crates**: no `test-util` features or helper crates;
+   duplicate small fixtures per crate instead.
+
 ### Clean installs only — no migrations or back-compat
 
 The project targets **clean installs exclusively** and does not support
