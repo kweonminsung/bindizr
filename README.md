@@ -411,12 +411,6 @@ The following features are planned for future releases. The roadmap may change b
   * Diagnose configuration, database connectivity, file permissions, BIND9 connectivity, and DNS synchronization issues.
   * Provide actionable warnings and recommended fixes.
 
-* [ ] **DNS over HTTPS (DoH)**
-
-  * Provide an RFC-compliant DNS-over-HTTPS endpoint.
-  * Support configurable listener addresses, TLS termination, access control, and query limits.
-  * Evaluate DNS over TLS (DoT) support as a related feature.
-
 * [ ] **Prometheus metrics**
 
   * Expose operational metrics through a `/metrics` endpoint.
