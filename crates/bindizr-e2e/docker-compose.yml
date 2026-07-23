@@ -105,7 +105,9 @@ services:
       timeout: 3s
       retries: 20
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # postgres 18+ images place data under /var/lib/postgresql and refuse a
+      # mount at the old /var/lib/postgresql/data path.
+      - postgres-data:/var/lib/postgresql
     networks:
       bindizr-net:
         ipv4_address: 172.28.0.20
