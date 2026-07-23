@@ -71,8 +71,7 @@ async fn probe_one(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<u32, String> {
-    let (query_id, query) =
-        super::build_question(Opcode::QUERY, false, qname).map_err(|e| e.to_string())?;
+    let (query_id, query) = super::build_question(Opcode::QUERY, false, qname);
 
     let (received, response) = super::udp_exchange(server_addr, timeout, &query, "SOA probe")
         .await

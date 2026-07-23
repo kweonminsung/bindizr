@@ -1,7 +1,7 @@
 use std::{collections::HashMap, net::IpAddr};
 
 use bindizr_core::dns::name::to_owner_fqdn;
-use domain::base::{Name, iana::Rtype};
+use domain::base::iana::Rtype;
 use tokio::net::TcpStream;
 
 use super::{axfr, catalog, delta};
@@ -10,26 +10,21 @@ use crate::{error::XfrError, log_info, log_warn, service::zone::ZoneService, wir
 /// Handles an IXFR request.
 pub(crate) async fn handle_ixfr(
     stream: &mut TcpStream,
-    zone_name: &Name<Vec<u8>>,
-    query_id: u16,
-    client_serial: Option<u32>,
+    query: &wire::ParsedQuery,
     client_ip: IpAddr,
 ) -> Result<(), XfrError> {
-    let zone_name_owned = zone_name.to_string();
-    let zone_name_str = zone_name_owned.trim_end_matches('.');
+    let zone_name_str = query.zone_name.as_str();
 
     log_info!(
         "IXFR request for zone {:?} from {}, client_serial={:?}",
-        zone_name_owned,
+        zone_name_str,
         client_ip,
-        client_serial
+        query.client_serial
     );
 
-    // Catalog zones fall back to AXFR.
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("IXFR: Catalog zone requested, falling back to AXFR");
-        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
-            .await;
+        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     let zone = ZoneService::find(zone_name_str)
@@ -39,50 +34,33 @@ pub(crate) async fn handle_ixfr(
 
     let current_serial = delta::serial_to_u32(zone.serial)?;
 
-    let client_serial = match client_serial {
+    let client_serial = match query.client_serial {
         Some(s) => s,
         None => {
             log_warn!("IXFR: No client serial provided, falling back to AXFR");
-            return axfr::handle_axfr_with_qtype(
-                stream,
-                zone_name,
-                query_id,
-                client_ip,
-                Rtype::IXFR,
-            )
-            .await;
+            return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
         }
     };
 
-    // If client is up-to-date, send single SOA response
     if client_serial == current_serial {
         log_info!("IXFR: Client is up-to-date (serial={})", current_serial);
         let current_soa = match delta::get_zone_snapshot(zone.id, current_serial).await? {
             Some(snapshot) => snapshot,
             None => {
                 log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-                return axfr::handle_axfr_with_qtype(
-                    stream,
-                    zone_name,
-                    query_id,
-                    client_ip,
-                    Rtype::IXFR,
-                )
-                .await;
+                return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
             }
         };
-        return send_up_to_date_response(stream, zone_name, query_id, &current_soa).await;
+        return send_up_to_date_response(stream, query, &current_soa).await;
     }
 
-    // Client is ahead of us: we can't build a delta, so fall back to AXFR.
     if client_serial > current_serial {
         log_warn!(
             "IXFR: Client serial {} > current serial {}, falling back to AXFR",
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
-            .await;
+        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     let changes = delta::get_zone_changes(zone.id, client_serial, current_serial).await?;
@@ -93,11 +71,9 @@ pub(crate) async fn handle_ixfr(
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
-            .await;
+        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    // Group changes by serial to validate monotonic serial progression
     let mut serials_in_changes: Vec<u32> = changes
         .iter()
         .map(|c| delta::serial_to_u32(c.serial))
@@ -113,19 +89,11 @@ pub(crate) async fn handle_ixfr(
                 previous_serial,
                 serial
             );
-            return axfr::handle_axfr_with_qtype(
-                stream,
-                zone_name,
-                query_id,
-                client_ip,
-                Rtype::IXFR,
-            )
-            .await;
+            return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
         }
         previous_serial = serial;
     }
 
-    // Verify the last serial in changes matches current serial
     if let Some(&last_serial) = serials_in_changes.last()
         && last_serial != current_serial
     {
@@ -134,23 +102,21 @@ pub(crate) async fn handle_ixfr(
             last_serial,
             current_serial
         );
-        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
-            .await;
+        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     let mut snapshots_by_serial: HashMap<u32, delta::ZoneSnapshot> = HashMap::new();
     snapshots_by_serial.reserve(serials_in_changes.len() + 1);
 
-    // All required serials fall within [client_serial, current_serial], so fetch
-    // the whole span in one query instead of one round-trip per serial. Any
-    // snapshot that is missing is caught by the chain validation below.
+    // Fetch the whole serial span in one query; missing snapshots are caught
+    // by the chain validation below.
     for snapshot in delta::get_zone_snapshots(zone.id, client_serial, current_serial).await? {
         if let Ok(serial) = delta::serial_to_u32(snapshot.serial) {
             snapshots_by_serial.insert(serial, snapshot);
         }
     }
 
-    // Validate snapshot chain to ensure old/new SOA can be formed for each serial delta.
+    // Every delta step needs both its old and new SOA snapshots.
     for (idx, &serial) in serials_in_changes.iter().enumerate() {
         let old_serial = if idx == 0 {
             client_serial
@@ -162,21 +128,13 @@ pub(crate) async fn handle_ixfr(
             || !snapshots_by_serial.contains_key(&serial)
         {
             log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-            return axfr::handle_axfr_with_qtype(
-                stream,
-                zone_name,
-                query_id,
-                client_ip,
-                Rtype::IXFR,
-            )
-            .await;
+            return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
         }
     }
 
     if !snapshots_by_serial.contains_key(&current_serial) {
         log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-        return axfr::handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::IXFR)
-            .await;
+        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     log_info!(
@@ -189,8 +147,7 @@ pub(crate) async fn handle_ixfr(
 
     match send_ixfr_response(
         stream,
-        zone_name,
-        query_id,
+        query,
         &zone,
         client_serial,
         &changes,
@@ -205,14 +162,7 @@ pub(crate) async fn handle_ixfr(
                 "IXFR: Failed to build incremental response ({}), falling back to AXFR",
                 err
             );
-            return axfr::handle_axfr_with_qtype(
-                stream,
-                zone_name,
-                query_id,
-                client_ip,
-                Rtype::IXFR,
-            )
-            .await;
+            return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
         Err(IxfrSendError::Partial(err)) => {
@@ -232,11 +182,10 @@ pub(crate) async fn handle_ixfr(
 /// Sends a single-SOA response when the client is already up-to-date.
 async fn send_up_to_date_response(
     stream: &mut TcpStream,
-    zone_name: &Name<Vec<u8>>,
-    query_id: u16,
+    query: &wire::ParsedQuery,
     current_soa: &delta::ZoneSnapshot,
 ) -> Result<(), XfrError> {
-    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
+    let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
 
     builder.add_soa_from_snapshot(current_soa)?;
     wire::flush_message_if_not_empty(stream, &mut builder).await?;
@@ -256,14 +205,13 @@ enum IxfrSendError {
 /// left the stream dirty so the caller can decide about AXFR fallback.
 async fn send_ixfr_response(
     stream: &mut TcpStream,
-    zone_name: &Name<Vec<u8>>,
-    query_id: u16,
+    query: &wire::ParsedQuery,
     zone: &crate::model::zone::Zone,
     client_serial: u32,
     changes: &[delta::ZoneChange],
     snapshots_by_serial: &HashMap<u32, delta::ZoneSnapshot>,
 ) -> Result<(), IxfrSendError> {
-    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, Rtype::IXFR);
+    let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
     let mut messages_sent = 0usize;
 
     let result = stream_ixfr_body(
@@ -289,8 +237,8 @@ async fn send_ixfr_response(
 }
 
 /// Streams the IXFR answers across multiple TCP messages, flushing before the
-/// 64 KiB wire limit like AXFR. `messages_sent` lets the caller tell a pre-write
-/// failure from a mid-stream one.
+/// 64 KiB wire limit. `messages_sent` distinguishes a pre-write failure from a
+/// mid-stream one.
 async fn stream_ixfr_body(
     stream: &mut TcpStream,
     builder: &mut wire::DnsMessageBuilder,
@@ -330,7 +278,7 @@ async fn stream_ixfr_body(
             serials[idx - 1]
         };
 
-        // Add old SOA (deletion section marker)
+        // Old SOA (deletion section marker).
         let old_soa = snapshots_by_serial.get(&old_serial).ok_or_else(|| {
             XfrError::ProtocolError(format!(
                 "Missing old SOA snapshot for serial {}",
@@ -349,7 +297,7 @@ async fn stream_ixfr_body(
             .await?;
         }
 
-        // Add new SOA (addition section marker)
+        // New SOA (addition section marker).
         let new_soa = snapshots_by_serial.get(&serial).ok_or_else(|| {
             XfrError::ProtocolError(format!("Missing new SOA snapshot for serial {}", serial))
         })?;
@@ -366,7 +314,7 @@ async fn stream_ixfr_body(
         }
     }
 
-    // Final SOA (current serial) closes the transfer.
+    // Final SOA (current serial).
     wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
         builder.add_soa_from_snapshot(current_snapshot)
     })

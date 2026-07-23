@@ -111,8 +111,8 @@ async fn handle_tcp_query(
     secondary_acl: &SecondaryAcl,
     query_data: &[u8],
 ) -> Result<(), String> {
-    // nsupdate is routed off the raw header (its handler owns parsing,
-    // including TSIG); everything else shares one upfront parse.
+    // nsupdate owns its own parsing (including TSIG); everything else shares
+    // one upfront parse.
     if server::nsupdate::is_nsupdate(query_data) {
         return server::nsupdate::handle_tcp_nsupdate(stream, query_data, client_addr).await;
     }

@@ -55,23 +55,14 @@ pub(crate) async fn handle_tcp_query(
 
     log_info!(
         "XFR TCP query: zone={:?}, qtype={:?}, from={}",
-        query.qname.to_string(),
+        query.zone_name,
         query.qtype,
         client_ip
     );
 
     let result = match query.qtype {
-        Rtype::AXFR => axfr::handle_axfr(stream, &query.qname, query.query_id, client_ip).await,
-        Rtype::IXFR => {
-            ixfr::handle_ixfr(
-                stream,
-                &query.qname,
-                query.query_id,
-                query.client_serial,
-                client_ip,
-            )
-            .await
-        }
+        Rtype::AXFR => axfr::handle_axfr(stream, query, client_ip).await,
+        Rtype::IXFR => ixfr::handle_ixfr(stream, query, client_ip).await,
         _ => {
             log_warn!("Unsupported query type: {:?}", query.qtype);
             return Err(XfrError::InvalidQuery(format!(
@@ -111,7 +102,7 @@ pub(crate) async fn handle_udp_query(
     if is_xfr_query_type(query.qtype) {
         log_warn!(
             "XFR-like UDP query is not supported (zone={:?}, qtype={:?}, from={})",
-            query.qname.to_string(),
+            query.zone_name,
             query.qtype,
             client_ip
         );

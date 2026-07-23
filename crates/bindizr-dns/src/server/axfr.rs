@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use domain::base::{Name, iana::Rtype};
+use domain::base::iana::Rtype;
 use tokio::net::TcpStream;
 
 use super::{catalog, delta, zone_cache};
@@ -9,40 +9,30 @@ use crate::{error::XfrError, log_info, service::zone::ZoneService, wire};
 /// Handles an AXFR request.
 pub(crate) async fn handle_axfr(
     stream: &mut TcpStream,
-    zone_name: &Name<Vec<u8>>,
-    query_id: u16,
+    query: &wire::ParsedQuery,
     client_ip: IpAddr,
 ) -> Result<(), XfrError> {
-    handle_axfr_with_qtype(stream, zone_name, query_id, client_ip, Rtype::AXFR).await
+    handle_axfr_with_qtype(stream, query, client_ip, Rtype::AXFR).await
 }
 
 /// Handles an AXFR payload with a specific response question type.
 /// IXFR fallback keeps QTYPE=IXFR to match the original query.
 pub(crate) async fn handle_axfr_with_qtype(
     stream: &mut TcpStream,
-    zone_name: &Name<Vec<u8>>,
-    query_id: u16,
+    query: &wire::ParsedQuery,
     client_ip: IpAddr,
     response_qtype: Rtype,
 ) -> Result<(), XfrError> {
-    let zone_name_owned = zone_name.to_string();
-    let zone_name_str = zone_name_owned.trim_end_matches('.');
+    let zone_name_str = query.zone_name.as_str();
 
     log_info!(
         "AXFR request for zone {:?} from {}",
-        zone_name_owned,
+        zone_name_str,
         client_ip
     );
 
-    // Catalog zone requests are handled separately.
     if catalog::is_catalog_zone(zone_name_str) {
-        return catalog::handle_catalog_axfr_with_qtype(
-            stream,
-            zone_name,
-            query_id,
-            response_qtype,
-        )
-        .await;
+        return catalog::handle_catalog_axfr_with_qtype(stream, query, response_qtype).await;
     }
 
     let zone = ZoneService::find(zone_name_str)
@@ -61,8 +51,7 @@ pub(crate) async fn handle_axfr_with_qtype(
         zone.serial
     );
 
-    // Build and send AXFR response across one or more TCP DNS messages.
-    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
+    let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
     let mut messages_sent = 0usize;
 
     let serial = delta::serial_to_u32(zone.serial)?;
@@ -78,7 +67,7 @@ pub(crate) async fn handle_axfr_with_qtype(
         .await?;
     }
 
-    // Add final SOA record to indicate end of transfer
+    // Final SOA closes the transfer.
     wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
         builder.add_soa(&zone, serial)
     })

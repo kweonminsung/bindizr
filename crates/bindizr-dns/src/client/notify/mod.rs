@@ -199,7 +199,7 @@ async fn send_notify_to_server_once(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<(), XfrError> {
-    let (query_id, notify_message) = super::build_question(Opcode::NOTIFY, true, zone_name)?;
+    let (query_id, notify_message) = super::build_question(Opcode::NOTIFY, true, zone_name);
 
     let (received, response) =
         super::udp_exchange(server_addr, timeout, &notify_message, "NOTIFY").await?;

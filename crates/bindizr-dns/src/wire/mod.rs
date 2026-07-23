@@ -1,11 +1,12 @@
 //! DNS wire-format encoding for zone-transfer responses: message framing and
 //! record/SOA serialization.
 
-use std::net::{Ipv4Addr, Ipv6Addr};
-
-use bindizr_core::dns::name::{
-    MAX_DNS_LABEL_LEN, email_to_soa_mailbox, presentation_labels, to_fqdn, to_owner_fqdn,
+use std::{
+    net::{Ipv4Addr, Ipv6Addr},
+    str::FromStr,
 };
+
+use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn, to_owner_fqdn};
 use domain::{
     base::{Message, Name, ToName, iana::Rtype},
     rdata::Soa,
@@ -23,8 +24,7 @@ pub(crate) struct DnsMessageBuilder {
     qname: Vec<u8>,
     qtype: u16,
     answers: Vec<Vec<u8>>,
-    /// Total byte length of `answers`, kept incrementally because
-    /// `message_len` runs after every appended answer.
+    /// Total byte length of `answers`, maintained incrementally for `message_len`.
     answers_len: usize,
 }
 
@@ -44,7 +44,6 @@ impl DnsMessageBuilder {
 
         encode_domain_name(&zone.primary_ns, &mut rdata)?;
 
-        // Admin email in DNS SOA mailbox format
         let admin_email = email_to_soa_mailbox(&zone.admin_email)
             .map_err(|e| XfrError::ProtocolError(e.to_string()))?;
         encode_domain_name(&admin_email, &mut rdata)?;
@@ -55,11 +54,11 @@ impl DnsMessageBuilder {
         rdata.extend_from_slice(&(zone.expire as u32).to_be_bytes());
         rdata.extend_from_slice(&(zone.minimum_ttl as u32).to_be_bytes());
 
-        self.add_answer_raw(&zone.name, 6, zone.ttl as u32, &rdata)?;
+        self.add_answer_raw(&zone.name, Rtype::SOA, zone.ttl as u32, &rdata)?;
         Ok(())
     }
 
-    /// Adds a catalog-zone SOA. MNAME and RNAME are intentionally invalid.
+    /// Adds a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
     pub(crate) fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
 
@@ -72,7 +71,7 @@ impl DnsMessageBuilder {
         rdata.extend_from_slice(&(zone.expire as u32).to_be_bytes());
         rdata.extend_from_slice(&(zone.minimum_ttl as u32).to_be_bytes());
 
-        self.add_answer_raw(&zone.name, 6, zone.ttl as u32, &rdata)?;
+        self.add_answer_raw(&zone.name, Rtype::SOA, zone.ttl as u32, &rdata)?;
         Ok(())
     }
 
@@ -93,10 +92,10 @@ impl DnsMessageBuilder {
         rdata.extend_from_slice(&(soa.expire as u32).to_be_bytes());
         rdata.extend_from_slice(&(soa.minimum_ttl as u32).to_be_bytes());
 
-        // IXFR SOA owner should be the transfer QNAME.
+        // IXFR SOA owner is the transfer QNAME.
         let mut answer = Vec::with_capacity(self.qname.len() + 10 + rdata.len());
         answer.extend_from_slice(&self.qname);
-        answer.extend_from_slice(&6u16.to_be_bytes()); // TYPE (SOA)
+        answer.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
         answer.extend_from_slice(&1u16.to_be_bytes()); // CLASS (IN = 1)
         answer.extend_from_slice(&(soa.ttl as u32).to_be_bytes());
         answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
@@ -113,7 +112,7 @@ impl DnsMessageBuilder {
         addr: Ipv4Addr,
     ) -> Result<(), XfrError> {
         let rdata = addr.octets().to_vec();
-        self.add_answer_raw(name, 1, ttl, &rdata)?;
+        self.add_answer_raw(name, Rtype::A, ttl, &rdata)?;
         Ok(())
     }
 
@@ -124,7 +123,7 @@ impl DnsMessageBuilder {
         addr: Ipv6Addr,
     ) -> Result<(), XfrError> {
         let rdata = addr.octets().to_vec();
-        self.add_answer_raw(name, 28, ttl, &rdata)?;
+        self.add_answer_raw(name, Rtype::AAAA, ttl, &rdata)?;
         Ok(())
     }
 
@@ -136,7 +135,7 @@ impl DnsMessageBuilder {
     ) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
         encode_domain_name(target, &mut rdata)?;
-        self.add_answer_raw(name, 5, ttl, &rdata)?;
+        self.add_answer_raw(name, Rtype::CNAME, ttl, &rdata)?;
         Ok(())
     }
 
@@ -150,7 +149,7 @@ impl DnsMessageBuilder {
         let mut rdata = Vec::new();
         rdata.extend_from_slice(&priority.to_be_bytes());
         encode_domain_name(target, &mut rdata)?;
-        self.add_answer_raw(name, 15, ttl, &rdata)?;
+        self.add_answer_raw(name, Rtype::MX, ttl, &rdata)?;
         Ok(())
     }
 
@@ -168,7 +167,7 @@ impl DnsMessageBuilder {
         rdata.extend_from_slice(&weight.to_be_bytes());
         rdata.extend_from_slice(&port.to_be_bytes());
         encode_domain_name(target, &mut rdata)?;
-        self.add_answer_raw(name, 33, ttl, &rdata)?;
+        self.add_answer_raw(name, Rtype::SRV, ttl, &rdata)?;
         Ok(())
     }
 
@@ -180,7 +179,7 @@ impl DnsMessageBuilder {
     ) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
         encode_domain_name(target, &mut rdata)?;
-        self.add_answer_raw(name, 2, ttl, &rdata)?;
+        self.add_answer_raw(name, Rtype::NS, ttl, &rdata)?;
         Ok(())
     }
 
@@ -191,14 +190,13 @@ impl DnsMessageBuilder {
         text: &str,
     ) -> Result<(), XfrError> {
         if let Some(rdata) = txt::decode_raw_txt_rdata(text) {
-            self.add_answer_raw(name, 16, ttl, &rdata)?;
+            self.add_answer_raw(name, Rtype::TXT, ttl, &rdata)?;
             return Ok(());
         }
 
         let mut rdata = Vec::new();
         let text_bytes = text.as_bytes();
 
-        // TXT records are stored as length-prefixed strings
         let mut offset = 0;
         while offset < text_bytes.len() {
             let chunk_len = (text_bytes.len() - offset).min(255);
@@ -207,7 +205,7 @@ impl DnsMessageBuilder {
             offset += chunk_len;
         }
 
-        self.add_answer_raw(name, 16, ttl, &rdata)?;
+        self.add_answer_raw(name, Rtype::TXT, ttl, &rdata)?;
         Ok(())
     }
 
@@ -219,7 +217,7 @@ impl DnsMessageBuilder {
     ) -> Result<(), XfrError> {
         let mut rdata = Vec::new();
         encode_domain_name(target, &mut rdata)?;
-        self.add_answer_raw(name, 12, ttl, &rdata)?;
+        self.add_answer_raw(name, Rtype::PTR, ttl, &rdata)?;
         Ok(())
     }
 
@@ -298,14 +296,14 @@ impl DnsMessageBuilder {
     fn add_answer_raw(
         &mut self,
         name: &str,
-        rtype: u16,
+        rtype: Rtype,
         ttl: u32,
         rdata: &[u8],
     ) -> Result<(), XfrError> {
         let mut answer = Vec::new();
 
         encode_domain_name(name, &mut answer)?;
-        answer.extend_from_slice(&rtype.to_be_bytes());
+        answer.extend_from_slice(&rtype.to_int().to_be_bytes());
         answer.extend_from_slice(&1u16.to_be_bytes()); // CLASS (IN = 1)
         answer.extend_from_slice(&ttl.to_be_bytes());
         answer.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
@@ -369,9 +367,8 @@ impl DnsMessageBuilder {
         message
     }
 
-    /// Serializes straight into a length-prefixed TCP frame, skipping the
-    /// intermediate message buffer `build_message` + `encode_tcp_message`
-    /// would copy through.
+    /// Serializes into a length-prefixed TCP frame in one buffer, with no
+    /// intermediate message copy.
     pub(crate) fn build_tcp_frame(&self) -> Result<Vec<u8>, XfrError> {
         let len = self.message_len();
         if len > DNS_TCP_MAX_SIZE {
@@ -482,7 +479,7 @@ where
         )));
     }
 
-    // Count the flush before the size check below, so a caller can tell that
+    // Count the flush before the size check below so a caller can tell that
     // bytes reached the client even when this call then returns an error.
     *messages_sent += flush_message_if_not_empty(writer, builder).await?;
 
@@ -541,33 +538,22 @@ pub(crate) fn build_error_response(
 }
 
 pub(crate) fn encode_domain_name(name: &str, buf: &mut Vec<u8>) -> Result<(), XfrError> {
-    let name = name.trim_end_matches('.');
-
-    if name.is_empty() {
+    if name.trim_end_matches('.').is_empty() {
         buf.push(0);
         return Ok(());
     }
 
-    for label in presentation_labels(name).map_err(|e| XfrError::ProtocolError(e.to_string()))? {
-        if label.is_empty() {
-            continue;
-        }
-        if label.len() > MAX_DNS_LABEL_LEN {
-            return Err(XfrError::ProtocolError(format!(
-                "Label too long: {}",
-                label
-            )));
-        }
-        buf.push(label.len() as u8);
-        buf.extend_from_slice(label.as_bytes());
-    }
-    buf.push(0);
+    let wire = Name::<Vec<u8>>::from_str(name)
+        .map_err(|e| XfrError::ProtocolError(format!("Invalid domain name '{}': {}", name, e)))?;
+    buf.extend_from_slice(wire.as_slice());
     Ok(())
 }
 
 /// A DNS query parsed once at the listener and handed to every handler.
 pub(crate) struct ParsedQuery {
     pub(crate) qname: Name<Vec<u8>>,
+    /// Presentation form of `qname` without the trailing dot.
+    pub(crate) zone_name: String,
     pub(crate) qtype: Rtype,
     pub(crate) client_serial: Option<u32>,
     pub(crate) query_id: u16,
@@ -586,6 +572,9 @@ pub(crate) fn parse_query(data: &[u8]) -> Result<ParsedQuery, XfrError> {
     let qname = question.qname().to_name::<Vec<u8>>();
     let qtype = question.qtype();
 
+    let qname_presentation = qname.to_string();
+    let zone_name = qname_presentation.trim_end_matches('.').to_string();
+
     // An IXFR query carries the client's current serial in an
     // authority-section SOA (RFC 1995 §2).
     let client_serial = if qtype == Rtype::IXFR {
@@ -596,6 +585,7 @@ pub(crate) fn parse_query(data: &[u8]) -> Result<ParsedQuery, XfrError> {
 
     Ok(ParsedQuery {
         qname,
+        zone_name,
         qtype,
         client_serial,
         query_id,

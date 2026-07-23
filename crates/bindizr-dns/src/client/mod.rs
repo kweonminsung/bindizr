@@ -7,11 +7,7 @@ pub mod probe;
 
 use std::{net::SocketAddr, time::Duration};
 
-use domain::base::{
-    Name, Rtype, StaticCompressor,
-    iana::{Opcode, Rcode},
-    message_builder::MessageBuilder,
-};
+use domain::base::{Name, Rtype, iana::Opcode};
 use tokio::net::{UdpSocket, lookup_host};
 
 use crate::{
@@ -71,33 +67,27 @@ pub(crate) async fn udp_exchange(
     Ok((received, response))
 }
 
-/// Build a single-question DNS message with a random id, returning
-/// `(query_id, wire bytes)`. NOTIFY sets `aa`; plain queries do not.
-pub(crate) fn build_question(
-    opcode: Opcode,
-    aa: bool,
-    qname: &Name<Vec<u8>>,
-) -> Result<(u16, Vec<u8>), XfrError> {
+/// Build a single-SOA-question DNS message with a random id, returning
+/// `(query_id, wire bytes)`.
+pub(crate) fn build_question(opcode: Opcode, aa: bool, qname: &Name<Vec<u8>>) -> (u16, Vec<u8>) {
     let query_id = rand::random::<u16>();
-    let mut msg = MessageBuilder::from_target(StaticCompressor::new(Vec::new()))
-        .map_err(|e| XfrError::ProtocolError(format!("Failed to create message builder: {}", e)))?;
 
-    let header = msg.header_mut();
-    header.set_id(query_id);
-    header.set_opcode(opcode);
-    header.set_aa(aa);
-    header.set_qr(false);
-    header.set_rcode(Rcode::NOERROR);
+    let qname_wire = qname.as_slice();
+    let mut msg = Vec::with_capacity(12 + qname_wire.len() + 4);
 
-    let mut question = msg.question();
-    question
-        .push((qname, Rtype::SOA))
-        .map_err(|e| XfrError::ProtocolError(format!("Failed to add question: {}", e)))?;
+    let flags = ((opcode.to_int() as u16) << 11) | if aa { 0x0400 } else { 0 };
+    msg.extend_from_slice(&query_id.to_be_bytes());
+    msg.extend_from_slice(&flags.to_be_bytes());
+    msg.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT=1
+    msg.extend_from_slice(&0u16.to_be_bytes()); // ANCOUNT=0
+    msg.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT=0
+    msg.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT=0
 
-    Ok((
-        query_id,
-        question.answer().finish().into_target().as_slice().to_vec(),
-    ))
+    msg.extend_from_slice(qname_wire);
+    msg.extend_from_slice(&Rtype::SOA.to_int().to_be_bytes());
+    msg.extend_from_slice(&1u16.to_be_bytes()); // QCLASS (IN)
+
+    (query_id, msg)
 }
 
 /// Resolve the comma-separated `secondary_addrs` config value into per-entry

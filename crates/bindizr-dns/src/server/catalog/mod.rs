@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
 use chrono::Utc;
-use domain::base::{Name, iana::Rtype};
+use domain::base::iana::Rtype;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
@@ -55,8 +55,7 @@ async fn generate_catalog_serial(member_zones: &[String], zones: &[Zone]) -> Res
 }
 
 fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
-    // Index serials by lowercased name once so the per-member lookup below is
-    // O(1) instead of a full scan of `zones` per member.
+    // Index serials by lowercased name so the per-member lookup is O(1).
     let serial_by_name: HashMap<String, i32> = zones
         .iter()
         .map(|z| (z.name.to_ascii_lowercase(), z.serial))
@@ -87,15 +86,14 @@ fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
 
 pub(crate) async fn handle_catalog_axfr_with_qtype(
     stream: &mut TcpStream,
-    zone_name: &Name<Vec<u8>>,
-    query_id: u16,
+    query: &wire::ParsedQuery,
     response_qtype: Rtype,
 ) -> Result<(), XfrError> {
     log_info!("AXFR request for catalog zone: {}", CATALOG_ZONE_NAME);
 
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;
 
-    let mut builder = wire::DnsMessageBuilder::new(query_id, zone_name, response_qtype);
+    let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
     let mut messages_sent = 0usize;
     let serial = delta::serial_to_u32(catalog_zone.serial)?;
 
