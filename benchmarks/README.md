@@ -27,9 +27,6 @@ tables), `performance.csv`, `performance.json`, and `graphs/*.png`.
 | `knot` | Knot DNS | RFC 2136 dynamic updates + journal-backed IXFR |
 | `coredns` | CoreDNS | zone file + `file` plugin mtime-poll reload (no management API) |
 
-> Multi-master scalability (original Benchmark 6) is **omitted** — it needs
-> Kubernetes/clustering that this Docker-only harness does not cover.
-
 > **CoreDNS scope.** CoreDNS has no management API and no RFC 2136 dynamic
 > update — a write means rewriting the zone file and waiting for the `file`
 > plugin's mtime poll (`reload 1s`; there is no `rndc reload` equivalent). It
@@ -55,9 +52,6 @@ tables), `performance.csv`, `performance.json`, and `graphs/*.png`.
 | 9 | `b09_resource_usage` | CPU/mem/net under steady query load | bindizr, powerdns, technitium, knot, coredns |
 
 <sub>\* CoreDNS's bulk number includes its zone-file reload poll — see the CoreDNS scope note above.</sub>
-
-> The original multi-master scalability benchmark (Kubernetes/clustering) is
-> omitted, so benchmarks are numbered 1–9 with no gap.
 
 ### The Benchmark 8 claim
 
@@ -101,27 +95,17 @@ BIND9` — i.e. **Bindizr introduces no measurable DNS query overhead**.
 - **Environment recorded.** CPU/mem/OS/Docker, per-container limits, repeats, and
   all image versions are written into every report.
 
-## Batch-size guidance (measured)
+## Batch-size guidance
 
-Bulk/import clients choose how many records to send per request; Bindizr applies
-each request as one transaction + serial bump + NOTIFY. Sweeping SQLite at 100k
-with matched batch sizes (`BENCH_BINDIZR_BULK_CHUNK` / `BENCH_BINDIZR_IMPORT_CHUNK`):
-
-| records/request | JSON bulk | zone import | import rec/s | peak mem |
-|---|---:|---:|---:|---:|
-| 2,000 | 1.15s | 0.95s | ~106k | ~115 MB |
-| **5,000** | **0.97s** | **0.76s** | **~131k** | ~130 MB |
-| 10,000 | 0.94s | 0.75s | ~134k | ~156 MB |
-
-Per-record DB-write cost is flat (~4.1 µs); a larger batch only amortizes the
-per-request fixed cost (transaction, serial bump, snapshot, JSON decode). Gains
-flatten past ~5,000 (2k→5k ≈ −17%, 5k→10k ≈ −2.5% for +20% memory), so **~5,000
-records/request** is the recommended default.
-
-Backend caveat: measured on SQLite. PostgreSQL is ~1.7× and MySQL ~5.7× slower at
-100k; on MySQL the dominant per-request cost is the existing-record
-`SELECT … FOR UPDATE` lookup (~90–130 ms/chunk), not the insert — so on that
-backend batch size matters far less than the lookup does.
+Bulk/import clients choose how many records to send per request
+(`BENCH_BINDIZR_BULK_CHUNK` / `BENCH_BINDIZR_IMPORT_CHUNK`); Bindizr applies
+each request as one transaction + serial bump + NOTIFY. Per-record DB-write cost
+is flat, so a larger batch only amortizes that per-request fixed cost
+(transaction, serial bump, snapshot, JSON decode) — gains flatten past ~5,000
+records/request while peak memory keeps growing, making **~5,000** the
+recommended default. On MySQL the dominant per-request cost is the
+existing-record `SELECT … FOR UPDATE` lookup rather than the insert, so batch
+size matters far less there.
 
 ## Layout
 
