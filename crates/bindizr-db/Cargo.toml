@@ -15,13 +15,7 @@ categories.workspace = true
 [dependencies]
 bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.5" }
 async-trait.workspace = true
-chrono.workspace = true
-hex.workspace = true
 log.workspace = true
-rand.workspace = true
-serde.workspace = true
-sha2.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-utoipa.workspace = true

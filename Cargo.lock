@@ -167,17 +167,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "axum-macros"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7aa268c23bfbbd2c4363b9cd302a4f504fb2a9dfe7e3451d66f35dd392e20aca"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "base16ct"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -201,7 +190,6 @@ version = "0.1.0-beta.5"
 dependencies = [
  "async-trait",
  "axum",
- "axum-macros",
  "bindizr-core",
  "bindizr-db",
  "bindizr-dns",
@@ -213,7 +201,6 @@ dependencies = [
  "serde_yaml",
  "tabled",
  "tempfile",
- "thiserror",
  "tokio",
  "tower-http 0.7.0",
  "utoipa",
@@ -230,8 +217,6 @@ dependencies = [
  "once_cell",
  "serde",
  "sqlx",
- "tempfile",
- "thiserror",
 ]
 
 [[package]]
@@ -240,16 +225,10 @@ version = "0.1.0-beta.5"
 dependencies = [
  "async-trait",
  "bindizr-core",
- "chrono",
- "hex",
  "log",
- "rand",
- "serde",
- "sha2 0.11.0",
  "sqlx",
  "thiserror",
  "tokio",
- "utoipa",
 ]
 
 [[package]]
@@ -296,7 +275,6 @@ dependencies = [
  "rand",
  "serde",
  "sha2 0.11.0",
- "thiserror",
  "tokio",
  "utoipa",
 ]

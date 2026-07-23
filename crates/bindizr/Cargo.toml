@@ -28,14 +28,12 @@ bindizr-dns = { path = "../bindizr-dns", version = "0.1.0-beta.5" }
 bindizr-service = { path = "../bindizr-service", version = "0.1.0-beta.5" }
 async-trait.workspace = true
 axum.workspace = true
-axum-macros.workspace = true
 clap.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 tabled.workspace = true
-thiserror.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 utoipa.workspace = true
