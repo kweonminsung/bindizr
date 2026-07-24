@@ -1274,7 +1274,7 @@ components:
           - 'null'
           format: int32
           example: 10
-          description: MX and SRV only; other record types have no priority and reject it.
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
         record_type:
           type: string
           example: A
@@ -1344,7 +1344,7 @@ components:
           - 'null'
           format: int32
           example: 10
-          description: MX and SRV only; other record types have no priority and reject it.
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
         record_type:
           type: string
           example: A
@@ -1976,7 +1976,7 @@ components:
           - 'null'
           format: int32
           example: 10
-          description: MX and SRV only; other record types have no priority and reject it.
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
         record_type:
           type: string
           example: A

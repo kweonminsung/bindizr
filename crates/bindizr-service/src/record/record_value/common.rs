@@ -5,19 +5,6 @@ use crate::{
     validation::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label},
 };
 
-pub(super) fn reject_duplicate_priority_field(
-    record_type: &str,
-    fallback_priority: Option<i32>,
-) -> Result<(), ServiceError> {
-    if fallback_priority.is_some() {
-        return Err(ServiceError::invalid_record_value(format!(
-            "{record_type} priority must be provided either inline or in the priority field, not both"
-        )));
-    }
-
-    Ok(())
-}
-
 pub(super) fn parse_optional_u16_record_field(
     field: &str,
     value: Option<i32>,

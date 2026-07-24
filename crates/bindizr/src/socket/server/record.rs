@@ -89,10 +89,9 @@ pub(super) async fn create_record(
     }
 }
 
-/// Handle the `UpdateRecord` command. Fields absent from the payload keep the
-/// record's current value, so the CLI can send only the flags the user set.
-/// The value is taken from the stored (non-display) form so MX/SRV round-trip
-/// without doubling the priority.
+/// Handle the `UpdateRecord` command, merging the payload over the current
+/// record so the CLI can send only the flags the user set. The value comes
+/// from the stored (non-display) form so MX/SRV round-trip.
 pub(super) async fn update_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -116,8 +115,7 @@ pub(super) async fn update_record(
             .map_err(|e| ServiceError::invalid_input(format!("Invalid value: {}", e)))?,
         _ => GetRecordResponse::from_record(&record).value,
     };
-    // The CLI sends null for unset flags, so a missing number keeps the current
-    // value rather than clearing it.
+    // Absent or null (an unset CLI flag) keeps the current value.
     let merged_i32 = |field: &str, current: Option<i32>| -> Option<i32> {
         match data.get(field).and_then(|v| v.as_i64()) {
             Some(value) => Some(value as i32),

@@ -74,33 +74,17 @@ fn record_values_equal_normalizes_name_like_values() {
         &RecordType::CNAME
     ));
     assert!(record_values_equal(
-        "10 mail.example.com",
-        None,
-        "10 mail.example.com.",
-        None,
-        &RecordType::MX
-    ));
-    // Split-priority and inline forms compare equal, with numeric fields
-    // compared by value ("010" == 10) — the wire encoding is identical.
-    assert!(record_values_equal(
-        "mail.example.com",
+        "Mail.Example.Com",
         Some(10),
-        "010 mail.example.com.",
-        None,
+        "mail.example.com.",
+        Some(10),
         &RecordType::MX
     ));
     assert!(record_values_equal(
-        "10 5 5060 sip.example.com",
-        None,
-        "10 5 5060 sip.example.com.",
-        None,
-        &RecordType::SRV
-    ));
-    assert!(record_values_equal(
-        "5 5060 sip.example.com",
+        "5 5060 Sip.Example.Com",
         Some(10),
-        "010 005 5060 sip.example.com.",
-        None,
+        "5 5060 sip.example.com.",
+        Some(10),
         &RecordType::SRV
     ));
     assert!(!record_values_equal(
@@ -146,11 +130,10 @@ fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
 }
 
 #[test]
-fn validate_mx_value_accepts_full_and_split_priority_forms() {
-    assert!(validate_record_value(&RecordType::MX, "10 mail.example.com", None).is_ok());
+fn validate_mx_value_takes_priority_from_the_field_only() {
     assert!(validate_record_value(&RecordType::MX, "mail.example.com", Some(10)).is_ok());
+    // An omitted priority defaults to 10.
     assert!(validate_record_value(&RecordType::MX, "mail.example.com", None).is_ok());
-    assert!(validate_record_value(&RecordType::MX, "0 .", None).is_ok());
     assert!(validate_record_value(&RecordType::MX, ".", Some(0)).is_ok());
 }
 
@@ -158,15 +141,14 @@ fn validate_mx_value_accepts_full_and_split_priority_forms() {
 fn validate_mx_value_rejects_invalid_forms() {
     for (value, priority) in [
         ("", None),
-        ("10 mail.example.com extra", None),
-        ("not-a-priority mail.example.com", None),
-        ("65536 mail.example.com", None),
-        ("10 .", None),
+        // Inline priority is no longer accepted; it belongs in the field.
+        ("10 mail.example.com", None),
+        ("10 mail.example.com", Some(10)),
+        ("mail.example.com extra", None),
         (".", None),
         (".", Some(10)),
-        ("10 bad target.example.com", None),
-        ("10 bad..example.com", None),
-        ("10 mail.example.com", Some(10)),
+        ("bad target.example.com", None),
+        ("bad..example.com", None),
         ("mail.example.com", Some(-1)),
         ("mail.example.com", Some(65_536)),
     ] {
@@ -178,11 +160,10 @@ fn validate_mx_value_rejects_invalid_forms() {
 }
 
 #[test]
-fn validate_srv_value_accepts_full_and_split_priority_forms() {
-    assert!(validate_record_value(&RecordType::SRV, "10 5 5060 sip.example.com", None).is_ok());
+fn validate_srv_value_takes_priority_from_the_field_only() {
     assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", Some(10)).is_ok());
+    // An omitted priority defaults to 10.
     assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", None).is_ok());
-    assert!(validate_record_value(&RecordType::SRV, "0 0 443 .", None).is_ok());
     assert!(validate_record_value(&RecordType::SRV, "0 443 .", Some(0)).is_ok());
 }
 
@@ -190,17 +171,17 @@ fn validate_srv_value_accepts_full_and_split_priority_forms() {
 fn validate_srv_value_rejects_invalid_forms() {
     for (value, priority) in [
         ("", None),
-        ("10 5", None),
-        ("10 5 5060 sip.example.com extra", None),
-        ("not-a-priority 5 5060 sip.example.com", None),
-        ("10 not-a-weight 5060 sip.example.com", None),
-        ("10 5 not-a-port sip.example.com", None),
-        ("65536 5 5060 sip.example.com", None),
-        ("10 65536 5060 sip.example.com", None),
-        ("10 5 65536 sip.example.com", None),
-        ("10 5 5060 bad target.example.com", None),
-        ("10 5 5060 bad..example.com", None),
+        ("5060 sip.example.com", None),
+        // Inline priority is no longer accepted; it belongs in the field.
+        ("10 5 5060 sip.example.com", None),
         ("10 5 5060 sip.example.com", Some(10)),
+        ("5 5060 sip.example.com extra", None),
+        ("not-a-weight 5060 sip.example.com", None),
+        ("5 not-a-port sip.example.com", None),
+        ("65536 5060 sip.example.com", None),
+        ("5 65536 sip.example.com", None),
+        ("5 5060 bad target.example.com", None),
+        ("5 5060 bad..example.com", None),
         ("5 5060 sip.example.com", Some(-1)),
         ("5 5060 sip.example.com", Some(65_536)),
     ] {
@@ -313,13 +294,14 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
 fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates() {
     let zone = test_zone();
 
+    // Case and trailing-dot differences canonicalize equal, so the add is a duplicate.
     let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
     let duplicate_mx = validate_record_add_constraints(
         &zone,
         &[existing_mx],
         "@",
         &RecordType::MX,
-        "10 mail.example.com",
+        "Mail.Example.Com.",
         RRSET_TTL,
         Some(10),
     );
@@ -337,7 +319,7 @@ fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates
         &[existing_srv],
         "_sip._tcp",
         &RecordType::SRV,
-        "10 5 5060 sip.example.com",
+        "5 5060 Sip.Example.Com.",
         RRSET_TTL,
         Some(10),
     );
@@ -354,9 +336,9 @@ fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
         &[existing_mx],
         "@",
         &RecordType::MX,
-        "0 .",
+        ".",
         RRSET_TTL,
-        None,
+        Some(0),
     );
     assert!(null_mx_with_existing_mx.is_err());
 

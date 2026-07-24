@@ -81,8 +81,8 @@ pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
     }
 }
 
-/// Handle the `UpdateZone` command. Fields absent from the payload keep the
-/// zone's current value, so the CLI can send only the flags the user set.
+/// Handle the `UpdateZone` command, merging the payload over the current zone
+/// so the CLI can send only the flags the user set.
 pub(super) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let name = required_name(data)?;
     let existing = ZoneService::get_by_name(name).await?;

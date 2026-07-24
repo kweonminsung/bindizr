@@ -384,8 +384,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .send_command(
                     DaemonCommandKind::UpdateZone,
                     Some(json!({
+                        // `name` looks up the zone; `new_name` renames it.
                         "name": name,
-                        // `name` is the lookup key; `new_name` sets the renamed value.
                         "new_name": new_name,
                         "primary_ns": primary_ns,
                         "admin_email": admin_email,
