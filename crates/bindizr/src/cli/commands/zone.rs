@@ -37,6 +37,9 @@ pub(crate) enum ZoneCommand {
     /// List zones
     #[command(alias = "ls")]
     List {
+        /// Filter by zone name
+        #[arg(long)]
+        name: Option<String>,
         /// Filter by zone ID
         #[arg(long)]
         id: Option<i64>,
@@ -113,21 +116,10 @@ $INCLUDE is not supported.")]
         output: OutputFormat,
     },
 
-    /// List a zone's snapshots (serial history), or inspect one serial's state
-    Snapshots {
-        /// The name of the zone
-        name: String,
-        /// Snapshot serial to inspect (omit to list all snapshots)
-        serial: Option<i32>,
-        /// Maximum number of snapshots to return
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Number of snapshots to skip
-        #[arg(long)]
-        offset: Option<u64>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
+    /// Inspect a zone's snapshots (serial history)
+    Snapshot {
+        #[command(subcommand)]
+        subcommand: ZoneSnapshotCommand,
     },
 
     /// Roll a zone back to the state captured at a snapshot serial
@@ -160,6 +152,36 @@ $INCLUDE is not supported.")]
     TsigPolicy {
         #[command(subcommand)]
         subcommand: ZoneTsigPolicyCommand,
+    },
+}
+
+/// Subcommands for inspecting a zone's snapshots.
+#[derive(Subcommand, Debug)]
+pub(crate) enum ZoneSnapshotCommand {
+    /// List a zone's snapshots (serial history)
+    #[command(alias = "ls")]
+    List {
+        /// The name of the zone
+        name: String,
+        /// Maximum number of snapshots to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of snapshots to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+    /// Show the zone state captured at one snapshot serial
+    Get {
+        /// The name of the zone
+        name: String,
+        /// Snapshot serial to inspect
+        serial: i32,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 }
 
@@ -257,6 +279,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             println!("{}", response.message);
         }
         ZoneCommand::List {
+            name,
             id,
             primary_ns,
             admin_email,
@@ -269,7 +292,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             offset,
             output,
         } => {
-            let has_filters = id.is_some()
+            let has_filters = name.is_some()
+                || id.is_some()
                 || primary_ns.is_some()
                 || admin_email.is_some()
                 || ttl.is_some()
@@ -281,6 +305,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 || offset.is_some();
             let filter_payload = || {
                 json!({
+                    "name": name,
                     "id": id,
                     "primary_ns": primary_ns,
                     "admin_email": admin_email,
@@ -360,14 +385,13 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     .map(|row| vec![row])
             })?;
         }
-        ZoneCommand::Snapshots {
-            name,
-            serial,
-            limit,
-            offset,
-            output,
-        } => match serial {
-            None => {
+        ZoneCommand::Snapshot { subcommand } => match subcommand {
+            ZoneSnapshotCommand::List {
+                name,
+                limit,
+                offset,
+                output,
+            } => {
                 let data = client
                     .send_command(
                         DaemonCommandKind::ListZoneSnapshots,
@@ -387,7 +411,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         .ok_or_else(|| "Missing snapshot items in response".to_string())
                 })?;
             }
-            Some(serial) => {
+            ZoneSnapshotCommand::Get {
+                name,
+                serial,
+                output,
+            } => {
                 let data = client
                     .send_command(
                         DaemonCommandKind::GetZoneSnapshot,

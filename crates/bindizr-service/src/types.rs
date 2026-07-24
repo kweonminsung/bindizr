@@ -437,9 +437,6 @@ pub struct GetZonesFilter {
 pub struct GetRecordsFilter {
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
-    #[serde(alias = "zone")]
-    #[schema(example = "example.com")]
-    pub zone: Option<String>,
     #[schema(example = "sub")]
     pub name: Option<String>,
     #[schema(example = "A")]
@@ -465,13 +462,6 @@ pub struct GetRecordsFilter {
     pub limit: Option<u32>,
     #[schema(example = 0)]
     pub offset: Option<u64>,
-}
-
-impl GetRecordsFilter {
-    /// Return the effective zone name, preferring `zone_name` over the `zone` alias.
-    pub fn resolved_zone_name(&self) -> Option<String> {
-        self.zone_name.clone().or_else(|| self.zone.clone())
-    }
 }
 
 /// Request body for updating an existing record.

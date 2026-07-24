@@ -119,8 +119,9 @@ impl RecordService {
         filter: GetRecordsFilter,
     ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
         let zone_name = filter
-            .resolved_zone_name()
-            .map(|name| normalize_zone_name(&name))
+            .zone_name
+            .as_deref()
+            .map(normalize_zone_name)
             .transpose()?;
         let value_filter = filter.value.clone();
         let search_filter = filter.search.clone();

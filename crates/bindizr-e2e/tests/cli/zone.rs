@@ -65,6 +65,14 @@ async fn zone_filter_and_paginate() {
     assert_eq!(zones.len(), 1);
     assert_eq!(zones[0]["name"], filtered_zone);
 
+    let by_name = app
+        .run_cli_success(&["zone", "list", "--name", &first_zone, "--output", "json"])
+        .await;
+    let by_name: Value = serde_json::from_str(&by_name).expect("CLI did not return valid JSON");
+    let by_name = by_name["items"].as_array().expect("missing zone items");
+    assert_eq!(by_name.len(), 1);
+    assert_eq!(by_name[0]["name"], first_zone);
+
     let page = app
         .run_cli_success(&[
             "zone",
@@ -210,7 +218,7 @@ async fn zone_snapshots_and_rollback_flow() {
     .await;
 
     let snapshots = app
-        .run_cli_success(&["zone", "snapshots", &zone_name, "--output", "json"])
+        .run_cli_success(&["zone", "snapshot", "list", &zone_name, "--output", "json"])
         .await;
     let snapshots: Value = serde_json::from_str(&snapshots).expect("CLI did not return valid JSON");
     let serials: Vec<i64> = snapshots["items"]
@@ -224,7 +232,8 @@ async fn zone_snapshots_and_rollback_flow() {
     let detail = app
         .run_cli_success(&[
             "zone",
-            "snapshots",
+            "snapshot",
+            "get",
             &zone_name,
             target_serial,
             "--output",
