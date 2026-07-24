@@ -62,20 +62,42 @@ pub fn presentation_rdata(value: &str, priority: Option<i32>, record_type: &Reco
     }
 }
 
+/// Render TXT from the stored raw RDATA so non-UTF-8 character-strings survive
+/// export → import. Working from the raw bytes (not the decoded string, which
+/// fails on non-UTF-8) each byte is emitted verbatim when printable ASCII and
+/// as a `\DDD` decimal escape otherwise (RFC 1035, Section 5.1).
 fn txt_presentation(value: &str) -> String {
-    let segments = match txt::decode_raw_txt_value(value) {
-        Some(txt::DecodedTxtValue::String(single)) => vec![single],
-        Some(txt::DecodedTxtValue::Segments(segments)) => segments,
-        None => vec![value.to_string()],
+    let Some(rdata) = txt::decode_raw_txt_rdata(value) else {
+        // Not an encoded TXT value; quote it as a single character-string.
+        return quote_txt_charstr(value.as_bytes());
     };
-    segments
-        .iter()
-        .map(|segment| {
-            let escaped = segment.replace('\\', "\\\\").replace('"', "\\\"");
-            format!("\"{}\"", escaped)
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+
+    let mut segments = Vec::new();
+    let mut pos = 0;
+    while pos < rdata.len() {
+        let len = rdata[pos] as usize;
+        pos += 1;
+        segments.push(quote_txt_charstr(&rdata[pos..pos + len]));
+        pos += len;
+    }
+    if segments.is_empty() {
+        segments.push("\"\"".to_string());
+    }
+    segments.join(" ")
+}
+
+fn quote_txt_charstr(bytes: &[u8]) -> String {
+    let mut out = String::from("\"");
+    for &byte in bytes {
+        match byte {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            0x20..=0x7e => out.push(byte as char),
+            _ => out.push_str(&format!("\\{:03}", byte)),
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn display_last_name_field(value: &str, valid_field_counts: &[usize]) -> String {

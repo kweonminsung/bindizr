@@ -58,7 +58,7 @@ pub(crate) fn hmac_sign(algorithm: TsigAlgorithm, data: &[u8]) -> Vec<u8> {
 }
 
 /// A minimal UPDATE request signed with `update-key`: the MAC covers the
-/// message without the TSIG RR plus the TSIG variables (RFC 8945, Sections 4.3.2/4.3.3).
+/// message without the TSIG RR plus the TSIG variables (RFC 8945, Sections 4.3.2 and 4.3.3).
 pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u8> {
     let base = minimal_update_with_ztype(6);
     let key_name = encode_name("update-key");

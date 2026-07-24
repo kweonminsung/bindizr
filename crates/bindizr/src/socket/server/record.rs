@@ -123,12 +123,22 @@ pub(super) async fn update_record(
         }
     };
 
+    // Only MX/SRV carry a priority; changing the type to any other one clears
+    // it, so retyping a record (e.g. MX -> A) isn't blocked by a stale priority.
+    let takes_priority =
+        record_type.eq_ignore_ascii_case("MX") || record_type.eq_ignore_ascii_case("SRV");
+    let priority = if takes_priority {
+        merged_i32("priority", record.priority)
+    } else {
+        None
+    };
+
     let request = UpdateRecordRequest {
         name,
         record_type,
         value,
         ttl: merged_i32("ttl", record.ttl),
-        priority: merged_i32("priority", record.priority),
+        priority,
     };
 
     match RecordService::update_by_id(record_id, &request).await {
