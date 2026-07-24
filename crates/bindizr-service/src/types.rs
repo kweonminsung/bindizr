@@ -279,7 +279,7 @@ pub struct CreateZoneRequest {
     pub admin_email: String,
     #[schema(example = 3600)]
     pub ttl: i32,
-    /// Auto-generated if not provided.
+    /// Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
     #[schema(example = 42)]
     pub serial: Option<i32>,
     #[schema(example = 7200)]

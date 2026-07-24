@@ -345,6 +345,58 @@ async fn zone_reject_invalid_name_and_ttl() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_seed_and_reject_out_of_range_serial() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("seeded-serial.example.com");
+
+    // Secondaries compare serials per RFC 1982, so a takeover has to continue
+    // from the previous primary's serial instead of restarting at 1.
+    let seeded_zone = json!({
+        "name": zone_name,
+        "primary_ns": format!("ns1.{zone_name}"),
+        "admin_email": "hostmaster@example.com",
+        "ttl": 3600,
+        "serial": 2026072501i64
+    });
+    let (status, body) = app.request(Method::POST, "/zones", Some(seeded_zone)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["zone"]["serial"], 2026072501i64);
+
+    let update_zone_request = json!({
+        "name": zone_name,
+        "primary_ns": format!("ns1.{zone_name}"),
+        "admin_email": "hostmaster@example.com",
+        "ttl": 7200
+    });
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(update_zone_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["zone"]["serial"], 2026072502i64);
+
+    // Past MAX_INITIAL_SERIAL (i32::MAX - 10_000_000) the counter would
+    // saturate while the zone is still in use.
+    for out_of_range_serial in [0i64, -1, 2_137_483_648, i32::MAX as i64] {
+        let out_of_range_zone = json!({
+            "name": app.zone_name("out-of-range-serial.example.com"),
+            "primary_ns": "ns1.example.com",
+            "admin_email": "hostmaster@example.com",
+            "ttl": 3600,
+            "serial": out_of_range_serial
+        });
+        let (status, _) = app
+            .request(Method::POST, "/zones", Some(out_of_range_zone))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_dry_run_then_apply() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;

@@ -29,7 +29,7 @@ pub(crate) enum ZoneCommand {
         /// TTL
         #[arg(long)]
         ttl: i32,
-        /// Serial number (optional, auto-generated if not provided)
+        /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<i32>,
     },
