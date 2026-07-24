@@ -12,16 +12,13 @@ use super::{
     build_response,
     parser::tests::minimal_update_with_ztype,
 };
-use crate::{
-    model::tsig_key::TsigAlgorithm,
-    protocol::{CLASS_ANY, RCODE_NOERROR, RCODE_REFUSED},
-};
+use crate::{model::tsig_key::TsigAlgorithm, protocol::CLASS_ANY};
 
 #[test]
 fn build_response_echoes_request_header_and_question() {
     let query = minimal_update_with_ztype(6);
 
-    let response = build_response(&query, RCODE_REFUSED, None, 300).unwrap();
+    let response = build_response(&query, Rcode::REFUSED, None, 300).unwrap();
 
     let msg = Message::from_octets(&response[..]).unwrap();
     let header = msg.header();
@@ -39,7 +36,7 @@ fn build_response_signs_with_request_mac_chain() {
     let key = auth::to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
     let signer = auth::validate_tsig(&query, Some(key)).unwrap();
 
-    let response = build_response(&query, RCODE_NOERROR, Some(signer), 300).unwrap();
+    let response = build_response(&query, Rcode::NOERROR, Some(signer), 300).unwrap();
 
     let msg = Message::from_octets(&response[..]).unwrap();
     assert_eq!(msg.header().rcode(), Rcode::NOERROR);
@@ -60,7 +57,7 @@ fn build_response_signs_with_request_mac_chain() {
 
     // The response without its TSIG RR (ARCOUNT still 0) is exactly the
     // unsigned build of the same request.
-    let unsigned = build_response(&query, RCODE_NOERROR, None, 300).unwrap();
+    let unsigned = build_response(&query, Rcode::NOERROR, None, 300).unwrap();
 
     // Recompute the response MAC per RFC 8945 §4.3.3: request MAC
     // (length-prefixed), the response without the TSIG RR, then the TSIG

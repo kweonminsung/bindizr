@@ -20,15 +20,3 @@ pub(crate) const CLASS_ANY: u16 = 255;
 pub(crate) const TYPE_ANY: u16 = 255;
 /// TSIG meta record TYPE (RFC 8945).
 pub(crate) const TYPE_TSIG: u16 = 250;
-
-// Response codes (RFC 1035 / 2136).
-pub(crate) const RCODE_NOERROR: u8 = 0;
-pub(crate) const RCODE_FORMERR: u8 = 1;
-pub(crate) const RCODE_SERVFAIL: u8 = 2;
-pub(crate) const RCODE_NXDOMAIN: u8 = 3;
-pub(crate) const RCODE_REFUSED: u8 = 5;
-pub(crate) const RCODE_YXDOMAIN: u8 = 6;
-pub(crate) const RCODE_YXRRSET: u8 = 7;
-pub(crate) const RCODE_NXRRSET: u8 = 8;
-pub(crate) const RCODE_NOTAUTH: u8 = 9;
-pub(crate) const RCODE_NOTZONE: u8 = 10;

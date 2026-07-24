@@ -1,6 +1,5 @@
 use std::{collections::HashMap, net::IpAddr};
 
-use bindizr_core::dns::name::to_owner_fqdn;
 use domain::base::iana::Rtype;
 use tokio::net::TcpStream;
 
@@ -24,7 +23,7 @@ pub(crate) async fn handle_ixfr(
 
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("IXFR: Catalog zone requested, falling back to AXFR");
-        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     let zone = ZoneService::find(zone_name_str)
@@ -38,7 +37,7 @@ pub(crate) async fn handle_ixfr(
         Some(s) => s,
         None => {
             log_warn!("IXFR: No client serial provided, falling back to AXFR");
-            return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
         }
     };
 
@@ -48,7 +47,7 @@ pub(crate) async fn handle_ixfr(
             Some(snapshot) => snapshot,
             None => {
                 log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-                return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+                return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
             }
         };
         return send_up_to_date_response(stream, query, &current_soa).await;
@@ -60,7 +59,7 @@ pub(crate) async fn handle_ixfr(
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     let changes = delta::get_zone_changes(zone.id, client_serial, current_serial).await?;
@@ -71,7 +70,7 @@ pub(crate) async fn handle_ixfr(
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     let mut serials_in_changes: Vec<u32> = changes
@@ -89,7 +88,7 @@ pub(crate) async fn handle_ixfr(
                 previous_serial,
                 serial
             );
-            return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
         }
         previous_serial = serial;
     }
@@ -102,7 +101,7 @@ pub(crate) async fn handle_ixfr(
             last_serial,
             current_serial
         );
-        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     let mut snapshots_by_serial: HashMap<u32, delta::ZoneSnapshot> = HashMap::new();
@@ -128,13 +127,13 @@ pub(crate) async fn handle_ixfr(
             || !snapshots_by_serial.contains_key(&serial)
         {
             log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-            return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
         }
     }
 
     if !snapshots_by_serial.contains_key(&current_serial) {
         log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-        return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     log_info!(
@@ -162,7 +161,7 @@ pub(crate) async fn handle_ixfr(
                 "IXFR: Failed to build incremental response ({}), falling back to AXFR",
                 err
             );
-            return axfr::handle_axfr_with_qtype(stream, query, client_ip, Rtype::IXFR).await;
+            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
         Err(IxfrSendError::Partial(err)) => {
@@ -292,7 +291,7 @@ async fn stream_ixfr_body(
 
         for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
             wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
-                add_change_to_builder(builder, change, &zone.name)
+                add_change(builder, change, &zone.name)
             })
             .await?;
         }
@@ -308,7 +307,7 @@ async fn stream_ixfr_body(
 
         for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
             wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
-                add_change_to_builder(builder, change, &zone.name)
+                add_change(builder, change, &zone.name)
             })
             .await?;
         }
@@ -324,54 +323,17 @@ async fn stream_ixfr_body(
     Ok(())
 }
 
-/// Adds a zone change record to the message builder.
-fn add_change_to_builder(
+fn add_change(
     builder: &mut wire::DnsMessageBuilder,
     change: &delta::ZoneChange,
     zone_name: &str,
 ) -> Result<(), XfrError> {
-    let ttl = change.record_ttl.unwrap_or(3600) as u32;
-    let owner_name = to_owner_fqdn(&change.record_name, zone_name);
-
-    match change.record_type.as_str() {
-        "A" => {
-            let addr: std::net::Ipv4Addr = change.record_value.parse().map_err(|_| {
-                XfrError::ProtocolError(format!("Invalid A record: {}", change.record_value))
-            })?;
-            builder.add_a_record(&owner_name, ttl, addr)?;
-        }
-        "AAAA" => {
-            let addr: std::net::Ipv6Addr = change.record_value.parse().map_err(|_| {
-                XfrError::ProtocolError(format!("Invalid AAAA record: {}", change.record_value))
-            })?;
-            builder.add_aaaa_record(&owner_name, ttl, addr)?;
-        }
-        "CNAME" => {
-            builder.add_cname_record(&owner_name, ttl, &change.record_value)?;
-        }
-        "MX" => {
-            let (priority, target) =
-                wire::parse_mx_record_value(&change.record_value, change.record_priority)?;
-            builder.add_mx_record(&owner_name, ttl, priority, target)?;
-        }
-        "NS" => {
-            builder.add_ns_record(&owner_name, ttl, &change.record_value)?;
-        }
-        "PTR" => {
-            builder.add_ptr_record(&owner_name, ttl, &change.record_value)?;
-        }
-        "SRV" => {
-            let (priority, weight, port, target) =
-                wire::parse_srv_record_value(&change.record_value, change.record_priority)?;
-            builder.add_srv_record(&owner_name, ttl, priority, weight, port, target)?;
-        }
-        "TXT" => {
-            builder.add_txt_record(&owner_name, ttl, &change.record_value)?;
-        }
-        _ => {
-            log_info!("Skipping unsupported record type: {}", change.record_type);
-        }
-    }
-
-    Ok(())
+    builder.add_record_parts(
+        zone_name,
+        &change.record_name,
+        &change.record_type,
+        &change.record_value,
+        change.record_ttl,
+        change.record_priority,
+    )
 }

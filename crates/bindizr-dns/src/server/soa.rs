@@ -3,7 +3,7 @@
 
 use std::net::{IpAddr, SocketAddr};
 
-use domain::base::iana::Rtype;
+use domain::base::iana::{Rcode, Rtype};
 use tokio::net::{TcpStream, UdpSocket};
 
 use crate::{error::XfrError, log_info, server::catalog, service::zone::ZoneService, wire};
@@ -40,7 +40,7 @@ async fn soa_response_bytes(
             query.query_id,
             &query.qname,
             query.qtype,
-            crate::protocol::RCODE_NOTAUTH,
+            Rcode::NOTAUTH,
         )),
         Err(err) => Err(err),
     }

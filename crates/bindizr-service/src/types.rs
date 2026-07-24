@@ -61,7 +61,6 @@ pub struct GetZoneResponse {
     pub minimum_ttl: i32,
 }
 impl GetZoneResponse {
-    /// Build a response from a [`Zone`].
     pub fn from_zone(zone: &Zone) -> Self {
         GetZoneResponse {
             id: zone.id,
@@ -116,8 +115,7 @@ pub struct GetTsigKeyResponse {
 }
 
 impl GetTsigKeyResponse {
-    /// Build a response from a [`TsigKey`]; an empty secret is treated as
-    /// already-cleared and omitted.
+    /// An empty secret is treated as already-cleared and omitted.
     pub fn from_key(key: &TsigKey) -> Self {
         GetTsigKeyResponse {
             id: key.id,
@@ -160,7 +158,6 @@ pub struct GetZoneTsigPolicyResponse {
 }
 
 impl GetZoneTsigPolicyResponse {
-    /// Build a response from a policy joined with its key name.
     pub fn from_policy(policy: &ZoneTsigPolicyWithKey) -> Self {
         GetZoneTsigPolicyResponse {
             id: policy.policy.id,
@@ -222,7 +219,6 @@ impl GetRecordResponse {
         }
     }
 
-    /// Build a response from a [`RecordWithZone`].
     pub fn from_record_with_zone(record: &RecordWithZone) -> Self {
         Self::from_record_and_zone_name(&record.record(), &record.zone_name)
     }

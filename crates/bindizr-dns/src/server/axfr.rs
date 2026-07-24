@@ -6,18 +6,9 @@ use tokio::net::TcpStream;
 use super::{catalog, delta, zone_cache};
 use crate::{error::XfrError, log_info, service::zone::ZoneService, wire};
 
-/// Handles an AXFR request.
+/// Handles an AXFR payload under `response_qtype`: the IXFR fallback keeps
+/// QTYPE=IXFR to match the original query.
 pub(crate) async fn handle_axfr(
-    stream: &mut TcpStream,
-    query: &wire::ParsedQuery,
-    client_ip: IpAddr,
-) -> Result<(), XfrError> {
-    handle_axfr_with_qtype(stream, query, client_ip, Rtype::AXFR).await
-}
-
-/// Handles an AXFR payload with a specific response question type.
-/// IXFR fallback keeps QTYPE=IXFR to match the original query.
-pub(crate) async fn handle_axfr_with_qtype(
     stream: &mut TcpStream,
     query: &wire::ParsedQuery,
     client_ip: IpAddr,

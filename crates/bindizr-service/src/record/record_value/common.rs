@@ -2,7 +2,7 @@ use bindizr_core::dns::name::{presentation_labels, to_fqdn_lowercase};
 
 use crate::{
     error::ServiceError,
-    validation::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control},
+    validation::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label},
 };
 
 pub(super) fn reject_duplicate_priority_field(
@@ -78,42 +78,7 @@ pub(super) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
     for label in presentation_labels(without_trailing_dot)
         .map_err(|e| ServiceError::invalid_record_value(e.to_string()))?
     {
-        validate_domain_record_label(field, &label)?;
-    }
-
-    Ok(())
-}
-
-fn validate_domain_record_label(field: &str, label: &str) -> Result<(), ServiceError> {
-    if label.is_empty() {
-        return Err(ServiceError::invalid_record_value(format!(
-            "{} must not contain empty labels",
-            field
-        )));
-    }
-
-    if label.len() > MAX_DNS_LABEL_LEN {
-        return Err(ServiceError::invalid_record_value(format!(
-            "{} labels must be 63 bytes or fewer",
-            field
-        )));
-    }
-
-    if !label
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(ServiceError::invalid_record_value(format!(
-            "{} labels must contain only ASCII letters, digits, hyphens, or underscores",
-            field
-        )));
-    }
-
-    if label.starts_with('-') || label.ends_with('-') {
-        return Err(ServiceError::invalid_record_value(format!(
-            "{} labels must not start or end with hyphens",
-            field
-        )));
+        validate_domain_label(&label, field, true, ServiceError::invalid_record_value)?;
     }
 
     Ok(())

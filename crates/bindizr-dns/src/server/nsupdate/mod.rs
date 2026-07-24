@@ -16,11 +16,7 @@ use tokio::net::{TcpStream, UdpSocket};
 
 use crate::{
     log_info, log_warn,
-    protocol::{
-        DNS_HEADER_LEN, DNS_OPCODE_UPDATE, RCODE_FORMERR, RCODE_NOERROR, RCODE_NOTZONE,
-        RCODE_NXDOMAIN, RCODE_NXRRSET, RCODE_REFUSED, RCODE_SERVFAIL, RCODE_YXDOMAIN,
-        RCODE_YXRRSET,
-    },
+    protocol::{DNS_HEADER_LEN, DNS_OPCODE_UPDATE},
 };
 
 /// Response-TSIG fudge for requests whose own fudge is unavailable
@@ -82,7 +78,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         Ok(req) => req,
         Err(e) => {
             log_warn!("NSUPDATE parse error from {}: {}", client_addr, e);
-            return build_response(query_data, RCODE_FORMERR, None, DEFAULT_FUDGE);
+            return build_response(query_data, Rcode::FORMERR, None, DEFAULT_FUDGE);
         }
     };
 
@@ -100,7 +96,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
                 client_addr,
                 changed
             );
-            RCODE_NOERROR
+            Rcode::NOERROR
         }
         // TSIG failures carry their own complete response, built against the
         // request's TSIG record (RFC 8945 §5.2–5.3).
@@ -110,31 +106,31 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         }
         Err(update::UpdateError::Refused(msg)) => {
             log_warn!("NSUPDATE refused from {}: {}", client_addr, msg);
-            RCODE_REFUSED
+            Rcode::REFUSED
         }
         Err(update::UpdateError::YxDomain(msg)) => {
             log_warn!("NSUPDATE yxdomain from {}: {}", client_addr, msg);
-            RCODE_YXDOMAIN
+            Rcode::YXDOMAIN
         }
         Err(update::UpdateError::YxRrset(msg)) => {
             log_warn!("NSUPDATE yxrrset from {}: {}", client_addr, msg);
-            RCODE_YXRRSET
+            Rcode::YXRRSET
         }
         Err(update::UpdateError::NxDomain(msg)) => {
             log_warn!("NSUPDATE nxdomain from {}: {}", client_addr, msg);
-            RCODE_NXDOMAIN
+            Rcode::NXDOMAIN
         }
         Err(update::UpdateError::NxRrset(msg)) => {
             log_warn!("NSUPDATE nxrrset from {}: {}", client_addr, msg);
-            RCODE_NXRRSET
+            Rcode::NXRRSET
         }
         Err(update::UpdateError::NotZone(msg)) => {
             log_warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
-            RCODE_NOTZONE
+            Rcode::NOTZONE
         }
         Err(update::UpdateError::Internal(msg)) => {
             log_warn!("NSUPDATE internal error from {}: {}", client_addr, msg);
-            RCODE_SERVFAIL
+            Rcode::SERVFAIL
         }
     };
 
@@ -146,13 +142,11 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
 /// signed request must be signed (RFC 8945 §5.3).
 fn build_response(
     query_data: &[u8],
-    rcode: u8,
+    rcode: Rcode,
     signer: Option<auth::ResponseSigner>,
     fudge: u16,
 ) -> Option<Vec<u8>> {
     let msg = Message::from_octets(query_data).ok()?;
-    let rcode = Rcode::checked_from_int(rcode)?;
-
     let answer = MessageBuilder::new_vec().start_answer(&msg, rcode).ok()?;
     let mut additional = answer.additional();
 

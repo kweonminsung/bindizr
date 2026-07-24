@@ -4,7 +4,7 @@ use crate::{
     error::ServiceError,
     types::CreateZoneRequest,
     validation::{
-        MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels,
+        MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label, validate_wire_labels,
     },
 };
 
@@ -174,42 +174,10 @@ fn normalize_domain_name(value: &str, field: &str) -> Result<String, ServiceErro
     }
 
     for label in without_trailing_dot.split('.') {
-        validate_domain_label(label, field)?;
+        validate_domain_label(label, field, false, ServiceError::invalid_zone)?;
     }
 
     Ok(without_trailing_dot.to_ascii_lowercase())
-}
-
-fn validate_domain_label(label: &str, field: &str) -> Result<(), ServiceError> {
-    if label.is_empty() {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must not contain empty labels",
-            field
-        )));
-    }
-
-    if label.len() > MAX_DNS_LABEL_LEN {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} labels must be 63 bytes or fewer",
-            field
-        )));
-    }
-
-    if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} labels must contain only ASCII letters, digits, or hyphens",
-            field
-        )));
-    }
-
-    if label.starts_with('-') || label.ends_with('-') {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} labels must not start or end with hyphens",
-            field
-        )));
-    }
-
-    Ok(())
 }
 
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {

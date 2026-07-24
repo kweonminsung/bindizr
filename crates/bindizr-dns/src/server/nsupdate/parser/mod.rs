@@ -10,21 +10,12 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRequest {
     pub zone_name: String,
-    pub prerequisites: Vec<PrerequisiteRecord>,
+    pub prerequisites: Vec<UpdateRecord>,
     pub updates: Vec<UpdateRecord>,
     pub tsig: Option<TsigRecord>,
 }
 
-#[derive(Debug, Clone)]
-pub(super) struct PrerequisiteRecord {
-    pub name: String,
-    pub rr_type: u16,
-    pub class: u16,
-    pub ttl: u32,
-    pub rdata: Vec<u8>,
-    pub rdata_start: usize,
-}
-
+/// One RR from the prerequisite or update section.
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRecord {
     pub name: String,
@@ -110,14 +101,7 @@ pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseEr
     let mut prerequisites = Vec::with_capacity(ancount);
     for _ in 0..ancount {
         let (rr, next) = parse_rr(data, pos)?;
-        prerequisites.push(PrerequisiteRecord {
-            name: rr.name,
-            rr_type: rr.rr_type,
-            class: rr.class,
-            ttl: rr.ttl,
-            rdata: rr.rdata,
-            rdata_start: rr.rdata_start,
-        });
+        prerequisites.push(rr);
         pos = next;
     }
 
