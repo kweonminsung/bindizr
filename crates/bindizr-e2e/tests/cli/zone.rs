@@ -37,6 +37,34 @@ async fn zone_create_read_delete() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_update_changes_only_passed_fields_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("cli-update.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    let updated = app
+        .run_cli_success(&[
+            "zone",
+            "update",
+            &zone_name,
+            "--refresh",
+            "300",
+            "--retry",
+            "60",
+            "--output",
+            "json",
+        ])
+        .await;
+    let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    assert_eq!(updated["refresh"], 300);
+    assert_eq!(updated["retry"], 60);
+    // Omitted fields keep their current values.
+    assert_eq!(updated["ttl"], 3600);
+    assert_eq!(updated["primary_ns"], format!("ns1.{zone_name}"));
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_filter_and_paginate() {
     let app = TestApp::start().await;
     let first_zone = app.zone_name("first.example");
@@ -251,13 +279,20 @@ async fn zone_snapshots_and_rollback_flow() {
     assert_eq!(a_records, ["www"]);
 
     let dry_run = app
-        .run_cli_success(&["zone", "rollback", &zone_name, target_serial, "--dry-run"])
+        .run_cli_success(&[
+            "zone",
+            "snapshot",
+            "rollback",
+            &zone_name,
+            target_serial,
+            "--dry-run",
+        ])
         .await;
     assert!(dry_run.contains("Dry run"));
     assert!(dry_run.contains("nothing applied"));
 
     let rolled_back = app
-        .run_cli_success(&["zone", "rollback", &zone_name, target_serial])
+        .run_cli_success(&["zone", "snapshot", "rollback", &zone_name, target_serial])
         .await;
     assert!(rolled_back.contains("Zone rolled back to serial 2 (new serial 4)"));
 
@@ -277,7 +312,7 @@ async fn zone_snapshots_and_rollback_flow() {
     assert!(names[0].starts_with("www."));
 
     // Rolling back to the current serial is rejected with a hint.
-    let args = ["zone", "rollback", &zone_name, "4"];
+    let args = ["zone", "snapshot", "rollback", &zone_name, "4"];
     let output = app.run_cli(&args).await;
     assert_cli_failure_contains(&args, &output, "must be less than the current serial");
 }

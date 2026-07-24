@@ -55,10 +55,12 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
+                DaemonCommandKind::UpdateZone => zone::update_zone(&cmd.data).await,
                 DaemonCommandKind::DeleteZone => zone::delete_zone(&cmd.data).await,
                 DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
+                DaemonCommandKind::UpdateRecord => record::update_record(&cmd.data).await,
                 DaemonCommandKind::BulkCreateRecords => {
                     record::bulk_create_records(&cmd.data).await
                 }

@@ -124,6 +124,30 @@ YAML example:
         output: OutputFormat,
     },
 
+    /// Update a record, changing only the fields you pass
+    Update {
+        /// The record ID
+        id: i32,
+        /// Record name
+        #[arg(long)]
+        name: Option<String>,
+        /// Record type (A, AAAA, CNAME, MX, etc.)
+        #[arg(long = "type", alias = "record-type")]
+        record_type: Option<String>,
+        /// Record value
+        #[arg(long)]
+        value: Option<String>,
+        /// TTL (records of one RRset share a TTL)
+        #[arg(long)]
+        ttl: Option<i32>,
+        /// Priority (MX and SRV only)
+        #[arg(long)]
+        priority: Option<i32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
     /// Delete a record
     Delete {
         /// The record ID
@@ -259,6 +283,32 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         RecordCommand::Get { id, output } => {
             let data = client
                 .send_command(DaemonCommandKind::GetRecord, Some(json!({ "id": id })))
+                .await?
+                .data;
+
+            print_records(&data, output)?;
+        }
+        RecordCommand::Update {
+            id,
+            name,
+            record_type,
+            value,
+            ttl,
+            priority,
+            output,
+        } => {
+            let data = client
+                .send_command(
+                    DaemonCommandKind::UpdateRecord,
+                    Some(json!({
+                        "id": id,
+                        "name": name,
+                        "record_type": record_type,
+                        "value": value,
+                        "ttl": ttl,
+                        "priority": priority,
+                    })),
+                )
                 .await?
                 .data;
 

@@ -4,7 +4,7 @@ use serde_json::json;
 use crate::{
     api::types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-        GetRecordsFilter,
+        GetRecordsFilter, UpdateRecordRequest,
     },
     socket::{server::to_response_data, types::DaemonResponse},
 };
@@ -85,6 +85,59 @@ pub(super) async fn create_record(
                 data: to_response_data(response)?,
             })
         }
+        Err(e) => Err(e),
+    }
+}
+
+/// Handle the `UpdateRecord` command. Fields absent from the payload keep the
+/// record's current value, so the CLI can send only the flags the user set.
+/// The value is taken from the stored (non-display) form so MX/SRV round-trip
+/// without doubling the priority.
+pub(super) async fn update_record(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let record_id = parse_record_id(data)?;
+    let record = RecordService::get_by_id_with_zone(record_id)
+        .await?
+        .record();
+
+    let name = data
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| record.name.clone());
+    let record_type = data
+        .get("record_type")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| record.record_type.to_string());
+    let value = match data.get("value") {
+        Some(value) if !value.is_null() => serde_json::from_value(value.clone())
+            .map_err(|e| ServiceError::invalid_input(format!("Invalid value: {}", e)))?,
+        _ => GetRecordResponse::from_record(&record).value,
+    };
+    // The CLI sends null for unset flags, so a missing number keeps the current
+    // value rather than clearing it.
+    let merged_i32 = |field: &str, current: Option<i32>| -> Option<i32> {
+        match data.get(field).and_then(|v| v.as_i64()) {
+            Some(value) => Some(value as i32),
+            None => current,
+        }
+    };
+
+    let request = UpdateRecordRequest {
+        name,
+        record_type,
+        value,
+        ttl: merged_i32("ttl", record.ttl),
+        priority: merged_i32("priority", record.priority),
+    };
+
+    match RecordService::update_by_id(record_id, &request).await {
+        Ok(record) => Ok(DaemonResponse {
+            message: "Record updated successfully".to_string(),
+            data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+        }),
         Err(e) => Err(e),
     }
 }

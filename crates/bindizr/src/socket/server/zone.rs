@@ -81,6 +81,40 @@ pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
     }
 }
 
+/// Handle the `UpdateZone` command. Fields absent from the payload keep the
+/// zone's current value, so the CLI can send only the flags the user set.
+pub(super) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+    let existing = ZoneService::get_by_name(name).await?;
+
+    let opt_i32 =
+        |field: &str| -> Option<i32> { data.get(field).and_then(|v| v.as_i64()).map(|v| v as i32) };
+    let str_or = |field: &str, fallback: &str| -> String {
+        data.get(field)
+            .and_then(|v| v.as_str())
+            .unwrap_or(fallback)
+            .to_string()
+    };
+
+    let request = CreateZoneRequest {
+        name: str_or("new_name", &existing.name),
+        primary_ns: str_or("primary_ns", &existing.primary_ns),
+        admin_email: str_or("admin_email", &existing.admin_email),
+        ttl: opt_i32("ttl").unwrap_or(existing.ttl),
+        serial: None,
+        refresh: Some(opt_i32("refresh").unwrap_or(existing.refresh)),
+        retry: Some(opt_i32("retry").unwrap_or(existing.retry)),
+        expire: Some(opt_i32("expire").unwrap_or(existing.expire)),
+        minimum_ttl: Some(opt_i32("minimum_ttl").unwrap_or(existing.minimum_ttl)),
+    };
+
+    let zone = ZoneService::update(name, &request).await?;
+    Ok(DaemonResponse {
+        message: "Zone updated successfully".to_string(),
+        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+    })
+}
+
 /// Handle the `ImportZoneFile` command by reconciling BIND zone file text with
 /// a zone in a single transaction.
 pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {

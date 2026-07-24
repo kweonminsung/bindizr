@@ -54,6 +54,59 @@ async fn record_create_read_delete() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn record_update_changes_only_passed_fields_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("cli-record-update.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    app.run_cli_success(&[
+        "record",
+        "create",
+        "--name",
+        "www",
+        "--type",
+        "A",
+        "--value",
+        "192.0.2.10",
+        "--zone",
+        &zone_name,
+        "--ttl",
+        "300",
+    ])
+    .await;
+
+    let records = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    let record_id = records["items"]
+        .as_array()
+        .and_then(|records| records.iter().find(|record| record["record_type"] == "A"))
+        .and_then(|record| record["id"].as_i64())
+        .expect("created record did not contain an ID")
+        .to_string();
+
+    let updated = app
+        .run_cli_success(&[
+            "record",
+            "update",
+            &record_id,
+            "--value",
+            "127.0.0.1",
+            "--output",
+            "json",
+        ])
+        .await;
+    let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    assert_eq!(updated["value"], "127.0.0.1");
+    // Omitted fields keep their current values.
+    assert_eq!(updated["ttl"], 300);
+    assert_eq!(updated["record_type"], "A");
+    assert_eq!(updated["name"], format!("www.{zone_name}."));
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn record_filter_by_zone_and_type() {
     let app = TestApp::start().await;
     let one_zone = app.zone_name("one.example");

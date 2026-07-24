@@ -34,6 +34,39 @@ pub(crate) enum ZoneCommand {
         serial: Option<i32>,
     },
 
+    /// Update a zone, changing only the fields you pass
+    Update {
+        /// The name of the zone to update
+        name: String,
+        /// Rename the zone to this name
+        #[arg(long)]
+        new_name: Option<String>,
+        /// Primary nameserver
+        #[arg(long)]
+        primary_ns: Option<String>,
+        /// Admin email
+        #[arg(long)]
+        admin_email: Option<String>,
+        /// TTL
+        #[arg(long)]
+        ttl: Option<i32>,
+        /// SOA refresh interval (seconds)
+        #[arg(long)]
+        refresh: Option<i32>,
+        /// SOA retry interval (seconds)
+        #[arg(long)]
+        retry: Option<i32>,
+        /// SOA expire interval (seconds)
+        #[arg(long)]
+        expire: Option<i32>,
+        /// SOA minimum TTL (seconds)
+        #[arg(long)]
+        minimum_ttl: Option<i32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
     /// List zones
     #[command(alias = "ls")]
     List {
@@ -116,24 +149,10 @@ $INCLUDE is not supported.")]
         output: OutputFormat,
     },
 
-    /// Inspect a zone's snapshots (serial history)
+    /// Inspect or roll back a zone's snapshots (serial history)
     Snapshot {
         #[command(subcommand)]
         subcommand: ZoneSnapshotCommand,
-    },
-
-    /// Roll a zone back to the state captured at a snapshot serial
-    Rollback {
-        /// The name of the zone
-        name: String,
-        /// Target snapshot serial (the zone serial still advances)
-        serial: i32,
-        /// Compute and report the rollback without applying any change
-        #[arg(long)]
-        dry_run: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
 
     /// Show how far each secondary has caught up with a zone
@@ -179,6 +198,19 @@ pub(crate) enum ZoneSnapshotCommand {
         name: String,
         /// Snapshot serial to inspect
         serial: i32,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+    /// Roll a zone back to the state captured at a snapshot serial
+    Rollback {
+        /// The name of the zone
+        name: String,
+        /// Target snapshot serial (the zone serial still advances)
+        serial: i32,
+        /// Compute and report the rollback without applying any change
+        #[arg(long)]
+        dry_run: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -336,6 +368,39 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
 
             print_zones(&data, output)?;
         }
+        ZoneCommand::Update {
+            name,
+            new_name,
+            primary_ns,
+            admin_email,
+            ttl,
+            refresh,
+            retry,
+            expire,
+            minimum_ttl,
+            output,
+        } => {
+            let data = client
+                .send_command(
+                    DaemonCommandKind::UpdateZone,
+                    Some(json!({
+                        "name": name,
+                        // `name` is the lookup key; `new_name` sets the renamed value.
+                        "new_name": new_name,
+                        "primary_ns": primary_ns,
+                        "admin_email": admin_email,
+                        "ttl": ttl,
+                        "refresh": refresh,
+                        "retry": retry,
+                        "expire": expire,
+                        "minimum_ttl": minimum_ttl,
+                    })),
+                )
+                .await?
+                .data;
+
+            print_zones(&data, output)?;
+        }
         ZoneCommand::Delete { name } => {
             let response = client
                 .send_command(DaemonCommandKind::DeleteZone, Some(json!({ "name": name })))
@@ -445,27 +510,27 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     })?;
                 }
             }
-        },
-        ZoneCommand::Rollback {
-            name,
-            serial,
-            dry_run,
-            output,
-        } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::RollbackZone,
-                    Some(json!({ "name": name, "serial": serial, "dry_run": dry_run })),
-                )
-                .await?;
+            ZoneSnapshotCommand::Rollback {
+                name,
+                serial,
+                dry_run,
+                output,
+            } => {
+                let response = client
+                    .send_command(
+                        DaemonCommandKind::RollbackZone,
+                        Some(json!({ "name": name, "serial": serial, "dry_run": dry_run })),
+                    )
+                    .await?;
 
-            if output == OutputFormat::Table {
-                println!("{}", response.message);
+                if output == OutputFormat::Table {
+                    println!("{}", response.message);
+                }
+                print_output_with_table(&response.data, output, |data| {
+                    RollbackSummaryRow::from_json(data).map(|row| vec![row])
+                })?;
             }
-            print_output_with_table(&response.data, output, |data| {
-                RollbackSummaryRow::from_json(data).map(|row| vec![row])
-            })?;
-        }
+        },
         ZoneCommand::Status { name, output } => {
             let response = client
                 .send_command(DaemonCommandKind::ZoneStatus, Some(json!({ "name": name })))
