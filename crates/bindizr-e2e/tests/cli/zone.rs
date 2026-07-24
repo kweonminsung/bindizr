@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::common::{TestApp, assert_cli_failure_contains, assert_cli_success};
 
@@ -277,6 +277,33 @@ async fn zone_snapshots_and_rollback_flow() {
         .map(|record| record["name"].as_str().unwrap())
         .collect();
     assert_eq!(a_records, ["www"]);
+
+    // Serial 1 -> 2 added the www A record; 2 -> 3 added extra.
+    let diff = app
+        .run_cli_success(&[
+            "zone", "snapshot", "diff", &zone_name, "1", "2", "--output", "json",
+        ])
+        .await;
+    let diff: Value = serde_json::from_str(&diff).expect("CLI did not return valid JSON");
+    assert_eq!(
+        diff["summary"],
+        json!({ "added": 1, "removed": 0, "changed": 0 })
+    );
+    let added = &diff["entries"][0];
+    assert_eq!(added["change"], "added");
+    assert_eq!(added["name"], format!("www.{zone_name}."));
+    assert_eq!(added["to_rdata"][0], "192.0.2.80");
+
+    // Omitting the second serial compares against the current serial (3).
+    let diff_to_current = app
+        .run_cli_success(&[
+            "zone", "snapshot", "diff", &zone_name, "1", "--output", "json",
+        ])
+        .await;
+    let diff_to_current: Value =
+        serde_json::from_str(&diff_to_current).expect("CLI did not return valid JSON");
+    assert_eq!(diff_to_current["to_serial"].as_i64().unwrap(), 3);
+    assert_eq!(diff_to_current["summary"]["added"].as_i64().unwrap(), 2);
 
     let dry_run = app
         .run_cli_success(&[

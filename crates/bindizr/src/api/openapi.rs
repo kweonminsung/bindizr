@@ -10,9 +10,10 @@ use super::types::{
     ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse,
     NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse, RecordValueRequest,
     RollbackSummary, RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse,
-    SnapshotDetailResponse, SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse,
-    TsigKeyResponse, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
-    ZoneSnapshotResponse, ZoneStatusResponse, ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
+    SnapshotDetailResponse, SnapshotDiffEntry, SnapshotDiffResponse, SnapshotDiffSummary,
+    SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse, TsigKeyResponse,
+    UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse, ZoneSnapshotResponse,
+    ZoneStatusResponse, ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
 };
 
 /// OpenAPI document for the HTTP API (debug builds only).
@@ -33,6 +34,7 @@ use super::types::{
         super::zone::import_zone,
         super::zone::list_zone_snapshots,
         super::zone::get_zone_snapshot,
+        super::zone::diff_zone_snapshots,
         super::zone::rollback_zone,
         super::zone::get_zone_status,
         super::notify::notify_zones,
@@ -72,6 +74,9 @@ use super::types::{
         RollbackZoneResponse,
         SecondaryStatusResponse,
         SnapshotDetailResponse,
+        SnapshotDiffResponse,
+        SnapshotDiffEntry,
+        SnapshotDiffSummary,
         SnapshotListResponse,
         SnapshotRecordResponse,
         TsigKeyListResponse,

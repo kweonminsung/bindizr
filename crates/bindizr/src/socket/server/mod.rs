@@ -69,6 +69,7 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
                 DaemonCommandKind::ListZoneSnapshots => zone::list_zone_snapshots(&cmd.data).await,
                 DaemonCommandKind::GetZoneSnapshot => zone::get_zone_snapshot(&cmd.data).await,
+                DaemonCommandKind::DiffZoneSnapshots => zone::diff_zone_snapshots(&cmd.data).await,
                 DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
                 DaemonCommandKind::ZoneStatus => zone::zone_status(&cmd.data).await,
             },

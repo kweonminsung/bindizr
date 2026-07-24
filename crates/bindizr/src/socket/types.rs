@@ -31,6 +31,7 @@ pub(crate) enum DaemonCommandKind {
     ImportZoneFile,
     ListZoneSnapshots,
     GetZoneSnapshot,
+    DiffZoneSnapshots,
     RollbackZone,
     ZoneStatus,
 }

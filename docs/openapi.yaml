@@ -965,6 +965,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/snapshots/diff:
+    get:
+      tags:
+      - Zone
+      summary: Diff the records between two of a zone's serials
+      description: Reports the RRsets added, removed, and changed between `from` and `to`. Omitting `to` compares against the current serial. Each serial must be the current one or an existing snapshot.
+      operationId: diff_zone_snapshots
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      - name: from
+        in: query
+        description: The serial to diff from.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      - name: to
+        in: query
+        description: The serial to diff to; defaults to the current serial.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: The record differences between the two serials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotDiffResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}/snapshots/{serial}:
     get:
       tags:
@@ -1273,8 +1326,8 @@ components:
           - integer
           - 'null'
           format: int32
-          example: 10
           description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          example: 10
         record_type:
           type: string
           example: A
@@ -1283,8 +1336,8 @@ components:
           - integer
           - 'null'
           format: int32
-          example: 3600
           description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+          example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
     BulkRecordsResponse:
@@ -1343,8 +1396,8 @@ components:
           - integer
           - 'null'
           format: int32
-          example: 10
           description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          example: 10
         record_type:
           type: string
           example: A
@@ -1353,8 +1406,8 @@ components:
           - integer
           - 'null'
           format: int32
-          example: 3600
           description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+          example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
         zone_name:
@@ -1897,6 +1950,85 @@ components:
             $ref: '#/components/schemas/SnapshotRecordResponse'
         snapshot:
           $ref: '#/components/schemas/ZoneSnapshotResponse'
+    SnapshotDiffEntry:
+      type: object
+      description: One RRset (owner name + type) whose records differ between two serials.
+      required:
+      - change
+      - name
+      - record_type
+      - from_rdata
+      - to_rdata
+      properties:
+        change:
+          type: string
+          description: '`added`, `removed`, or `changed`.'
+          example: changed
+        from_rdata:
+          type: array
+          items:
+            type: string
+          description: Zone-file rdata present at the `from` serial (empty for `added`).
+        name:
+          type: string
+          example: www.example.com.
+        record_type:
+          type: string
+          example: A
+        to_rdata:
+          type: array
+          items:
+            type: string
+          description: Zone-file rdata present at the `to` serial (empty for `removed`).
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 300
+    SnapshotDiffResponse:
+      type: object
+      description: The record-level difference between two of a zone's serials.
+      required:
+      - from_serial
+      - to_serial
+      - entries
+      - summary
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotDiffEntry'
+        from_serial:
+          type: integer
+          format: int32
+          example: 41
+        summary:
+          $ref: '#/components/schemas/SnapshotDiffSummary'
+        to_serial:
+          type: integer
+          format: int32
+          example: 42
+    SnapshotDiffSummary:
+      type: object
+      description: How many RRsets were added, removed, and changed between two serials.
+      required:
+      - added
+      - removed
+      - changed
+      properties:
+        added:
+          type: integer
+          example: 1
+          minimum: 0
+        changed:
+          type: integer
+          example: 1
+          minimum: 0
+        removed:
+          type: integer
+          example: 1
+          minimum: 0
     SnapshotListResponse:
       type: object
       description: A page of zone snapshots.
@@ -1975,8 +2107,8 @@ components:
           - integer
           - 'null'
           format: int32
-          example: 10
           description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          example: 10
         record_type:
           type: string
           example: A
@@ -1985,8 +2117,8 @@ components:
           - integer
           - 'null'
           format: int32
-          example: 3600
           description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+          example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
     ZoneDetailResponse:

@@ -19,8 +19,8 @@ use crate::api::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
         ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, RollbackZoneRequest,
         RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
-        SnapshotListResponse, SnapshotRecordResponse, ZoneDetailResponse, ZoneListResponse,
-        ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
+        SnapshotDiffResponse, SnapshotListResponse, SnapshotRecordResponse, ZoneDetailResponse,
+        ZoneListResponse, ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
     },
 };
 
@@ -41,6 +41,10 @@ impl ZoneApi {
                 routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
             .route("/zones/{name}/snapshots", routing::get(list_zone_snapshots))
+            .route(
+                "/zones/{name}/snapshots/diff",
+                routing::get(diff_zone_snapshots),
+            )
             .route(
                 "/zones/{name}/snapshots/{serial}",
                 routing::get(get_zone_snapshot),
@@ -232,6 +236,42 @@ pub(crate) struct SnapshotListQuery {
 pub(crate) struct ZoneSnapshotParam {
     name: String,
     serial: i32,
+}
+
+/// Query parameters selecting the two serials to diff.
+#[derive(Debug, Deserialize)]
+pub(crate) struct SnapshotDiffQuery {
+    from: i32,
+    to: Option<i32>,
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/snapshots/diff",
+        tag = "Zone",
+        summary = "Diff the records between two of a zone's serials",
+        description = "Reports the RRsets added, removed, and changed between `from` and `to`. Omitting `to` compares against the current serial. Each serial must be the current one or an existing snapshot.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("from" = i32, Query, description = "The serial to diff from."),
+            ("to" = Option<i32>, Query, description = "The serial to diff to; defaults to the current serial.")
+        ),
+        responses(
+            (status = 200, description = "The record differences between the two serials", body = SnapshotDiffResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone or snapshot not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Diff the record sets at two of a zone's serials.
+pub(crate) async fn diff_zone_snapshots(
+    Path(params): Path<ZoneNameParam>,
+    Query(query): Query<SnapshotDiffQuery>,
+) -> impl IntoResponse {
+    match ZoneService::diff_snapshots(&params.name, query.from, query.to).await {
+        Ok(diff) => (StatusCode::OK, Json(diff)).into_response(),
+        Err(err) => ApiError::from(err).into_response(),
+    }
 }
 
 #[utoipa::path(

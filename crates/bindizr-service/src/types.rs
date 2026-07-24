@@ -630,6 +630,46 @@ pub struct SnapshotDetailResponse {
     pub records: Vec<SnapshotRecordResponse>,
 }
 
+/// One RRset (owner name + type) whose records differ between two serials.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotDiffEntry {
+    /// `added`, `removed`, or `changed`.
+    #[schema(example = "changed")]
+    pub change: String,
+    #[schema(example = "www.example.com.")]
+    pub name: String,
+    #[schema(example = "A")]
+    pub record_type: String,
+    #[schema(example = 300)]
+    pub ttl: Option<i32>,
+    /// Zone-file rdata present at the `from` serial (empty for `added`).
+    pub from_rdata: Vec<String>,
+    /// Zone-file rdata present at the `to` serial (empty for `removed`).
+    pub to_rdata: Vec<String>,
+}
+
+/// How many RRsets were added, removed, and changed between two serials.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotDiffSummary {
+    #[schema(example = 1)]
+    pub added: usize,
+    #[schema(example = 1)]
+    pub removed: usize,
+    #[schema(example = 1)]
+    pub changed: usize,
+}
+
+/// The record-level difference between two of a zone's serials.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotDiffResponse {
+    #[schema(example = 41)]
+    pub from_serial: i32,
+    #[schema(example = 42)]
+    pub to_serial: i32,
+    pub entries: Vec<SnapshotDiffEntry>,
+    pub summary: SnapshotDiffSummary,
+}
+
 /// Request body for rolling a zone back to a snapshot serial.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct RollbackZoneRequest {

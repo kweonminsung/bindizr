@@ -1,9 +1,12 @@
 //! Zone serial history: snapshot listing, point-in-time record reconstruction,
 //! and serial-based rollback.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
-use bindizr_core::dns::name::{soa_mailbox_to_email, to_fqdn};
+use bindizr_core::dns::{
+    name::{soa_mailbox_to_email, to_fqdn},
+    record::{display_record_owner_name, presentation_rdata},
+};
 use chrono::Utc;
 
 use super::{ZoneService, snapshot::save_zone_snapshot_tx, validation::normalize_zone_name};
@@ -23,7 +26,10 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{PaginatedResponse, RollbackSummary, RollbackZoneResponse},
+    types::{
+        PaginatedResponse, RollbackSummary, RollbackZoneResponse, SnapshotDiffEntry,
+        SnapshotDiffResponse, SnapshotDiffSummary,
+    },
 };
 
 /// A record as it existed at a past serial, rebuilt from the change history;
@@ -162,6 +168,156 @@ async fn reconstruct_records_at_serial(
     Ok(records)
 }
 
+/// The record set at `serial`: the live records when it is the current serial,
+/// otherwise reconstructed from the change history.
+async fn records_at_serial(
+    tx: &mut RepositoryTx<'_>,
+    zone_id: i32,
+    serial: i32,
+    current_serial: i32,
+) -> Result<Vec<ReconstructedRecord>, ServiceError> {
+    if serial == current_serial {
+        let mut records: Vec<ReconstructedRecord> =
+            RepositoryService::get_records_by_zone_id_tx(tx, zone_id)
+                .await?
+                .into_iter()
+                .map(ReconstructedRecord::from)
+                .collect();
+        sort_records(&mut records);
+        Ok(records)
+    } else {
+        reconstruct_records_at_serial(tx, zone_id, serial, current_serial).await
+    }
+}
+
+/// A serial is diffable only if it is the current serial or has a snapshot.
+async fn require_serial(
+    tx: &mut RepositoryTx<'_>,
+    zone: &Zone,
+    serial: i32,
+) -> Result<(), ServiceError> {
+    if serial == zone.serial {
+        return Ok(());
+    }
+    RepositoryService::get_zone_snapshot_by_serial_tx(tx, zone.id, serial)
+        .await?
+        .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, serial))?;
+    Ok(())
+}
+
+/// Presentation view of one RRset at one serial: the shared TTL and the sorted
+/// zone-file rdata of its records.
+#[derive(PartialEq)]
+struct RrsetView {
+    ttl: Option<i32>,
+    rdata: Vec<String>,
+}
+
+/// Group records into RRsets keyed by (display owner name, record type).
+fn group_rrsets(
+    zone: &Zone,
+    records: &[ReconstructedRecord],
+) -> BTreeMap<(String, String), RrsetView> {
+    let mut groups: BTreeMap<(String, String), RrsetView> = BTreeMap::new();
+    for record in records {
+        let key = (
+            display_record_owner_name(&record.name, &zone.name),
+            record.record_type.to_string(),
+        );
+        let view = groups.entry(key).or_insert_with(|| RrsetView {
+            ttl: record.ttl,
+            rdata: Vec::new(),
+        });
+        view.rdata.push(presentation_rdata(
+            &record.value,
+            record.priority,
+            &record.record_type,
+        ));
+    }
+    for view in groups.values_mut() {
+        view.rdata.sort();
+    }
+    groups
+}
+
+/// Diff two record sets at the RRset level. TTL is reported for context but is
+/// not itself a difference (a mixed-TTL RRset cannot exist).
+fn build_snapshot_diff(
+    zone: &Zone,
+    from_serial: i32,
+    to_serial: i32,
+    from_records: &[ReconstructedRecord],
+    to_records: &[ReconstructedRecord],
+) -> SnapshotDiffResponse {
+    let from_groups = group_rrsets(zone, from_records);
+    let mut to_groups = group_rrsets(zone, to_records);
+
+    let mut keys: Vec<(String, String)> = from_groups.keys().cloned().collect();
+    keys.extend(
+        to_groups
+            .keys()
+            .filter(|k| !from_groups.contains_key(*k))
+            .cloned(),
+    );
+    keys.sort();
+
+    let mut entries = Vec::new();
+    let (mut added, mut removed, mut changed) = (0usize, 0usize, 0usize);
+
+    for key in keys {
+        let (name, record_type) = key.clone();
+        match (from_groups.get(&key), to_groups.remove(&key)) {
+            (None, Some(to)) => {
+                added += 1;
+                entries.push(SnapshotDiffEntry {
+                    change: "added".to_string(),
+                    name,
+                    record_type,
+                    ttl: to.ttl,
+                    from_rdata: Vec::new(),
+                    to_rdata: to.rdata,
+                });
+            }
+            (Some(from), None) => {
+                removed += 1;
+                entries.push(SnapshotDiffEntry {
+                    change: "removed".to_string(),
+                    name,
+                    record_type,
+                    ttl: from.ttl,
+                    from_rdata: from.rdata.clone(),
+                    to_rdata: Vec::new(),
+                });
+            }
+            (Some(from), Some(to)) => {
+                if from.rdata != to.rdata {
+                    changed += 1;
+                    entries.push(SnapshotDiffEntry {
+                        change: "changed".to_string(),
+                        name,
+                        record_type,
+                        ttl: to.ttl,
+                        from_rdata: from.rdata.clone(),
+                        to_rdata: to.rdata,
+                    });
+                }
+            }
+            (None, None) => unreachable!("keys come from the two group maps"),
+        }
+    }
+
+    SnapshotDiffResponse {
+        from_serial,
+        to_serial,
+        entries,
+        summary: SnapshotDiffSummary {
+            added,
+            removed,
+            changed,
+        },
+    }
+}
+
 /// Deterministic output order (hash-map iteration order is not).
 fn sort_records(records: &mut [ReconstructedRecord]) {
     records.sort_by(|a, b| {
@@ -249,24 +405,48 @@ impl ZoneService {
                     .await?
                     .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, serial))?;
 
-            let records = if serial == zone.serial {
-                let mut records: Vec<ReconstructedRecord> =
-                    RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id)
-                        .await?
-                        .into_iter()
-                        .map(ReconstructedRecord::from)
-                        .collect();
-                sort_records(&mut records);
-                records
-            } else {
-                reconstruct_records_at_serial(&mut tx, zone.id, serial, zone.serial).await?
-            };
+            let records = records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
 
             Ok::<_, ServiceError>((snapshot, records))
         }
         .await;
 
         RepositoryService::finish_tx(tx, result, "Failed to load snapshot").await
+    }
+
+    /// Compute the record-level difference between two of a zone's serials.
+    /// `to_serial` defaults to the zone's current serial when `None`. Each
+    /// serial must be the current one or an existing snapshot.
+    pub async fn diff_snapshots(
+        zone_name: &str,
+        from_serial: i32,
+        to_serial: Option<i32>,
+    ) -> Result<SnapshotDiffResponse, ServiceError> {
+        let lookup_name = normalize_zone_name(zone_name)?;
+        let mut tx = RepositoryService::begin_tx("Failed to diff snapshots").await?;
+
+        let result = async {
+            let zone = load_zone_tx(&mut tx, &lookup_name).await?;
+            let to_serial = to_serial.unwrap_or(zone.serial);
+
+            require_serial(&mut tx, &zone, from_serial).await?;
+            require_serial(&mut tx, &zone, to_serial).await?;
+
+            let from_records =
+                records_at_serial(&mut tx, zone.id, from_serial, zone.serial).await?;
+            let to_records = records_at_serial(&mut tx, zone.id, to_serial, zone.serial).await?;
+
+            Ok::<_, ServiceError>(build_snapshot_diff(
+                &zone,
+                from_serial,
+                to_serial,
+                &from_records,
+                &to_records,
+            ))
+        }
+        .await;
+
+        RepositoryService::finish_tx(tx, result, "Failed to diff snapshots").await
     }
 
     /// Roll a zone back to the state captured at `target_serial`. The record

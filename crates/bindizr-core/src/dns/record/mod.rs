@@ -45,6 +45,39 @@ pub fn display_record_value(value: &str, record_type: &RecordType) -> String {
 const MX_FIELD_COUNTS: &[usize] = &[1, 2];
 const SRV_FIELD_COUNTS: &[usize] = &[3, 4];
 
+/// Render a stored value plus its priority column as zone-file rdata: MX/SRV
+/// carry the priority inline (default 10), TXT is quoted per character-string,
+/// and other types use their display form.
+pub fn presentation_rdata(value: &str, priority: Option<i32>, record_type: &RecordType) -> String {
+    match record_type {
+        RecordType::TXT => txt_presentation(value),
+        RecordType::MX | RecordType::SRV => {
+            format!(
+                "{} {}",
+                priority.unwrap_or(10),
+                display_record_value(value, record_type)
+            )
+        }
+        _ => display_record_value(value, record_type),
+    }
+}
+
+fn txt_presentation(value: &str) -> String {
+    let segments = match txt::decode_raw_txt_value(value) {
+        Some(txt::DecodedTxtValue::String(single)) => vec![single],
+        Some(txt::DecodedTxtValue::Segments(segments)) => segments,
+        None => vec![value.to_string()],
+    };
+    segments
+        .iter()
+        .map(|segment| {
+            let escaped = segment.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("\"{}\"", escaped)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn display_last_name_field(value: &str, valid_field_counts: &[usize]) -> String {
     let mut fields = value
         .split_whitespace()

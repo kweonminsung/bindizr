@@ -194,6 +194,38 @@ pub(super) async fn get_zone_snapshot(
     })
 }
 
+/// Handle the `DiffZoneSnapshots` command by diffing two of a zone's serials.
+/// A missing `to_serial` compares `from_serial` against the current serial.
+pub(super) async fn diff_zone_snapshots(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+    let serial_field = |field: &str| -> Result<Option<i32>, ServiceError> {
+        data.get(field)
+            .and_then(|v| v.as_i64())
+            .map(|v| {
+                i32::try_from(v).map_err(|_| ServiceError::invalid_input("Serial is out of range"))
+            })
+            .transpose()
+    };
+    let from_serial = serial_field("from_serial")?
+        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'from_serial' field"))?;
+    let to_serial = serial_field("to_serial")?;
+
+    let response = ZoneService::diff_snapshots(name, from_serial, to_serial).await?;
+    Ok(DaemonResponse {
+        message: format!(
+            "Serial {} -> {}: +{} -{} ~{}",
+            response.from_serial,
+            response.to_serial,
+            response.summary.added,
+            response.summary.removed,
+            response.summary.changed
+        ),
+        data: to_response_data(response)?,
+    })
+}
+
 /// Handle the `RollbackZone` command by rolling a zone back to a snapshot serial.
 pub(super) async fn rollback_zone(
     data: &serde_json::Value,
