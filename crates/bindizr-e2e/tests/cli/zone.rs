@@ -206,6 +206,41 @@ async fn zone_import_zone_file_from_stdin() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_import_preview_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-preview.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    // Preview renders a +/-/~ diff and, being a dry run, applies nothing.
+    let preview = app
+        .run_cli_success_with_input(
+            &["zone", "import", &zone_name, "-", "--preview"],
+            "www IN A 192.0.2.30\nmail IN A 192.0.2.31\n",
+        )
+        .await;
+    assert!(preview.contains("+ www."), "preview was: {preview}");
+    assert!(
+        preview.contains("Records: +2 -0 ~0"),
+        "preview was: {preview}"
+    );
+
+    let records = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    // Only the apex NS seeded at creation exists; the preview applied nothing.
+    let names: Vec<&str> = records["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["record_type"] == "A")
+        .map(|r| r["name"].as_str().unwrap())
+        .collect();
+    assert!(names.is_empty(), "records were: {names:?}");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_snapshots_and_rollback_flow() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");

@@ -1686,6 +1686,34 @@ components:
         tsig_key:
           type: string
           example: update-key
+    ImportChange:
+      type: object
+      description: One record an import adds or deletes, with its rdata rendered for display.
+      required:
+      - op
+      - name
+      - record_type
+      - rdata
+      properties:
+        name:
+          type: string
+          example: www.example.com.
+        op:
+          type: string
+          description: '`add` or `delete`.'
+          example: add
+        rdata:
+          type: string
+          example: 192.0.2.1
+        record_type:
+          type: string
+          example: A
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 300
     ImportMode:
       type: string
       description: How parsed records are reconciled with the records already in the zone.
@@ -1755,11 +1783,19 @@ components:
       - applied
       - dry_run
       - summary
+      - changes
       - errors
       properties:
         applied:
           type: boolean
           example: true
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportChange'
+          description: |-
+            Every record the reconcile adds or deletes (a TTL change is a delete of
+            the old plus an add of the new). Lets a caller preview the change.
         dry_run:
           type: boolean
           example: false

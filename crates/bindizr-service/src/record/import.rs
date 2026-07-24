@@ -3,6 +3,7 @@ use std::{
     time::Instant,
 };
 
+use bindizr_core::dns::record::{display_record_owner_name, presentation_rdata};
 use chrono::Utc;
 
 use super::{
@@ -24,7 +25,9 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse},
+    types::{
+        ImportChange, ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
+    },
     zone::snapshot::save_zone_snapshot_tx,
 };
 
@@ -357,6 +360,8 @@ impl RecordService {
                 skipped,
             };
 
+            let changes = build_import_changes(&zone, &adds, &dels, &ttl_dels);
+
             let will_apply = errors.is_empty() && !dry_run;
             let has_changes = !dels.is_empty() || !adds.is_empty() || !ttl_dels.is_empty();
 
@@ -400,6 +405,7 @@ impl RecordService {
                 applied: will_apply,
                 dry_run,
                 summary,
+                changes,
                 errors,
             };
 
@@ -462,6 +468,35 @@ impl RecordService {
 
         Ok(response)
     }
+}
+
+/// The add/delete records of a reconcile, rendered for a preview. TTL updates
+/// appear as a delete of the old record and an add of the new one.
+fn build_import_changes(
+    zone: &Zone,
+    adds: &[&DesiredRecord],
+    dels: &[Record],
+    ttl_dels: &[Record],
+) -> Vec<ImportChange> {
+    let added = adds.iter().map(|add| ImportChange {
+        op: "add".to_string(),
+        name: display_record_owner_name(&add.stored_name, &zone.name),
+        record_type: add.prepared.record_type.to_string(),
+        ttl: add.prepared.ttl,
+        rdata: presentation_rdata(
+            &add.prepared.value,
+            add.prepared.priority,
+            &add.prepared.record_type,
+        ),
+    });
+    let deleted = dels.iter().chain(ttl_dels).map(|record| ImportChange {
+        op: "delete".to_string(),
+        name: display_record_owner_name(&record.name, &zone.name),
+        record_type: record.record_type.to_string(),
+        ttl: record.ttl,
+        rdata: presentation_rdata(&record.value, record.priority, &record.record_type),
+    });
+    added.chain(deleted).collect()
 }
 
 /// A placeholder record for in-memory comparison only; the negative id keeps it

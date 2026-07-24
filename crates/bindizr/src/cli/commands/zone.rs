@@ -6,7 +6,8 @@ use crate::{
         error::CliError,
         output::{
             ImportSummaryRow, OutputFormat, RollbackSummaryRow, SecondaryStatusRow,
-            SnapshotRecordRow, SnapshotRow, ZoneRow, print_output_with_table,
+            SnapshotRecordRow, SnapshotRow, ZoneRow, changes_to_entries, print_output_with_table,
+            render_change_preview, render_diff_lines,
         },
     },
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
@@ -144,6 +145,9 @@ $INCLUDE is not supported.")]
         /// Parse and validate without applying any change
         #[arg(long)]
         dry_run: bool,
+        /// Preview the change as a +/-/~ diff without applying it (implies --dry-run)
+        #[arg(long)]
+        preview: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -424,6 +428,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             file,
             mode,
             dry_run,
+            preview,
             output,
         } => {
             let content = super::read_input(&file)?;
@@ -434,7 +439,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         "zone_name": name,
                         "content": content,
                         "mode": mode.as_str(),
-                        "dry_run": dry_run,
+                        // Preview never applies; it is a dry run rendered as a diff.
+                        "dry_run": dry_run || preview,
                     })),
                 )
                 .await?;
@@ -455,12 +461,23 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     }
                 }
             }
-            print_output_with_table(&response.data, output, |data| {
-                data.get("summary")
-                    .ok_or("Missing import summary in response".to_string())
-                    .and_then(ImportSummaryRow::from_json)
-                    .map(|row| vec![row])
-            })?;
+
+            if preview && output == OutputFormat::Table {
+                let changes = response
+                    .data
+                    .get("changes")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                print!("{}", render_change_preview(&changes_to_entries(&changes)));
+            } else {
+                print_output_with_table(&response.data, output, |data| {
+                    data.get("summary")
+                        .ok_or("Missing import summary in response".to_string())
+                        .and_then(ImportSummaryRow::from_json)
+                        .map(|row| vec![row])
+                })?;
+            }
         }
         ZoneCommand::Snapshot { subcommand } => match subcommand {
             ZoneSnapshotCommand::List {
@@ -676,68 +693,14 @@ fn print_tsig_policies(data: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
-fn str_array(value: Option<&serde_json::Value>) -> Vec<String> {
-    value
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Render a snapshot diff as a zone-file-style patch: `+`/`-`/`~` per RRset,
-/// with a changed RRset stacking its removed values above its added ones.
+/// Render a snapshot diff: the `+`/`-`/`~` lines plus SOA-serial and count footers.
 fn render_snapshot_diff(data: &serde_json::Value) -> String {
-    let mut out = String::new();
-
-    for entry in data
+    let empty = vec![];
+    let entries = data
         .get("entries")
         .and_then(|v| v.as_array())
-        .unwrap_or(&vec![])
-    {
-        let change = entry.get("change").and_then(|v| v.as_str()).unwrap_or("");
-        let sign = match change {
-            "added" => '+',
-            "removed" => '-',
-            _ => '~',
-        };
-        let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        let rtype = entry
-            .get("record_type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let ttl = entry
-            .get("ttl")
-            .and_then(|v| v.as_i64())
-            .map_or_else(|| "-".to_string(), |ttl| ttl.to_string());
-
-        let from = str_array(entry.get("from_rdata"));
-        let to = str_array(entry.get("to_rdata"));
-        let values: Vec<String> = match change {
-            "added" => to,
-            "removed" => from,
-            // Changed: only the delta, removed values first then added ones.
-            _ => {
-                let mut delta: Vec<String> =
-                    from.iter().filter(|v| !to.contains(v)).cloned().collect();
-                delta.extend(to.iter().filter(|v| !from.contains(v)).cloned());
-                delta
-            }
-        };
-
-        let prefix = format!("{} {:<24} {:>5} IN {:<6} ", sign, name, ttl, rtype);
-        let pad = " ".repeat(prefix.chars().count());
-        out.push_str(&format!(
-            "{}{}\n",
-            prefix,
-            values.first().map(String::as_str).unwrap_or("")
-        ));
-        for value in values.iter().skip(1) {
-            out.push_str(&format!("{}{}\n", pad, value));
-        }
-    }
+        .unwrap_or(&empty);
+    let mut out = render_diff_lines(entries);
 
     let serial = |field: &str| data.get(field).and_then(|v| v.as_i64()).unwrap_or(0);
     let count = |field: &str| {

@@ -385,8 +385,27 @@ pub struct ImportZoneFileResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     pub summary: ImportSummary,
+    /// Every record the reconcile adds or deletes (a TTL change is a delete of
+    /// the old plus an add of the new). Lets a caller preview the change.
+    pub changes: Vec<ImportChange>,
     /// Per-record validation errors. When non-empty nothing is applied.
     pub errors: Vec<String>,
+}
+
+/// One record an import adds or deletes, with its rdata rendered for display.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ImportChange {
+    /// `add` or `delete`.
+    #[schema(example = "add")]
+    pub op: String,
+    #[schema(example = "www.example.com.")]
+    pub name: String,
+    #[schema(example = "A")]
+    pub record_type: String,
+    #[schema(example = 300)]
+    pub ttl: Option<i32>,
+    #[schema(example = "192.0.2.1")]
+    pub rdata: String,
 }
 
 /// Counts of records parsed, added, deleted, updated, unchanged, and skipped

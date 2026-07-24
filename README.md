@@ -281,8 +281,15 @@ $ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
 # Update a record, changing only the fields you pass
 $ bindizr record update <RECORD_ID> --value 127.0.0.1
 
+# Preview a bulk insert or zone-file import as a +/-/~ diff (applies nothing)
+$ bindizr record bulk records.json --zone <ZONE_NAME> --preview
+$ bindizr zone import <ZONE_NAME> zone.txt --preview
+
 # List a zone's snapshots (SOA serials are a plain counter starting at 1)
 $ bindizr zone snapshot list <ZONE_NAME>
+
+# Diff the records between two serials (omit the second to compare to current)
+$ bindizr zone snapshot diff <ZONE_NAME> <FROM_SERIAL> [<TO_SERIAL>]
 
 # Inspect the zone state captured at a serial
 $ bindizr zone snapshot get <ZONE_NAME> <SERIAL>

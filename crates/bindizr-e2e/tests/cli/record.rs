@@ -54,6 +54,49 @@ async fn record_create_read_delete() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_preview_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("bulk-preview.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    let records = r#"[
+        {"name": "www", "record_type": "A", "value": "192.0.2.1"},
+        {"name": "@", "record_type": "MX", "value": "mail.example.com", "priority": 10}
+    ]"#;
+    let preview = app
+        .run_cli_success_with_input(
+            &["record", "bulk", "-", "--zone", &zone_name, "--preview"],
+            records,
+        )
+        .await;
+    assert!(preview.contains("+ www."), "preview was: {preview}");
+    // The MX priority is re-inlined into the rdata for display.
+    assert!(
+        preview.contains("10 mail.example.com."),
+        "preview was: {preview}"
+    );
+    assert!(
+        preview.contains("Records: +2 -0 ~0"),
+        "preview was: {preview}"
+    );
+
+    // Preview applies nothing.
+    let listed = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    assert!(
+        listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["record_type"] != "MX"),
+        "preview should not have inserted records"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn record_update_changes_only_passed_fields_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-record-update.example");

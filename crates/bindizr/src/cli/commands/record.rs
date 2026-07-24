@@ -4,10 +4,59 @@ use serde_json::json;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, RecordRow, print_output_with_table},
+        output::{OutputFormat, RecordRow, print_output_with_table, render_change_preview},
     },
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
+
+/// Turn a bulk response's records into diff entries (all additions), grouping
+/// records that share an owner name and type into one RRset.
+fn bulk_records_as_added(data: &serde_json::Value) -> Vec<serde_json::Value> {
+    let mut order: Vec<(String, String)> = Vec::new();
+    let mut groups: std::collections::HashMap<(String, String), (Option<i64>, Vec<String>)> =
+        std::collections::HashMap::new();
+
+    for record in data
+        .get("records")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&vec![])
+    {
+        let name = record.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let rtype = record
+            .get("record_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let value = record.get("value").and_then(|v| v.as_str()).unwrap_or("");
+        let priority = record.get("priority").and_then(|v| v.as_i64());
+        // The value from the server omits the MX/SRV priority; re-inline it.
+        let rdata = match rtype {
+            "MX" | "SRV" => format!("{} {}", priority.unwrap_or(10), value),
+            _ => value.to_string(),
+        };
+
+        let key = (name.to_string(), rtype.to_string());
+        let group = groups.entry(key.clone()).or_insert_with(|| {
+            order.push(key.clone());
+            (record.get("ttl").and_then(|v| v.as_i64()), Vec::new())
+        });
+        group.1.push(rdata);
+    }
+
+    order
+        .into_iter()
+        .map(|key| {
+            let (ttl, rdata) = groups.remove(&key).unwrap();
+            serde_json::json!({
+                "change": "added",
+                "name": key.0,
+                "record_type": key.1,
+                "ttl": ttl,
+                "from_rdata": [],
+                "to_rdata": rdata,
+            })
+        })
+        .collect()
+}
 
 /// Subcommands for managing records.
 #[derive(Subcommand, Debug)]
@@ -110,6 +159,9 @@ YAML example:
         /// Parse and validate without applying any change
         #[arg(long)]
         dry_run: bool,
+        /// Preview the inserts as a +/-/~ diff without applying them (implies --dry-run)
+        #[arg(long)]
+        preview: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -241,6 +293,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             file,
             zone,
             dry_run,
+            preview,
             output,
         } => {
             let content = super::read_input(&file)?;
@@ -262,9 +315,20 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let response = client
                 .send_command(
                     DaemonCommandKind::BulkCreateRecords,
-                    Some(json!({ "zone_name": zone, "records": records, "dry_run": dry_run })),
+                    // Preview never applies; it is a dry run rendered as a diff.
+                    Some(json!({
+                        "zone_name": zone,
+                        "records": records,
+                        "dry_run": dry_run || preview,
+                    })),
                 )
                 .await?;
+
+            if preview && output == OutputFormat::Table {
+                let entries = bulk_records_as_added(&response.data);
+                print!("{}", render_change_preview(&entries));
+                return Ok(());
+            }
 
             if output == OutputFormat::Table {
                 println!("{}", response.message);

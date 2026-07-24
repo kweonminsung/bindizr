@@ -6,14 +6,14 @@ use utoipa::{
 use super::types::{
     BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
     CreateTsigKeyRequest, CreateZoneRequest, CreateZoneTsigPolicyRequest, ErrorResponse,
-    GetRecordResponse, GetTsigKeyResponse, GetZoneResponse, GetZoneTsigPolicyResponse, ImportMode,
-    ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse,
-    NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse, RecordValueRequest,
-    RollbackSummary, RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse,
-    SnapshotDetailResponse, SnapshotDiffEntry, SnapshotDiffResponse, SnapshotDiffSummary,
-    SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse, TsigKeyResponse,
-    UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse, ZoneSnapshotResponse,
-    ZoneStatusResponse, ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
+    GetRecordResponse, GetTsigKeyResponse, GetZoneResponse, GetZoneTsigPolicyResponse,
+    ImportChange, ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
+    MessageResponse, NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse,
+    RecordValueRequest, RollbackSummary, RollbackZoneRequest, RollbackZoneResponse,
+    SecondaryStatusResponse, SnapshotDetailResponse, SnapshotDiffEntry, SnapshotDiffResponse,
+    SnapshotDiffSummary, SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse,
+    TsigKeyResponse, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+    ZoneSnapshotResponse, ZoneStatusResponse, ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
 };
 
 /// OpenAPI document for the HTTP API (debug builds only).
@@ -60,6 +60,7 @@ use super::types::{
         GetZoneResponse,
         GetZoneTsigPolicyResponse,
         ImportMode,
+        ImportChange,
         ImportSummary,
         ImportZoneFileRequest,
         ImportZoneFileResponse,
