@@ -1,10 +1,10 @@
 use std::fmt;
 
-use bindizr_core::dns::name::MAX_DNS_LABEL_LEN;
+use domain::{base::name::ParsedName, dep::octseq::parse::Parser, rdata::tsig::Tsig};
 
 use crate::{
     model::record::RecordType,
-    protocol::{CLASS_ANY, CLASS_IN, DNS_COMPRESSION_POINTER_MASK, DNS_HEADER_LEN, TYPE_TSIG},
+    protocol::{CLASS_ANY, CLASS_IN, DNS_HEADER_LEN, TYPE_TSIG},
 };
 
 #[derive(Debug, Clone)]
@@ -15,7 +15,9 @@ pub(super) struct UpdateRequest {
     pub tsig: Option<TsigRecord>,
 }
 
-/// One RR from the prerequisite or update section.
+/// One RR from the prerequisite or update section. `rdata_start` locates the
+/// rdata in the original message so compressed names inside it can be decoded
+/// lazily by the update flow.
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRecord {
     pub name: String,
@@ -81,41 +83,37 @@ pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseEr
         return Err(ParseError::InvalidHeader);
     }
 
-    let mut pos = DNS_HEADER_LEN;
+    let mut parser = Parser::from_ref(data);
+    parser
+        .advance(DNS_HEADER_LEN)
+        .map_err(|_| ParseError::TooShort)?;
 
-    let (zone_name, consumed) = decode_name(data, pos)?;
-    pos += consumed;
-
-    if pos + 4 > data.len() {
-        return Err(ParseError::InvalidZoneSection);
-    }
-
-    let ztype = u16::from_be_bytes([data[pos], data[pos + 1]]);
-    let zclass = u16::from_be_bytes([data[pos + 2], data[pos + 3]]);
-    pos += 4;
+    let zone = ParsedName::parse(&mut parser).map_err(|_| ParseError::InvalidName)?;
+    let ztype = parser
+        .parse_u16_be()
+        .map_err(|_| ParseError::InvalidZoneSection)?;
+    let zclass = parser
+        .parse_u16_be()
+        .map_err(|_| ParseError::InvalidZoneSection)?;
 
     if ztype != RecordType::SOA.wire_code() || zclass != CLASS_IN {
         return Err(ParseError::InvalidZoneSection);
     }
+    let zone_name = presentation_name(&zone)?;
 
     let mut prerequisites = Vec::with_capacity(ancount);
     for _ in 0..ancount {
-        let (rr, next) = parse_rr(data, pos)?;
-        prerequisites.push(rr);
-        pos = next;
+        prerequisites.push(parse_rr(&mut parser, data)?);
     }
 
     let mut updates = Vec::with_capacity(nscount);
     for _ in 0..nscount {
-        let (rr, next) = parse_rr(data, pos)?;
-        updates.push(rr);
-        pos = next;
+        updates.push(parse_rr(&mut parser, data)?);
     }
 
-    let (tsig, next) = parse_additional_section(data, pos, arcount)?;
-    pos = next;
+    let tsig = parse_additional_section(&mut parser, arcount)?;
 
-    if pos != data.len() {
+    if parser.remaining() != 0 {
         return Err(ParseError::InvalidHeader);
     }
 
@@ -127,220 +125,106 @@ pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseEr
     })
 }
 
-fn parse_rr(data: &[u8], pos: usize) -> Result<(UpdateRecord, usize), ParseError> {
-    let (name, name_len) = decode_name(data, pos)?;
-    let hdr = pos + name_len;
+fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRecord, ParseError> {
+    let name = ParsedName::parse(parser).map_err(|_| ParseError::InvalidName)?;
+    let name = presentation_name(&name)?;
 
-    if hdr + 10 > data.len() {
-        return Err(ParseError::InvalidRr);
-    }
+    let rr_type = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?;
+    let class = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?;
+    let ttl = parser.parse_u32_be().map_err(|_| ParseError::InvalidRr)?;
+    let rdlen = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)? as usize;
 
-    let rr_type = u16::from_be_bytes([data[hdr], data[hdr + 1]]);
-    let class = u16::from_be_bytes([data[hdr + 2], data[hdr + 3]]);
-    let ttl = u32::from_be_bytes([data[hdr + 4], data[hdr + 5], data[hdr + 6], data[hdr + 7]]);
-    let rdlen = u16::from_be_bytes([data[hdr + 8], data[hdr + 9]]) as usize;
+    let rdata_start = parser.pos();
+    parser.advance(rdlen).map_err(|_| ParseError::InvalidRr)?;
 
-    let rdata_start = hdr + 10;
-    let rdata_end = rdata_start + rdlen;
-    if rdata_end > data.len() {
-        return Err(ParseError::InvalidRr);
-    }
-
-    Ok((
-        UpdateRecord {
-            name,
-            rr_type,
-            class,
-            ttl,
-            rdata: data[rdata_start..rdata_end].to_vec(),
-            rdata_start,
-        },
-        rdata_end,
-    ))
+    Ok(UpdateRecord {
+        name,
+        rr_type,
+        class,
+        ttl,
+        rdata: data[rdata_start..rdata_start + rdlen].to_vec(),
+        rdata_start,
+    })
 }
 
 fn parse_additional_section(
-    data: &[u8],
-    mut pos: usize,
+    parser: &mut Parser<'_, [u8]>,
     count: usize,
-) -> Result<(Option<TsigRecord>, usize), ParseError> {
+) -> Result<Option<TsigRecord>, ParseError> {
     let mut tsig = None;
 
     for index in 0..count {
-        let rr_type = peek_rr_type(data, pos)?;
+        let owner = ParsedName::parse(parser).map_err(|_| ParseError::InvalidName)?;
+        let rr_type = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?;
+
         if rr_type == TYPE_TSIG {
             if tsig.is_some() || index + 1 != count {
                 return Err(ParseError::InvalidTsig);
             }
 
-            let (record, next) = parse_tsig_rr(data, pos)?;
-            tsig = Some(record);
-            pos = next;
+            tsig = Some(parse_tsig_rr(parser, &owner)?);
         } else {
-            let (_, next) = parse_rr(data, pos)?;
-            pos = next;
+            parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?; // CLASS
+            parser.parse_u32_be().map_err(|_| ParseError::InvalidRr)?; // TTL
+            let rdlen = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)? as usize;
+            parser.advance(rdlen).map_err(|_| ParseError::InvalidRr)?;
         }
     }
 
-    Ok((tsig, pos))
+    Ok(tsig)
 }
 
-fn peek_rr_type(data: &[u8], pos: usize) -> Result<u16, ParseError> {
-    let (_, name_len) = decode_name(data, pos)?;
-    let hdr = pos + name_len;
+/// Parses a TSIG RR from its CLASS field on (owner and TYPE already consumed).
+fn parse_tsig_rr(
+    parser: &mut Parser<'_, [u8]>,
+    owner: &ParsedName<&[u8]>,
+) -> Result<TsigRecord, ParseError> {
+    let class = parser.parse_u16_be().map_err(|_| ParseError::InvalidTsig)?;
+    let ttl = parser.parse_u32_be().map_err(|_| ParseError::InvalidTsig)?;
+    let rdlen = parser.parse_u16_be().map_err(|_| ParseError::InvalidTsig)? as usize;
 
-    if hdr + 10 > data.len() {
-        return Err(ParseError::InvalidRr);
+    if class != CLASS_ANY || ttl != 0 {
+        return Err(ParseError::InvalidTsig);
     }
 
-    Ok(u16::from_be_bytes([data[hdr], data[hdr + 1]]))
+    let mut rdata = parser
+        .parse_parser(rdlen)
+        .map_err(|_| ParseError::InvalidTsig)?;
+    let record = Tsig::parse(&mut rdata).map_err(|_| ParseError::InvalidTsig)?;
+    if rdata.remaining() != 0 {
+        return Err(ParseError::InvalidTsig);
+    }
+
+    Ok(TsigRecord {
+        name: presentation_name(owner)?,
+        fudge: record.fudge(),
+    })
 }
 
-fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseError> {
-    let (name, name_len) = decode_name(data, pos)?;
-    let hdr = pos + name_len;
+/// Renders a parsed name the way the update flow stores names: labels joined
+/// with '.', trailing dot, label bytes unescaped (dots inside a label survive
+/// as-is).
+fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
+    let mut out = String::new();
 
-    if hdr + 10 > data.len() {
-        return Err(ParseError::InvalidTsig);
-    }
-
-    let rr_type = u16::from_be_bytes([data[hdr], data[hdr + 1]]);
-    let class = u16::from_be_bytes([data[hdr + 2], data[hdr + 3]]);
-    let ttl = u32::from_be_bytes([data[hdr + 4], data[hdr + 5], data[hdr + 6], data[hdr + 7]]);
-    let rdlen = u16::from_be_bytes([data[hdr + 8], data[hdr + 9]]) as usize;
-
-    if rr_type != TYPE_TSIG || class != CLASS_ANY || ttl != 0 {
-        return Err(ParseError::InvalidTsig);
-    }
-
-    let rdata_start = hdr + 10;
-    let rdata_end = rdata_start + rdlen;
-    if rdata_end > data.len() {
-        return Err(ParseError::InvalidTsig);
-    }
-
-    let mut p = rdata_start;
-    let (_, algo_len) = decode_name(data, p).map_err(|_| ParseError::InvalidTsig)?;
-    p += algo_len;
-
-    if p + 6 + 2 + 2 > rdata_end {
-        return Err(ParseError::InvalidTsig);
-    }
-
-    p += 6; // Time signed
-
-    let fudge = u16::from_be_bytes([data[p], data[p + 1]]);
-    p += 2;
-
-    let mac_size = u16::from_be_bytes([data[p], data[p + 1]]) as usize;
-    p += 2;
-
-    if p + mac_size + 2 + 2 + 2 > rdata_end {
-        return Err(ParseError::InvalidTsig);
-    }
-
-    p += mac_size + 2 + 2; // MAC, original ID, error
-
-    let other_len = u16::from_be_bytes([data[p], data[p + 1]]) as usize;
-    p += 2;
-
-    if p + other_len != rdata_end {
-        return Err(ParseError::InvalidTsig);
-    }
-
-    Ok((TsigRecord { name, fudge }, rdata_end))
-}
-
-/// Walks a (possibly compressed) wire-format name at `start`, calling
-/// `on_label` with each raw label, and returns the octets consumed at `start`
-/// (a compression pointer consumes 2 regardless of where it points).
-fn walk_name(
-    data: &[u8],
-    start: usize,
-    mut on_label: impl FnMut(&[u8]) -> Result<(), ParseError>,
-) -> Result<usize, ParseError> {
-    if start >= data.len() {
-        return Err(ParseError::InvalidName);
-    }
-
-    let mut pos = start;
-    let mut consumed = 0usize;
-    let mut jumped = false;
-    let mut jumps = 0usize;
-
-    loop {
-        if pos >= data.len() {
-            return Err(ParseError::InvalidName);
-        }
-
-        let len = data[pos];
-        if len & DNS_COMPRESSION_POINTER_MASK == DNS_COMPRESSION_POINTER_MASK {
-            if pos + 1 >= data.len() {
-                return Err(ParseError::InvalidName);
-            }
-
-            let ptr = (((len as u16 & 0x3F) << 8) | data[pos + 1] as u16) as usize;
-            if ptr >= pos {
-                return Err(ParseError::InvalidName);
-            }
-
-            if !jumped {
-                consumed += 2;
-                jumped = true;
-            }
-
-            pos = ptr;
-            jumps += 1;
-            if jumps > data.len() {
-                return Err(ParseError::InvalidName);
-            }
-            continue;
-        }
-
-        if len == 0 {
-            if !jumped {
-                consumed += 1;
-            }
+    for label in name.iter() {
+        if label.is_root() {
             break;
         }
 
-        let label_len = len as usize;
-        let label_start = pos + 1;
-        let label_end = label_start + label_len;
-
-        if label_end > data.len() || label_len > MAX_DNS_LABEL_LEN {
-            return Err(ParseError::InvalidName);
-        }
-
-        on_label(&data[label_start..label_end])?;
-
-        if !jumped {
-            consumed += 1 + label_len;
-        }
-        pos = label_end;
+        let text = std::str::from_utf8(label.as_slice()).map_err(|_| ParseError::InvalidName)?;
+        out.push_str(text);
+        out.push('.');
     }
 
-    Ok(consumed)
+    if out.is_empty() {
+        out.push('.');
+    }
+
+    Ok(out)
 }
 
-/// Decodes a name into dotted presentation form with a trailing dot.
-fn decode_name(data: &[u8], start: usize) -> Result<(String, usize), ParseError> {
-    let mut labels: Vec<String> = Vec::new();
-    let consumed = walk_name(data, start, |label| {
-        let label = std::str::from_utf8(label).map_err(|_| ParseError::InvalidName)?;
-        labels.push(label.to_string());
-        Ok(())
-    })?;
-
-    let name = if labels.is_empty() {
-        ".".to_string()
-    } else {
-        format!("{}.", labels.join("."))
-    };
-
-    Ok((name, consumed))
-}
-
+/// Decodes a (possibly compressed) name that must exactly fill an rdata field.
 pub(super) fn decode_name_from_rdata(
     message: &[u8],
     rdata_start: usize,
@@ -350,11 +234,17 @@ pub(super) fn decode_name_from_rdata(
         return Err(ParseError::InvalidName);
     }
 
-    let (name, consumed) = decode_name(message, rdata_start)?;
-    if consumed != rdata_len {
+    let mut parser = Parser::from_ref(message);
+    parser
+        .advance(rdata_start)
+        .map_err(|_| ParseError::InvalidName)?;
+
+    let name = ParsedName::parse(&mut parser).map_err(|_| ParseError::InvalidName)?;
+    if parser.pos() != rdata_start + rdata_len {
         return Err(ParseError::InvalidName);
     }
-    Ok(name)
+
+    presentation_name(&name)
 }
 
 pub(super) fn decode_txt_from_rdata(rdata: &[u8]) -> Result<String, ParseError> {

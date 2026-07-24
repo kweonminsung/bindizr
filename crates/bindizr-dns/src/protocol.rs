@@ -5,8 +5,6 @@
 pub(crate) const DNS_HEADER_LEN: usize = 12;
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix).
 pub(crate) const DNS_TCP_MAX_SIZE: usize = 65535;
-/// Top two bits set marks a compression pointer in a name (RFC 1035 §4.1.4).
-pub(crate) const DNS_COMPRESSION_POINTER_MASK: u8 = 0xC0;
 
 /// OPCODE for UPDATE messages (RFC 2136).
 pub(crate) const DNS_OPCODE_UPDATE: u8 = 5;
