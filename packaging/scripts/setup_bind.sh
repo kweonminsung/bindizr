@@ -2,12 +2,10 @@
 set -euo pipefail
 
 if [ -d /etc/bind ]; then
-    OS="debian"
     OPTIONS_FILE="/etc/bind/named.conf.options"
     MAIN_CONF="/etc/bind/named.conf"
     CACHE="/var/cache/bind"
 elif [ -d /etc/named ]; then
-    OS="redhat"
     OPTIONS_FILE="/etc/named.conf"
     MAIN_CONF="/etc/named.conf"
     CACHE="/var/named/slaves"
