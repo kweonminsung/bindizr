@@ -115,11 +115,12 @@ pub(super) async fn update_record(
             .map_err(|e| ServiceError::invalid_input(format!("Invalid value: {}", e)))?,
         _ => GetRecordResponse::from_record(&record).value,
     };
-    // Absent or null (an unset CLI flag) keeps the current value.
-    let merged_i32 = |field: &str, current: Option<i32>| -> Option<i32> {
-        match data.get(field).and_then(|v| v.as_i64()) {
-            Some(value) => Some(value as i32),
-            None => current,
+    // Absent or null (an unset CLI flag) keeps the current value; a present
+    // number must fit in i32 rather than wrapping.
+    let merged_i32 = |field: &str, current: Option<i32>| -> Result<Option<i32>, ServiceError> {
+        match data.get(field) {
+            None | Some(serde_json::Value::Null) => Ok(current),
+            Some(value) => Ok(Some(super::json_i32(field, value)?)),
         }
     };
 
@@ -128,7 +129,7 @@ pub(super) async fn update_record(
     let takes_priority =
         record_type.eq_ignore_ascii_case("MX") || record_type.eq_ignore_ascii_case("SRV");
     let priority = if takes_priority {
-        merged_i32("priority", record.priority)
+        merged_i32("priority", record.priority)?
     } else {
         None
     };
@@ -137,7 +138,7 @@ pub(super) async fn update_record(
         name,
         record_type,
         value,
-        ttl: merged_i32("ttl", record.ttl),
+        ttl: merged_i32("ttl", record.ttl)?,
         priority,
     };
 
