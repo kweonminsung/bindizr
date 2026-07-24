@@ -26,10 +26,10 @@ pub(crate) enum RecordCommand {
         /// Zone name
         #[arg(short, long)]
         zone: String,
-        /// TTL (optional)
+        /// TTL, defaulting to the zone TTL (records of one RRset share a TTL)
         #[arg(long)]
         ttl: Option<i32>,
-        /// Priority (for MX records)
+        /// Priority (MX and SRV only)
         #[arg(long)]
         priority: Option<i32>,
     },

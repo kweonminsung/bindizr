@@ -292,14 +292,23 @@ async fn add_record(
 
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
 
+    if update.ttl > i32::MAX as u32 {
+        return Err(UpdateError::Refused(format!(
+            "TTL value {} exceeds maximum allowed value ({})",
+            update.ttl,
+            i32::MAX
+        )));
+    }
+    let ttl = update.ttl as i32;
+
     validate_add_constraints_tx(
         tx,
         zone,
         &relative_name,
         &record_type,
         &value,
+        Some(ttl),
         priority,
-        None,
     )
     .await
     .map_err(|e| UpdateError::Refused(e.to_string()))?;
@@ -319,15 +328,6 @@ async fn add_record(
     {
         return Ok(false);
     }
-
-    if update.ttl > i32::MAX as u32 {
-        return Err(UpdateError::Refused(format!(
-            "TTL value {} exceeds maximum allowed value ({})",
-            update.ttl,
-            i32::MAX
-        )));
-    }
-    let ttl = update.ttl as i32;
 
     let created = RecordService::create_tx(
         tx,

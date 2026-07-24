@@ -9,6 +9,10 @@ use crate::model::{
     zone::Zone,
 };
 
+/// TTL of every [`test_record`], so adds under test share their RRset's TTL
+/// instead of tripping the RRset TTL rule.
+const RRSET_TTL: Option<i32> = Some(3600);
+
 #[test]
 fn normalize_record_owner_name_accepts_relative_and_in_bailiwick_absolute_names() {
     let zone = "test.example.com";
@@ -276,7 +280,7 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
         "@",
         &RecordType::CNAME,
         "target.example.com",
-        None,
+        RRSET_TTL,
         None,
     );
     assert!(cname_at_apex.is_err());
@@ -287,7 +291,7 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
         "child",
         &RecordType::NS,
         "ns.example.com",
-        None,
+        RRSET_TTL,
         None,
     );
     assert!(ns_below_apex.is_err());
@@ -299,7 +303,7 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
         "www",
         &RecordType::CNAME,
         "target.example.com",
-        None,
+        RRSET_TTL,
         None,
     );
     assert!(cname_conflict.is_err());
@@ -316,8 +320,8 @@ fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates
         "@",
         &RecordType::MX,
         "10 mail.example.com",
+        RRSET_TTL,
         Some(10),
-        None,
     );
     assert!(duplicate_mx.is_err());
 
@@ -334,8 +338,8 @@ fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates
         "_sip._tcp",
         &RecordType::SRV,
         "10 5 5060 sip.example.com",
+        RRSET_TTL,
         Some(10),
-        None,
     );
     assert!(duplicate_srv.is_err());
 }
@@ -351,7 +355,7 @@ fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
         "@",
         &RecordType::MX,
         "0 .",
-        None,
+        RRSET_TTL,
         None,
     );
     assert!(null_mx_with_existing_mx.is_err());
@@ -363,10 +367,84 @@ fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
         "@",
         &RecordType::MX,
         "mail.example.com",
+        RRSET_TTL,
         Some(10),
-        None,
     );
     assert!(mx_with_existing_null_mx.is_err());
+}
+
+#[test]
+fn validate_record_add_constraints_rejects_ttl_differing_from_the_rrset() {
+    let zone = test_zone();
+    let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
+
+    let differing_ttl = validate_record_add_constraints(
+        &zone,
+        std::slice::from_ref(&existing_a),
+        "www",
+        &RecordType::A,
+        "192.0.2.11",
+        Some(600),
+        None,
+    );
+    assert!(differing_ttl.is_err());
+
+    // An unset TTL is not interchangeable with an explicit one: the wire
+    // fallback is a constant, not the zone TTL.
+    let unset_ttl = validate_record_add_constraints(
+        &zone,
+        std::slice::from_ref(&existing_a),
+        "www",
+        &RecordType::A,
+        "192.0.2.11",
+        None,
+        None,
+    );
+    assert!(unset_ttl.is_err());
+
+    let matching_ttl = validate_record_add_constraints(
+        &zone,
+        std::slice::from_ref(&existing_a),
+        "www",
+        &RecordType::A,
+        "192.0.2.11",
+        RRSET_TTL,
+        None,
+    );
+    assert!(matching_ttl.is_ok());
+
+    // A different type at the same owner name is a different RRset.
+    let other_rrset = validate_record_add_constraints(
+        &zone,
+        std::slice::from_ref(&existing_a),
+        "www",
+        &RecordType::TXT,
+        "hello",
+        Some(600),
+        None,
+    );
+    assert!(other_rrset.is_ok());
+}
+
+#[test]
+fn validate_record_value_rejects_priority_on_types_without_one() {
+    for (record_type, value) in [
+        (RecordType::A, "192.0.2.1"),
+        (RecordType::AAAA, "2001:db8::1"),
+        (RecordType::CNAME, "target.example.com"),
+        (RecordType::TXT, "hello"),
+        (RecordType::NS, "ns1.example.com"),
+        (RecordType::PTR, "host.example.com"),
+    ] {
+        assert!(
+            validate_record_value(&record_type, value, Some(10)).is_err(),
+            "{record_type} should reject a priority"
+        );
+        assert!(validate_record_value(&record_type, value, None).is_ok());
+    }
+
+    assert!(validate_record_value(&RecordType::MX, "mail.example.com", Some(10)).is_ok());
+    assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", Some(10)).is_ok());
 }
 
 #[test]
@@ -417,7 +495,7 @@ fn test_record(
         name: name.to_string(),
         record_type,
         value: value.to_string(),
-        ttl: Some(3600),
+        ttl: RRSET_TTL,
         priority,
         zone_id: 1,
         created_at: Utc::now(),

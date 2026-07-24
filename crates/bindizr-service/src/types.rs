@@ -300,8 +300,10 @@ pub struct CreateRecordRequest {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
+    /// Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    /// MX and SRV only; other record types have no priority and reject it.
     #[schema(example = 10)]
     pub priority: Option<i32>,
     #[schema(example = "example.com")]
@@ -317,8 +319,10 @@ pub struct BulkRecordItem {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
+    /// Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    /// MX and SRV only; other record types have no priority and reject it.
     #[schema(example = 10)]
     pub priority: Option<i32>,
 }
@@ -472,8 +476,10 @@ pub struct UpdateRecordRequest {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
+    /// Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    /// MX and SRV only; other record types have no priority and reject it.
     #[schema(example = 10)]
     pub priority: Option<i32>,
 }

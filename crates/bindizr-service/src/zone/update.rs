@@ -159,12 +159,19 @@ impl ZoneService {
             let mut changes: Vec<ZoneChange> = Vec::new();
 
             if !has_primary_ns {
+                // Join the apex NS RRset's TTL (RFC 2181 §5.2), which this
+                // direct insert would otherwise split.
+                let ns_rrset_ttl = apex_records
+                    .iter()
+                    .find(|r| r.record_type == RecordType::NS)
+                    .map_or(Some(updated_zone.ttl), |r| r.ttl);
+
                 let primary_ns_record = Record {
                     id: 0,
                     name: "@".to_string(),
                     record_type: RecordType::NS,
                     value: updated_zone.primary_ns.clone(),
-                    ttl: Some(updated_zone.ttl),
+                    ttl: ns_rrset_ttl,
                     priority: None,
                     zone_id,
                     created_at: Utc::now(),
@@ -185,7 +192,7 @@ impl ZoneService {
                     record_name: "@".to_string(),
                     record_type: "NS".to_string(),
                     record_value: updated_zone.primary_ns.clone(),
-                    record_ttl: Some(updated_zone.ttl),
+                    record_ttl: ns_rrset_ttl,
                     record_priority: None,
                 });
             }

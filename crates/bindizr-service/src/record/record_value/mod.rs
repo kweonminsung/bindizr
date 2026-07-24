@@ -30,6 +30,14 @@ pub(super) fn validate_record_value(
     value: &str,
     priority: Option<i32>,
 ) -> Result<(), ServiceError> {
+    // Only MX and SRV encode a priority
+    if priority.is_some() && !matches!(record_type, RecordType::MX | RecordType::SRV) {
+        return Err(ServiceError::invalid_record_value(format!(
+            "{} records do not take a priority",
+            record_type
+        )));
+    }
+
     match record_type {
         RecordType::A => ARecordValue::parse(value).map(|_| ()),
         RecordType::AAAA => AaaaRecordValue::parse(value).map(|_| ()),

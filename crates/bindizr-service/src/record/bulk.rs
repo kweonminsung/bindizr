@@ -248,10 +248,10 @@ impl RecordService {
                 let t = timing.then(Instant::now);
                 validate_record_add_constraints_normalized(
                     same_name,
-                    &prepared_record.owner_name,
                     &normalized_owner.stored_name,
                     &prepared_record.record_type,
                     &prepared_record.value,
+                    prepared_record.ttl,
                     prepared_record.priority,
                     None,
                 )?;

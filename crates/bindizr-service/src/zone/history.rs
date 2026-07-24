@@ -375,11 +375,28 @@ impl ZoneService {
                     is_restored_apex_ns(&record.record_type, &record.name, &record.value)
                 });
             if !has_primary_ns {
+                // Join the apex NS RRset's TTL; a mixed-TTL RRset is rejected.
+                let is_apex_ns = |record_type: &RecordType, name: &str| {
+                    *record_type == RecordType::NS && name == "@"
+                };
+                let ns_rrset_ttl = to_add
+                    .iter()
+                    .find(|record| is_apex_ns(&record.record_type, &record.name))
+                    .map(|record| record.ttl)
+                    .or_else(|| {
+                        current_records
+                            .iter()
+                            .filter(|record| !deleted_ids.contains(&record.id))
+                            .find(|record| is_apex_ns(&record.record_type, &record.name))
+                            .map(|record| record.ttl)
+                    })
+                    .unwrap_or(Some(restored_zone.ttl));
+
                 to_add.push(ReconstructedRecord {
                     name: "@".to_string(),
                     record_type: RecordType::NS,
                     value: restored_zone.primary_ns.clone(),
-                    ttl: Some(restored_zone.ttl),
+                    ttl: ns_rrset_ttl,
                     priority: None,
                 });
             }
@@ -404,9 +421,9 @@ impl ZoneService {
                 validate_record_add_constraints_normalized(
                     same_name,
                     &target.name,
-                    &target.name,
                     &target.record_type,
                     &target.value,
+                    target.ttl,
                     target.priority,
                     None,
                 )?;

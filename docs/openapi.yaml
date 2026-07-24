@@ -1274,6 +1274,7 @@ components:
           - 'null'
           format: int32
           example: 10
+          description: MX and SRV only; other record types have no priority and reject it.
         record_type:
           type: string
           example: A
@@ -1283,6 +1284,7 @@ components:
           - 'null'
           format: int32
           example: 3600
+          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
         value:
           $ref: '#/components/schemas/RecordValueRequest'
     BulkRecordsResponse:
@@ -1342,6 +1344,7 @@ components:
           - 'null'
           format: int32
           example: 10
+          description: MX and SRV only; other record types have no priority and reject it.
         record_type:
           type: string
           example: A
@@ -1351,6 +1354,7 @@ components:
           - 'null'
           format: int32
           example: 3600
+          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
         value:
           $ref: '#/components/schemas/RecordValueRequest'
         zone_name:
@@ -1972,6 +1976,7 @@ components:
           - 'null'
           format: int32
           example: 10
+          description: MX and SRV only; other record types have no priority and reject it.
         record_type:
           type: string
           example: A
@@ -1981,6 +1986,7 @@ components:
           - 'null'
           format: int32
           example: 3600
+          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
         value:
           $ref: '#/components/schemas/RecordValueRequest'
     ZoneDetailResponse:

@@ -324,10 +324,10 @@ impl RecordService {
                     .or_default();
                 match validate_record_add_constraints_normalized(
                     same_name,
-                    &add.prepared.owner_name,
                     &add.stored_name,
                     &add.prepared.record_type,
                     &add.prepared.value,
+                    add.prepared.ttl,
                     add.prepared.priority,
                     None,
                 ) {
@@ -335,6 +335,7 @@ impl RecordService {
                         &add.stored_name,
                         &add.prepared.record_type,
                         &add.prepared.value,
+                        add.prepared.ttl,
                         add.prepared.priority,
                     )),
                     Err(e) if e.code.http_status() < 500 => {
@@ -469,6 +470,7 @@ fn synthetic_record(
     stored_name: &str,
     record_type: &RecordType,
     value: &str,
+    ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Record {
     Record {
@@ -476,7 +478,7 @@ fn synthetic_record(
         name: stored_name.to_string(),
         record_type: record_type.clone(),
         value: value.to_string(),
-        ttl: None,
+        ttl,
         priority,
         zone_id: 0,
         created_at: Utc::now(),
