@@ -127,6 +127,81 @@ fn rr_to_record_value_preserves_txt_character_string_boundaries() {
 }
 
 #[test]
+fn rr_to_record_value_follows_compression_pointer_in_name_rdata() {
+    let mut message = vec![
+        3, b'w', b'w', b'w', 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
+    ];
+    let rdata_start = message.len();
+    let pointer = [0xC0, 5]; // Points at the "example.com." bytes above
+    message.extend_from_slice(&pointer);
+
+    let update = UpdateRecord {
+        name: "www.example.com.".to_string(),
+        rr_type: RecordType::CNAME.wire_code(),
+        class: CLASS_IN,
+        ttl: 300,
+        rdata: pointer.to_vec(),
+        rdata_start,
+    };
+
+    let (record_type, value, priority) = rr_to_record_value(&update, &message).unwrap();
+    assert_eq!(record_type, RecordType::CNAME);
+    assert_eq!(value, "example.com.");
+    assert_eq!(priority, None);
+}
+
+#[test]
+fn rr_to_record_value_rejects_non_backward_compression_pointers() {
+    let forward = [
+        0xC0, 0x02, // Pointer to the root label after this pointer
+        0x00,
+    ];
+    let self_referential = [
+        0xC0, 0x00, // Pointer to itself
+    ];
+
+    for message in [&forward[..], &self_referential[..]] {
+        let update = update_record(
+            RecordType::CNAME.wire_code(),
+            CLASS_IN,
+            300,
+            message[..2].to_vec(),
+        );
+        let err = rr_to_record_value(&update, message).unwrap_err();
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+}
+
+#[test]
+fn rr_to_record_value_rejects_name_rdata_with_trailing_bytes() {
+    let message = [1, b'a', 0, 0];
+    let update = update_record(
+        RecordType::CNAME.wire_code(),
+        CLASS_IN,
+        300,
+        message.to_vec(),
+    );
+    let err = rr_to_record_value(&update, &message).unwrap_err();
+    assert!(matches!(err, UpdateError::Refused(_)));
+}
+
+// TXT RDATA is one or more character-strings (RFC 1035 §3.3.14); an empty
+// value previously slipped through and stored an undecodable record.
+#[test]
+fn rr_to_record_value_rejects_empty_txt_rdata() {
+    let update = update_record(RecordType::TXT.wire_code(), CLASS_IN, 300, Vec::new());
+    let err = rr_to_record_value(&update, &[]).unwrap_err();
+    assert!(matches!(err, UpdateError::Refused(_)));
+}
+
+#[test]
+fn rr_to_record_value_rejects_non_utf8_txt_character_strings() {
+    let update = update_record(RecordType::TXT.wire_code(), CLASS_IN, 300, vec![1, 0xFF]);
+    let err = rr_to_record_value(&update, &update.rdata).unwrap_err();
+    assert!(matches!(err, UpdateError::Refused(_)));
+}
+
+#[test]
 fn record_value_matches_ignores_case_for_name_like_values() {
     assert!(record_value_matches(
         &RecordType::NS,

@@ -259,6 +259,7 @@ name = "bindizr-e2e"
 version = "0.1.0-beta.5"
 dependencies = [
  "bindizr",
+ "domain",
  "reqwest",
  "serde_json",
  "serial_test",

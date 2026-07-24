@@ -1,4 +1,4 @@
-use super::{ParseError, decode_name_from_rdata, parse_update_request};
+use super::{ParseError, parse_update_request};
 
 pub(crate) fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
     let mut message = Vec::new();
@@ -54,46 +54,6 @@ fn append_tsig_rr_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     ]);
     message.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
     message.extend_from_slice(&rdata);
-}
-
-#[test]
-fn decode_name_from_rdata_handles_compression_pointer() {
-    let mut message = Vec::new();
-    message.extend_from_slice(&[
-        3, b'w', b'w', b'w', 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
-    ]);
-
-    let target_offset = 5usize;
-    let rdata_start = message.len();
-    let ptr_hi = 0xC0 | ((target_offset >> 8) as u8 & 0x3F);
-    let ptr_lo = (target_offset & 0xFF) as u8;
-    message.extend_from_slice(&[ptr_hi, ptr_lo]);
-
-    let decoded = decode_name_from_rdata(&message, rdata_start, 2).unwrap();
-    assert_eq!(decoded, "example.com.");
-}
-
-#[test]
-fn decode_name_from_rdata_rejects_non_backward_compression_pointers() {
-    let forward = [
-        0xC0, 0x02, // Pointer to the root label after this pointer
-        0x00,
-    ];
-    let self_referential = [
-        0xC0, 0x00, // Pointer to itself
-    ];
-
-    for message in [&forward[..], &self_referential[..]] {
-        let err = decode_name_from_rdata(message, 0, 2).unwrap_err();
-        assert!(matches!(err, ParseError::InvalidName));
-    }
-}
-
-#[test]
-fn decode_name_from_rdata_rejects_trailing_bytes() {
-    let message = [1, b'a', 0, 0];
-    let err = decode_name_from_rdata(&message, 0, message.len()).unwrap_err();
-    assert!(matches!(err, ParseError::InvalidName));
 }
 
 #[test]

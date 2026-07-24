@@ -204,7 +204,7 @@ fn parse_tsig_rr(
 /// Renders a parsed name the way the update flow stores names: labels joined
 /// with '.', trailing dot, label bytes unescaped (dots inside a label survive
 /// as-is).
-fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
+pub(super) fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
     let mut out = String::new();
 
     for label in name.iter() {
@@ -219,50 +219,6 @@ fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
 
     if out.is_empty() {
         out.push('.');
-    }
-
-    Ok(out)
-}
-
-/// Decodes a (possibly compressed) name that must exactly fill an rdata field.
-pub(super) fn decode_name_from_rdata(
-    message: &[u8],
-    rdata_start: usize,
-    rdata_len: usize,
-) -> Result<String, ParseError> {
-    if rdata_start + rdata_len > message.len() {
-        return Err(ParseError::InvalidName);
-    }
-
-    let mut parser = Parser::from_ref(message);
-    parser
-        .advance(rdata_start)
-        .map_err(|_| ParseError::InvalidName)?;
-
-    let name = ParsedName::parse(&mut parser).map_err(|_| ParseError::InvalidName)?;
-    if parser.pos() != rdata_start + rdata_len {
-        return Err(ParseError::InvalidName);
-    }
-
-    presentation_name(&name)
-}
-
-pub(super) fn decode_txt_from_rdata(rdata: &[u8]) -> Result<String, ParseError> {
-    let mut pos = 0usize;
-    let mut out = String::new();
-
-    while pos < rdata.len() {
-        let chunk_len = rdata[pos] as usize;
-        pos += 1;
-
-        if pos + chunk_len > rdata.len() {
-            return Err(ParseError::InvalidRr);
-        }
-
-        let chunk =
-            std::str::from_utf8(&rdata[pos..pos + chunk_len]).map_err(|_| ParseError::InvalidRr)?;
-        out.push_str(chunk);
-        pos += chunk_len;
     }
 
     Ok(out)

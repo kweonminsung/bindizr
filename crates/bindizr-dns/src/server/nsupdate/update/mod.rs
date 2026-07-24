@@ -1,9 +1,14 @@
 use bindizr_core::{config, dns::name::to_fqdn};
 use chrono::Utc;
+use domain::{
+    base::name::ParsedName,
+    dep::octseq::parse::Parser,
+    rdata::{A, Aaaa, Mx, Txt},
+};
 
 use super::{
     auth::ResponseSigner,
-    parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata},
+    parser::{UpdateRecord, UpdateRequest, presentation_name},
 };
 use crate::{
     log_error, log_info,
@@ -488,56 +493,59 @@ fn validate_delete_update_shape(
     Ok(())
 }
 
+/// Parses one rdata field in place inside the full message — so names may
+/// chase compression pointers — and requires the parse to consume it exactly.
+fn parse_rdata<'a, T>(
+    message: &'a [u8],
+    update: &UpdateRecord,
+    what: &str,
+    parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
+) -> Result<T, UpdateError> {
+    let refused = || UpdateError::Refused(format!("invalid {} rdata", what));
+
+    let mut parser = Parser::from_ref(message);
+    parser.advance(update.rdata_start).map_err(|_| refused())?;
+    let value = parse(&mut parser).ok_or_else(refused)?;
+
+    if parser.pos() != update.rdata_start + update.rdata.len() {
+        return Err(refused());
+    }
+
+    Ok(value)
+}
+
 pub(super) fn rr_to_record_value(
     update: &UpdateRecord,
     message: &[u8],
 ) -> Result<(RecordType, String, Option<i32>), UpdateError> {
     match rr_type_to_record_type(update.rr_type)? {
         RecordType::A => {
-            if update.rdata.len() != 4 {
-                return Err(UpdateError::Refused("invalid A rdata length".to_string()));
-            }
-            let value = std::net::Ipv4Addr::new(
-                update.rdata[0],
-                update.rdata[1],
-                update.rdata[2],
-                update.rdata[3],
-            )
-            .to_string();
-            Ok((RecordType::A, value, None))
+            let data = parse_rdata(message, update, "A", |parser| A::parse(parser).ok())?;
+            Ok((RecordType::A, data.addr().to_string(), None))
         }
         RecordType::AAAA => {
-            if update.rdata.len() != 16 {
-                return Err(UpdateError::Refused(
-                    "invalid AAAA rdata length".to_string(),
-                ));
-            }
-            let mut octets = [0u8; 16];
-            octets.copy_from_slice(&update.rdata[..16]);
-            let value = std::net::Ipv6Addr::from(octets).to_string();
-            Ok((RecordType::AAAA, value, None))
+            let data = parse_rdata(message, update, "AAAA", |parser| Aaaa::parse(parser).ok())?;
+            Ok((RecordType::AAAA, data.addr().to_string(), None))
         }
-        RecordType::CNAME => Ok((
-            RecordType::CNAME,
-            decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
-                .map_err(|e| UpdateError::Refused(format!("invalid CNAME rdata: {}", e)))?,
-            None,
-        )),
-        RecordType::NS => Ok((
-            RecordType::NS,
-            decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
-                .map_err(|e| UpdateError::Refused(format!("invalid NS rdata: {}", e)))?,
-            None,
-        )),
-        RecordType::PTR => Ok((
-            RecordType::PTR,
-            decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
-                .map_err(|e| UpdateError::Refused(format!("invalid PTR rdata: {}", e)))?,
-            None,
-        )),
+        record_type @ (RecordType::CNAME | RecordType::NS | RecordType::PTR) => {
+            let name = parse_rdata(message, update, record_type.as_str(), |parser| {
+                ParsedName::parse(parser).ok()
+            })?;
+            let value = presentation_name(&name).map_err(|e| {
+                UpdateError::Refused(format!("invalid {} rdata: {}", record_type.as_str(), e))
+            })?;
+            Ok((record_type, value, None))
+        }
         RecordType::TXT => {
-            decode_txt_from_rdata(&update.rdata)
+            let data = Txt::from_octets(update.rdata.as_slice())
                 .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?;
+            // Stored TXT values must decode back into strings, so reject
+            // non-UTF-8 character-strings even though the wire allows them.
+            for charstr in data.iter_charstrs() {
+                if std::str::from_utf8(charstr.as_slice()).is_err() {
+                    return Err(UpdateError::Refused("invalid TXT rdata".to_string()));
+                }
+            }
             Ok((
                 RecordType::TXT,
                 txt::encode_raw_txt_rdata(&update.rdata),
@@ -545,15 +553,10 @@ pub(super) fn rr_to_record_value(
             ))
         }
         RecordType::MX => {
-            if update.rdata.len() < 3 {
-                return Err(UpdateError::Refused("invalid MX rdata length".to_string()));
-            }
-
-            let priority = i32::from(u16::from_be_bytes([update.rdata[0], update.rdata[1]]));
-            let host =
-                decode_name_from_rdata(message, update.rdata_start + 2, update.rdata.len() - 2)
-                    .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
-            Ok((RecordType::MX, host, Some(priority)))
+            let data = parse_rdata(message, update, "MX", |parser| Mx::parse(parser).ok())?;
+            let host = presentation_name(data.exchange())
+                .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
+            Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
         }
         _ => Err(UpdateError::Refused(format!(
             "unsupported rr type: {}",
