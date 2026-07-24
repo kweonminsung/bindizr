@@ -216,8 +216,13 @@ impl RecordService {
 
             let new_serial = generate_serial(Some(zone.serial));
 
-            // Kept to build the record diff below (`after` = these plus inserts).
-            let before_records = existing_records.clone();
+            // The diff is only shown on a dry-run preview, so keep the `before`
+            // snapshot (and pay for building the diff) off the apply hot path.
+            let before_records = if dry_run {
+                existing_records.clone()
+            } else {
+                Vec::new()
+            };
 
             // Index existing records by owner name so constraint checks scan
             // only same-name records; new records join the index as we go so
@@ -282,18 +287,16 @@ impl RecordService {
             normalize_ms = normalize_dur.as_secs_f64() * 1000.0;
             validate_ms = validate_dur.as_secs_f64() * 1000.0;
 
-            // Diff the batch: `before` is the existing same-name records, `after`
-            // is those plus the inserts, so an insert into an existing RRset
-            // shows as `changed` rather than a bare `added`.
-            let before: Vec<ReconstructedRecord> = before_records
-                .into_iter()
-                .map(ReconstructedRecord::from)
-                .collect();
-            let mut after = before.clone();
-            after.extend(to_insert.iter().cloned().map(ReconstructedRecord::from));
-            let diff = build_record_diff(&zone, &before, &after);
-
             if dry_run {
+                // `after` = existing plus the inserts, so an insert into an
+                // existing RRset reads as `changed`, not a bare `added`.
+                let before: Vec<ReconstructedRecord> = before_records
+                    .into_iter()
+                    .map(ReconstructedRecord::from)
+                    .collect();
+                let mut after = before.clone();
+                after.extend(to_insert.iter().cloned().map(ReconstructedRecord::from));
+                let diff = build_record_diff(&zone, &before, &after);
                 return Ok((to_insert, zone.name, diff));
             }
 
@@ -317,7 +320,7 @@ impl RecordService {
             Ok::<(Vec<Record>, String, RecordDiff), ServiceError>((
                 created_records,
                 zone.name,
-                diff,
+                RecordDiff::default(),
             ))
         }
         .await;

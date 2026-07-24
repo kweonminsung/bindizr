@@ -360,7 +360,13 @@ impl RecordService {
                 skipped,
             };
 
-            let diff = import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels);
+            // The diff is only shown on a dry-run preview, so keep it off the
+            // apply hot path (import benchmarks measure records/sec here).
+            let diff = if dry_run {
+                import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels)
+            } else {
+                RecordDiff::default()
+            };
 
             let will_apply = errors.is_empty() && !dry_run;
             let has_changes = !dels.is_empty() || !adds.is_empty() || !ttl_dels.is_empty();

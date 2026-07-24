@@ -1,7 +1,5 @@
-//! Zone-file-style rendering of a `RecordDiff`, shared by snapshot diff and the
-//! bulk/import previews. The server sends structured records (display value +
-//! priority); this module assembles the zone-file rdata and the `+`/`-`/`~`
-//! lines — presentation lives entirely on the client.
+//! Client-side rendering of a `RecordDiff` as a zone-file `+`/`-`/`~` patch:
+//! the API sends structured records, and rdata assembly lives here.
 use serde_json::Value;
 
 /// Render one record's value as zone-file rdata: MX/SRV carry the priority
@@ -84,8 +82,8 @@ pub(crate) fn render_diff_lines(entries: &[Value]) -> String {
                 .cloned(),
         );
 
-        // Sign and owner name label the RRset once; each record keeps its own
-        // TTL so a TTL-only change reads clearly.
+        // Sign and name label the RRset once; TTL stays per-line so a TTL-only
+        // change reads clearly.
         for (index, (ttl, data)) in lines.iter().enumerate() {
             let head = if index == 0 { sign } else { ' ' };
             let name_col = if index == 0 { name } else { "" };

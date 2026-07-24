@@ -676,7 +676,7 @@ pub struct RecordDiffEntry {
 }
 
 /// How many RRsets were added, removed, and changed.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Default, Serialize, Debug, ToSchema)]
 pub struct RecordDiffSummary {
     #[schema(example = 1)]
     pub added: usize,
@@ -686,8 +686,9 @@ pub struct RecordDiffSummary {
     pub changed: usize,
 }
 
-/// A record-level difference between two record sets, RRset by RRset.
-#[derive(Serialize, Debug, ToSchema)]
+/// A record-level difference between two record sets, RRset by RRset. Empty on
+/// a real apply, which does not need it; populated only for a dry-run preview.
+#[derive(Default, Serialize, Debug, ToSchema)]
 pub struct RecordDiff {
     pub entries: Vec<RecordDiffEntry>,
     pub summary: RecordDiffSummary,
