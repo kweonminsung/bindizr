@@ -21,9 +21,11 @@ use crate::{
     error::XfrError,
     log_info,
     model::{record::Record, zone::Zone},
-    protocol::DNS_TCP_MAX_SIZE,
     txt,
 };
+
+/// Maximum size of a DNS message carried over TCP (16-bit length prefix).
+const DNS_TCP_MAX_SIZE: usize = 65535;
 
 pub(crate) struct DnsMessageBuilder {
     query_id: u16,

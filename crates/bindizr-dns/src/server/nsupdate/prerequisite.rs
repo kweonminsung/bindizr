@@ -1,3 +1,5 @@
+use domain::base::iana::{Class, Rtype};
+
 use super::{
     parser::UpdateRecord,
     update::{
@@ -7,7 +9,6 @@ use super::{
 };
 use crate::{
     model::{record::Record, zone::Zone},
-    protocol::{CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY},
     service::{RepositoryTx, record::RecordService},
 };
 
@@ -46,14 +47,14 @@ fn evaluate_prerequisites_against_records(
         let owner_exists = is_owner_existing(&relative, zone_records);
 
         match rr.class {
-            CLASS_ANY => {
+            Class::ANY => {
                 if !rr.rdata.is_empty() {
                     return Err(UpdateError::Refused(
                         "ANY-class prerequisite must have empty rdata".to_string(),
                     ));
                 }
 
-                if rr.rr_type == TYPE_ANY {
+                if rr.rr_type == Rtype::ANY {
                     if !owner_exists {
                         return Err(UpdateError::NxDomain(format!(
                             "owner '{}' does not exist",
@@ -74,14 +75,14 @@ fn evaluate_prerequisites_against_records(
                     }
                 }
             }
-            CLASS_NONE => {
+            Class::NONE => {
                 if !rr.rdata.is_empty() {
                     return Err(UpdateError::Refused(
                         "NONE-class prerequisite must have empty rdata".to_string(),
                     ));
                 }
 
-                if rr.rr_type == TYPE_ANY {
+                if rr.rr_type == Rtype::ANY {
                     if owner_exists {
                         return Err(UpdateError::YxDomain(format!("owner '{}' exists", owner)));
                     }
@@ -99,8 +100,8 @@ fn evaluate_prerequisites_against_records(
                     }
                 }
             }
-            CLASS_IN => {
-                if rr.rr_type == TYPE_ANY || rr.rdata.is_empty() {
+            Class::IN => {
+                if rr.rr_type == Rtype::ANY || rr.rdata.is_empty() {
                     return Err(UpdateError::Refused(
                         "IN-class prerequisite must specify rrtype and rdata".to_string(),
                     ));

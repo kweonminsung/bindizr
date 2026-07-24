@@ -1,7 +1,10 @@
 use bindizr_core::{config, dns::name::to_fqdn};
 use chrono::Utc;
 use domain::{
-    base::name::ParsedName,
+    base::{
+        iana::{Class, Rtype},
+        name::ParsedName,
+    },
     dep::octseq::parse::Parser,
     rdata::{A, Aaaa, Mx, Txt},
 };
@@ -18,7 +21,6 @@ use crate::{
         zone::Zone,
         zone_change::ZoneChange,
     },
-    protocol::{CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY},
     service,
     service::{
         RepositoryTx,
@@ -231,7 +233,7 @@ async fn authorize_key(
     for update in &request.updates {
         let owner_name = normalize_owner_name(&update.name, &zone.name)?;
         let relative_name = absolute_to_relative(&owner_name, &zone.name)?;
-        let record_type = if update.rr_type == TYPE_ANY {
+        let record_type = if update.rr_type == Rtype::ANY {
             None
         } else {
             Some(rr_type_to_record_type(update.rr_type)?)
@@ -264,11 +266,11 @@ async fn apply_single_update(
     let owner_name = normalize_owner_name(&update.name, &zone.name)?;
 
     match update.class {
-        CLASS_IN => add_record(tx, zone, &owner_name, update, query_data, new_serial).await,
-        CLASS_ANY => {
+        Class::IN => add_record(tx, zone, &owner_name, update, query_data, new_serial).await,
+        Class::ANY => {
             delete_records(tx, zone, &owner_name, update, true, query_data, new_serial).await
         }
-        CLASS_NONE => {
+        Class::NONE => {
             delete_records(tx, zone, &owner_name, update, false, query_data, new_serial).await
         }
         class => Err(UpdateError::Refused(format!(
@@ -375,7 +377,7 @@ async fn delete_records(
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
 
-    let target_type = if update.rr_type == TYPE_ANY {
+    let target_type = if update.rr_type == Rtype::ANY {
         None
     } else {
         Some(rr_type_to_record_type(update.rr_type)?)
@@ -477,7 +479,7 @@ fn validate_delete_update_shape(
             ));
         }
     } else {
-        if update.rr_type == TYPE_ANY {
+        if update.rr_type == Rtype::ANY {
             return Err(UpdateError::Refused(
                 "NONE-class delete must specify rrtype".to_string(),
             ));
@@ -565,8 +567,8 @@ pub(super) fn rr_to_record_value(
     }
 }
 
-pub(super) fn rr_type_to_record_type(rr_type: u16) -> Result<RecordType, UpdateError> {
-    RecordType::from_wire_code(rr_type)
+pub(super) fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, UpdateError> {
+    RecordType::from_wire_code(rr_type.to_int())
         .filter(|rt| !matches!(rt, RecordType::SOA | RecordType::SRV))
         .ok_or_else(|| UpdateError::Refused(format!("unsupported rr type: {}", rr_type)))
 }

@@ -2,14 +2,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use chrono::Utc;
+use domain::base::iana::{Class, Rtype};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Sha256, Sha384, Sha512};
 
 use super::*;
-use crate::{
-    protocol::{CLASS_ANY, TYPE_TSIG},
-    server::nsupdate::parser::tests::minimal_update_with_ztype,
-};
+use crate::server::nsupdate::parser::tests::minimal_update_with_ztype;
 
 pub(crate) const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
@@ -68,7 +66,7 @@ pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u
 
     let mut digest = base.clone();
     digest.extend_from_slice(&key_name);
-    digest.extend_from_slice(&CLASS_ANY.to_be_bytes());
+    digest.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
     digest.extend_from_slice(&0u32.to_be_bytes());
     digest.extend_from_slice(&algorithm_name);
     digest.extend_from_slice(&encode_u48(time_signed));
@@ -80,8 +78,8 @@ pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u
     let mut message = base;
     message[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
     message.extend_from_slice(&key_name);
-    message.extend_from_slice(&TYPE_TSIG.to_be_bytes());
-    message.extend_from_slice(&CLASS_ANY.to_be_bytes());
+    message.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
+    message.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
     message.extend_from_slice(&0u32.to_be_bytes()); // TTL
     let rdlen = algorithm_name.len() + 6 + 2 + 2 + mac.len() + 2 + 2 + 2;
     message.extend_from_slice(&(rdlen as u16).to_be_bytes());

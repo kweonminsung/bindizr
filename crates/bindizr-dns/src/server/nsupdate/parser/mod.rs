@@ -1,11 +1,17 @@
 use std::fmt;
 
-use domain::{base::name::ParsedName, dep::octseq::parse::Parser, rdata::tsig::Tsig};
-
-use crate::{
-    model::record::RecordType,
-    protocol::{CLASS_ANY, CLASS_IN, DNS_HEADER_LEN, TYPE_TSIG},
+use domain::{
+    base::{
+        Message,
+        iana::{Class, Opcode, Rtype},
+        name::ParsedName,
+    },
+    dep::octseq::parse::Parser,
+    rdata::tsig::Tsig,
 };
+
+/// Fixed length of a DNS message header, in bytes.
+const DNS_HEADER_LEN: usize = 12;
 
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRequest {
@@ -21,8 +27,8 @@ pub(super) struct UpdateRequest {
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRecord {
     pub name: String,
-    pub rr_type: u16,
-    pub class: u16,
+    pub rr_type: Rtype,
+    pub class: Class,
     pub ttl: u32,
     pub rdata: Vec<u8>,
     pub rdata_start: usize,
@@ -65,21 +71,14 @@ impl fmt::Display for ParseError {
 }
 
 pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
-    if data.len() < DNS_HEADER_LEN {
-        return Err(ParseError::TooShort);
-    }
+    let message = Message::from_octets(data).map_err(|_| ParseError::TooShort)?;
 
-    let opcode = (data[2] >> 3) & 0x0f;
-    if opcode != 5 {
+    if message.header().opcode() != Opcode::UPDATE {
         return Err(ParseError::InvalidOpcode);
     }
 
-    let qdcount = u16::from_be_bytes([data[4], data[5]]) as usize;
-    let ancount = u16::from_be_bytes([data[6], data[7]]) as usize;
-    let nscount = u16::from_be_bytes([data[8], data[9]]) as usize;
-    let arcount = u16::from_be_bytes([data[10], data[11]]) as usize;
-
-    if qdcount != 1 {
+    let counts = message.header_counts();
+    if counts.qdcount() != 1 {
         return Err(ParseError::InvalidHeader);
     }
 
@@ -96,22 +95,22 @@ pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseEr
         .parse_u16_be()
         .map_err(|_| ParseError::InvalidZoneSection)?;
 
-    if ztype != RecordType::SOA.wire_code() || zclass != CLASS_IN {
+    if Rtype::from_int(ztype) != Rtype::SOA || Class::from_int(zclass) != Class::IN {
         return Err(ParseError::InvalidZoneSection);
     }
     let zone_name = presentation_name(&zone)?;
 
-    let mut prerequisites = Vec::with_capacity(ancount);
-    for _ in 0..ancount {
+    let mut prerequisites = Vec::with_capacity(counts.ancount() as usize);
+    for _ in 0..counts.ancount() {
         prerequisites.push(parse_rr(&mut parser, data)?);
     }
 
-    let mut updates = Vec::with_capacity(nscount);
-    for _ in 0..nscount {
+    let mut updates = Vec::with_capacity(counts.nscount() as usize);
+    for _ in 0..counts.nscount() {
         updates.push(parse_rr(&mut parser, data)?);
     }
 
-    let tsig = parse_additional_section(&mut parser, arcount)?;
+    let tsig = parse_additional_section(&mut parser, counts.arcount() as usize)?;
 
     if parser.remaining() != 0 {
         return Err(ParseError::InvalidHeader);
@@ -129,8 +128,8 @@ fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRecord, 
     let name = ParsedName::parse(parser).map_err(|_| ParseError::InvalidName)?;
     let name = presentation_name(&name)?;
 
-    let rr_type = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?;
-    let class = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?;
+    let rr_type = Rtype::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?);
+    let class = Class::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?);
     let ttl = parser.parse_u32_be().map_err(|_| ParseError::InvalidRr)?;
     let rdlen = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)? as usize;
 
@@ -155,9 +154,9 @@ fn parse_additional_section(
 
     for index in 0..count {
         let owner = ParsedName::parse(parser).map_err(|_| ParseError::InvalidName)?;
-        let rr_type = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?;
+        let rr_type = Rtype::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?);
 
-        if rr_type == TYPE_TSIG {
+        if rr_type == Rtype::TSIG {
             if tsig.is_some() || index + 1 != count {
                 return Err(ParseError::InvalidTsig);
             }
@@ -179,11 +178,11 @@ fn parse_tsig_rr(
     parser: &mut Parser<'_, [u8]>,
     owner: &ParsedName<&[u8]>,
 ) -> Result<TsigRecord, ParseError> {
-    let class = parser.parse_u16_be().map_err(|_| ParseError::InvalidTsig)?;
+    let class = Class::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidTsig)?);
     let ttl = parser.parse_u32_be().map_err(|_| ParseError::InvalidTsig)?;
     let rdlen = parser.parse_u16_be().map_err(|_| ParseError::InvalidTsig)? as usize;
 
-    if class != CLASS_ANY || ttl != 0 {
+    if class != Class::ANY || ttl != 0 {
         return Err(ParseError::InvalidTsig);
     }
 

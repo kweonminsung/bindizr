@@ -1,7 +1,7 @@
 use domain::{
     base::{
         Message,
-        iana::{Opcode, Rcode, TsigRcode},
+        iana::{Class, Opcode, Rcode, TsigRcode},
     },
     rdata::tsig::Tsig,
 };
@@ -12,7 +12,7 @@ use super::{
     build_response,
     parser::tests::minimal_update_with_ztype,
 };
-use crate::{model::tsig_key::TsigAlgorithm, protocol::CLASS_ANY};
+use crate::model::tsig_key::TsigAlgorithm;
 
 #[test]
 fn build_response_echoes_request_header_and_question() {
@@ -67,7 +67,7 @@ fn build_response_signs_with_request_mac_chain() {
     digest.extend_from_slice(&request_mac);
     digest.extend_from_slice(&unsigned);
     digest.extend_from_slice(&encode_name("update-key"));
-    digest.extend_from_slice(&CLASS_ANY.to_be_bytes());
+    digest.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
     digest.extend_from_slice(&0u32.to_be_bytes());
     digest.extend_from_slice(&encode_name("hmac-sha256"));
     digest.extend_from_slice(&encode_u48(u64::from(data.time_signed())));

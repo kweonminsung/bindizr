@@ -9,27 +9,22 @@ mod update;
 use std::net::SocketAddr;
 
 use domain::{
-    base::{Message, MessageBuilder, iana::Rcode},
+    base::{
+        Message, MessageBuilder,
+        iana::{Opcode, Rcode},
+    },
     rdata::tsig::Time48,
 };
 use tokio::net::{TcpStream, UdpSocket};
 
-use crate::{
-    log_info, log_warn,
-    protocol::{DNS_HEADER_LEN, DNS_OPCODE_UPDATE},
-};
+use crate::{log_info, log_warn};
 
 /// Response-TSIG fudge for requests whose own fudge is unavailable
 /// (RFC 8945 §10 suggested default).
 const DEFAULT_FUDGE: u16 = 300;
 
 pub(crate) fn is_nsupdate(message: &[u8]) -> bool {
-    if message.len() < DNS_HEADER_LEN {
-        return false;
-    }
-
-    let opcode = (message[2] >> 3) & 0x0f;
-    opcode == DNS_OPCODE_UPDATE
+    Message::from_octets(message).is_ok_and(|message| message.header().opcode() == Opcode::UPDATE)
 }
 
 pub(crate) async fn handle_tcp_nsupdate(
