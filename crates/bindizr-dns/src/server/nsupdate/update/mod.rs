@@ -567,10 +567,21 @@ pub(super) fn rr_to_record_value(
     }
 }
 
+/// Record types updatable via nsupdate; SOA and SRV are deliberately excluded.
 pub(super) fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, UpdateError> {
-    RecordType::from_wire_code(rr_type.to_int())
-        .filter(|rt| !matches!(rt, RecordType::SOA | RecordType::SRV))
-        .ok_or_else(|| UpdateError::Refused(format!("unsupported rr type: {}", rr_type)))
+    match rr_type {
+        Rtype::A => Ok(RecordType::A),
+        Rtype::NS => Ok(RecordType::NS),
+        Rtype::CNAME => Ok(RecordType::CNAME),
+        Rtype::PTR => Ok(RecordType::PTR),
+        Rtype::MX => Ok(RecordType::MX),
+        Rtype::TXT => Ok(RecordType::TXT),
+        Rtype::AAAA => Ok(RecordType::AAAA),
+        _ => Err(UpdateError::Refused(format!(
+            "unsupported rr type: {}",
+            rr_type
+        ))),
+    }
 }
 
 pub(super) fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String, UpdateError> {
