@@ -8,22 +8,24 @@ mod update;
 
 use std::net::SocketAddr;
 
+use domain::{
+    base::{Message, MessageBuilder, iana::Rcode},
+    rdata::tsig::Time48,
+};
 use tokio::net::{TcpStream, UdpSocket};
-use update::{ResponseTsig, TsigErrorResponse};
 
 use crate::{
     log_info, log_warn,
     protocol::{
-        DNS_COMPRESSION_POINTER_MASK, DNS_HEADER_LEN, DNS_OPCODE_UPDATE, RCODE_FORMERR,
-        RCODE_NOERROR, RCODE_NOTAUTH, RCODE_NOTZONE, RCODE_NXDOMAIN, RCODE_NXRRSET, RCODE_REFUSED,
-        RCODE_SERVFAIL, RCODE_YXDOMAIN, RCODE_YXRRSET,
+        DNS_HEADER_LEN, DNS_OPCODE_UPDATE, RCODE_FORMERR, RCODE_NOERROR, RCODE_NOTZONE,
+        RCODE_NXDOMAIN, RCODE_NXRRSET, RCODE_REFUSED, RCODE_SERVFAIL, RCODE_YXDOMAIN,
+        RCODE_YXRRSET,
     },
 };
 
-struct NsupdateResponse {
-    rcode: u8,
-    tsig: Option<ResponseTsig>,
-}
+/// Response-TSIG fudge for requests whose own fudge is unavailable
+/// (RFC 8945 §10 suggested default).
+const DEFAULT_FUDGE: u16 = 300;
 
 pub(crate) fn is_nsupdate(message: &[u8]) -> bool {
     if message.len() < DNS_HEADER_LEN {
@@ -41,8 +43,8 @@ pub(crate) async fn handle_tcp_nsupdate(
 ) -> Result<(), String> {
     log_info!("NSUPDATE TCP request from {}", client_addr);
 
-    let result = handle_nsupdate_request(query_data, client_addr).await;
-    let response = build_response(query_data, result)
+    let response = handle_nsupdate_request(query_data, client_addr)
+        .await
         .ok_or_else(|| "Failed to build NSUPDATE TCP response".to_string())?;
 
     crate::wire::write_tcp_message(stream, &response)
@@ -57,8 +59,7 @@ pub(crate) async fn handle_udp_nsupdate(
 ) -> Result<(), String> {
     log_info!("NSUPDATE UDP request from {}", client_addr);
 
-    let result = handle_nsupdate_request(query_data, client_addr).await;
-    let response = match build_response(query_data, result) {
+    let response = match handle_nsupdate_request(query_data, client_addr).await {
         Some(resp) => resp,
         None => {
             log_warn!("Ignored malformed NSUPDATE packet from {}", client_addr);
@@ -74,198 +75,94 @@ pub(crate) async fn handle_udp_nsupdate(
     Ok(())
 }
 
-async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> NsupdateResponse {
+/// Process an UPDATE request and return the complete wire response, or `None`
+/// for a message too malformed to answer.
+async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> Option<Vec<u8>> {
     let parsed = match parser::parse_update_request(query_data) {
         Ok(req) => req,
         Err(e) => {
             log_warn!("NSUPDATE parse error from {}: {}", client_addr, e);
-            return NsupdateResponse {
-                rcode: RCODE_FORMERR,
-                tsig: None,
-            };
+            return build_response(query_data, RCODE_FORMERR, None, DEFAULT_FUDGE);
         }
     };
 
+    // The response TSIG echoes the request's fudge.
+    let fudge = parsed
+        .tsig
+        .as_ref()
+        .map_or(DEFAULT_FUDGE, |tsig| tsig.fudge);
     let (result, signer) = update::apply_update(parsed, query_data).await;
-    // Once the request's TSIG was validated, every response — success or
-    // failure — must be signed (RFC 8945 §5.3). NOTAUTH errors carry their own
-    // response TSIG (unsigned for BADKEY/BADSIG, signed for BADTIME).
-    let signed = signer.map(ResponseTsig::Signed);
 
-    match result {
+    let rcode = match result {
         Ok(update::UpdateResult::Applied { changed }) => {
             log_info!(
                 "NSUPDATE applied from {} (changed={})",
                 client_addr,
                 changed
             );
-            NsupdateResponse {
-                rcode: RCODE_NOERROR,
-                tsig: signed,
-            }
+            RCODE_NOERROR
+        }
+        // TSIG failures carry their own complete response, built against the
+        // request's TSIG record (RFC 8945 §5.2–5.3).
+        Err(update::UpdateError::TsigFailed { msg, response }) => {
+            log_warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
+            return Some(response);
         }
         Err(update::UpdateError::Refused(msg)) => {
             log_warn!("NSUPDATE refused from {}: {}", client_addr, msg);
-            NsupdateResponse {
-                rcode: RCODE_REFUSED,
-                tsig: signed,
-            }
-        }
-        Err(update::UpdateError::NotAuth { msg, tsig }) => {
-            log_warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
-            NsupdateResponse {
-                rcode: RCODE_NOTAUTH,
-                tsig: tsig.map(|tsig| *tsig),
-            }
+            RCODE_REFUSED
         }
         Err(update::UpdateError::YxDomain(msg)) => {
             log_warn!("NSUPDATE yxdomain from {}: {}", client_addr, msg);
-            NsupdateResponse {
-                rcode: RCODE_YXDOMAIN,
-                tsig: signed,
-            }
+            RCODE_YXDOMAIN
         }
         Err(update::UpdateError::YxRrset(msg)) => {
             log_warn!("NSUPDATE yxrrset from {}: {}", client_addr, msg);
-            NsupdateResponse {
-                rcode: RCODE_YXRRSET,
-                tsig: signed,
-            }
+            RCODE_YXRRSET
         }
         Err(update::UpdateError::NxDomain(msg)) => {
             log_warn!("NSUPDATE nxdomain from {}: {}", client_addr, msg);
-            NsupdateResponse {
-                rcode: RCODE_NXDOMAIN,
-                tsig: signed,
-            }
+            RCODE_NXDOMAIN
         }
         Err(update::UpdateError::NxRrset(msg)) => {
             log_warn!("NSUPDATE nxrrset from {}: {}", client_addr, msg);
-            NsupdateResponse {
-                rcode: RCODE_NXRRSET,
-                tsig: signed,
-            }
+            RCODE_NXRRSET
         }
         Err(update::UpdateError::NotZone(msg)) => {
             log_warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
-            NsupdateResponse {
-                rcode: RCODE_NOTZONE,
-                tsig: signed,
-            }
+            RCODE_NOTZONE
         }
         Err(update::UpdateError::Internal(msg)) => {
             log_warn!("NSUPDATE internal error from {}: {}", client_addr, msg);
-            NsupdateResponse {
-                rcode: RCODE_SERVFAIL,
-                tsig: signed,
-            }
+            RCODE_SERVFAIL
         }
-    }
-}
-
-/// Returns the end offset of the first question (zone) section, or None if the message is invalid.
-fn zone_section_end(message: &[u8]) -> Option<usize> {
-    let mut offset = DNS_HEADER_LEN;
-
-    // Parse QNAME: labels ending with 0 or a compression pointer (2 bytes)
-    loop {
-        if offset >= message.len() {
-            return None;
-        }
-
-        let len = message[offset];
-
-        if (len & DNS_COMPRESSION_POINTER_MASK) == DNS_COMPRESSION_POINTER_MASK {
-            // Compression pointer – two bytes, name ends here.
-            if offset + 1 >= message.len() {
-                return None;
-            }
-            offset += 2;
-            break;
-        }
-
-        if len == 0 {
-            // End of QNAME.
-            offset += 1;
-            break;
-        }
-
-        // Regular label.
-        offset += 1 + len as usize;
-        if offset > message.len() {
-            return None;
-        }
-    }
-
-    // QTYPE (2 bytes) + QCLASS (2 bytes).
-    if offset + 4 > message.len() {
-        return None;
-    }
-
-    Some(offset + 4)
-}
-
-fn build_response(query_data: &[u8], result: NsupdateResponse) -> Option<Vec<u8>> {
-    if query_data.len() < DNS_HEADER_LEN {
-        return None;
-    }
-
-    let opcode_bits = query_data[2] & 0x78;
-    let rd_bit = query_data[2] & 0x01;
-
-    let qdcount = u16::from_be_bytes([query_data[4], query_data[5]]);
-    let zone_end = if qdcount > 0 {
-        zone_section_end(query_data)
-    } else {
-        None
     };
 
-    let response_size = zone_end.unwrap_or(DNS_HEADER_LEN);
-    let mut response = vec![0u8; response_size];
-
-    // Transaction ID.
-    response[0] = query_data[0];
-    response[1] = query_data[1];
-
-    // QR=1, preserve opcode and RD bit.
-    response[2] = 0x80 | opcode_bits | rd_bit;
-    // Preserve upper flag nibble, set RCODE in lower nibble.
-    response[3] = (query_data[3] & 0xF0) | (result.rcode & 0x0F);
-
-    if let Some(end) = zone_end {
-        // QDCOUNT=1; ANCOUNT/NSCOUNT/ARCOUNT remain 0.
-        response[4] = 0x00;
-        response[5] = 0x01;
-        // Copy the zone/question section verbatim from the query.
-        response[DNS_HEADER_LEN..end].copy_from_slice(&query_data[DNS_HEADER_LEN..end]);
-    }
-
-    match result.tsig {
-        Some(ResponseTsig::Unsigned(tsig)) => {
-            append_tsig_error(&mut response, &tsig)?;
-        }
-        Some(ResponseTsig::Signed(signer)) => {
-            signer.sign_response(&mut response)?;
-        }
-        None => {}
-    }
-
-    Some(response)
+    build_response(query_data, rcode, signer, fudge)
 }
 
-/// Append an unsigned TSIG error record (MAC size 0, RFC 8945 §5.3.2).
-fn append_tsig_error(response: &mut Vec<u8>, tsig: &TsigErrorResponse) -> Option<()> {
-    let mut rdata = Vec::new();
-    rdata.extend_from_slice(&tsig.algorithm_canonical);
-    rdata.extend_from_slice(&auth::encode_u48(tsig.time_signed));
-    rdata.extend_from_slice(&tsig.fudge.to_be_bytes());
-    rdata.extend_from_slice(&0u16.to_be_bytes());
-    rdata.extend_from_slice(&tsig.original_id.to_be_bytes());
-    rdata.extend_from_slice(&tsig.error.to_be_bytes());
-    rdata.extend_from_slice(&(u16::try_from(tsig.other_data.len()).ok()?).to_be_bytes());
-    rdata.extend_from_slice(&tsig.other_data);
+/// Build the response: request ID/opcode/question echoed, RCODE set, and a
+/// TSIG appended once the request's TSIG was validated — every response to a
+/// signed request must be signed (RFC 8945 §5.3).
+fn build_response(
+    query_data: &[u8],
+    rcode: u8,
+    signer: Option<auth::ResponseSigner>,
+    fudge: u16,
+) -> Option<Vec<u8>> {
+    let msg = Message::from_octets(query_data).ok()?;
+    let rcode = Rcode::checked_from_int(rcode)?;
 
-    auth::append_tsig_rr(response, &tsig.name_canonical, &rdata)
+    let answer = MessageBuilder::new_vec().start_answer(&msg, rcode).ok()?;
+    let mut additional = answer.additional();
+
+    if let Some(signer) = signer {
+        signer
+            .answer_with_fudge(&mut additional, Time48::now(), fudge)
+            .ok()?;
+    }
+
+    Some(additional.finish())
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@ use bindizr_core::{config, dns::name::to_fqdn};
 use chrono::Utc;
 
 use super::{
-    auth::TsigSigner,
+    auth::ResponseSigner,
     parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata},
 };
 use crate::{
@@ -32,9 +32,12 @@ use crate::{
 #[derive(Debug)]
 pub(super) enum UpdateError {
     Refused(String),
-    NotAuth {
+    /// TSIG validation failed. Carries the complete NOTAUTH wire response,
+    /// built during validation because it must echo (or sign against) the
+    /// request's TSIG record (RFC 8945 §5.2–5.3).
+    TsigFailed {
         msg: String,
-        tsig: Option<Box<ResponseTsig>>,
+        response: Vec<u8>,
     },
     YxDomain(String),
     YxRrset(String),
@@ -42,26 +45,6 @@ pub(super) enum UpdateError {
     NxRrset(String),
     NotZone(String),
     Internal(String),
-}
-
-/// TSIG record to append to a response. Responses to a validated request are
-/// signed (RFC 8945 §5.3); BADKEY/BADSIG errors carry an unsigned TSIG error
-/// record instead, since no verified MAC exists to sign with (§5.3.2).
-#[derive(Debug)]
-pub(super) enum ResponseTsig {
-    Unsigned(TsigErrorResponse),
-    Signed(TsigSigner),
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct TsigErrorResponse {
-    pub name_canonical: Vec<u8>,
-    pub algorithm_canonical: Vec<u8>,
-    pub original_id: u16,
-    pub time_signed: u64,
-    pub fudge: u16,
-    pub error: u16,
-    pub other_data: Vec<u8>,
 }
 
 pub(super) enum UpdateResult {
@@ -80,7 +63,7 @@ struct AppliedUpdate {
 pub(super) async fn apply_update(
     request: UpdateRequest,
     query_data: &[u8],
-) -> (Result<UpdateResult, UpdateError>, Option<TsigSigner>) {
+) -> (Result<UpdateResult, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
     let result = apply_update_inner(request, query_data, &mut signer).await;
     (result, signer)
@@ -89,7 +72,7 @@ pub(super) async fn apply_update(
 async fn apply_update_inner(
     request: UpdateRequest,
     query_data: &[u8],
-    signer: &mut Option<TsigSigner>,
+    signer: &mut Option<ResponseSigner>,
 ) -> Result<UpdateResult, UpdateError> {
     let zone_name = trim_dot(&request.zone_name);
     if zone_name.is_empty() {
@@ -188,7 +171,7 @@ async fn authenticate_request(
     tx: &mut RepositoryTx<'_>,
     request: &UpdateRequest,
     query_data: &[u8],
-    signer: &mut Option<TsigSigner>,
+    signer: &mut Option<ResponseSigner>,
 ) -> Result<Option<TsigKey>, UpdateError> {
     let tsig = match &request.tsig {
         Some(tsig) => tsig,
@@ -204,12 +187,14 @@ async fn authenticate_request(
 
     let key = TsigKeyService::find_by_name_tx(tx, &tsig.name)
         .await
-        .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?
-        .ok_or_else(|| super::auth::unknown_key_error(tsig))?;
+        .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?;
 
-    *signer = Some(super::auth::validate_tsig(tsig, query_data, &key)?);
+    // An unknown key still runs validation: the empty key store makes it
+    // produce the BADKEY error response.
+    let domain_key = key.as_ref().map(super::auth::to_domain_key).transpose()?;
+    *signer = Some(super::auth::validate_tsig(query_data, domain_key)?);
 
-    Ok(Some(key))
+    Ok(key)
 }
 
 /// Authorize an authenticated request: global keys may update anything, other

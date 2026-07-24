@@ -35,20 +35,15 @@ pub(super) struct UpdateRecord {
     pub rdata_start: usize,
 }
 
+/// The request's TSIG record, reduced to what the update flow needs: the key
+/// name for the DB lookup and the fudge echoed in the response. Cryptographic
+/// validation re-reads the full record via `domain::tsig`; parsing here still
+/// rejects structurally invalid TSIG RRs with FORMERR (RFC 8945 §5.2) before
+/// that happens.
 #[derive(Debug, Clone)]
 pub(super) struct TsigRecord {
     pub name: String,
-    pub name_canonical: Vec<u8>,
-    pub algorithm: String,
-    pub algorithm_canonical: Vec<u8>,
-    pub time_signed: u64,
     pub fudge: u16,
-    pub mac: Vec<u8>,
-    pub original_id: u16,
-    pub error: u16,
-    pub other_data: Vec<u8>,
-    pub rr_start: usize,
-    pub rr_end: usize,
 }
 
 #[derive(Debug)]
@@ -218,13 +213,7 @@ fn peek_rr_type(data: &[u8], pos: usize) -> Result<u16, ParseError> {
 }
 
 fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseError> {
-    let rr_start = pos;
     let (name, name_len) = decode_name(data, pos)?;
-    let (name_canonical, canonical_name_len) =
-        decode_name_canonical(data, pos).map_err(|_| ParseError::InvalidTsig)?;
-    if canonical_name_len != name_len {
-        return Err(ParseError::InvalidTsig);
-    }
     let hdr = pos + name_len;
 
     if hdr + 10 > data.len() {
@@ -247,25 +236,14 @@ fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseEr
     }
 
     let mut p = rdata_start;
-    let (algorithm, algo_len) = decode_name(data, p).map_err(|_| ParseError::InvalidTsig)?;
-    let (algorithm_canonical, canonical_algo_len) =
-        decode_name_canonical(data, p).map_err(|_| ParseError::InvalidTsig)?;
-    if canonical_algo_len != algo_len {
-        return Err(ParseError::InvalidTsig);
-    }
+    let (_, algo_len) = decode_name(data, p).map_err(|_| ParseError::InvalidTsig)?;
     p += algo_len;
 
     if p + 6 + 2 + 2 > rdata_end {
         return Err(ParseError::InvalidTsig);
     }
 
-    let time_signed = ((data[p] as u64) << 40)
-        | ((data[p + 1] as u64) << 32)
-        | ((data[p + 2] as u64) << 24)
-        | ((data[p + 3] as u64) << 16)
-        | ((data[p + 4] as u64) << 8)
-        | data[p + 5] as u64;
-    p += 6;
+    p += 6; // Time signed
 
     let fudge = u16::from_be_bytes([data[p], data[p + 1]]);
     p += 2;
@@ -277,14 +255,7 @@ fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseEr
         return Err(ParseError::InvalidTsig);
     }
 
-    let mac = data[p..p + mac_size].to_vec();
-    p += mac_size;
-
-    let original_id = u16::from_be_bytes([data[p], data[p + 1]]);
-    p += 2;
-
-    let error = u16::from_be_bytes([data[p], data[p + 1]]);
-    p += 2;
+    p += mac_size + 2 + 2; // MAC, original ID, error
 
     let other_len = u16::from_be_bytes([data[p], data[p + 1]]) as usize;
     p += 2;
@@ -293,25 +264,7 @@ fn parse_tsig_rr(data: &[u8], pos: usize) -> Result<(TsigRecord, usize), ParseEr
         return Err(ParseError::InvalidTsig);
     }
 
-    let other_data = data[p..p + other_len].to_vec();
-
-    Ok((
-        TsigRecord {
-            name,
-            name_canonical,
-            algorithm,
-            algorithm_canonical,
-            time_signed,
-            fudge,
-            mac,
-            original_id,
-            error,
-            other_data,
-            rr_start,
-            rr_end: rdata_end,
-        },
-        rdata_end,
-    ))
+    Ok((TsigRecord { name, fudge }, rdata_end))
 }
 
 /// Walks a (possibly compressed) wire-format name at `start`, calling
@@ -384,18 +337,6 @@ fn walk_name(
     }
 
     Ok(consumed)
-}
-
-/// Decodes a name into lowercased uncompressed wire form (for TSIG signing).
-fn decode_name_canonical(data: &[u8], start: usize) -> Result<(Vec<u8>, usize), ParseError> {
-    let mut out = Vec::new();
-    let consumed = walk_name(data, start, |label| {
-        out.push(label.len() as u8);
-        out.extend(label.iter().map(u8::to_ascii_lowercase));
-        Ok(())
-    })?;
-    out.push(0);
-    Ok((out, consumed))
 }
 
 /// Decodes a name into dotted presentation form with a trailing dot.

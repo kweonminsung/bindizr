@@ -130,11 +130,13 @@ fn parse_update_request_accepts_opt_before_tsig() {
     let request = parse_update_request(&message).unwrap();
     let tsig = request.tsig.unwrap();
     assert_eq!(tsig.name, "key.");
-    assert_eq!(tsig.algorithm, "hmac-sha256.");
+    assert_eq!(tsig.fudge, 300);
 }
 
+/// Dots inside a key-name label must survive into the presentation-form name
+/// used for the key lookup.
 #[test]
-fn parse_update_request_preserves_tsig_canonical_owner_labels() {
+fn parse_update_request_preserves_tsig_owner_label_dots() {
     let mut message = minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_tsig_rr_with_owner(
@@ -147,12 +149,6 @@ fn parse_update_request_preserves_tsig_canonical_owner_labels() {
     let request = parse_update_request(&message).unwrap();
     let tsig = request.tsig.unwrap();
     assert_eq!(tsig.name, "Key.With.Dot.");
-    assert_eq!(
-        tsig.name_canonical,
-        vec![
-            0x0c, b'k', b'e', b'y', b'.', b'w', b'i', b't', b'h', b'.', b'd', b'o', b't', 0x00
-        ]
-    );
 }
 
 #[test]

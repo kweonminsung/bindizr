@@ -32,8 +32,3 @@ pub(crate) const RCODE_YXRRSET: u8 = 7;
 pub(crate) const RCODE_NXRRSET: u8 = 8;
 pub(crate) const RCODE_NOTAUTH: u8 = 9;
 pub(crate) const RCODE_NOTZONE: u8 = 10;
-
-// TSIG error codes (RFC 8945).
-pub(crate) const TSIG_ERROR_BADSIG: u16 = 16;
-pub(crate) const TSIG_ERROR_BADKEY: u16 = 17;
-pub(crate) const TSIG_ERROR_BADTIME: u16 = 18;
