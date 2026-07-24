@@ -58,7 +58,7 @@ pub(crate) fn hmac_sign(algorithm: TsigAlgorithm, data: &[u8]) -> Vec<u8> {
 }
 
 /// A minimal UPDATE request signed with `update-key`: the MAC covers the
-/// message without the TSIG RR plus the TSIG variables (RFC 8945 §4.3.2/§4.3.3).
+/// message without the TSIG RR plus the TSIG variables (RFC 8945, Sections 4.3.2/4.3.3).
 pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u8> {
     let base = minimal_update_with_ztype(6);
     let key_name = encode_name("update-key");
@@ -147,7 +147,7 @@ fn validate_tsig_rejects_tampered_mac_with_badsig() {
     let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
     let err = validate_tsig(&query, Some(key)).unwrap_err();
 
-    // RFC 8945 §5.3.2: a MAC failure answers NOTAUTH/BADSIG with an unsigned
+    // RFC 8945, Section 5.3.2: a MAC failure answers NOTAUTH/BADSIG with an unsigned
     // TSIG error record.
     let (rcode, error, _, mac, _) = response_tsig(&failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
@@ -204,7 +204,7 @@ fn validate_tsig_rejects_stale_time_with_signed_badtime() {
     let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
     let err = validate_tsig(&query, Some(key)).unwrap_err();
 
-    // RFC 8945 §5.2.3: BADTIME responses are signed, echo the client's time,
+    // RFC 8945, Section 5.2.3: BADTIME responses are signed, echo the client's time,
     // and carry the server's time in other data.
     let (rcode, error, time_signed, mac, other) = response_tsig(&failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);

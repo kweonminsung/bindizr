@@ -59,7 +59,7 @@ fn build_response_signs_with_request_mac_chain() {
     // unsigned build of the same request.
     let unsigned = build_response(&query, Rcode::NOERROR, None, 300).unwrap();
 
-    // Recompute the response MAC per RFC 8945 §4.3.3: request MAC
+    // Recompute the response MAC per RFC 8945, Section 4.3.3: request MAC
     // (length-prefixed), the response without the TSIG RR, then the TSIG
     // variables.
     let mut digest = Vec::new();

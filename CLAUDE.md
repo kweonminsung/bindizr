@@ -56,6 +56,9 @@ adjacent code. Specifically avoid:
   queries vary by database backend` above the `match self { ... }` that plainly
   does exactly that).
 
+When citing an RFC section, write it out as `RFC 2181, Section 5.2` (and
+`Sections 5.2–5.3` for a range) — never the `§` glyph.
+
 `#[allow(dead_code)]` on repository traits and a few facade methods is
 deliberate (trait surface consumed across crates / kept to satisfy lints) —
 leave it in place.

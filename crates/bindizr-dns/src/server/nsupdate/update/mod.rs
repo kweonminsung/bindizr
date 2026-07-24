@@ -41,7 +41,7 @@ pub(super) enum UpdateError {
     Refused(String),
     /// TSIG validation failed. Carries the complete NOTAUTH wire response,
     /// built during validation because it must echo (or sign against) the
-    /// request's TSIG record (RFC 8945 §5.2–5.3).
+    /// request's TSIG record (RFC 8945, Sections 5.2–5.3).
     TsigFailed {
         msg: String,
         response: Vec<u8>,

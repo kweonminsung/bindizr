@@ -159,7 +159,7 @@ impl ZoneService {
             let mut changes: Vec<ZoneChange> = Vec::new();
 
             if !has_primary_ns {
-                // Join the apex NS RRset's TTL (RFC 2181 §5.2), which this
+                // Join the apex NS RRset's TTL (RFC 2181, Section 5.2), which this
                 // direct insert would otherwise split.
                 let ns_rrset_ttl = apex_records
                     .iter()

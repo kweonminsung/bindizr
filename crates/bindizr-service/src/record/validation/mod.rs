@@ -204,7 +204,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         ));
     }
 
-    // RFC 2181 §5.2: one TTL per RRset. A mixed one is rewritten by the
+    // RFC 2181, Section 5.2: one TTL per RRset. A mixed one is rewritten by the
     // secondary, so stored and served state drift apart.
     if let Some(conflicting) = existing_records_with_name
         .iter()

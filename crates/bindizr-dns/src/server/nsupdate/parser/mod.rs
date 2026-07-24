@@ -37,7 +37,7 @@ pub(super) struct UpdateRecord {
 /// The request's TSIG record, reduced to what the update flow needs: the key
 /// name for the DB lookup and the fudge echoed in the response. Cryptographic
 /// validation re-reads the full record via `domain::tsig`; parsing here still
-/// rejects structurally invalid TSIG RRs with FORMERR (RFC 8945 §5.2) before
+/// rejects structurally invalid TSIG RRs with FORMERR (RFC 8945, Section 5.2) before
 /// that happens.
 #[derive(Debug, Clone)]
 pub(super) struct TsigRecord {

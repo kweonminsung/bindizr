@@ -35,8 +35,8 @@ fn normalize_owner_name_rejects_out_of_zone_suffix_matches() {
 }
 
 // Delete-update wire shapes are fixed by RFC 2136: delete-RRset is CLASS ANY +
-// TTL 0 + empty RDATA (§2.5.2), delete-specific-RR is CLASS NONE + TTL 0 +
-// RDATA present (§2.5.4); every other combination must be refused.
+// TTL 0 + empty RDATA (Section 2.5.2), delete-specific-RR is CLASS NONE + TTL 0 +
+// RDATA present (Section 2.5.4); every other combination must be refused.
 #[test]
 fn validate_delete_update_shape_accepts_any_class_rrset_delete() {
     let update = update_record(Rtype::A, Class::ANY, 0, Vec::new());
@@ -173,7 +173,7 @@ fn rr_to_record_value_rejects_name_rdata_with_trailing_bytes() {
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
-// TXT RDATA is one or more character-strings (RFC 1035 §3.3.14); an empty
+// TXT RDATA is one or more character-strings (RFC 1035, Section 3.3.14); an empty
 // value previously slipped through and stored an undecodable record.
 #[test]
 fn rr_to_record_value_rejects_empty_txt_rdata() {

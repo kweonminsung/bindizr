@@ -188,7 +188,7 @@ async fn record_reject_mixed_rrset_ttl() {
     let (status, _) = app.request(Method::POST, "/records", Some(first)).await;
     assert_eq!(status, StatusCode::CREATED);
 
-    // RFC 2181 §5.2: one TTL per RRset.
+    // RFC 2181, Section 5.2: one TTL per RRset.
     let differing_ttl = json!({
         "name": "www",
         "record_type": "A",
@@ -529,7 +529,7 @@ async fn record_preserve_txt_segments_and_case() {
             .contains("TXT record must contain at least one character-string")
     );
 
-    // A DNS character-string holds at most 255 octets (RFC 1035 §3.3), so a
+    // A DNS character-string holds at most 255 octets (RFC 1035, Section 3.3), so a
     // 300-char value must be stored split into 255 + 45.
     let long_txt = json!({
         "name": "long-txt",

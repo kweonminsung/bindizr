@@ -544,7 +544,7 @@ pub(crate) fn parse_query(data: &[u8]) -> Result<ParsedQuery, XfrError> {
     let zone_name = qname_presentation.trim_end_matches('.').to_string();
 
     // An IXFR query carries the client's current serial in an
-    // authority-section SOA (RFC 1995 §2).
+    // authority-section SOA (RFC 1995, Section 2).
     let client_serial = if qtype == Rtype::IXFR {
         extract_ixfr_serial(&message)
     } else {
