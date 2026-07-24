@@ -1,7 +1,10 @@
 //! DNS record constraint validation: CNAME/NS/MX/SOA rules, duplicate
 //! detection, and owner-name normalization.
 
-use bindizr_core::dns::name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn};
+use bindizr_core::dns::{
+    DEFAULT_RECORD_TTL,
+    name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn},
+};
 
 use super::record_value::{is_null_mx_record_value, record_values_equal, validate_record_value};
 use crate::{
@@ -204,12 +207,12 @@ pub(crate) fn validate_record_add_constraints_normalized(
         ));
     }
 
-    // RFC 2181, Section 5.2: one TTL per RRset. A mixed one is rewritten by the
-    // secondary, so stored and served state drift apart.
-    if let Some(conflicting) = existing_records_with_name
-        .iter()
-        .find(|r| r.record_type == *record_type && r.ttl != ttl)
-    {
+    // RFC 2181, Section 5.2: one TTL per RRset. Compare the effective (as-served)
+    // TTL so an unset TTL matches an explicit one at the wire default.
+    let effective_ttl = ttl.unwrap_or(DEFAULT_RECORD_TTL);
+    if let Some(conflicting) = existing_records_with_name.iter().find(|r| {
+        r.record_type == *record_type && r.ttl.unwrap_or(DEFAULT_RECORD_TTL) != effective_ttl
+    }) {
         return Err(ServiceError::record_conflict(format!(
             "TTL {} does not match the existing {} RRset for '{}' (TTL {}); every record in an RRset must share one TTL",
             ttl_label(ttl),

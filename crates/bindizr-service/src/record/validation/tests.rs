@@ -356,8 +356,9 @@ fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
 }
 
 #[test]
-fn validate_record_add_constraints_rejects_ttl_differing_from_the_rrset() {
+fn validate_record_add_constraints_enforces_effective_rrset_ttl() {
     let zone = test_zone();
+    // existing_a's TTL (RRSET_TTL = 3600) equals the wire default.
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
 
     let differing_ttl = validate_record_add_constraints(
@@ -371,9 +372,8 @@ fn validate_record_add_constraints_rejects_ttl_differing_from_the_rrset() {
     );
     assert!(differing_ttl.is_err());
 
-    // An unset TTL is not interchangeable with an explicit one: the wire
-    // fallback is a constant, not the zone TTL.
-    let unset_ttl = validate_record_add_constraints(
+    // An unset TTL serves at the wire default, matching this RRset.
+    let unset_matches_default = validate_record_add_constraints(
         &zone,
         std::slice::from_ref(&existing_a),
         "www",
@@ -382,7 +382,23 @@ fn validate_record_add_constraints_rejects_ttl_differing_from_the_rrset() {
         None,
         None,
     );
-    assert!(unset_ttl.is_err());
+    assert!(unset_matches_default.is_ok());
+
+    // But an unset TTL against an RRset served at a non-default TTL is a mix.
+    let existing_7200 = Record {
+        ttl: Some(7200),
+        ..test_record(2, "svc", RecordType::A, "192.0.2.20", None)
+    };
+    let unset_against_non_default = validate_record_add_constraints(
+        &zone,
+        std::slice::from_ref(&existing_7200),
+        "svc",
+        &RecordType::A,
+        "192.0.2.21",
+        None,
+        None,
+    );
+    assert!(unset_against_non_default.is_err());
 
     let matching_ttl = validate_record_add_constraints(
         &zone,
