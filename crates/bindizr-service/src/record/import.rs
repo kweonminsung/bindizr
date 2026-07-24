@@ -3,7 +3,6 @@ use std::{
     time::Instant,
 };
 
-use bindizr_core::dns::record::{display_record_owner_name, presentation_rdata};
 use chrono::Utc;
 
 use super::{
@@ -25,10 +24,11 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{
-        ImportChange, ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
+    types::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff},
+    zone::{
+        history::{ReconstructedRecord, build_record_diff},
+        snapshot::save_zone_snapshot_tx,
     },
-    zone::snapshot::save_zone_snapshot_tx,
 };
 
 /// A record the import wants present, with its owner name already normalized so
@@ -360,7 +360,7 @@ impl RecordService {
                 skipped,
             };
 
-            let changes = build_import_changes(&zone, &adds, &dels, &ttl_dels);
+            let diff = import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels);
 
             let will_apply = errors.is_empty() && !dry_run;
             let has_changes = !dels.is_empty() || !adds.is_empty() || !ttl_dels.is_empty();
@@ -405,7 +405,7 @@ impl RecordService {
                 applied: will_apply,
                 dry_run,
                 summary,
-                changes,
+                diff,
                 errors,
             };
 
@@ -470,33 +470,37 @@ impl RecordService {
     }
 }
 
-/// The add/delete records of a reconcile, rendered for a preview. TTL updates
-/// appear as a delete of the old record and an add of the new one.
-fn build_import_changes(
+/// The reconcile as a record diff: `after` is the existing set minus the
+/// deletes plus the adds, so `build_record_diff` classifies each RRset.
+fn import_diff(
     zone: &Zone,
+    existing: &[Record],
     adds: &[&DesiredRecord],
     dels: &[Record],
     ttl_dels: &[Record],
-) -> Vec<ImportChange> {
-    let added = adds.iter().map(|add| ImportChange {
-        op: "add".to_string(),
-        name: display_record_owner_name(&add.stored_name, &zone.name),
-        record_type: add.prepared.record_type.to_string(),
+) -> RecordDiff {
+    let deleted_ids: HashSet<i32> = dels.iter().chain(ttl_dels).map(|r| r.id).collect();
+
+    let before: Vec<ReconstructedRecord> = existing
+        .iter()
+        .cloned()
+        .map(ReconstructedRecord::from)
+        .collect();
+    let mut after: Vec<ReconstructedRecord> = existing
+        .iter()
+        .filter(|record| !deleted_ids.contains(&record.id))
+        .cloned()
+        .map(ReconstructedRecord::from)
+        .collect();
+    after.extend(adds.iter().map(|add| ReconstructedRecord {
+        name: add.stored_name.clone(),
+        record_type: add.prepared.record_type.clone(),
+        value: add.prepared.value.clone(),
         ttl: add.prepared.ttl,
-        rdata: presentation_rdata(
-            &add.prepared.value,
-            add.prepared.priority,
-            &add.prepared.record_type,
-        ),
-    });
-    let deleted = dels.iter().chain(ttl_dels).map(|record| ImportChange {
-        op: "delete".to_string(),
-        name: display_record_owner_name(&record.name, &zone.name),
-        record_type: record.record_type.to_string(),
-        ttl: record.ttl,
-        rdata: presentation_rdata(&record.value, record.priority, &record.record_type),
-    });
-    added.chain(deleted).collect()
+        priority: add.prepared.priority,
+    }));
+
+    build_record_diff(zone, &before, &after)
 }
 
 /// A placeholder record for in-memory comparison only; the negative id keeps it

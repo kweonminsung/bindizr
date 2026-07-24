@@ -1390,10 +1390,14 @@ components:
       - dry_run
       - inserted
       - records
+      - diff
       properties:
         applied:
           type: boolean
           example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The insert as a record diff (all additions), for previewing the change.
         dry_run:
           type: boolean
           example: false
@@ -1725,34 +1729,6 @@ components:
         tsig_key:
           type: string
           example: update-key
-    ImportChange:
-      type: object
-      description: One record an import adds or deletes, with its rdata rendered for display.
-      required:
-      - op
-      - name
-      - record_type
-      - rdata
-      properties:
-        name:
-          type: string
-          example: www.example.com.
-        op:
-          type: string
-          description: '`add` or `delete`.'
-          example: add
-        rdata:
-          type: string
-          example: 192.0.2.1
-        record_type:
-          type: string
-          example: A
-        ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          example: 300
     ImportMode:
       type: string
       description: How parsed records are reconciled with the records already in the zone.
@@ -1822,19 +1798,15 @@ components:
       - applied
       - dry_run
       - summary
-      - changes
+      - diff
       - errors
       properties:
         applied:
           type: boolean
           example: true
-        changes:
-          type: array
-          items:
-            $ref: '#/components/schemas/ImportChange'
-          description: |-
-            Every record the reconcile adds or deletes (a TTL change is a delete of
-            the old plus an add of the new). Lets a caller preview the change.
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The reconcile as a record diff, for previewing the change.
         dry_run:
           type: boolean
           example: false
@@ -1889,6 +1861,91 @@ components:
           format: int64
           example: 125
           minimum: 0
+    RecordDiff:
+      type: object
+      description: A record-level difference between two record sets, RRset by RRset.
+      required:
+      - entries
+      - summary
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffEntry'
+        summary:
+          $ref: '#/components/schemas/RecordDiffSummary'
+    RecordDiffEntry:
+      type: object
+      description: |-
+        One RRset (owner name + type) whose records differ, with the records present
+        on each side. `from` is empty for `added`, `to` for `removed`.
+      required:
+      - change
+      - name
+      - record_type
+      - from
+      - to
+      properties:
+        change:
+          type: string
+          description: '`added`, `removed`, or `changed`.'
+          example: changed
+        from:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffValue'
+        name:
+          type: string
+          example: www.example.com.
+        record_type:
+          type: string
+          example: A
+        to:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffValue'
+    RecordDiffSummary:
+      type: object
+      description: How many RRsets were added, removed, and changed.
+      required:
+      - added
+      - removed
+      - changed
+      properties:
+        added:
+          type: integer
+          example: 1
+          minimum: 0
+        changed:
+          type: integer
+          example: 1
+          minimum: 0
+        removed:
+          type: integer
+          example: 1
+          minimum: 0
+    RecordDiffValue:
+      type: object
+      description: |-
+        One record on one side of a diff. Rendering (zone-file rdata, priority
+        placement) is left to the client; the value is in display form.
+      required:
+      - value
+      properties:
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 10
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 300
+        value:
+          $ref: '#/components/schemas/RecordValueRequest'
     RecordListResponse:
       type: object
       description: Paginated list of records.
@@ -2025,85 +2082,24 @@ components:
             $ref: '#/components/schemas/SnapshotRecordResponse'
         snapshot:
           $ref: '#/components/schemas/ZoneSnapshotResponse'
-    SnapshotDiffEntry:
-      type: object
-      description: One RRset (owner name + type) whose records differ between two serials.
-      required:
-      - change
-      - name
-      - record_type
-      - from_rdata
-      - to_rdata
-      properties:
-        change:
-          type: string
-          description: '`added`, `removed`, or `changed`.'
-          example: changed
-        from_rdata:
-          type: array
-          items:
-            type: string
-          description: Zone-file rdata present at the `from` serial (empty for `added`).
-        name:
-          type: string
-          example: www.example.com.
-        record_type:
-          type: string
-          example: A
-        to_rdata:
-          type: array
-          items:
-            type: string
-          description: Zone-file rdata present at the `to` serial (empty for `removed`).
-        ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          example: 300
     SnapshotDiffResponse:
       type: object
-      description: The record-level difference between two of a zone's serials.
+      description: The difference between two of a zone's serials.
       required:
       - from_serial
       - to_serial
-      - entries
-      - summary
+      - diff
       properties:
-        entries:
-          type: array
-          items:
-            $ref: '#/components/schemas/SnapshotDiffEntry'
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
         from_serial:
           type: integer
           format: int32
           example: 41
-        summary:
-          $ref: '#/components/schemas/SnapshotDiffSummary'
         to_serial:
           type: integer
           format: int32
           example: 42
-    SnapshotDiffSummary:
-      type: object
-      description: How many RRsets were added, removed, and changed between two serials.
-      required:
-      - added
-      - removed
-      - changed
-      properties:
-        added:
-          type: integer
-          example: 1
-          minimum: 0
-        changed:
-          type: integer
-          example: 1
-          minimum: 0
-        removed:
-          type: integer
-          example: 1
-          minimum: 0
     SnapshotListResponse:
       type: object
       description: A page of zone snapshots.

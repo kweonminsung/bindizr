@@ -226,17 +226,32 @@ impl GetRecordResponse {
 
 fn record_response_value(record: &Record, display_names: bool) -> RecordValueRequest {
     if record.record_type == RecordType::TXT {
-        match txt::decode_raw_txt_value(&record.value) {
-            Some(txt::DecodedTxtValue::String(value)) => RecordValueRequest::String(value),
-            Some(txt::DecodedTxtValue::Segments(segments)) => {
-                RecordValueRequest::Segments(segments)
-            }
-            None => RecordValueRequest::String(record.value.clone()),
-        }
+        decode_txt_value_request(&record.value)
     } else if display_names {
         RecordValueRequest::String(display_record_value(&record.value, &record.record_type))
     } else {
         RecordValueRequest::String(record.value.clone())
+    }
+}
+
+fn decode_txt_value_request(value: &str) -> RecordValueRequest {
+    match txt::decode_raw_txt_value(value) {
+        Some(txt::DecodedTxtValue::String(value)) => RecordValueRequest::String(value),
+        Some(txt::DecodedTxtValue::Segments(segments)) => RecordValueRequest::Segments(segments),
+        None => RecordValueRequest::String(value.to_string()),
+    }
+}
+
+/// A stored value as the record APIs display it: TXT decoded to string/segments,
+/// other types rendered with trailing-dot FQDNs. Priority stays a separate field.
+pub(crate) fn display_record_value_request(
+    value: &str,
+    record_type: &RecordType,
+) -> RecordValueRequest {
+    if *record_type == RecordType::TXT {
+        decode_txt_value_request(value)
+    } else {
+        RecordValueRequest::String(display_record_value(value, record_type))
     }
 }
 
@@ -348,6 +363,8 @@ pub struct BulkRecordsResponse {
     #[schema(example = 3)]
     pub inserted: usize,
     pub records: Vec<GetRecordResponse>,
+    /// The insert as a record diff (all additions), for previewing the change.
+    pub diff: RecordDiff,
 }
 
 /// How parsed records are reconciled with the records already in the zone.
@@ -385,27 +402,10 @@ pub struct ImportZoneFileResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     pub summary: ImportSummary,
-    /// Every record the reconcile adds or deletes (a TTL change is a delete of
-    /// the old plus an add of the new). Lets a caller preview the change.
-    pub changes: Vec<ImportChange>,
+    /// The reconcile as a record diff, for previewing the change.
+    pub diff: RecordDiff,
     /// Per-record validation errors. When non-empty nothing is applied.
     pub errors: Vec<String>,
-}
-
-/// One record an import adds or deletes, with its rdata rendered for display.
-#[derive(Serialize, Debug, ToSchema)]
-pub struct ImportChange {
-    /// `add` or `delete`.
-    #[schema(example = "add")]
-    pub op: String,
-    #[schema(example = "www.example.com.")]
-    pub name: String,
-    #[schema(example = "A")]
-    pub record_type: String,
-    #[schema(example = 300)]
-    pub ttl: Option<i32>,
-    #[schema(example = "192.0.2.1")]
-    pub rdata: String,
 }
 
 /// Counts of records parsed, added, deleted, updated, unchanged, and skipped
@@ -649,9 +649,21 @@ pub struct SnapshotDetailResponse {
     pub records: Vec<SnapshotRecordResponse>,
 }
 
-/// One RRset (owner name + type) whose records differ between two serials.
+/// One record on one side of a diff. Rendering (zone-file rdata, priority
+/// placement) is left to the client; the value is in display form.
+#[derive(Clone, Serialize, Debug, ToSchema)]
+pub struct RecordDiffValue {
+    pub value: RecordValueRequest,
+    #[schema(example = 300)]
+    pub ttl: Option<i32>,
+    #[schema(example = 10)]
+    pub priority: Option<i32>,
+}
+
+/// One RRset (owner name + type) whose records differ, with the records present
+/// on each side. `from` is empty for `added`, `to` for `removed`.
 #[derive(Serialize, Debug, ToSchema)]
-pub struct SnapshotDiffEntry {
+pub struct RecordDiffEntry {
     /// `added`, `removed`, or `changed`.
     #[schema(example = "changed")]
     pub change: String,
@@ -659,17 +671,13 @@ pub struct SnapshotDiffEntry {
     pub name: String,
     #[schema(example = "A")]
     pub record_type: String,
-    #[schema(example = 300)]
-    pub ttl: Option<i32>,
-    /// Zone-file rdata present at the `from` serial (empty for `added`).
-    pub from_rdata: Vec<String>,
-    /// Zone-file rdata present at the `to` serial (empty for `removed`).
-    pub to_rdata: Vec<String>,
+    pub from: Vec<RecordDiffValue>,
+    pub to: Vec<RecordDiffValue>,
 }
 
-/// How many RRsets were added, removed, and changed between two serials.
+/// How many RRsets were added, removed, and changed.
 #[derive(Serialize, Debug, ToSchema)]
-pub struct SnapshotDiffSummary {
+pub struct RecordDiffSummary {
     #[schema(example = 1)]
     pub added: usize,
     #[schema(example = 1)]
@@ -678,15 +686,21 @@ pub struct SnapshotDiffSummary {
     pub changed: usize,
 }
 
-/// The record-level difference between two of a zone's serials.
+/// A record-level difference between two record sets, RRset by RRset.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct RecordDiff {
+    pub entries: Vec<RecordDiffEntry>,
+    pub summary: RecordDiffSummary,
+}
+
+/// The difference between two of a zone's serials.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct SnapshotDiffResponse {
     #[schema(example = 41)]
     pub from_serial: i32,
     #[schema(example = 42)]
     pub to_serial: i32,
-    pub entries: Vec<SnapshotDiffEntry>,
-    pub summary: SnapshotDiffSummary,
+    pub diff: RecordDiff,
 }
 
 /// Request body for rolling a zone back to a snapshot serial.

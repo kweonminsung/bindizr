@@ -17,8 +17,12 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{BulkRecordItem, RecordValueRequest},
-    zone::{snapshot::save_zone_snapshot_tx, validation::normalize_zone_name},
+    types::{BulkRecordItem, RecordDiff, RecordValueRequest},
+    zone::{
+        history::{ReconstructedRecord, build_record_diff},
+        snapshot::save_zone_snapshot_tx,
+        validation::normalize_zone_name,
+    },
 };
 
 /// A record whose type and value are parsed and ready to insert. The owner name
@@ -139,7 +143,7 @@ impl RecordService {
         zone_name: &str,
         items: &[BulkRecordItem],
         dry_run: bool,
-    ) -> Result<Vec<RecordWithZone>, ServiceError> {
+    ) -> Result<(Vec<RecordWithZone>, RecordDiff), ServiceError> {
         if items.is_empty() {
             return Err(ServiceError::invalid_input(
                 "no records provided for bulk insert".to_string(),
@@ -212,6 +216,9 @@ impl RecordService {
 
             let new_serial = generate_serial(Some(zone.serial));
 
+            // Kept to build the record diff below (`after` = these plus inserts).
+            let before_records = existing_records.clone();
+
             // Index existing records by owner name so constraint checks scan
             // only same-name records; new records join the index as we go so
             // intra-batch conflicts are still detected.
@@ -275,8 +282,19 @@ impl RecordService {
             normalize_ms = normalize_dur.as_secs_f64() * 1000.0;
             validate_ms = validate_dur.as_secs_f64() * 1000.0;
 
+            // Diff the batch: `before` is the existing same-name records, `after`
+            // is those plus the inserts, so an insert into an existing RRset
+            // shows as `changed` rather than a bare `added`.
+            let before: Vec<ReconstructedRecord> = before_records
+                .into_iter()
+                .map(ReconstructedRecord::from)
+                .collect();
+            let mut after = before.clone();
+            after.extend(to_insert.iter().cloned().map(ReconstructedRecord::from));
+            let diff = build_record_diff(&zone, &before, &after);
+
             if dry_run {
-                return Ok((to_insert, zone.name));
+                return Ok((to_insert, zone.name, diff));
             }
 
             let t = Instant::now();
@@ -296,11 +314,15 @@ impl RecordService {
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
             serial_ms = t.elapsed().as_secs_f64() * 1000.0;
 
-            Ok::<(Vec<Record>, String), ServiceError>((created_records, zone.name))
+            Ok::<(Vec<Record>, String, RecordDiff), ServiceError>((
+                created_records,
+                zone.name,
+                diff,
+            ))
         }
         .await;
 
-        let (created_records, zone_name) =
+        let (created_records, zone_name, diff) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create records").await?;
 
         log_info!(
@@ -337,9 +359,10 @@ impl RecordService {
             t_total.elapsed().as_secs_f64() * 1000.0,
         );
 
-        Ok(created_records
+        let records = created_records
             .into_iter()
             .map(|record| RecordWithZone::new(record, zone_name.clone()))
-            .collect())
+            .collect();
+        Ok((records, diff))
     }
 }

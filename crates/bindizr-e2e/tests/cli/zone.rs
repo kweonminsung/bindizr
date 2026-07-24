@@ -367,13 +367,14 @@ async fn zone_snapshots_and_rollback_flow() {
         .await;
     let diff: Value = serde_json::from_str(&diff).expect("CLI did not return valid JSON");
     assert_eq!(
-        diff["summary"],
+        diff["diff"]["summary"],
         json!({ "added": 1, "removed": 0, "changed": 0 })
     );
-    let added = &diff["entries"][0];
+    let added = &diff["diff"]["entries"][0];
     assert_eq!(added["change"], "added");
     assert_eq!(added["name"], format!("www.{zone_name}."));
-    assert_eq!(added["to_rdata"][0], "192.0.2.80");
+    // The value is structured (display form), not a rendered rdata string.
+    assert_eq!(added["to"][0]["value"], "192.0.2.80");
 
     // Omitting the second serial compares against the current serial (3).
     let diff_to_current = app
@@ -384,7 +385,12 @@ async fn zone_snapshots_and_rollback_flow() {
     let diff_to_current: Value =
         serde_json::from_str(&diff_to_current).expect("CLI did not return valid JSON");
     assert_eq!(diff_to_current["to_serial"].as_i64().unwrap(), 3);
-    assert_eq!(diff_to_current["summary"]["added"].as_i64().unwrap(), 2);
+    assert_eq!(
+        diff_to_current["diff"]["summary"]["added"]
+            .as_i64()
+            .unwrap(),
+        2
+    );
 
     let dry_run = app
         .run_cli_success(&[

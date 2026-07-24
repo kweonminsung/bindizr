@@ -225,9 +225,9 @@ pub(crate) async fn create_records_bulk(
     Path(params): Path<ZoneScopedParam>,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
 ) -> impl IntoResponse {
-    let raw_records =
+    let (raw_records, diff) =
         match RecordService::create_bulk(&params.zone_name, &body.records, body.dry_run).await {
-            Ok(records) => records,
+            Ok(result) => result,
             Err(err) => return ApiError::from(err).into_response(),
         };
 
@@ -241,6 +241,7 @@ pub(crate) async fn create_records_bulk(
         dry_run: body.dry_run,
         inserted: if body.dry_run { 0 } else { records.len() },
         records,
+        diff,
     };
     let status = if body.dry_run {
         StatusCode::OK

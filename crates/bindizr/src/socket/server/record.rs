@@ -150,7 +150,7 @@ pub(super) async fn bulk_create_records(
         .map_err(|e| ServiceError::invalid_input(format!("Invalid request data: {}", e)))?;
 
     match RecordService::create_bulk(zone_name, &request.records, request.dry_run).await {
-        Ok(records) => {
+        Ok((records, diff)) => {
             let records = records
                 .iter()
                 .map(GetRecordResponse::from_record_with_zone)
@@ -169,6 +169,7 @@ pub(super) async fn bulk_create_records(
                 dry_run: request.dry_run,
                 inserted: if request.dry_run { 0 } else { records.len() },
                 records,
+                diff,
             };
 
             Ok(DaemonResponse {

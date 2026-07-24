@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bindizr_core::dns::{
     name::{soa_mailbox_to_email, to_fqdn},
-    record::{display_record_owner_name, presentation_rdata},
+    record::display_record_owner_name,
 };
 use chrono::Utc;
 
@@ -27,8 +27,8 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::{
-        PaginatedResponse, RollbackSummary, RollbackZoneResponse, SnapshotDiffEntry,
-        SnapshotDiffResponse, SnapshotDiffSummary,
+        PaginatedResponse, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
+        RollbackSummary, RollbackZoneResponse, SnapshotDiffResponse, display_record_value_request,
     },
 };
 
@@ -205,58 +205,67 @@ async fn require_serial(
     Ok(())
 }
 
-/// Presentation view of one RRset at one serial: the shared TTL and the sorted
-/// zone-file rdata of its records.
-#[derive(PartialEq)]
-struct RrsetView {
-    ttl: Option<i32>,
-    rdata: Vec<String>,
+/// One record within an RRset group: its identity (for change detection) and
+/// its display-form value (for the response).
+#[derive(Clone)]
+struct GroupedRecord {
+    identity: (String, Option<i32>),
+    value: RecordDiffValue,
 }
 
-/// Group records into RRsets keyed by (display owner name, record type).
+/// Group records into RRsets keyed by (display owner name, record type). Two
+/// records are the same iff their canonical value+priority and TTL match.
 fn group_rrsets(
     zone: &Zone,
     records: &[ReconstructedRecord],
-) -> BTreeMap<(String, String), RrsetView> {
-    let mut groups: BTreeMap<(String, String), RrsetView> = BTreeMap::new();
+) -> BTreeMap<(String, String), Vec<GroupedRecord>> {
+    let mut groups: BTreeMap<(String, String), Vec<GroupedRecord>> = BTreeMap::new();
     for record in records {
         let key = (
             display_record_owner_name(&record.name, &zone.name),
             record.record_type.to_string(),
         );
-        let view = groups.entry(key).or_insert_with(|| RrsetView {
-            ttl: record.ttl,
-            rdata: Vec::new(),
+        groups.entry(key).or_default().push(GroupedRecord {
+            identity: (
+                canonical_record_value(&record.value, record.priority, &record.record_type)
+                    .into_owned(),
+                record.ttl,
+            ),
+            value: RecordDiffValue {
+                value: display_record_value_request(&record.value, &record.record_type),
+                ttl: record.ttl,
+                priority: record.priority,
+            },
         });
-        view.rdata.push(presentation_rdata(
-            &record.value,
-            record.priority,
-            &record.record_type,
-        ));
-    }
-    for view in groups.values_mut() {
-        view.rdata.sort();
     }
     groups
 }
 
-/// Diff two record sets at the RRset level. TTL is reported for context but is
-/// not itself a difference (a mixed-TTL RRset cannot exist).
-fn build_snapshot_diff(
-    zone: &Zone,
-    from_serial: i32,
-    to_serial: i32,
-    from_records: &[ReconstructedRecord],
-    to_records: &[ReconstructedRecord],
-) -> SnapshotDiffResponse {
-    let from_groups = group_rrsets(zone, from_records);
-    let mut to_groups = group_rrsets(zone, to_records);
+fn group_identities(group: &[GroupedRecord]) -> Vec<(String, Option<i32>)> {
+    let mut ids: Vec<_> = group.iter().map(|r| r.identity.clone()).collect();
+    ids.sort();
+    ids
+}
 
-    let mut keys: Vec<(String, String)> = from_groups.keys().cloned().collect();
+fn group_values(group: Vec<GroupedRecord>) -> Vec<RecordDiffValue> {
+    group.into_iter().map(|r| r.value).collect()
+}
+
+/// Diff two record sets at the RRset level. TTL is part of a record's identity,
+/// so a TTL-only change shows as `changed`.
+pub(crate) fn build_record_diff(
+    zone: &Zone,
+    before: &[ReconstructedRecord],
+    after: &[ReconstructedRecord],
+) -> RecordDiff {
+    let before_groups = group_rrsets(zone, before);
+    let mut after_groups = group_rrsets(zone, after);
+
+    let mut keys: Vec<(String, String)> = before_groups.keys().cloned().collect();
     keys.extend(
-        to_groups
+        after_groups
             .keys()
-            .filter(|k| !from_groups.contains_key(*k))
+            .filter(|k| !before_groups.contains_key(*k))
             .cloned(),
     );
     keys.sort();
@@ -266,39 +275,38 @@ fn build_snapshot_diff(
 
     for key in keys {
         let (name, record_type) = key.clone();
-        match (from_groups.get(&key), to_groups.remove(&key)) {
-            (None, Some(to)) => {
+        let before = before_groups.get(&key);
+        let after = after_groups.remove(&key);
+        match (before, after) {
+            (None, Some(after)) => {
                 added += 1;
-                entries.push(SnapshotDiffEntry {
+                entries.push(RecordDiffEntry {
                     change: "added".to_string(),
                     name,
                     record_type,
-                    ttl: to.ttl,
-                    from_rdata: Vec::new(),
-                    to_rdata: to.rdata,
+                    from: Vec::new(),
+                    to: group_values(after),
                 });
             }
-            (Some(from), None) => {
+            (Some(before), None) => {
                 removed += 1;
-                entries.push(SnapshotDiffEntry {
+                entries.push(RecordDiffEntry {
                     change: "removed".to_string(),
                     name,
                     record_type,
-                    ttl: from.ttl,
-                    from_rdata: from.rdata.clone(),
-                    to_rdata: Vec::new(),
+                    from: group_values(before.clone()),
+                    to: Vec::new(),
                 });
             }
-            (Some(from), Some(to)) => {
-                if from.rdata != to.rdata {
+            (Some(before), Some(after)) => {
+                if group_identities(before) != group_identities(&after) {
                     changed += 1;
-                    entries.push(SnapshotDiffEntry {
+                    entries.push(RecordDiffEntry {
                         change: "changed".to_string(),
                         name,
                         record_type,
-                        ttl: to.ttl,
-                        from_rdata: from.rdata.clone(),
-                        to_rdata: to.rdata,
+                        from: group_values(before.clone()),
+                        to: group_values(after),
                     });
                 }
             }
@@ -306,11 +314,9 @@ fn build_snapshot_diff(
         }
     }
 
-    SnapshotDiffResponse {
-        from_serial,
-        to_serial,
+    RecordDiff {
         entries,
-        summary: SnapshotDiffSummary {
+        summary: RecordDiffSummary {
             added,
             removed,
             changed,
@@ -436,13 +442,11 @@ impl ZoneService {
                 records_at_serial(&mut tx, zone.id, from_serial, zone.serial).await?;
             let to_records = records_at_serial(&mut tx, zone.id, to_serial, zone.serial).await?;
 
-            Ok::<_, ServiceError>(build_snapshot_diff(
-                &zone,
+            Ok::<_, ServiceError>(SnapshotDiffResponse {
                 from_serial,
                 to_serial,
-                &from_records,
-                &to_records,
-            ))
+                diff: build_record_diff(&zone, &from_records, &to_records),
+            })
         }
         .await;
 

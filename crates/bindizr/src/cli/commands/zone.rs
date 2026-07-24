@@ -6,7 +6,7 @@ use crate::{
         error::CliError,
         output::{
             ImportSummaryRow, OutputFormat, RollbackSummaryRow, SecondaryStatusRow,
-            SnapshotRecordRow, SnapshotRow, ZoneRow, changes_to_entries, print_output_with_table,
+            SnapshotRecordRow, SnapshotRow, ZoneRow, print_output_with_table,
             render_change_preview, render_diff_lines,
         },
     },
@@ -483,13 +483,14 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             }
 
             if preview && output == OutputFormat::Table {
-                let changes = response
+                let entries = response
                     .data
-                    .get("changes")
+                    .get("diff")
+                    .and_then(|d| d.get("entries"))
                     .and_then(|v| v.as_array())
                     .cloned()
                     .unwrap_or_default();
-                print!("{}", render_change_preview(&changes_to_entries(&changes)));
+                print!("{}", render_change_preview(&entries));
             } else {
                 print_output_with_table(&response.data, output, |data| {
                     data.get("summary")
@@ -717,14 +718,16 @@ fn print_tsig_policies(data: &serde_json::Value) -> Result<(), String> {
 fn render_snapshot_diff(data: &serde_json::Value) -> String {
     let empty = vec![];
     let entries = data
-        .get("entries")
+        .get("diff")
+        .and_then(|d| d.get("entries"))
         .and_then(|v| v.as_array())
         .unwrap_or(&empty);
     let mut out = render_diff_lines(entries);
 
     let serial = |field: &str| data.get(field).and_then(|v| v.as_i64()).unwrap_or(0);
     let count = |field: &str| {
-        data.get("summary")
+        data.get("diff")
+            .and_then(|d| d.get("summary"))
             .and_then(|s| s.get(field))
             .and_then(|v| v.as_u64())
             .unwrap_or(0)

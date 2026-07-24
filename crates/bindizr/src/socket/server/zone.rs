@@ -228,9 +228,9 @@ pub(super) async fn diff_zone_snapshots(
             "Serial {} -> {}: +{} -{} ~{}",
             response.from_serial,
             response.to_serial,
-            response.summary.added,
-            response.summary.removed,
-            response.summary.changed
+            response.diff.summary.added,
+            response.diff.summary.removed,
+            response.diff.summary.changed
         ),
         data: to_response_data(response)?,
     })
