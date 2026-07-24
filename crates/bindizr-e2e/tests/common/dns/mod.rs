@@ -1,8 +1,9 @@
-use std::{
-    net::{Ipv4Addr, Ipv6Addr, UdpSocket},
-    time::Duration,
-};
+use std::{net::UdpSocket, str::FromStr, time::Duration};
 
+use domain::{
+    base::{Message, MessageBuilder, Name, Rtype, iana::Rcode, name::ParsedName},
+    rdata::AllRecordData,
+};
 use serde_json::{Value, json};
 
 pub(super) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
@@ -152,239 +153,116 @@ fn query_dns_record(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsAn
 }
 
 fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8>, String> {
-    let mut query = Vec::new();
-    query.extend_from_slice(&query_id.to_be_bytes());
-    query.extend_from_slice(&0x0000_u16.to_be_bytes());
-    query.extend_from_slice(&1_u16.to_be_bytes());
-    query.extend_from_slice(&0_u16.to_be_bytes());
-    query.extend_from_slice(&0_u16.to_be_bytes());
-    query.extend_from_slice(&0_u16.to_be_bytes());
-    encode_dns_name(name, &mut query)?;
-    query.extend_from_slice(&record_type.to_be_bytes());
-    query.extend_from_slice(&1_u16.to_be_bytes());
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(query_id);
 
-    Ok(query)
+    let mut question = builder.question();
+    question
+        .push((&query_name(name)?, Rtype::from_int(record_type)))
+        .map_err(|e| e.to_string())?;
+
+    Ok(question.finish())
 }
 
-fn encode_dns_name(name: &str, out: &mut Vec<u8>) -> Result<(), String> {
-    let name = name.trim_end_matches('.');
-    if name.is_empty() {
-        out.push(0);
-        return Ok(());
+fn query_name(name: &str) -> Result<Name<Vec<u8>>, String> {
+    let trimmed = name.trim_end_matches('.');
+    if trimmed.is_empty() {
+        return Ok(Name::root_vec());
     }
-
-    for label in name.split('.') {
-        let len = u8::try_from(label.len()).map_err(|_| format!("label too long: {label}"))?;
-        if len > 63 {
-            return Err(format!("label too long: {label}"));
-        }
-
-        out.push(len);
-        out.extend_from_slice(label.as_bytes());
-    }
-
-    out.push(0);
-    Ok(())
+    Name::from_str(trimmed).map_err(|e| format!("invalid DNS name '{name}': {e}"))
 }
 
 fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<DnsAnswer>, String> {
-    if response.len() < 12 {
-        return Err("DNS response header is too short".to_string());
-    }
+    let message = Message::from_octets(response).map_err(|e| e.to_string())?;
+    let header = message.header();
 
-    if u16::from_be_bytes([response[0], response[1]]) != query_id {
+    if header.id() != query_id {
         return Err("DNS response query id mismatch".to_string());
     }
-
-    let flags = u16::from_be_bytes([response[2], response[3]]);
-    if flags & 0x8000 == 0 {
+    if !header.qr() {
         return Err("DNS response is not marked as a response".to_string());
     }
-    let response_code = flags & 0x000f;
-    match response_code {
-        0 => {}
-        3 => return Ok(Vec::new()), // NXDOMAIN
+    match header.rcode() {
+        Rcode::NOERROR => {}
+        Rcode::NXDOMAIN => return Ok(Vec::new()),
         code => {
             return Err(format!(
-                "DNS response returned {} RCODE ({code})",
-                dns_response_code_name(code)
+                "DNS response returned {} RCODE ({})",
+                code,
+                code.to_int()
             ));
         }
     }
 
-    let question_count = u16::from_be_bytes([response[4], response[5]]) as usize;
-    let answer_count = u16::from_be_bytes([response[6], response[7]]) as usize;
-    let mut offset = 12;
-
-    for _ in 0..question_count {
-        offset = skip_dns_name(response, offset)?;
-        offset = offset
-            .checked_add(4)
-            .ok_or_else(|| "DNS question offset overflow".to_string())?;
-        if offset > response.len() {
-            return Err("DNS question extends beyond response".to_string());
-        }
-    }
-
+    let answer = message.answer().map_err(|e| e.to_string())?;
     let mut answers = Vec::new();
-    for _ in 0..answer_count {
-        offset = skip_dns_name(response, offset)?;
-        if offset + 10 > response.len() {
-            return Err("DNS answer header extends beyond response".to_string());
-        }
-
-        let record_type = u16::from_be_bytes([response[offset], response[offset + 1]]);
-        let rdlen = u16::from_be_bytes([response[offset + 8], response[offset + 9]]) as usize;
-        offset += 10;
-
-        if offset + rdlen > response.len() {
-            return Err("DNS answer rdata extends beyond response".to_string());
-        }
-
+    for record in answer.limit_to::<AllRecordData<_, _>>() {
+        let record = record.map_err(|e| e.to_string())?;
+        let record_type = record.rtype().to_int();
         answers.push(DnsAnswer {
             record_type,
-            value: decode_dns_value(response, record_type, offset, rdlen)?,
+            value: decode_dns_value(record.data(), record_type)?,
         });
-        offset += rdlen;
     }
 
     Ok(answers)
 }
 
-fn dns_response_code_name(code: u16) -> &'static str {
-    match code {
-        1 => "FORMERR",
-        2 => "SERVFAIL",
-        3 => "NXDOMAIN",
-        4 => "NOTIMP",
-        5 => "REFUSED",
-        9 => "NOTAUTH",
-        10 => "NOTZONE",
-        _ => "unknown",
-    }
-}
-
-#[cfg(test)]
-mod tests;
-
 fn decode_dns_value(
-    response: &[u8],
+    data: &AllRecordData<&[u8], ParsedName<&[u8]>>,
     record_type: u16,
-    offset: usize,
-    rdlen: usize,
 ) -> Result<Option<Value>, String> {
-    let end = offset + rdlen;
-    let value = match record_type {
-        1 if rdlen == 4 => Value::String(
-            Ipv4Addr::new(
-                response[offset],
-                response[offset + 1],
-                response[offset + 2],
-                response[offset + 3],
-            )
-            .to_string(),
-        ),
-        28 if rdlen == 16 => {
-            let bytes: [u8; 16] = response[offset..end]
-                .try_into()
-                .map_err(|_| "invalid AAAA")?;
-            Value::String(Ipv6Addr::from(bytes).to_string())
-        }
-        2 | 5 | 12 => Value::String(decode_dns_name(response, offset)?),
-        15 => {
-            if rdlen < 2 {
-                return Err("invalid MX rdlen".to_string());
-            }
-            Value::String(format!(
-                "{} {}",
-                u16::from_be_bytes([response[offset], response[offset + 1]]),
-                decode_dns_name(response, offset + 2)?
-            ))
-        }
-        33 => {
-            if rdlen < 6 {
-                return Err("invalid SRV rdlen".to_string());
-            }
-            Value::String(format!(
-                "{} {} {} {}",
-                u16::from_be_bytes([response[offset], response[offset + 1]]),
-                u16::from_be_bytes([response[offset + 2], response[offset + 3]]),
-                u16::from_be_bytes([response[offset + 4], response[offset + 5]]),
-                decode_dns_name(response, offset + 6)?
-            ))
-        }
-        16 => {
-            let mut position = offset;
-            let mut segments = Vec::new();
-            while position < end {
-                let len = response[position] as usize;
-                position += 1;
-                if position + len > end {
-                    return Err("invalid TXT rdata".to_string());
-                }
-                segments.push(String::from_utf8_lossy(&response[position..position + len]).into());
-                position += len;
-            }
+    let value = match data {
+        AllRecordData::A(a) => Value::String(a.addr().to_string()),
+        AllRecordData::Aaaa(aaaa) => Value::String(aaaa.addr().to_string()),
+        AllRecordData::Ns(ns) => Value::String(presentation_name(ns.nsdname())),
+        AllRecordData::Cname(cname) => Value::String(presentation_name(cname.cname())),
+        AllRecordData::Ptr(ptr) => Value::String(presentation_name(ptr.ptrdname())),
+        AllRecordData::Mx(mx) => Value::String(format!(
+            "{} {}",
+            mx.preference(),
+            presentation_name(mx.exchange())
+        )),
+        AllRecordData::Srv(srv) => Value::String(format!(
+            "{} {} {} {}",
+            srv.priority(),
+            srv.weight(),
+            srv.port(),
+            presentation_name(srv.target())
+        )),
+        AllRecordData::Txt(txt) => {
+            let mut segments = txt
+                .iter_charstrs()
+                .map(|charstr| String::from_utf8_lossy(charstr.as_slice()).into())
+                .collect::<Vec<String>>();
             if segments.len() == 1 {
                 Value::String(segments.remove(0))
             } else {
                 serde_json::to_value(segments).map_err(|error| error.to_string())?
             }
         }
-        6 => return Ok(None),
+        AllRecordData::Soa(_) => return Ok(None),
         _ => return Err(format!("unsupported DNS answer type {record_type}")),
     };
     Ok(Some(value))
 }
 
-fn decode_dns_name(response: &[u8], mut offset: usize) -> Result<String, String> {
-    let mut labels = Vec::<String>::new();
-    for _ in 0..128 {
-        let len = *response.get(offset).ok_or("DNS name out of bounds")?;
-        if len == 0 {
-            return Ok(format!("{}.", labels.join(".")));
+/// Renders names the way records are compared here: labels joined with '.',
+/// trailing dot, lossy UTF-8 (never `Display`, which escapes label bytes).
+fn presentation_name(name: &ParsedName<&[u8]>) -> String {
+    let mut out = String::new();
+    for label in name.iter() {
+        if label.is_root() {
+            break;
         }
-        if len & 0xc0 == 0xc0 {
-            let next = *response
-                .get(offset + 1)
-                .ok_or("DNS pointer out of bounds")?;
-            offset = (((len & 0x3f) as usize) << 8) | next as usize;
-            continue;
-        }
-        let start = offset + 1;
-        let end = start + len as usize;
-        labels.push(
-            String::from_utf8_lossy(response.get(start..end).ok_or("DNS label out of bounds")?)
-                .into(),
-        );
-        offset = end;
+        out.push_str(&String::from_utf8_lossy(label.as_slice()));
+        out.push('.');
     }
-    Err("DNS compression pointer loop".to_string())
+    if out.is_empty() {
+        out.push('.');
+    }
+    out
 }
 
-fn skip_dns_name(response: &[u8], mut offset: usize) -> Result<usize, String> {
-    loop {
-        let len = *response
-            .get(offset)
-            .ok_or_else(|| "DNS name extends beyond response".to_string())?;
-
-        if len & 0xc0 == 0xc0 {
-            if offset + 1 >= response.len() {
-                return Err("DNS compression pointer extends beyond response".to_string());
-            }
-            return Ok(offset + 2);
-        }
-
-        if len == 0 {
-            return Ok(offset + 1);
-        }
-
-        if len & 0xc0 != 0 {
-            return Err("DNS name has unsupported label format".to_string());
-        }
-
-        offset = offset
-            .checked_add(1 + len as usize)
-            .ok_or_else(|| "DNS name offset overflow".to_string())?;
-    }
-}
+#[cfg(test)]
+mod tests;

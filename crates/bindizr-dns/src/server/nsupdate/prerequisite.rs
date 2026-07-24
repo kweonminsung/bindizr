@@ -1,5 +1,7 @@
+use domain::base::iana::{Class, Rtype};
+
 use super::{
-    parser::{PrerequisiteRecord, UpdateRecord},
+    parser::UpdateRecord,
     update::{
         UpdateError, absolute_to_relative, normalize_owner_name, record_value_matches,
         rr_to_record_value, rr_type_to_record_type,
@@ -7,14 +9,13 @@ use super::{
 };
 use crate::{
     model::{record::Record, zone::Zone},
-    protocol::{CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY},
     service::{RepositoryTx, record::RecordService},
 };
 
 pub(super) async fn evaluate_prerequisites_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
-    prerequisites: &[PrerequisiteRecord],
+    prerequisites: &[UpdateRecord],
     query_data: &[u8],
 ) -> Result<(), UpdateError> {
     if prerequisites.is_empty() {
@@ -30,7 +31,7 @@ pub(super) async fn evaluate_prerequisites_tx(
 
 fn evaluate_prerequisites_against_records(
     zone: &Zone,
-    prerequisites: &[PrerequisiteRecord],
+    prerequisites: &[UpdateRecord],
     query_data: &[u8],
     zone_records: &[Record],
 ) -> Result<(), UpdateError> {
@@ -46,14 +47,14 @@ fn evaluate_prerequisites_against_records(
         let owner_exists = is_owner_existing(&relative, zone_records);
 
         match rr.class {
-            CLASS_ANY => {
+            Class::ANY => {
                 if !rr.rdata.is_empty() {
                     return Err(UpdateError::Refused(
                         "ANY-class prerequisite must have empty rdata".to_string(),
                     ));
                 }
 
-                if rr.rr_type == TYPE_ANY {
+                if rr.rr_type == Rtype::ANY {
                     if !owner_exists {
                         return Err(UpdateError::NxDomain(format!(
                             "owner '{}' does not exist",
@@ -74,14 +75,14 @@ fn evaluate_prerequisites_against_records(
                     }
                 }
             }
-            CLASS_NONE => {
+            Class::NONE => {
                 if !rr.rdata.is_empty() {
                     return Err(UpdateError::Refused(
                         "NONE-class prerequisite must have empty rdata".to_string(),
                     ));
                 }
 
-                if rr.rr_type == TYPE_ANY {
+                if rr.rr_type == Rtype::ANY {
                     if owner_exists {
                         return Err(UpdateError::YxDomain(format!("owner '{}' exists", owner)));
                     }
@@ -99,24 +100,15 @@ fn evaluate_prerequisites_against_records(
                     }
                 }
             }
-            CLASS_IN => {
-                if rr.rr_type == TYPE_ANY || rr.rdata.is_empty() {
+            Class::IN => {
+                if rr.rr_type == Rtype::ANY || rr.rdata.is_empty() {
                     return Err(UpdateError::Refused(
                         "IN-class prerequisite must specify rrtype and rdata".to_string(),
                     ));
                 }
 
-                let (target_type, target_value, target_priority) = rr_to_record_value(
-                    &UpdateRecord {
-                        name: rr.name.clone(),
-                        rr_type: rr.rr_type,
-                        class: rr.class,
-                        ttl: rr.ttl,
-                        rdata: rr.rdata.clone(),
-                        rdata_start: rr.rdata_start,
-                    },
-                    query_data,
-                )?;
+                let (target_type, target_value, target_priority) =
+                    rr_to_record_value(rr, query_data)?;
 
                 let exists = zone_records.iter().any(|record| {
                     record.name.eq_ignore_ascii_case(&relative)

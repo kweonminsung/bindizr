@@ -13,7 +13,7 @@ pub(crate) mod zone_cache;
 use std::net::{IpAddr, SocketAddr};
 
 use catalog::generate_catalog_zone;
-use domain::base::iana::Rtype;
+use domain::base::iana::{Rcode, Rtype};
 use tokio::net::TcpStream;
 
 use crate::{error::XfrError, log_info, log_warn, wire};
@@ -61,7 +61,7 @@ pub(crate) async fn handle_tcp_query(
     );
 
     let result = match query.qtype {
-        Rtype::AXFR => axfr::handle_axfr(stream, query, client_ip).await,
+        Rtype::AXFR => axfr::handle_axfr(stream, query, client_ip, Rtype::AXFR).await,
         Rtype::IXFR => ixfr::handle_ixfr(stream, query, client_ip).await,
         _ => {
             log_warn!("Unsupported query type: {:?}", query.qtype);
@@ -78,7 +78,7 @@ pub(crate) async fn handle_tcp_query(
                 query.query_id,
                 &query.qname,
                 query.qtype,
-                crate::protocol::RCODE_NOTAUTH,
+                Rcode::NOTAUTH,
             );
             wire::write_tcp_message(stream, &response).await?;
             return Ok(());

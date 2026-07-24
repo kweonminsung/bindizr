@@ -1,9 +1,17 @@
 use bindizr_core::{config, dns::name::to_fqdn};
 use chrono::Utc;
+use domain::{
+    base::{
+        iana::{Class, Rtype},
+        name::ParsedName,
+    },
+    dep::octseq::parse::Parser,
+    rdata::{A, Aaaa, Mx, Txt},
+};
 
 use super::{
-    auth::TsigSigner,
-    parser::{UpdateRecord, UpdateRequest, decode_name_from_rdata, decode_txt_from_rdata},
+    auth::ResponseSigner,
+    parser::{UpdateRecord, UpdateRequest, presentation_name},
 };
 use crate::{
     log_error, log_info,
@@ -13,7 +21,6 @@ use crate::{
         zone::Zone,
         zone_change::ZoneChange,
     },
-    protocol::{CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY},
     service,
     service::{
         RepositoryTx,
@@ -32,9 +39,12 @@ use crate::{
 #[derive(Debug)]
 pub(super) enum UpdateError {
     Refused(String),
-    NotAuth {
+    /// TSIG validation failed. Carries the complete NOTAUTH wire response,
+    /// built during validation because it must echo (or sign against) the
+    /// request's TSIG record (RFC 8945 §5.2–5.3).
+    TsigFailed {
         msg: String,
-        tsig: Option<Box<ResponseTsig>>,
+        response: Vec<u8>,
     },
     YxDomain(String),
     YxRrset(String),
@@ -42,26 +52,6 @@ pub(super) enum UpdateError {
     NxRrset(String),
     NotZone(String),
     Internal(String),
-}
-
-/// TSIG record to append to a response. Responses to a validated request are
-/// signed (RFC 8945 §5.3); BADKEY/BADSIG errors carry an unsigned TSIG error
-/// record instead, since no verified MAC exists to sign with (§5.3.2).
-#[derive(Debug)]
-pub(super) enum ResponseTsig {
-    Unsigned(TsigErrorResponse),
-    Signed(TsigSigner),
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct TsigErrorResponse {
-    pub name_canonical: Vec<u8>,
-    pub algorithm_canonical: Vec<u8>,
-    pub original_id: u16,
-    pub time_signed: u64,
-    pub fudge: u16,
-    pub error: u16,
-    pub other_data: Vec<u8>,
 }
 
 pub(super) enum UpdateResult {
@@ -80,7 +70,7 @@ struct AppliedUpdate {
 pub(super) async fn apply_update(
     request: UpdateRequest,
     query_data: &[u8],
-) -> (Result<UpdateResult, UpdateError>, Option<TsigSigner>) {
+) -> (Result<UpdateResult, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
     let result = apply_update_inner(request, query_data, &mut signer).await;
     (result, signer)
@@ -89,7 +79,7 @@ pub(super) async fn apply_update(
 async fn apply_update_inner(
     request: UpdateRequest,
     query_data: &[u8],
-    signer: &mut Option<TsigSigner>,
+    signer: &mut Option<ResponseSigner>,
 ) -> Result<UpdateResult, UpdateError> {
     let zone_name = trim_dot(&request.zone_name);
     if zone_name.is_empty() {
@@ -188,7 +178,7 @@ async fn authenticate_request(
     tx: &mut RepositoryTx<'_>,
     request: &UpdateRequest,
     query_data: &[u8],
-    signer: &mut Option<TsigSigner>,
+    signer: &mut Option<ResponseSigner>,
 ) -> Result<Option<TsigKey>, UpdateError> {
     let tsig = match &request.tsig {
         Some(tsig) => tsig,
@@ -204,12 +194,14 @@ async fn authenticate_request(
 
     let key = TsigKeyService::find_by_name_tx(tx, &tsig.name)
         .await
-        .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?
-        .ok_or_else(|| super::auth::unknown_key_error(tsig))?;
+        .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?;
 
-    *signer = Some(super::auth::validate_tsig(tsig, query_data, &key)?);
+    // An unknown key still runs validation: the empty key store makes it
+    // produce the BADKEY error response.
+    let domain_key = key.as_ref().map(super::auth::to_domain_key).transpose()?;
+    *signer = Some(super::auth::validate_tsig(query_data, domain_key)?);
 
-    Ok(Some(key))
+    Ok(key)
 }
 
 /// Authorize an authenticated request: global keys may update anything, other
@@ -241,7 +233,7 @@ async fn authorize_key(
     for update in &request.updates {
         let owner_name = normalize_owner_name(&update.name, &zone.name)?;
         let relative_name = absolute_to_relative(&owner_name, &zone.name)?;
-        let record_type = if update.rr_type == TYPE_ANY {
+        let record_type = if update.rr_type == Rtype::ANY {
             None
         } else {
             Some(rr_type_to_record_type(update.rr_type)?)
@@ -274,11 +266,11 @@ async fn apply_single_update(
     let owner_name = normalize_owner_name(&update.name, &zone.name)?;
 
     match update.class {
-        CLASS_IN => add_record(tx, zone, &owner_name, update, query_data, new_serial).await,
-        CLASS_ANY => {
+        Class::IN => add_record(tx, zone, &owner_name, update, query_data, new_serial).await,
+        Class::ANY => {
             delete_records(tx, zone, &owner_name, update, true, query_data, new_serial).await
         }
-        CLASS_NONE => {
+        Class::NONE => {
             delete_records(tx, zone, &owner_name, update, false, query_data, new_serial).await
         }
         class => Err(UpdateError::Refused(format!(
@@ -385,7 +377,7 @@ async fn delete_records(
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
 
-    let target_type = if update.rr_type == TYPE_ANY {
+    let target_type = if update.rr_type == Rtype::ANY {
         None
     } else {
         Some(rr_type_to_record_type(update.rr_type)?)
@@ -487,7 +479,7 @@ fn validate_delete_update_shape(
             ));
         }
     } else {
-        if update.rr_type == TYPE_ANY {
+        if update.rr_type == Rtype::ANY {
             return Err(UpdateError::Refused(
                 "NONE-class delete must specify rrtype".to_string(),
             ));
@@ -503,56 +495,59 @@ fn validate_delete_update_shape(
     Ok(())
 }
 
+/// Parses one rdata field in place inside the full message — so names may
+/// chase compression pointers — and requires the parse to consume it exactly.
+fn parse_rdata<'a, T>(
+    message: &'a [u8],
+    update: &UpdateRecord,
+    what: &str,
+    parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
+) -> Result<T, UpdateError> {
+    let refused = || UpdateError::Refused(format!("invalid {} rdata", what));
+
+    let mut parser = Parser::from_ref(message);
+    parser.advance(update.rdata_start).map_err(|_| refused())?;
+    let value = parse(&mut parser).ok_or_else(refused)?;
+
+    if parser.pos() != update.rdata_start + update.rdata.len() {
+        return Err(refused());
+    }
+
+    Ok(value)
+}
+
 pub(super) fn rr_to_record_value(
     update: &UpdateRecord,
     message: &[u8],
 ) -> Result<(RecordType, String, Option<i32>), UpdateError> {
     match rr_type_to_record_type(update.rr_type)? {
         RecordType::A => {
-            if update.rdata.len() != 4 {
-                return Err(UpdateError::Refused("invalid A rdata length".to_string()));
-            }
-            let value = std::net::Ipv4Addr::new(
-                update.rdata[0],
-                update.rdata[1],
-                update.rdata[2],
-                update.rdata[3],
-            )
-            .to_string();
-            Ok((RecordType::A, value, None))
+            let data = parse_rdata(message, update, "A", |parser| A::parse(parser).ok())?;
+            Ok((RecordType::A, data.addr().to_string(), None))
         }
         RecordType::AAAA => {
-            if update.rdata.len() != 16 {
-                return Err(UpdateError::Refused(
-                    "invalid AAAA rdata length".to_string(),
-                ));
-            }
-            let mut octets = [0u8; 16];
-            octets.copy_from_slice(&update.rdata[..16]);
-            let value = std::net::Ipv6Addr::from(octets).to_string();
-            Ok((RecordType::AAAA, value, None))
+            let data = parse_rdata(message, update, "AAAA", |parser| Aaaa::parse(parser).ok())?;
+            Ok((RecordType::AAAA, data.addr().to_string(), None))
         }
-        RecordType::CNAME => Ok((
-            RecordType::CNAME,
-            decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
-                .map_err(|e| UpdateError::Refused(format!("invalid CNAME rdata: {}", e)))?,
-            None,
-        )),
-        RecordType::NS => Ok((
-            RecordType::NS,
-            decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
-                .map_err(|e| UpdateError::Refused(format!("invalid NS rdata: {}", e)))?,
-            None,
-        )),
-        RecordType::PTR => Ok((
-            RecordType::PTR,
-            decode_name_from_rdata(message, update.rdata_start, update.rdata.len())
-                .map_err(|e| UpdateError::Refused(format!("invalid PTR rdata: {}", e)))?,
-            None,
-        )),
+        record_type @ (RecordType::CNAME | RecordType::NS | RecordType::PTR) => {
+            let name = parse_rdata(message, update, record_type.as_str(), |parser| {
+                ParsedName::parse(parser).ok()
+            })?;
+            let value = presentation_name(&name).map_err(|e| {
+                UpdateError::Refused(format!("invalid {} rdata: {}", record_type.as_str(), e))
+            })?;
+            Ok((record_type, value, None))
+        }
         RecordType::TXT => {
-            decode_txt_from_rdata(&update.rdata)
+            let data = Txt::from_octets(update.rdata.as_slice())
                 .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?;
+            // Stored TXT values must decode back into strings, so reject
+            // non-UTF-8 character-strings even though the wire allows them.
+            for charstr in data.iter_charstrs() {
+                if std::str::from_utf8(charstr.as_slice()).is_err() {
+                    return Err(UpdateError::Refused("invalid TXT rdata".to_string()));
+                }
+            }
             Ok((
                 RecordType::TXT,
                 txt::encode_raw_txt_rdata(&update.rdata),
@@ -560,15 +555,10 @@ pub(super) fn rr_to_record_value(
             ))
         }
         RecordType::MX => {
-            if update.rdata.len() < 3 {
-                return Err(UpdateError::Refused("invalid MX rdata length".to_string()));
-            }
-
-            let priority = i32::from(u16::from_be_bytes([update.rdata[0], update.rdata[1]]));
-            let host =
-                decode_name_from_rdata(message, update.rdata_start + 2, update.rdata.len() - 2)
-                    .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
-            Ok((RecordType::MX, host, Some(priority)))
+            let data = parse_rdata(message, update, "MX", |parser| Mx::parse(parser).ok())?;
+            let host = presentation_name(data.exchange())
+                .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
+            Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
         }
         _ => Err(UpdateError::Refused(format!(
             "unsupported rr type: {}",
@@ -577,8 +567,8 @@ pub(super) fn rr_to_record_value(
     }
 }
 
-pub(super) fn rr_type_to_record_type(rr_type: u16) -> Result<RecordType, UpdateError> {
-    RecordType::from_wire_code(rr_type)
+pub(super) fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, UpdateError> {
+    RecordType::from_wire_code(rr_type.to_int())
         .filter(|rt| !matches!(rt, RecordType::SOA | RecordType::SRV))
         .ok_or_else(|| UpdateError::Refused(format!("unsupported rr type: {}", rr_type)))
 }

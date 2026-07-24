@@ -50,7 +50,7 @@ pub fn presentation_labels(name: &str) -> Result<PresentationLabels<'_>, NameErr
 }
 
 /// Split a presentation-format name into labels, honoring `\` escapes.
-pub fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
+fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
     let mut labels = Vec::new();
     let mut label = String::new();
     let mut escaped = false;

@@ -1,12 +1,10 @@
+use domain::base::iana::{Class, Rtype};
+
 use super::{
     UpdateError, absolute_to_relative, normalize_owner_name, record_value_matches,
     rr_to_record_value, validate_delete_update_shape,
 };
-use crate::{
-    model::record::RecordType,
-    protocol::{CLASS_ANY, CLASS_IN, CLASS_NONE, TYPE_ANY},
-    server::nsupdate::parser::UpdateRecord,
-};
+use crate::{model::record::RecordType, server::nsupdate::parser::UpdateRecord};
 
 #[test]
 fn absolute_to_relative_accepts_apex() {
@@ -41,21 +39,21 @@ fn normalize_owner_name_rejects_out_of_zone_suffix_matches() {
 // RDATA present (§2.5.4); every other combination must be refused.
 #[test]
 fn validate_delete_update_shape_accepts_any_class_rrset_delete() {
-    let update = update_record(RecordType::A.wire_code(), CLASS_ANY, 0, Vec::new());
+    let update = update_record(Rtype::A, Class::ANY, 0, Vec::new());
 
     validate_delete_update_shape(&update, true).unwrap();
 }
 
 #[test]
 fn validate_delete_update_shape_accepts_none_class_exact_delete() {
-    let update = update_record(RecordType::A.wire_code(), CLASS_NONE, 0, vec![192, 0, 2, 1]);
+    let update = update_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1]);
 
     validate_delete_update_shape(&update, false).unwrap();
 }
 
 #[test]
 fn validate_delete_update_shape_rejects_delete_with_nonzero_ttl() {
-    let update = update_record(RecordType::A.wire_code(), CLASS_ANY, 60, Vec::new());
+    let update = update_record(Rtype::A, Class::ANY, 60, Vec::new());
     let err = validate_delete_update_shape(&update, true).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
@@ -63,7 +61,7 @@ fn validate_delete_update_shape_rejects_delete_with_nonzero_ttl() {
 
 #[test]
 fn validate_delete_update_shape_rejects_any_class_delete_with_rdata() {
-    let update = update_record(RecordType::A.wire_code(), CLASS_ANY, 0, vec![192, 0, 2, 1]);
+    let update = update_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]);
     let err = validate_delete_update_shape(&update, true).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
@@ -71,7 +69,7 @@ fn validate_delete_update_shape_rejects_any_class_delete_with_rdata() {
 
 #[test]
 fn validate_delete_update_shape_rejects_none_class_delete_without_rdata() {
-    let update = update_record(RecordType::A.wire_code(), CLASS_NONE, 0, Vec::new());
+    let update = update_record(Rtype::A, Class::NONE, 0, Vec::new());
     let err = validate_delete_update_shape(&update, false).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
@@ -79,7 +77,7 @@ fn validate_delete_update_shape_rejects_none_class_delete_without_rdata() {
 
 #[test]
 fn validate_delete_update_shape_rejects_none_class_delete_with_type_any() {
-    let update = update_record(TYPE_ANY, CLASS_NONE, 0, vec![192, 0, 2, 1]);
+    let update = update_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]);
     let err = validate_delete_update_shape(&update, false).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
@@ -95,16 +93,16 @@ fn record_value_matches_preserves_txt_case() {
 fn rr_to_record_value_preserves_txt_character_string_boundaries() {
     let first = UpdateRecord {
         name: "txt.example.com.".to_string(),
-        rr_type: RecordType::TXT.wire_code(),
-        class: CLASS_IN,
+        rr_type: Rtype::TXT,
+        class: Class::IN,
         ttl: 300,
         rdata: vec![2, b'a', b'b', 1, b'c'],
         rdata_start: 0,
     };
     let second = UpdateRecord {
         name: "txt.example.com.".to_string(),
-        rr_type: RecordType::TXT.wire_code(),
-        class: CLASS_IN,
+        rr_type: Rtype::TXT,
+        class: Class::IN,
         ttl: 300,
         rdata: vec![1, b'a', 2, b'b', b'c'],
         rdata_start: 0,
@@ -127,6 +125,71 @@ fn rr_to_record_value_preserves_txt_character_string_boundaries() {
 }
 
 #[test]
+fn rr_to_record_value_follows_compression_pointer_in_name_rdata() {
+    let mut message = vec![
+        3, b'w', b'w', b'w', 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
+    ];
+    let rdata_start = message.len();
+    let pointer = [0xC0, 5]; // Points at the "example.com." bytes above
+    message.extend_from_slice(&pointer);
+
+    let update = UpdateRecord {
+        name: "www.example.com.".to_string(),
+        rr_type: Rtype::CNAME,
+        class: Class::IN,
+        ttl: 300,
+        rdata: pointer.to_vec(),
+        rdata_start,
+    };
+
+    let (record_type, value, priority) = rr_to_record_value(&update, &message).unwrap();
+    assert_eq!(record_type, RecordType::CNAME);
+    assert_eq!(value, "example.com.");
+    assert_eq!(priority, None);
+}
+
+#[test]
+fn rr_to_record_value_rejects_non_backward_compression_pointers() {
+    let forward = [
+        0xC0, 0x02, // Pointer to the root label after this pointer
+        0x00,
+    ];
+    let self_referential = [
+        0xC0, 0x00, // Pointer to itself
+    ];
+
+    for message in [&forward[..], &self_referential[..]] {
+        let update = update_record(Rtype::CNAME, Class::IN, 300, message[..2].to_vec());
+        let err = rr_to_record_value(&update, message).unwrap_err();
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+}
+
+#[test]
+fn rr_to_record_value_rejects_name_rdata_with_trailing_bytes() {
+    let message = [1, b'a', 0, 0];
+    let update = update_record(Rtype::CNAME, Class::IN, 300, message.to_vec());
+    let err = rr_to_record_value(&update, &message).unwrap_err();
+    assert!(matches!(err, UpdateError::Refused(_)));
+}
+
+// TXT RDATA is one or more character-strings (RFC 1035 §3.3.14); an empty
+// value previously slipped through and stored an undecodable record.
+#[test]
+fn rr_to_record_value_rejects_empty_txt_rdata() {
+    let update = update_record(Rtype::TXT, Class::IN, 300, Vec::new());
+    let err = rr_to_record_value(&update, &[]).unwrap_err();
+    assert!(matches!(err, UpdateError::Refused(_)));
+}
+
+#[test]
+fn rr_to_record_value_rejects_non_utf8_txt_character_strings() {
+    let update = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
+    let err = rr_to_record_value(&update, &update.rdata).unwrap_err();
+    assert!(matches!(err, UpdateError::Refused(_)));
+}
+
+#[test]
 fn record_value_matches_ignores_case_for_name_like_values() {
     assert!(record_value_matches(
         &RecordType::NS,
@@ -140,7 +203,7 @@ fn record_value_matches_ignores_case_for_name_like_values() {
     ));
 }
 
-fn update_record(rr_type: u16, class: u16, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
+fn update_record(rr_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
     UpdateRecord {
         name: "www.example.com.".to_string(),
         rr_type,

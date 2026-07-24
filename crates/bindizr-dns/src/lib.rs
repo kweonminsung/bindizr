@@ -3,7 +3,6 @@
 
 pub(crate) mod address;
 pub mod error;
-pub(crate) mod protocol;
 pub use bindizr_core::dns::txt;
 pub mod client;
 pub(crate) mod server;
