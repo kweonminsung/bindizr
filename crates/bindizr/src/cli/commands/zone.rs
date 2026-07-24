@@ -153,6 +153,12 @@ $INCLUDE is not supported.")]
         output: OutputFormat,
     },
 
+    /// Export a zone as BIND master-file text
+    Export {
+        /// The name of the zone
+        name: String,
+    },
+
     /// Inspect or roll back a zone's snapshots (serial history)
     Snapshot {
         #[command(subcommand)]
@@ -422,6 +428,20 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .send_command(DaemonCommandKind::DeleteZone, Some(json!({ "name": name })))
                 .await?;
             println!("{}", response.message);
+        }
+        ZoneCommand::Export { name } => {
+            let data = client
+                .send_command(
+                    DaemonCommandKind::ExportZoneFile,
+                    Some(json!({ "name": name })),
+                )
+                .await?
+                .data;
+            let zone_file = data
+                .get("zone_file")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing zone_file in response")?;
+            print!("{}", zone_file);
         }
         ZoneCommand::Import {
             name,

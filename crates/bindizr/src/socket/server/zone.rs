@@ -144,6 +144,16 @@ pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
     }
 }
 
+/// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
+pub(super) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+    let zone_file = ZoneService::export_zone_file(name).await?;
+    Ok(DaemonResponse {
+        message: "Zone exported successfully".to_string(),
+        data: json!({ "zone_file": zone_file }),
+    })
+}
+
 /// Handle the `ListZoneSnapshots` command by returning a zone's serial history.
 pub(super) async fn list_zone_snapshots(
     data: &serde_json::Value,

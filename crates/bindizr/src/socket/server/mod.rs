@@ -67,6 +67,7 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
                 DaemonCommandKind::NotifyZone => notify::handle_notify_zone(cmd.data).await,
                 DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
+                DaemonCommandKind::ExportZoneFile => zone::export_zone(&cmd.data).await,
                 DaemonCommandKind::ListZoneSnapshots => zone::list_zone_snapshots(&cmd.data).await,
                 DaemonCommandKind::GetZoneSnapshot => zone::get_zone_snapshot(&cmd.data).await,
                 DaemonCommandKind::DiffZoneSnapshots => zone::diff_zone_snapshots(&cmd.data).await,

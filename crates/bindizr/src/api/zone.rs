@@ -40,6 +40,7 @@ impl ZoneApi {
                 "/zones/{name}/imports",
                 routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
+            .route("/zones/{name}/export", routing::get(export_zone))
             .route("/zones/{name}/snapshots", routing::get(list_zone_snapshots))
             .route(
                 "/zones/{name}/snapshots/diff",
@@ -116,6 +117,35 @@ pub(crate) async fn get_zone_status(Path(params): Path<ZoneNameParam>) -> impl I
     match dns::client::probe::probe_secondaries(&zone.name).await {
         Ok(probes) => (StatusCode::OK, Json(build_zone_status(&zone, probes))).into_response(),
         Err(err) => ApiError(ServiceError::internal(err.to_string())).into_response(),
+    }
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/export",
+        tag = "Zone",
+        summary = "Export a zone as BIND master-file text",
+        description = "Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone to export.")
+        ),
+        responses(
+            (status = 200, description = "The zone as master-file text", content_type = "text/plain", body = String),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Render a zone as BIND master-file text.
+pub(crate) async fn export_zone(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
+    match ZoneService::export_zone_file(&params.name).await {
+        Ok(zone_file) => (
+            StatusCode::OK,
+            [("content-type", "text/plain; charset=utf-8")],
+            zone_file,
+        )
+            .into_response(),
+        Err(err) => ApiError::from(err).into_response(),
     }
 }
 

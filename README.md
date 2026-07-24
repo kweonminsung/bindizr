@@ -281,6 +281,9 @@ $ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
 # Update a record, changing only the fields you pass
 $ bindizr record update <RECORD_ID> --value 127.0.0.1
 
+# Export a zone as BIND master-file text (the inverse of import)
+$ bindizr zone export <ZONE_NAME>
+
 # Preview a bulk insert or zone-file import as a +/-/~ diff (applies nothing)
 $ bindizr record bulk records.json --zone <ZONE_NAME> --preview
 $ bindizr zone import <ZONE_NAME> zone.txt --preview

@@ -206,6 +206,52 @@ async fn zone_import_zone_file_from_stdin() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_export_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("export.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    app.run_cli_success(&[
+        "record",
+        "create",
+        "--name",
+        "www",
+        "--type",
+        "A",
+        "--value",
+        "192.0.2.1",
+        "--zone",
+        &zone_name,
+        "--ttl",
+        "300",
+    ])
+    .await;
+
+    let exported = app.run_cli_success(&["zone", "export", &zone_name]).await;
+    assert!(
+        exported.contains(&format!("$ORIGIN {zone_name}.")),
+        "{exported}"
+    );
+    assert!(exported.contains("$TTL 3600"), "{exported}");
+    assert!(exported.contains("IN\tSOA\t"), "{exported}");
+    assert!(
+        exported.contains("www\t300\tIN\tA\t192.0.2.1"),
+        "{exported}"
+    );
+
+    // Re-importing the export into the same zone changes nothing.
+    let reimport = app
+        .run_cli_success_with_input(
+            &["zone", "import", &zone_name, "-", "--output", "json"],
+            &exported,
+        )
+        .await;
+    let reimport: Value = serde_json::from_str(&reimport).expect("CLI did not return valid JSON");
+    assert_eq!(reimport["summary"]["added"], 0, "{reimport}");
+    assert_eq!(reimport["summary"]["deleted"], 0, "{reimport}");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_import_preview_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("import-preview.example");

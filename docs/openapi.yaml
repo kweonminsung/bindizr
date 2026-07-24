@@ -796,6 +796,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/export:
+    get:
+      tags:
+      - Zone
+      summary: Export a zone as BIND master-file text
+      description: Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint.
+      operationId: export_zone
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone to export.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The zone as master-file text
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}/imports:
     post:
       tags:

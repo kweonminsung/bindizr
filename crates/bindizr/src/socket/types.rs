@@ -29,6 +29,7 @@ pub(crate) enum DaemonCommandKind {
     DeleteRecord,
     NotifyZone,
     ImportZoneFile,
+    ExportZoneFile,
     ListZoneSnapshots,
     GetZoneSnapshot,
     DiffZoneSnapshots,

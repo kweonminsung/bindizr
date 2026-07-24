@@ -32,6 +32,7 @@ use super::types::{
         super::record::delete_record,
         super::record::create_records_bulk,
         super::zone::import_zone,
+        super::zone::export_zone,
         super::zone::list_zone_snapshots,
         super::zone::get_zone_snapshot,
         super::zone::diff_zone_snapshots,
