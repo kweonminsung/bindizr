@@ -1,10 +1,10 @@
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, str::FromStr};
 
 use domain::base::{Name, iana::Rtype};
 
 use super::{
     DNS_TCP_MAX_SIZE, DnsMessageBuilder, XfrError, add_answer_and_flush_if_needed,
-    encode_domain_name, encode_tcp_message, flush_message_if_not_empty,
+    encode_tcp_message, flush_message_if_not_empty, parse_name,
 };
 
 #[test]
@@ -17,14 +17,12 @@ fn encode_tcp_message_rejects_oversized_payload() {
 }
 
 #[test]
-fn encode_domain_name_respects_escaped_dots() {
-    let mut encoded = Vec::new();
-
-    encode_domain_name(r"admin\.dns.example.com.", &mut encoded).unwrap();
+fn parse_name_respects_escaped_dots() {
+    let name = parse_name(r"admin\.dns.example.com.").unwrap();
 
     assert_eq!(
-        encoded,
-        vec![
+        name.as_slice(),
+        [
             9, b'a', b'd', b'm', b'i', b'n', b'.', b'd', b'n', b's', 7, b'e', b'x', b'a', b'm',
             b'p', b'l', b'e', 3, b'c', b'o', b'm', 0
         ]
@@ -33,9 +31,7 @@ fn encode_domain_name_respects_escaped_dots() {
 
 #[tokio::test]
 async fn chunked_tcp_writer_splits_large_answer_sets() {
-    let mut qname = Vec::new();
-    encode_domain_name("example.com.", &mut qname).unwrap();
-    let qname = Name::from_octets(qname).unwrap();
+    let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
     let mut builder = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR);
     let mut writer = Vec::new();
     let mut sent = 0usize;

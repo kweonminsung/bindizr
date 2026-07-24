@@ -11,9 +11,11 @@ use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
 const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
 fn encode_name(name: &str) -> Vec<u8> {
-    let mut out = Vec::new();
-    crate::wire::encode_domain_name(&name.to_ascii_lowercase(), &mut out).unwrap();
-    out
+    use std::str::FromStr;
+    domain::base::Name::<Vec<u8>>::from_str(&name.to_ascii_lowercase())
+        .unwrap()
+        .as_slice()
+        .to_vec()
 }
 
 fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
