@@ -155,6 +155,44 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn record_update_retype_without_value_is_rejected_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("cli-retype-noval.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    app.run_cli_success(&[
+        "record",
+        "create",
+        "--name",
+        "www",
+        "--type",
+        "A",
+        "--value",
+        "192.0.2.1",
+        "--zone",
+        &zone_name,
+    ])
+    .await;
+    let records = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    let record_id = records["items"]
+        .as_array()
+        .and_then(|records| records.iter().find(|r| r["record_type"] == "A"))
+        .and_then(|r| r["id"].as_i64())
+        .expect("created A record did not contain an ID")
+        .to_string();
+
+    // A stale plain value stored under TXT is wire-identical to a real TXT record
+    // yet slips past duplicate detection, so retyping must supply a fresh value.
+    let args = ["record", "update", &record_id, "--type", "TXT"];
+    let output = app.run_cli(&args).await;
+    assert_cli_failure_contains(&args, &output, "value is required when changing");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn record_update_changes_only_passed_fields_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-record-update.example");

@@ -59,6 +59,13 @@ impl RecordService {
                 Some(record_type) => parse_record_type(record_type)?,
                 None => existing.record_type.clone(),
             };
+            // A stored value is encoded per record type (TXT keeps raw RDATA, others
+            // plain), so it can't carry across a type change — require a fresh value.
+            if record_type != existing.record_type && patch.value.is_none() {
+                return Err(ServiceError::invalid_input(
+                    "value is required when changing a record's type".to_string(),
+                ));
+            }
             let storage_value = match &patch.value {
                 Some(value) => value
                     .to_storage_value(&record_type)
