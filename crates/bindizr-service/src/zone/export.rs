@@ -2,16 +2,35 @@
 
 use bindizr_core::dns::{DEFAULT_RECORD_TTL, name::to_fqdn, record::presentation_rdata};
 
-use super::ZoneService;
-use crate::{error::ServiceError, model::record::RecordType, record::RecordService};
+use super::{ZoneService, validation::normalize_zone_name};
+use crate::{
+    error::ServiceError,
+    model::{
+        record::{Record, RecordType},
+        zone::Zone,
+    },
+    repository::RepositoryService,
+};
 
 impl ZoneService {
     /// Render a zone and its records as a BIND master file (RFC 1035). The
     /// output round-trips through `zone import`, which manages the SOA itself
     /// and so ignores the SOA line on the way back in.
     pub async fn export_zone_file(zone_name: &str) -> Result<String, ServiceError> {
-        let zone = Self::get_by_name(zone_name).await?;
-        let mut records = RecordService::list(Some(zone.name.clone())).await?;
+        // Read the zone and records in one locked transaction so the export is a
+        // single consistent snapshot, not stale SOA metadata with newer records.
+        let lookup_name = normalize_zone_name(zone_name)?;
+        let mut tx = RepositoryService::begin_tx("Failed to export zone").await?;
+        let load_result = async {
+            let zone = RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_name)
+                .await?
+                .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
+            let records = RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await?;
+            Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
+        }
+        .await;
+        let (zone, mut records) =
+            RepositoryService::finish_tx(tx, load_result, "Failed to export zone").await?;
 
         let origin = to_fqdn(&zone.name);
         let mut out = String::new();
