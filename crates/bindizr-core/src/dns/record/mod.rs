@@ -84,7 +84,9 @@ fn txt_presentation(value: &str) -> String {
     segments.join(" ")
 }
 
-fn quote_txt_charstr(bytes: &[u8]) -> String {
+/// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any
+/// non-printable byte as a `\DDD` decimal escape (RFC 1035, Section 5.1).
+pub fn quote_txt_charstr(bytes: &[u8]) -> String {
     let mut out = String::from("\"");
     for &byte in bytes {
         match byte {
