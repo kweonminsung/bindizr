@@ -125,7 +125,6 @@ impl RecordService {
             let mut desired_by_name: HashMap<String, Vec<usize>> =
                 HashMap::with_capacity(parsed.records.len());
             for record in parsed.records {
-                // Encode the parsed value to its stored form per record type.
                 let value = match record.value.to_storage_value(&record.record_type) {
                     Ok(value) => value,
                     Err(e) => {

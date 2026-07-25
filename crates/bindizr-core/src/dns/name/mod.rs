@@ -106,9 +106,10 @@ pub fn to_owner_fqdn(name: &str, zone: &str) -> String {
     }
 
     let owner_trimmed = name.trim_end_matches('.');
-    let zone_suffix = format!(".{}", zone_trimmed.to_ascii_lowercase());
+    let zone_lower = zone_trimmed.to_ascii_lowercase();
+    let zone_suffix = format!(".{}", zone_lower);
     let owner_lower = owner_trimmed.to_ascii_lowercase();
-    if owner_lower == zone_trimmed.to_ascii_lowercase() || owner_lower.ends_with(&zone_suffix) {
+    if owner_lower == zone_lower || owner_lower.ends_with(&zone_suffix) {
         return format!("{}.", owner_trimmed);
     }
 
