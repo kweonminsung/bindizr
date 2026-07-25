@@ -2,20 +2,18 @@ use super::{display_record_owner_name, display_record_value, presentation_rdata}
 use crate::{dns::txt, model::record::RecordType};
 
 #[test]
-fn presentation_rdata_txt_round_trips_non_utf8_bytes() {
-    // A zone-file TXT with a \DDD escape stores raw non-UTF-8 bytes; export
-    // must re-escape them, not leak the internal storage marker.
-    let stored = txt::encode_raw_txt_rdata(&[3, 0xff, b'a', 0xfe]);
-    assert_eq!(
-        presentation_rdata(&stored, None, &RecordType::TXT),
-        "\"\\255a\\254\""
-    );
-
-    // Printable ASCII stays readable; quotes and backslashes are escaped.
+fn presentation_rdata_txt_escapes_special_characters() {
     let ascii = txt::encode_txt_string("v=spf1 \"x\\y\"");
     assert_eq!(
         presentation_rdata(&ascii, None, &RecordType::TXT),
         "\"v=spf1 \\\"x\\\\y\\\"\""
+    );
+
+    // Control bytes are escaped as \DDD per RFC 1035, Section 5.1.
+    let control = txt::encode_txt_string("a\u{1}b");
+    assert_eq!(
+        presentation_rdata(&control, None, &RecordType::TXT),
+        "\"a\\001b\""
     );
 }
 

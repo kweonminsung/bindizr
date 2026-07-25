@@ -541,7 +541,7 @@ pub(super) fn rr_to_record_value(
         RecordType::TXT => {
             let data = Txt::from_octets(update.rdata.as_slice())
                 .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?;
-            // Stored TXT values must decode back into strings, so reject
+            // TXT values must be valid UTF-8 (a project-wide rule), so reject
             // non-UTF-8 character-strings even though the wire allows them.
             for charstr in data.iter_charstrs() {
                 if std::str::from_utf8(charstr.as_slice()).is_err() {
