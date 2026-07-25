@@ -4,7 +4,7 @@ use sqlx::{MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::tsig_key::TsigKey,
-    repository::{RepositoryTx, RepositoryTxKind, TsigKeyRepository},
+    repository::{RepositoryTx, TsigKeyRepository},
 };
 
 /// MySQL-backed implementation of `TsigKeyRepository`.
@@ -73,14 +73,7 @@ impl TsigKeyRepository for MySqlTsigKeyRepository {
         tx: &mut RepositoryTx<'_>,
         name: &str,
     ) -> Result<Option<TsigKey>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let key = sqlx::query_as::<_, TsigKey>(
             "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE name = ?",

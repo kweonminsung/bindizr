@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres};
 use crate::{
     error::DatabaseError,
     model::zone_change::ZoneChange,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneChangeRepository},
+    repository::{RepositoryTx, ZoneChangeRepository},
 };
 
 /// PostgreSQL-backed implementation of `ZoneChangeRepository`.
@@ -47,14 +47,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         tx: &mut RepositoryTx<'_>,
         zone_change: ZoneChange,
     ) -> Result<ZoneChange, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         sqlx::query_as::<_, ZoneChange>(
             r#"
@@ -81,14 +74,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         tx: &mut RepositoryTx<'_>,
         changes: &[ZoneChange],
     ) -> Result<(), DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         const CHUNK: usize = 500;
         for chunk in changes.chunks(CHUNK) {
@@ -162,14 +148,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
-        let pg_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let pg_tx = tx.as_postgres()?;
 
         sqlx::query_as::<_, ZoneChange>(
             r#"

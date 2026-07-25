@@ -4,7 +4,7 @@ use sqlx::{Pool, Postgres};
 use crate::{
     error::DatabaseError,
     model::zone_snapshot::ZoneSnapshot,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneSnapshotRepository},
+    repository::{RepositoryTx, ZoneSnapshotRepository},
 };
 
 /// PostgreSQL-backed implementation of `ZoneSnapshotRepository`.
@@ -57,14 +57,7 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
         tx: &mut RepositoryTx<'_>,
         snapshot: ZoneSnapshot,
     ) -> Result<ZoneSnapshot, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         sqlx::query_as::<_, ZoneSnapshot>(
             r#"
@@ -174,14 +167,7 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
         zone_id: i32,
         serial: i32,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
-        let pg_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let pg_tx = tx.as_postgres()?;
 
         sqlx::query_as::<_, ZoneSnapshot>(
             r#"

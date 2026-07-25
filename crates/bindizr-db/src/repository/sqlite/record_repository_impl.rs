@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::record::{Record, RecordType, RecordWithZone},
-    repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
+    repository::{RecordFilter, RecordRepository, RepositoryTx},
 };
 
 /// SQLite-backed implementation of `RecordRepository`.
@@ -48,14 +48,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         mut record: Record,
     ) -> Result<Record, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         let result = sqlx::query(
             r#"
@@ -81,14 +74,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         records: &[Record],
     ) -> Result<Vec<Record>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         // 6 columns per row; keep bind count under SQLite's conservative limit.
         const CHUNK: usize = 150;
@@ -169,14 +155,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         id: i32,
     ) -> Result<Option<Record>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
             .bind(id)
@@ -227,14 +206,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         let records = sqlx::query_as::<_, Record>(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name",
@@ -252,14 +224,7 @@ impl RecordRepository for SqliteRecordRepository {
         zone_id: i32,
         name: &str,
     ) -> Result<Vec<Record>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         // Owner names are stored lowercase, so match against a lowercased bind
         // and keep the column function-free so idx_records_zone_name is used.
@@ -284,14 +249,7 @@ impl RecordRepository for SqliteRecordRepository {
             return Ok(Vec::new());
         }
 
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         // Only same-name rows can conflict, so match names lowercased (keeping the
         // column function-free so idx_records_zone_name is used) and chunk the IN
@@ -371,14 +329,7 @@ impl RecordRepository for SqliteRecordRepository {
         priority: Option<i32>,
         match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
         let value_filter = if record_type.is_name_like_value() {
             "AND (? IS NULL OR LOWER(value) = LOWER(?))"
         } else {
@@ -619,14 +570,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query(
             r#"
@@ -660,14 +604,7 @@ impl RecordRepository for SqliteRecordRepository {
     }
 
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query("DELETE FROM records WHERE id = ?")
             .bind(id)
@@ -685,14 +622,7 @@ impl RecordRepository for SqliteRecordRepository {
             return Ok(());
         }
 
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         // One bind per id; keep the count under SQLite's conservative limit.
         const CHUNK: usize = 900;

@@ -4,7 +4,7 @@ use sqlx::{Pool, Postgres, Row};
 use crate::{
     error::DatabaseError,
     model::tsig_key::TsigKey,
-    repository::{RepositoryTx, RepositoryTxKind, TsigKeyRepository},
+    repository::{RepositoryTx, TsigKeyRepository},
 };
 
 /// PostgreSQL-backed implementation of `TsigKeyRepository`.
@@ -74,14 +74,7 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         tx: &mut RepositoryTx<'_>,
         name: &str,
     ) -> Result<Option<TsigKey>, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         let key = sqlx::query_as::<_, TsigKey>(
             "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE name = $1",
