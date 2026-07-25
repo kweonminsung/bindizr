@@ -3,6 +3,7 @@ use std::{
     time::Instant,
 };
 
+use bindizr_core::dns::DEFAULT_RECORD_TTL;
 use chrono::Utc;
 
 use super::{
@@ -264,11 +265,10 @@ impl RecordService {
 
             // A present record is left in place unless upsert/replace reconciles
             // its TTL: a change becomes DEL + re-ADD via the batched paths below.
-            // TTLs compare by effective value so a stored `None` isn't a change
-            // against a file TTL equal to the zone default.
+            // An unset TTL compares at DEFAULT_RECORD_TTL (the wire/export default),
+            // so round-tripping an export doesn't spuriously rewrite unset-TTL rows.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
-            let default_ttl = zone.ttl;
-            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(default_ttl);
+            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(DEFAULT_RECORD_TTL);
 
             let mut unchanged = 0usize;
             let mut updated = 0usize;

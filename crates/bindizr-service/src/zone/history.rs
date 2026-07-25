@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bindizr_core::dns::{
+    DEFAULT_RECORD_TTL,
     name::{soa_mailbox_to_email, to_fqdn},
     record::display_record_owner_name,
 };
@@ -510,9 +511,10 @@ impl ZoneService {
                 let key = record_match_key(record);
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
-                        // TTL-only difference: replace the row (DEL + ADD).
-                        let current_ttl = record.ttl.unwrap_or(restored_zone.ttl);
-                        let target_ttl = target.ttl.unwrap_or(restored_zone.ttl);
+                        // TTL-only difference: replace the row (DEL + ADD). An
+                        // unset TTL serves at DEFAULT_RECORD_TTL, not the zone TTL.
+                        let current_ttl = record.ttl.unwrap_or(DEFAULT_RECORD_TTL);
+                        let target_ttl = target.ttl.unwrap_or(DEFAULT_RECORD_TTL);
                         if current_ttl != target_ttl
                             && validate_delete_constraints(
                                 &restored_zone,
