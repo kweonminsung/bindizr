@@ -360,9 +360,10 @@ impl RecordService {
                 skipped,
             };
 
-            // The diff is only shown on a dry-run preview, so keep it off the
-            // apply hot path (import benchmarks measure records/sec here).
-            let diff = if dry_run {
+            // The diff is only shown on a dry-run preview, so keep it off the apply
+            // hot path (import benchmarks measure records/sec here). Skip it too when
+            // errors block the import, so the preview shows no un-appliable changes.
+            let diff = if dry_run && errors.is_empty() {
                 import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels)
             } else {
                 RecordDiff::default()

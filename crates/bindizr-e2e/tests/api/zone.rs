@@ -627,6 +627,35 @@ async fn zone_import_zone_file_reports_validation_errors() {
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 }
 
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_preview_shows_empty_diff_on_validation_error() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // A CNAME that can't coexist with the A fails the whole import, so the dry-run
+    // preview must report the error with an empty diff, not a never-applied add.
+    let content = "dup IN A 192.0.2.1\ndup IN CNAME www\n";
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content, "dry_run": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], false);
+    assert_eq!(body["dry_run"], true);
+    assert!(!body["errors"].as_array().unwrap().is_empty());
+    assert!(
+        body["diff"]["entries"].as_array().unwrap().is_empty(),
+        "preview diff should be empty when the import has errors: {}",
+        body["diff"]
+    );
+    assert_eq!(body["diff"]["summary"]["added"], 0);
+}
+
 // --- append fast-path adversarial tests -------------------------------------
 // Append imports load only rows sharing an owner name with the file; these
 // verify that constraint checks against records existing only in the DB still hold.
