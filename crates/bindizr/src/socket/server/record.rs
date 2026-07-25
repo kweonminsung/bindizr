@@ -4,7 +4,7 @@ use serde_json::json;
 use crate::{
     api::types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-        GetRecordsFilter, UpdateRecordRequest,
+        GetRecordsFilter, UpdateRecordPatch,
     },
     socket::{server::to_response_data, types::DaemonResponse},
 };
@@ -89,60 +89,14 @@ pub(super) async fn create_record(
     }
 }
 
-/// Handle the `UpdateRecord` command, merging the payload over the current
-/// record so the CLI can send only the flags the user set. The value comes
-/// from the stored (non-display) form so MX/SRV round-trip.
+/// Handle the `UpdateRecord` command by applying a partial-update patch.
 pub(super) async fn update_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let record_id = parse_record_id(data)?;
-    let record = RecordService::get_by_id_with_zone(record_id)
-        .await?
-        .record();
+    let patch: UpdateRecordPatch = super::parse_params(data)?;
 
-    let name = data
-        .get("name")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| record.name.clone());
-    let record_type = data
-        .get("record_type")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| record.record_type.to_string());
-    let value = match data.get("value") {
-        Some(value) if !value.is_null() => serde_json::from_value(value.clone())
-            .map_err(|e| ServiceError::invalid_input(format!("Invalid value: {}", e)))?,
-        _ => GetRecordResponse::from_record(&record).value,
-    };
-    // Absent or null (an unset CLI flag) keeps the current value; a present
-    // number must fit in i32 rather than wrapping.
-    let merged_i32 = |field: &str, current: Option<i32>| -> Result<Option<i32>, ServiceError> {
-        match data.get(field) {
-            None | Some(serde_json::Value::Null) => Ok(current),
-            Some(value) => Ok(Some(super::json_i32(field, value)?)),
-        }
-    };
-
-    // Only MX/SRV carry a priority; changing the type to any other one clears
-    // it, so retyping a record (e.g. MX -> A) isn't blocked by a stale priority.
-    let takes_priority =
-        record_type.eq_ignore_ascii_case("MX") || record_type.eq_ignore_ascii_case("SRV");
-    let priority = if takes_priority {
-        merged_i32("priority", record.priority)?
-    } else {
-        None
-    };
-
-    let request = UpdateRecordRequest {
-        name,
-        record_type,
-        value,
-        ttl: merged_i32("ttl", record.ttl)?,
-        priority,
-    };
-
-    match RecordService::update_by_id(record_id, &request).await {
+    match RecordService::patch_by_id(record_id, &patch).await {
         Ok(record) => Ok(DaemonResponse {
             message: "Record updated successfully".to_string(),
             data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,

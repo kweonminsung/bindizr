@@ -198,16 +198,6 @@ pub(super) fn required_zone_name(data: &serde_json::Value) -> Result<&str, Servi
         .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'zone_name' field"))
 }
 
-/// Parse a JSON value as an `i32`, rejecting non-integers and out-of-range
-/// numbers instead of silently wrapping them.
-pub(super) fn json_i32(field: &str, value: &serde_json::Value) -> Result<i32, ServiceError> {
-    let number = value.as_i64().ok_or_else(|| {
-        ServiceError::invalid_input(format!("Field '{}' must be an integer", field))
-    })?;
-    i32::try_from(number)
-        .map_err(|_| ServiceError::invalid_input(format!("Field '{}' is out of range", field)))
-}
-
 /// Deserialize a command payload into its typed parameter struct, so missing
 /// and wrongly typed fields are rejected instead of silently defaulting.
 pub(super) fn parse_params<T: serde::de::DeserializeOwned>(

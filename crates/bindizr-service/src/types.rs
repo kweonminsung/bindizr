@@ -503,6 +503,32 @@ pub struct UpdateRecordRequest {
     pub priority: Option<i32>,
 }
 
+/// A partial record update; an omitted field keeps the current value. Merged
+/// inside the update transaction so a concurrent write is not lost.
+#[derive(Deserialize, Debug, Default)]
+pub struct UpdateRecordPatch {
+    pub name: Option<String>,
+    pub record_type: Option<String>,
+    pub value: Option<RecordValueRequest>,
+    pub ttl: Option<i32>,
+    pub priority: Option<i32>,
+}
+
+/// A partial zone update; an omitted field keeps the current value, merged
+/// inside the update transaction. `serial` is carried only to be rejected.
+#[derive(Deserialize, Debug, Default)]
+pub struct UpdateZonePatch {
+    pub new_name: Option<String>,
+    pub primary_ns: Option<String>,
+    pub admin_email: Option<String>,
+    pub ttl: Option<i32>,
+    pub refresh: Option<i32>,
+    pub retry: Option<i32>,
+    pub expire: Option<i32>,
+    pub minimum_ttl: Option<i32>,
+    pub serial: Option<i32>,
+}
+
 /// Request body for triggering a NOTIFY, optionally scoped to one zone.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct NotifyZoneRequest {

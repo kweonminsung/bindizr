@@ -4,7 +4,7 @@ use serde_json::json;
 use crate::{
     api::types::{
         CreateZoneRequest, GetZoneResponse, GetZonesFilter, ImportZoneFileRequest,
-        SnapshotDetailResponse, SnapshotRecordResponse, ZoneSnapshotResponse,
+        SnapshotDetailResponse, SnapshotRecordResponse, UpdateZonePatch, ZoneSnapshotResponse,
     },
     socket::{server::to_response_data, types::DaemonResponse},
 };
@@ -81,40 +81,12 @@ pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
     }
 }
 
-/// Handle the `UpdateZone` command, merging the payload over the current zone
-/// so the CLI can send only the flags the user set.
+/// Handle the `UpdateZone` command by applying a partial-update patch.
 pub(super) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let name = required_name(data)?;
-    let existing = ZoneService::get_by_name(name).await?;
+    let patch: UpdateZonePatch = super::parse_params(data)?;
 
-    // Absent or null keeps the current value; a present number must be a valid
-    // i32, so a non-numeric or out-of-range field is rejected, not ignored.
-    let opt_i32 = |field: &str| -> Result<Option<i32>, ServiceError> {
-        match data.get(field) {
-            None | Some(serde_json::Value::Null) => Ok(None),
-            Some(value) => Ok(Some(super::json_i32(field, value)?)),
-        }
-    };
-    let str_or = |field: &str, fallback: &str| -> String {
-        data.get(field)
-            .and_then(|v| v.as_str())
-            .unwrap_or(fallback)
-            .to_string()
-    };
-
-    let request = CreateZoneRequest {
-        name: str_or("new_name", &existing.name),
-        primary_ns: str_or("primary_ns", &existing.primary_ns),
-        admin_email: str_or("admin_email", &existing.admin_email),
-        ttl: opt_i32("ttl")?.unwrap_or(existing.ttl),
-        serial: None,
-        refresh: Some(opt_i32("refresh")?.unwrap_or(existing.refresh)),
-        retry: Some(opt_i32("retry")?.unwrap_or(existing.retry)),
-        expire: Some(opt_i32("expire")?.unwrap_or(existing.expire)),
-        minimum_ttl: Some(opt_i32("minimum_ttl")?.unwrap_or(existing.minimum_ttl)),
-    };
-
-    let zone = ZoneService::update(name, &request).await?;
+    let zone = ZoneService::patch(name, &patch).await?;
     Ok(DaemonResponse {
         message: "Zone updated successfully".to_string(),
         data: to_response_data(GetZoneResponse::from_zone(&zone))?,
