@@ -48,7 +48,16 @@ protocol/wire-format details, or public-API contracts (`///`) — but keep them
 **terse**: state the reason in one or two lines, without spelling out
 consequences the reader can derive, restating an already-made point, or
 enumerating what the code shows. Remove comments that merely restate the
-adjacent code. Specifically avoid:
+adjacent code.
+
+This explicitly includes short **in-function** comments that give the business
+or protocol reason for a step — e.g. `// Increment zone serial so IXFR
+consumers can detect this change` above the serial bump. Keep these mid-body
+comments even when the statement itself is obvious: they carry the *why* (which
+downstream system or invariant depends on this step), not the *what*. When
+trimming verbose comments, do not strip them.
+
+Specifically avoid:
 
 - Trailing scaffolding notes like `id: 0, // Will be set by the database` — the
   placeholder pattern is used throughout and needs no annotation.

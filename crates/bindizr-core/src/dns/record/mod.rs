@@ -63,9 +63,7 @@ pub fn presentation_rdata(value: &str, priority: Option<i32>, record_type: &Reco
 }
 
 /// Render TXT from the stored raw RDATA so non-UTF-8 character-strings survive
-/// export → import. Working from the raw bytes (not the decoded string, which
-/// fails on non-UTF-8) each byte is emitted verbatim when printable ASCII and
-/// as a `\DDD` decimal escape otherwise (RFC 1035, Section 5.1).
+/// export → import, re-escaping bytes per RFC 1035, Section 5.1.
 fn txt_presentation(value: &str) -> String {
     let Some(rdata) = txt::decode_raw_txt_rdata(value) else {
         // Not an encoded TXT value; quote it as a single character-string.
