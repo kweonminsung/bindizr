@@ -33,8 +33,6 @@ DNS Synchronization Service for BIND9
 
 - **nsupdate (Dynamic Update)**: Supports RFC 2136-style DNS dynamic updates via nsupdate.
 
-- **TXT Records (UTF-8 only)**: TXT record values must be valid UTF-8. Non-UTF-8 octets — for example, BIND `\DDD` escapes in an imported zone file that decode to invalid UTF-8 — are rejected on zone import and via nsupdate rather than stored.
-
 <br>
 
 &nbsp;<img src="public/concepts.png" width="462px">
