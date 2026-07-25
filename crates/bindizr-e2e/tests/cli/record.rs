@@ -184,8 +184,8 @@ async fn record_update_retype_without_value_is_rejected_via_cli() {
         .expect("created A record did not contain an ID")
         .to_string();
 
-    // A stale plain value stored under TXT is wire-identical to a real TXT record
-    // yet slips past duplicate detection, so retyping must supply a fresh value.
+    // A record's stored value is encoded for its type, so a value carried over from
+    // the old type is invalid for the new one — retyping must supply a fresh value.
     let args = ["record", "update", &record_id, "--type", "TXT"];
     let output = app.run_cli(&args).await;
     assert_cli_failure_contains(&args, &output, "value is required when changing");
