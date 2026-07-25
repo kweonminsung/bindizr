@@ -796,6 +796,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/export:
+    get:
+      tags:
+      - Zone
+      summary: Export a zone as BIND master-file text
+      description: Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint.
+      operationId: export_zone
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone to export.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The zone as master-file text
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}/imports:
     post:
       tags:
@@ -955,6 +994,59 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/snapshots/diff:
+    get:
+      tags:
+      - Zone
+      summary: Diff the records between two of a zone's serials
+      description: Reports the RRsets added, removed, and changed between `from` and `to`. Omitting `to` compares against the current serial. Each serial must be the current one or an existing snapshot.
+      operationId: diff_zone_snapshots
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      - name: from
+        in: query
+        description: The serial to diff from.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      - name: to
+        in: query
+        description: The serial to diff to; defaults to the current serial.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: The record differences between the two serials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotDiffResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or snapshot not found
           content:
             application/json:
               schema:
@@ -1273,6 +1365,7 @@ components:
           - integer
           - 'null'
           format: int32
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
           example: 10
         record_type:
           type: string
@@ -1282,6 +1375,7 @@ components:
           - integer
           - 'null'
           format: int32
+          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
           example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
@@ -1296,10 +1390,14 @@ components:
       - dry_run
       - inserted
       - records
+      - diff
       properties:
         applied:
           type: boolean
           example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The insert as a record diff (all additions), for previewing the change.
         dry_run:
           type: boolean
           example: false
@@ -1341,6 +1439,7 @@ components:
           - integer
           - 'null'
           format: int32
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
           example: 10
         record_type:
           type: string
@@ -1350,6 +1449,7 @@ components:
           - integer
           - 'null'
           format: int32
+          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
           example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
@@ -1430,7 +1530,7 @@ components:
           - integer
           - 'null'
           format: int32
-          description: Auto-generated if not provided.
+          description: Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
           example: 42
         ttl:
           type: integer
@@ -1698,11 +1798,15 @@ components:
       - applied
       - dry_run
       - summary
+      - diff
       - errors
       properties:
         applied:
           type: boolean
           example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The reconcile as a record diff, for previewing the change.
         dry_run:
           type: boolean
           example: false
@@ -1757,6 +1861,91 @@ components:
           format: int64
           example: 125
           minimum: 0
+    RecordDiff:
+      type: object
+      description: A record-level difference between two record sets, RRset by RRset.
+      required:
+      - entries
+      - summary
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffEntry'
+        summary:
+          $ref: '#/components/schemas/RecordDiffSummary'
+    RecordDiffEntry:
+      type: object
+      description: |-
+        One RRset (owner name + type) whose records differ, with the records present
+        on each side. `from` is empty for `added`, `to` for `removed`.
+      required:
+      - change
+      - name
+      - record_type
+      - from
+      - to
+      properties:
+        change:
+          type: string
+          description: '`added`, `removed`, or `changed`.'
+          example: changed
+        from:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffValue'
+        name:
+          type: string
+          example: www.example.com.
+        record_type:
+          type: string
+          example: A
+        to:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffValue'
+    RecordDiffSummary:
+      type: object
+      description: How many RRsets were added, removed, and changed.
+      required:
+      - added
+      - removed
+      - changed
+      properties:
+        added:
+          type: integer
+          example: 1
+          minimum: 0
+        changed:
+          type: integer
+          example: 1
+          minimum: 0
+        removed:
+          type: integer
+          example: 1
+          minimum: 0
+    RecordDiffValue:
+      type: object
+      description: |-
+        One record on one side of a diff. Rendering (zone-file rdata, priority
+        placement) is left to the client; the value is in display form.
+      required:
+      - value
+      properties:
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 10
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 300
+        value:
+          $ref: '#/components/schemas/RecordValueRequest'
     RecordListResponse:
       type: object
       description: Paginated list of records.
@@ -1893,6 +2082,24 @@ components:
             $ref: '#/components/schemas/SnapshotRecordResponse'
         snapshot:
           $ref: '#/components/schemas/ZoneSnapshotResponse'
+    SnapshotDiffResponse:
+      type: object
+      description: The difference between two of a zone's serials.
+      required:
+      - from_serial
+      - to_serial
+      - diff
+      properties:
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+        from_serial:
+          type: integer
+          format: int32
+          example: 41
+        to_serial:
+          type: integer
+          format: int32
+          example: 42
     SnapshotListResponse:
       type: object
       description: A page of zone snapshots.
@@ -1971,6 +2178,7 @@ components:
           - integer
           - 'null'
           format: int32
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
           example: 10
         record_type:
           type: string
@@ -1980,6 +2188,7 @@ components:
           - integer
           - 'null'
           format: int32
+          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
           example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'

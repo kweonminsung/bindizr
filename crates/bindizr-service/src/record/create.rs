@@ -88,10 +88,10 @@ impl RecordService {
 
             validate_record_add_constraints_normalized(
                 &existing_records_with_name,
-                &create_record_request.name,
                 &normalized_owner.stored_name,
                 &record_type,
                 &record_value,
+                create_record_request.ttl,
                 create_record_request.priority,
                 None,
             )?;

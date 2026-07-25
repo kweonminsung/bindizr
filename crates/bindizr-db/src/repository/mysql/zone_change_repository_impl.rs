@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::zone_change::ZoneChange,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneChangeRepository},
+    repository::{RepositoryTx, ZoneChangeRepository},
 };
 
 /// MySQL-backed implementation of `ZoneChangeRepository`.
@@ -60,14 +60,7 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
         tx: &mut RepositoryTx<'_>,
         zone_change: ZoneChange,
     ) -> Result<ZoneChange, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let result = sqlx::query(
             r#"
@@ -107,14 +100,7 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
         tx: &mut RepositoryTx<'_>,
         changes: &[ZoneChange],
     ) -> Result<(), DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         const CHUNK: usize = 500;
         const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?)";
@@ -177,14 +163,7 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query_as::<_, ZoneChange>(
             r#"

@@ -120,6 +120,43 @@ impl<'a> RepositoryTx<'a> {
                 .map_err(|e| DatabaseError::TransactionFailed(e.to_string())),
         }
     }
+
+    /// Borrow the underlying MySQL transaction, erroring if this handle wraps a
+    /// different backend.
+    pub(crate) fn as_mysql(&mut self) -> Result<&mut sqlx::Transaction<'a, MySql>, DatabaseError> {
+        match &mut self.0 {
+            RepositoryTxKind::MySQL(tx) => Ok(tx),
+            _ => Err(DatabaseError::TransactionFailed(
+                "transaction kind mismatch (expected MySQL)".to_string(),
+            )),
+        }
+    }
+
+    /// Borrow the underlying PostgreSQL transaction, erroring if this handle
+    /// wraps a different backend.
+    pub(crate) fn as_postgres(
+        &mut self,
+    ) -> Result<&mut sqlx::Transaction<'a, Postgres>, DatabaseError> {
+        match &mut self.0 {
+            RepositoryTxKind::PostgreSQL(tx) => Ok(tx),
+            _ => Err(DatabaseError::TransactionFailed(
+                "transaction kind mismatch (expected PostgreSQL)".to_string(),
+            )),
+        }
+    }
+
+    /// Borrow the underlying SQLite transaction, erroring if this handle wraps a
+    /// different backend.
+    pub(crate) fn as_sqlite(
+        &mut self,
+    ) -> Result<&mut sqlx::Transaction<'a, Sqlite>, DatabaseError> {
+        match &mut self.0 {
+            RepositoryTxKind::SQLite(tx) => Ok(tx),
+            _ => Err(DatabaseError::TransactionFailed(
+                "transaction kind mismatch (expected SQLite)".to_string(),
+            )),
+        }
+    }
 }
 
 /// Persistence operations for zones.

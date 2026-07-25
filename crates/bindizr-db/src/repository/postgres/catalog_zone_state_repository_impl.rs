@@ -4,7 +4,7 @@ use sqlx::{Pool, Postgres};
 use crate::{
     error::DatabaseError,
     model::catalog_zone_state::CatalogZoneState,
-    repository::{CatalogZoneStateRepository, RepositoryTx, RepositoryTxKind},
+    repository::{CatalogZoneStateRepository, RepositoryTx},
 };
 
 /// PostgreSQL-backed implementation of `CatalogZoneStateRepository`.
@@ -57,14 +57,7 @@ impl CatalogZoneStateRepository for PostgresCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         sqlx::query_as::<_, CatalogZoneState>(
             r#"

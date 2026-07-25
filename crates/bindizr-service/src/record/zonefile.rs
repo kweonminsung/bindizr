@@ -1,4 +1,4 @@
-use bindizr_core::dns::{name::to_fqdn_lowercase, txt::encode_raw_txt_rdata};
+use bindizr_core::dns::name::to_fqdn_lowercase;
 use domain::{
     base::iana::{Class, Rtype},
     rdata::ZoneRecordData,
@@ -13,18 +13,9 @@ pub(super) struct ParsedRecord {
     /// Absolute owner name (e.g. `www.example.com.`).
     pub owner_fqdn: String,
     pub record_type: RecordType,
-    pub value: ParsedValue,
+    pub value: RecordValueRequest,
     pub ttl: Option<i32>,
     pub priority: Option<i32>,
-}
-
-/// The parsed value, ready to become a stored value. Non-TXT records carry a
-/// `Request` that import re-encodes per type; TXT is pre-`Encoded` so its raw
-/// octets (possibly non-UTF-8, from BIND `\DDD` escapes) never pass through a
-/// lossy UTF-8 conversion.
-pub(super) enum ParsedValue {
-    Request(RecordValueRequest),
-    Encoded(String),
 }
 
 pub(super) struct ParsedZoneFile {
@@ -101,14 +92,27 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
 
                 let (value, priority) = match record.data() {
                     ZoneRecordData::Txt(txt) => {
-                        // Store the RDATA byte-exact (see `ParsedValue`); each
-                        // character-string is <=255 bytes by the CharStr invariant.
-                        let mut rdata = Vec::new();
+                        // TXT values must be valid UTF-8; reject non-UTF-8 octets
+                        // (e.g. BIND `\DDD` escapes) rather than storing them.
+                        let mut segments = Vec::new();
+                        let mut non_utf8 = false;
                         for segment in txt.iter() {
-                            rdata.push(segment.len() as u8);
-                            rdata.extend_from_slice(segment);
+                            match std::str::from_utf8(segment) {
+                                Ok(text) => segments.push(text.to_string()),
+                                Err(_) => {
+                                    non_utf8 = true;
+                                    break;
+                                }
+                            }
                         }
-                        (ParsedValue::Encoded(encode_raw_txt_rdata(&rdata)), None)
+                        if non_utf8 {
+                            errors.push(format!(
+                                "TXT value for '{}' is not valid UTF-8",
+                                record.owner()
+                            ));
+                            continue;
+                        }
+                        (RecordValueRequest::Segments(segments), None)
                     }
                     other => {
                         let raw = other.to_string();
@@ -120,18 +124,12 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                                 match fields.next().and_then(|p| p.parse::<i32>().ok()) {
                                     Some(prio) => {
                                         let rest = fields.collect::<Vec<_>>().join(" ");
-                                        (
-                                            ParsedValue::Request(RecordValueRequest::String(rest)),
-                                            Some(prio),
-                                        )
+                                        (RecordValueRequest::String(rest), Some(prio))
                                     }
-                                    None => (
-                                        ParsedValue::Request(RecordValueRequest::String(raw)),
-                                        None,
-                                    ),
+                                    None => (RecordValueRequest::String(raw), None),
                                 }
                             }
-                            _ => (ParsedValue::Request(RecordValueRequest::String(raw)), None),
+                            _ => (RecordValueRequest::String(raw), None),
                         }
                     }
                 };
@@ -160,33 +158,42 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::dns::txt::decode_raw_txt_rdata;
-
     use super::*;
 
     #[test]
-    fn txt_preserves_non_utf8_octets() {
-        // `\255\254` decode to bytes 0xFF 0xFE, which are not valid UTF-8. The
-        // old `String::from_utf8_lossy` path turned them into U+FFFD; the stored
-        // RDATA must instead hold the exact octets.
+    fn txt_rejects_non_utf8_octets() {
+        // `\255\254` decode to bytes 0xFF 0xFE, which are not valid UTF-8.
         let parsed = parse_zone_file("weird IN TXT \"\\255\\254\"\n", "example.com", 3600);
+        assert!(
+            parsed.errors.iter().any(|e| e.contains("not valid UTF-8")),
+            "expected a UTF-8 error, got: {:?}",
+            parsed.errors
+        );
+        assert!(
+            !parsed
+                .records
+                .iter()
+                .any(|r| r.record_type == RecordType::TXT),
+            "the non-UTF-8 TXT record should not have been stored"
+        );
+    }
+
+    #[test]
+    fn txt_utf8_multi_segment_parses_as_segments() {
+        let parsed = parse_zone_file("multi IN TXT \"foo\" \"bar\"\n", "example.com", 3600);
         assert!(
             parsed.errors.is_empty(),
             "unexpected errors: {:?}",
             parsed.errors
         );
-
         let rec = parsed
             .records
             .iter()
             .find(|r| r.record_type == RecordType::TXT)
             .expect("a TXT record");
-        let encoded = match &rec.value {
-            ParsedValue::Encoded(s) => s,
-            ParsedValue::Request(_) => panic!("TXT should be pre-encoded"),
-        };
-        let rdata = decode_raw_txt_rdata(encoded).expect("valid encoded TXT rdata");
-        // One character-string of length 2 carrying the exact bytes.
-        assert_eq!(rdata, vec![2u8, 0xFF, 0xFE]);
+        match &rec.value {
+            RecordValueRequest::Segments(segments) => assert_eq!(segments, &["foo", "bar"]),
+            other => panic!("expected segments, got {other:?}"),
+        }
     }
 }

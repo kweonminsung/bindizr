@@ -6,7 +6,10 @@ use std::{
     str::FromStr,
 };
 
-use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn, to_owner_fqdn};
+use bindizr_core::dns::{
+    DEFAULT_RECORD_TTL,
+    name::{email_to_soa_mailbox, to_fqdn, to_owner_fqdn},
+};
 use domain::{
     base::{
         Message, MessageBuilder, Name, Serial, ToName, Ttl, UnknownRecordData,
@@ -250,7 +253,7 @@ impl DnsMessageBuilder {
         ttl: Option<i32>,
         priority: Option<i32>,
     ) -> Result<(), XfrError> {
-        let ttl = ttl.unwrap_or(3600) as u32;
+        let ttl = ttl.unwrap_or(DEFAULT_RECORD_TTL) as u32;
         let owner_name = to_owner_fqdn(name, zone_name);
 
         match record_type {
@@ -544,7 +547,7 @@ pub(crate) fn parse_query(data: &[u8]) -> Result<ParsedQuery, XfrError> {
     let zone_name = qname_presentation.trim_end_matches('.').to_string();
 
     // An IXFR query carries the client's current serial in an
-    // authority-section SOA (RFC 1995 §2).
+    // authority-section SOA (RFC 1995, Section 2).
     let client_serial = if qtype == Rtype::IXFR {
         extract_ixfr_serial(&message)
     } else {

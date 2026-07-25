@@ -4,7 +4,7 @@ use sqlx::{Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::zone_snapshot::ZoneSnapshot,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneSnapshotRepository},
+    repository::{RepositoryTx, ZoneSnapshotRepository},
 };
 
 /// SQLite-backed implementation of `ZoneSnapshotRepository`.
@@ -69,14 +69,7 @@ impl ZoneSnapshotRepository for SqliteZoneSnapshotRepository {
         tx: &mut RepositoryTx<'_>,
         snapshot: ZoneSnapshot,
     ) -> Result<ZoneSnapshot, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query(
             r#"
@@ -199,14 +192,7 @@ impl ZoneSnapshotRepository for SqliteZoneSnapshotRepository {
         zone_id: i32,
         serial: i32,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query_as::<_, ZoneSnapshot>(
             r#"

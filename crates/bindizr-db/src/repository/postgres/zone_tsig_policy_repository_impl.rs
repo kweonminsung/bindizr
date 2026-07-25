@@ -4,7 +4,7 @@ use sqlx::{Pool, Postgres, Row};
 use crate::{
     error::DatabaseError,
     model::zone_tsig_policy::ZoneTsigPolicy,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneTsigPolicyRepository},
+    repository::{RepositoryTx, ZoneTsigPolicyRepository},
 };
 
 /// PostgreSQL-backed implementation of `ZoneTsigPolicyRepository`.
@@ -75,14 +75,7 @@ impl ZoneTsigPolicyRepository for PostgresZoneTsigPolicyRepository {
         zone_id: i32,
         tsig_key_id: i32,
     ) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         let policies = sqlx::query_as::<_, ZoneTsigPolicy>(
             "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM zone_tsig_policies WHERE zone_id = $1 AND tsig_key_id = $2 ORDER BY id",

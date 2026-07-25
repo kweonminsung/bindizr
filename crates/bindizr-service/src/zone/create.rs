@@ -10,7 +10,7 @@ use crate::{
         zone::Zone,
     },
     repository::RepositoryService,
-    serial::generate_serial,
+    serial::{generate_serial, validate_initial_serial},
     types::CreateZoneRequest,
     zone::{
         DEFAULT_EXPIRE, DEFAULT_MINIMUM_TTL, DEFAULT_REFRESH, DEFAULT_RETRY,
@@ -51,13 +51,7 @@ impl ZoneService {
         };
 
         let serial = match create_zone_request.serial {
-            Some(s) if s < 1 => {
-                return Err(ServiceError::invalid_zone(format!(
-                    "serial {} must be a positive integer",
-                    s
-                )));
-            }
-            Some(s) => s,
+            Some(s) => validate_initial_serial(s)?,
             None => generate_serial(None),
         };
 

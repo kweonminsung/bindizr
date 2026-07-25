@@ -41,7 +41,7 @@ pub(super) enum UpdateError {
     Refused(String),
     /// TSIG validation failed. Carries the complete NOTAUTH wire response,
     /// built during validation because it must echo (or sign against) the
-    /// request's TSIG record (RFC 8945 §5.2–5.3).
+    /// request's TSIG record (RFC 8945, Sections 5.2–5.3).
     TsigFailed {
         msg: String,
         response: Vec<u8>,
@@ -292,14 +292,23 @@ async fn add_record(
 
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
 
+    if update.ttl > i32::MAX as u32 {
+        return Err(UpdateError::Refused(format!(
+            "TTL value {} exceeds maximum allowed value ({})",
+            update.ttl,
+            i32::MAX
+        )));
+    }
+    let ttl = update.ttl as i32;
+
     validate_add_constraints_tx(
         tx,
         zone,
         &relative_name,
         &record_type,
         &value,
+        Some(ttl),
         priority,
-        None,
     )
     .await
     .map_err(|e| UpdateError::Refused(e.to_string()))?;
@@ -319,15 +328,6 @@ async fn add_record(
     {
         return Ok(false);
     }
-
-    if update.ttl > i32::MAX as u32 {
-        return Err(UpdateError::Refused(format!(
-            "TTL value {} exceeds maximum allowed value ({})",
-            update.ttl,
-            i32::MAX
-        )));
-    }
-    let ttl = update.ttl as i32;
 
     let created = RecordService::create_tx(
         tx,
@@ -541,7 +541,7 @@ pub(super) fn rr_to_record_value(
         RecordType::TXT => {
             let data = Txt::from_octets(update.rdata.as_slice())
                 .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?;
-            // Stored TXT values must decode back into strings, so reject
+            // TXT values must be valid UTF-8 (a project-wide rule), so reject
             // non-UTF-8 character-strings even though the wire allows them.
             for charstr in data.iter_charstrs() {
                 if std::str::from_utf8(charstr.as_slice()).is_err() {

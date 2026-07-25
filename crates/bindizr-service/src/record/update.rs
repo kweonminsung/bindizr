@@ -11,23 +11,95 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::UpdateRecordRequest,
+    types::{UpdateRecordPatch, UpdateRecordRequest},
     zone::snapshot::save_zone_snapshot_tx,
 };
 
+/// The record's fields after a full request or a patch has been resolved
+/// against the currently stored record. `storage_value` is already encoded.
+struct ResolvedRecordUpdate {
+    owner_name: String,
+    record_type: RecordType,
+    storage_value: String,
+    ttl: Option<i32>,
+    priority: Option<i32>,
+}
+
 impl RecordService {
-    /// Update a record by id, bumping the zone serial and recording DEL+ADD changes for IXFR.
+    /// Full replacement (HTTP PUT): every field comes from the request.
     pub async fn update_by_id(
         record_id: i32,
-        update_record_request: &UpdateRecordRequest,
+        request: &UpdateRecordRequest,
+    ) -> Result<RecordWithZone, ServiceError> {
+        Self::update_locked(record_id, |_existing| {
+            let record_type = parse_record_type(&request.record_type)?;
+            let storage_value = request
+                .value
+                .to_storage_value(&record_type)
+                .map_err(ServiceError::invalid_record_value)?;
+            Ok(ResolvedRecordUpdate {
+                owner_name: request.name.clone(),
+                record_type,
+                storage_value,
+                ttl: request.ttl,
+                priority: request.priority,
+            })
+        })
+        .await
+    }
+
+    /// Partial update (CLI): omitted fields keep the stored record's value. The
+    /// merge runs inside the transaction, against the row loaded there.
+    pub async fn patch_by_id(
+        record_id: i32,
+        patch: &UpdateRecordPatch,
+    ) -> Result<RecordWithZone, ServiceError> {
+        Self::update_locked(record_id, |existing| {
+            let record_type = match &patch.record_type {
+                Some(record_type) => parse_record_type(record_type)?,
+                None => existing.record_type.clone(),
+            };
+            // A stored value is encoded per record type (TXT keeps raw RDATA, others
+            // plain), so it can't carry across a type change — require a fresh value.
+            if record_type != existing.record_type && patch.value.is_none() {
+                return Err(ServiceError::invalid_input(
+                    "value is required when changing a record's type".to_string(),
+                ));
+            }
+            let storage_value = match &patch.value {
+                Some(value) => value
+                    .to_storage_value(&record_type)
+                    .map_err(ServiceError::invalid_record_value)?,
+                None => existing.value.clone(),
+            };
+            // Only MX/SRV carry a priority, so retyping to any other type clears it.
+            let priority = if matches!(record_type, RecordType::MX | RecordType::SRV) {
+                patch.priority.or(existing.priority)
+            } else {
+                None
+            };
+            Ok(ResolvedRecordUpdate {
+                owner_name: patch.name.clone().unwrap_or_else(|| existing.name.clone()),
+                record_type,
+                storage_value,
+                ttl: patch.ttl.or(existing.ttl),
+                priority,
+            })
+        })
+        .await
+    }
+
+    /// Load the record inside the transaction, resolve the update against it,
+    /// then write it, bumping the zone serial and recording DEL+ADD IXFR changes.
+    async fn update_locked(
+        record_id: i32,
+        resolve: impl FnOnce(&Record) -> Result<ResolvedRecordUpdate, ServiceError>,
     ) -> Result<RecordWithZone, ServiceError> {
         // Resolve zone_id with a non-locking read so the tx locks zone before
         // record (the create/bulk/import order); the reverse can deadlock.
         let zone_id = match RepositoryService::get_record_by_id(record_id).await {
             Ok(Some(record)) => record.zone_id,
-            Ok(None) => {
-                return Err(ServiceError::record_not_found(record_id));
-            }
+            Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
                 return Err(ServiceError::internal("Failed to fetch record".to_string()));
@@ -63,24 +135,11 @@ impl RecordService {
                     }
                 };
 
-            let record_type = update_record_request
-                .record_type
-                .parse::<RecordType>()
-                .map_err(|_| {
-                    ServiceError::invalid_input(format!(
-                        "Invalid record type: {}",
-                        update_record_request.record_type
-                    ))
-                })?;
-            let record_value = update_record_request
-                .value
-                .to_storage_value(&record_type)
-                .map_err(ServiceError::invalid_record_value)?;
+            let resolved = resolve(&existing_record)?;
 
             // Only records sharing the new owner name can conflict, so load just
             // those instead of the whole zone.
-            let lookup_owner =
-                normalize_record_owner_name(&update_record_request.name, &zone.name)?;
+            let lookup_owner = normalize_record_owner_name(&resolved.owner_name, &zone.name)?;
             let zone_records = match RepositoryService::get_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone.id,
@@ -99,11 +158,11 @@ impl RecordService {
 
             let mut candidate_updated = Record {
                 id: existing_record.id,
-                name: update_record_request.name.clone(),
-                record_type,
-                value: record_value,
-                ttl: update_record_request.ttl,
-                priority: update_record_request.priority,
+                name: resolved.owner_name.clone(),
+                record_type: resolved.record_type.clone(),
+                value: resolved.storage_value.clone(),
+                ttl: resolved.ttl,
+                priority: resolved.priority,
                 zone_id: zone.id,
                 created_at: existing_record.created_at,
             };
@@ -156,8 +215,8 @@ impl RecordService {
                     record_name: updated_record.name.clone(),
                     record_type: updated_record.record_type.to_string(),
                     record_value: updated_record.value.clone(),
-                    record_ttl: update_record_request.ttl,
-                    record_priority: update_record_request.priority,
+                    record_ttl: updated_record.ttl,
+                    record_priority: updated_record.priority,
                 },
             ];
             RepositoryService::create_zone_changes_tx(&mut tx, &changes)
@@ -179,12 +238,12 @@ impl RecordService {
         log_info!(
             "event=record_update zone={} name={} type={} ttl={} priority={} record_id={}",
             zone_name,
-            update_record_request.name,
-            update_record_request.record_type,
-            update_record_request
+            updated_record.name,
+            updated_record.record_type,
+            updated_record
                 .ttl
                 .map_or("null".to_string(), |v| v.to_string()),
-            update_record_request
+            updated_record
                 .priority
                 .map_or("null".to_string(), |v| v.to_string()),
             updated_record.id
@@ -196,4 +255,10 @@ impl RecordService {
 
         Ok(RecordWithZone::new(updated_record, zone_name))
     }
+}
+
+fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
+    value
+        .parse::<RecordType>()
+        .map_err(|_| ServiceError::invalid_input(format!("Invalid record type: {}", value)))
 }

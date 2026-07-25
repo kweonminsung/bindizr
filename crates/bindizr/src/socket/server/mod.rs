@@ -55,18 +55,22 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
+                DaemonCommandKind::UpdateZone => zone::update_zone(&cmd.data).await,
                 DaemonCommandKind::DeleteZone => zone::delete_zone(&cmd.data).await,
                 DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
+                DaemonCommandKind::UpdateRecord => record::update_record(&cmd.data).await,
                 DaemonCommandKind::BulkCreateRecords => {
                     record::bulk_create_records(&cmd.data).await
                 }
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
                 DaemonCommandKind::NotifyZone => notify::handle_notify_zone(cmd.data).await,
                 DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
+                DaemonCommandKind::ExportZoneFile => zone::export_zone(&cmd.data).await,
                 DaemonCommandKind::ListZoneSnapshots => zone::list_zone_snapshots(&cmd.data).await,
                 DaemonCommandKind::GetZoneSnapshot => zone::get_zone_snapshot(&cmd.data).await,
+                DaemonCommandKind::DiffZoneSnapshots => zone::diff_zone_snapshots(&cmd.data).await,
                 DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
                 DaemonCommandKind::ZoneStatus => zone::zone_status(&cmd.data).await,
             },

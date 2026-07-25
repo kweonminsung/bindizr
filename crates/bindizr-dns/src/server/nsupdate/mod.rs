@@ -20,7 +20,7 @@ use tokio::net::{TcpStream, UdpSocket};
 use crate::{log_info, log_warn};
 
 /// Response-TSIG fudge for requests whose own fudge is unavailable
-/// (RFC 8945 §10 suggested default).
+/// (RFC 8945, Section 10 suggested default).
 const DEFAULT_FUDGE: u16 = 300;
 
 pub(crate) fn is_nsupdate(message: &[u8]) -> bool {
@@ -94,7 +94,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
             Rcode::NOERROR
         }
         // TSIG failures carry their own complete response, built against the
-        // request's TSIG record (RFC 8945 §5.2–5.3).
+        // request's TSIG record (RFC 8945, Sections 5.2–5.3).
         Err(update::UpdateError::TsigFailed { msg, response }) => {
             log_warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
             return Some(response);
@@ -134,7 +134,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
 
 /// Build the response: request ID/opcode/question echoed, RCODE set, and a
 /// TSIG appended once the request's TSIG was validated — every response to a
-/// signed request must be signed (RFC 8945 §5.3).
+/// signed request must be signed (RFC 8945, Section 5.3).
 fn build_response(
     query_data: &[u8],
     rcode: Rcode,

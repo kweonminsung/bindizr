@@ -13,7 +13,7 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::CreateZoneRequest,
+    types::{CreateZoneRequest, UpdateZonePatch},
     zone::{
         snapshot::save_zone_snapshot_tx,
         validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
@@ -41,22 +41,61 @@ impl ZoneService {
         RepositoryService::create_zone_change_tx(tx, zone_change).await
     }
 
-    /// Update a zone, bumping its serial and recording SOA/NS changes for IXFR.
+    /// Full replacement (HTTP PUT): the request supplies every field.
     pub async fn update(
         zone_name: &str,
-        update_zone_request: &CreateZoneRequest,
+        request: &CreateZoneRequest,
+    ) -> Result<Zone, ServiceError> {
+        reject_serial(request.serial)?;
+        Self::update_locked(zone_name, |_existing| CreateZoneRequest {
+            name: request.name.clone(),
+            primary_ns: request.primary_ns.clone(),
+            admin_email: request.admin_email.clone(),
+            ttl: request.ttl,
+            serial: None,
+            refresh: request.refresh,
+            retry: request.retry,
+            expire: request.expire,
+            minimum_ttl: request.minimum_ttl,
+        })
+        .await
+    }
+
+    /// Partial update (CLI): omitted fields keep the stored zone's value. The
+    /// merge runs inside the transaction, against the locked row.
+    pub async fn patch(zone_name: &str, patch: &UpdateZonePatch) -> Result<Zone, ServiceError> {
+        reject_serial(patch.serial)?;
+        Self::update_locked(zone_name, |existing| CreateZoneRequest {
+            name: patch
+                .new_name
+                .clone()
+                .unwrap_or_else(|| existing.name.clone()),
+            primary_ns: patch
+                .primary_ns
+                .clone()
+                .unwrap_or_else(|| existing.primary_ns.clone()),
+            admin_email: patch
+                .admin_email
+                .clone()
+                .unwrap_or_else(|| existing.admin_email.clone()),
+            ttl: patch.ttl.unwrap_or(existing.ttl),
+            serial: None,
+            // Omitted timers fall back to the existing zone in resolve_soa_timers.
+            refresh: patch.refresh,
+            retry: patch.retry,
+            expire: patch.expire,
+            minimum_ttl: patch.minimum_ttl,
+        })
+        .await
+    }
+
+    /// Lock the zone, build the effective request against it, then apply:
+    /// bump the serial and record SOA/NS changes for IXFR.
+    async fn update_locked(
+        zone_name: &str,
+        build: impl FnOnce(&Zone) -> CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        let validated = validate_create_zone_request(update_zone_request)?;
-
-        // The serial is a system-managed version counter (snapshot/rollback key);
-        // after creation it can only advance through the generator.
-        if update_zone_request.serial.is_some() {
-            return Err(ServiceError::invalid_input(
-                "serial is managed automatically and cannot be set on update",
-            ));
-        }
-
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
 
         let apply_result: Result<AppliedZoneUpdate, ServiceError> = async {
@@ -74,9 +113,13 @@ impl ZoneService {
                 })?;
             let zone_id = existing_zone.id;
 
+            // Merge against the locked row, then validate.
+            let request = build(&existing_zone);
+            let validated = validate_create_zone_request(&request)?;
+
             // Preserve the zone's current SOA timers when the request omits them.
             let timers = resolve_soa_timers(
-                update_zone_request,
+                &request,
                 ResolvedSoaTimers {
                     refresh: existing_zone.refresh,
                     retry: existing_zone.retry,
@@ -159,12 +202,19 @@ impl ZoneService {
             let mut changes: Vec<ZoneChange> = Vec::new();
 
             if !has_primary_ns {
+                // Join the apex NS RRset's TTL (RFC 2181, Section 5.2), which this
+                // direct insert would otherwise split.
+                let ns_rrset_ttl = apex_records
+                    .iter()
+                    .find(|r| r.record_type == RecordType::NS)
+                    .map_or(Some(updated_zone.ttl), |r| r.ttl);
+
                 let primary_ns_record = Record {
                     id: 0,
                     name: "@".to_string(),
                     record_type: RecordType::NS,
                     value: updated_zone.primary_ns.clone(),
-                    ttl: Some(updated_zone.ttl),
+                    ttl: ns_rrset_ttl,
                     priority: None,
                     zone_id,
                     created_at: Utc::now(),
@@ -185,7 +235,7 @@ impl ZoneService {
                     record_name: "@".to_string(),
                     record_type: "NS".to_string(),
                     record_value: updated_zone.primary_ns.clone(),
-                    record_ttl: Some(updated_zone.ttl),
+                    record_ttl: ns_rrset_ttl,
                     record_priority: None,
                 });
             }
@@ -261,4 +311,14 @@ impl ZoneService {
 
         Ok(updated_zone)
     }
+}
+
+/// The serial is a system-managed version counter and cannot be set on update.
+fn reject_serial(serial: Option<i32>) -> Result<(), ServiceError> {
+    if serial.is_some() {
+        return Err(ServiceError::invalid_input(
+            "serial is managed automatically and cannot be set on update",
+        ));
+    }
+    Ok(())
 }

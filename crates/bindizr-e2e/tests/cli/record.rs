@@ -54,6 +54,198 @@ async fn record_create_read_delete() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_preview_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("bulk-preview.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    let records = r#"[
+        {"name": "www", "record_type": "A", "value": "192.0.2.1"},
+        {"name": "@", "record_type": "MX", "value": "mail.example.com", "priority": 10}
+    ]"#;
+    let preview = app
+        .run_cli_success_with_input(
+            &["record", "bulk", "-", "--zone", &zone_name, "--preview"],
+            records,
+        )
+        .await;
+    assert!(preview.contains("+ www."), "preview was: {preview}");
+    // The MX priority is re-inlined into the rdata for display.
+    assert!(
+        preview.contains("10 mail.example.com."),
+        "preview was: {preview}"
+    );
+    assert!(
+        preview.contains("Records: +2 -0 ~0"),
+        "preview was: {preview}"
+    );
+
+    // Preview applies nothing.
+    let listed = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let listed: Value = serde_json::from_str(&listed).expect("CLI did not return valid JSON");
+    assert!(
+        listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["record_type"] != "MX"),
+        "preview should not have inserted records"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_update_retype_clears_incompatible_priority_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("cli-retype.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    app.run_cli_success(&[
+        "record",
+        "create",
+        "--name",
+        "svc",
+        "--type",
+        "MX",
+        "--value",
+        "mail.example.com",
+        "--priority",
+        "10",
+        "--zone",
+        &zone_name,
+    ])
+    .await;
+    let records = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    let record_id = records["items"]
+        .as_array()
+        .and_then(|records| records.iter().find(|r| r["record_type"] == "MX"))
+        .and_then(|r| r["id"].as_i64())
+        .expect("created MX record did not contain an ID")
+        .to_string();
+
+    // Retyping to A must succeed even though --priority is not passed: the stale
+    // MX priority is cleared rather than rejected.
+    let updated = app
+        .run_cli_success(&[
+            "record",
+            "update",
+            &record_id,
+            "--type",
+            "A",
+            "--value",
+            "192.0.2.1",
+            "--output",
+            "json",
+        ])
+        .await;
+    let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    assert_eq!(updated["record_type"], "A");
+    assert_eq!(updated["value"], "192.0.2.1");
+    assert!(
+        updated["priority"].is_null(),
+        "priority was: {}",
+        updated["priority"]
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_update_retype_without_value_is_rejected_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("cli-retype-noval.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    app.run_cli_success(&[
+        "record",
+        "create",
+        "--name",
+        "www",
+        "--type",
+        "A",
+        "--value",
+        "192.0.2.1",
+        "--zone",
+        &zone_name,
+    ])
+    .await;
+    let records = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    let record_id = records["items"]
+        .as_array()
+        .and_then(|records| records.iter().find(|r| r["record_type"] == "A"))
+        .and_then(|r| r["id"].as_i64())
+        .expect("created A record did not contain an ID")
+        .to_string();
+
+    // A record's stored value is encoded for its type, so a value carried over from
+    // the old type is invalid for the new one — retyping must supply a fresh value.
+    let args = ["record", "update", &record_id, "--type", "TXT"];
+    let output = app.run_cli(&args).await;
+    assert_cli_failure_contains(&args, &output, "value is required when changing");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_update_changes_only_passed_fields_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("cli-record-update.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    app.run_cli_success(&[
+        "record",
+        "create",
+        "--name",
+        "www",
+        "--type",
+        "A",
+        "--value",
+        "192.0.2.10",
+        "--zone",
+        &zone_name,
+        "--ttl",
+        "300",
+    ])
+    .await;
+
+    let records = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    let record_id = records["items"]
+        .as_array()
+        .and_then(|records| records.iter().find(|record| record["record_type"] == "A"))
+        .and_then(|record| record["id"].as_i64())
+        .expect("created record did not contain an ID")
+        .to_string();
+
+    let updated = app
+        .run_cli_success(&[
+            "record",
+            "update",
+            &record_id,
+            "--value",
+            "127.0.0.1",
+            "--output",
+            "json",
+        ])
+        .await;
+    let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    assert_eq!(updated["value"], "127.0.0.1");
+    // Omitted fields keep their current values.
+    assert_eq!(updated["ttl"], 300);
+    assert_eq!(updated["record_type"], "A");
+    assert_eq!(updated["name"], format!("www.{zone_name}."));
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn record_filter_by_zone_and_type() {
     let app = TestApp::start().await;
     let one_zone = app.zone_name("one.example");

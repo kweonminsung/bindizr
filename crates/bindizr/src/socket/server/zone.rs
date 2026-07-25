@@ -4,7 +4,7 @@ use serde_json::json;
 use crate::{
     api::types::{
         CreateZoneRequest, GetZoneResponse, GetZonesFilter, ImportZoneFileRequest,
-        SnapshotDetailResponse, SnapshotRecordResponse, ZoneSnapshotResponse,
+        SnapshotDetailResponse, SnapshotRecordResponse, UpdateZonePatch, ZoneSnapshotResponse,
     },
     socket::{server::to_response_data, types::DaemonResponse},
 };
@@ -81,6 +81,18 @@ pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
     }
 }
 
+/// Handle the `UpdateZone` command by applying a partial-update patch.
+pub(super) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+    let patch: UpdateZonePatch = super::parse_params(data)?;
+
+    let zone = ZoneService::patch(name, &patch).await?;
+    Ok(DaemonResponse {
+        message: "Zone updated successfully".to_string(),
+        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+    })
+}
+
 /// Handle the `ImportZoneFile` command by reconciling BIND zone file text with
 /// a zone in a single transaction.
 pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
@@ -108,6 +120,16 @@ pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
         }
         Err(e) => Err(e),
     }
+}
+
+/// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
+pub(super) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+    let zone_file = ZoneService::export_zone_file(name).await?;
+    Ok(DaemonResponse {
+        message: "Zone exported successfully".to_string(),
+        data: json!({ "zone_file": zone_file }),
+    })
 }
 
 /// Handle the `ListZoneSnapshots` command by returning a zone's serial history.
@@ -156,6 +178,38 @@ pub(super) async fn get_zone_snapshot(
 
     Ok(DaemonResponse {
         message: format!("Snapshot '{}' retrieved successfully", serial),
+        data: to_response_data(response)?,
+    })
+}
+
+/// Handle the `DiffZoneSnapshots` command by diffing two of a zone's serials.
+/// A missing `to_serial` compares `from_serial` against the current serial.
+pub(super) async fn diff_zone_snapshots(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let name = required_name(data)?;
+    let serial_field = |field: &str| -> Result<Option<i32>, ServiceError> {
+        data.get(field)
+            .and_then(|v| v.as_i64())
+            .map(|v| {
+                i32::try_from(v).map_err(|_| ServiceError::invalid_input("Serial is out of range"))
+            })
+            .transpose()
+    };
+    let from_serial = serial_field("from_serial")?
+        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'from_serial' field"))?;
+    let to_serial = serial_field("to_serial")?;
+
+    let response = ZoneService::diff_snapshots(name, from_serial, to_serial).await?;
+    Ok(DaemonResponse {
+        message: format!(
+            "Serial {} -> {}: +{} -{} ~{}",
+            response.from_serial,
+            response.to_serial,
+            response.diff.summary.added,
+            response.diff.summary.removed,
+            response.diff.summary.changed
+        ),
         data: to_response_data(response)?,
     })
 }

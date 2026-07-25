@@ -1,7 +1,10 @@
 //! DNS record constraint validation: CNAME/NS/MX/SOA rules, duplicate
 //! detection, and owner-name normalization.
 
-use bindizr_core::dns::name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn};
+use bindizr_core::dns::{
+    DEFAULT_RECORD_TTL,
+    name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn},
+};
 
 use super::record_value::{is_null_mx_record_value, record_values_equal, validate_record_value};
 use crate::{
@@ -105,30 +108,29 @@ pub(super) fn validate_record_add_constraints(
     owner_name: &str,
     record_type: &RecordType,
     value: &str,
+    ttl: Option<i32>,
     priority: Option<i32>,
-    except_record_id: Option<i32>,
 ) -> Result<NormalizedOwnerName, ServiceError> {
     let normalized_owner = normalize_record_owner_name(owner_name, &zone.name)?;
     validate_record_add_constraints_normalized(
         zone_records,
-        owner_name,
         &normalized_owner.stored_name,
         record_type,
         value,
+        ttl,
         priority,
-        except_record_id,
+        None,
     )?;
     Ok(normalized_owner)
 }
 
 /// Validate an add whose owner name has already been normalized to `stored_name`.
-/// `owner_name` is the caller's original spelling, used only in error messages.
 pub(crate) fn validate_record_add_constraints_normalized(
     zone_records: &[Record],
-    owner_name: &str,
     stored_name: &str,
     record_type: &RecordType,
     value: &str,
+    ttl: Option<i32>,
     priority: Option<i32>,
     except_record_id: Option<i32>,
 ) -> Result<(), ServiceError> {
@@ -160,7 +162,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
     }) {
         return Err(ServiceError::record_conflict(format!(
             "Record '{}' {} '{}' already exists in this zone",
-            owner_name, record_type, value
+            stored_name, record_type, value
         )));
     }
 
@@ -176,7 +178,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         if (adding_null_mx && has_existing_mx) || (!adding_null_mx && has_existing_null_mx) {
             return Err(ServiceError::record_conflict(format!(
                 "Null MX record for '{}' cannot coexist with other MX records",
-                owner_name
+                stored_name
             )));
         }
     }
@@ -185,7 +187,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         if *record_type == RecordType::CNAME {
             return Err(ServiceError::record_conflict(format!(
                 "Another record with name '{}' already exists in this zone, so CNAME cannot be used",
-                owner_name
+                stored_name
             )));
         }
         if existing_records_with_name
@@ -194,7 +196,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         {
             return Err(ServiceError::record_conflict(format!(
                 "A CNAME record with name '{}' already exists in this zone",
-                owner_name
+                stored_name
             )));
         }
     }
@@ -205,7 +207,30 @@ pub(crate) fn validate_record_add_constraints_normalized(
         ));
     }
 
+    // RFC 2181, Section 5.2: one TTL per RRset. Compare the effective (as-served)
+    // TTL so an unset TTL matches an explicit one at the wire default.
+    let effective_ttl = ttl.unwrap_or(DEFAULT_RECORD_TTL);
+    if let Some(conflicting) = existing_records_with_name.iter().find(|r| {
+        r.record_type == *record_type && r.ttl.unwrap_or(DEFAULT_RECORD_TTL) != effective_ttl
+    }) {
+        return Err(ServiceError::record_conflict(format!(
+            "TTL {} does not match the existing {} RRset for '{}' (TTL {}); every record in an RRset must share one TTL",
+            ttl_label(ttl),
+            record_type,
+            stored_name,
+            ttl_label(conflicting.ttl)
+        )));
+    }
+
     Ok(())
+}
+
+/// Render a TTL for error messages; an unset TTL has no number to show.
+fn ttl_label(ttl: Option<i32>) -> String {
+    match ttl {
+        Some(ttl) => ttl.to_string(),
+        None => "unset".to_string(),
+    }
 }
 
 /// Reject deletions of the SOA record or the NS record referenced by `primary_ns`.
@@ -254,10 +279,10 @@ pub(super) fn validate_record_update_constraints_normalized(
 
     validate_record_add_constraints_normalized(
         zone_records,
-        &updated_record.name,
         stored_name,
         &updated_record.record_type,
         &updated_record.value,
+        updated_record.ttl,
         updated_record.priority,
         Some(existing_record.id),
     )?;
@@ -287,8 +312,8 @@ pub async fn validate_add_constraints_tx(
     owner_name: &str,
     record_type: &RecordType,
     value: &str,
+    ttl: Option<i32>,
     priority: Option<i32>,
-    except_record_id: Option<i32>,
 ) -> Result<(), ServiceError> {
     // Only records sharing the owner name can conflict, so load just those
     // instead of the whole zone.
@@ -310,8 +335,8 @@ pub async fn validate_add_constraints_tx(
         owner_name,
         record_type,
         value,
+        ttl,
         priority,
-        except_record_id,
     )
     .map(|_| ())
 }

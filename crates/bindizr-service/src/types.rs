@@ -226,17 +226,32 @@ impl GetRecordResponse {
 
 fn record_response_value(record: &Record, display_names: bool) -> RecordValueRequest {
     if record.record_type == RecordType::TXT {
-        match txt::decode_raw_txt_value(&record.value) {
-            Some(txt::DecodedTxtValue::String(value)) => RecordValueRequest::String(value),
-            Some(txt::DecodedTxtValue::Segments(segments)) => {
-                RecordValueRequest::Segments(segments)
-            }
-            None => RecordValueRequest::String(record.value.clone()),
-        }
+        decode_txt_value_request(&record.value)
     } else if display_names {
         RecordValueRequest::String(display_record_value(&record.value, &record.record_type))
     } else {
         RecordValueRequest::String(record.value.clone())
+    }
+}
+
+fn decode_txt_value_request(value: &str) -> RecordValueRequest {
+    match txt::decode_raw_txt_value(value) {
+        Some(txt::DecodedTxtValue::String(value)) => RecordValueRequest::String(value),
+        Some(txt::DecodedTxtValue::Segments(segments)) => RecordValueRequest::Segments(segments),
+        None => RecordValueRequest::String(value.to_string()),
+    }
+}
+
+/// A stored value as the record APIs display it: TXT decoded to string/segments,
+/// other types rendered with trailing-dot FQDNs. Priority stays a separate field.
+pub(crate) fn display_record_value_request(
+    value: &str,
+    record_type: &RecordType,
+) -> RecordValueRequest {
+    if *record_type == RecordType::TXT {
+        decode_txt_value_request(value)
+    } else {
+        RecordValueRequest::String(display_record_value(value, record_type))
     }
 }
 
@@ -279,7 +294,7 @@ pub struct CreateZoneRequest {
     pub admin_email: String,
     #[schema(example = 3600)]
     pub ttl: i32,
-    /// Auto-generated if not provided.
+    /// Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
     #[schema(example = 42)]
     pub serial: Option<i32>,
     #[schema(example = 7200)]
@@ -300,8 +315,10 @@ pub struct CreateRecordRequest {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
+    /// Optional; an omitted TTL is served at the default 3600s, not the zone TTL. Every record of an RRset (same name and type) must share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
     #[schema(example = 10)]
     pub priority: Option<i32>,
     #[schema(example = "example.com")]
@@ -317,8 +334,10 @@ pub struct BulkRecordItem {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
+    /// Optional; an omitted TTL is served at the default 3600s, not the zone TTL. Every record of an RRset (same name and type) must share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
     #[schema(example = 10)]
     pub priority: Option<i32>,
 }
@@ -344,6 +363,8 @@ pub struct BulkRecordsResponse {
     #[schema(example = 3)]
     pub inserted: usize,
     pub records: Vec<GetRecordResponse>,
+    /// The insert as a record diff (all additions), for previewing the change.
+    pub diff: RecordDiff,
 }
 
 /// How parsed records are reconciled with the records already in the zone.
@@ -381,6 +402,8 @@ pub struct ImportZoneFileResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     pub summary: ImportSummary,
+    /// The reconcile as a record diff, for previewing the change.
+    pub diff: RecordDiff,
     /// Per-record validation errors. When non-empty nothing is applied.
     pub errors: Vec<String>,
 }
@@ -437,9 +460,6 @@ pub struct GetZonesFilter {
 pub struct GetRecordsFilter {
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
-    #[serde(alias = "zone")]
-    #[schema(example = "example.com")]
-    pub zone: Option<String>,
     #[schema(example = "sub")]
     pub name: Option<String>,
     #[schema(example = "A")]
@@ -467,13 +487,6 @@ pub struct GetRecordsFilter {
     pub offset: Option<u64>,
 }
 
-impl GetRecordsFilter {
-    /// Return the effective zone name, preferring `zone_name` over the `zone` alias.
-    pub fn resolved_zone_name(&self) -> Option<String> {
-        self.zone_name.clone().or_else(|| self.zone.clone())
-    }
-}
-
 /// Request body for updating an existing record.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct UpdateRecordRequest {
@@ -482,10 +495,38 @@ pub struct UpdateRecordRequest {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
+    /// Optional; an omitted TTL is served at the default 3600s, not the zone TTL. Every record of an RRset (same name and type) must share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
     #[schema(example = 10)]
     pub priority: Option<i32>,
+}
+
+/// A partial record update; an omitted field keeps the current value. Merged
+/// inside the update transaction so a concurrent write is not lost.
+#[derive(Deserialize, Debug, Default)]
+pub struct UpdateRecordPatch {
+    pub name: Option<String>,
+    pub record_type: Option<String>,
+    pub value: Option<RecordValueRequest>,
+    pub ttl: Option<i32>,
+    pub priority: Option<i32>,
+}
+
+/// A partial zone update; an omitted field keeps the current value, merged
+/// inside the update transaction. `serial` is carried only to be rejected.
+#[derive(Deserialize, Debug, Default)]
+pub struct UpdateZonePatch {
+    pub new_name: Option<String>,
+    pub primary_ns: Option<String>,
+    pub admin_email: Option<String>,
+    pub ttl: Option<i32>,
+    pub refresh: Option<i32>,
+    pub retry: Option<i32>,
+    pub expire: Option<i32>,
+    pub minimum_ttl: Option<i32>,
+    pub serial: Option<i32>,
 }
 
 /// Request body for triggering a NOTIFY, optionally scoped to one zone.
@@ -632,6 +673,61 @@ pub struct SnapshotRecordResponse {
 pub struct SnapshotDetailResponse {
     pub snapshot: ZoneSnapshotResponse,
     pub records: Vec<SnapshotRecordResponse>,
+}
+
+/// One record on one side of a diff. Rendering (zone-file rdata, priority
+/// placement) is left to the client; the value is in display form.
+#[derive(Clone, Serialize, Debug, ToSchema)]
+pub struct RecordDiffValue {
+    pub value: RecordValueRequest,
+    #[schema(example = 300)]
+    pub ttl: Option<i32>,
+    #[schema(example = 10)]
+    pub priority: Option<i32>,
+}
+
+/// One RRset (owner name + type) whose records differ, with the records present
+/// on each side. `from` is empty for `added`, `to` for `removed`.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct RecordDiffEntry {
+    /// `added`, `removed`, or `changed`.
+    #[schema(example = "changed")]
+    pub change: String,
+    #[schema(example = "www.example.com.")]
+    pub name: String,
+    #[schema(example = "A")]
+    pub record_type: String,
+    pub from: Vec<RecordDiffValue>,
+    pub to: Vec<RecordDiffValue>,
+}
+
+/// How many RRsets were added, removed, and changed.
+#[derive(Default, Serialize, Debug, ToSchema)]
+pub struct RecordDiffSummary {
+    #[schema(example = 1)]
+    pub added: usize,
+    #[schema(example = 1)]
+    pub removed: usize,
+    #[schema(example = 1)]
+    pub changed: usize,
+}
+
+/// A record-level difference between two record sets, RRset by RRset. Empty on
+/// a real apply, which does not need it; populated only for a dry-run preview.
+#[derive(Default, Serialize, Debug, ToSchema)]
+pub struct RecordDiff {
+    pub entries: Vec<RecordDiffEntry>,
+    pub summary: RecordDiffSummary,
+}
+
+/// The difference between two of a zone's serials.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct SnapshotDiffResponse {
+    #[schema(example = 41)]
+    pub from_serial: i32,
+    #[schema(example = 42)]
+    pub to_serial: i32,
+    pub diff: RecordDiff,
 }
 
 /// Request body for rolling a zone back to a snapshot serial.

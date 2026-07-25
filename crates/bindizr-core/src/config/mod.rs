@@ -7,8 +7,6 @@ use config::{Config, File, FileFormat};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
-/// Default directory holding the bindizr configuration.
-pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";
 /// Default path to the bindizr configuration file.
 pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 

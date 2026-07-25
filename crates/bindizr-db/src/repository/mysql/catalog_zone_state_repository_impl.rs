@@ -4,7 +4,7 @@ use sqlx::{MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::catalog_zone_state::CatalogZoneState,
-    repository::{CatalogZoneStateRepository, RepositoryTx, RepositoryTxKind},
+    repository::{CatalogZoneStateRepository, RepositoryTx},
 };
 
 /// MySQL-backed implementation of `CatalogZoneStateRepository`.
@@ -63,14 +63,7 @@ impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query(
             r#"

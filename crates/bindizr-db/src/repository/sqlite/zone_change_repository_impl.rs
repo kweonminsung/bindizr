@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::zone_change::ZoneChange,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneChangeRepository},
+    repository::{RepositoryTx, ZoneChangeRepository},
 };
 
 /// SQLite-backed implementation of `ZoneChangeRepository`.
@@ -60,14 +60,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         tx: &mut RepositoryTx<'_>,
         zone_change: ZoneChange,
     ) -> Result<ZoneChange, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         let result = sqlx::query(
             r#"
@@ -107,14 +100,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         tx: &mut RepositoryTx<'_>,
         changes: &[ZoneChange],
     ) -> Result<(), DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         // 8 columns per row; keep bind count under SQLite's conservative limit.
         const CHUNK: usize = 100;
@@ -179,14 +165,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query_as::<_, ZoneChange>(
             r#"

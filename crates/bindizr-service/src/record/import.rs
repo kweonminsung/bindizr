@@ -3,6 +3,7 @@ use std::{
     time::Instant,
 };
 
+use bindizr_core::dns::DEFAULT_RECORD_TTL;
 use chrono::Utc;
 
 use super::{
@@ -13,7 +14,7 @@ use super::{
         normalize_record_owner_name, validate_delete_constraints,
         validate_record_add_constraints_normalized,
     },
-    zonefile::{ParsedValue, parse_zone_file},
+    zonefile::parse_zone_file,
 };
 use crate::{
     error::ServiceError,
@@ -24,8 +25,11 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse},
-    zone::snapshot::save_zone_snapshot_tx,
+    types::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff},
+    zone::{
+        history::{ReconstructedRecord, build_record_diff},
+        snapshot::save_zone_snapshot_tx,
+    },
 };
 
 /// A record the import wants present, with its owner name already normalized so
@@ -122,17 +126,12 @@ impl RecordService {
             let mut desired_by_name: HashMap<String, Vec<usize>> =
                 HashMap::with_capacity(parsed.records.len());
             for record in parsed.records {
-                // TXT is pre-encoded byte-exact by the parser; other types are
-                // encoded per record type here.
-                let value = match &record.value {
-                    ParsedValue::Encoded(value) => value.clone(),
-                    ParsedValue::Request(req) => match req.to_storage_value(&record.record_type) {
-                        Ok(value) => value,
-                        Err(e) => {
-                            errors.push(format!("{}: {}", record.owner_fqdn, e));
-                            continue;
-                        }
-                    },
+                let value = match record.value.to_storage_value(&record.record_type) {
+                    Ok(value) => value,
+                    Err(e) => {
+                        errors.push(format!("{}: {}", record.owner_fqdn, e));
+                        continue;
+                    }
                 };
                 let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name)
                 {
@@ -266,11 +265,10 @@ impl RecordService {
 
             // A present record is left in place unless upsert/replace reconciles
             // its TTL: a change becomes DEL + re-ADD via the batched paths below.
-            // TTLs compare by effective value so a stored `None` isn't a change
-            // against a file TTL equal to the zone default.
+            // An unset TTL compares at DEFAULT_RECORD_TTL (the wire/export default),
+            // so round-tripping an export doesn't spuriously rewrite unset-TTL rows.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
-            let default_ttl = zone.ttl;
-            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(default_ttl);
+            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(DEFAULT_RECORD_TTL);
 
             let mut unchanged = 0usize;
             let mut updated = 0usize;
@@ -324,10 +322,10 @@ impl RecordService {
                     .or_default();
                 match validate_record_add_constraints_normalized(
                     same_name,
-                    &add.prepared.owner_name,
                     &add.stored_name,
                     &add.prepared.record_type,
                     &add.prepared.value,
+                    add.prepared.ttl,
                     add.prepared.priority,
                     None,
                 ) {
@@ -335,6 +333,7 @@ impl RecordService {
                         &add.stored_name,
                         &add.prepared.record_type,
                         &add.prepared.value,
+                        add.prepared.ttl,
                         add.prepared.priority,
                     )),
                     Err(e) if e.code.http_status() < 500 => {
@@ -354,6 +353,15 @@ impl RecordService {
                 updated,
                 unchanged,
                 skipped,
+            };
+
+            // The diff is only shown on a dry-run preview, so keep it off the apply
+            // hot path (import benchmarks measure records/sec here). Skip it too when
+            // errors block the import, so the preview shows no un-appliable changes.
+            let diff = if dry_run && errors.is_empty() {
+                import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels)
+            } else {
+                RecordDiff::default()
             };
 
             let will_apply = errors.is_empty() && !dry_run;
@@ -399,6 +407,7 @@ impl RecordService {
                 applied: will_apply,
                 dry_run,
                 summary,
+                diff,
                 errors,
             };
 
@@ -463,12 +472,46 @@ impl RecordService {
     }
 }
 
+/// The reconcile as a record diff: `after` is the existing set minus the
+/// deletes plus the adds, so `build_record_diff` classifies each RRset.
+fn import_diff(
+    zone: &Zone,
+    existing: &[Record],
+    adds: &[&DesiredRecord],
+    dels: &[Record],
+    ttl_dels: &[Record],
+) -> RecordDiff {
+    let deleted_ids: HashSet<i32> = dels.iter().chain(ttl_dels).map(|r| r.id).collect();
+
+    let before: Vec<ReconstructedRecord> = existing
+        .iter()
+        .cloned()
+        .map(ReconstructedRecord::from)
+        .collect();
+    let mut after: Vec<ReconstructedRecord> = existing
+        .iter()
+        .filter(|record| !deleted_ids.contains(&record.id))
+        .cloned()
+        .map(ReconstructedRecord::from)
+        .collect();
+    after.extend(adds.iter().map(|add| ReconstructedRecord {
+        name: add.stored_name.clone(),
+        record_type: add.prepared.record_type.clone(),
+        value: add.prepared.value.clone(),
+        ttl: add.prepared.ttl,
+        priority: add.prepared.priority,
+    }));
+
+    build_record_diff(zone, &before, &after)
+}
+
 /// A placeholder record for in-memory comparison only; the negative id keeps it
 /// distinct from persisted rows.
 fn synthetic_record(
     stored_name: &str,
     record_type: &RecordType,
     value: &str,
+    ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Record {
     Record {
@@ -476,7 +519,7 @@ fn synthetic_record(
         name: stored_name.to_string(),
         record_type: record_type.clone(),
         value: value.to_string(),
-        ttl: None,
+        ttl,
         priority,
         zone_id: 0,
         created_at: Utc::now(),

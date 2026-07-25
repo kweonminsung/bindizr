@@ -48,13 +48,25 @@ protocol/wire-format details, or public-API contracts (`///`) — but keep them
 **terse**: state the reason in one or two lines, without spelling out
 consequences the reader can derive, restating an already-made point, or
 enumerating what the code shows. Remove comments that merely restate the
-adjacent code. Specifically avoid:
+adjacent code.
+
+This explicitly includes short **in-function** comments that give the business
+or protocol reason for a step — e.g. `// Increment zone serial so IXFR
+consumers can detect this change` above the serial bump. Keep these mid-body
+comments even when the statement itself is obvious: they carry the *why* (which
+downstream system or invariant depends on this step), not the *what*. When
+trimming verbose comments, do not strip them.
+
+Specifically avoid:
 
 - Trailing scaffolding notes like `id: 0, // Will be set by the database` — the
   placeholder pattern is used throughout and needs no annotation.
 - Section labels that echo the code they precede (e.g. `// Table creation
   queries vary by database backend` above the `match self { ... }` that plainly
   does exactly that).
+
+When citing an RFC section, write it out as `RFC 2181, Section 5.2` (and
+`Sections 5.2–5.3` for a range) — never the `§` glyph.
 
 `#[allow(dead_code)]` on repository traits and a few facade methods is
 deliberate (trait surface consumed across crates / kept to satisfy lints) —

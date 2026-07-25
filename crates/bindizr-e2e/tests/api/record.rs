@@ -174,6 +174,111 @@ async fn record_reject_invalid_values() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn record_reject_mixed_rrset_ttl() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+
+    let first = json!({
+        "name": "www",
+        "record_type": "A",
+        "value": "192.0.2.1",
+        "ttl": 300,
+        "zone_name": zone["name"]
+    });
+    let (status, _) = app.request(Method::POST, "/records", Some(first)).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // RFC 2181, Section 5.2: one TTL per RRset.
+    let differing_ttl = json!({
+        "name": "www",
+        "record_type": "A",
+        "value": "192.0.2.2",
+        "ttl": 600,
+        "zone_name": zone["name"]
+    });
+    let (status, body) = app
+        .request(Method::POST, "/records", Some(differing_ttl))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("must share one TTL"),
+        "unexpected error: {}",
+        body["error"]
+    );
+
+    let matching_ttl = json!({
+        "name": "www",
+        "record_type": "A",
+        "value": "192.0.2.2",
+        "ttl": 300,
+        "zone_name": zone["name"]
+    });
+    let (status, _) = app
+        .request(Method::POST, "/records", Some(matching_ttl))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // A different type at the same owner name is a separate RRset.
+    let other_rrset = json!({
+        "name": "www",
+        "record_type": "TXT",
+        "value": "hello",
+        "ttl": 600,
+        "zone_name": zone["name"]
+    });
+    let (status, _) = app
+        .request(Method::POST, "/records", Some(other_rrset))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_reject_priority_on_types_without_one() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+
+    for (record_type, value) in [
+        ("A", "192.0.2.1"),
+        ("AAAA", "2001:db8::1"),
+        ("CNAME", "target.example.com"),
+        ("TXT", "hello"),
+        ("NS", "ns2.example.com"),
+    ] {
+        let request = json!({
+            "name": if record_type == "NS" { "@" } else { "prio" },
+            "record_type": record_type,
+            "value": value,
+            "ttl": 3600,
+            "priority": 10,
+            "zone_name": zone["name"]
+        });
+        let (status, body) = app.request(Method::POST, "/records", Some(request)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{record_type}");
+        assert!(
+            body["error"].as_str().unwrap().contains("priority"),
+            "unexpected error for {record_type}: {}",
+            body["error"]
+        );
+    }
+
+    let mx = json!({
+        "name": "@",
+        "record_type": "MX",
+        "value": "mail.example.com",
+        "ttl": 3600,
+        "priority": 10,
+        "zone_name": zone["name"]
+    });
+    let (status, _) = app.request(Method::POST, "/records", Some(mx)).await;
+    assert_eq!(status, StatusCode::CREATED);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn record_scope_by_zone() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
@@ -424,7 +529,7 @@ async fn record_preserve_txt_segments_and_case() {
             .contains("TXT record must contain at least one character-string")
     );
 
-    // A DNS character-string holds at most 255 octets (RFC 1035 §3.3), so a
+    // A DNS character-string holds at most 255 octets (RFC 1035, Section 3.3), so a
     // 300-char value must be stored split into 255 + 45.
     let long_txt = json!({
         "name": "long-txt",

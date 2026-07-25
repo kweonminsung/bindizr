@@ -4,7 +4,7 @@ use serde_json::json;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, RecordRow, print_output_with_table},
+        output::{OutputFormat, RecordRow, print_output_with_table, render_change_preview},
     },
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
@@ -26,10 +26,10 @@ pub(crate) enum RecordCommand {
         /// Zone name
         #[arg(short, long)]
         zone: String,
-        /// TTL (optional)
+        /// TTL, defaulting to the zone TTL (records of one RRset share a TTL)
         #[arg(long)]
         ttl: Option<i32>,
-        /// Priority (for MX records)
+        /// Priority (MX and SRV only)
         #[arg(long)]
         priority: Option<i32>,
     },
@@ -110,6 +110,9 @@ YAML example:
         /// Parse and validate without applying any change
         #[arg(long)]
         dry_run: bool,
+        /// Preview the inserts as a +/-/~ diff without applying them (implies --dry-run)
+        #[arg(long)]
+        preview: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -119,6 +122,30 @@ YAML example:
     Get {
         /// The record ID
         id: i32,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
+    /// Update a record, changing only the fields you pass
+    Update {
+        /// The record ID
+        id: i32,
+        /// Record name
+        #[arg(long)]
+        name: Option<String>,
+        /// Record type (A, AAAA, CNAME, MX, etc.)
+        #[arg(long = "type", alias = "record-type")]
+        record_type: Option<String>,
+        /// Record value
+        #[arg(long)]
+        value: Option<String>,
+        /// TTL (records of one RRset share a TTL)
+        #[arg(long)]
+        ttl: Option<i32>,
+        /// Priority (MX and SRV only)
+        #[arg(long)]
+        priority: Option<i32>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -217,6 +244,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             file,
             zone,
             dry_run,
+            preview,
             output,
         } => {
             let content = super::read_input(&file)?;
@@ -238,9 +266,26 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let response = client
                 .send_command(
                     DaemonCommandKind::BulkCreateRecords,
-                    Some(json!({ "zone_name": zone, "records": records, "dry_run": dry_run })),
+                    // Preview never applies; it is a dry run rendered as a diff.
+                    Some(json!({
+                        "zone_name": zone,
+                        "records": records,
+                        "dry_run": dry_run || preview,
+                    })),
                 )
                 .await?;
+
+            if preview && output == OutputFormat::Table {
+                let entries = response
+                    .data
+                    .get("diff")
+                    .and_then(|d| d.get("entries"))
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                print!("{}", render_change_preview(&entries));
+                return Ok(());
+            }
 
             if output == OutputFormat::Table {
                 println!("{}", response.message);
@@ -259,6 +304,32 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         RecordCommand::Get { id, output } => {
             let data = client
                 .send_command(DaemonCommandKind::GetRecord, Some(json!({ "id": id })))
+                .await?
+                .data;
+
+            print_records(&data, output)?;
+        }
+        RecordCommand::Update {
+            id,
+            name,
+            record_type,
+            value,
+            ttl,
+            priority,
+            output,
+        } => {
+            let data = client
+                .send_command(
+                    DaemonCommandKind::UpdateRecord,
+                    Some(json!({
+                        "id": id,
+                        "name": name,
+                        "record_type": record_type,
+                        "value": value,
+                        "ttl": ttl,
+                        "priority": priority,
+                    })),
+                )
                 .await?
                 .data;
 

@@ -1,6 +1,5 @@
 use super::common::{
-    canonical_domain_value, parse_optional_u16_record_field, parse_u16_record_field,
-    reject_duplicate_priority_field, validate_domain_record_value,
+    canonical_domain_value, parse_optional_u16_record_field, validate_domain_record_value,
 };
 use crate::error::ServiceError;
 
@@ -10,25 +9,19 @@ pub(super) struct MxRecordValue<'a> {
 }
 
 impl<'a> MxRecordValue<'a> {
+    /// The value is the target host only; the priority comes from the priority
+    /// field (default 10), never inline.
     pub(super) fn parse(
         value: &'a str,
         fallback_priority: Option<i32>,
     ) -> Result<Self, ServiceError> {
-        let fields = value.split_whitespace().collect::<Vec<_>>();
-        match fields.as_slice() {
-            [priority, target] => {
-                reject_duplicate_priority_field("MX", fallback_priority)?;
-                Ok(Self {
-                    priority: parse_u16_record_field("MX priority", priority)?,
-                    target,
-                })
-            }
+        match value.split_whitespace().collect::<Vec<_>>().as_slice() {
             [target] => Ok(Self {
                 priority: parse_optional_u16_record_field("MX priority", fallback_priority)?,
                 target,
             }),
             _ => Err(ServiceError::invalid_record_value(format!(
-                "MX record value must be '<priority> <target>' or '<target>': {value}"
+                "MX record value must be the target host '<target>', with the priority in the priority field: {value}"
             ))),
         }
     }

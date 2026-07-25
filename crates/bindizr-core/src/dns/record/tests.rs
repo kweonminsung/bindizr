@@ -1,5 +1,21 @@
-use super::{display_record_owner_name, display_record_value};
-use crate::model::record::RecordType;
+use super::{display_record_owner_name, display_record_value, presentation_rdata};
+use crate::{dns::txt, model::record::RecordType};
+
+#[test]
+fn presentation_rdata_txt_escapes_special_characters() {
+    let ascii = txt::encode_txt_string("v=spf1 \"x\\y\"");
+    assert_eq!(
+        presentation_rdata(&ascii, None, &RecordType::TXT),
+        "\"v=spf1 \\\"x\\\\y\\\"\""
+    );
+
+    // Control bytes are escaped as \DDD per RFC 1035, Section 5.1.
+    let control = txt::encode_txt_string("a\u{1}b");
+    assert_eq!(
+        presentation_rdata(&control, None, &RecordType::TXT),
+        "\"a\\001b\""
+    );
+}
 
 #[test]
 fn display_record_owner_name_returns_absolute_fqdn() {

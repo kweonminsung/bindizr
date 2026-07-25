@@ -90,7 +90,7 @@ fn tsig_failure(query_data: &[u8], err: ServerError<Arc<Key>>) -> UpdateError {
     // `domain` folds a MAC mismatch into FORMERR (`ValidationError::BadSig`
     // has no arm in `server_request`, through at least 0.12.2), but the parser
     // already validated the TSIG structure, so FORMERR here can only mean a
-    // bad signature — which RFC 8945 §5.3.2 requires reporting as BADSIG.
+    // bad signature — which RFC 8945, Section 5.3.2 requires reporting as BADSIG.
     let response = if error == TsigRcode::FORMERR {
         build_unsigned_error(&msg, TsigRcode::BADSIG)
     } else {
@@ -109,7 +109,7 @@ fn tsig_failure(query_data: &[u8], err: ServerError<Arc<Key>>) -> UpdateError {
 }
 
 /// Build a NOTAUTH response carrying an unsigned TSIG error record that
-/// echoes the request TSIG with an empty MAC (RFC 8945 §5.3.2).
+/// echoes the request TSIG with an empty MAC (RFC 8945, Section 5.3.2).
 fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8>> {
     let record = msg
         .additional()

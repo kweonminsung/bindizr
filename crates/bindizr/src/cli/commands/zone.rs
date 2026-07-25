@@ -7,6 +7,7 @@ use crate::{
         output::{
             ImportSummaryRow, OutputFormat, RollbackSummaryRow, SecondaryStatusRow,
             SnapshotRecordRow, SnapshotRow, ZoneRow, print_output_with_table,
+            render_change_preview, render_diff_lines,
         },
     },
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
@@ -29,14 +30,50 @@ pub(crate) enum ZoneCommand {
         /// TTL
         #[arg(long)]
         ttl: i32,
-        /// Serial number (optional, auto-generated if not provided)
+        /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<i32>,
+    },
+
+    /// Update a zone, changing only the fields you pass
+    Update {
+        /// The name of the zone to update
+        name: String,
+        /// Rename the zone to this name
+        #[arg(long)]
+        new_name: Option<String>,
+        /// Primary nameserver
+        #[arg(long)]
+        primary_ns: Option<String>,
+        /// Admin email
+        #[arg(long)]
+        admin_email: Option<String>,
+        /// TTL
+        #[arg(long)]
+        ttl: Option<i32>,
+        /// SOA refresh interval (seconds)
+        #[arg(long)]
+        refresh: Option<i32>,
+        /// SOA retry interval (seconds)
+        #[arg(long)]
+        retry: Option<i32>,
+        /// SOA expire interval (seconds)
+        #[arg(long)]
+        expire: Option<i32>,
+        /// SOA minimum TTL (seconds)
+        #[arg(long)]
+        minimum_ttl: Option<i32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 
     /// List zones
     #[command(alias = "ls")]
     List {
+        /// Filter by zone name
+        #[arg(long)]
+        name: Option<String>,
         /// Filter by zone ID
         #[arg(long)]
         id: Option<i64>,
@@ -108,40 +145,24 @@ $INCLUDE is not supported.")]
         /// Parse and validate without applying any change
         #[arg(long)]
         dry_run: bool,
+        /// Preview the change as a +/-/~ diff without applying it (implies --dry-run)
+        #[arg(long)]
+        preview: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
 
-    /// List a zone's snapshots (serial history), or inspect one serial's state
-    Snapshots {
+    /// Export a zone as BIND master-file text
+    Export {
         /// The name of the zone
         name: String,
-        /// Snapshot serial to inspect (omit to list all snapshots)
-        serial: Option<i32>,
-        /// Maximum number of snapshots to return
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Number of snapshots to skip
-        #[arg(long)]
-        offset: Option<u64>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
 
-    /// Roll a zone back to the state captured at a snapshot serial
-    Rollback {
-        /// The name of the zone
-        name: String,
-        /// Target snapshot serial (the zone serial still advances)
-        serial: i32,
-        /// Compute and report the rollback without applying any change
-        #[arg(long)]
-        dry_run: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
+    /// Inspect or roll back a zone's snapshots (serial history)
+    Snapshot {
+        #[command(subcommand)]
+        subcommand: ZoneSnapshotCommand,
     },
 
     /// Show how far each secondary has caught up with a zone
@@ -160,6 +181,61 @@ $INCLUDE is not supported.")]
     TsigPolicy {
         #[command(subcommand)]
         subcommand: ZoneTsigPolicyCommand,
+    },
+}
+
+/// Subcommands for inspecting a zone's snapshots.
+#[derive(Subcommand, Debug)]
+pub(crate) enum ZoneSnapshotCommand {
+    /// List a zone's snapshots (serial history)
+    #[command(alias = "ls")]
+    List {
+        /// The name of the zone
+        name: String,
+        /// Maximum number of snapshots to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of snapshots to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+    /// Show the zone state captured at one snapshot serial
+    Get {
+        /// The name of the zone
+        name: String,
+        /// Snapshot serial to inspect
+        serial: i32,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+    /// Show the record differences between two serials
+    Diff {
+        /// The name of the zone
+        name: String,
+        /// The serial to diff from
+        from_serial: i32,
+        /// The serial to diff to (omit to compare against the current serial)
+        to_serial: Option<i32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+    /// Roll a zone back to the state captured at a snapshot serial
+    Rollback {
+        /// The name of the zone
+        name: String,
+        /// Target snapshot serial (the zone serial still advances)
+        serial: i32,
+        /// Compute and report the rollback without applying any change
+        #[arg(long)]
+        dry_run: bool,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 }
 
@@ -257,6 +333,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             println!("{}", response.message);
         }
         ZoneCommand::List {
+            name,
             id,
             primary_ns,
             admin_email,
@@ -269,7 +346,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             offset,
             output,
         } => {
-            let has_filters = id.is_some()
+            let has_filters = name.is_some()
+                || id.is_some()
                 || primary_ns.is_some()
                 || admin_email.is_some()
                 || ttl.is_some()
@@ -281,6 +359,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 || offset.is_some();
             let filter_payload = || {
                 json!({
+                    "name": name,
                     "id": id,
                     "primary_ns": primary_ns,
                     "admin_email": admin_email,
@@ -311,17 +390,65 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
 
             print_zones(&data, output)?;
         }
+        ZoneCommand::Update {
+            name,
+            new_name,
+            primary_ns,
+            admin_email,
+            ttl,
+            refresh,
+            retry,
+            expire,
+            minimum_ttl,
+            output,
+        } => {
+            let data = client
+                .send_command(
+                    DaemonCommandKind::UpdateZone,
+                    Some(json!({
+                        // `name` looks up the zone; `new_name` renames it.
+                        "name": name,
+                        "new_name": new_name,
+                        "primary_ns": primary_ns,
+                        "admin_email": admin_email,
+                        "ttl": ttl,
+                        "refresh": refresh,
+                        "retry": retry,
+                        "expire": expire,
+                        "minimum_ttl": minimum_ttl,
+                    })),
+                )
+                .await?
+                .data;
+
+            print_zones(&data, output)?;
+        }
         ZoneCommand::Delete { name } => {
             let response = client
                 .send_command(DaemonCommandKind::DeleteZone, Some(json!({ "name": name })))
                 .await?;
             println!("{}", response.message);
         }
+        ZoneCommand::Export { name } => {
+            let data = client
+                .send_command(
+                    DaemonCommandKind::ExportZoneFile,
+                    Some(json!({ "name": name })),
+                )
+                .await?
+                .data;
+            let zone_file = data
+                .get("zone_file")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing zone_file in response")?;
+            print!("{}", zone_file);
+        }
         ZoneCommand::Import {
             name,
             file,
             mode,
             dry_run,
+            preview,
             output,
         } => {
             let content = super::read_input(&file)?;
@@ -332,7 +459,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         "zone_name": name,
                         "content": content,
                         "mode": mode.as_str(),
-                        "dry_run": dry_run,
+                        // Preview never applies; it is a dry run rendered as a diff.
+                        "dry_run": dry_run || preview,
                     })),
                 )
                 .await?;
@@ -353,21 +481,32 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     }
                 }
             }
-            print_output_with_table(&response.data, output, |data| {
-                data.get("summary")
-                    .ok_or("Missing import summary in response".to_string())
-                    .and_then(ImportSummaryRow::from_json)
-                    .map(|row| vec![row])
-            })?;
+
+            if preview && output == OutputFormat::Table {
+                let entries = response
+                    .data
+                    .get("diff")
+                    .and_then(|d| d.get("entries"))
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                print!("{}", render_change_preview(&entries));
+            } else {
+                print_output_with_table(&response.data, output, |data| {
+                    data.get("summary")
+                        .ok_or("Missing import summary in response".to_string())
+                        .and_then(ImportSummaryRow::from_json)
+                        .map(|row| vec![row])
+                })?;
+            }
         }
-        ZoneCommand::Snapshots {
-            name,
-            serial,
-            limit,
-            offset,
-            output,
-        } => match serial {
-            None => {
+        ZoneCommand::Snapshot { subcommand } => match subcommand {
+            ZoneSnapshotCommand::List {
+                name,
+                limit,
+                offset,
+                output,
+            } => {
                 let data = client
                     .send_command(
                         DaemonCommandKind::ListZoneSnapshots,
@@ -387,7 +526,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         .ok_or_else(|| "Missing snapshot items in response".to_string())
                 })?;
             }
-            Some(serial) => {
+            ZoneSnapshotCommand::Get {
+                name,
+                serial,
+                output,
+            } => {
                 let data = client
                     .send_command(
                         DaemonCommandKind::GetZoneSnapshot,
@@ -417,27 +560,52 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     })?;
                 }
             }
-        },
-        ZoneCommand::Rollback {
-            name,
-            serial,
-            dry_run,
-            output,
-        } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::RollbackZone,
-                    Some(json!({ "name": name, "serial": serial, "dry_run": dry_run })),
-                )
-                .await?;
+            ZoneSnapshotCommand::Diff {
+                name,
+                from_serial,
+                to_serial,
+                output,
+            } => {
+                let data = client
+                    .send_command(
+                        DaemonCommandKind::DiffZoneSnapshots,
+                        Some(json!({
+                            "name": name,
+                            "from_serial": from_serial,
+                            "to_serial": to_serial,
+                        })),
+                    )
+                    .await?
+                    .data;
 
-            if output == OutputFormat::Table {
-                println!("{}", response.message);
+                match output {
+                    OutputFormat::Table => print!("{}", render_snapshot_diff(&data)),
+                    _ => print_output_with_table(&data, output, |_| {
+                        Ok::<Vec<SnapshotRow>, String>(Vec::new())
+                    })?,
+                }
             }
-            print_output_with_table(&response.data, output, |data| {
-                RollbackSummaryRow::from_json(data).map(|row| vec![row])
-            })?;
-        }
+            ZoneSnapshotCommand::Rollback {
+                name,
+                serial,
+                dry_run,
+                output,
+            } => {
+                let response = client
+                    .send_command(
+                        DaemonCommandKind::RollbackZone,
+                        Some(json!({ "name": name, "serial": serial, "dry_run": dry_run })),
+                    )
+                    .await?;
+
+                if output == OutputFormat::Table {
+                    println!("{}", response.message);
+                }
+                print_output_with_table(&response.data, output, |data| {
+                    RollbackSummaryRow::from_json(data).map(|row| vec![row])
+                })?;
+            }
+        },
         ZoneCommand::Status { name, output } => {
             let response = client
                 .send_command(DaemonCommandKind::ZoneStatus, Some(json!({ "name": name })))
@@ -544,6 +712,39 @@ fn print_tsig_policies(data: &serde_json::Value) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Render a snapshot diff: the `+`/`-`/`~` lines plus SOA-serial and count footers.
+fn render_snapshot_diff(data: &serde_json::Value) -> String {
+    let empty = vec![];
+    let entries = data
+        .get("diff")
+        .and_then(|d| d.get("entries"))
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
+    let mut out = render_diff_lines(entries);
+
+    let serial = |field: &str| data.get(field).and_then(|v| v.as_i64()).unwrap_or(0);
+    let count = |field: &str| {
+        data.get("diff")
+            .and_then(|d| d.get("summary"))
+            .and_then(|s| s.get(field))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+    };
+    out.push('\n');
+    out.push_str(&format!(
+        "SOA serial: {} -> {}\n",
+        serial("from_serial"),
+        serial("to_serial")
+    ));
+    out.push_str(&format!(
+        "Records: +{} -{} ~{}\n",
+        count("added"),
+        count("removed"),
+        count("changed")
+    ));
+    out
 }
 
 fn print_zones(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {

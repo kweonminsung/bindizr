@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::record::{Record, RecordType, RecordWithZone},
-    repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
+    repository::{RecordFilter, RecordRepository, RepositoryTx},
 };
 
 /// MySQL-backed implementation of `RecordRepository`.
@@ -49,14 +49,7 @@ impl RecordRepository for MySqlRecordRepository {
         tx: &mut RepositoryTx<'_>,
         mut record: Record,
     ) -> Result<Record, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let result = sqlx::query(
             r#"
@@ -82,14 +75,7 @@ impl RecordRepository for MySqlRecordRepository {
         tx: &mut RepositoryTx<'_>,
         records: &[Record],
     ) -> Result<Vec<Record>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         // Ids in a multi-row insert step by @@auto_increment_increment,
         // which is >1 on multi-primary replication setups.
@@ -178,14 +164,7 @@ impl RecordRepository for MySqlRecordRepository {
         tx: &mut RepositoryTx<'_>,
         id: i32,
     ) -> Result<Option<Record>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ? FOR UPDATE")
             .bind(id)
@@ -236,14 +215,7 @@ impl RecordRepository for MySqlRecordRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let records = sqlx::query_as::<_, Record>(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name FOR UPDATE",
@@ -261,14 +233,7 @@ impl RecordRepository for MySqlRecordRepository {
         zone_id: i32,
         name: &str,
     ) -> Result<Vec<Record>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         // Owner names are stored lowercase, so match against a lowercased bind
         // and keep the column function-free so idx_records_zone_name is used.
@@ -293,14 +258,7 @@ impl RecordRepository for MySqlRecordRepository {
             return Ok(Vec::new());
         }
 
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         // Only same-name rows can conflict, so match names lowercased (keeping the
         // column function-free so idx_records_zone_name is used) and lock just those.
@@ -381,14 +339,7 @@ impl RecordRepository for MySqlRecordRepository {
         priority: Option<i32>,
         match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
         let value_filter = if record_type.is_name_like_value() {
             "AND (? IS NULL OR BINARY LOWER(value) = BINARY LOWER(?))"
         } else {
@@ -630,14 +581,7 @@ impl RecordRepository for MySqlRecordRepository {
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query(
             r#"
@@ -669,14 +613,7 @@ impl RecordRepository for MySqlRecordRepository {
     }
 
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query("DELETE FROM records WHERE id = ?")
             .bind(id)
@@ -694,14 +631,7 @@ impl RecordRepository for MySqlRecordRepository {
             return Ok(());
         }
 
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         const CHUNK: usize = 2000;
         for chunk in ids.chunks(CHUNK) {

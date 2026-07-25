@@ -4,7 +4,7 @@ use sqlx::{MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::zone_tsig_policy::ZoneTsigPolicy,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneTsigPolicyRepository},
+    repository::{RepositoryTx, ZoneTsigPolicyRepository},
 };
 
 /// MySQL-backed implementation of `ZoneTsigPolicyRepository`.
@@ -74,14 +74,7 @@ impl ZoneTsigPolicyRepository for MySqlZoneTsigPolicyRepository {
         zone_id: i32,
         tsig_key_id: i32,
     ) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let policies = sqlx::query_as::<_, ZoneTsigPolicy>(
             "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM zone_tsig_policies WHERE zone_id = ? AND tsig_key_id = ? ORDER BY id",

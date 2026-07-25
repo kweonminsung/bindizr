@@ -4,7 +4,7 @@ use serde_json::json;
 use crate::{
     api::types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-        GetRecordsFilter,
+        GetRecordsFilter, UpdateRecordPatch,
     },
     socket::{server::to_response_data, types::DaemonResponse},
 };
@@ -89,6 +89,22 @@ pub(super) async fn create_record(
     }
 }
 
+/// Handle the `UpdateRecord` command by applying a partial-update patch.
+pub(super) async fn update_record(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let record_id = parse_record_id(data)?;
+    let patch: UpdateRecordPatch = super::parse_params(data)?;
+
+    match RecordService::patch_by_id(record_id, &patch).await {
+        Ok(record) => Ok(DaemonResponse {
+            message: "Record updated successfully".to_string(),
+            data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+        }),
+        Err(e) => Err(e),
+    }
+}
+
 /// Handle the `BulkCreateRecords` command by inserting records into a zone in
 /// a single transaction.
 pub(super) async fn bulk_create_records(
@@ -99,7 +115,7 @@ pub(super) async fn bulk_create_records(
         .map_err(|e| ServiceError::invalid_input(format!("Invalid request data: {}", e)))?;
 
     match RecordService::create_bulk(zone_name, &request.records, request.dry_run).await {
-        Ok(records) => {
+        Ok((records, diff)) => {
             let records = records
                 .iter()
                 .map(GetRecordResponse::from_record_with_zone)
@@ -118,6 +134,7 @@ pub(super) async fn bulk_create_records(
                 dry_run: request.dry_run,
                 inserted: if request.dry_run { 0 } else { records.len() },
                 records,
+                diff,
             };
 
             Ok(DaemonResponse {

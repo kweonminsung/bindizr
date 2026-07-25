@@ -33,6 +33,8 @@ DNS Synchronization Service for BIND9
 
 - **nsupdate (Dynamic Update)**: Supports RFC 2136-style DNS dynamic updates via nsupdate.
 
+- **TXT Records (UTF-8 only)**: TXT record values must be valid UTF-8. Non-UTF-8 octets — for example, BIND `\DDD` escapes in an imported zone file that decode to invalid UTF-8 — are rejected on zone import and via nsupdate rather than stored.
+
 <br>
 
 &nbsp;<img src="public/concepts.png" width="462px">
@@ -275,14 +277,30 @@ $ bindizr status
 # Send NOTIFY to secondary DNS servers for a zone
 $ bindizr zone notify <ZONE_NAME>
 
+# Update a zone, changing only the fields you pass
+$ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
+
+# Update a record, changing only the fields you pass
+$ bindizr record update <RECORD_ID> --value 127.0.0.1
+
+# Export a zone as BIND master-file text (the inverse of import)
+$ bindizr zone export <ZONE_NAME>
+
+# Preview a bulk insert or zone-file import as a +/-/~ diff (applies nothing)
+$ bindizr record bulk records.json --zone <ZONE_NAME> --preview
+$ bindizr zone import <ZONE_NAME> zone.txt --preview
+
 # List a zone's snapshots (SOA serials are a plain counter starting at 1)
-$ bindizr zone snapshots <ZONE_NAME>
+$ bindizr zone snapshot list <ZONE_NAME>
+
+# Diff the records between two serials (omit the second to compare to current)
+$ bindizr zone snapshot diff <ZONE_NAME> <FROM_SERIAL> [<TO_SERIAL>]
 
 # Inspect the zone state captured at a serial
-$ bindizr zone snapshots <ZONE_NAME> <SERIAL>
+$ bindizr zone snapshot get <ZONE_NAME> <SERIAL>
 
 # Roll a zone back to a previous serial (the serial still advances)
-$ bindizr zone rollback <ZONE_NAME> <SERIAL> [--dry-run]
+$ bindizr zone snapshot rollback <ZONE_NAME> <SERIAL> [--dry-run]
 
 # Check how far each secondary has caught up with a zone
 $ bindizr zone status <ZONE_NAME>

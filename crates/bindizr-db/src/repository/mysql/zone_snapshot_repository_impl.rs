@@ -4,7 +4,7 @@ use sqlx::{MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::zone_snapshot::ZoneSnapshot,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneSnapshotRepository},
+    repository::{RepositoryTx, ZoneSnapshotRepository},
 };
 
 /// MySQL-backed implementation of `ZoneSnapshotRepository`.
@@ -68,14 +68,7 @@ impl ZoneSnapshotRepository for MySqlZoneSnapshotRepository {
         tx: &mut RepositoryTx<'_>,
         snapshot: ZoneSnapshot,
     ) -> Result<ZoneSnapshot, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query(
             r#"
@@ -196,14 +189,7 @@ impl ZoneSnapshotRepository for MySqlZoneSnapshotRepository {
         zone_id: i32,
         serial: i32,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query_as::<_, ZoneSnapshot>(
             r#"
