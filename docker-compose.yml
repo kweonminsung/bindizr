@@ -67,7 +67,7 @@ services:
       POSTGRES_USER: bindizr
       POSTGRES_PASSWORD: bindizr
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     networks:
       - bindizr-net
     deploy:
