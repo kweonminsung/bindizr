@@ -78,9 +78,8 @@ def build_report(env: dict, cfg: dict) -> None:
 
 
 # Fields that identify a distinct measurement (not metrics to average over).
-# `status` is a dimension so a FAILED row is never merged into a successful row
-# sharing the other fields — e.g. a b07 bulk-import failure carries no size (like
-# the CRUD row) but must not be absorbed into it with its status silently dropped.
+# `status` is a dimension so a FAILED row is never merged into a successful one
+# sharing the other fields.
 DIMENSION_FIELDS = ("system", "backend", "size", "changes", "status")
 
 

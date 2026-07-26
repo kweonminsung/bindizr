@@ -84,10 +84,9 @@ class ResourceSampler:
             return {"peak_cpu_pct": 0, "avg_cpu_pct": 0, "peak_mem_mb": 0, "avg_mem_mb": 0}
         cpus = [s["cpu_pct"] for s in self.samples]
 
-        # Per-container average CPU. The pooled `avg_cpu_pct` above understates a
+        # Per-container CPU average: the pooled avg_cpu_pct understates a
         # multi-container stack (Bindizr's idle control plane averaged with the
-        # BIND9 that serves queries); the report rows still consume the pooled
-        # value, so keep both and expose the split alongside it.
+        # BIND9 serving queries), so expose the split alongside it.
         by_container: dict[str, list[float]] = {}
         for s in self.samples:
             by_container.setdefault(s["name"], []).append(s["cpu_pct"])
@@ -95,19 +94,17 @@ class ResourceSampler:
             name: round(sum(v) / len(v), 2) for name, v in by_container.items()
         }
 
-        # Memory peak/avg are the whole-stack total, not one container. Sum each
-        # tick across containers first, then peak = max tick total, avg = mean
-        # tick total — a flat max/mean would understate the stack (largest single
-        # container / stack total ÷ container count). Single-container systems have
-        # one sample per tick, so this collapses to the original values.
+        # Whole-stack memory: sum each tick across containers, then peak/avg over
+        # the tick totals — a flat max/mean would understate a multi-container
+        # stack. Single-container systems collapse to the original values.
         mem_by_tick: dict[int, float] = {}
         for s in self.samples:
             mem_by_tick[s["tick"]] = mem_by_tick.get(s["tick"], 0.0) + s["mem_bytes"]
         mem_totals = list(mem_by_tick.values())
 
-        # net_tx is Docker's cumulative TX counter, so bytes sent during the
-        # measured window are last - first per container (summed), not the absolute
-        # max — which would include setup/import/propagation traffic.
+        # net_tx is Docker's cumulative TX counter, so window bytes are
+        # last - first per container (summed), not the absolute max (which would
+        # include setup/import/propagation traffic).
         net_by_container: dict[str, list[float]] = {}
         for s in self.samples:
             net_by_container.setdefault(s["name"], []).append(s["net_tx"])

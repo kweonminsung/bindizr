@@ -27,10 +27,9 @@ async def run(adapter, cfg, ctx) -> dict:
     await adapter.create_zone(zone)
     loop = asyncio.get_event_loop()
 
-    # Warm up: the first record in a freshly created zone waits for the secondary
-    # to finish establishing it (for Bindizr: catalog discovery + initial AXFR) —
-    # a one-time ~2s bootstrap cost unrelated to steady-state propagation. Do one
-    # throwaway create so the measured samples below reflect steady state.
+    # Warm up: the first record in a fresh zone pays a one-time secondary
+    # bootstrap (for Bindizr: catalog discovery + initial AXFR), so do one
+    # throwaway create to keep it out of the measured samples.
     warm = {"name": "warmup", "type": "A", "value": "10.0.0.1", "ttl": 60}
     try:
         await adapter.create_record(zone, warm)

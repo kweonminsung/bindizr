@@ -46,10 +46,9 @@ async def run(adapter, cfg, ctx) -> list:
     await adapter.create_zone(zone)
     await adapter.bulk_import(zone, generate(baseline, cfg["seed"], zone))
 
-    # Wait for the baseline zone to reach the secondary before reading serials: a
-    # large baseline may not transfer within a fixed sleep, and reading a
-    # pre-baseline serial would request IXFR from a serial with no delta history —
-    # a spurious full-AXFR outlier. Poll the AXFR count until it covers the set.
+    # Wait for the baseline to reach the secondary before reading serials:
+    # reading a pre-baseline serial would request IXFR from a serial with no
+    # delta history, a spurious full-AXFR outlier.
     deadline = time.monotonic() + max(60, baseline / 500)
     prev = -1
     while time.monotonic() < deadline:
@@ -64,9 +63,9 @@ async def run(adapter, cfg, ctx) -> list:
     change_pool = generate(sum(change_sizes) + baseline, cfg["seed"] + 50, zone)
     ci = 0
     for n in change_sizes:
-        # Read the pre-change serial, retrying on a transient SOA-query miss.
-        # Falling back to `base_serial or 1` would request IXFR from serial 1 — no
-        # delta history — forcing a full AXFR and a spurious "huge IXFR" outlier.
+        # Read the pre-change serial, retrying a transient SOA miss. Falling back
+        # to serial 1 would request IXFR from a serial with no delta history,
+        # forcing a full AXFR.
         base_serial = None
         for _ in range(10):
             base_serial = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
@@ -85,10 +84,9 @@ async def run(adapter, cfg, ctx) -> list:
             ci += 1
         await adapter.bulk_import(zone, batch)
 
-        # Wait for the serial to advance. If it never does (batch failed to apply,
-        # or the secondary never transferred it), an IXFR from the unchanged
-        # base_serial returns a tiny "up-to-date" SOA that would masquerade as an
-        # efficient transfer — so record a failure instead of measuring.
+        # Wait for the serial to advance; if it never does (batch failed to apply
+        # or never transferred), an IXFR from the unchanged base_serial returns a
+        # tiny "up-to-date" SOA that would masquerade as an efficient transfer.
         deadline = time.monotonic() + 120
         propagated = False
         while time.monotonic() < deadline:

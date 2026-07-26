@@ -39,9 +39,8 @@ RUNNERS = {
 
 
 # Management-plane benchmarks isolate raw write throughput, so Bindizr runs them
-# with notify_after_update=false (per benchmarks/README.md); propagation itself is
-# measured separately in B3/B4/B5. b07_database is special-cased in run_one and
-# forces NOTIFY off in its own adapters, so it is not listed here.
+# with notify_after_update=false; propagation is measured separately in B3/B4/B5.
+# b07_database forces NOTIFY off in its own adapters, so it is not listed here.
 NOTIFY_OFF_BENCHMARKS = {"b01_crud_tps", "b02_bulk_import"}
 
 
