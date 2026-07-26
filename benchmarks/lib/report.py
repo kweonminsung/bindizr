@@ -147,6 +147,31 @@ def _bulk_linearity_note(rows: list[dict]) -> str:
             "linear at scale):\n" + "\n".join(lines) + "\n")
 
 
+# Gap below which a QPS difference is treated as run-to-run noise, not overhead.
+QUERY_NOISE_TOLERANCE_PCT = 5.0
+
+
+def _b08_conclusion(native: dict | None, base: Any, ok: list[dict]) -> str:
+    """The no-overhead claim is a measured outcome, not a premise: state it only
+    when both sides produced a QPS and the gap is inside the tolerance."""
+    bindizr = next((r for r in ok if "Bindizr" in r["system"]), None)
+    if not native or not base or not bindizr or not bindizr.get("qps"):
+        return ("\n> ⚠️ No-overhead conclusion unavailable: this run has no "
+                "successful Native BIND9 and Bindizr pair to compare.\n")
+
+    loss = (1 - bindizr["qps"] / base) * 100
+    if abs(loss) > QUERY_NOISE_TOLERANCE_PCT:
+        return (f"\n> ⚠️ `Bindizr + BIND9` differs from `Native BIND9` by {loss:+.1f}%, "
+                f"outside the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% noise tolerance — this "
+                "run does not support the no-overhead conclusion.\n")
+
+    return ("\n> **Bindizr introduces no measurable DNS query overhead because it "
+            "is outside the DNS data plane.** Queries are served by the BIND9 "
+            "secondaries, not by Bindizr — so `Bindizr + BIND9` tracks `Native "
+            f"BIND9` ({loss:+.1f}%, within the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% "
+            "run-to-run tolerance).\n")
+
+
 def _render_b07(rows: list[dict]) -> str:
     """Benchmark 7 emits two row shapes: CRUD-lite (create/read TPS) and bulk
     import (import_secs per size). Render them as two separate tables."""
@@ -305,11 +330,7 @@ def _render_markdown(env: dict, data: dict) -> str:
             out.append("\n> ⚠️ Failed runs: " +
                        ", ".join(f'{r.get("system", "?")} ({r.get("error", "?")})'
                                  for r in failed) + "\n")
-        out.append(
-            "\n> **Bindizr introduces no measurable DNS query overhead because it "
-            "is outside the DNS data plane.** Queries are served by the BIND9 "
-            "secondaries, not by Bindizr — so `Bindizr + BIND9` tracks `Native "
-            "BIND9` (differences are within run-to-run noise).\n")
+        out.append(_b08_conclusion(native, base, ok))
 
     if "b09_resource_usage" in data:
         results = _rows(data, "b09_resource_usage")
