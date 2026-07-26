@@ -207,7 +207,7 @@ impl ZoneService {
                 let ns_rrset_ttl = apex_records
                     .iter()
                     .find(|r| r.record_type == RecordType::NS)
-                    .map_or(Some(updated_zone.ttl), |r| r.ttl);
+                    .map_or(updated_zone.ttl, |r| r.ttl);
 
                 let primary_ns_record = Record {
                     id: 0,
@@ -248,7 +248,7 @@ impl ZoneService {
                 record_name: "@".to_string(),
                 record_type: "SOA".to_string(),
                 record_value: soa_rdata(&existing_zone)?,
-                record_ttl: Some(existing_zone.ttl),
+                record_ttl: existing_zone.ttl,
                 record_priority: None,
             });
             changes.push(ZoneChange {
@@ -259,7 +259,7 @@ impl ZoneService {
                 record_name: "@".to_string(),
                 record_type: "SOA".to_string(),
                 record_value: soa_rdata(&updated_zone)?,
-                record_ttl: Some(updated_zone.ttl),
+                record_ttl: updated_zone.ttl,
                 record_priority: None,
             });
 

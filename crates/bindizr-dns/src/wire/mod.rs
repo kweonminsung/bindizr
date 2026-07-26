@@ -6,10 +6,7 @@ use std::{
     str::FromStr,
 };
 
-use bindizr_core::dns::{
-    DEFAULT_RECORD_TTL,
-    name::{email_to_soa_mailbox, to_fqdn, to_owner_fqdn},
-};
+use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn, to_owner_fqdn};
 use domain::{
     base::{
         Message, MessageBuilder, Name, Serial, ToName, Ttl, UnknownRecordData,
@@ -251,10 +248,10 @@ impl DnsMessageBuilder {
         name: &str,
         record_type: &str,
         value: &str,
-        ttl: Option<i32>,
+        ttl: i32,
         priority: Option<i32>,
     ) -> Result<(), XfrError> {
-        let ttl = ttl.unwrap_or(DEFAULT_RECORD_TTL) as u32;
+        let ttl = ttl as u32;
         let owner_name = to_owner_fqdn(name, zone_name);
 
         match record_type {

@@ -209,7 +209,7 @@ async fn zone_import_zone_file_from_stdin() {
 async fn zone_export_via_cli() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("export.example");
-    // Zone TTL is deliberately not 3600 to distinguish it from the wire default.
+    // Zone TTL is deliberately not 3600 so an inherited TTL is distinguishable.
     app.create_zone_cli(&zone_name, "7200").await;
     app.run_cli_success(&[
         "record",
@@ -227,7 +227,7 @@ async fn zone_export_via_cli() {
     ])
     .await;
 
-    // An unset TTL serves at the wire default (3600), not the zone TTL (7200).
+    // An omitted TTL is fixed to the zone's TTL (7200) at write time.
     app.run_cli_success(&[
         "record",
         "create",
@@ -254,7 +254,7 @@ async fn zone_export_via_cli() {
         "{exported}"
     );
     assert!(
-        exported.contains("nottl\t3600\tIN\tA\t192.0.2.2"),
+        exported.contains("nottl\t7200\tIN\tA\t192.0.2.2"),
         "{exported}"
     );
 

@@ -10,7 +10,7 @@ pub struct Record {
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
     pub value: String,
-    pub ttl: Option<i32>,      // TTL in seconds
+    pub ttl: i32,              // TTL in seconds
     pub priority: Option<i32>, // Priority (MX and SRV records)
     pub created_at: DateTime<Utc>,
     pub zone_id: i32,
@@ -24,7 +24,7 @@ pub struct RecordWithZone {
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
     pub value: String,
-    pub ttl: Option<i32>,
+    pub ttl: i32,
     pub priority: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub zone_id: i32,

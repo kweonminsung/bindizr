@@ -59,9 +59,8 @@ pub(crate) struct RecordRow {
     #[tabled(rename = "VALUE")]
     #[serde(deserialize_with = "deserialize_record_value")]
     pub value: String,
-    #[tabled(rename = "TTL", display = "display_option_i32")]
-    #[serde(default)]
-    pub ttl: Option<i32>,
+    #[tabled(rename = "TTL")]
+    pub ttl: i32,
     #[tabled(rename = "PRIORITY", display = "display_option_i32")]
     #[serde(default)]
     pub priority: Option<i32>,
@@ -102,9 +101,8 @@ pub(crate) struct SnapshotRecordRow {
     #[tabled(rename = "VALUE")]
     #[serde(deserialize_with = "deserialize_record_value")]
     pub value: String,
-    #[tabled(rename = "TTL", display = "display_option_i32")]
-    #[serde(default)]
-    pub ttl: Option<i32>,
+    #[tabled(rename = "TTL")]
+    pub ttl: i32,
     #[tabled(rename = "PRIORITY", display = "display_option_i32")]
     #[serde(default)]
     pub priority: Option<i32>,

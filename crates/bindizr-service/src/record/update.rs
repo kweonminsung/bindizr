@@ -7,6 +7,7 @@ use crate::{
     log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType, RecordWithZone},
+        zone::Zone,
         zone_change::ZoneChange,
     },
     repository::RepositoryService,
@@ -21,7 +22,7 @@ struct ResolvedRecordUpdate {
     owner_name: String,
     record_type: RecordType,
     storage_value: String,
-    ttl: Option<i32>,
+    ttl: i32,
     priority: Option<i32>,
 }
 
@@ -31,7 +32,7 @@ impl RecordService {
         record_id: i32,
         request: &UpdateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(record_id, |_existing| {
+        Self::update_locked(record_id, |zone, _existing| {
             let record_type = parse_record_type(&request.record_type)?;
             let storage_value = request
                 .value
@@ -41,7 +42,7 @@ impl RecordService {
                 owner_name: request.name.clone(),
                 record_type,
                 storage_value,
-                ttl: request.ttl,
+                ttl: request.ttl.unwrap_or(zone.ttl),
                 priority: request.priority,
             })
         })
@@ -54,7 +55,7 @@ impl RecordService {
         record_id: i32,
         patch: &UpdateRecordPatch,
     ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(record_id, |existing| {
+        Self::update_locked(record_id, |_zone, existing| {
             let record_type = match &patch.record_type {
                 Some(record_type) => parse_record_type(record_type)?,
                 None => existing.record_type.clone(),
@@ -82,7 +83,7 @@ impl RecordService {
                 owner_name: patch.name.clone().unwrap_or_else(|| existing.name.clone()),
                 record_type,
                 storage_value,
-                ttl: patch.ttl.or(existing.ttl),
+                ttl: patch.ttl.unwrap_or(existing.ttl),
                 priority,
             })
         })
@@ -93,7 +94,7 @@ impl RecordService {
     /// then write it, bumping the zone serial and recording DEL+ADD IXFR changes.
     async fn update_locked(
         record_id: i32,
-        resolve: impl FnOnce(&Record) -> Result<ResolvedRecordUpdate, ServiceError>,
+        resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
     ) -> Result<RecordWithZone, ServiceError> {
         // Resolve zone_id with a non-locking read so the tx locks zone before
         // record (the create/bulk/import order); the reverse can deadlock.
@@ -135,7 +136,7 @@ impl RecordService {
                     }
                 };
 
-            let resolved = resolve(&existing_record)?;
+            let resolved = resolve(&zone, &existing_record)?;
 
             // Only records sharing the new owner name can conflict, so load just
             // those instead of the whole zone.
@@ -240,9 +241,7 @@ impl RecordService {
             zone_name,
             updated_record.name,
             updated_record.record_type,
-            updated_record
-                .ttl
-                .map_or("null".to_string(), |v| v.to_string()),
+            updated_record.ttl,
             updated_record
                 .priority
                 .map_or("null".to_string(), |v| v.to_string()),

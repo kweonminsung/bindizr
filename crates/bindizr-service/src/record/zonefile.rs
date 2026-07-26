@@ -14,7 +14,7 @@ pub(super) struct ParsedRecord {
     pub owner_fqdn: String,
     pub record_type: RecordType,
     pub value: RecordValueRequest,
-    pub ttl: Option<i32>,
+    pub ttl: i32,
     pub priority: Option<i32>,
 }
 
@@ -138,7 +138,7 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                     owner_fqdn: record.owner().to_string().to_ascii_lowercase(),
                     record_type,
                     value,
-                    ttl: Some(ttl),
+                    ttl,
                     priority,
                 });
             }

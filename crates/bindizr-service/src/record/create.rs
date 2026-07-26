@@ -86,12 +86,15 @@ impl RecordService {
                     }
                 };
 
+            // Fixed at write time: a later zone TTL change will not move it.
+            let ttl = create_record_request.ttl.unwrap_or(zone.ttl);
+
             validate_record_add_constraints_normalized(
                 &existing_records_with_name,
                 &normalized_owner.stored_name,
                 &record_type,
                 &record_value,
-                create_record_request.ttl,
+                ttl,
                 create_record_request.priority,
                 None,
             )?;
@@ -105,7 +108,7 @@ impl RecordService {
                     name: normalized_owner.stored_name,
                     record_type,
                     value: record_value,
-                    ttl: create_record_request.ttl,
+                    ttl,
                     priority: create_record_request.priority,
                     zone_id: zone.id,
                     created_at: Utc::now(),
@@ -136,7 +139,7 @@ impl RecordService {
                     record_name: created_record.name.clone(),
                     record_type: create_record_request.record_type.clone(),
                     record_value: created_record.value.clone(),
-                    record_ttl: create_record_request.ttl,
+                    record_ttl: ttl,
                     record_priority: create_record_request.priority,
                 },
             )

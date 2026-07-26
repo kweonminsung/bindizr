@@ -312,7 +312,7 @@ async fn add_record(
         &relative_name,
         &record_type,
         &value,
-        Some(ttl),
+        ttl,
         priority,
     )
     .await
@@ -341,7 +341,7 @@ async fn add_record(
             name: relative_name,
             record_type: record_type.clone(),
             value: value.clone(),
-            ttl: Some(ttl),
+            ttl,
             priority,
             zone_id: zone.id,
             created_at: Utc::now(),
@@ -696,7 +696,7 @@ async fn log_zone_change(
     name: &str,
     record_type: &RecordType,
     value: &str,
-    ttl: Option<i32>,
+    ttl: i32,
     priority: Option<i32>,
 ) -> Result<(), UpdateError> {
     ZoneService::create_change_tx(

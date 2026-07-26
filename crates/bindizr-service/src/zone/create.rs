@@ -92,7 +92,7 @@ impl ZoneService {
                 name: "@".to_string(),
                 record_type: RecordType::NS,
                 value: validated.primary_ns.clone(),
-                ttl: Some(validated.ttl),
+                ttl: validated.ttl,
                 priority: None,
                 zone_id: created_zone.id,
                 created_at: Utc::now(),

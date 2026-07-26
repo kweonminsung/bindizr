@@ -5,10 +5,6 @@ pub mod txt;
 /// Well-known name of the BIND catalog zone (RFC 9432).
 pub const CATALOG_ZONE_NAME: &str = "catalog.bind";
 
-/// TTL served for a record with no explicit one. The RRset TTL check and the
-/// XFR encoder must agree on it.
-pub const DEFAULT_RECORD_TTL: i32 = 3600;
-
 /// Whether `zone_name` is the virtual RFC 9432 catalog zone. Case-insensitive
 /// per RFC 4343; callers pass client-cased query names as-is.
 pub fn is_catalog_zone(zone_name: &str) -> bool {

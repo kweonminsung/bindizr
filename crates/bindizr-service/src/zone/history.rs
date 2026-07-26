@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bindizr_core::dns::{
-    DEFAULT_RECORD_TTL,
     name::{soa_mailbox_to_email, to_fqdn},
     record::display_record_owner_name,
 };
@@ -40,7 +39,7 @@ pub struct ReconstructedRecord {
     pub name: String,
     pub record_type: RecordType,
     pub value: String,
-    pub ttl: Option<i32>,
+    pub ttl: i32,
     pub priority: Option<i32>,
 }
 
@@ -212,7 +211,7 @@ async fn require_serial(
 /// its display-form value (for the response).
 #[derive(Clone)]
 struct GroupedRecord {
-    identity: (String, Option<i32>),
+    identity: (String, i32),
     value: RecordDiffValue,
 }
 
@@ -244,7 +243,7 @@ fn group_rrsets(
     groups
 }
 
-fn group_identities(group: &[GroupedRecord]) -> Vec<(String, Option<i32>)> {
+fn group_identities(group: &[GroupedRecord]) -> Vec<(String, i32)> {
     let mut ids: Vec<_> = group.iter().map(|r| r.identity.clone()).collect();
     ids.sort();
     ids
@@ -513,14 +512,11 @@ impl ZoneService {
                 let key = record_match_key(record);
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
-                        // TTL-only difference: replace the row (DEL + ADD). An
-                        // unset TTL serves at DEFAULT_RECORD_TTL, not the zone TTL.
-                        let current_ttl = record.ttl.unwrap_or(DEFAULT_RECORD_TTL);
-                        let target_ttl = target.ttl.unwrap_or(DEFAULT_RECORD_TTL);
-                        // The DEL+ADD pair preserves the record's identity, so
-                        // validate_delete_constraints' primary_ns protection
-                        // does not apply; SOA lives in the zone's own fields.
-                        if current_ttl != target_ttl && record.record_type != RecordType::SOA {
+                        // TTL-only difference: replace the row (DEL + ADD).
+                        // The pair preserves the record's identity, so the
+                        // primary_ns delete protection cannot be violated; SOA
+                        // lives in the zone's own fields.
+                        if record.ttl != target.ttl && record.record_type != RecordType::SOA {
                             dels.push(record.clone());
                             to_add.push(target);
                         } else {
@@ -575,7 +571,7 @@ impl ZoneService {
                             .find(|record| is_apex_ns(&record.record_type, &record.name))
                             .map(|record| record.ttl)
                     })
-                    .unwrap_or(Some(restored_zone.ttl));
+                    .unwrap_or(restored_zone.ttl);
 
                 to_add.push(ReconstructedRecord {
                     name: "@".to_string(),
@@ -663,7 +659,7 @@ impl ZoneService {
                         record_name: "@".to_string(),
                         record_type: "SOA".to_string(),
                         record_value: soa_rdata(&zone)?,
-                        record_ttl: Some(zone.ttl),
+                        record_ttl: zone.ttl,
                         record_priority: None,
                     },
                     ZoneChange {
@@ -674,7 +670,7 @@ impl ZoneService {
                         record_name: "@".to_string(),
                         record_type: "SOA".to_string(),
                         record_value: soa_rdata(&restored_zone)?,
-                        record_ttl: Some(restored_zone.ttl),
+                        record_ttl: restored_zone.ttl,
                         record_priority: None,
                     },
                 ];

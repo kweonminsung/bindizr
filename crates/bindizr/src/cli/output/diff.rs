@@ -33,7 +33,7 @@ fn rdata(value: &Value, record_type: &str) -> String {
     }
 }
 
-/// A record's TTL, or `-` when unset (served at the 3600s default).
+/// A record's TTL, or `-` if the response omits it.
 fn ttl_of(value: &Value) -> String {
     value
         .get("ttl")

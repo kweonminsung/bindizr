@@ -3,7 +3,6 @@ use std::{
     time::Instant,
 };
 
-use bindizr_core::dns::DEFAULT_RECORD_TTL;
 use chrono::Utc;
 
 use super::{
@@ -159,8 +158,8 @@ impl RecordService {
                     })
                 });
                 if let Some(kept) = duplicate_in_file {
-                    let kept_ttl = desired[kept].prepared.ttl.unwrap_or(DEFAULT_RECORD_TTL);
-                    let this_ttl = record.ttl.unwrap_or(DEFAULT_RECORD_TTL);
+                    let kept_ttl = desired[kept].prepared.ttl.unwrap_or(zone.ttl);
+                    let this_ttl = record.ttl;
                     // The same RR at two TTLs is a mixed-TTL RRset (RFC 2181,
                     // Section 5.2); deduplication must not swallow the conflict.
                     if kept_ttl != this_ttl {
@@ -183,7 +182,7 @@ impl RecordService {
                         owner_name: record.owner_fqdn,
                         record_type: record.record_type,
                         value,
-                        ttl: record.ttl,
+                        ttl: Some(record.ttl),
                         priority: record.priority,
                     },
                     stored_name,
@@ -274,11 +273,9 @@ impl RecordService {
                     .collect(),
             };
 
-            // Reconcile TTL only for upsert/replace. Compare an unset TTL at
-            // DEFAULT_RECORD_TTL (the wire/export default) so round-tripping an
-            // export doesn't rewrite unset-TTL rows.
+            // Reconcile TTL only for upsert/replace.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
-            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(DEFAULT_RECORD_TTL);
+            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.ttl);
 
             let mut unchanged = 0usize;
             let mut updated = 0usize;
@@ -292,7 +289,7 @@ impl RecordService {
                     for &e in es {
                         if desired_matches(e, d) {
                             present = true;
-                            if reconcile_ttl && effective_ttl(e.ttl) != desired_ttl {
+                            if reconcile_ttl && e.ttl != desired_ttl {
                                 ttl_dels.push(e.clone());
                                 stale = true;
                             }
@@ -335,7 +332,7 @@ impl RecordService {
                     &add.stored_name,
                     &add.prepared.record_type,
                     &add.prepared.value,
-                    add.prepared.ttl,
+                    effective_ttl(add.prepared.ttl),
                     add.prepared.priority,
                     None,
                 ) {
@@ -343,7 +340,7 @@ impl RecordService {
                         &add.stored_name,
                         &add.prepared.record_type,
                         &add.prepared.value,
-                        add.prepared.ttl,
+                        effective_ttl(add.prepared.ttl),
                         add.prepared.priority,
                     )),
                     Err(e) if e.code.http_status() < 500 => {
@@ -392,7 +389,7 @@ impl RecordService {
                         name: add.stored_name.clone(),
                         record_type: add.prepared.record_type.clone(),
                         value: add.prepared.value.clone(),
-                        ttl: add.prepared.ttl,
+                        ttl: effective_ttl(add.prepared.ttl),
                         priority: add.prepared.priority,
                         zone_id: zone.id,
                         created_at: Utc::now(),
@@ -509,7 +506,7 @@ fn import_diff(
         name: add.stored_name.clone(),
         record_type: add.prepared.record_type.clone(),
         value: add.prepared.value.clone(),
-        ttl: add.prepared.ttl,
+        ttl: add.prepared.ttl.unwrap_or(zone.ttl),
         priority: add.prepared.priority,
     }));
 
@@ -522,7 +519,7 @@ fn synthetic_record(
     stored_name: &str,
     record_type: &RecordType,
     value: &str,
-    ttl: Option<i32>,
+    ttl: i32,
     priority: Option<i32>,
 ) -> Record {
     Record {

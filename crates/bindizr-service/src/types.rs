@@ -181,7 +181,7 @@ pub struct GetRecordResponse {
     #[schema(example = "192.168.1.100")]
     pub value: RecordValueRequest,
     #[schema(example = 3600)]
-    pub ttl: Option<i32>,
+    pub ttl: i32,
     #[schema(example = 10)]
     pub priority: Option<i32>,
     #[schema(example = 1)]
@@ -315,7 +315,7 @@ pub struct CreateRecordRequest {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
-    /// Optional; an omitted TTL is served at the default 3600s, not the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+    /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
     /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
@@ -334,7 +334,7 @@ pub struct BulkRecordItem {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
-    /// Optional; an omitted TTL is served at the default 3600s, not the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+    /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
     /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
@@ -495,7 +495,7 @@ pub struct UpdateRecordRequest {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
-    /// Optional; an omitted TTL is served at the default 3600s, not the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+    /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
     /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
@@ -662,7 +662,7 @@ pub struct SnapshotRecordResponse {
     pub record_type: String,
     pub value: RecordValueRequest,
     #[schema(example = 3600)]
-    pub ttl: Option<i32>,
+    pub ttl: i32,
     #[schema(example = 10)]
     pub priority: Option<i32>,
 }
@@ -680,7 +680,7 @@ pub struct SnapshotDetailResponse {
 pub struct RecordDiffValue {
     pub value: RecordValueRequest,
     #[schema(example = 300)]
-    pub ttl: Option<i32>,
+    pub ttl: i32,
     #[schema(example = 10)]
     pub priority: Option<i32>,
 }

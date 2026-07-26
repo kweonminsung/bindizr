@@ -257,13 +257,16 @@ impl RecordService {
                     .entry(normalized_owner.stored_name.to_ascii_lowercase())
                     .or_default();
 
+                // Fixed at write time: a later zone TTL change will not move it.
+                let ttl = prepared_record.ttl.unwrap_or(zone.ttl);
+
                 let t = timing.then(Instant::now);
                 validate_record_add_constraints_normalized(
                     same_name,
                     &normalized_owner.stored_name,
                     &prepared_record.record_type,
                     &prepared_record.value,
-                    prepared_record.ttl,
+                    ttl,
                     prepared_record.priority,
                     None,
                 )?;
@@ -276,7 +279,7 @@ impl RecordService {
                     name: normalized_owner.stored_name,
                     record_type: prepared_record.record_type.clone(),
                     value: prepared_record.value.clone(),
-                    ttl: prepared_record.ttl,
+                    ttl,
                     priority: prepared_record.priority,
                     zone_id: zone.id,
                     created_at: Utc::now(),

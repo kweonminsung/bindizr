@@ -9,7 +9,7 @@ fn test_record() -> Record {
         name: "www".to_string(),
         record_type: RecordType::A,
         value: "192.0.2.10".to_string(),
-        ttl: Some(3600),
+        ttl: 3600,
         priority: None,
         created_at: Utc::now(),
         zone_id: 1,

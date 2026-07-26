@@ -10,6 +10,6 @@ pub struct ZoneChange {
     pub record_name: String,
     pub record_type: String,
     pub record_value: String,
-    pub record_ttl: Option<i32>,
+    pub record_ttl: i32,
     pub record_priority: Option<i32>,
 }
