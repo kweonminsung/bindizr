@@ -100,6 +100,7 @@ pub(crate) struct SnapshotRecordRow {
     #[tabled(rename = "TYPE")]
     pub record_type: String,
     #[tabled(rename = "VALUE")]
+    #[serde(deserialize_with = "deserialize_record_value")]
     pub value: String,
     #[tabled(rename = "TTL", display = "display_option_i32")]
     #[serde(default)]

@@ -660,8 +660,7 @@ pub struct SnapshotRecordResponse {
     pub name: String,
     #[schema(example = "A")]
     pub record_type: String,
-    #[schema(example = "192.0.2.1")]
-    pub value: String,
+    pub value: RecordValueRequest,
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
     #[schema(example = 10)]

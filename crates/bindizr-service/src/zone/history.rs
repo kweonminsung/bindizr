@@ -58,10 +58,12 @@ impl From<Record> for ReconstructedRecord {
 
 impl From<ReconstructedRecord> for crate::types::SnapshotRecordResponse {
     fn from(record: ReconstructedRecord) -> Self {
+        // Decode TXT out of its stored form, as the record endpoints do.
+        let value = display_record_value_request(&record.value, &record.record_type);
         crate::types::SnapshotRecordResponse {
             name: record.name,
             record_type: record.record_type.to_string(),
-            value: record.value,
+            value,
             ttl: record.ttl,
             priority: record.priority,
         }
