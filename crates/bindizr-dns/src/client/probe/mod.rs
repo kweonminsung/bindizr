@@ -21,8 +21,8 @@ pub struct SecondaryProbe {
 }
 
 /// Query every configured secondary for the zone's SOA serial, in parallel.
-/// One probe per configured entry (the first resolved address is used for
-/// hostname entries). An empty `secondary_addrs` yields an empty list.
+/// One probe per configured entry; a hostname entry is tried at each resolved
+/// address until one answers. An empty `secondary_addrs` yields an empty list.
 pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, XfrError> {
     let dns_config = &config::get_bindizr_config().dns;
     let raw = dns_config.secondary_addrs.clone();
@@ -37,9 +37,8 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, X
     let mut probes = Vec::new();
     let mut tasks = Vec::new();
     for (entry, result) in super::resolve_secondary_entries(&raw).await {
-        let addr = match result.map(|addrs| addrs.into_iter().next()) {
-            Ok(Some(addr)) => addr,
-            Ok(None) => unreachable!("resolve_secondary_entries never yields an empty Ok"),
+        let addrs = match result {
+            Ok(addrs) => addrs,
             Err(e) => {
                 probes.push(SecondaryProbe {
                     address: entry,
@@ -51,19 +50,42 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, X
 
         let qname = qname.clone();
         tasks.push((
-            addr.to_string(),
-            tokio::spawn(async move { probe_one(&qname, addr, timeout).await }),
+            entry,
+            tokio::spawn(async move { probe_entry(&qname, addrs, timeout).await }),
         ));
     }
 
-    for (address, task) in tasks {
-        let result = task
-            .await
-            .unwrap_or_else(|e| Err(format!("probe task failed: {}", e)));
-        probes.push(SecondaryProbe { address, result });
+    for (entry, task) in tasks {
+        match task.await {
+            Ok((address, result)) => probes.push(SecondaryProbe { address, result }),
+            Err(e) => probes.push(SecondaryProbe {
+                address: entry,
+                result: Err(format!("probe task failed: {}", e)),
+            }),
+        }
     }
 
     Ok(probes)
+}
+
+/// Probe the resolved addresses in order, reporting the first that answers (on
+/// failure, the last one tried). NOTIFY and the transfer ACL act on every
+/// resolved address, so probing only the first would contradict what
+/// propagates — commonly an unusable IPv6 ahead of a working IPv4.
+async fn probe_entry(
+    qname: &Name<Vec<u8>>,
+    addrs: Vec<SocketAddr>,
+    timeout: Duration,
+) -> (String, Result<u32, String>) {
+    let mut last = None;
+    for addr in addrs {
+        match probe_one(qname, addr, timeout).await {
+            Ok(serial) => return (addr.to_string(), Ok(serial)),
+            Err(e) => last = Some((addr.to_string(), Err(e))),
+        }
+    }
+
+    last.expect("resolve_secondary_entries never yields an empty Ok")
 }
 
 async fn probe_one(
