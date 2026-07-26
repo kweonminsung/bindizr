@@ -515,13 +515,10 @@ impl ZoneService {
                         // unset TTL serves at DEFAULT_RECORD_TTL, not the zone TTL.
                         let current_ttl = record.ttl.unwrap_or(DEFAULT_RECORD_TTL);
                         let target_ttl = target.ttl.unwrap_or(DEFAULT_RECORD_TTL);
-                        if current_ttl != target_ttl
-                            && validate_delete_constraints(
-                                &restored_zone,
-                                std::slice::from_ref(record),
-                            )
-                            .is_ok()
-                        {
+                        // The DEL+ADD pair preserves the record's identity, so
+                        // validate_delete_constraints' primary_ns protection
+                        // does not apply; SOA lives in the zone's own fields.
+                        if current_ttl != target_ttl && record.record_type != RecordType::SOA {
                             dels.push(record.clone());
                             to_add.push(target);
                         } else {
