@@ -47,8 +47,7 @@ Keep comments that explain **why**, document non-obvious behavior/invariants,
 protocol/wire-format details, or public-API contracts (`///`) — but keep them
 **terse**: state the reason in one or two lines, without spelling out
 consequences the reader can derive, restating an already-made point, or
-enumerating what the code shows. Remove comments that merely restate the
-adjacent code.
+enumerating what the code shows.
 
 This explicitly includes short **in-function** comments that give the business
 or protocol reason for a step — e.g. `// Increment zone serial so IXFR
