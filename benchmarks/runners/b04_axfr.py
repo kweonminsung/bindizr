@@ -34,11 +34,27 @@ async def run(adapter, cfg, ctx) -> list:
         # the API delete, and recreating sooner lets the new low serial collide
         # with the stale copy. A no-op for systems that delete synchronously.
         drop_deadline = time.monotonic() + 30
+        dropped = False
         while time.monotonic() < drop_deadline:
             _, count, _ = await _axfr_count(zone, xe.host, xe.port)
             if count == 0:
+                dropped = True
                 break
             await asyncio.sleep(1.0)
+
+        # Recreating over a zone the secondary still serves measures the stale
+        # copy, which a descending BENCH_SIZES would report as the new size.
+        if not dropped:
+            print(f'  [FAIL] b04: secondary still serves the old zone '
+                  f'for {ctx["label"]}')
+            rows.append({
+                "system": ctx["label"],
+                "size": size,
+                "status": "FAILED",
+                "error": "delete timeout: secondary still serves the old zone",
+            })
+            continue
+
         await adapter.create_zone(zone)
         await adapter.bulk_import(zone, generate(size, cfg["seed"], zone))
 

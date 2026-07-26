@@ -32,12 +32,28 @@ async def run(adapter, cfg, ctx) -> list:
         # secondary drops the zone via the catalog seconds later, and the new
         # low serial would otherwise collide with the stale copy it still holds.
         drop_deadline = time.monotonic() + 30
+        dropped = False
         while time.monotonic() < drop_deadline:
             _, count, _ = await loop.run_in_executor(
                 None, dnsutil.axfr, zone, xe.host, xe.port, 300)
             if count == 0:
+                dropped = True
                 break
             await asyncio.sleep(1.0)
+
+        # Recreating over a zone the secondary still serves measures the stale
+        # copy, which a descending BENCH_SIZES would report as the new size.
+        if not dropped:
+            print(f'  [FAIL] b06: secondary still serves the old zone '
+                  f'for size {size}')
+            sampler.stop()
+            rows.append({
+                "system": ctx["label"],
+                "size": size,
+                "status": "FAILED",
+                "error": "delete timeout: secondary still serves the old zone",
+            })
+            continue
 
         t = time.monotonic()
         await adapter.create_zone(zone)
