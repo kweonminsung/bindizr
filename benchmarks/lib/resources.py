@@ -82,11 +82,15 @@ class ResourceSampler:
     def summary(self) -> dict:
         if not self.samples:
             return {"peak_cpu_pct": 0, "avg_cpu_pct": 0, "peak_mem_mb": 0, "avg_mem_mb": 0}
-        cpus = [s["cpu_pct"] for s in self.samples]
+        # Whole-stack CPU: sum each tick across containers, then peak/avg over the
+        # tick totals — averaging the flat sample list would divide the stack's
+        # cost by its container count.
+        cpu_by_tick: dict[int, float] = {}
+        for s in self.samples:
+            cpu_by_tick[s["tick"]] = cpu_by_tick.get(s["tick"], 0.0) + s["cpu_pct"]
+        cpu_totals = list(cpu_by_tick.values())
 
-        # Per-container CPU average: the pooled avg_cpu_pct understates a
-        # multi-container stack (Bindizr's idle control plane averaged with the
-        # BIND9 serving queries), so expose the split alongside it.
+        # Per-container split, so a stack total can be attributed.
         by_container: dict[str, list[float]] = {}
         for s in self.samples:
             by_container.setdefault(s["name"], []).append(s["cpu_pct"])
@@ -111,8 +115,8 @@ class ResourceSampler:
         net_tx_delta = sum(max(v) - min(v) for v in net_by_container.values())
 
         return {
-            "peak_cpu_pct": round(max(cpus), 2),
-            "avg_cpu_pct": round(sum(cpus) / len(cpus), 2),
+            "peak_cpu_pct": round(max(cpu_totals), 2),
+            "avg_cpu_pct": round(sum(cpu_totals) / len(cpu_totals), 2),
             "cpu_by_container": cpu_by_container,
             "peak_mem_mb": round(max(mem_totals) / 1024**2, 2),
             "avg_mem_mb": round(sum(mem_totals) / len(mem_totals) / 1024**2, 2),

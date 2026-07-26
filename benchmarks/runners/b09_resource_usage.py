@@ -57,9 +57,8 @@ async def run(adapter, cfg, ctx) -> dict:
     res = sampler.stop()
     s = rec.summary()
 
-    # Report CPU per container, not pooled: Bindizr idles outside the query plane
-    # while BIND9 serves, so a pooled mean would halve the stack's true cost.
-    # cpu_total_pct sums the per-container averages; cpu_by_container splits them.
+    # Bindizr idles outside the query plane while BIND9 serves, so the split
+    # shows where the stack's cost actually lands.
     def _service(name: str) -> str:
         # docker container names are "<project>-<service>-<index>".
         parts = name.rsplit("-", 2)
