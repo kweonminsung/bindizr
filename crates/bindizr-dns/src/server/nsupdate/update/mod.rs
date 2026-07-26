@@ -6,7 +6,7 @@ use domain::{
         name::ParsedName,
     },
     dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, Mx, Txt},
+    rdata::{A, Aaaa, Mx, Srv, Txt},
 };
 
 use super::{
@@ -565,6 +565,17 @@ pub(super) fn rr_to_record_value(
                 .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
             Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
         }
+        RecordType::SRV => {
+            let data = parse_rdata(message, update, "SRV", |parser| Srv::parse(parser).ok())?;
+            let target = presentation_name(data.target())
+                .map_err(|e| UpdateError::Refused(format!("invalid SRV rdata: {}", e)))?;
+            // Priority lives in its own column, so the value holds the rest.
+            Ok((
+                RecordType::SRV,
+                format!("{} {} {}", data.weight(), data.port(), target),
+                Some(i32::from(data.priority())),
+            ))
+        }
         _ => Err(UpdateError::Refused(format!(
             "unsupported rr type: {}",
             update.rr_type
@@ -572,7 +583,8 @@ pub(super) fn rr_to_record_value(
     }
 }
 
-/// Record types updatable via nsupdate; SOA and SRV are deliberately excluded.
+/// Record types updatable via nsupdate. SOA is excluded because it is managed
+/// through the zone's own fields.
 pub(super) fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, UpdateError> {
     match rr_type {
         Rtype::A => Ok(RecordType::A),
@@ -582,6 +594,7 @@ pub(super) fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, Updat
         Rtype::MX => Ok(RecordType::MX),
         Rtype::TXT => Ok(RecordType::TXT),
         Rtype::AAAA => Ok(RecordType::AAAA),
+        Rtype::SRV => Ok(RecordType::SRV),
         _ => Err(UpdateError::Refused(format!(
             "unsupported rr type: {}",
             rr_type

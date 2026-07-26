@@ -203,6 +203,23 @@ fn record_value_matches_ignores_case_for_name_like_values() {
     ));
 }
 
+#[test]
+fn rr_to_record_value_splits_srv_priority_into_its_own_column() {
+    // priority 10, weight 20, port 5060, target sip.example.com.
+    let mut rdata = vec![0, 10, 0, 20, 0x13, 0xC4];
+    rdata.extend_from_slice(&[
+        3, b's', b'i', b'p', 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
+    ]);
+    let update = update_record(Rtype::SRV, Class::IN, 300, rdata.clone());
+
+    let (record_type, value, priority) = rr_to_record_value(&update, &rdata).unwrap();
+
+    assert_eq!(record_type, RecordType::SRV);
+    // The wire encoder reads back this 3-field form with the priority column.
+    assert_eq!(value, "20 5060 sip.example.com.");
+    assert_eq!(priority, Some(10));
+}
+
 fn update_record(rr_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
     UpdateRecord {
         name: "www.example.com.".to_string(),
