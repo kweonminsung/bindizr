@@ -52,7 +52,7 @@ impl ZoneService {
 
         let serial = match create_zone_request.serial {
             Some(s) => validate_initial_serial(s)?,
-            None => generate_serial(None),
+            None => generate_serial(None)?,
         };
 
         let mut tx = RepositoryService::begin_tx("Failed to create zone").await?;

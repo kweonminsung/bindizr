@@ -148,7 +148,7 @@ impl ZoneService {
                 }
             }
 
-            let new_serial = generate_serial(Some(existing_zone.serial));
+            let new_serial = generate_serial(Some(existing_zone.serial))?;
 
             let updated_zone = RepositoryService::update_zone_tx(
                 &mut tx,

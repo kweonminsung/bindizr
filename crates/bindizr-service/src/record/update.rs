@@ -176,7 +176,7 @@ impl RecordService {
             )?;
             candidate_updated.name = lookup_owner.stored_name;
 
-            let new_serial = generate_serial(Some(zone.serial));
+            let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();
 
             let updated_record = RepositoryService::update_record_tx(&mut tx, candidate_updated)

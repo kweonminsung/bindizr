@@ -96,7 +96,7 @@ impl RecordService {
                 None,
             )?;
 
-            let new_serial = generate_serial(Some(zone.serial));
+            let new_serial = generate_serial(Some(zone.serial))?;
 
             let created_record = RepositoryService::create_record_tx(
                 &mut tx,

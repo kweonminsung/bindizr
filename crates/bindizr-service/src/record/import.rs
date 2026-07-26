@@ -367,7 +367,7 @@ impl RecordService {
             let has_changes = !dels.is_empty() || !adds.is_empty() || !ttl_dels.is_empty();
 
             if will_apply && has_changes {
-                let new_serial = generate_serial(Some(zone.serial));
+                let new_serial = generate_serial(Some(zone.serial))?;
 
                 let t = Instant::now();
                 let mut all_dels = dels;

@@ -4,7 +4,7 @@
 //! "when" of a serial comes from `zone_soa_history.created_at`, not from the
 //! serial itself. An explicit serial supplied at zone creation (e.g. when
 //! taking over a zone whose secondaries already track a serial) simply becomes
-//! the starting point and the counter continues from there. Saturates at
+//! the starting point and the counter continues from there. Stops at
 //! `i32::MAX` because IXFR encodes serials as `u32` and rejects negatives, so
 //! wrapping is not an option.
 
@@ -13,17 +13,21 @@ use crate::error::ServiceError;
 /// Mutations a zone seeded with an explicit serial is guaranteed to have left.
 const RESERVED_SERIAL_HEADROOM: i32 = 10_000_000;
 
-/// Largest serial accepted as a zone's starting point. Saturation is silent —
-/// `zone_soa_history` upserts on `(zone_id, serial)` — so mutations would keep
-/// succeeding while secondaries never see the serial advance.
+/// Largest serial accepted as a zone's starting point, leaving
+/// `RESERVED_SERIAL_HEADROOM` mutations before the counter reaches the ceiling.
 pub const MAX_INITIAL_SERIAL: i32 = i32::MAX - RESERVED_SERIAL_HEADROOM;
 
 /// Generate the next SOA serial: `None` (new zone) yields 1; `Some(s)` yields
-/// `s + 1`, saturating at `i32::MAX`.
-pub fn generate_serial(current_serial: Option<i32>) -> i32 {
+/// `s + 1`. `i32::MAX` is an error rather than a saturating no-op, which would
+/// repeat a serial silently — `zone_soa_history` upserts on `(zone_id, serial)`.
+pub fn generate_serial(current_serial: Option<i32>) -> Result<i32, ServiceError> {
     match current_serial {
-        Some(serial) => serial.saturating_add(1),
-        None => 1,
+        Some(serial) if serial == i32::MAX => Err(ServiceError::zone_conflict(format!(
+            "zone serial reached its maximum of {}, so the zone can no longer accept changes",
+            i32::MAX
+        ))),
+        Some(serial) => Ok(serial + 1),
+        None => Ok(1),
     }
 }
 
@@ -52,23 +56,28 @@ mod tests {
 
     #[test]
     fn starts_at_one_for_new_zones() {
-        assert_eq!(generate_serial(None), 1);
+        assert_eq!(generate_serial(None).unwrap(), 1);
     }
 
     #[test]
     fn increments_by_one() {
-        assert_eq!(generate_serial(Some(1)), 2);
-        assert_eq!(generate_serial(Some(41)), 42);
+        assert_eq!(generate_serial(Some(1)).unwrap(), 2);
+        assert_eq!(generate_serial(Some(41)).unwrap(), 42);
     }
 
     #[test]
     fn continues_from_explicit_legacy_serials() {
-        assert_eq!(generate_serial(Some(2023010101)), 2023010102);
+        assert_eq!(generate_serial(Some(2023010101)).unwrap(), 2023010102);
     }
 
     #[test]
-    fn saturates_at_i32_max() {
-        assert_eq!(generate_serial(Some(i32::MAX)), i32::MAX);
+    fn rejects_mutations_once_the_serial_hits_i32_max() {
+        assert!(generate_serial(Some(i32::MAX)).is_err());
+    }
+
+    #[test]
+    fn advances_up_to_i32_max() {
+        assert_eq!(generate_serial(Some(i32::MAX - 1)).unwrap(), i32::MAX);
     }
 
     #[test]
@@ -99,6 +108,9 @@ mod tests {
     #[test]
     fn accepted_serials_leave_the_counter_advancing() {
         let seeded = validate_initial_serial(MAX_INITIAL_SERIAL).unwrap();
-        assert_eq!(generate_serial(Some(seeded)), MAX_INITIAL_SERIAL + 1);
+        assert_eq!(
+            generate_serial(Some(seeded)).unwrap(),
+            MAX_INITIAL_SERIAL + 1
+        );
     }
 }

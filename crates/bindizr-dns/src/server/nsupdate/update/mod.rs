@@ -112,7 +112,10 @@ async fn apply_update_inner(
         )
         .await?;
 
-        let new_serial = generate_serial(Some(zone.serial));
+        // An exhausted serial cannot advance, so refuse rather than commit
+        // changes secondaries could never detect.
+        let new_serial =
+            generate_serial(Some(zone.serial)).map_err(|e| UpdateError::Refused(e.to_string()))?;
         let mut changed = false;
 
         for update in &request.updates {

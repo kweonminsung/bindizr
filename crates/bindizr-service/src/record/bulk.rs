@@ -214,7 +214,7 @@ impl RecordService {
             };
             load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
 
-            let new_serial = generate_serial(Some(zone.serial));
+            let new_serial = generate_serial(Some(zone.serial))?;
 
             // The diff is only shown on a dry-run preview, so keep the `before`
             // snapshot (and pay for building the diff) off the apply hot path.

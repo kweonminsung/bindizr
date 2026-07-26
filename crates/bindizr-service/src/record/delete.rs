@@ -67,7 +67,7 @@ impl RecordService {
                     }
                 };
 
-            let new_serial = generate_serial(Some(zone.serial));
+            let new_serial = generate_serial(Some(zone.serial))?;
 
             validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
 

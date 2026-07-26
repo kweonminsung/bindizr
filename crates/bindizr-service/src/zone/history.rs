@@ -480,7 +480,7 @@ impl ZoneService {
                     .await?
                     .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, target_serial))?;
 
-            let new_serial = generate_serial(Some(zone.serial));
+            let new_serial = generate_serial(Some(zone.serial))?;
             let restored_zone = restored_zone_from_snapshot(&zone, &snapshot, new_serial)?;
             let soa_changed = soa_metadata_changed(&zone, &restored_zone);
 
