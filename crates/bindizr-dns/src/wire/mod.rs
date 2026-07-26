@@ -213,6 +213,7 @@ impl DnsMessageBuilder {
     /// Adds the catalog-zone version TXT record.
     pub(crate) fn add_catalog_version(&mut self, zone: &Zone) -> Result<(), XfrError> {
         let version_name = format!("version.{}.", zone.name.trim_end_matches('.'));
+        // "2" is the RFC 9432 catalog zone schema version.
         self.add_txt_record(&version_name, zone.ttl as u32, "2")?;
         Ok(())
     }

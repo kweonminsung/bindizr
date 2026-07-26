@@ -63,6 +63,9 @@ Specifically avoid:
 - Section labels that echo the code they precede (e.g. `// Table creation
   queries vary by database backend` above the `match self { ... }` that plainly
   does exactly that).
+- Change-history / changelog notes (`// previously used a date-based serial`,
+  `// changed in v2`, `// no longer needed`) — why a value changed belongs in the
+  commit history, not the source.
 
 When citing an RFC section, write it out as `RFC 2181, Section 5.2` (and
 `Sections 5.2–5.3` for a range) — never the `§` glyph.

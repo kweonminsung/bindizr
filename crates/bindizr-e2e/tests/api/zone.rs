@@ -677,9 +677,8 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
     )
     .await;
 
-    // Append a CNAME for the same owner, spelled in a different case: the scoped
-    // load must match the existing A case-insensitively so CNAME exclusivity
-    // rejects it. Nothing is applied.
+    // Append a CNAME for the same owner in a different case: the scoped load must
+    // match the existing A case-insensitively, so CNAME exclusivity rejects it.
     let (status, body) = app
         .request(
             Method::POST,

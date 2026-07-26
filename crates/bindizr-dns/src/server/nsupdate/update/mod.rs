@@ -122,6 +122,8 @@ async fn apply_update_inner(
         }
 
         if changed {
+            // Bump the serial and snapshot it so secondaries detect the change via
+            // SOA/NOTIFY and can serve it as an IXFR delta.
             bump_zone_serial(&mut tx, &zone, new_serial).await?;
             save_zone_snapshot(&mut tx, &zone, new_serial).await?;
         }

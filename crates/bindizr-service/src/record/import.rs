@@ -263,10 +263,9 @@ impl RecordService {
                     .collect(),
             };
 
-            // A present record is left in place unless upsert/replace reconciles
-            // its TTL: a change becomes DEL + re-ADD via the batched paths below.
-            // An unset TTL compares at DEFAULT_RECORD_TTL (the wire/export default),
-            // so round-tripping an export doesn't spuriously rewrite unset-TTL rows.
+            // Reconcile TTL only for upsert/replace. Compare an unset TTL at
+            // DEFAULT_RECORD_TTL (the wire/export default) so round-tripping an
+            // export doesn't rewrite unset-TTL rows.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
             let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(DEFAULT_RECORD_TTL);
 
@@ -392,6 +391,7 @@ impl RecordService {
                 db_write_ms = t.elapsed().as_secs_f64() * 1000.0;
 
                 let t = Instant::now();
+                // Increment zone serial once so IXFR consumers detect the import
                 RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
                     .await
                     .map_err(|e| {
