@@ -24,7 +24,9 @@ jobs:
       - name: Resolve version from Cargo.toml
         run: |
           VERSION="v$(grep '^version =' Cargo.toml | cut -d '"' -f 2)"
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+          # Full SemVer: prerelease identifiers may contain hyphens, and build
+          # metadata may follow a '+'. Cargo accepts both.
+          if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
             echo "Malformed version '$VERSION' in Cargo.toml" >&2
             exit 1
           fi
