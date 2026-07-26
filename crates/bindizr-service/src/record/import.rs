@@ -146,8 +146,8 @@ impl RecordService {
                 };
 
                 let name_key = stored_name.to_ascii_lowercase();
-                let duplicate_in_file = desired_by_name.get(&name_key).is_some_and(|idxs| {
-                    idxs.iter().any(|&i| {
+                let duplicate_in_file = desired_by_name.get(&name_key).and_then(|idxs| {
+                    idxs.iter().copied().find(|&i| {
                         desired[i].prepared.record_type == record.record_type
                             && record_values_equal(
                                 &desired[i].prepared.value,
@@ -158,8 +158,19 @@ impl RecordService {
                             )
                     })
                 });
-                if duplicate_in_file {
-                    skipped += 1;
+                if let Some(kept) = duplicate_in_file {
+                    let kept_ttl = desired[kept].prepared.ttl.unwrap_or(DEFAULT_RECORD_TTL);
+                    let this_ttl = record.ttl.unwrap_or(DEFAULT_RECORD_TTL);
+                    // The same RR at two TTLs is a mixed-TTL RRset (RFC 2181,
+                    // Section 5.2); deduplication must not swallow the conflict.
+                    if kept_ttl != this_ttl {
+                        errors.push(format!(
+                            "{}: duplicate {} record with conflicting TTLs {} and {}",
+                            record.owner_fqdn, record.record_type, kept_ttl, this_ttl
+                        ));
+                    } else {
+                        skipped += 1;
+                    }
                     continue;
                 }
 
