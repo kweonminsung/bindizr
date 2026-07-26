@@ -29,13 +29,22 @@ async def run(adapter, cfg, ctx) -> list:
     rows = []
     for size in cfg["sizes"]:
         await adapter.delete_zone(zone)
+        # Wait for the delete to reach the XFR endpoint before recreating: for
+        # Bindizr the BIND9 secondary drops the zone via the catalog ~5s after
+        # the API delete, and recreating sooner lets the new low serial collide
+        # with the stale copy. A no-op for systems that delete synchronously.
+        drop_deadline = time.monotonic() + 30
+        while time.monotonic() < drop_deadline:
+            _, count, _ = await _axfr_count(zone, xe.host, xe.port)
+            if count == 0:
+                break
+            await asyncio.sleep(1.0)
         await adapter.create_zone(zone)
         await adapter.bulk_import(zone, generate(size, cfg["seed"], zone))
 
-        # Wait for the zone to be fully transferable (matters for Bindizr's
-        # secondary, which pulls asynchronously). Poll until the AXFR record
-        # count stops growing and covers the imported set. Scale the bound with
-        # size so a 100k/1M transfer isn't cut off at a fixed 120s.
+        # Wait until the zone is fully transferable — Bindizr's secondary pulls
+        # asynchronously. Poll until the AXFR count stops growing and covers the
+        # set; scale the bound with size so a large transfer isn't cut off early.
         deadline = time.monotonic() + max(120, size / 500)
         prev = -1
         propagated = False
