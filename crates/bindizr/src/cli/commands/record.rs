@@ -26,7 +26,7 @@ pub(crate) enum RecordCommand {
         /// Zone name
         #[arg(short, long)]
         zone: String,
-        /// TTL, defaulting to the zone TTL (records of one RRset share a TTL)
+        /// TTL in seconds, defaulting to 3600 (records of one RRset share a TTL)
         #[arg(long)]
         ttl: Option<i32>,
         /// Priority (MX and SRV only)
@@ -88,7 +88,7 @@ Input format (JSON or YAML): an array of records, or an object with a
   name         owner name relative to the zone, or '@' for the apex (required)
   record_type  A, AAAA, CNAME, MX, NS, PTR, SRV, TXT (required)
   value        record value; TXT also accepts an array of strings (required)
-  ttl          seconds (optional; defaults to the zone TTL)
+  ttl          seconds (optional; defaults to 3600)
   priority     MX/SRV priority (optional)
 
 JSON example:
