@@ -262,8 +262,8 @@ impl RecordRepository for MySqlRecordRepository {
 
         // Only same-name rows can conflict, so match names lowercased (keeping the
         // column function-free so idx_records_zone_name is used) and lock just those.
-        // One round-trip per chunk; 500 dominated bulk-import time here. 5000 is
-        // well under the 65535 placeholder limit.
+        // One round-trip per chunk; keep it large (chunk size dominated bulk-import
+        // time). 5000 is well under the 65535 placeholder limit.
         const CHUNK: usize = 5000;
         let mut out = Vec::new();
         for chunk in names.chunks(CHUNK) {

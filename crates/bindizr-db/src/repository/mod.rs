@@ -76,6 +76,8 @@ pub async fn begin_transaction() -> Result<RepositoryTx<'static>, DatabaseError>
             .await
             .map(|tx| RepositoryTx(RepositoryTxKind::PostgreSQL(tx)))
             .map_err(|e| DatabaseError::TransactionFailed(e.to_string())),
+        // BEGIN IMMEDIATE takes SQLite's write lock up front so a read-then-write
+        // transaction can't fail late with "database is locked".
         DatabasePool::SQLite(pool) => pool
             .begin_with("BEGIN IMMEDIATE")
             .await

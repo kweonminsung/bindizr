@@ -27,6 +27,8 @@ impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)
@@ -65,6 +67,8 @@ impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
     ) -> Result<CatalogZoneState, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)

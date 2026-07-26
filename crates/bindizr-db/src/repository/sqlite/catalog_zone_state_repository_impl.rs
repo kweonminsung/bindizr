@@ -27,6 +27,8 @@ impl CatalogZoneStateRepository for SqliteCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)
@@ -70,6 +72,8 @@ impl CatalogZoneStateRepository for SqliteCatalogZoneStateRepository {
     ) -> Result<CatalogZoneState, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)

@@ -27,6 +27,8 @@ impl CatalogZoneStateRepository for PostgresCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query_as::<_, CatalogZoneState>(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)
@@ -59,6 +61,8 @@ impl CatalogZoneStateRepository for PostgresCatalogZoneStateRepository {
     ) -> Result<CatalogZoneState, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query_as::<_, CatalogZoneState>(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)
