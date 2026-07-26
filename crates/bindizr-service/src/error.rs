@@ -22,6 +22,7 @@ pub enum ErrorCode {
     TsigPolicyNotFound,
     Unauthorized,
     InvalidToken,
+    PayloadTooLarge,
     UnsupportedMediaType,
     Internal,
 }
@@ -46,6 +47,7 @@ impl ErrorCode {
             ErrorCode::TsigPolicyNotFound => "TSIG_POLICY_NOT_FOUND",
             ErrorCode::Unauthorized => "UNAUTHORIZED",
             ErrorCode::InvalidToken => "INVALID_TOKEN",
+            ErrorCode::PayloadTooLarge => "PAYLOAD_TOO_LARGE",
             ErrorCode::UnsupportedMediaType => "UNSUPPORTED_MEDIA_TYPE",
             ErrorCode::Internal => "INTERNAL",
         }
@@ -72,6 +74,7 @@ impl ErrorCode {
             "TSIG_POLICY_NOT_FOUND" => ErrorCode::TsigPolicyNotFound,
             "UNAUTHORIZED" => ErrorCode::Unauthorized,
             "INVALID_TOKEN" => ErrorCode::InvalidToken,
+            "PAYLOAD_TOO_LARGE" => ErrorCode::PayloadTooLarge,
             "UNSUPPORTED_MEDIA_TYPE" => ErrorCode::UnsupportedMediaType,
             "INTERNAL" => ErrorCode::Internal,
             _ => return None,
@@ -96,6 +99,7 @@ impl ErrorCode {
             | ErrorCode::RecordConflict
             | ErrorCode::TsigKeyConflict
             | ErrorCode::TsigKeyInUse => 409,
+            ErrorCode::PayloadTooLarge => 413,
             ErrorCode::UnsupportedMediaType => 415,
             ErrorCode::Internal => 500,
         }

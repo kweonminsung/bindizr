@@ -7,7 +7,7 @@ use axum::{
 use bindizr_core::log_error;
 use bindizr_service::error::{ErrorCode, ServiceError};
 
-use crate::api::types::ErrorResponse;
+use crate::api::{middleware::body_parser::MAX_UPLOAD_BODY_BYTES, types::ErrorResponse};
 
 /// Newtype over [`ServiceError`] so the service error can be converted into an
 /// HTTP response (orphan rules forbid implementing `IntoResponse` directly).
@@ -43,6 +43,19 @@ impl From<JsonRejection> for ApiError {
                 ErrorCode::UnsupportedMediaType,
                 "Unsupported media type: expected 'Content-Type: application/json'",
             ),
+            // A body over DefaultBodyLimit arrives as a BytesRejection; it is a
+            // client size error, so keep axum's status instead of reporting 500.
+            JsonRejection::BytesRejection(_)
+                if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE =>
+            {
+                ServiceError::new(
+                    ErrorCode::PayloadTooLarge,
+                    format!(
+                        "Request body exceeds the {} MiB limit",
+                        MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
+                    ),
+                )
+            }
             _ => ServiceError::internal("Failed to read request body"),
         };
 
