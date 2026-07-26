@@ -62,11 +62,14 @@ async def run(adapter, cfg, ctx) -> dict:
         secs = await loop.run_in_executor(
             None, dnsutil.poll_until_visible, fqdn, "A", ip, ep.host, ep.port,
             p["poll_interval_ms"], p["timeout_secs"])
+        # Time from the create call, not from when polling started: a
+        # synchronous apply sends the NOTIFY inside the API call itself.
+        elapsed = time.monotonic() - t0
         if secs is None:
             timeouts += 1
-            visible.record(p["timeout_secs"], ok=False)
+            visible.record(elapsed, ok=False)
         else:
-            visible.record(secs, ok=True)
+            visible.record(elapsed, ok=True)
 
     api.ended_at = visible.ended_at = time.monotonic()
     a, v = api.summary(), visible.summary()
