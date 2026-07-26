@@ -51,13 +51,27 @@ async def run(adapter, cfg, ctx) -> list:
     # delta history, a spurious full-AXFR outlier.
     deadline = time.monotonic() + max(60, baseline / 500)
     prev = -1
+    propagated = False
     while time.monotonic() < deadline:
         _, count, _ = await loop.run_in_executor(
             None, dnsutil.axfr, zone, xe.host, xe.port, 300)
         if count >= baseline and count == prev:
+            propagated = True
             break
         prev = count
         await asyncio.sleep(1.0)
+
+    # Falling through on timeout would read a pre-baseline serial — exactly the
+    # full-AXFR outlier this wait exists to prevent.
+    if not propagated:
+        print(f'  [FAIL] b05: baseline not fully transferable within deadline '
+              f'for {ctx["label"]}')
+        return [{
+            "system": ctx["label"],
+            "changes": n,
+            "status": "FAILED",
+            "error": "baseline propagation timeout: zone not fully transferable",
+        } for n in change_sizes]
 
     rows = []
     change_pool = generate(sum(change_sizes) + baseline, cfg["seed"] + 50, zone)
