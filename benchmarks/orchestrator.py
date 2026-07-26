@@ -89,12 +89,16 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
     try:
         print("  setup...", flush=True)
         await adapter.setup()
-        ids = [adapter.compose.container_id(s) for s in adapter.resource_services]
-        ids = [i for i in ids if i]
-        sampler = ResourceSampler(ids, cfg["resources"]["sample_interval_secs"])
-        sampler.start()
-
         mod = importlib.import_module(RUNNERS[bench])
+
+        # A runner that samples its own measured phase sets SELF_SAMPLES; a
+        # second sampler would only add `docker stats` load to the same run.
+        if not getattr(mod, "SELF_SAMPLES", False):
+            ids = [adapter.compose.container_id(s) for s in adapter.resource_services]
+            ids = [i for i in ids if i]
+            sampler = ResourceSampler(ids, cfg["resources"]["sample_interval_secs"])
+            sampler.start()
+
         ctx = {"zone": ZONE, "label": label, "system": system, "project": proj}
         result = await mod.run(adapter, cfg, ctx)
 

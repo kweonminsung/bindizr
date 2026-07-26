@@ -20,6 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
 from lib.resources import ResourceSampler  # noqa: E402
 
+# Sampled around the measured phase below, not by the orchestrator.
+SELF_SAMPLES = True
+
 
 async def _measure(adapter, zone, size, label, load, errors) -> dict:
     """Load records into a fresh zone via `load()` and time it, sampling the

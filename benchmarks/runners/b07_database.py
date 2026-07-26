@@ -23,6 +23,9 @@ from datasets.gen_dataset import generate  # noqa: E402
 from lib import loadgen  # noqa: E402
 from lib.resources import ResourceSampler  # noqa: E402
 
+# Sampled around the measured phase below, not by the orchestrator.
+SELF_SAMPLES = True
+
 
 async def _bench_backend(adapter, cfg, zone, label) -> dict:
     c = cfg["crud"]

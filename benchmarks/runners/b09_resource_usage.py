@@ -14,6 +14,9 @@ from datasets.gen_dataset import generate  # noqa: E402
 from lib import dnsquery, dnsutil  # noqa: E402
 from lib.resources import ResourceSampler  # noqa: E402
 
+# Sampled around the measured phase below, not by the orchestrator.
+SELF_SAMPLES = True
+
 LOAD_SECS = 20
 
 
