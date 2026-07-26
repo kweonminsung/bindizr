@@ -83,12 +83,18 @@ async def _bulk_backend(adapter, cfg, zone, backend, size) -> dict:
     await adapter.bulk_import(zone, records)
     elapsed = time.monotonic() - t0
     res = sampler.stop()
+
+    # Adapters count failures instead of raising, so rate off what landed —
+    # a fast total failure would otherwise top the chart.
+    failed = getattr(adapter, "bulk_errors", 0)
+    imported = max(size - failed, 0)
+
     return {
         "backend": backend,
         "size": size,
         "import_secs": round(elapsed, 3),
-        "records_per_sec": round(size / elapsed, 1) if elapsed else 0,
-        "import_errors": getattr(adapter, "bulk_errors", 0),
+        "records_per_sec": round(imported / elapsed, 1) if elapsed else 0,
+        "import_errors": failed,
         "peak_mem_mb": res.get("peak_mem_mb", 0),
         "avg_cpu_pct": res.get("avg_cpu_pct", 0),
     }

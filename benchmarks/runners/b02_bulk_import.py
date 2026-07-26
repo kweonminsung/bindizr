@@ -36,12 +36,17 @@ async def _measure(adapter, zone, size, label, load, errors) -> dict:
     elapsed = time.monotonic() - t0
     res = sampler.stop()
 
+    # Adapters count failures instead of raising, so rate off what landed —
+    # a fast total failure would otherwise top the chart.
+    failed = errors()
+    imported = max(size - failed, 0)
+
     return {
         "system": label,
         "size": size,
         "import_secs": round(elapsed, 3),
-        "records_per_sec": round(size / elapsed, 1) if elapsed else 0,
-        "import_errors": errors(),
+        "records_per_sec": round(imported / elapsed, 1) if elapsed else 0,
+        "import_errors": failed,
         "peak_mem_mb": res.get("peak_mem_mb", 0),
         "avg_cpu_pct": res.get("avg_cpu_pct", 0),
     }
