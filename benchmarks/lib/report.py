@@ -300,7 +300,7 @@ def _render_markdown(env: dict, data: dict) -> str:
                          r.get("p95_ms", "-"), r.get("p99_ms", "-"), overhead])
         out.append(_md_table(
             ["Server", "QPS", "Avg latency (ms)", "p95 (ms)", "p99 (ms)",
-             "Δ QPS vs Native BIND9"], rows))
+             "QPS loss vs Native BIND9"], rows))
         if failed:
             out.append("\n> ⚠️ Failed runs: " +
                        ", ".join(f'{r.get("system", "?")} ({r.get("error", "?")})'
