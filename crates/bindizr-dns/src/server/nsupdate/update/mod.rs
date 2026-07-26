@@ -165,10 +165,10 @@ async fn apply_update_inner(
             new_serial
         );
 
-        if config::get_bindizr_config().dns.notify_after_update {
-            if let Err(e) = crate::client::notify::send_notify(Some(&zone.name), false).await {
-                log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
-            }
+        // Queue through the service like every other mutation path, so
+        // `dns.apply_mode` governs RFC 2136 writes too.
+        if let Err(e) = service::notify::send_notify_after_update(Some(&zone.name)).await {
+            log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
         }
     }
 
