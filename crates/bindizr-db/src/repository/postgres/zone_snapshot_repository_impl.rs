@@ -145,7 +145,7 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
         )
         .bind(zone_id)
         .bind(limit as i64)
-        .bind(offset as i64)
+        .bind(i64::try_from(offset).unwrap_or(i64::MAX))
         .fetch_all(&self.pool)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
