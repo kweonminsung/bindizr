@@ -4,6 +4,11 @@ from __future__ import annotations
 import platform
 import shutil
 import subprocess
+from pathlib import Path
+
+import yaml
+
+SYSTEMS_DIR = Path(__file__).resolve().parent.parent / "systems"
 
 
 def _cmd(args: list[str]) -> str:
@@ -13,6 +18,25 @@ def _cmd(args: list[str]) -> str:
         ).stdout.strip()
     except Exception:
         return ""
+
+
+def _compose_images() -> dict[str, str]:
+    """Image tag per service across systems/*/compose.yml, derived so the report
+    cannot drift from what the stack runs. `seed` containers are scaffolding."""
+    images: dict[str, str] = {}
+    for compose in sorted(SYSTEMS_DIR.glob("*/compose.yml")):
+        try:
+            with open(compose) as fh:
+                services = (yaml.safe_load(fh) or {}).get("services") or {}
+        except Exception:
+            continue
+        for name, service in services.items():
+            image = (service or {}).get("image")
+            if image and name != "seed":
+                images[name] = image
+    if "bindizr" in images:
+        images["bindizr"] += " (built from source)"
+    return dict(sorted(images.items()))
 
 
 def _cpu_model() -> str:
@@ -57,15 +81,7 @@ def collect(cfg: dict) -> dict:
             "version": _cmd(["docker", "version", "--format", "{{.Server.Version}}"]),
             "compose": _cmd(["docker", "compose", "version", "--short"]),
         },
-        "software": {
-            # Image tags are the source of truth; keep in sync with systems/*/compose.yml.
-            "bindizr": "bindizr:local (built from source)",
-            "bind9": "internetsystemsconsortium/bind9:9.21",
-            "powerdns": "powerdns/pdns-auth-49:latest",
-            "technitium": "technitium/dns-server:latest",
-            "mysql": "mysql:9.7",
-            "postgresql": "postgres:17",
-        },
+        "software": _compose_images(),
         "config": {
             "seed": cfg.get("seed"),
             "sizes": cfg.get("sizes"),
