@@ -28,6 +28,17 @@ async def run(adapter, cfg, ctx) -> list:
         sampler.start()
 
         await adapter.delete_zone(zone)
+        # Wait for the delete to reach the XFR endpoint before recreating: the
+        # secondary drops the zone via the catalog seconds later, and the new
+        # low serial would otherwise collide with the stale copy it still holds.
+        drop_deadline = time.monotonic() + 30
+        while time.monotonic() < drop_deadline:
+            _, count, _ = await loop.run_in_executor(
+                None, dnsutil.axfr, zone, xe.host, xe.port, 300)
+            if count == 0:
+                break
+            await asyncio.sleep(1.0)
+
         t = time.monotonic()
         await adapter.create_zone(zone)
         create_secs = time.monotonic() - t
@@ -42,13 +53,29 @@ async def run(adapter, cfg, ctx) -> list:
         # covers the set before timing the export; scale the bound with size.
         deadline = time.monotonic() + max(120, size / 500)
         prev = -1
+        propagated = False
         while time.monotonic() < deadline:
             _, count, _ = await loop.run_in_executor(
                 None, dnsutil.axfr, zone, xe.host, xe.port, 300)
             if count >= size and count == prev:
+                propagated = True
                 break
             prev = count
             await asyncio.sleep(1.0)
+
+        # A timed-out poll means the secondary never received the full zone;
+        # exporting anyway would time a stale transfer and label it this size.
+        if not propagated:
+            print(f'  [FAIL] b06: zone not fully transferable within deadline '
+                  f'for size {size}')
+            sampler.stop()
+            rows.append({
+                "system": ctx["label"],
+                "size": size,
+                "status": "FAILED",
+                "error": "propagation timeout: zone not fully transferable",
+            })
+            continue
 
         export_secs, _, export_bytes = await loop.run_in_executor(
             None, dnsutil.axfr, zone, xe.host, xe.port, 300)
