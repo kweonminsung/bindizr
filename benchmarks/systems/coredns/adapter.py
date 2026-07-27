@@ -126,7 +126,10 @@ class CoreDnsAdapter(DnsAdapter):
         return  # the zone is declared in the Corefile
 
     async def delete_zone(self, zone: str) -> None:
+        # Clearing the dict alone leaves the old zone file on disk, so CoreDNS
+        # keeps serving every record until the next write rewrites it.
         self.records.clear()
+        await self._flush_and_reload()
 
     async def bulk_import(self, zone: str, records: list[dict]) -> None:
         """Write the whole set in one rewrite so the reload cost is paid once."""

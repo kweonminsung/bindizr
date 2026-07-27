@@ -13,10 +13,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datasets.gen_dataset import generate  # noqa: E402
 from lib import dnsutil  # noqa: E402
-from lib.resources import ResourceSampler  # noqa: E402
+from lib.resources import sampler_for  # noqa: E402
 
 # Sampled around the measured phase below, not by the orchestrator.
 SELF_SAMPLES = True
+
+# A dropped zone floors at its apex (SOA, NS, glue, closing SOA) on any system
+# that keeps the zone declared and only removes its records.
+APEX_LINES = 10
 
 
 async def run(adapter, cfg, ctx) -> list:
@@ -25,9 +29,7 @@ async def run(adapter, cfg, ctx) -> list:
     loop = asyncio.get_event_loop()
     rows = []
     for size in cfg["sizes"]:
-        ids = [i for i in (adapter.compose.container_id(s)
-                           for s in adapter.resource_services) if i]
-        sampler = ResourceSampler(ids, cfg["resources"]["sample_interval_secs"])
+        sampler = sampler_for(adapter, cfg)
         sampler.start()
 
         await adapter.delete_zone(zone)
@@ -39,7 +41,7 @@ async def run(adapter, cfg, ctx) -> list:
         while time.monotonic() < drop_deadline:
             _, count, _ = await loop.run_in_executor(
                 None, dnsutil.axfr, zone, xe.host, xe.port, 300)
-            if count == 0:
+            if count <= APEX_LINES:
                 dropped = True
                 break
             await asyncio.sleep(1.0)

@@ -61,8 +61,6 @@ async def run(adapter, cfg, ctx) -> list:
         prev = count
         await asyncio.sleep(1.0)
 
-    # Falling through on timeout would read a pre-baseline serial — exactly the
-    # full-AXFR outlier this wait exists to prevent.
     if not propagated:
         print(f'  [FAIL] b05: baseline not fully transferable within deadline '
               f'for {ctx["label"]}')
@@ -77,9 +75,8 @@ async def run(adapter, cfg, ctx) -> list:
     change_pool = generate(sum(change_sizes) + baseline, cfg["seed"] + 50, zone)
     ci = 0
     for n in change_sizes:
-        # Read the pre-change serial, retrying a transient SOA miss. Falling back
-        # to serial 1 would request IXFR from a serial with no delta history,
-        # forcing a full AXFR.
+        # Retry a transient SOA miss rather than defaulting: a made-up base
+        # serial has no delta history behind it and forces a full AXFR.
         base_serial = None
         for _ in range(10):
             base_serial = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
@@ -98,17 +95,24 @@ async def run(adapter, cfg, ctx) -> list:
             ci += 1
         await adapter.bulk_import(zone, batch)
 
-        # Wait for the serial to advance; if it never does (batch failed to apply
-        # or never transferred), an IXFR from the unchanged base_serial returns a
-        # tiny "up-to-date" SOA that would masquerade as an efficient transfer.
+        # Hold until the serial and the record count both stop moving. A serial
+        # that never advances means the batch never landed, and an IXFR from the
+        # unchanged base_serial would answer with a tiny "up-to-date" SOA that
+        # reads as an efficient transfer; stopping at the *first* bump is just as
+        # wrong, since a batch over the adapter's chunk size lands as several
+        # transactions and would transfer only the chunks that had arrived.
         deadline = time.monotonic() + 120
         propagated = False
+        prev = None
         while time.monotonic() < deadline:
             s = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
-            if s is not None and s > base_serial:
+            _, count, _ = await loop.run_in_executor(
+                None, dnsutil.axfr, zone, xe.host, xe.port, 300)
+            if s is not None and s > base_serial and (s, count) == prev:
                 propagated = True
                 break
-            await asyncio.sleep(0.5)
+            prev = (s, count)
+            await asyncio.sleep(1.0)
         if not propagated:
             print(f"  [FAIL] b05: serial did not advance within 120s for {n}-change IXFR")
             rows.append({

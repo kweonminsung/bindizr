@@ -22,6 +22,12 @@ API_PORT = 18081
 DNS_PORT = 15354
 API_KEY = "benchkey"
 
+# pdns-auth's webserver stops accepting somewhere above ten concurrent
+# connections and 4.9 exposes no setting to raise that, so the surplus stalls on
+# the client's TCP SYN retransmit (1s, then 2s) — which measures the retransmit
+# timer, not the API. Cap the pool so a wider workload queues client-side.
+API_MAX_CONNECTIONS = 8
+
 
 def _content(rec: dict) -> str:
     v = rec["value"]
@@ -47,7 +53,9 @@ class PowerDnsAdapter(DnsAdapter):
     async def setup(self) -> None:
         self.compose.down()  # clean slate: remove any leftovers from a prior run
         self.compose.up("powerdns", wait=True)
-        self.session = aiohttp.ClientSession(headers=self.headers)
+        self.session = aiohttp.ClientSession(
+            headers=self.headers,
+            connector=aiohttp.TCPConnector(limit=API_MAX_CONNECTIONS))
         await self._wait_api()
 
     async def _wait_api(self, timeout: int = 60) -> None:

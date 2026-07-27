@@ -47,9 +47,8 @@ class Bind9NsupdateAdapter(DnsAdapter):
         await self._wait_dns()
 
     async def _wait_dns(self, timeout: int = 90) -> None:
-        # Wait for SOA, then confirm the dynamic-update path works before returning
-        # so prepopulation never races a cold server. Probe failures are retried
-        # (not fatal) until the timeout.
+        # Confirm the dynamic-update path works, not just that SOA answers, so
+        # prepopulation never races a cold server.
         for _ in range(timeout * 2):
             code, _out = await self._dig(ZONE, "SOA")
             if code:

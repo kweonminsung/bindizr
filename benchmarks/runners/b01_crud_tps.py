@@ -54,8 +54,8 @@ async def run(adapter, cfg, ctx) -> dict:
 
     read_rec = await loadgen.run_closed_loop(read_step, conc, dur, warm)
 
-    # --- UPDATE (type-safe: same name/type/value, change TTL) so it maps cleanly
-    # onto RRset-based systems like PowerDNS as well as id-based ones like Bindizr.
+    # Change only the TTL, keeping name/type/value: an RRset-based system like
+    # PowerDNS and an id-based one like Bindizr then do comparable work.
     async def update_step(seq: int) -> bool:
         idx = seq % len(pool_handles)
         rec = dict(pool_recs[idx])
@@ -64,7 +64,7 @@ async def run(adapter, cfg, ctx) -> dict:
 
     update_rec = await loadgen.run_closed_loop(update_step, conc, dur, warm)
 
-    # --- DELETE (exactly the handles created above) ---
+    # Delete exactly what the CREATE phase made, leaving the read/update pool intact.
     async def delete_step(seq: int) -> bool:
         return await adapter.delete_record(zone, created[seq])
 

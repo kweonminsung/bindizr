@@ -1,6 +1,7 @@
 """Capture the test environment (hardware, OS, software/DB versions)."""
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import subprocess
@@ -63,8 +64,6 @@ def _mem_total_gb() -> float:
 
 
 def collect(cfg: dict) -> dict:
-    import os
-
     free = shutil.disk_usage("/").free
     return {
         "hardware": {

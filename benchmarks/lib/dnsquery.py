@@ -44,7 +44,7 @@ async def query_load(server: str, port: int, names: list[str], qtype: int,
     counter = itertools.count()
     n = len(names)
 
-    async def worker(wid: int) -> None:
+    async def worker() -> None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setblocking(False)
         sock.connect((server, port))
@@ -60,7 +60,14 @@ async def query_load(server: str, port: int, names: list[str], qtype: int,
                 ok = False
                 try:
                     await loop.sock_sendall(sock, pkt)
-                    resp = await asyncio.wait_for(loop.sock_recv(sock, 512), timeout=2.0)
+                    # Discard replies to earlier queries: one timed-out query
+                    # would otherwise leave every later read off by one, since
+                    # the socket is reused for the worker's whole run.
+                    while True:
+                        resp = await asyncio.wait_for(
+                            loop.sock_recv(sock, 512), timeout=2.0)
+                        if resp[:2] == pkt[:2]:
+                            break
                     ok = _ancount(resp) > 0
                 except Exception:
                     ok = False
@@ -70,6 +77,6 @@ async def query_load(server: str, port: int, names: list[str], qtype: int,
         finally:
             sock.close()
 
-    await asyncio.gather(*[worker(i) for i in range(concurrency)])
+    await asyncio.gather(*[worker() for _ in range(concurrency)])
     rec.ended_at = clock()
     return rec

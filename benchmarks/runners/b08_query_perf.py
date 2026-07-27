@@ -32,28 +32,19 @@ async def run(adapter, cfg, ctx) -> dict:
     names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
     ep = adapter.dns_endpoint()
 
-    # Wait until the imported zone is queryable before measuring: Bindizr's bulk
-    # write only starts async transfer to the secondary, so a fixed sleep could
-    # count missing names as errors. Probe the last record (highest-serial chunk)
-    # to confirm the whole zone is present; integrated systems return instantly.
-    loop = asyncio.get_event_loop()
     p = cfg["propagation"]
-    probe_idxs = sorted({0, len(records) // 2, len(records) - 1}) if records else []
-    for idx in probe_idxs:
-        r = records[idx]
-        got = await loop.run_in_executor(
-            None, dnsutil.poll_until_visible,
-            f'{r["name"]}.{zone.rstrip(".")}', "A", r["value"],
-            ep.host, ep.port, p["poll_interval_ms"], p["timeout_secs"])
-        if got is None:
-            print(f'  [FAIL] b08: zone not queryable within '
-                  f'{p["timeout_secs"]}s for {ctx["label"]}')
-            return {
-                "system": ctx["label"],
-                "zone_records": len(records),
-                "status": "FAILED",
-                "error": "propagation timeout: imported zone not queryable",
-            }
+    missing = await asyncio.get_event_loop().run_in_executor(
+        None, dnsutil.first_unqueryable, records, zone, ep.host, ep.port,
+        p["poll_interval_ms"], p["timeout_secs"])
+    if missing is not None:
+        print(f'  [FAIL] b08: zone not queryable within '
+              f'{p["timeout_secs"]}s for {ctx["label"]}')
+        return {
+            "system": ctx["label"],
+            "zone_records": len(records),
+            "status": "FAILED",
+            "error": "propagation timeout: imported zone not queryable",
+        }
 
     rec = await dnsquery.query_load(
         ep.host, ep.port, names, dnsquery.QTYPE["A"],

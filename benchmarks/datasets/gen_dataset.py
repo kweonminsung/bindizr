@@ -39,11 +39,13 @@ def iter_records(count: int, seed: int, zone: str = ZONE) -> Iterator[dict]:
         elif roll < 0.80:
             rec = {"name": name, "type": "AAAA", "value": _ip6(rng), "ttl": 3600}
         elif roll < 0.90:
-            rec = {"name": name, "type": "CNAME", "value": f"host{rng.randint(0, max(i,1)):06d}.{zone}", "ttl": 3600}
+            target = f"host{rng.randint(0, max(i, 1)):06d}.{zone}"
+            rec = {"name": name, "type": "CNAME", "value": target, "ttl": 3600}
         elif roll < 0.97:
             rec = {"name": name, "type": "TXT", "value": f"v=bench{i}", "ttl": 3600}
         else:
-            rec = {"name": name, "type": "MX", "value": f"mail{i%5}.{zone}", "ttl": 3600, "priority": 10}
+            rec = {"name": name, "type": "MX", "value": f"mail{i % 5}.{zone}",
+                   "ttl": 3600, "priority": 10}
         yield rec
 
 
