@@ -43,6 +43,8 @@ jobs:
         run: |
           helm dependency update charts/bindizr-stack
           mkdir -p docs/charts
+          # Rebuild index.yaml from the current chart alone
+          rm -f docs/charts/*.tgz
           helm package charts/bindizr-stack --destination docs/charts
           helm repo index docs/charts --url https://kweonminsung.github.io/bindizr/charts
 
@@ -52,7 +54,8 @@ jobs:
           git config user.email "github-actions@github.com"
 
           git add docs/index.html docs/api/index.html docs/charts/artifacthub-repo.yml docs/charts/index.html docs/charts/index.yaml
-          git add -f docs/charts/*.tgz
+          # -A so a removed .tgz is staged as a deletion
+          git add -Af docs/charts
 
           # Only commit and push if there are changes
           if ! git diff --cached --quiet; then

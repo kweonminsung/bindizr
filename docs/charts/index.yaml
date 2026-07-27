@@ -23,26 +23,4 @@ entries:
     urls:
     - https://kweonminsung.github.io/bindizr/charts/bindizr-stack-0.1.0-beta.5.tgz
     version: 0.1.0-beta.5
-  - apiVersion: v2
-    appVersion: 0.1.0-beta.4
-    created: "2026-07-27T17:43:39.312712123Z"
-    description: Bindizr DNS control plane with BIND9 authoritative DNS pods.
-    digest: 0c8dc668fb50f143f628b037ed372969ff99b71466362679b1a776b10729fd25
-    home: https://github.com/kweonminsung/bindizr
-    keywords:
-    - dns
-    - bindizr
-    - bind9
-    - kubernetes
-    - helm
-    maintainers:
-    - email: kevin136583@gmail.com
-      name: kweonminsung
-    name: bindizr-stack
-    sources:
-    - https://github.com/kweonminsung/bindizr
-    type: application
-    urls:
-    - https://kweonminsung.github.io/bindizr/charts/bindizr-stack-0.1.0-beta.4.tgz
-    version: 0.1.0-beta.4
-generated: "2026-07-27T17:43:39.31175404Z"
+generated: "2026-07-27T18:18:40.741003000Z"
