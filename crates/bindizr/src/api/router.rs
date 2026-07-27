@@ -9,16 +9,19 @@ use utoipa::OpenApi;
 
 #[cfg(debug_assertions)]
 use super::openapi::ApiDoc;
-use super::{notify::NotifyApi, record::RecordApi, zone::ZoneApi};
+use super::{notify::NotifyApi, record::RecordApi, tsig_key::TsigKeyApi, zone::ZoneApi};
 
+/// HTTP API router assembling all route groups.
 pub(crate) struct ApiRouter;
 
 impl ApiRouter {
+    /// Build the full axum router with auth, CORS, and (in debug) OpenAPI routes.
     pub(crate) async fn routes() -> Router {
         let mut api_router = Router::new()
             .merge(ZoneApi::routes().await)
             .merge(RecordApi::routes().await)
             .merge(NotifyApi::routes().await)
+            .merge(TsigKeyApi::routes().await)
             .route("/", routing::get(ApiRouter::get_home));
 
         if config::get_bindizr_config().api.require_authentication {
@@ -27,7 +30,7 @@ impl ApiRouter {
             ));
         }
 
-        let mut router = Router::new().merge(api_router);
+        let mut router = api_router;
 
         #[cfg(debug_assertions)]
         {

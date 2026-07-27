@@ -4,14 +4,16 @@ use sqlx::{MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneFilter, ZoneRepository},
+    repository::{RepositoryTx, ZoneFilter, ZoneRepository},
 };
 
+/// MySQL-backed implementation of `ZoneRepository`.
 pub struct MySqlZoneRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlZoneRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
@@ -51,14 +53,7 @@ impl ZoneRepository for MySqlZoneRepository {
         tx: &mut RepositoryTx<'_>,
         mut zone: Zone,
     ) -> Result<Zone, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let result = sqlx::query(
             r#"
@@ -99,14 +94,7 @@ impl ZoneRepository for MySqlZoneRepository {
         tx: &mut RepositoryTx<'_>,
         id: i32,
     ) -> Result<Option<Zone>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = ? FOR UPDATE")
             .bind(id)
@@ -133,14 +121,7 @@ impl ZoneRepository for MySqlZoneRepository {
         tx: &mut RepositoryTx<'_>,
         name: &str,
     ) -> Result<Option<Zone>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let zone = sqlx::query_as::<_, Zone>(
             "SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = ? FOR UPDATE",
@@ -303,14 +284,7 @@ impl ZoneRepository for MySqlZoneRepository {
         tx: &mut RepositoryTx<'_>,
         zone: Zone,
     ) -> Result<Zone, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query(
             r#"
@@ -346,15 +320,24 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(())
     }
 
+    async fn update_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), DatabaseError> {
+        let mysql_tx = tx.as_mysql()?;
+
+        sqlx::query("UPDATE zones SET serial = ? WHERE id = ?")
+            .bind(serial)
+            .bind(zone_id)
+            .execute(&mut **mysql_tx)
+            .await?;
+        Ok(())
+    }
+
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query("DELETE FROM zones WHERE id = ?")
             .bind(id)

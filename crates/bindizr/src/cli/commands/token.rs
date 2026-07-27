@@ -2,8 +2,12 @@ use bindizr_core::{log_debug, model::api_token::ApiToken};
 use clap::Subcommand;
 use serde_json::json;
 
-use crate::socket::{client::DaemonSocketClient, types::DaemonCommandKind};
+use crate::{
+    cli::error::CliError,
+    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+};
 
+/// Subcommands for managing API tokens.
 #[derive(Subcommand, Debug)]
 pub(crate) enum TokenCommand {
     /// Create a new API token
@@ -24,7 +28,8 @@ pub(crate) enum TokenCommand {
     },
 }
 
-pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), String> {
+/// Handle the `token` subcommand by dispatching to the daemon over the socket.
+pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
 
     match subcommand {
@@ -41,8 +46,7 @@ async fn create_token(
     client: &DaemonSocketClient,
     description: Option<String>,
     expires_in_days: Option<i64>,
-) -> Result<(), String> {
-    // Create socket request
+) -> Result<(), CliError> {
     let res = client
         .send_command(
             DaemonCommandKind::TokenCreate,
@@ -58,7 +62,6 @@ async fn create_token(
     let token: ApiToken = serde_json::from_value(res.data)
         .map_err(|e| format!("Failed to parse token creation response: {}", e))?;
 
-    // Print token details
     println!("API token created successfully:");
     println!("ID: {}", token.id);
     println!("Token: {}", token.token);
@@ -78,8 +81,7 @@ async fn create_token(
     Ok(())
 }
 
-async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
-    // Create socket request
+async fn list_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
     let res = client
         .send_command(DaemonCommandKind::TokenList, None)
         .await?;
@@ -111,8 +113,7 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), String> {
     Ok(())
 }
 
-async fn delete_token(client: &DaemonSocketClient, token_id: i32) -> Result<(), String> {
-    // Create socket request
+async fn delete_token(client: &DaemonSocketClient, token_id: i32) -> Result<(), CliError> {
     let res = client
         .send_command(
             DaemonCommandKind::TokenDelete,

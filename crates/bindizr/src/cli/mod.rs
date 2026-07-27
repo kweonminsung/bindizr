@@ -1,4 +1,5 @@
 mod commands;
+pub(crate) mod error;
 mod output;
 
 use std::sync::Arc;
@@ -12,7 +13,9 @@ use clap::{Parser, Subcommand};
 
 use crate::{
     api,
-    cli::commands::{notify::NotifyCommand, token::TokenCommand},
+    cli::commands::{
+        record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+    },
     socket,
 };
 
@@ -21,12 +24,13 @@ struct DnsNotifySender;
 #[async_trait]
 impl service::notify::NotifySender for DnsNotifySender {
     async fn send_notify(&self, zone_name: Option<&str>) -> Result<(), String> {
-        dns::xfr::notify::send_notify(zone_name, false)
+        dns::client::notify::send_notify(zone_name, false)
             .await
             .map_err(|e| e.to_string())
     }
 }
 
+/// Top-level CLI argument parser.
 #[derive(Parser, Debug)]
 #[command(name = "bindizr", version, about)]
 pub(crate) struct Args {
@@ -34,6 +38,7 @@ pub(crate) struct Args {
     pub command: Command,
 }
 
+/// Top-level CLI subcommands.
 #[derive(Subcommand, Debug)]
 pub(crate) enum Command {
     /// Start bindizr on foreground
@@ -49,45 +54,35 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: TokenCommand,
     },
-    /// Get resources
-    Get {
+    /// Manage TSIG keys for nsupdate authentication
+    TsigKey {
         #[command(subcommand)]
-        subcommand: commands::get::GetCommand,
+        subcommand: TsigKeyCommand,
     },
-    /// Create resources
-    Create {
+    /// Manage zones
+    Zone {
         #[command(subcommand)]
-        subcommand: commands::create::CreateCommand,
+        subcommand: ZoneCommand,
     },
-    /// Delete resources
-    Delete {
+    /// Manage records
+    Record {
         #[command(subcommand)]
-        subcommand: commands::delete::DeleteCommand,
-    },
-    /// Send NOTIFY to secondary servers
-    Notify {
-        #[command(subcommand)]
-        subcommand: NotifyCommand,
+        subcommand: RecordCommand,
     },
 }
 
+/// Initialize config, logging, database, DNS, socket, and API servers, then run until Ctrl+C.
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
-    // Initialize Configuration
-    if let Some(file) = config_file {
-        // Load configuration from the specified file
-        config::initialize(Some(file));
-    } else {
-        // Use default configuration file
-        config::initialize(None);
-    }
+    config::initialize(config_file);
 
     logger::initialize();
     service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
+    service::notify::init_apply_worker();
     database::initialize().await;
     dns::initialize().await;
 
     if config::get_bindizr_config().dns.notify_on_startup {
-        match dns::xfr::notify::send_notify(None, false).await {
+        match dns::client::notify::send_notify(None, false).await {
             Ok(()) => log_info!("Startup DNS NOTIFY completed."),
             Err(e) => log_error!("Startup DNS NOTIFY failed: {}", e),
         }
@@ -100,7 +95,6 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     socket::server::initialize().await?;
     api::initialize().await?;
 
-    // Wait only for Ctrl+C signal, ignore all stdin input
     tokio::signal::ctrl_c()
         .await
         .map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
@@ -110,20 +104,24 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+/// Parse CLI arguments and dispatch to the matching command handler.
 pub async fn execute() {
     let args = Args::parse();
 
-    // Execute command
     if let Err(e) = match args.command {
-        Command::Start { config } => commands::start::handle_command(config).await,
+        Command::Start { config } => commands::start::handle_command(config)
+            .await
+            .map_err(error::CliError::from),
         Command::Status => commands::status::handle_command().await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
-        Command::Get { subcommand } => commands::get::handle_command(subcommand).await,
-        Command::Create { subcommand } => commands::create::handle_command(subcommand).await,
-        Command::Delete { subcommand } => commands::delete::handle_command(subcommand).await,
-        Command::Notify { subcommand } => commands::notify::handle_notify(&subcommand).await,
+        Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
+        Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
+        Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
     } {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {}", e.message);
+        if let Some(hint) = e.hint() {
+            eprintln!("Hint: {}", hint);
+        }
         std::process::exit(1);
     }
 }

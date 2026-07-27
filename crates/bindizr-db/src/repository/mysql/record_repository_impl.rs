@@ -4,14 +4,16 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::record::{Record, RecordType, RecordWithZone},
-    repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
+    repository::{RecordFilter, RecordRepository, RepositoryTx},
 };
 
+/// MySQL-backed implementation of `RecordRepository`.
 pub struct MySqlRecordRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlRecordRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<MySql>) -> Self {
         MySqlRecordRepository { pool }
     }
@@ -47,14 +49,7 @@ impl RecordRepository for MySqlRecordRepository {
         tx: &mut RepositoryTx<'_>,
         mut record: Record,
     ) -> Result<Record, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let result = sqlx::query(
             r#"
@@ -73,6 +68,64 @@ impl RecordRepository for MySqlRecordRepository {
 
         record.id = result.last_insert_id() as i32;
         Ok(record)
+    }
+
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let mysql_tx = tx.as_mysql()?;
+
+        // Ids in a multi-row insert step by @@auto_increment_increment,
+        // which is >1 on multi-primary replication setups.
+        let increment =
+            sqlx::query_scalar::<_, i64>("SELECT CAST(@@auto_increment_increment AS SIGNED)")
+                .fetch_one(&mut **mysql_tx)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
+                .max(1) as i32;
+
+        const CHUNK: usize = 500;
+        let mut out = Vec::with_capacity(records.len());
+        for chunk in records.chunks(CHUNK) {
+            let mut sql = String::from(
+                "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
+            );
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 {
+                    "(?, ?, ?, ?, ?, ?)"
+                } else {
+                    ",(?, ?, ?, ?, ?, ?)"
+                });
+            }
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for r in chunk {
+                query = query
+                    .bind(r.name.clone())
+                    .bind(r.record_type.to_string())
+                    .bind(r.value.clone())
+                    .bind(r.ttl)
+                    .bind(r.priority)
+                    .bind(r.zone_id);
+            }
+            let result = query
+                .execute(&mut **mysql_tx)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            // MySQL returns the id of the FIRST row of a multi-row insert; the
+            // ids are contiguous by `increment` for a simple insert under every
+            // innodb_autoinc_lock_mode.
+            let first = result.last_insert_id() as i32;
+            for (offset, r) in chunk.iter().enumerate() {
+                let mut rec = r.clone();
+                rec.id = first + offset as i32 * increment;
+                out.push(rec);
+            }
+        }
+        Ok(out)
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
@@ -111,14 +164,7 @@ impl RecordRepository for MySqlRecordRepository {
         tx: &mut RepositoryTx<'_>,
         id: i32,
     ) -> Result<Option<Record>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ? FOR UPDATE")
             .bind(id)
@@ -169,14 +215,7 @@ impl RecordRepository for MySqlRecordRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         let records = sqlx::query_as::<_, Record>(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name FOR UPDATE",
@@ -186,6 +225,64 @@ impl RecordRepository for MySqlRecordRepository {
         .await?;
 
         Ok(records)
+    }
+
+    async fn get_by_zone_id_and_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        name: &str,
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let mysql_tx = tx.as_mysql()?;
+
+        // Owner names are stored lowercase, so match against a lowercased bind
+        // and keep the column function-free so idx_records_zone_name is used.
+        let records = sqlx::query_as::<_, Record>(
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name FOR UPDATE",
+        )
+        .bind(zone_id)
+        .bind(name.to_lowercase())
+        .fetch_all(&mut **mysql_tx)
+        .await?;
+
+        Ok(records)
+    }
+
+    async fn get_by_zone_id_and_names_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        names: &[String],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mysql_tx = tx.as_mysql()?;
+
+        // Only same-name rows can conflict, so match names lowercased (keeping the
+        // column function-free so idx_records_zone_name is used) and lock just those.
+        // One round-trip per chunk; keep it large (chunk size dominated bulk-import
+        // time). 5000 is well under the 65535 placeholder limit.
+        const CHUNK: usize = 5000;
+        let mut out = Vec::new();
+        for chunk in names.chunks(CHUNK) {
+            let mut sql = String::from(
+                "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name IN (",
+            );
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 { "?" } else { ",?" });
+            }
+            sql.push_str(") FOR UPDATE");
+
+            let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+            for name in chunk {
+                query = query.bind(name.to_lowercase());
+            }
+            let mut rows = query.fetch_all(&mut **mysql_tx).await?;
+            out.append(&mut rows);
+        }
+        Ok(out)
     }
 
     async fn get(
@@ -242,14 +339,7 @@ impl RecordRepository for MySqlRecordRepository {
         priority: Option<i32>,
         match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
         let value_filter = if record_type.is_name_like_value() {
             "AND (? IS NULL OR BINARY LOWER(value) = BINARY LOWER(?))"
         } else {
@@ -491,14 +581,7 @@ impl RecordRepository for MySqlRecordRepository {
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query(
             r#"
@@ -530,19 +613,40 @@ impl RecordRepository for MySqlRecordRepository {
     }
 
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query("DELETE FROM records WHERE id = ?")
             .bind(id)
             .execute(&mut **mysql_tx)
             .await?;
+        Ok(())
+    }
+
+    async fn delete_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), DatabaseError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let mysql_tx = tx.as_mysql()?;
+
+        const CHUNK: usize = 2000;
+        for chunk in ids.chunks(CHUNK) {
+            let mut sql = String::from("DELETE FROM records WHERE id IN (");
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 { "?" } else { ",?" });
+            }
+            sql.push(')');
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for id in chunk {
+                query = query.bind(id);
+            }
+            query.execute(&mut **mysql_tx).await?;
+        }
         Ok(())
     }
 }

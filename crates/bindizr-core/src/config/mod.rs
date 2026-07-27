@@ -7,12 +7,12 @@ use config::{Config, File, FileFormat};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
-// Config file path
-pub const BINDIZR_CONF_DIR: &str = "/etc/bindizr";
+/// Default path to the bindizr configuration file.
 pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
 
+/// Top-level bindizr configuration.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BindizrConfig {
     pub api: ApiConfig,
@@ -21,6 +21,7 @@ pub struct BindizrConfig {
     pub logging: LoggingConfig,
 }
 
+/// HTTP API server settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
@@ -29,6 +30,7 @@ pub struct ApiConfig {
     pub require_authentication: bool,
 }
 
+/// Database backend selection and per-backend connection settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DatabaseConfig {
     #[serde(rename = "type")]
@@ -41,6 +43,7 @@ pub struct DatabaseConfig {
     pub postgresql: PostgresqlConfig,
 }
 
+/// Supported database backends.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
@@ -60,21 +63,38 @@ impl fmt::Display for DatabaseType {
     }
 }
 
+impl std::str::FromStr for DatabaseType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "mysql" => Ok(DatabaseType::Mysql),
+            "sqlite" => Ok(DatabaseType::Sqlite),
+            "postgresql" => Ok(DatabaseType::Postgresql),
+            _ => Err("expected mysql, postgresql, or sqlite".to_string()),
+        }
+    }
+}
+
+/// MySQL connection settings.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct MysqlConfig {
     pub server_url: String,
 }
 
+/// SQLite connection settings.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SqliteConfig {
     pub file_path: String,
 }
 
+/// PostgreSQL connection settings.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct PostgresqlConfig {
     pub server_url: String,
 }
 
+/// DNS server and NOTIFY/nsupdate settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
@@ -82,21 +102,73 @@ pub struct DnsConfig {
     pub secondary_addrs: String,
     #[serde(default = "default_notify_after_update")]
     pub notify_after_update: bool,
+    /// `sync` runs reload/NOTIFY inline; `async` hands it to a background worker.
+    #[serde(default = "default_apply_mode")]
+    pub apply_mode: ApplyMode,
+    /// Window (ms) over which async-mode NOTIFYs are collapsed to one per zone.
+    #[serde(default = "default_apply_batch_ms")]
+    pub apply_batch_ms: u64,
+    /// Cache each zone's records by serial so repeated AXFRs skip the DB read.
+    #[serde(default = "default_zone_cache")]
+    pub zone_cache: bool,
     #[serde(default)]
     pub notify_on_startup: bool,
     #[serde(default = "default_notify_retries")]
     pub notify_retries: u32,
     #[serde(default = "default_notify_timeout_secs")]
     pub notify_timeout_secs: u64,
-    /// Both name and key must be non-empty to enable nsupdate TSIG authentication.
+    /// Accept unsigned nsupdate requests. Not recommended in production;
+    /// signed requests are always verified.
     #[serde(default)]
-    pub nsupdate_tsig_key_name: String,
-    #[serde(default)]
-    pub nsupdate_tsig_key: String,
+    pub nsupdate_allow_unsigned: bool,
 }
 
 fn default_notify_after_update() -> bool {
     true
+}
+
+fn default_apply_mode() -> ApplyMode {
+    ApplyMode::Sync
+}
+
+fn default_apply_batch_ms() -> u64 {
+    50
+}
+
+fn default_zone_cache() -> bool {
+    true
+}
+
+/// When zone reload/NOTIFY runs relative to the write request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApplyMode {
+    /// Inline: the write returns only after NOTIFY is sent.
+    Sync,
+    /// Queued to a background worker: the write returns at commit.
+    Async,
+}
+
+impl fmt::Display for ApplyMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            ApplyMode::Sync => "sync",
+            ApplyMode::Async => "async",
+        };
+        write!(f, "{}", value)
+    }
+}
+
+impl std::str::FromStr for ApplyMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "sync" => Ok(ApplyMode::Sync),
+            "async" => Ok(ApplyMode::Async),
+            _ => Err("expected sync or async".to_string()),
+        }
+    }
 }
 
 fn default_notify_retries() -> u32 {
@@ -107,11 +179,13 @@ fn default_notify_timeout_secs() -> u64 {
     5
 }
 
+/// Logging settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LoggingConfig {
     pub log_level: LogLevel,
 }
 
+/// Console log verbosity levels.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
@@ -135,6 +209,23 @@ impl fmt::Display for LogLevel {
     }
 }
 
+impl std::str::FromStr for LogLevel {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "trace" => Ok(LogLevel::Trace),
+            "debug" => Ok(LogLevel::Debug),
+            "info" => Ok(LogLevel::Info),
+            "warn" => Ok(LogLevel::Warn),
+            "error" => Ok(LogLevel::Error),
+            _ => Err("expected trace, debug, info, warn, or error".to_string()),
+        }
+    }
+}
+
+/// Load configuration from `conf_file_path` (or the default path / env var),
+/// apply environment overrides, and store it as the global config.
 pub fn initialize(conf_file_path: Option<&str>) {
     let conf_file_path = conf_file_path
         .map(str::to_string)
@@ -198,7 +289,7 @@ fn apply_env_overrides_from(
             parse_env_value("BINDIZR_API_REQUIRE_AUTHENTICATION", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
-        config.database.database_type = parse_database_type_env("BINDIZR_DATABASE_TYPE", &value)?;
+        config.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_MYSQL_SERVER_URL") {
         config.database.mysql.server_url = value;
@@ -225,16 +316,21 @@ fn apply_env_overrides_from(
     if let Some(value) = get_env("BINDIZR_SECONDARY_ADDRS") {
         config.dns.secondary_addrs = value;
     }
-    if let Some(value) = get_env("BINDIZR_NSUPDATE_TSIG_KEY") {
-        config.dns.nsupdate_tsig_key = value;
-    } else if let Some(value) = get_env("TSIG_SECRET") {
-        config.dns.nsupdate_tsig_key = value;
-    }
-    if let Some(value) = get_env("BINDIZR_NSUPDATE_TSIG_KEY_NAME") {
-        config.dns.nsupdate_tsig_key_name = value;
+    if let Some(value) = get_env("BINDIZR_NSUPDATE_ALLOW_UNSIGNED") {
+        config.dns.nsupdate_allow_unsigned =
+            parse_env_value("BINDIZR_NSUPDATE_ALLOW_UNSIGNED", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_NOTIFY_AFTER_UPDATE") {
         config.dns.notify_after_update = parse_env_value("BINDIZR_NOTIFY_AFTER_UPDATE", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_APPLY_MODE") {
+        config.dns.apply_mode = parse_env_value("BINDIZR_APPLY_MODE", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_APPLY_BATCH_MS") {
+        config.dns.apply_batch_ms = parse_env_value("BINDIZR_APPLY_BATCH_MS", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_ZONE_CACHE") {
+        config.dns.zone_cache = parse_env_value("BINDIZR_ZONE_CACHE", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
         config.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;
@@ -246,7 +342,7 @@ fn apply_env_overrides_from(
         config.dns.notify_timeout_secs = parse_env_value("BINDIZR_NOTIFY_TIMEOUT_SECS", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
-        config.logging.log_level = parse_log_level_env("BINDIZR_LOG_LEVEL", &value)?;
+        config.logging.log_level = parse_env_value("BINDIZR_LOG_LEVEL", &value)?;
     }
 
     Ok(())
@@ -260,32 +356,6 @@ where
     value
         .parse::<T>()
         .map_err(|e| format!("Invalid {} environment variable '{}': {}", name, value, e))
-}
-
-fn parse_database_type_env(name: &str, value: &str) -> Result<DatabaseType, String> {
-    match value {
-        "mysql" => Ok(DatabaseType::Mysql),
-        "postgresql" => Ok(DatabaseType::Postgresql),
-        "sqlite" => Ok(DatabaseType::Sqlite),
-        _ => Err(format!(
-            "Invalid {} environment variable '{}': expected mysql, postgresql, or sqlite",
-            name, value
-        )),
-    }
-}
-
-fn parse_log_level_env(name: &str, value: &str) -> Result<LogLevel, String> {
-    match value {
-        "trace" => Ok(LogLevel::Trace),
-        "debug" => Ok(LogLevel::Debug),
-        "info" => Ok(LogLevel::Info),
-        "warn" => Ok(LogLevel::Warn),
-        "error" => Ok(LogLevel::Error),
-        _ => Err(format!(
-            "Invalid {} environment variable '{}': expected trace, debug, info, warn, or error",
-            name, value
-        )),
-    }
 }
 
 fn validate_database_config(config: &DatabaseConfig) -> Result<(), String> {
@@ -309,6 +379,7 @@ fn exit_config_error(message: String) -> ! {
     std::process::exit(1);
 }
 
+/// Return the global configuration; panics if [`initialize`] has not run.
 pub fn get_bindizr_config() -> &'static BindizrConfig {
     BINDIZR_CONFIG.get().expect("Configuration not initialized")
 }

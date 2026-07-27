@@ -4,14 +4,16 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::record::{Record, RecordType, RecordWithZone},
-    repository::{RecordFilter, RecordRepository, RepositoryTx, RepositoryTxKind},
+    repository::{RecordFilter, RecordRepository, RepositoryTx},
 };
 
+/// SQLite-backed implementation of `RecordRepository`.
 pub struct SqliteRecordRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteRecordRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -46,14 +48,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         mut record: Record,
     ) -> Result<Record, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         let result = sqlx::query(
             r#"
@@ -72,6 +67,56 @@ impl RecordRepository for SqliteRecordRepository {
 
         record.id = result.last_insert_rowid() as i32;
         Ok(record)
+    }
+
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        records: &[Record],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let sqlite_tx = tx.as_sqlite()?;
+
+        // 6 columns per row; keep bind count under SQLite's conservative limit.
+        const CHUNK: usize = 150;
+        let mut out = Vec::with_capacity(records.len());
+        for chunk in records.chunks(CHUNK) {
+            let mut sql = String::from(
+                "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
+            );
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 {
+                    "(?, ?, ?, ?, ?, ?)"
+                } else {
+                    ",(?, ?, ?, ?, ?, ?)"
+                });
+            }
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for r in chunk {
+                query = query
+                    .bind(r.name.clone())
+                    .bind(r.record_type.to_string())
+                    .bind(r.value.clone())
+                    .bind(r.ttl)
+                    .bind(r.priority)
+                    .bind(r.zone_id);
+            }
+            let result = query
+                .execute(&mut **sqlite_tx)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+            // SQLite assigns contiguous rowids within a single insert; the last
+            // one is `last_insert_rowid()`, so the chunk spans first..=last.
+            let last = result.last_insert_rowid() as i32;
+            let first = last - chunk.len() as i32 + 1;
+            for (offset, r) in chunk.iter().enumerate() {
+                let mut rec = r.clone();
+                rec.id = first + offset as i32;
+                out.push(rec);
+            }
+        }
+        Ok(out)
     }
 
     async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
@@ -110,14 +155,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         id: i32,
     ) -> Result<Option<Record>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
             .bind(id)
@@ -168,14 +206,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         let records = sqlx::query_as::<_, Record>(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name",
@@ -185,6 +216,63 @@ impl RecordRepository for SqliteRecordRepository {
         .await?;
 
         Ok(records)
+    }
+
+    async fn get_by_zone_id_and_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        name: &str,
+    ) -> Result<Vec<Record>, DatabaseError> {
+        let sqlite_tx = tx.as_sqlite()?;
+
+        // Owner names are stored lowercase, so match against a lowercased bind
+        // and keep the column function-free so idx_records_zone_name is used.
+        let records = sqlx::query_as::<_, Record>(
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name",
+        )
+        .bind(zone_id)
+        .bind(name.to_lowercase())
+        .fetch_all(&mut **sqlite_tx)
+        .await?;
+
+        Ok(records)
+    }
+
+    async fn get_by_zone_id_and_names_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        names: &[String],
+    ) -> Result<Vec<Record>, DatabaseError> {
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let sqlite_tx = tx.as_sqlite()?;
+
+        // Only same-name rows can conflict, so match names lowercased (keeping the
+        // column function-free so idx_records_zone_name is used) and chunk the IN
+        // list to stay under SQLite's bind-variable limit.
+        const CHUNK: usize = 400;
+        let mut out = Vec::new();
+        for chunk in names.chunks(CHUNK) {
+            let mut sql = String::from(
+                "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name IN (",
+            );
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 { "?" } else { ",?" });
+            }
+            sql.push(')');
+
+            let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+            for name in chunk {
+                query = query.bind(name.to_lowercase());
+            }
+            let mut rows = query.fetch_all(&mut **sqlite_tx).await?;
+            out.append(&mut rows);
+        }
+        Ok(out)
     }
 
     async fn get(
@@ -241,14 +329,7 @@ impl RecordRepository for SqliteRecordRepository {
         priority: Option<i32>,
         match_priority: bool,
     ) -> Result<Option<Record>, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
         let value_filter = if record_type.is_name_like_value() {
             "AND (? IS NULL OR LOWER(value) = LOWER(?))"
         } else {
@@ -489,14 +570,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query(
             r#"
@@ -530,19 +604,41 @@ impl RecordRepository for SqliteRecordRepository {
     }
 
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query("DELETE FROM records WHERE id = ?")
             .bind(id)
             .execute(&mut **sqlite_tx)
             .await?;
+        Ok(())
+    }
+
+    async fn delete_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), DatabaseError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let sqlite_tx = tx.as_sqlite()?;
+
+        // One bind per id; keep the count under SQLite's conservative limit.
+        const CHUNK: usize = 900;
+        for chunk in ids.chunks(CHUNK) {
+            let mut sql = String::from("DELETE FROM records WHERE id IN (");
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 { "?" } else { ",?" });
+            }
+            sql.push(')');
+
+            let mut query = sqlx::query(AssertSqlSafe(sql));
+            for id in chunk {
+                query = query.bind(id);
+            }
+            query.execute(&mut **sqlite_tx).await?;
+        }
         Ok(())
     }
 }

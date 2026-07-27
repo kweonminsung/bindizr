@@ -1,0 +1,40 @@
+# CoreDNS authoritative server, zone served from a file the adapter rewrites.
+services:
+  # Seeded with busybox, not the CoreDNS image, which ships without a shell.
+  seed:
+    image: busybox:1.38
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cp /seed/bench.example.zone /zones/bench.example.zone
+        chmod 644 /zones/bench.example.zone
+    volumes:
+      - ./bench.example.zone:/seed/bench.example.zone:ro
+      - coredns-zones:/zones
+
+  coredns:
+    image: coredns/coredns:1.14.6
+    command: ["-conf", "/etc/coredns/Corefile"]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    volumes:
+      - ./Corefile:/etc/coredns/Corefile:ro
+      - coredns-zones:/zones
+    ports:
+      - "${COREDNS_DNS_HOST_PORT:-15359}:53/tcp"
+      - "${COREDNS_DNS_HOST_PORT:-15359}:53/udp"
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
+networks:
+  bench-net:
+
+volumes:
+  coredns-zones:

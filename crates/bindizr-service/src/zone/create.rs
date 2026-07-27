@@ -3,14 +3,14 @@ use chrono::Utc;
 
 use super::ZoneService;
 use crate::{
-    error::ServiceError,
+    error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType},
         zone::Zone,
     },
     repository::RepositoryService,
-    serial::generate_serial,
+    serial::{generate_serial, validate_initial_serial},
     types::CreateZoneRequest,
     zone::{
         DEFAULT_EXPIRE, DEFAULT_MINIMUM_TTL, DEFAULT_REFRESH, DEFAULT_RETRY,
@@ -20,6 +20,7 @@ use crate::{
 };
 
 impl ZoneService {
+    /// Create a new zone with an apex NS record and NOTIFY the catalog zone.
     pub async fn create(create_zone_request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
         let validated = validate_create_zone_request(create_zone_request)?;
         let timers = resolve_soa_timers(
@@ -37,31 +38,30 @@ impl ZoneService {
         match RepositoryService::get_zone_by_name(&validated.name).await {
             Ok(Some(_)) => {
                 log_error!("Zone with name {} already exists", validated.name);
-                return Err(ServiceError::BadRequest(
-                    "zone name already exists".to_string(),
-                ));
+                return Err(ServiceError::zone_conflict(format!(
+                    "Zone with name '{}' already exists",
+                    validated.name
+                )));
             }
             Ok(None) => {}
             Err(e) => {
                 log_error!("Failed to check existing zone: {}", e);
-                return Err(ServiceError::Internal("Failed to create zone".to_string()));
+                return Err(ServiceError::internal("Failed to create zone".to_string()));
             }
         };
 
-        // Generate serial if not provided
         let serial = match create_zone_request.serial {
-            Some(s) => s,
-            None => generate_serial(None),
+            Some(s) => validate_initial_serial(s)?,
+            None => generate_serial(None)?,
         };
 
-        // Create zone
         let mut tx = RepositoryService::begin_tx("Failed to create zone").await?;
 
         let apply_result = async {
             let created_zone = RepositoryService::create_zone_tx(
                 &mut tx,
                 Zone {
-                    id: 0, // Will be set by the database
+                    id: 0,
                     name: validated.name.clone(),
                     primary_ns: validated.primary_ns.clone(),
                     admin_email: validated.admin_email.clone(),
@@ -71,13 +71,19 @@ impl ZoneService {
                     retry: timers.retry,
                     expire: timers.expire,
                     minimum_ttl: timers.minimum_ttl,
-                    created_at: Utc::now(), // Will be set by the database
+                    created_at: Utc::now(),
                 },
             )
             .await
             .map_err(|e| {
                 log_error!("Failed to create zone: {}", e);
-                ServiceError::Internal("Failed to create zone".to_string())
+                // Keep the conflict mapped from the UNIQUE(name) backstop; it
+                // covers creates that raced past the pre-check above.
+                if e.code == ErrorCode::ZoneConflict {
+                    e
+                } else {
+                    ServiceError::internal("Failed to create zone".to_string())
+                }
             })?;
 
             // Keep zones.primary_ns aligned with at least one apex NS record in records table.
@@ -86,7 +92,7 @@ impl ZoneService {
                 name: "@".to_string(),
                 record_type: RecordType::NS,
                 value: validated.primary_ns.clone(),
-                ttl: Some(validated.ttl),
+                ttl: validated.ttl,
                 priority: None,
                 zone_id: created_zone.id,
                 created_at: Utc::now(),
@@ -96,7 +102,7 @@ impl ZoneService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to create primary NS record: {}", e);
-                    ServiceError::Internal("Failed to create primary NS record".to_string())
+                    ServiceError::internal("Failed to create primary NS record".to_string())
                 })?;
 
             save_zone_snapshot_tx(&mut tx, &created_zone, created_zone.serial).await?;
@@ -108,7 +114,6 @@ impl ZoneService {
         let created_zone =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create zone").await?;
 
-        // Log zone creation after commit (structured logging)
         log_info!(
             "event=zone_create zone={} primary_ns={} serial={} zone_id={}",
             created_zone.name,
@@ -117,6 +122,7 @@ impl ZoneService {
             created_zone.id
         );
 
+        // Send catalog NOTIFY so secondaries pick up the new zone
         if let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await {
             log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }

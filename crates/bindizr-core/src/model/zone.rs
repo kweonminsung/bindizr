@@ -3,19 +3,19 @@ use sqlx::FromRow;
 
 use crate::dns::name::{NameError, email_to_soa_mailbox};
 
-// Structure for basic creation of SOA records and basic creation of NS records
+/// Zone metadata used to generate the SOA and NS records.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Zone {
     pub id: i32,
-    pub name: String,        // zone name (e.g.: "example.com")
-    pub primary_ns: String,  // primary name server (e.g.: "ns1.example.com")
-    pub admin_email: String, // admin email (e.g.: "admin.example.com")
-    pub ttl: i32,            // default TTL (seconds)
-    pub serial: i32,         // serial number (SOA record)
-    pub refresh: i32,        // refresh period (seconds)
-    pub retry: i32,          // retry period (seconds)
-    pub expire: i32,         // expire period (seconds)
-    pub minimum_ttl: i32,    // minimum TTL (seconds)
+    pub name: String,
+    pub primary_ns: String,
+    pub admin_email: String,
+    pub ttl: i32,         // Default TTL in seconds
+    pub serial: i32,      // SOA serial number
+    pub refresh: i32,     // SOA refresh period in seconds
+    pub retry: i32,       // SOA retry period in seconds
+    pub expire: i32,      // SOA expire period in seconds
+    pub minimum_ttl: i32, // SOA minimum TTL in seconds
     pub created_at: DateTime<Utc>,
 }
 

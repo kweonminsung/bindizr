@@ -4,11 +4,19 @@ use utoipa::{
 };
 
 use super::types::{
-    CreateRecordRequest, CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse,
-    MessageResponse, NotifyZoneRequest, Pagination, RecordListResponse, RecordResponse,
-    RecordValueRequest, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+    BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
+    CreateTsigKeyRequest, CreateZoneRequest, CreateZoneTsigPolicyRequest, ErrorResponse,
+    GetRecordResponse, GetTsigKeyResponse, GetZoneResponse, GetZoneTsigPolicyResponse, ImportMode,
+    ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse,
+    NotifyZoneRequest, Pagination, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
+    RecordListResponse, RecordResponse, RecordValueRequest, RollbackSummary, RollbackZoneRequest,
+    RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse, SnapshotDiffResponse,
+    SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse, TsigKeyResponse,
+    UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse, ZoneSnapshotResponse,
+    ZoneStatusResponse, ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
 };
 
+/// OpenAPI document for the HTTP API (debug builds only).
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -22,30 +30,75 @@ use super::types::{
         super::record::create_record,
         super::record::update_record,
         super::record::delete_record,
-        super::notify::notify_zones
+        super::record::create_records_bulk,
+        super::zone::import_zone,
+        super::zone::export_zone,
+        super::zone::list_zone_snapshots,
+        super::zone::get_zone_snapshot,
+        super::zone::diff_zone_snapshots,
+        super::zone::rollback_zone,
+        super::zone::get_zone_status,
+        super::notify::notify_zones,
+        super::tsig_key::get_tsig_keys,
+        super::tsig_key::create_tsig_key,
+        super::tsig_key::get_tsig_key,
+        super::tsig_key::delete_tsig_key,
+        super::tsig_key::get_zone_tsig_policies,
+        super::tsig_key::create_zone_tsig_policy,
+        super::tsig_key::delete_zone_tsig_policy
     ),
     components(schemas(
+        BulkRecordItem,
+        BulkRecordsResponse,
+        CreateBulkRecordsRequest,
         CreateRecordRequest,
+        CreateTsigKeyRequest,
         CreateZoneRequest,
+        CreateZoneTsigPolicyRequest,
         ErrorResponse,
         GetRecordResponse,
+        GetTsigKeyResponse,
         GetZoneResponse,
+        GetZoneTsigPolicyResponse,
+        ImportMode,
+        ImportSummary,
+        ImportZoneFileRequest,
+        ImportZoneFileResponse,
         MessageResponse,
         NotifyZoneRequest,
         Pagination,
+        RecordDiff,
+        RecordDiffEntry,
+        RecordDiffSummary,
+        RecordDiffValue,
         RecordListResponse,
         RecordResponse,
         RecordValueRequest,
+        RollbackSummary,
+        RollbackZoneRequest,
+        RollbackZoneResponse,
+        SecondaryStatusResponse,
+        SnapshotDetailResponse,
+        SnapshotDiffResponse,
+        SnapshotListResponse,
+        SnapshotRecordResponse,
+        TsigKeyListResponse,
+        TsigKeyResponse,
         UpdateRecordRequest,
         ZoneDetailResponse,
         ZoneListResponse,
-        ZoneResponse
+        ZoneResponse,
+        ZoneSnapshotResponse,
+        ZoneStatusResponse,
+        ZoneTsigPolicyListResponse,
+        ZoneTsigPolicyResponse
     )),
     modifiers(&SecurityAddon),
     tags(
         (name = "Zone", description = "Manage DNS zones including creation, update, deletion, and retrieval."),
         (name = "Record", description = "Manage DNS records including creation, update, deletion, and retrieval."),
-        (name = "Notify", description = "Send DNS NOTIFY messages to secondary servers.")
+        (name = "Notify", description = "Send DNS NOTIFY messages to secondary servers."),
+        (name = "TSIG", description = "Manage TSIG keys and per-zone TSIG policies for nsupdate authentication.")
     ),
     info(
         title = "Bindizr HTTP API",

@@ -2,8 +2,8 @@ services:
   bindizr:
     image: kweonminsung/bindizr:0.1.0-beta.5
     environment:
-      BINDIZR_DATABASE_TYPE: mysql
-      BINDIZR_DATABASE_URL: mysql://bindizr:bindizr@mysql:3306/bindizr
+      BINDIZR_DATABASE_TYPE: postgresql
+      BINDIZR_DATABASE_URL: postgresql://bindizr:bindizr@postgres:5432/bindizr
       BINDIZR_API_LISTEN_ADDR: "0.0.0.0"
       BINDIZR_API_PORT: "8000"
       BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
@@ -13,8 +13,7 @@ services:
       BINDIZR_SECONDARY_ADDRS: tasks.bind9:53
       BINDIZR_NOTIFY_RETRIES: "3"
       BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
-      BINDIZR_NSUPDATE_TSIG_KEY_NAME: nsupdate-key
-      BINDIZR_NSUPDATE_TSIG_KEY: ""
+      BINDIZR_NSUPDATE_ALLOW_UNSIGNED: "false"
     ports:
       - target: 8000
         published: 8000
@@ -61,15 +60,14 @@ services:
       restart_policy:
         condition: any
 
-  mysql:
-    image: mysql:9.7
+  postgres:
+    image: postgres:18
     environment:
-      MYSQL_DATABASE: bindizr
-      MYSQL_USER: bindizr
-      MYSQL_PASSWORD: bindizr
-      MYSQL_ROOT_PASSWORD: bindizr-root
+      POSTGRES_DB: bindizr
+      POSTGRES_USER: bindizr
+      POSTGRES_PASSWORD: bindizr
     volumes:
-      - mysql-data:/var/lib/mysql
+      - postgres-data:/var/lib/postgresql
     networks:
       - bindizr-net
     deploy:
@@ -90,4 +88,4 @@ volumes:
   bindizr-data:
   bind9-cache:
   bind9-data:
-  mysql-data:
+  postgres-data:

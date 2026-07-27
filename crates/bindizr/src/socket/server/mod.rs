@@ -2,15 +2,17 @@ mod notify;
 mod record;
 mod status;
 mod token;
+mod tsig_key;
 mod zone;
 
 use std::{io, os::unix::fs::FileTypeExt, path::Path};
 
 use bindizr_core::{log_error, log_info, log_warn};
+use bindizr_service::error::ServiceError;
 use serde_json::json;
 use tokio::{
     fs,
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
 };
 
@@ -19,8 +21,13 @@ use crate::socket::{
     types::{DaemonCommand, DaemonCommandKind},
 };
 
+/// Upper bound on a single command line, so a buggy or malicious client cannot
+/// force unbounded allocation. Sized above the HTTP upload cap (32 MB) because
+/// zone-file content arrives JSON-escaped, roughly doubling in the worst case.
+const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
+
 async fn handle_client(stream: UnixStream) {
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
 
     if reader.read_line(&mut line).await.is_ok() {
@@ -28,43 +35,66 @@ async fn handle_client(stream: UnixStream) {
 
         let raw_response = match parsed {
             Ok(cmd) => match cmd.command {
-                // General commands
                 DaemonCommandKind::Status => status::get_status(),
                 DaemonCommandKind::TokenCreate => token::create_token(&cmd.data).await,
                 DaemonCommandKind::TokenList => token::list_tokens().await,
                 DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
-                // Zone commands
+                DaemonCommandKind::TsigKeyCreate => tsig_key::create_tsig_key(&cmd.data).await,
+                DaemonCommandKind::TsigKeyList => tsig_key::list_tsig_keys().await,
+                DaemonCommandKind::TsigKeyGet => tsig_key::get_tsig_key(&cmd.data).await,
+                DaemonCommandKind::TsigKeyDelete => tsig_key::delete_tsig_key(&cmd.data).await,
+                DaemonCommandKind::ZoneTsigPolicyAdd => {
+                    tsig_key::add_zone_tsig_policy(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneTsigPolicyList => {
+                    tsig_key::list_zone_tsig_policies(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneTsigPolicyRemove => {
+                    tsig_key::remove_zone_tsig_policy(&cmd.data).await
+                }
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
+                DaemonCommandKind::UpdateZone => zone::update_zone(&cmd.data).await,
                 DaemonCommandKind::DeleteZone => zone::delete_zone(&cmd.data).await,
-                // Record commands
                 DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
+                DaemonCommandKind::UpdateRecord => record::update_record(&cmd.data).await,
+                DaemonCommandKind::BulkCreateRecords => {
+                    record::bulk_create_records(&cmd.data).await
+                }
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
-                // Notify commands
                 DaemonCommandKind::NotifyZone => notify::handle_notify_zone(cmd.data).await,
+                DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
+                DaemonCommandKind::ExportZoneFile => zone::export_zone(&cmd.data).await,
+                DaemonCommandKind::ListZoneSnapshots => zone::list_zone_snapshots(&cmd.data).await,
+                DaemonCommandKind::GetZoneSnapshot => zone::get_zone_snapshot(&cmd.data).await,
+                DaemonCommandKind::DiffZoneSnapshots => zone::diff_zone_snapshots(&cmd.data).await,
+                DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
+                DaemonCommandKind::ZoneStatus => zone::zone_status(&cmd.data).await,
             },
 
             Err(e) => {
                 log_error!("Failed to parse command: {}", e);
-                Err("Failed to parse command".to_string())
+                Err(ServiceError::invalid_input("Failed to parse command"))
             }
         };
 
         let response = match raw_response {
-            Ok(res) => serde_json::to_string(&res)
-                .unwrap_or_else(|_| json_response_error("Failed to serialize response")),
+            Ok(res) => serde_json::to_string(&res).unwrap_or_else(|_| {
+                json_response_error(&ServiceError::internal("Failed to serialize response"))
+            }),
             Err(e) => json_response_error(&e),
         };
 
-        let mut stream = reader.into_inner();
+        let mut stream = reader.into_inner().into_inner();
         let _ = stream.write_all(response.as_bytes()).await;
         let _ = stream.write_all(b"\n").await;
     }
 }
 
+/// Bind the daemon's Unix socket and spawn the connection accept loop.
 pub(crate) async fn initialize() -> Result<(), String> {
     let (socket_path, listener) = bind_daemon_socket().await?;
 
@@ -88,32 +118,36 @@ pub(crate) async fn initialize() -> Result<(), String> {
     Ok(())
 }
 
-async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
-    match bind_socket(SOCKET_FILE_PATH).await {
-        Ok(listener) => Ok((SOCKET_FILE_PATH.to_string(), listener)),
-        Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {
-            log_warn!(
-                "Cannot use default Unix socket path '{}': {}. Falling back to '{}'.",
-                SOCKET_FILE_PATH,
-                err,
-                FALLBACK_SOCKET_FILE_PATH
-            );
+/// Socket paths tried in order when the daemon starts.
+const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH];
 
-            bind_socket(FALLBACK_SOCKET_FILE_PATH)
-                .await
-                .map(|listener| (FALLBACK_SOCKET_FILE_PATH.to_string(), listener))
-                .map_err(|err| {
-                    format!(
-                        "Failed to use fallback Unix socket path '{}': {}",
-                        FALLBACK_SOCKET_FILE_PATH, err
-                    )
-                })
+async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
+    let mut failures = Vec::new();
+
+    for (i, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
+        let err = match bind_socket(path).await {
+            Ok(listener) => return Ok(((*path).to_string(), listener)),
+            // Another daemon already owns this socket. Trying the next candidate
+            // would start a second daemon instead of reporting the conflict.
+            Err(err) if err.kind() == io::ErrorKind::AddrInUse => return Err(err.to_string()),
+            Err(err) => err,
+        };
+
+        if let Some(next) = SOCKET_PATH_CANDIDATES.get(i + 1) {
+            log_warn!(
+                "Cannot use Unix socket path '{}': {}. Falling back to '{}'.",
+                path,
+                err,
+                next
+            );
         }
-        Err(err) => Err(format!(
-            "Failed to use Unix socket path '{}': {}",
-            SOCKET_FILE_PATH, err
-        )),
+        failures.push(format!("'{}': {}", path, err));
     }
+
+    Err(format!(
+        "Failed to bind the daemon Unix socket ({})",
+        failures.join("; ")
+    ))
 }
 
 async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {
@@ -157,9 +191,34 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     }
 }
 
-fn json_response_error(msg: &str) -> String {
+/// Extract the required `zone_name` string field from a command payload.
+pub(super) fn required_zone_name(data: &serde_json::Value) -> Result<&str, ServiceError> {
+    data.get("zone_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'zone_name' field"))
+}
+
+/// Deserialize a command payload into its typed parameter struct, so missing
+/// and wrongly typed fields are rejected instead of silently defaulting.
+pub(super) fn parse_params<T: serde::de::DeserializeOwned>(
+    data: &serde_json::Value,
+) -> Result<T, ServiceError> {
+    serde_json::from_value(data.clone())
+        .map_err(|e| ServiceError::invalid_input(format!("Invalid command payload: {}", e)))
+}
+
+/// Serialize a handler result into the `DaemonResponse` data payload.
+pub(super) fn to_response_data<T: serde::Serialize>(
+    value: T,
+) -> Result<serde_json::Value, ServiceError> {
+    serde_json::to_value(value)
+        .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))
+}
+
+fn json_response_error(err: &ServiceError) -> String {
     json!({
-        "error": msg
+        "error": err.message,
+        "code": err.code.as_str(),
     })
     .to_string()
 }

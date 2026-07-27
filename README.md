@@ -77,7 +77,7 @@ Use the default `docker-compose.yml` with Docker Swarm for a containerized Bindi
 $ docker stack deploy -c docker-compose.yml bindizr
 ```
 
-The stack runs Bindizr, MySQL, and BIND9 on an overlay network, using Docker configs for BIND9 configuration.
+The stack runs Bindizr, PostgreSQL, and BIND9 on an overlay network, using Docker configs for BIND9 configuration.
 
 ### Manual Installation
 
@@ -121,8 +121,7 @@ notify_after_update = true    # Send DNS NOTIFY after zone changes
 notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
 notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 5       # Timeout in seconds for each NOTIFY send/response wait
-nsupdate_tsig_key_name = "nsupdate-key" # TSIG key name for nsupdate authentication (name and key must both be set)
-nsupdate_tsig_key = ""        # Shared TSIG secret for nsupdate authentication (name and key must both be set, base64 recommended)
+nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests (not recommended in production; TSIG keys/policies are managed via CLI or HTTP API)
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace
@@ -274,7 +273,35 @@ $ bindizr start -c <FILE>
 $ bindizr status
 
 # Send NOTIFY to secondary DNS servers for a zone
-$ bindizr notify zone <ZONE_NAME>
+$ bindizr zone notify <ZONE_NAME>
+
+# Update a zone, changing only the fields you pass
+$ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
+
+# Update a record, changing only the fields you pass
+$ bindizr record update <RECORD_ID> --value 127.0.0.1
+
+# Export a zone as BIND master-file text (the inverse of import)
+$ bindizr zone export <ZONE_NAME>
+
+# Preview a bulk insert or zone-file import as a +/-/~ diff (applies nothing)
+$ bindizr record bulk records.json --zone <ZONE_NAME> --preview
+$ bindizr zone import <ZONE_NAME> zone.txt --preview
+
+# List a zone's snapshots (SOA serials are a plain counter starting at 1)
+$ bindizr zone snapshot list <ZONE_NAME>
+
+# Diff the records between two serials (omit the second to compare to current)
+$ bindizr zone snapshot diff <ZONE_NAME> <FROM_SERIAL> [<TO_SERIAL>]
+
+# Inspect the zone state captured at a serial
+$ bindizr zone snapshot get <ZONE_NAME> <SERIAL>
+
+# Roll a zone back to a previous serial (the serial still advances)
+$ bindizr zone snapshot rollback <ZONE_NAME> <SERIAL> [--dry-run]
+
+# Check how far each secondary has caught up with a zone
+$ bindizr zone status <ZONE_NAME>
 
 # Show help information
 $ bindizr --help
@@ -282,16 +309,71 @@ $ bindizr --help
 
 ### nsupdate (Dynamic Update)
 
-Bindizr supports RFC 2136-style dynamic updates through the DNS listener.
+Bindizr supports RFC 2136-style dynamic updates through the DNS listener,
+authenticated with TSIG. Authorization is built from two pieces:
+
+- **Keys** are standalone, reusable resources (name, HMAC algorithm, base64
+  secret). The key name is what appears on the wire in a signed request.
+  A key created with `--global` may update every zone — including zones
+  created later — without any policy; this is fixed at creation.
+- **Policies** grant a non-global key update rights in one zone, optionally
+  restricted to a record name pattern and record types.
+
+For each incoming update, bindizr resolves the key named in the TSIG record
+and verifies the signature and signing time. A global key is then authorized
+for everything; for any other key, bindizr loads its policies for the target
+zone and every record in the update must match at least one of them (name
+pattern and type). Otherwise the whole update is refused and nothing is
+partially applied.
 
 ```bash
-$ nsupdate <<EOF
+# Create a key (the secret is generated and printed once; use `get` to re-read it)
+$ bindizr tsig-key create --name update-key
+
+# Or import an existing base64 secret / pick another HMAC algorithm
+$ bindizr tsig-key create --name legacy-key --algorithm hmac-sha512 --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
+
+# Or create a global key that may update every zone, including future ones,
+# without any policy. This is write access to all DNS data — use sparingly.
+$ bindizr tsig-key create --name admin-key --global
+
+# Grant a (non-global) key update rights in a zone (pattern/types default to '*')
+$ bindizr zone tsig-policy add example.com --key update-key
+$ bindizr zone tsig-policy add example.com --key acme-key --pattern "*" --types "TXT"
+
+# Send a signed update (hmac-sha256 by default)
+$ nsupdate -y "hmac-sha256:update-key:<BASE64_SECRET>" <<EOF
 server 127.0.0.1 53
 zone example.com
 update add sub.example.com. 300 A 1.2.3.4
 send
 EOF
 ```
+
+A zone with no policies refuses nsupdate, except from global keys, which may
+update any zone. Setting `dns.nsupdate_allow_unsigned = true` accepts unsigned
+requests for every zone, regardless of its policies; this is not recommended
+in production (signed requests are always verified).
+
+### TSIG Key Management
+
+```bash
+# List all TSIG keys (secrets are not shown)
+$ bindizr tsig-key list
+
+# Show one key including its secret
+$ bindizr tsig-key get update-key
+
+# Delete a key (refused while zone TSIG policies still reference it)
+$ bindizr tsig-key delete update-key
+
+# Inspect or revoke a zone's policies
+$ bindizr zone tsig-policy list example.com
+$ bindizr zone tsig-policy remove example.com <POLICY_ID>
+```
+
+TSIG keys and policies are also manageable over the HTTP API
+(`/tsig-keys`, `/zones/{name}/tsig-policies`).
 
 ### Token Management
 
@@ -336,7 +418,27 @@ This project relies on the following core dependencies:
 - [`utoipa`](https://docs.rs/utoipa/latest/utoipa/) - Compile-time OpenAPI generation for Rust APIs.
 - [`sqlx`](https://docs.rs/sqlx/latest/sqlx/) - An async, pure Rust SQL crate featuring compile-time checked queries without a DSL.
 
+## Roadmap
 
+The following features are planned for future releases. The roadmap may change based on implementation complexity and community feedback.
+
+* [ ] **`bindizr doctor`**
+
+  * Diagnose configuration, database connectivity, file permissions, BIND9 connectivity, and DNS synchronization issues.
+  * Provide actionable warnings and recommended fixes.
+
+* [ ] **Prometheus metrics**
+
+  * Expose operational metrics through a `/metrics` endpoint.
+  * Include API request latency, database operation duration, zone synchronization status, reload results, NOTIFY results, and error counts.
+  * Provide example Prometheus scrape configuration and Grafana dashboards.
+
+* [ ] **DNSSEC support**
+
+  * Support DNSSEC signing and key lifecycle management.
+  * Provide configurable KSK/ZSK generation, rotation, and rollover policies.
+  * Expose DS records and signing status through the API and CLI.
+  * Support integration with externally managed keys and BIND9 DNSSEC tooling.
 
 ### License
 

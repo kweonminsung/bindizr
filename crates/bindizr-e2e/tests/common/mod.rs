@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     env, fs,
+    io::Write,
     net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -17,7 +18,6 @@ use tempfile::TempDir;
 
 mod assertions;
 mod dns;
-pub(crate) mod notify;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 use dns::{dns_expected_value, dns_key_from_record, dns_record_type, wait_for_dns_records};
@@ -109,6 +109,10 @@ impl TestApp {
         &self.namespace
     }
 
+    pub(crate) fn has_dns_secondaries(&self) -> bool {
+        !self.dns_secondary_ports.is_empty()
+    }
+
     pub(crate) async fn request(
         &self,
         method: Method,
@@ -172,7 +176,7 @@ impl TestApp {
             "primary_ns": format!("ns1.{zone_name}"),
             "admin_email": "admin@example.com",
             "ttl": 3600,
-            "serial": 2023010101,
+            "serial": 10,
             "refresh": 7200,
             "retry": 3600,
             "expire": 604800,
@@ -183,28 +187,81 @@ impl TestApp {
         body["zone"].clone()
     }
 
+    /// CLI-side twin of `create_test_zone`: create a zone via `zone create` and
+    /// return the CLI output.
+    pub(crate) async fn create_zone_cli(&self, zone_name: &str, ttl: &str) -> String {
+        let primary_ns = format!("ns1.{zone_name}");
+        let admin_email = format!("hostmaster@{zone_name}");
+        self.run_cli_success(&[
+            "zone",
+            "create",
+            "--name",
+            zone_name,
+            "--primary-ns",
+            &primary_ns,
+            "--admin-email",
+            &admin_email,
+            "--ttl",
+            ttl,
+        ])
+        .await
+    }
+
     pub(crate) async fn run_cli(&self, args: &[&str]) -> std::process::Output {
+        self.run_cli_with_input(args, None).await
+    }
+
+    /// Run the CLI, optionally piping `input` to its stdin (for `-` file args).
+    pub(crate) async fn run_cli_with_input(
+        &self,
+        args: &[&str],
+        input: Option<&str>,
+    ) -> std::process::Output {
         let previous_dns_key = match args {
-            ["delete", "record", record_id, ..] => {
+            ["record", "delete", record_id, ..] => {
                 self.previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }
-            ["delete", "zone", zone_name, ..] => Some((zone_name.to_string(), 6)),
+            ["zone", "delete", zone_name, ..] => Some((zone_name.to_string(), 6)),
             _ => None,
         };
         let mut command = match self.runtime.as_ref().expect("test runtime is missing") {
             TestRuntime::Local { .. } => Command::new(env!("CARGO_BIN_EXE_bindizr")),
             TestRuntime::Compose(stack) => stack.cli_command(),
         };
+        command.args(args);
 
-        let output = command
-            .args(args)
-            .stdin(Stdio::null())
-            .output()
-            .expect("failed to run bindizr CLI");
+        let output = match input {
+            Some(input) => {
+                let mut child = command
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .expect("failed to start bindizr CLI");
+                child
+                    .stdin
+                    .take()
+                    .expect("missing CLI stdin")
+                    .write_all(input.as_bytes())
+                    .expect("failed to write to CLI stdin");
+                child.wait_with_output().expect("failed to run bindizr CLI")
+            }
+            None => command
+                .stdin(Stdio::null())
+                .output()
+                .expect("failed to run bindizr CLI"),
+        };
 
         if output.status.success()
-            && matches!(args.first().copied(), Some("create" | "delete" | "notify"))
+            && matches!(
+                args,
+                [
+                    "zone" | "record",
+                    "create" | "bulk" | "delete" | "import" | "notify" | "rollback",
+                    ..
+                ]
+            )
         {
             self.assert_dns_matches_api(previous_dns_key).await;
         }
@@ -214,6 +271,12 @@ impl TestApp {
 
     pub(crate) async fn run_cli_success(&self, args: &[&str]) -> String {
         let output = self.run_cli(args).await;
+        assert_cli_success(args, &output);
+        String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
+    }
+
+    pub(crate) async fn run_cli_success_with_input(&self, args: &[&str], input: &str) -> String {
+        let output = self.run_cli_with_input(args, Some(input)).await;
         assert_cli_success(args, &output);
         String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
     }
@@ -482,7 +545,7 @@ notify_after_update = false
 notify_on_startup = false
 notify_retries = 0
 notify_timeout_secs = 1
-nsupdate_tsig_key = ""
+nsupdate_allow_unsigned = false
 
 [logging]
 log_level = "error"

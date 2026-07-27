@@ -4,14 +4,16 @@ use sqlx::{MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::catalog_zone_state::CatalogZoneState,
-    repository::{CatalogZoneStateRepository, RepositoryTx, RepositoryTxKind},
+    repository::{CatalogZoneStateRepository, RepositoryTx},
 };
 
+/// MySQL-backed implementation of `CatalogZoneStateRepository`.
 pub struct MySqlCatalogZoneStateRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlCatalogZoneStateRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
@@ -25,6 +27,8 @@ impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)
@@ -46,7 +50,6 @@ impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
             SELECT name, signature, serial, updated_at
             FROM catalog_zone_state
             WHERE name = ?
-            FOR UPDATE
             "#,
         )
         .bind(name)
@@ -62,15 +65,10 @@ impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
-        let mysql_tx = match &mut tx.0 {
-            RepositoryTxKind::MySQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected MySQL)".to_string(),
-                ));
-            }
-        };
+        let mysql_tx = tx.as_mysql()?;
 
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)

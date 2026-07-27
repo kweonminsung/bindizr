@@ -4,14 +4,16 @@ use sqlx::{Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::zone_snapshot::ZoneSnapshot,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneSnapshotRepository},
+    repository::{RepositoryTx, ZoneSnapshotRepository},
 };
 
+/// SQLite-backed implementation of `ZoneSnapshotRepository`.
 pub struct SqliteZoneSnapshotRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteZoneSnapshotRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -67,14 +69,7 @@ impl ZoneSnapshotRepository for SqliteZoneSnapshotRepository {
         tx: &mut RepositoryTx<'_>,
         snapshot: ZoneSnapshot,
     ) -> Result<ZoneSnapshot, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query(
             r#"
@@ -133,6 +128,82 @@ impl ZoneSnapshotRepository for SqliteZoneSnapshotRepository {
         .bind(zone_id)
         .bind(serial)
         .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn get_by_zone_id_in_serial_range(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneSnapshot>, DatabaseError> {
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            FROM zone_soa_history
+            WHERE zone_id = ? AND serial >= ? AND serial <= ?
+            "#,
+        )
+        .bind(zone_id)
+        .bind(from_serial)
+        .bind(to_serial)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn list_by_zone_id(
+        &self,
+        zone_id: i32,
+        limit: u32,
+        offset: u64,
+    ) -> Result<Vec<ZoneSnapshot>, DatabaseError> {
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            FROM zone_soa_history
+            WHERE zone_id = ?
+            ORDER BY serial DESC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(zone_id)
+        .bind(limit as i64)
+        .bind(i64::try_from(offset).unwrap_or(i64::MAX))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn count_by_zone_id(&self, zone_id: i32) -> Result<u64, DatabaseError> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM zone_soa_history WHERE zone_id = ?")
+                .bind(zone_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(count as u64)
+    }
+
+    async fn get_by_zone_id_and_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
+        let sqlite_tx = tx.as_sqlite()?;
+
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            FROM zone_soa_history
+            WHERE zone_id = ? AND serial = ?
+            "#,
+        )
+        .bind(zone_id)
+        .bind(serial)
+        .fetch_optional(&mut **sqlite_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }

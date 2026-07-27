@@ -1,19 +1,19 @@
 use axum::{
-    Json,
     body::Body,
     http::{Request, StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use bindizr_core::log_debug;
-use bindizr_service::auth::AuthService;
-use serde_json::json;
+use bindizr_service::{auth::AuthService, error::ServiceError};
 
+use crate::api::error::ApiError;
+
+/// Validate the request's Bearer token, rejecting unauthorized requests.
 pub(crate) async fn auth_middleware(
     mut req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Extract Authorization header
     let auth_header = match req.headers().get(AUTHORIZATION) {
         Some(header) => header,
         None => {
@@ -21,7 +21,6 @@ pub(crate) async fn auth_middleware(
         }
     };
 
-    // Extract Bearer token
     let auth_str = match auth_header.to_str() {
         Ok(s) => s,
         Err(_) => return Ok(unauthorized("Invalid authorization header")),
@@ -33,7 +32,6 @@ pub(crate) async fn auth_middleware(
 
     let token = &auth_str[7..];
 
-    // Validate token
     match AuthService::validate_token(token).await {
         Ok(api_token) => {
             req.extensions_mut().insert(api_token);
@@ -41,12 +39,11 @@ pub(crate) async fn auth_middleware(
         }
         Err(err) => {
             log_debug!("Token validation error: {}", err);
-            Ok(unauthorized("Invalid or expired token"))
+            Ok(ApiError::from(err).into_response())
         }
     }
 }
 
 fn unauthorized(message: &str) -> Response {
-    let json_body = json!({ "error": message });
-    (StatusCode::UNAUTHORIZED, Json(json_body)).into_response()
+    ApiError(ServiceError::unauthorized(message)).into_response()
 }

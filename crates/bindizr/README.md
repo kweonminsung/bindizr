@@ -51,8 +51,7 @@ notify_after_update = true    # Send DNS NOTIFY after zone changes
 notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
 notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 5       # Timeout in seconds for each NOTIFY send/response wait
-nsupdate_tsig_key_name = "nsupdate-key" # TSIG key name for nsupdate authentication (name and key must both be set)
-nsupdate_tsig_key = ""        # Shared TSIG secret for nsupdate authentication (name and key must both be set, base64 recommended)
+nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests (not recommended in production; TSIG keys/policies are managed via CLI or HTTP API)
 
 [logging]
 log_level = "info"           # Log level: error, warn, info, debug, trace
@@ -69,10 +68,15 @@ Use the CLI to inspect and manage resources:
 ```bash
 bindizr status
 bindizr token create --description admin
-bindizr create zone --name example.com --primary-ns ns1.example.com --admin-email admin.example.com --ttl 3600
-bindizr get zones
-bindizr get records --zone example.com
-bindizr notify zone example.com
+bindizr zone create --name example.com --primary-ns ns1.example.com --admin-email admin.example.com --ttl 3600
+bindizr zone list
+bindizr zone import example.com db.example.com --mode upsert
+bindizr zone snapshots example.com
+bindizr zone rollback example.com 7 --dry-run
+bindizr zone status example.com
+bindizr record list --zone example.com
+bindizr record bulk records.json --zone example.com
+bindizr zone notify example.com
 ```
 
 ## Packages

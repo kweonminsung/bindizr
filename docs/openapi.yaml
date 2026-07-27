@@ -144,6 +144,7 @@ paths:
         schema:
           type: integer
           format: int32
+          minimum: 0
       - name: offset
         in: query
         description: Number of records to skip.
@@ -151,6 +152,7 @@ paths:
         schema:
           type: integer
           format: int64
+          minimum: 0
       responses:
         '200':
           description: A list of DNS records
@@ -351,6 +353,164 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /tsig-keys:
+    get:
+      tags:
+      - TSIG
+      summary: List all TSIG keys
+      description: Lists every TSIG key without its secret. Fetch a single key to read the secret.
+      operationId: get_tsig_keys
+      responses:
+        '200':
+          description: All TSIG keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TsigKeyListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - TSIG
+      summary: Create a TSIG key
+      description: Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` makes the key able to update every zone (all names, all types) without any policy — effectively write access to all DNS data, so use it sparingly. The response includes the secret.
+      operationId: create_tsig_key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTsigKeyRequest'
+        required: true
+      responses:
+        '201':
+          description: TSIG key created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TsigKeyResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A TSIG key with the same name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /tsig-keys/{name}:
+    get:
+      tags:
+      - TSIG
+      summary: Get a specific TSIG key
+      description: Returns one TSIG key including its secret.
+      operationId: get_tsig_key
+      parameters:
+      - name: name
+        in: path
+        description: The name of the TSIG key.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The TSIG key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TsigKeyResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: TSIG key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - TSIG
+      summary: Delete a TSIG key
+      description: Deletes a TSIG key. Refused while any zone TSIG policy still references it.
+      operationId: delete_tsig_key
+      parameters:
+      - name: name
+        in: path
+        description: The name of the TSIG key.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: TSIG key deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: TSIG key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: TSIG key is still referenced by zone TSIG policies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /zones:
     get:
       tags:
@@ -424,6 +584,7 @@ paths:
         schema:
           type: integer
           format: int32
+          minimum: 0
       - name: offset
         in: query
         description: Number of zones to skip.
@@ -431,6 +592,7 @@ paths:
         schema:
           type: integer
           format: int64
+          minimum: 0
       responses:
         '200':
           description: A list of DNS zones
@@ -634,10 +796,635 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/export:
+    get:
+      tags:
+      - Zone
+      summary: Export a zone as BIND master-file text
+      description: Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint.
+      operationId: export_zone
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone to export.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The zone as master-file text
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/imports:
+    post:
+      tags:
+      - Zone
+      summary: Import a BIND zone file into a zone
+      description: Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.
+      operationId: import_zone
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone to import records into.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportZoneFileRequest'
+        required: true
+      responses:
+        '200':
+          description: Import summary and validation errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportZoneFileResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/rollback:
+    post:
+      tags:
+      - Zone
+      summary: Roll a zone back to a snapshot serial
+      description: Restores the zone's record set and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a snapshot and is never changed. With dry_run the rollback is computed and reported without applying any change.
+      operationId: rollback_zone
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone to roll back.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackZoneRequest'
+        required: true
+      responses:
+        '200':
+          description: Rollback result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RollbackZoneResponse'
+        '400':
+          description: Bad request, invalid target serial
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/snapshots:
+    get:
+      tags:
+      - Zone
+      summary: List a zone's snapshots (serial history)
+      description: Every zone mutation records a snapshot of the zone's SOA metadata keyed by serial. Snapshots are returned newest serial first.
+      operationId: list_zone_snapshots
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Maximum number of snapshots to return.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        description: Number of snapshots to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: A list of zone snapshots
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/snapshots/diff:
+    get:
+      tags:
+      - Zone
+      summary: Diff the records between two of a zone's serials
+      description: Reports the RRsets added, removed, and changed between `from` and `to`. Omitting `to` compares against the current serial. Each serial must be the current one or an existing snapshot.
+      operationId: diff_zone_snapshots
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      - name: from
+        in: query
+        description: The serial to diff from.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      - name: to
+        in: query
+        description: The serial to diff to; defaults to the current serial.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: The record differences between the two serials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotDiffResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/snapshots/{serial}:
+    get:
+      tags:
+      - Zone
+      summary: Get the zone state captured at a snapshot serial
+      description: Returns the SOA snapshot at the given serial together with the zone's record set at that serial, reconstructed from the change history.
+      operationId: get_zone_snapshot
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      - name: serial
+        in: path
+        description: The snapshot serial to inspect.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: The snapshot and its reconstructed records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotDetailResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/status:
+    get:
+      tags:
+      - Zone
+      summary: Check how far each secondary has caught up with a zone
+      description: Queries every configured secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no secondaries configured the list is empty.
+      operationId: get_zone_status
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The zone's secondary sync status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZoneStatusResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/tsig-policies:
+    get:
+      tags:
+      - TSIG
+      summary: List a zone's TSIG policies
+      description: 'Lists every TSIG policy of a zone: which keys may update which record names and types via nsupdate.'
+      operationId: get_zone_tsig_policies
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The zone's TSIG policies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZoneTsigPolicyListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - TSIG
+      summary: Grant a TSIG key nsupdate rights in a zone
+      description: 'Creates a TSIG policy granting the named key nsupdate rights in the zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global keys are rejected: they already cover every zone and never carry policies.'
+      operationId: create_zone_tsig_policy
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateZoneTsigPolicyRequest'
+        required: true
+      responses:
+        '201':
+          description: TSIG policy created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZoneTsigPolicyResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or TSIG key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/tsig-policies/{id}:
+    delete:
+      tags:
+      - TSIG
+      summary: Remove a TSIG policy from a zone
+      operationId: delete_zone_tsig_policy
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        description: The id of the TSIG policy.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: TSIG policy deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or TSIG policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{zone_name}/records/bulk:
+    post:
+      tags:
+      - Record
+      summary: Bulk insert DNS records into a zone
+      description: Insert many records into a single zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.
+      operationId: create_records_bulk
+      parameters:
+      - name: zone_name
+        in: path
+        description: The name of the DNS zone to insert records into.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBulkRecordsRequest'
+        required: true
+      responses:
+        '200':
+          description: Dry run validated successfully, nothing applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRecordsResponse'
+        '201':
+          description: DNS records created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRecordsResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
+    BulkRecordItem:
+      type: object
+      description: |-
+        A single record entry for bulk insertion. The zone is taken from the request
+        path, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
+      required:
+      - name
+      - record_type
+      - value
+      properties:
+        name:
+          type: string
+          example: sub
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          example: 10
+        record_type:
+          type: string
+          example: A
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+          example: 3600
+        value:
+          $ref: '#/components/schemas/RecordValueRequest'
+    BulkRecordsResponse:
+      type: object
+      description: |-
+        Response for a bulk insert: the count inserted and the created records. On a
+        dry run `records` holds the validated would-be records (with placeholder
+        IDs) and nothing is inserted.
+      required:
+      - applied
+      - dry_run
+      - inserted
+      - records
+      - diff
+      properties:
+        applied:
+          type: boolean
+          example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The insert as a record diff (all additions), for previewing the change.
+        dry_run:
+          type: boolean
+          example: false
+        inserted:
+          type: integer
+          example: 3
+          minimum: 0
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetRecordResponse'
+    CreateBulkRecordsRequest:
+      type: object
+      description: Request body for bulk-inserting records into a zone.
+      required:
+      - records
+      properties:
+        dry_run:
+          type: boolean
+          description: When true, parse and validate without applying any change.
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkRecordItem'
     CreateRecordRequest:
       type: object
+      description: Request body for creating a record in a named zone.
       required:
       - name
       - record_type
@@ -652,6 +1439,7 @@ components:
           - integer
           - 'null'
           format: int32
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
           example: 10
         record_type:
           type: string
@@ -661,14 +1449,43 @@ components:
           - integer
           - 'null'
           format: int32
+          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
           example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
         zone_name:
           type: string
           example: example.com
+    CreateTsigKeyRequest:
+      type: object
+      description: Request body for creating a TSIG key. Omitting `secret` generates one.
+      required:
+      - name
+      properties:
+        algorithm:
+          type:
+          - string
+          - 'null'
+          description: Defaults to `hmac-sha256`; also accepts `hmac-sha384` and `hmac-sha512`.
+          example: hmac-sha256
+        global:
+          type: boolean
+          description: |-
+            Make the key global: it may update every zone (all names, all types)
+            without any policy. Fixed at creation.
+          example: false
+        name:
+          type: string
+          example: update-key
+        secret:
+          type:
+          - string
+          - 'null'
+          description: Existing base64 secret to import; omit to generate a random one.
+          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
     CreateZoneRequest:
       type: object
+      description: Request body for creating or updating a zone.
       required:
       - name
       - primary_ns
@@ -713,21 +1530,52 @@ components:
           - integer
           - 'null'
           format: int32
-          example: 2025100101
+          description: Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
+          example: 42
         ttl:
           type: integer
           format: int32
           example: 3600
+    CreateZoneTsigPolicyRequest:
+      type: object
+      description: Request body for granting a TSIG key nsupdate rights in a zone.
+      required:
+      - tsig_key
+      properties:
+        record_name_pattern:
+          type:
+          - string
+          - 'null'
+          description: |-
+            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
+            Defaults to `*`.
+          example: '*.dyn'
+        record_types:
+          type:
+          - string
+          - 'null'
+          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
+          example: A,AAAA,TXT
+        tsig_key:
+          type: string
+          description: Name of an existing TSIG key.
+          example: update-key
     ErrorResponse:
       type: object
+      description: 'Generic error response: a plain description plus a machine-readable code.'
       required:
       - error
+      - code
       properties:
+        code:
+          type: string
+          example: ZONE_NOT_FOUND
         error:
           type: string
-          example: 'Bad request: invalid input data'
+          example: Zone with name 'example.com' not found
     GetRecordResponse:
       type: object
+      description: API representation of a record, optionally carrying its zone name.
       required:
       - id
       - name
@@ -768,8 +1616,43 @@ components:
           - string
           - 'null'
           example: example.com
+    GetTsigKeyResponse:
+      type: object
+      description: |-
+        API representation of a TSIG key. `secret` is only present on create and
+        single-key reads; list responses omit it.
+      required:
+      - id
+      - name
+      - algorithm
+      - global
+      - created_at
+      properties:
+        algorithm:
+          type: string
+          example: hmac-sha256
+        created_at:
+          type: string
+          format: date-time
+        global:
+          type: boolean
+          description: Whether the key may update every zone without any policy.
+          example: false
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: update-key
+        secret:
+          type:
+          - string
+          - 'null'
+          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
     GetZoneResponse:
       type: object
+      description: API representation of a zone.
       required:
       - id
       - name
@@ -815,13 +1698,128 @@ components:
           - integer
           - 'null'
           format: int32
-          example: 2025100101
+          example: 42
         ttl:
           type: integer
           format: int32
           example: 3600
+    GetZoneTsigPolicyResponse:
+      type: object
+      description: API representation of a zone TSIG policy.
+      required:
+      - id
+      - tsig_key
+      - record_name_pattern
+      - record_types
+      - created_at
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: integer
+          format: int32
+          example: 1
+        record_name_pattern:
+          type: string
+          example: '*.dyn'
+        record_types:
+          type: string
+          example: A,AAAA,TXT
+        tsig_key:
+          type: string
+          example: update-key
+    ImportMode:
+      type: string
+      description: How parsed records are reconciled with the records already in the zone.
+      enum:
+      - append
+      - upsert
+      - replace
+    ImportSummary:
+      type: object
+      description: |-
+        Counts of records parsed, added, deleted, updated, unchanged, and skipped
+        during import. `updated` is a TTL-only reconcile and is never also counted
+        as `unchanged`.
+      required:
+      - parsed
+      - added
+      - deleted
+      - updated
+      - unchanged
+      - skipped
+      properties:
+        added:
+          type: integer
+          example: 8
+          minimum: 0
+        deleted:
+          type: integer
+          example: 2
+          minimum: 0
+        parsed:
+          type: integer
+          example: 12
+          minimum: 0
+        skipped:
+          type: integer
+          example: 0
+          minimum: 0
+        unchanged:
+          type: integer
+          example: 2
+          minimum: 0
+        updated:
+          type: integer
+          example: 1
+          minimum: 0
+    ImportZoneFileRequest:
+      type: object
+      description: Request body for importing a BIND zone file into a zone.
+      required:
+      - content
+      properties:
+        content:
+          type: string
+          description: Raw BIND zone file text.
+          example: |
+            www IN A 192.0.2.1
+            mail IN A 192.0.2.2
+        dry_run:
+          type: boolean
+          description: When true, parse and validate without applying any change.
+        mode:
+          $ref: '#/components/schemas/ImportMode'
+    ImportZoneFileResponse:
+      type: object
+      description: Result of a zone-file import, including a summary and any validation errors.
+      required:
+      - applied
+      - dry_run
+      - summary
+      - diff
+      - errors
+      properties:
+        applied:
+          type: boolean
+          example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The reconcile as a record diff, for previewing the change.
+        dry_run:
+          type: boolean
+          example: false
+        errors:
+          type: array
+          items:
+            type: string
+          description: Per-record validation errors. When non-empty nothing is applied.
+        summary:
+          $ref: '#/components/schemas/ImportSummary'
     MessageResponse:
       type: object
+      description: Generic success message response.
       required:
       - message
       properties:
@@ -830,6 +1828,7 @@ components:
           example: Deleted successfully
     NotifyZoneRequest:
       type: object
+      description: Request body for triggering a NOTIFY, optionally scoped to one zone.
       properties:
         force:
           type: boolean
@@ -841,6 +1840,7 @@ components:
           example: example.com
     Pagination:
       type: object
+      description: Pagination window and total count for a list response.
       required:
       - limit
       - offset
@@ -850,16 +1850,105 @@ components:
           type: integer
           format: int32
           example: 50
+          minimum: 0
         offset:
           type: integer
           format: int64
           example: 0
+          minimum: 0
         total:
           type: integer
           format: int64
           example: 125
+          minimum: 0
+    RecordDiff:
+      type: object
+      description: A record-level difference between two record sets, RRset by RRset.
+      required:
+      - entries
+      - summary
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffEntry'
+        summary:
+          $ref: '#/components/schemas/RecordDiffSummary'
+    RecordDiffEntry:
+      type: object
+      description: |-
+        One RRset (owner name + type) whose records differ, with the records present
+        on each side. `from` is empty for `added`, `to` for `removed`.
+      required:
+      - change
+      - name
+      - record_type
+      - from
+      - to
+      properties:
+        change:
+          type: string
+          description: '`added`, `removed`, or `changed`.'
+          example: changed
+        from:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffValue'
+        name:
+          type: string
+          example: www.example.com.
+        record_type:
+          type: string
+          example: A
+        to:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordDiffValue'
+    RecordDiffSummary:
+      type: object
+      description: How many RRsets were added, removed, and changed.
+      required:
+      - added
+      - removed
+      - changed
+      properties:
+        added:
+          type: integer
+          example: 1
+          minimum: 0
+        changed:
+          type: integer
+          example: 1
+          minimum: 0
+        removed:
+          type: integer
+          example: 1
+          minimum: 0
+    RecordDiffValue:
+      type: object
+      description: |-
+        One record on one side of a diff. Rendering (zone-file rdata, priority
+        placement) is left to the client; the value is in display form.
+      required:
+      - value
+      properties:
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 10
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 300
+        value:
+          $ref: '#/components/schemas/RecordValueRequest'
     RecordListResponse:
       type: object
+      description: Paginated list of records.
       required:
       - items
       - pagination
@@ -872,6 +1961,7 @@ components:
           $ref: '#/components/schemas/Pagination'
     RecordResponse:
       type: object
+      description: A single record wrapped in a response envelope.
       required:
       - record
       properties:
@@ -887,8 +1977,147 @@ components:
         example:
         - hello
         - world
-    UpdateRecordRequest:
+      description: 'A record value as sent by the client: a single string or TXT segments.'
+    RollbackSummary:
       type: object
+      description: |-
+        Counts of what a rollback changes. TTL-only differences count as one
+        delete plus one add.
+      required:
+      - records_added
+      - records_deleted
+      - records_unchanged
+      - soa_changed
+      properties:
+        records_added:
+          type: integer
+          example: 2
+          minimum: 0
+        records_deleted:
+          type: integer
+          example: 3
+          minimum: 0
+        records_unchanged:
+          type: integer
+          example: 5
+          minimum: 0
+        soa_changed:
+          type: boolean
+          example: true
+    RollbackZoneRequest:
+      type: object
+      description: Request body for rolling a zone back to a snapshot serial.
+      required:
+      - serial
+      properties:
+        dry_run:
+          type: boolean
+          description: When true, compute and report the rollback without applying any change.
+        serial:
+          type: integer
+          format: int32
+          example: 7
+    RollbackZoneResponse:
+      type: object
+      description: |-
+        Result of a zone rollback. The zone's state returns to `target_serial`
+        while its serial advances to `new_serial` (serials never go backward).
+      required:
+      - applied
+      - dry_run
+      - target_serial
+      - new_serial
+      - summary
+      properties:
+        applied:
+          type: boolean
+          example: true
+        dry_run:
+          type: boolean
+          example: false
+        new_serial:
+          type: integer
+          format: int32
+          example: 13
+        summary:
+          $ref: '#/components/schemas/RollbackSummary'
+        target_serial:
+          type: integer
+          format: int32
+          example: 7
+    SecondaryStatusResponse:
+      type: object
+      description: Sync state of one configured secondary for a zone.
+      required:
+      - address
+      - status
+      properties:
+        address:
+          type: string
+          example: 10.0.1.10:53
+        error:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+          description: '`in_sync` | `lagging` | `ahead` | `unreachable`'
+          example: in_sync
+        visible_serial:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          example: 42
+    SnapshotDetailResponse:
+      type: object
+      description: One snapshot plus the reconstructed record set at that serial.
+      required:
+      - snapshot
+      - records
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotRecordResponse'
+        snapshot:
+          $ref: '#/components/schemas/ZoneSnapshotResponse'
+    SnapshotDiffResponse:
+      type: object
+      description: The difference between two of a zone's serials.
+      required:
+      - from_serial
+      - to_serial
+      - diff
+      properties:
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+        from_serial:
+          type: integer
+          format: int32
+          example: 41
+        to_serial:
+          type: integer
+          format: int32
+          example: 42
+    SnapshotListResponse:
+      type: object
+      description: A page of zone snapshots.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ZoneSnapshotResponse'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    SnapshotRecordResponse:
+      type: object
+      description: |-
+        A record reconstructed from the zone's change history; unlike stored
+        records it has no database id.
       required:
       - name
       - record_type
@@ -896,7 +2125,7 @@ components:
       properties:
         name:
           type: string
-          example: sub
+          example: www
         priority:
           type:
           - integer
@@ -913,9 +2142,59 @@ components:
           format: int32
           example: 3600
         value:
+          type: string
+          example: 192.0.2.1
+    TsigKeyListResponse:
+      type: object
+      description: List of TSIG keys (secrets omitted).
+      required:
+      - tsig_keys
+      properties:
+        tsig_keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetTsigKeyResponse'
+    TsigKeyResponse:
+      type: object
+      description: A single TSIG key wrapped in a response envelope.
+      required:
+      - tsig_key
+      properties:
+        tsig_key:
+          $ref: '#/components/schemas/GetTsigKeyResponse'
+    UpdateRecordRequest:
+      type: object
+      description: Request body for updating an existing record.
+      required:
+      - name
+      - record_type
+      - value
+      properties:
+        name:
+          type: string
+          example: sub
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          example: 10
+        record_type:
+          type: string
+          example: A
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+          example: 3600
+        value:
           $ref: '#/components/schemas/RecordValueRequest'
     ZoneDetailResponse:
       type: object
+      description: A zone together with all of its records.
       required:
       - zone
       - records
@@ -928,6 +2207,7 @@ components:
           $ref: '#/components/schemas/GetZoneResponse'
     ZoneListResponse:
       type: object
+      description: Paginated list of zones.
       required:
       - items
       - pagination
@@ -940,11 +2220,100 @@ components:
           $ref: '#/components/schemas/Pagination'
     ZoneResponse:
       type: object
+      description: A single zone wrapped in a response envelope.
       required:
       - zone
       properties:
         zone:
           $ref: '#/components/schemas/GetZoneResponse'
+    ZoneSnapshotResponse:
+      type: object
+      description: |-
+        One entry of a zone's serial history, with SOA metadata in API form
+        (`admin_email` converted back from SOA mailbox form).
+      required:
+      - serial
+      - primary_ns
+      - admin_email
+      - ttl
+      - refresh
+      - retry
+      - expire
+      - minimum_ttl
+      - created_at
+      properties:
+        admin_email:
+          type: string
+          example: admin@example.com
+        created_at:
+          type: string
+          format: date-time
+        expire:
+          type: integer
+          format: int32
+          example: 604800
+        minimum_ttl:
+          type: integer
+          format: int32
+          example: 3600
+        primary_ns:
+          type: string
+          example: ns1.example.com
+        refresh:
+          type: integer
+          format: int32
+          example: 7200
+        retry:
+          type: integer
+          format: int32
+          example: 3600
+        serial:
+          type: integer
+          format: int32
+          example: 7
+        ttl:
+          type: integer
+          format: int32
+          example: 3600
+    ZoneStatusResponse:
+      type: object
+      description: |-
+        A zone's serial and the sync state of every configured secondary, probed
+        live via SOA queries.
+      required:
+      - zone
+      - serial
+      - secondaries
+      properties:
+        secondaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecondaryStatusResponse'
+        serial:
+          type: integer
+          format: int32
+          example: 42
+        zone:
+          type: string
+          example: example.com
+    ZoneTsigPolicyListResponse:
+      type: object
+      description: List of a zone's TSIG policies.
+      required:
+      - tsig_policies
+      properties:
+        tsig_policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetZoneTsigPolicyResponse'
+    ZoneTsigPolicyResponse:
+      type: object
+      description: A single zone TSIG policy wrapped in a response envelope.
+      required:
+      - tsig_policy
+      properties:
+        tsig_policy:
+          $ref: '#/components/schemas/GetZoneTsigPolicyResponse'
   securitySchemes:
     bearer_auth:
       type: http
@@ -956,3 +2325,5 @@ tags:
   description: Manage DNS records including creation, update, deletion, and retrieval.
 - name: Notify
   description: Send DNS NOTIFY messages to secondary servers.
+- name: TSIG
+  description: Manage TSIG keys and per-zone TSIG policies for nsupdate authentication.

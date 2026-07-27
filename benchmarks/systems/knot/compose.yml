@@ -1,0 +1,41 @@
+# Knot DNS authoritative primary accepting RFC 2136 dynamic updates.
+services:
+  # Seeded with busybox so the zone file is owned/readable by knot (uid 53).
+  seed:
+    image: busybox:1.38
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cp /seed/bench.example.zone /storage/bench.example.zone
+        chown 53:53 /storage/bench.example.zone
+        chmod 644 /storage/bench.example.zone
+    volumes:
+      - ./bench.example.zone:/seed/bench.example.zone:ro
+      - knot-storage:/storage
+
+  knot:
+    image: cznic/knot:3.5
+    command: ["knotd", "-c", "/config/knot.conf"]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    volumes:
+      - ./knot.conf:/config/knot.conf:ro
+      - knot-storage:/storage
+    ports:
+      - "${KNOT_DNS_HOST_PORT:-15360}:53/tcp"
+      - "${KNOT_DNS_HOST_PORT:-15360}:53/udp"
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
+networks:
+  bench-net:
+
+volumes:
+  knot-storage:

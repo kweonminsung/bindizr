@@ -3,6 +3,7 @@ use std::fmt;
 use serde::Serialize;
 use tabled::{Table, Tabled, settings::Style};
 
+/// Output format for CLI results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputFormat {
     Json,
@@ -36,11 +37,11 @@ impl std::str::FromStr for OutputFormat {
     }
 }
 
-/// Print output with table support
+/// Print serialized output as JSON, YAML, or a formatted table.
 pub(crate) fn print_output_with_table<T, U>(
     data: &T,
     format: OutputFormat,
-    to_table_rows: impl Fn(&T) -> Vec<U>,
+    to_table_rows: impl Fn(&T) -> Result<Vec<U>, String>,
 ) -> Result<(), String>
 where
     T: Serialize,
@@ -58,7 +59,7 @@ where
             println!("{}", yaml);
         }
         OutputFormat::Table => {
-            let rows = to_table_rows(data);
+            let rows = to_table_rows(data)?;
             if rows.is_empty() {
                 println!("No resources found.");
             } else {

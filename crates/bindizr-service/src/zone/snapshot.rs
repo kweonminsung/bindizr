@@ -23,7 +23,7 @@ pub async fn save_zone_snapshot_tx(
             primary_ns: zone.primary_ns.clone(),
             admin_email: zone
                 .soa_mailbox()
-                .map_err(|e| ServiceError::BadRequest(e.to_string()))?,
+                .map_err(|e| ServiceError::invalid_zone(e.to_string()))?,
             ttl: zone.ttl,
             refresh: zone.refresh,
             retry: zone.retry,
@@ -35,15 +35,25 @@ pub async fn save_zone_snapshot_tx(
     .await
     .map_err(|e| {
         log_error!("Failed to save SOA snapshot: {}", e);
-        ServiceError::Internal("Failed to save SOA snapshot".to_string())
+        ServiceError::internal("Failed to save SOA snapshot".to_string())
     })?;
 
     Ok(())
 }
 
+/// Fetch the SOA snapshot recorded for a zone at the given serial, if any.
 pub async fn get_by_serial(
     zone_id: i32,
     serial: i32,
 ) -> Result<Option<ZoneSnapshot>, ServiceError> {
     RepositoryService::get_zone_snapshot_by_serial(zone_id, serial).await
+}
+
+/// Fetch every SOA snapshot for a zone with serial in `[from_serial, to_serial]`.
+pub async fn get_in_range(
+    zone_id: i32,
+    from_serial: i32,
+    to_serial: i32,
+) -> Result<Vec<ZoneSnapshot>, ServiceError> {
+    RepositoryService::get_zone_snapshots_in_range(zone_id, from_serial, to_serial).await
 }

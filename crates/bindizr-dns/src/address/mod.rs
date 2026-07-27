@@ -1,3 +1,6 @@
+//! Parsing of `host[:port]` address targets into socket addresses or deferred
+//! host/port pairs.
+
 use std::net::{IpAddr, SocketAddr};
 
 pub(crate) enum ParsedAddress {

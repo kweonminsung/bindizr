@@ -1,45 +1,37 @@
-use axum::{extract::rejection::JsonRejection, http::StatusCode, response::IntoResponse};
-use axum_macros::FromRequest;
-use bindizr_core::log_error;
-use serde_json::json;
+use std::time::Instant;
 
-// Custom extractor for JSON body with error handling
-#[derive(FromRequest)]
-#[from_request(via(axum::Json), rejection(ApiError))]
+use axum::{
+    Json,
+    extract::{FromRequest, Request},
+};
+use bindizr_core::log_debug;
+use serde::de::DeserializeOwned;
+
+use crate::api::error::ApiError;
+
+/// Body cap for whole-zone-file / bulk uploads (import, bulk create) — above
+/// axum's 2 MiB default, but bounded to limit per-request memory.
+pub(crate) const MAX_UPLOAD_BODY_BYTES: usize = 32 * 1024 * 1024;
+
+/// JSON body extractor that maps rejections to a JSON [`ApiError`] response and
+/// records deserialization time at debug level (`event=json_decode`), so the
+/// JSON transport cost can be compared against the zone-file text path.
 pub(crate) struct JsonBody<T>(pub T);
 
-// Custom API error type for handling JSON extraction errors
-#[derive(Debug)]
-pub(crate) struct ApiError {
-    code: StatusCode,
-    message: String,
-}
+impl<T, S> FromRequest<S> for JsonBody<T>
+where
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
 
-// Implement conversion from JsonRejection to ApiError
-impl From<JsonRejection> for ApiError {
-    fn from(rejection: JsonRejection) -> Self {
-        let code = match rejection {
-            JsonRejection::JsonDataError(_) => StatusCode::BAD_REQUEST,
-            JsonRejection::JsonSyntaxError(_) => StatusCode::BAD_REQUEST,
-            JsonRejection::MissingJsonContentType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-
-        log_error!("JSON Rejection: {:?}", rejection);
-
-        Self {
-            code,
-            message: "Invalid or malformed JSON body".to_string(),
-        }
-    }
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> axum::response::Response {
-        let payload = json!({
-            "error": self.message,
-        });
-
-        (self.code, axum::Json(payload)).into_response()
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let start = Instant::now();
+        let Json(value) = Json::<T>::from_request(req, state).await?;
+        log_debug!(
+            "event=json_decode ms={:.1}",
+            start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok(Self(value))
     }
 }

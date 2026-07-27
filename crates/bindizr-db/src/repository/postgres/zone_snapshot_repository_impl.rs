@@ -4,14 +4,16 @@ use sqlx::{Pool, Postgres};
 use crate::{
     error::DatabaseError,
     model::zone_snapshot::ZoneSnapshot,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneSnapshotRepository},
+    repository::{RepositoryTx, ZoneSnapshotRepository},
 };
 
+/// PostgreSQL-backed implementation of `ZoneSnapshotRepository`.
 pub struct PostgresZoneSnapshotRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresZoneSnapshotRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -55,14 +57,7 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
         tx: &mut RepositoryTx<'_>,
         snapshot: ZoneSnapshot,
     ) -> Result<ZoneSnapshot, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         sqlx::query_as::<_, ZoneSnapshot>(
             r#"
@@ -109,6 +104,81 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
         .bind(zone_id)
         .bind(serial)
         .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn get_by_zone_id_in_serial_range(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<Vec<ZoneSnapshot>, DatabaseError> {
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            FROM zone_soa_history
+            WHERE zone_id = $1 AND serial >= $2 AND serial <= $3
+            "#,
+        )
+        .bind(zone_id)
+        .bind(from_serial)
+        .bind(to_serial)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+    async fn list_by_zone_id(
+        &self,
+        zone_id: i32,
+        limit: u32,
+        offset: u64,
+    ) -> Result<Vec<ZoneSnapshot>, DatabaseError> {
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            FROM zone_soa_history
+            WHERE zone_id = $1
+            ORDER BY serial DESC
+            LIMIT $2 OFFSET $3
+            "#,
+        )
+        .bind(zone_id)
+        .bind(limit as i64)
+        .bind(i64::try_from(offset).unwrap_or(i64::MAX))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn count_by_zone_id(&self, zone_id: i32) -> Result<u64, DatabaseError> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM zone_soa_history WHERE zone_id = $1")
+                .bind(zone_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        Ok(count as u64)
+    }
+
+    async fn get_by_zone_id_and_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
+        let pg_tx = tx.as_postgres()?;
+
+        sqlx::query_as::<_, ZoneSnapshot>(
+            r#"
+            SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
+            FROM zone_soa_history
+            WHERE zone_id = $1 AND serial = $2
+            "#,
+        )
+        .bind(zone_id)
+        .bind(serial)
+        .fetch_optional(&mut **pg_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }

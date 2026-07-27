@@ -1,0 +1,15 @@
+---
+# benchmarks/ is a local Python + Docker harness, not part of the Cargo build or
+# any shipped artifact. Its subprocess/`random` usage is inherent to driving
+# containers and generating reproducible datasets, so security and complexity
+# analysis there produces only false positives.
+exclude_paths:
+  - 'benchmarks/**'
+
+engines:
+  duplication:
+    exclude_paths:
+      - 'benchmarks/**'
+  metrics:
+    exclude_paths:
+      - 'benchmarks/**'

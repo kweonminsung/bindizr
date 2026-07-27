@@ -1,69 +1,88 @@
-use std::{fs::File as StdFile, io::Write};
-
 use config::{Config, File, FileFormat};
-use tempfile::tempdir;
 
 use crate::config::{
-    DatabaseType, LogLevel, apply_env_overrides_from, parse_bindizr_config_with_env,
+    BindizrConfig, DatabaseType, LogLevel, apply_env_overrides_from, parse_bindizr_config_with_env,
 };
 
-fn create_temp_config_file(content: &str) -> (tempfile::TempDir, String) {
-    // Create a temporary directory
-    let dir = tempdir().unwrap();
-    let config_path = dir.path().join("bindizr.conf.toml");
+/// Deviations from the base config TOML; the default renders a minimal valid
+/// sqlite config.
+struct TestConfigToml {
+    api_listen_addr: &'static str,
+    require_authentication: bool,
+    database_type: &'static str,
+    /// Include the `[database.mysql]` / `[database.postgresql]` sections.
+    unselected_databases: bool,
+    secondary_addrs: &'static str,
+    /// Extra `[dns]` lines (newline-separated, no trailing newline).
+    dns_notify: &'static str,
+}
 
-    // Create a test config file
-    let mut file = StdFile::create(&config_path).unwrap();
-    write!(file, "{}", content).unwrap();
-    file.flush().unwrap(); // Ensure content is written to disk
+impl Default for TestConfigToml {
+    fn default() -> Self {
+        Self {
+            api_listen_addr: "127.0.0.1",
+            require_authentication: false,
+            database_type: "sqlite",
+            unselected_databases: true,
+            secondary_addrs: "",
+            dns_notify: "",
+        }
+    }
+}
 
-    // Return both the directory (to keep it alive) and the path
-    (dir, config_path.to_str().unwrap().to_string())
+impl TestConfigToml {
+    fn render(&self) -> String {
+        let unselected_databases = if self.unselected_databases {
+            "\n[database.mysql]\nserver_url = \"\"\n\n[database.postgresql]\nserver_url = \"\"\n"
+        } else {
+            ""
+        };
+        format!(
+            r#"
+[api]
+listen_addr = "{api_listen_addr}"
+listen_port = 3000
+require_authentication = {require_authentication}
+
+[database]
+type = "{database_type}"
+
+[database.sqlite]
+file_path = "file::memory:?cache=shared"
+{unselected_databases}
+[dns]
+listen_addr = "127.0.0.1"
+listen_port = 53
+secondary_addrs = "{secondary_addrs}"
+{dns_notify}
+[logging]
+log_level = "debug"
+"#,
+            api_listen_addr = self.api_listen_addr,
+            require_authentication = self.require_authentication,
+            database_type = self.database_type,
+            secondary_addrs = self.secondary_addrs,
+            dns_notify = self.dns_notify,
+        )
+    }
+}
+
+fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
+    let config = Config::builder()
+        .add_source(File::from_str(&toml.render(), FileFormat::Toml))
+        .build()
+        .unwrap();
+    parse_bindizr_config_with_env(config, |_| None)
 }
 
 #[test]
 fn parse_bindizr_config_accepts_valid_config() {
-    let (dir, config_path) = create_temp_config_file(
-        r#"
-[api]
-listen_addr = "127.0.0.1"
-listen_port = 3000
-require_authentication = false
-
-[database]
-type = "sqlite"
-
-[database.mysql]
-server_url = ""
-
-[database.sqlite]
-file_path = "file::memory:?cache=shared"
-
-[database.postgresql]
-server_url = ""
-
-[dns]
-listen_addr = "127.0.0.1"
-listen_port = 53
-secondary_addrs = "127.0.0.1:53"
-notify_after_update = false
-notify_on_startup = true
-notify_retries = 4
-notify_timeout_secs = 9
-nsupdate_tsig_key_name = "nsupdate-key"
-nsupdate_tsig_key = ""
-
-[logging]
-log_level = "debug"
-"#,
-    );
-
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    let parsed = parse_bindizr_config_with_env(config, |_| None).unwrap();
+    let parsed = parse_config(&TestConfigToml {
+        secondary_addrs: "127.0.0.1:53",
+        dns_notify: "notify_after_update = false\nnotify_on_startup = true\nnotify_retries = 4\nnotify_timeout_secs = 9\nnsupdate_allow_unsigned = true",
+        ..Default::default()
+    })
+    .unwrap();
 
     assert_eq!(parsed.api.listen_addr.to_string(), "127.0.0.1");
     assert_eq!(parsed.dns.listen_addr.to_string(), "127.0.0.1");
@@ -76,91 +95,27 @@ log_level = "debug"
     assert!(parsed.dns.notify_on_startup);
     assert_eq!(parsed.dns.notify_retries, 4);
     assert_eq!(parsed.dns.notify_timeout_secs, 9);
-    assert_eq!(parsed.dns.nsupdate_tsig_key_name, "nsupdate-key");
-
-    drop(dir);
+    assert!(parsed.dns.nsupdate_allow_unsigned);
 }
 
 #[test]
-fn parse_bindizr_config_defaults_missing_nsupdate_tsig_key() {
-    let (dir, config_path) = create_temp_config_file(
-        r#"
-[api]
-listen_addr = "127.0.0.1"
-listen_port = 3000
-require_authentication = false
+fn parse_bindizr_config_defaults_missing_optional_dns_fields() {
+    let parsed = parse_config(&TestConfigToml::default()).unwrap();
 
-[database]
-type = "sqlite"
-
-[database.mysql]
-server_url = ""
-
-[database.sqlite]
-file_path = "file::memory:?cache=shared"
-
-[database.postgresql]
-server_url = ""
-
-[dns]
-listen_addr = "127.0.0.1"
-listen_port = 53
-secondary_addrs = "127.0.0.1:53"
-
-[logging]
-log_level = "debug"
-"#,
-    );
-
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    let parsed = parse_bindizr_config_with_env(config, |_| None).unwrap();
-
-    assert_eq!(parsed.dns.nsupdate_tsig_key, "");
     assert!(parsed.dns.notify_after_update);
     assert!(!parsed.dns.notify_on_startup);
     assert_eq!(parsed.dns.notify_retries, 3);
     assert_eq!(parsed.dns.notify_timeout_secs, 5);
-    assert_eq!(parsed.dns.nsupdate_tsig_key_name, "");
-
-    drop(dir);
+    assert!(!parsed.dns.nsupdate_allow_unsigned);
 }
 
 #[test]
 fn parse_bindizr_config_defaults_unselected_database_sections() {
-    let (dir, config_path) = create_temp_config_file(
-        r#"
-[api]
-listen_addr = "127.0.0.1"
-listen_port = 3000
-require_authentication = false
-
-[database]
-type = "sqlite"
-
-[database.sqlite]
-file_path = "file::memory:?cache=shared"
-
-[dns]
-listen_addr = "127.0.0.1"
-listen_port = 53
-secondary_addrs = "127.0.0.1:53"
-nsupdate_tsig_key = ""
-
-[logging]
-log_level = "debug"
-"#,
-    );
-
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    let parsed = parse_bindizr_config_with_env(config, |_| None).unwrap();
+    let parsed = parse_config(&TestConfigToml {
+        unselected_databases: false,
+        ..Default::default()
+    })
+    .unwrap();
 
     assert_eq!(
         parsed.database.sqlite.file_path,
@@ -168,137 +123,37 @@ log_level = "debug"
     );
     assert_eq!(parsed.database.mysql.server_url, "");
     assert_eq!(parsed.database.postgresql.server_url, "");
-
-    drop(dir);
 }
 
 #[test]
 fn parse_bindizr_config_rejects_invalid_listen_addr() {
-    let (dir, config_path) = create_temp_config_file(
-        r#"
-[api]
-listen_addr = "not-an-ip"
-listen_port = 3000
-require_authentication = false
-
-[database]
-type = "sqlite"
-
-[database.mysql]
-server_url = ""
-
-[database.sqlite]
-file_path = "file::memory:?cache=shared"
-
-[database.postgresql]
-server_url = ""
-
-[dns]
-listen_addr = "127.0.0.1"
-listen_port = 53
-secondary_addrs = ""
-nsupdate_tsig_key = ""
-
-[logging]
-log_level = "debug"
-"#,
-    );
-
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    let err = parse_bindizr_config_with_env(config, |_| None).unwrap_err();
+    let err = parse_config(&TestConfigToml {
+        api_listen_addr: "not-an-ip",
+        ..Default::default()
+    })
+    .unwrap_err();
 
     assert!(err.contains("Invalid Bindizr configuration"));
-
-    drop(dir);
 }
 
 #[test]
 fn parse_bindizr_config_rejects_empty_selected_database_url() {
-    let (dir, config_path) = create_temp_config_file(
-        r#"
-[api]
-listen_addr = "127.0.0.1"
-listen_port = 3000
-require_authentication = false
-
-[database]
-type = "mysql"
-
-[database.mysql]
-server_url = ""
-
-[database.sqlite]
-file_path = "file::memory:?cache=shared"
-
-[database.postgresql]
-server_url = ""
-
-[dns]
-listen_addr = "127.0.0.1"
-listen_port = 53
-secondary_addrs = ""
-nsupdate_tsig_key = ""
-
-[logging]
-log_level = "debug"
-"#,
-    );
-
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    let err = parse_bindizr_config_with_env(config, |_| None).unwrap_err();
+    let err = parse_config(&TestConfigToml {
+        database_type: "mysql",
+        ..Default::default()
+    })
+    .unwrap_err();
 
     assert!(err.contains("database.mysql.server_url must not be empty"));
-
-    drop(dir);
 }
 
 #[test]
 fn apply_env_overrides_replaces_config_values_before_validation() {
-    let (dir, config_path) = create_temp_config_file(
-        r#"
-[api]
-listen_addr = "127.0.0.1"
-listen_port = 3000
-require_authentication = true
-
-[database]
-type = "sqlite"
-
-[database.mysql]
-server_url = ""
-
-[database.sqlite]
-file_path = "file::memory:?cache=shared"
-
-[database.postgresql]
-server_url = ""
-
-[dns]
-listen_addr = "127.0.0.1"
-listen_port = 53
-secondary_addrs = ""
-nsupdate_tsig_key = ""
-
-[logging]
-log_level = "debug"
-"#,
-    );
-
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    let parsed = parse_bindizr_config_with_env(config, |_| None).unwrap();
-    let mut overridden = parsed.clone();
+    let mut overridden = parse_config(&TestConfigToml {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .unwrap();
 
     apply_env_overrides_from(&mut overridden, |name| match name {
         "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
@@ -309,8 +164,7 @@ log_level = "debug"
         "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
         "BINDIZR_DNS_PORT" => Some("5353".to_string()),
         "BINDIZR_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
-        "BINDIZR_NSUPDATE_TSIG_KEY" => Some("secret#with&chars".to_string()),
-        "BINDIZR_NSUPDATE_TSIG_KEY_NAME" => Some("nsupdate-key".to_string()),
+        "BINDIZR_NSUPDATE_ALLOW_UNSIGNED" => Some("true".to_string()),
         "BINDIZR_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
         "BINDIZR_NOTIFY_ON_STARTUP" => Some("true".to_string()),
         "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
@@ -337,50 +191,22 @@ log_level = "debug"
         overridden.dns.secondary_addrs,
         "192.0.2.10:53,192.0.2.11:53"
     );
-    assert_eq!(overridden.dns.nsupdate_tsig_key, "secret#with&chars");
-    assert_eq!(overridden.dns.nsupdate_tsig_key_name, "nsupdate-key");
+    assert!(overridden.dns.nsupdate_allow_unsigned);
     assert!(!overridden.dns.notify_after_update);
     assert!(overridden.dns.notify_on_startup);
     assert_eq!(overridden.dns.notify_retries, 7);
     assert_eq!(overridden.dns.notify_timeout_secs, 11);
     assert!(matches!(overridden.logging.log_level, LogLevel::Info));
-
-    drop(dir);
 }
 
 #[test]
 fn apply_env_overrides_rejects_invalid_values() {
-    let (dir, config_path) = create_temp_config_file(
-        r#"
-[api]
-listen_addr = "127.0.0.1"
-listen_port = 3000
-require_authentication = false
+    let mut overridden = parse_config(&TestConfigToml {
+        unselected_databases: false,
+        ..Default::default()
+    })
+    .unwrap();
 
-[database]
-type = "sqlite"
-
-[database.sqlite]
-file_path = "file::memory:?cache=shared"
-
-[dns]
-listen_addr = "127.0.0.1"
-listen_port = 53
-secondary_addrs = ""
-nsupdate_tsig_key = ""
-
-[logging]
-log_level = "debug"
-"#,
-    );
-
-    let config = Config::builder()
-        .add_source(File::new(&config_path, FileFormat::Toml))
-        .build()
-        .unwrap();
-
-    let parsed = parse_bindizr_config_with_env(config, |_| None).unwrap();
-    let mut overridden = parsed.clone();
     let err = apply_env_overrides_from(&mut overridden, |name| match name {
         "BINDIZR_API_PORT" => Some("not-a-port".to_string()),
         _ => None,
@@ -388,6 +214,4 @@ log_level = "debug"
     .unwrap_err();
 
     assert!(err.contains("Invalid BINDIZR_API_PORT environment variable"));
-
-    drop(dir);
 }

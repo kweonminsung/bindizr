@@ -4,7 +4,7 @@ use crate::{
     error::ServiceError,
     types::CreateZoneRequest,
     validation::{
-        MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels,
+        MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label, validate_wire_labels,
     },
 };
 
@@ -54,7 +54,7 @@ fn resolve_soa_interval(
 ) -> Result<i32, ServiceError> {
     let resolved = value.unwrap_or(fallback);
     if resolved <= 0 {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_zone(format!(
             "{} must be a positive number of seconds",
             field
         )));
@@ -84,19 +84,19 @@ fn normalize_email(value: &str) -> Result<String, ServiceError> {
     let value = value.trim();
 
     if value.is_empty() {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "admin email must not be empty".to_string(),
         ));
     }
 
     if has_whitespace_or_control(value) {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "admin email must not contain whitespace or control characters".to_string(),
         ));
     }
 
     if value.matches('@').count() != 1 {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "admin email must contain exactly one @".to_string(),
         ));
     }
@@ -110,7 +110,7 @@ fn normalize_email(value: &str) -> Result<String, ServiceError> {
 
     let normalized = format!("{}@{}", local, domain);
     if normalized.len() > MAX_EMAIL_LEN {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "admin email must be 254 bytes or fewer".to_string(),
         ));
     }
@@ -122,13 +122,13 @@ pub(crate) fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed == "." {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "zone name must not be the root zone".to_string(),
         ));
     }
 
     if trimmed.starts_with("*.") || trimmed == "*" {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "wildcard zone names are not allowed".to_string(),
         ));
     }
@@ -144,14 +144,14 @@ fn normalize_domain_name(value: &str, field: &str) -> Result<String, ServiceErro
     let trimmed = value.trim();
 
     if trimmed.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_zone(format!(
             "{} must not be empty",
             field
         )));
     }
 
     if has_whitespace_or_control(trimmed) {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_zone(format!(
             "{} must not contain whitespace or control characters",
             field
         )));
@@ -160,79 +160,47 @@ fn normalize_domain_name(value: &str, field: &str) -> Result<String, ServiceErro
     let without_trailing_dot = trimmed.strip_suffix('.').unwrap_or(trimmed);
 
     if without_trailing_dot.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_zone(format!(
             "{} must not be empty",
             field
         )));
     }
 
     if without_trailing_dot.len() > MAX_DOMAIN_LEN {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_zone(format!(
             "{} must be 253 bytes or fewer",
             field
         )));
     }
 
     for label in without_trailing_dot.split('.') {
-        validate_domain_label(label, field)?;
+        validate_domain_label(label, field, false, ServiceError::invalid_zone)?;
     }
 
     Ok(without_trailing_dot.to_ascii_lowercase())
 }
 
-fn validate_domain_label(label: &str, field: &str) -> Result<(), ServiceError> {
-    if label.is_empty() {
-        return Err(ServiceError::BadRequest(format!(
-            "{} must not contain empty labels",
-            field
-        )));
-    }
-
-    if label.len() > MAX_DNS_LABEL_LEN {
-        return Err(ServiceError::BadRequest(format!(
-            "{} labels must be 63 bytes or fewer",
-            field
-        )));
-    }
-
-    if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-        return Err(ServiceError::BadRequest(format!(
-            "{} labels must contain only ASCII letters, digits, or hyphens",
-            field
-        )));
-    }
-
-    if label.starts_with('-') || label.ends_with('-') {
-        return Err(ServiceError::BadRequest(format!(
-            "{} labels must not start or end with hyphens",
-            field
-        )));
-    }
-
-    Ok(())
-}
-
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     if local.is_empty() {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "admin email local part must not be empty".to_string(),
         ));
     }
 
     if local.len() > MAX_EMAIL_LOCAL_LEN {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "admin email local part must be 64 bytes or fewer".to_string(),
         ));
     }
 
     if local.starts_with('.') || local.ends_with('.') || local.contains("..") {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "admin email local part must not start, end, or contain consecutive dots".to_string(),
         ));
     }
 
     if !local.chars().all(is_valid_email_local_char) {
-        return Err(ServiceError::BadRequest(
+        return Err(ServiceError::invalid_zone(
             "admin email local part contains invalid characters".to_string(),
         ));
     }
@@ -242,14 +210,14 @@ fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
 
 fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
     if ttl < MIN_TTL {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_zone(format!(
             "ttl must be at least {} seconds",
             MIN_TTL
         )));
     }
 
     if ttl > MAX_TTL {
-        return Err(ServiceError::BadRequest(format!(
+        return Err(ServiceError::invalid_zone(format!(
             "ttl must be at most {} seconds",
             MAX_TTL
         )));
@@ -263,7 +231,7 @@ fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
 // label boundaries can shift during the email-to-mailbox escaping, needs rechecking.
 fn validate_soa_wire_safety(admin_email: &str) -> Result<(), ServiceError> {
     let soa_mailbox =
-        email_to_soa_mailbox(admin_email).map_err(|e| ServiceError::BadRequest(e.to_string()))?;
+        email_to_soa_mailbox(admin_email).map_err(|e| ServiceError::invalid_zone(e.to_string()))?;
     validate_wire_labels(&soa_mailbox, "admin email SOA RNAME")
 }
 

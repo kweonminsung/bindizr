@@ -4,14 +4,16 @@ use sqlx::{Pool, Postgres};
 use crate::{
     error::DatabaseError,
     model::catalog_zone_state::CatalogZoneState,
-    repository::{CatalogZoneStateRepository, RepositoryTx, RepositoryTxKind},
+    repository::{CatalogZoneStateRepository, RepositoryTx},
 };
 
+/// PostgreSQL-backed implementation of `CatalogZoneStateRepository`.
 pub struct PostgresCatalogZoneStateRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresCatalogZoneStateRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -25,6 +27,8 @@ impl CatalogZoneStateRepository for PostgresCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query_as::<_, CatalogZoneState>(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)
@@ -55,15 +59,10 @@ impl CatalogZoneStateRepository for PostgresCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query_as::<_, CatalogZoneState>(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)

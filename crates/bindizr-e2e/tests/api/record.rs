@@ -174,6 +174,111 @@ async fn record_reject_invalid_values() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn record_reject_mixed_rrset_ttl() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+
+    let first = json!({
+        "name": "www",
+        "record_type": "A",
+        "value": "192.0.2.1",
+        "ttl": 300,
+        "zone_name": zone["name"]
+    });
+    let (status, _) = app.request(Method::POST, "/records", Some(first)).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // RFC 2181, Section 5.2: one TTL per RRset.
+    let differing_ttl = json!({
+        "name": "www",
+        "record_type": "A",
+        "value": "192.0.2.2",
+        "ttl": 600,
+        "zone_name": zone["name"]
+    });
+    let (status, body) = app
+        .request(Method::POST, "/records", Some(differing_ttl))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("must share one TTL"),
+        "unexpected error: {}",
+        body["error"]
+    );
+
+    let matching_ttl = json!({
+        "name": "www",
+        "record_type": "A",
+        "value": "192.0.2.2",
+        "ttl": 300,
+        "zone_name": zone["name"]
+    });
+    let (status, _) = app
+        .request(Method::POST, "/records", Some(matching_ttl))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // A different type at the same owner name is a separate RRset.
+    let other_rrset = json!({
+        "name": "www",
+        "record_type": "TXT",
+        "value": "hello",
+        "ttl": 600,
+        "zone_name": zone["name"]
+    });
+    let (status, _) = app
+        .request(Method::POST, "/records", Some(other_rrset))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_reject_priority_on_types_without_one() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+
+    for (record_type, value) in [
+        ("A", "192.0.2.1"),
+        ("AAAA", "2001:db8::1"),
+        ("CNAME", "target.example.com"),
+        ("TXT", "hello"),
+        ("NS", "ns2.example.com"),
+    ] {
+        let request = json!({
+            "name": if record_type == "NS" { "@" } else { "prio" },
+            "record_type": record_type,
+            "value": value,
+            "ttl": 3600,
+            "priority": 10,
+            "zone_name": zone["name"]
+        });
+        let (status, body) = app.request(Method::POST, "/records", Some(request)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{record_type}");
+        assert!(
+            body["error"].as_str().unwrap().contains("priority"),
+            "unexpected error for {record_type}: {}",
+            body["error"]
+        );
+    }
+
+    let mx = json!({
+        "name": "@",
+        "record_type": "MX",
+        "value": "mail.example.com",
+        "ttl": 3600,
+        "priority": 10,
+        "zone_name": zone["name"]
+    });
+    let (status, _) = app.request(Method::POST, "/records", Some(mx)).await;
+    assert_eq!(status, StatusCode::CREATED);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn record_scope_by_zone() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
@@ -312,6 +417,8 @@ async fn record_filter_and_paginate() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["record_type"], "MX");
 
+    // The CNAME was created as "Target.Example.Com": the value filter matches
+    // against the normalized (lowercased, dot-terminated) stored value.
     let (status, body) = app
         .request(
             Method::GET,
@@ -324,6 +431,8 @@ async fn record_filter_and_paginate() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["record_type"], "CNAME");
 
+    // Filters accept denormalized inputs too: a trailing-dot zone name and an
+    // owner in FQDN form without the trailing dot.
     let (status, body) = app
         .request(
             Method::GET,
@@ -362,6 +471,8 @@ async fn record_preserve_txt_segments_and_case() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
+    // TXT comparison is byte-exact, so two values differing only in case must
+    // coexist under one name instead of colliding as duplicates.
     for value in ["Token=ABC", "Token=abc"] {
         let create_record_request = json!({
             "name": "case-sensitive",
@@ -418,6 +529,8 @@ async fn record_preserve_txt_segments_and_case() {
             .contains("TXT record must contain at least one character-string")
     );
 
+    // A DNS character-string holds at most 255 octets (RFC 1035, Section 3.3), so a
+    // 300-char value must be stored split into 255 + 45.
     let long_txt = json!({
         "name": "long-txt",
         "record_type": "TXT",
@@ -453,6 +566,8 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["record"]["name"], format!("a1.{zone_name}."));
 
+    // The FQDN spelling resolves to the same stored owner as the relative
+    // "a1" above, so it must be detected as a duplicate.
     let in_bailiwick_duplicate = json!({
         "name": format!("a1.{zone_name}."),
         "record_type": "A",
@@ -463,7 +578,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
     let (status, _) = app
         .request(Method::POST, "/records", Some(in_bailiwick_duplicate))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let in_bailiwick_different_value = json!({
         "name": format!("a1.{zone_name}"),
@@ -568,6 +683,7 @@ async fn record_create_supported_types() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
+    // 5 created here + the apex NS record auto-created with the zone.
     assert_eq!(records.len(), 6);
     for record_type in ["MX", "SRV", "TXT", "AAAA", "CNAME"] {
         assert!(
@@ -607,7 +723,7 @@ async fn record_reject_cname_conflicts() {
     let (status, _) = app
         .request(Method::POST, "/records", Some(cname_record_request))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
     let cname_record_request = json!({
         "name": "cname-test",
@@ -632,8 +748,10 @@ async fn record_reject_cname_conflicts() {
     let (status, _) = app
         .request(Method::POST, "/records", Some(a_record_request))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::CONFLICT);
 
+    // Renaming the CNAME onto an owner that already holds an A record must
+    // hit the same exclusivity check through the update path.
     let update_cname_request = json!({
         "name": "test",
         "record_type": "CNAME",
@@ -647,5 +765,163 @@ async fn record_reject_cname_conflicts() {
             Some(update_cname_request),
         )
         .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let bulk_request = json!({
+        "records": [
+            { "name": "bulk1", "record_type": "A", "value": "192.0.2.1" },
+            { "name": "bulk2", "record_type": "A", "value": "192.0.2.2", "ttl": 1800 },
+            { "name": "bulkcname", "record_type": "CNAME", "value": "bulk1" },
+            { "name": "@", "record_type": "MX", "value": "mail", "priority": 10 }
+        ]
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["inserted"], 4);
+    assert_eq!(body["records"].as_array().unwrap().len(), 4);
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert_is_all_or_nothing() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // The second record has an invalid type, so the whole batch must fail.
+    let bulk_request = json!({
+        "records": [
+            { "name": "ok", "record_type": "A", "value": "192.0.2.5" },
+            { "name": "bad", "record_type": "NOPE", "value": "192.0.2.6" }
+        ]
+    });
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Nothing from the failed batch should have been persisted.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=ok"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert_unknown_zone_returns_not_found() {
+    let app = TestApp::start().await;
+    let missing_zone = app.zone_name("missing.example.com");
+
+    let bulk_request = json!({
+        "records": [ { "name": "a", "record_type": "A", "value": "192.0.2.1" } ]
+    });
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{missing_zone}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert_dry_run_then_apply() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let bulk_request = json!({
+        "records": [
+            { "name": "dry1", "record_type": "A", "value": "192.0.2.40" },
+            { "name": "dry2", "record_type": "A", "value": "192.0.2.41", "ttl": 1800 }
+        ],
+        "dry_run": true
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], false);
+    assert_eq!(body["dry_run"], true);
+    assert_eq!(body["inserted"], 0);
+    assert_eq!(body["records"].as_array().unwrap().len(), 2);
+
+    // The dry run must not have persisted anything.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 0);
+
+    let bulk_request = json!({
+        "records": [
+            { "name": "dry1", "record_type": "A", "value": "192.0.2.40" },
+            { "name": "dry2", "record_type": "A", "value": "192.0.2.41", "ttl": 1800 }
+        ]
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["dry_run"], false);
+    assert_eq!(body["inserted"], 2);
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
 }

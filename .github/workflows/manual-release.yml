@@ -3,9 +3,6 @@ name: Manual Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Release version (e.g. v0.2.5)"
-        required: true
       prerelease:
         description: "Mark as pre-release?"
         required: false
@@ -23,6 +20,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # Cargo.toml is the single source of the version: tag, packages, binary.
+      - name: Resolve version from Cargo.toml
+        run: |
+          VERSION="v$(grep '^version =' Cargo.toml | cut -d '"' -f 2)"
+          # Full SemVer: prerelease identifiers may contain hyphens, and build
+          # metadata may follow a '+'. Cargo accepts both.
+          if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Malformed version '$VERSION' in Cargo.toml" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
       - name: Set up Ruby and FPM
         run: |
           sudo apt-get update
@@ -35,21 +44,19 @@ jobs:
           sudo apt-get install -y musl-tools pkg-config libsqlite3-dev
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: stable
           target: x86_64-unknown-linux-musl
 
       - name: Build packages
         run: |
-          export VERSION=${{ github.event.inputs.version }}
           export CC_x86_64_unknown_linux_musl=musl-gcc
           export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
-          ./scripts/build_packages.sh
+          ./packaging/scripts/build_packages.sh
 
       - name: Create git tag (if not exists)
         run: |
-          VERSION=${{ github.event.inputs.version }}
           if git rev-parse "$VERSION" >/dev/null 2>&1; then
             echo "Tag $VERSION already exists, skipping tag creation"
           else
@@ -60,11 +67,11 @@ jobs:
           fi
 
       - name: Create GitHub Release and Upload Assets
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: ${{ github.event.inputs.version }}
-          prerelease: ${{ github.event.inputs.prerelease }}
+          tag_name: ${{ env.VERSION }}
+          name: ${{ env.VERSION }}
+          prerelease: ${{ inputs.prerelease }}
           files: |
             bindizr_*.deb
             bindizr-*.rpm

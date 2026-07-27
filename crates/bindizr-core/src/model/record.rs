@@ -2,19 +2,21 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::FromRow;
 
+/// A single DNS resource record belonging to a zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Record {
     pub id: i32,
-    pub name: String, // domain name (e.g.: "www.example.com")
+    pub name: String,
     #[sqlx(try_from = "String")]
-    pub record_type: RecordType, // record type
-    pub value: String, // record value (e.g.: IP address, CNAME, etc.)
-    pub ttl: Option<i32>, // TTL (seconds)
-    pub priority: Option<i32>, // priority (for MX and SRV records)
+    pub record_type: RecordType,
+    pub value: String,
+    pub ttl: i32,              // TTL in seconds
+    pub priority: Option<i32>, // Priority (MX and SRV records)
     pub created_at: DateTime<Utc>,
     pub zone_id: i32,
 }
 
+/// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {
     pub id: i32,
@@ -22,7 +24,7 @@ pub struct RecordWithZone {
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
     pub value: String,
-    pub ttl: Option<i32>,
+    pub ttl: i32,
     pub priority: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub zone_id: i32,
@@ -30,6 +32,7 @@ pub struct RecordWithZone {
 }
 
 impl RecordWithZone {
+    /// Create a [`RecordWithZone`] from a [`Record`] and its zone name.
     pub fn new(record: Record, zone_name: String) -> Self {
         Self {
             id: record.id,
@@ -44,6 +47,7 @@ impl RecordWithZone {
         }
     }
 
+    /// Return the underlying [`Record`], dropping the zone name.
     pub fn record(&self) -> Record {
         Record {
             id: self.id,
@@ -58,6 +62,7 @@ impl RecordWithZone {
     }
 }
 
+/// Supported DNS resource record types.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub enum RecordType {
@@ -103,6 +108,7 @@ impl std::str::FromStr for RecordType {
 }
 
 impl RecordType {
+    /// Return the record type's presentation-format mnemonic (e.g. `"A"`).
     pub fn as_str(&self) -> &str {
         match self {
             RecordType::A => "A",
@@ -117,41 +123,11 @@ impl RecordType {
         }
     }
 
+    /// Whether the record's value is (or ends with) a domain name.
     pub fn is_name_like_value(&self) -> bool {
         matches!(
             self,
             RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX | RecordType::SRV
         )
-    }
-
-    /// Numeric TYPE code used on the wire (RFC 1035 and successors).
-    pub fn wire_code(&self) -> u16 {
-        match self {
-            RecordType::A => 1,
-            RecordType::NS => 2,
-            RecordType::CNAME => 5,
-            RecordType::SOA => 6,
-            RecordType::PTR => 12,
-            RecordType::MX => 15,
-            RecordType::TXT => 16,
-            RecordType::AAAA => 28,
-            RecordType::SRV => 33,
-        }
-    }
-
-    /// Map a numeric wire TYPE code back to a [`RecordType`], if supported.
-    pub fn from_wire_code(code: u16) -> Option<Self> {
-        match code {
-            1 => Some(RecordType::A),
-            2 => Some(RecordType::NS),
-            5 => Some(RecordType::CNAME),
-            6 => Some(RecordType::SOA),
-            12 => Some(RecordType::PTR),
-            15 => Some(RecordType::MX),
-            16 => Some(RecordType::TXT),
-            28 => Some(RecordType::AAAA),
-            33 => Some(RecordType::SRV),
-            _ => None,
-        }
     }
 }

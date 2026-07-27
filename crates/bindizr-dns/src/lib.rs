@@ -1,17 +1,19 @@
-pub(crate) mod acl;
+//! DNS front end: the authoritative TCP/UDP server plus zone transfer
+//! (AXFR/IXFR), NOTIFY, SOA queries, RFC 2136 nsupdate, and secondary ACLs.
+
 pub(crate) mod address;
-pub(crate) mod nsupdate;
-pub(crate) mod protocol;
-pub(crate) mod soa;
+pub mod error;
 pub use bindizr_core::dns::txt;
-pub mod xfr;
+pub mod client;
+pub(crate) mod server;
+pub(crate) mod wire;
 
 use std::{io::ErrorKind, net::SocketAddr, time::Duration};
 
-use acl::SecondaryAcl;
 pub(crate) use bindizr_core::{config, log_error, log_info, log_warn, model};
 pub(crate) use bindizr_service as service;
 use domain::base::iana::Rtype;
+use server::acl::SecondaryAcl;
 use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
     time::timeout,
@@ -19,15 +21,9 @@ use tokio::{
 
 const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
-enum QueryRoute {
-    Nsupdate,
-    Soa,
-    Xfr,
-    Other(Rtype),
-}
-
+/// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
 pub async fn initialize() {
-    xfr::initialize().await;
+    server::initialize().await;
 
     let bindizr_config = config::get_bindizr_config();
     let listen_addr = SocketAddr::new(
@@ -35,7 +31,7 @@ pub async fn initialize() {
         bindizr_config.dns.listen_port,
     );
 
-    let secondary_acl = acl::secondary_acl_from_config();
+    let secondary_acl = server::acl::secondary_acl_from_config();
     let tcp_secondary_acl = secondary_acl.clone();
 
     tokio::spawn(async move {
@@ -84,11 +80,11 @@ async fn handle_tcp_connection(
     secondary_acl: SecondaryAcl,
 ) -> Result<(), String> {
     loop {
-        let query_data = match timeout(TCP_IDLE_TIMEOUT, xfr::wire::read_tcp_message(&mut stream))
+        let query_data = match timeout(TCP_IDLE_TIMEOUT, crate::wire::read_tcp_message(&mut stream))
             .await
         {
             Ok(Ok(query_data)) => query_data,
-            Ok(Err(xfr::error::XfrError::IoError(e))) if e.kind() == ErrorKind::UnexpectedEof => {
+            Ok(Err(crate::error::XfrError::IoError(e))) if e.kind() == ErrorKind::UnexpectedEof => {
                 break;
             }
             Ok(Err(e)) => return Err(format!("Failed to read DNS TCP message: {}", e)),
@@ -114,30 +110,34 @@ async fn handle_tcp_query(
     secondary_acl: &SecondaryAcl,
     query_data: &[u8],
 ) -> Result<(), String> {
-    match classify_query_route(query_data) {
-        Ok(QueryRoute::Nsupdate) => {
-            nsupdate::handle_tcp_nsupdate(stream, query_data, client_addr).await?;
-        }
-        Ok(QueryRoute::Soa) => {
-            soa::handle_tcp_soa(stream, client_addr, query_data)
-                .await
-                .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
-        }
-        Ok(QueryRoute::Xfr) => {
-            xfr::handle_tcp_query(stream, client_addr, secondary_acl, query_data)
-                .await
-                .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
-        }
-        Ok(QueryRoute::Other(qtype)) => {
-            log_info!(
-                "Ignoring non-XFR DNS TCP query from {} (qtype={:?})",
-                client_addr,
-                qtype
-            );
-        }
+    // nsupdate owns its own parsing (including TSIG); everything else shares
+    // one upfront parse.
+    if server::nsupdate::is_nsupdate(query_data) {
+        return server::nsupdate::handle_tcp_nsupdate(stream, query_data, client_addr).await;
+    }
+
+    let query = match wire::parse_query(query_data) {
+        Ok(query) => query,
         Err(e) => {
             log_warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);
+            return Ok(());
         }
+    };
+
+    if query.qtype == Rtype::SOA {
+        server::soa::handle_tcp_soa(stream, client_addr, &query)
+            .await
+            .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
+    } else if server::is_xfr_query_type(query.qtype) {
+        server::handle_tcp_query(stream, client_addr, secondary_acl, &query)
+            .await
+            .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
+    } else {
+        log_info!(
+            "Ignoring non-XFR DNS TCP query from {} (qtype={:?})",
+            client_addr,
+            query.qtype
+        );
     }
 
     Ok(())
@@ -166,43 +166,28 @@ async fn run_udp_server(
 
         let query_data = &buf[..len];
 
-        match classify_query_route(query_data) {
-            Ok(QueryRoute::Nsupdate) => {
-                if let Err(e) =
-                    nsupdate::handle_udp_nsupdate(&socket, query_data, client_addr).await
-                {
-                    log_error!("NSUPDATE UDP handler failed for {}: {}", client_addr, e);
-                }
+        if server::nsupdate::is_nsupdate(query_data) {
+            if let Err(e) =
+                server::nsupdate::handle_udp_nsupdate(&socket, query_data, client_addr).await
+            {
+                log_error!("NSUPDATE UDP handler failed for {}: {}", client_addr, e);
             }
-            Ok(QueryRoute::Soa) => {
-                if let Err(e) = soa::handle_udp_soa(&socket, client_addr, query_data).await {
-                    log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
-                }
-            }
-            Ok(QueryRoute::Xfr) => {
-                if let Err(e) = xfr::handle_udp_query(client_addr, &secondary_acl, query_data).await
-                {
-                    log_warn!("Failed to handle XFR UDP query from {}: {}", client_addr, e);
-                }
-            }
-            Ok(QueryRoute::Other(_)) => {}
-            Err(_) => {}
+            continue;
         }
-    }
-}
 
-fn classify_query_route(query_data: &[u8]) -> Result<QueryRoute, String> {
-    if nsupdate::is_nsupdate(query_data) {
-        return Ok(QueryRoute::Nsupdate);
-    }
+        let query = match wire::parse_query(query_data) {
+            Ok(query) => query,
+            Err(_) => continue,
+        };
 
-    let (_, qtype, _, _) = xfr::wire::parse_query(query_data).map_err(|e| e.to_string())?;
-
-    if qtype == Rtype::SOA {
-        Ok(QueryRoute::Soa)
-    } else if xfr::is_xfr_query_type(qtype) {
-        Ok(QueryRoute::Xfr)
-    } else {
-        Ok(QueryRoute::Other(qtype))
+        if query.qtype == Rtype::SOA {
+            if let Err(e) = server::soa::handle_udp_soa(&socket, client_addr, &query).await {
+                log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
+            }
+        } else if server::is_xfr_query_type(query.qtype) {
+            if let Err(e) = server::handle_udp_query(client_addr, &secondary_acl, &query).await {
+                log_warn!("Failed to handle XFR UDP query from {}: {}", client_addr, e);
+            }
+        }
     }
 }

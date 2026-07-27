@@ -1,0 +1,110 @@
+# Bindizr Benchmark Suite — central configuration.
+# All knobs live here so runs are reproducible and CI can override via env.
+
+# Fixed seed makes dataset generation and workload ordering reproducible.
+seed: 1337
+
+# Record-set sizes used by bulk/large-zone/AXFR benchmarks.
+# 1_000_000 is heavy (time + disk); it is excluded from `sizes_ci` and only
+# runs when explicitly selected (BENCH_SIZES=1000000 or --sizes 1000000).
+sizes: [1000, 10000, 100000, 1000000]
+sizes_ci: [1000, 10000]
+
+# How many times each measurement is repeated. The report averages numeric
+# metrics per dimension and reports the sample standard deviation, so >=5 gives
+# stable README-quality figures. CI uses 1 to stay fast; override with
+# BENCH_REPEATS=N (env wins over both).
+repeats: 5
+repeats_ci: 1
+
+# CRUD (Benchmark 1) workload.
+crud:
+  concurrency: 32          # closed-loop concurrent clients
+  duration_secs: 30        # per-operation measurement window
+  warmup_secs: 5           # discarded before measurement
+  records_prepopulate: 5000 # rows seeded before GET/PUT/DELETE phases
+
+# DNS query (Benchmark 8) workload.
+query:
+  duration_secs: 30
+  concurrency: 50
+  qps_target: 0            # 0 = unthrottled (max throughput)
+  zone_size: 10000         # records loaded before querying (B8/B9)
+
+# Propagation (Benchmark 3): how long to poll `dig` for a freshly-created record.
+propagation:
+  poll_interval_ms: 50
+  timeout_secs: 30
+  samples: 100             # number of create->visible measurements
+
+# Resource sampling (Benchmark 9 + inline for others).
+resources:
+  sample_interval_secs: 1
+
+# Systems under test. `enabled` toggles participation; adapters map to
+# benchmarks/systems/<key>/adapter.py and compose.yml.
+systems:
+  bindizr:
+    enabled: true
+    label: "Bindizr + BIND9"
+    kind: control_plane      # writes DB, propagates via XFR; outside query data-plane
+  powerdns:
+    enabled: true
+    label: "PowerDNS Authoritative"
+    kind: integrated
+  technitium:
+    enabled: true
+    label: "Technitium DNS"
+    kind: integrated
+  bind9_nsupdate:
+    enabled: true
+    label: "BIND9 + nsupdate"
+    kind: dynamic_update
+  bind9_rndc:
+    enabled: true
+    label: "BIND9 + rndc"
+    kind: dynamic_update
+  knot:
+    enabled: true
+    label: "Knot DNS"
+    kind: dynamic_update      # RFC 2136 DDNS + journal-backed IXFR
+  coredns:
+    enabled: true
+    label: "CoreDNS"
+    kind: file_backed         # no management API; zone file + mtime-poll reload
+
+# Which systems each benchmark applies to (per the task spec).
+#
+# CoreDNS has no management API and no RFC 2136 dynamic update: writes mean
+# rewriting the zone file and waiting for the `file` plugin's mtime poll. It
+# therefore joins only the benchmarks where that is a fair measurement — bulk
+# (one reload for the whole set), AXFR, query, and resources — and is left out
+# of per-record CRUD (b01), propagation (b03), and IXFR (b05, no journal), where
+# the poll interval rather than the server would dominate the result.
+benchmarks:
+  b01_crud_tps:      [bindizr, powerdns, technitium, bind9_nsupdate, knot]
+  b02_bulk_import:   [bindizr, powerdns, technitium, bind9_rndc, knot, coredns]
+  b03_propagation:   [bindizr, powerdns, technitium, bind9_nsupdate, knot]
+  b04_axfr:          [bindizr, powerdns, technitium, knot, coredns]
+  b05_ixfr:          [bindizr, powerdns, technitium, knot]
+  b06_large_zone:    [bindizr]
+  b07_database:      [bindizr]   # SQLite / MySQL / PostgreSQL backends
+  b08_query_perf:    [bind9_native, bindizr, powerdns, technitium, knot, coredns]
+  b09_resource_usage: [bindizr, powerdns, technitium, knot, coredns]
+
+# IXFR (Benchmark 5): the baseline zone size, then the change-batch sizes applied
+# on top of it. A large baseline (100k) with a 10k change batch checks that the
+# incremental transfer stays proportional to the delta, not the zone.
+ixfr_baseline: 100000
+ixfr_baseline_ci: 1000
+ixfr_change_sizes: [1, 10, 100, 1000, 10000]
+ixfr_change_sizes_ci: [1, 10, 100, 1000]
+
+# Database backends for Benchmark 7 (Bindizr only).
+databases: [sqlite, mysql, postgresql]
+
+# Record-set sizes for the per-backend bulk-import comparison (Benchmark 7).
+# Each backend imports these sizes so SQLite/MySQL/PostgreSQL bulk throughput
+# can be compared directly and 100k linearity checked against 10k.
+db_bulk_sizes: [10000, 100000]
+db_bulk_sizes_ci: [1000, 10000]

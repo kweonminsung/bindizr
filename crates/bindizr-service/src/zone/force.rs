@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl ZoneService {
+    /// Force-increment the serial of one zone by name, or of every zone when `None`.
     pub async fn force_increment_serial(
         zone_name: Option<&str>,
     ) -> Result<Vec<Zone>, ServiceError> {
@@ -18,6 +19,9 @@ impl ZoneService {
                 let mut bumped_zones = Vec::with_capacity(zones.len());
 
                 for zone in zones {
+                    // Bump each zone in its own transaction so the new serial
+                    // derives from the current row and a concurrent edit to other
+                    // fields is not clobbered.
                     bumped_zones.push(Self::force_increment_zone_serial(&zone.name).await?);
                 }
 
@@ -34,31 +38,28 @@ impl ZoneService {
             let zone = match RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_name).await {
                 Ok(Some(zone)) => zone,
                 Ok(None) => {
-                    return Err(ServiceError::NotFound(format!(
-                        "Zone with name '{}' not found",
-                        zone_name
-                    )));
+                    return Err(ServiceError::zone_not_found(zone_name));
                 }
                 Err(e) => {
                     log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::Internal(
+                    return Err(ServiceError::internal(
                         "Failed to force increment zone serial".to_string(),
                     ));
                 }
             };
 
-            let new_serial = generate_serial(Some(zone.serial));
+            let new_serial = generate_serial(Some(zone.serial))?;
             let updated_zone = RepositoryService::update_zone_tx(
                 &mut tx,
                 Zone {
                     serial: new_serial,
-                    ..zone.clone()
+                    ..zone
                 },
             )
             .await
             .map_err(|e| {
                 log_error!("Failed to force increment zone serial: {}", e);
-                ServiceError::Internal("Failed to force increment zone serial".to_string())
+                ServiceError::internal("Failed to force increment zone serial".to_string())
             })?;
 
             save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;

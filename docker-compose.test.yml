@@ -33,11 +33,11 @@ services:
       context: .
     image: bindizr:local
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
     environment:
-      BINDIZR_DATABASE_TYPE: mysql
-      BINDIZR_DATABASE_URL: mysql://bindizr:bindizr@mysql:3306/bindizr
+      BINDIZR_DATABASE_TYPE: postgresql
+      BINDIZR_DATABASE_URL: postgresql://bindizr:bindizr@postgres:5432/bindizr
       BINDIZR_API_LISTEN_ADDR: "0.0.0.0"
       BINDIZR_API_PORT: "8000"
       BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
@@ -47,8 +47,7 @@ services:
       BINDIZR_SECONDARY_ADDRS: bind9-1:53,bind9-2:53
       BINDIZR_NOTIFY_RETRIES: "3"
       BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
-      BINDIZR_NSUPDATE_TSIG_KEY_NAME: nsupdate-key
-      BINDIZR_NSUPDATE_TSIG_KEY: ""
+      BINDIZR_NSUPDATE_ALLOW_UNSIGNED: "true"
     ports:
       - "8000:8000/tcp"
       - "5300:53/tcp"
@@ -96,24 +95,19 @@ services:
         ipv4_address: 172.28.0.12
     restart: unless-stopped
 
-  mysql:
-    image: mysql:9.7
+  postgres:
+    image: postgres:18
     environment:
-      MYSQL_DATABASE: bindizr
-      MYSQL_USER: bindizr
-      MYSQL_PASSWORD: bindizr
-      MYSQL_ROOT_PASSWORD: bindizr-root
+      POSTGRES_DB: bindizr
+      POSTGRES_USER: bindizr
+      POSTGRES_PASSWORD: bindizr
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mysqladmin ping -h 127.0.0.1 -ubindizr -pbindizr --silent",
-        ]
+      test: ["CMD-SHELL", "pg_isready -U bindizr -d bindizr"]
       interval: 5s
       timeout: 3s
       retries: 20
     volumes:
-      - mysql-data:/var/lib/mysql
+      - postgres-data:/var/lib/postgresql
     networks:
       bindizr-net:
         ipv4_address: 172.28.0.20
@@ -131,4 +125,4 @@ volumes:
   bind9-2-cache:
   bind9-1-data:
   bind9-2-data:
-  mysql-data:
+  postgres-data:

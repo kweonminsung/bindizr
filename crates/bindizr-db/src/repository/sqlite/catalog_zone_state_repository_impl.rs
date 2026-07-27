@@ -4,14 +4,16 @@ use sqlx::{Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::catalog_zone_state::CatalogZoneState,
-    repository::{CatalogZoneStateRepository, RepositoryTx, RepositoryTxKind},
+    repository::{CatalogZoneStateRepository, RepositoryTx},
 };
 
+/// SQLite-backed implementation of `CatalogZoneStateRepository`.
 pub struct SqliteCatalogZoneStateRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteCatalogZoneStateRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -25,6 +27,8 @@ impl CatalogZoneStateRepository for SqliteCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)
@@ -66,15 +70,10 @@ impl CatalogZoneStateRepository for SqliteCatalogZoneStateRepository {
         signature: &str,
         base_serial: i32,
     ) -> Result<CatalogZoneState, DatabaseError> {
-        let sqlite_tx = match &mut tx.0 {
-            RepositoryTxKind::SQLite(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected SQLite)".to_string(),
-                ));
-            }
-        };
+        let sqlite_tx = tx.as_sqlite()?;
 
+        // Advance the catalog serial only when the signature changes, kept
+        // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)

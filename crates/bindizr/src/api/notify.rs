@@ -1,5 +1,6 @@
 use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
 use bindizr_dns as dns;
+use bindizr_service::error::{ErrorCode, ServiceError};
 use serde_json::json;
 
 use crate::api::{
@@ -8,9 +9,11 @@ use crate::api::{
     types::{ErrorResponse, MessageResponse, NotifyZoneRequest},
 };
 
+/// Route group for NOTIFY endpoints.
 pub(crate) struct NotifyApi;
 
 impl NotifyApi {
+    /// Build the router for NOTIFY endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new().route("/notify/zones", routing::post(notify_zones))
     }
@@ -31,8 +34,9 @@ impl NotifyApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
+/// Send DNS NOTIFY messages for a specific zone or all zones.
 pub(crate) async fn notify_zones(JsonBody(body): JsonBody<NotifyZoneRequest>) -> impl IntoResponse {
-    match dns::xfr::notify::send_notify(body.zone_name.as_deref(), body.force).await {
+    match dns::client::notify::send_notify(body.zone_name.as_deref(), body.force).await {
         Ok(()) => {
             let message = match body.zone_name {
                 Some(zone_name) if body.force => {
@@ -44,9 +48,11 @@ pub(crate) async fn notify_zones(JsonBody(body): JsonBody<NotifyZoneRequest>) ->
             };
             (StatusCode::OK, Json(json!({ "message": message }))).into_response()
         }
-        Err(dns::xfr::error::XfrError::ZoneNotFound(zone_name)) => {
-            ApiError::NotFound(format!("Zone not found: {}", zone_name)).into_response()
-        }
-        Err(err) => ApiError::InternalServerError(err.to_string()).into_response(),
+        Err(dns::error::XfrError::ZoneNotFound(zone_name)) => ApiError(ServiceError::new(
+            ErrorCode::ZoneNotFound,
+            format!("Zone not found: {}", zone_name),
+        ))
+        .into_response(),
+        Err(err) => ApiError(ServiceError::internal(err.to_string())).into_response(),
     }
 }

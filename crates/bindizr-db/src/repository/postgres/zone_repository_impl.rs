@@ -4,14 +4,16 @@ use sqlx::{Pool, Postgres, Row};
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{RepositoryTx, RepositoryTxKind, ZoneFilter, ZoneRepository},
+    repository::{RepositoryTx, ZoneFilter, ZoneRepository},
 };
 
+/// PostgreSQL-backed implementation of `ZoneRepository`.
 pub struct PostgresZoneRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresZoneRepository {
+    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -51,14 +53,7 @@ impl ZoneRepository for PostgresZoneRepository {
         tx: &mut RepositoryTx<'_>,
         mut zone: Zone,
     ) -> Result<Zone, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         let result = sqlx::query(
             r#"
@@ -99,14 +94,7 @@ impl ZoneRepository for PostgresZoneRepository {
         tx: &mut RepositoryTx<'_>,
         id: i32,
     ) -> Result<Option<Zone>, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1 FOR UPDATE")
             .bind(id)
@@ -132,14 +120,7 @@ impl ZoneRepository for PostgresZoneRepository {
         tx: &mut RepositoryTx<'_>,
         name: &str,
     ) -> Result<Option<Zone>, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         let zone = sqlx::query_as::<_, Zone>(
             "SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1 FOR UPDATE",
@@ -302,14 +283,7 @@ impl ZoneRepository for PostgresZoneRepository {
         tx: &mut RepositoryTx<'_>,
         zone: Zone,
     ) -> Result<Zone, DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         sqlx::query(
             r#"
@@ -346,15 +320,24 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(())
     }
 
+    async fn update_serial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        serial: i32,
+    ) -> Result<(), DatabaseError> {
+        let postgres_tx = tx.as_postgres()?;
+
+        sqlx::query("UPDATE zones SET serial = $1 WHERE id = $2")
+            .bind(serial)
+            .bind(zone_id)
+            .execute(&mut **postgres_tx)
+            .await?;
+        Ok(())
+    }
+
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
-        let postgres_tx = match &mut tx.0 {
-            RepositoryTxKind::PostgreSQL(tx) => tx,
-            _ => {
-                return Err(DatabaseError::TransactionFailed(
-                    "transaction kind mismatch (expected PostgreSQL)".to_string(),
-                ));
-            }
-        };
+        let postgres_tx = tx.as_postgres()?;
 
         sqlx::query("DELETE FROM zones WHERE id = $1")
             .bind(id)

@@ -2,6 +2,7 @@ use super::ZoneService;
 use crate::{error::ServiceError, repository::RepositoryService};
 
 impl ZoneService {
+    /// Bump the catalog zone serial only when its content `signature` has changed.
     pub async fn update_catalog_serial_for_signature(
         name: &str,
         signature: &str,
