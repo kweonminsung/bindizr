@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="270" viewBox="0 0 900 270" role="img">
+  <text x="16.0" y="24.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#0b0b0b" text-anchor="start">Write path — API acknowledgement to DNS visibility</text>
+  <text x="16.0" y="43.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">a record create, from the API call until it answers from DNS, 5-run median — lower is better</text>
+  <circle cx="157" cy="57" r="4.5" fill="none" stroke="#2a78d6" stroke-width="2"/>
+  <text x="168.0" y="61.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">API 200 OK</text>
+  <circle cx="268" cy="57" r="4.5" fill="#2a78d6"/>
+  <text x="279.0" y="61.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">DNS-visible</text>
+  <text x="140.0" y="98.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">Technitium</text>
+  <line x1="157.7" y1="94.0" x2="195.5" y2="94.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="157.7" cy="94.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
+  <circle cx="195.5" cy="94.0" r="4.5" fill="#8c8b85"/>
+  <text x="206.5" y="98.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">4.6 ms</text>
+  <text x="140.0" y="130.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">PowerDNS</text>
+  <line x1="178.5" y1="126.0" x2="221.0" y2="126.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="178.5" cy="126.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
+  <circle cx="221.0" cy="126.0" r="4.5" fill="#8c8b85"/>
+  <text x="232.0" y="130.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">7.3 ms</text>
+  <text x="140.0" y="162.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">Knot DNS</text>
+  <line x1="305.2" y1="158.0" x2="344.9" y2="158.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="305.2" cy="158.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
+  <circle cx="344.9" cy="158.0" r="4.5" fill="#8c8b85"/>
+  <text x="355.9" y="162.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">20.4 ms</text>
+  <text x="140.0" y="194.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">BIND9 + nsupdate</text>
+  <line x1="314.6" y1="190.0" x2="355.3" y2="190.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="314.6" cy="190.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
+  <circle cx="355.3" cy="190.0" r="4.5" fill="#8c8b85"/>
+  <text x="366.3" y="194.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">21.5 ms</text>
+  <text x="140.0" y="226.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#52514e" text-anchor="end">Bindizr + BIND9</text>
+  <line x1="212.5" y1="222.0" x2="773.2" y2="222.0" stroke="#2a78d6" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="212.5" cy="222.0" r="4.5" fill="none" stroke="#2a78d6" stroke-width="2"/>
+  <circle cx="773.2" cy="222.0" r="4.5" fill="#2a78d6"/>
+  <text x="784.2" y="226.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start">65.7 ms</text>
+  <line x1="152" y1="84" x2="152" y2="244" stroke="#dcdbd5" stroke-width="1"/>
+  <text x="16.0" y="262.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#78776f" text-anchor="start">Bindizr acknowledges in 6.4 ms; the change is live on every secondary 65.7 ms after the call, carried there by NOTIFY + IXFR.</text>
+</svg>
