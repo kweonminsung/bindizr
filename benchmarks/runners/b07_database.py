@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from adapters import registry  # noqa: E402
 from datasets.gen_dataset import generate  # noqa: E402
 from lib import loadgen  # noqa: E402
-from lib.resources import ResourceSampler  # noqa: E402
+from lib.resources import sampler_for  # noqa: E402
 
 # Sampled around the measured phase below, not by the orchestrator.
 SELF_SAMPLES = True
@@ -39,9 +39,7 @@ async def _bench_backend(adapter, cfg, zone, label) -> dict:
         rec["name"] = f"pool{i:07d}"
         handles.append(await adapter.create_record(zone, rec))
 
-    ids = [i for i in (adapter.compose.container_id(s)
-                       for s in adapter.resource_services) if i]
-    sampler = ResourceSampler(ids, cfg["resources"]["sample_interval_secs"])
+    sampler = sampler_for(adapter, cfg)
     sampler.start()
 
     create_recs = generate(200_000, cfg["seed"] + 3)
@@ -78,9 +76,7 @@ async def _bulk_backend(adapter, cfg, zone, backend, size) -> dict:
     await adapter.create_zone(zone)
     records = generate(size, cfg["seed"], zone)
 
-    ids = [i for i in (adapter.compose.container_id(s)
-                       for s in adapter.resource_services) if i]
-    sampler = ResourceSampler(ids, cfg["resources"]["sample_interval_secs"])
+    sampler = sampler_for(adapter, cfg)
     sampler.start()
     t0 = time.monotonic()
     await adapter.bulk_import(zone, records)

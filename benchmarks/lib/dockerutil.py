@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -32,17 +33,11 @@ class Compose:
         if wait:
             cmd.append("--wait")
         cmd += list(services)
-        import os
-
-        env = {**os.environ, **self.env}
-        subprocess.run(cmd, check=True, text=True, env=env)
+        subprocess.run(cmd, check=True, text=True, env={**os.environ, **self.env})
 
     def down(self) -> None:
-        import os
-
-        # Force COMPOSE_PROFILES to include all backends so `down` also stops
-        # profiled DB services (Bindizr's optional mysql/postgres) and removes
-        # their volumes, never leaving a container with stale data between runs.
+        # All profiles, so `down` also removes Bindizr's optional mysql/postgres
+        # services and their volumes rather than leaving stale data behind.
         env = {**os.environ, **self.env}
         env["COMPOSE_PROFILES"] = "mysql,postgres"
         subprocess.run(

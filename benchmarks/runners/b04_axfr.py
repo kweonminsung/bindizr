@@ -18,6 +18,12 @@ from datasets.gen_dataset import generate  # noqa: E402
 from lib import dnsutil  # noqa: E402
 
 
+# A statically-configured zone (Knot, CoreDNS) still answers AXFR with its apex
+# — SOA, NS, glue, closing SOA — once its records are gone, so a dropped zone
+# floors at the apex rather than at zero.
+APEX_LINES = 10
+
+
 async def _axfr_count(zone, host, port, timeout=300):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, dnsutil.axfr, zone, host, port, timeout)
@@ -29,15 +35,15 @@ async def run(adapter, cfg, ctx) -> list:
     rows = []
     for size in cfg["sizes"]:
         await adapter.delete_zone(zone)
-        # Wait for the delete to reach the XFR endpoint before recreating: for
-        # Bindizr the BIND9 secondary drops the zone via the catalog ~5s after
-        # the API delete, and recreating sooner lets the new low serial collide
-        # with the stale copy. A no-op for systems that delete synchronously.
+        # Wait for the delete to reach the XFR endpoint before recreating: the
+        # BIND9 secondary drops the zone via the catalog seconds after the API
+        # call, and recreating sooner lets the new low serial collide with the
+        # stale copy it still holds.
         drop_deadline = time.monotonic() + 30
         dropped = False
         while time.monotonic() < drop_deadline:
             _, count, _ = await _axfr_count(zone, xe.host, xe.port)
-            if count == 0:
+            if count <= APEX_LINES:
                 dropped = True
                 break
             await asyncio.sleep(1.0)
@@ -85,7 +91,6 @@ async def run(adapter, cfg, ctx) -> list:
             })
             continue
 
-        # Clean measured transfer.
         secs, count, nbytes = await _axfr_count(zone, xe.host, xe.port)
         rows.append({
             "system": ctx["label"],

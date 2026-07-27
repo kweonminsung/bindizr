@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import re
 import threading
-import time
 
 from . import dockerutil
 
@@ -34,6 +33,13 @@ def _to_bytes(s: str) -> float:
         "TB": 1000**4,
     }
     return val * scale.get(unit, 1)
+
+
+def sampler_for(adapter, cfg: dict) -> "ResourceSampler":
+    """Sampler over the containers an adapter declares measurable."""
+    ids = [adapter.compose.container_id(s) for s in adapter.resource_services]
+    return ResourceSampler([i for i in ids if i],
+                           cfg["resources"]["sample_interval_secs"])
 
 
 class ResourceSampler:
@@ -79,47 +85,41 @@ class ResourceSampler:
             self._thread.join(timeout=5)
         return self.summary()
 
+    def _by_tick(self, field: str) -> list[float]:
+        """Stack total per tick. Averaging the flat sample list instead would
+        divide a multi-container stack's cost by its container count."""
+        totals: dict[int, float] = {}
+        for s in self.samples:
+            totals[s["tick"]] = totals.get(s["tick"], 0.0) + s[field]
+        return list(totals.values())
+
+    def _by_container(self, field: str) -> dict[str, list[float]]:
+        out: dict[str, list[float]] = {}
+        for s in self.samples:
+            out.setdefault(s["name"], []).append(s[field])
+        return out
+
     def summary(self) -> dict:
         if not self.samples:
-            return {"peak_cpu_pct": 0, "avg_cpu_pct": 0, "peak_mem_mb": 0, "avg_mem_mb": 0}
-        # Whole-stack CPU: sum each tick across containers, then peak/avg over the
-        # tick totals — averaging the flat sample list would divide the stack's
-        # cost by its container count.
-        cpu_by_tick: dict[int, float] = {}
-        for s in self.samples:
-            cpu_by_tick[s["tick"]] = cpu_by_tick.get(s["tick"], 0.0) + s["cpu_pct"]
-        cpu_totals = list(cpu_by_tick.values())
+            return {"peak_cpu_pct": 0, "avg_cpu_pct": 0, "cpu_by_container": {},
+                    "peak_mem_mb": 0, "avg_mem_mb": 0, "net_tx_mb": 0, "samples": 0}
 
-        # Per-container split, so a stack total can be attributed.
-        by_container: dict[str, list[float]] = {}
-        for s in self.samples:
-            by_container.setdefault(s["name"], []).append(s["cpu_pct"])
-        cpu_by_container = {
-            name: round(sum(v) / len(v), 2) for name, v in by_container.items()
-        }
+        cpu_totals = self._by_tick("cpu_pct")
+        mem_totals = self._by_tick("mem_bytes")
 
-        # Whole-stack memory: sum each tick across containers, then peak/avg over
-        # the tick totals — a flat max/mean would understate a multi-container
-        # stack. Single-container systems collapse to the original values.
-        mem_by_tick: dict[int, float] = {}
-        for s in self.samples:
-            mem_by_tick[s["tick"]] = mem_by_tick.get(s["tick"], 0.0) + s["mem_bytes"]
-        mem_totals = list(mem_by_tick.values())
-
-        # net_tx is Docker's cumulative TX counter, so window bytes are
-        # last - first per container (summed), not the absolute max (which would
-        # include setup/import/propagation traffic).
-        net_by_container: dict[str, list[float]] = {}
-        for s in self.samples:
-            net_by_container.setdefault(s["name"], []).append(s["net_tx"])
-        net_tx_delta = sum(max(v) - min(v) for v in net_by_container.values())
+        # net_tx is Docker's cumulative counter, so the window's traffic is the
+        # per-container rise across it — an absolute max would also count the
+        # setup/import/propagation bytes sent before sampling started.
+        net_tx = sum(v[-1] - v[0] for v in self._by_container("net_tx").values())
 
         return {
             "peak_cpu_pct": round(max(cpu_totals), 2),
             "avg_cpu_pct": round(sum(cpu_totals) / len(cpu_totals), 2),
-            "cpu_by_container": cpu_by_container,
+            # Per-container split, so a stack total can be attributed.
+            "cpu_by_container": {name: round(sum(v) / len(v), 2)
+                                 for name, v in self._by_container("cpu_pct").items()},
             "peak_mem_mb": round(max(mem_totals) / 1024**2, 2),
             "avg_mem_mb": round(sum(mem_totals) / len(mem_totals) / 1024**2, 2),
-            "peak_net_tx_mb": round(net_tx_delta / 1024**2, 2),
+            "net_tx_mb": round(net_tx / 1024**2, 2),
             "samples": len(self.samples),
         }

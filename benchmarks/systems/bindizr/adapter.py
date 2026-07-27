@@ -21,16 +21,18 @@ from lib import dockerutil  # noqa: E402
 API_PORT = 18000
 DNS_PORT = 15353
 
+# Attempts per chunk in the bulk/import paths before it is counted as failed.
+POST_ATTEMPTS = 4
+
 
 class BindizrAdapter(DnsAdapter):
     key = "bindizr"
     resource_services = ["bindizr", "bind9"]
     supports_ixfr = True
-    # Bindizr exposes a native bulk-insert API and a BIND zone-file import API, so
-    # it does not fall back to the base one-by-one bulk path.
     supports_zone_import = True
-    # Records per request: each bulk/import batch is one server-side transaction
-    # (single serial bump + NOTIFY), so batch to bound memory and transaction size.
+    # Records per request. Each chunk is one server-side transaction — a single
+    # serial bump and NOTIFY — so the chunk size bounds both memory and how much
+    # NOTIFY/XFR traffic a bulk load generates.
     bulk_chunk = 2000
     import_chunk = 5000
 
@@ -41,13 +43,12 @@ class BindizrAdapter(DnsAdapter):
                  zone_cache: bool | None = None,
                  log_level: str | None = None):
         super().__init__(cfg, project)
-        # b07 passes db_type explicitly; b02/others fall back to the env knob so a
-        # single benchmark can be pointed at any backend (default sqlite).
+        # b07 passes db_type; every other benchmark takes the env knob so it can
+        # be pointed at any backend.
         db_type = db_type or os.environ.get("BENCH_BINDIZR_DB_TYPE", "sqlite")
         self.db_type = db_type
-        # Sample the DB container that is actually under test (mysql/postgres run
-        # as their own containers; sqlite is embedded in the bindizr process), so
-        # Benchmark 7's per-backend CPU/mem columns include the profiled backend.
+        # mysql/postgres run as their own containers, so b07's per-backend
+        # CPU/mem columns only cover the backend if it is sampled too.
         self.resource_services = ["bindizr", "bind9"]
         if db_type == "mysql":
             self.resource_services.append("mysql")
@@ -63,9 +64,8 @@ class BindizrAdapter(DnsAdapter):
         # Raise to "debug" to surface the server's per-stage timing lines
         # (event=record_bulk_create_timing / event=zone_import_timing).
         self.log_level = log_level or os.environ.get("BENCH_BINDIZR_LOG_LEVEL", "info")
-        # HTTP-level batch sizes, overridable so the JSON-bulk vs zone-import
-        # comparison can be run with matched chunks — each chunk is one
-        # transaction + serial bump + NOTIFY, so chunk count skews the totals.
+        # Overridable so JSON-bulk and zone-import can be compared at matched
+        # chunk sizes rather than at their differing defaults.
         self.bulk_chunk = int(os.environ.get("BENCH_BINDIZR_BULK_CHUNK", str(self.bulk_chunk)))
         self.import_chunk = int(os.environ.get("BENCH_BINDIZR_IMPORT_CHUNK", str(self.import_chunk)))
         self.base = f"http://localhost:{API_PORT}"
@@ -164,15 +164,15 @@ class BindizrAdapter(DnsAdapter):
 
     async def _post_with_retry(self, url: str, body: dict, count: int,
                                check_applied: bool = False) -> int:
-        """POST `body`, retrying transient failures. Returns the number of records
-        that failed after all retries (0 on success).
+        """POST `body`, retrying transient failures. Return how many records still
+        failed (0 on success).
 
-        The zone-import endpoint returns HTTP 200 even when validation errors
-        leave `applied=false` and nothing is inserted; `check_applied` inspects
-        the response so a rejected chunk counts as failed instead of a silent
-        success. Rejection is deterministic, so it is not retried."""
+        The zone-import endpoint answers 200 with `applied=false` when validation
+        rejects the chunk and nothing is inserted, so `check_applied` reads the
+        body to catch that. Rejection is deterministic and not retried.
+        """
         delay = 0.05
-        for attempt in range(4):
+        for attempt in range(POST_ATTEMPTS):
             try:
                 async with self.session.post(url, json=body) as r:
                     if r.status in (200, 201):
@@ -182,7 +182,7 @@ class BindizrAdapter(DnsAdapter):
                         return 0 if data.get("applied") else count
             except Exception:
                 pass
-            if attempt < 3:
+            if attempt < POST_ATTEMPTS - 1:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 1.0)
         return count

@@ -41,7 +41,7 @@ async def run(adapter, cfg, ctx) -> dict:
 
     api = LatencyRecorder()
     visible = LatencyRecorder()
-    api.started_at = time.monotonic()
+    api.started_at = visible.started_at = time.monotonic()
     timeouts = 0
 
     for i in range(samples):

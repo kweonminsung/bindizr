@@ -14,7 +14,11 @@ Semantics notes:
 from __future__ import annotations
 
 import abc
+import asyncio
 from dataclasses import dataclass
+
+# Attempts per record in the default bulk_import before it is counted as failed.
+BULK_ATTEMPTS = 4
 
 
 @dataclass
@@ -27,6 +31,11 @@ class DnsAdapter(abc.ABC):
     key: str = "base"
     #: container/compose service names whose resources should be measured
     resource_services: list[str] = []
+    #: concurrency used by the default bulk_import
+    bulk_concurrency: int = 32
+    #: populated by bulk_import
+    bulk_errors: int = 0
+    supports_ixfr: bool = True
 
     def __init__(self, cfg: dict, project: str):
         self.cfg = cfg
@@ -60,18 +69,13 @@ class DnsAdapter(abc.ABC):
     @abc.abstractmethod
     async def delete_record(self, zone: str, handle: str) -> bool: ...
 
-    #: concurrency used by the default bulk_import
-    bulk_concurrency: int = 32
-
     async def bulk_import(self, zone: str, records: list[dict]) -> None:
-        """Default bulk = concurrent creates via a fixed worker pool (memory-safe
-        for very large record sets); adapters may override for batch APIs.
+        """Concurrent creates via a fixed worker pool; adapters override for batch APIs.
 
-        Per-record failures are retried (a real importer would retry transient
-        backend contention, e.g. SQLite write locks) and, if still failing,
-        counted in `self.bulk_errors` rather than aborting the whole import."""
-        import asyncio
-
+        Failures are retried — a real importer would retry transient backend
+        contention such as SQLite write locks — then counted in `bulk_errors`
+        rather than aborting the whole import.
+        """
         self.bulk_errors = 0
         queue: asyncio.Queue[int] = asyncio.Queue()
         for i in range(len(records)):
@@ -84,21 +88,18 @@ class DnsAdapter(abc.ABC):
                 except asyncio.QueueEmpty:
                     return
                 delay = 0.02
-                for attempt in range(4):
+                for attempt in range(BULK_ATTEMPTS):
                     try:
                         await self.create_record(zone, records[i])
                         break
                     except Exception:
-                        if attempt == 3:
+                        if attempt == BULK_ATTEMPTS - 1:
                             self.bulk_errors += 1
                         else:
                             await asyncio.sleep(delay)
                             delay = min(delay * 2, 0.5)
 
         await asyncio.gather(*(worker() for _ in range(self.bulk_concurrency)))
-
-    #: populated by bulk_import
-    bulk_errors: int = 0
 
     @abc.abstractmethod
     def dns_endpoint(self) -> Endpoint:
@@ -107,5 +108,3 @@ class DnsAdapter(abc.ABC):
     def xfr_endpoint(self) -> Endpoint:
         """Server that answers AXFR/IXFR for the managed zone (defaults to DNS)."""
         return self.dns_endpoint()
-
-    supports_ixfr: bool = True

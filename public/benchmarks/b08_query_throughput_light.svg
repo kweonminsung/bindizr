@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="278" viewBox="0 0 900 278" role="img">
+  <text x="16.0" y="24.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#0b0b0b" text-anchor="start">DNS query throughput</text>
+  <text x="16.0" y="43.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">queries/sec served to clients, 5-run mean — higher is better</text>
+  <text x="134.0" y="76.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">CoreDNS</text>
+  <path d="M146.0,62.0 H806.0 A4,4 0 0 1 810.0,66.0 V78.0 A4,4 0 0 1 806.0,82.0 H146.0 Z" fill="#8c8b85"/>
+  <text x="818.0" y="76.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">62,696</text>
+  <text x="134.0" y="108.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#52514e" text-anchor="end">Bindizr + BIND9</text>
+  <path d="M146.0,94.0 H803.4 A4,4 0 0 1 807.4,98.0 V110.0 A4,4 0 0 1 803.4,114.0 H146.0 Z" fill="#2a78d6"/>
+  <text x="815.4" y="108.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start">62,448</text>
+  <text x="134.0" y="140.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">Native BIND9</text>
+  <path d="M146.0,126.0 H794.7 A4,4 0 0 1 798.7,130.0 V142.0 A4,4 0 0 1 794.7,146.0 H146.0 Z" fill="#8c8b85"/>
+  <text x="806.7" y="140.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">61,629</text>
+  <text x="134.0" y="172.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">PowerDNS</text>
+  <path d="M146.0,158.0 H781.7 A4,4 0 0 1 785.7,162.0 V174.0 A4,4 0 0 1 781.7,178.0 H146.0 Z" fill="#8c8b85"/>
+  <text x="793.7" y="172.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">60,406</text>
+  <text x="134.0" y="204.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">Knot DNS</text>
+  <path d="M146.0,190.0 H579.3 A4,4 0 0 1 583.3,194.0 V206.0 A4,4 0 0 1 579.3,210.0 H146.0 Z" fill="#8c8b85"/>
+  <text x="591.3" y="204.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">41,289</text>
+  <text x="134.0" y="236.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">Technitium</text>
+  <path d="M146.0,222.0 H281.2 A4,4 0 0 1 285.2,226.0 V238.0 A4,4 0 0 1 281.2,242.0 H146.0 Z" fill="#8c8b85"/>
+  <text x="293.2" y="236.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">13,139</text>
+  <line x1="146" y1="56" x2="146" y2="248" stroke="#dcdbd5" stroke-width="1"/>
+  <text x="16.0" y="270.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#78776f" text-anchor="start">Bindizr is outside the query data plane: clients query the BIND9 secondaries, so throughput tracks native BIND9 (−1.3%).</text>
+</svg>

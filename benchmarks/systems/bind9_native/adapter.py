@@ -90,8 +90,7 @@ class Bind9NativeAdapter(DnsAdapter):
         with tempfile.NamedTemporaryFile("w", suffix=".zone", delete=False) as fh:
             fh.write(self._zone_text())
             tmp = fh.name
-        # docker cp preserves perms; make it world-readable so BIND (uid 53) can
-        # read the file it is now owned by root.
+        # Make world-readable so BIND (uid 53) can read the root-owned copy.
         os.chmod(tmp, 0o644)
         ok = await self._run("docker", "cp", tmp, f"{self.cid}:{ZONE_PATH}")
         Path(tmp).unlink(missing_ok=True)

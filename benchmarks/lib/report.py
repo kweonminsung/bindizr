@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import json
+from statistics import stdev
 from typing import Any
 
 from .settings import GRAPHS_DIR, RESULTS_DIR
@@ -48,11 +49,9 @@ def build_report(env: dict, cfg: dict) -> None:
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
     data = _load_all()
 
-    # performance.json — the full machine-readable record.
     full = {"environment": env, "config_seed": cfg.get("seed"), "benchmarks": data}
     (RESULTS_DIR / "performance.json").write_text(json.dumps(full, indent=2))
 
-    # performance.csv — flat rows across all benchmarks.
     csv_rows: list[dict] = []
     for name, payload in data.items():
         for r in payload["results"]:
@@ -70,10 +69,7 @@ def build_report(env: dict, cfg: dict) -> None:
             w.writeheader()
             w.writerows(csv_rows)
 
-    # performance.md — human-readable, paste-into-README tables.
-    md = _render_markdown(env, data)
-    (RESULTS_DIR / "performance.md").write_text(md)
-
+    (RESULTS_DIR / "performance.md").write_text(_render_markdown(env, data))
     _render_graphs(data)
 
 
@@ -84,16 +80,16 @@ DIMENSION_FIELDS = ("system", "backend", "size", "changes", "status")
 
 
 def _aggregate(rows: list[dict]) -> list[dict]:
-    """Collapse repeated runs: group by dimension fields, average numeric metrics,
-    and record their sample standard deviation as a companion `<metric>_std` key.
-    Also add a `runs` count. With a single run std is 0 and `runs` is omitted."""
-    from collections import OrderedDict
-    from statistics import stdev
+    """Collapse repeated runs: group by dimension fields, average numeric metrics
+    into `<metric>` plus a `<metric>_std`, and count them in `runs`.
 
-    groups: "OrderedDict[tuple, list[dict]]" = OrderedDict()
+    A metric is only averaged when every run in the group reported it as a
+    number; otherwise the first run's value carries through, since a mean over a
+    subset would silently describe fewer runs than the `runs` count claims.
+    """
+    groups: dict[tuple, list[dict]] = {}
     for r in rows:
-        key = tuple(str(r.get(f)) for f in DIMENSION_FIELDS)
-        groups.setdefault(key, []).append(r)
+        groups.setdefault(tuple(str(r.get(f)) for f in DIMENSION_FIELDS), []).append(r)
 
     out = []
     for grp in groups.values():
@@ -380,7 +376,8 @@ def _render_graphs(data: dict) -> None:
         # Largest-size row per system.
         by_sys: dict[str, dict] = {}
         for r in _rows(data, "b02_bulk_import"):
-            if r["system"] not in by_sys or r["size"] >= by_sys[r["system"]]["size"]:
+            prev = by_sys.get(r["system"])
+            if prev is None or r.get("size", 0) >= prev.get("size", 0):
                 by_sys[r["system"]] = r
         rs = list(by_sys.values())
         bar("b02_records_per_sec.png", "Bulk Import Throughput (records/sec)",

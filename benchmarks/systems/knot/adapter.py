@@ -44,15 +44,17 @@ class KnotAdapter(DnsAdapter):
     def __init__(self, cfg: dict, project: str):
         super().__init__(cfg, project)
         self.compose = dockerutil.Compose(HERE / "compose.yml", project)
+        self.cid: str | None = None
 
     async def setup(self) -> None:
         self.compose.down()  # clean slate: remove any leftovers from a prior run
         self.compose.up("knot", wait=False)
+        self.cid = self.compose.container_id("knot")
         await self._wait_dns()
 
     async def _wait_dns(self, timeout: int = 90) -> None:
-        # Wait for SOA, then confirm the dynamic-update path works before
-        # returning so prepopulation never races a cold server.
+        # Confirm the dynamic-update path works, not just that SOA answers, so
+        # prepopulation never races a cold server.
         for _ in range(timeout * 2):
             code, _out = await self._dig(ZONE, "SOA")
             if code:
@@ -94,6 +96,15 @@ class KnotAdapter(DnsAdapter):
                 delay = min(delay * 2, 0.5)
         return False
 
+    async def _knotc(self, *args: str) -> bool:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "exec", self.cid, "knotc", *args,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+        _, err = await proc.communicate()
+        if proc.returncode != 0:
+            self._last_err = (err or b"").decode(errors="replace").strip()
+        return proc.returncode == 0
+
     @staticmethod
     def _fqdn(name: str) -> str:
         return f"{name}.{ZONE}."
@@ -102,7 +113,18 @@ class KnotAdapter(DnsAdapter):
         return  # the zone is declared in knot.conf
 
     async def delete_zone(self, zone: str) -> None:
-        return
+        """Drop the zone contents and reload the pristine zone file.
+
+        The zone itself is declared in knot.conf and cannot be removed over
+        DDNS. `+zonefile` is deliberately left out of the purge: `zonefile-sync:
+        -1` means Knot never writes back, so that file is still the seed and the
+        reload restores the bare apex from it.
+        """
+        if not self.cid:
+            return
+        await self._knotc("-f", "zone-purge", "+expire", "+journal", "+timers", ZONE)
+        await self._knotc("zone-reload", ZONE)
+        await self._wait_dns()
 
     async def bulk_import(self, zone: str, records: list[dict]) -> None:
         """Batch adds into as few UPDATE transactions as the message size allows."""
