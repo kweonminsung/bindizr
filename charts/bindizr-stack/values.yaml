@@ -126,7 +126,7 @@ mysql:
   enabled: false
   image:
     repository: mysql
-    tag: "9.7"
+    tag: "26.7"
     pullPolicy: IfNotPresent
   service:
     port: 3306
