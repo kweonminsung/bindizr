@@ -16,3 +16,14 @@ also verifies that create, update, and delete results reach both BIND9 secondari
 ```sh
 BINDIZR_E2E_VERIFY_DNS=true cargo test -p bindizr-e2e
 ```
+
+On ARM hosts (e.g. Apple Silicon), additionally set `BINDIZR_E2E_ARM=true` to layer
+`docker-compose.arm.yml` on top of the stack. It swaps the amd64-only ISC BIND9 image for the
+multi-arch `ubuntu/bind9` image so the secondaries run natively instead of under emulation:
+
+```sh
+BINDIZR_E2E_VERIFY_DNS=true BINDIZR_E2E_ARM=true cargo test -p bindizr-e2e
+```
+
+When switching between the ARM and default stacks, remove the old containers and volumes first:
+`docker compose -p bindizr-e2e-dns down -v`.

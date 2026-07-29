@@ -23,9 +23,11 @@ pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 use dns::{dns_expected_value, dns_key_from_record, dns_record_type, wait_for_dns_records};
 
 const COMPOSE_FILE: &str = "docker-compose.yml";
+const ARM_COMPOSE_FILE: &str = "docker-compose.arm.yml";
 const COMPOSE_PROJECT_NAME: &str = "bindizr-e2e-dns";
 const COMPOSE_API_BASE_URL: &str = "http://127.0.0.1:8000";
 const DNS_VERIFICATION_ENV: &str = "BINDIZR_E2E_VERIFY_DNS";
+const ARM_STACK_ENV: &str = "BINDIZR_E2E_ARM";
 const SECONDARY_PORTS: [u16; 2] = [1053, 1054];
 const COMPOSE_COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
 static COMPOSE_STACK: OnceLock<ComposeStack> = OnceLock::new();
@@ -394,38 +396,36 @@ impl ComposeStack {
     }
 
     fn cli_command(&self) -> Command {
-        let mut command = Command::new("docker");
+        let mut command = self.compose_command();
+        command.args(["exec", "-T", "bindizr", "bindizr"]);
         command
-            .arg("compose")
-            .arg("-p")
-            .arg(&self.project_name)
-            .arg("-f")
-            .arg(COMPOSE_FILE)
-            .args(["exec", "-T", "bindizr", "bindizr"])
-            .current_dir(&self.compose_dir);
+    }
+
+    fn compose_command(&self) -> Command {
+        let mut command = Command::new("docker");
+        command.arg("compose").arg("-p").arg(&self.project_name);
+        for file in compose_files() {
+            command.arg("-f").arg(file);
+        }
+        command.current_dir(&self.compose_dir);
         command
     }
 
     fn run_compose(&self, args: &[&str]) {
         eprintln!(
-            "Running: docker compose -p {} -f {COMPOSE_FILE} {}",
+            "Running: docker compose -p {} -f {} {}",
             self.project_name,
+            compose_files().join(" -f "),
             args.join(" ")
         );
 
-        let mut child = Command::new("docker")
-            .arg("compose")
-            .arg("-p")
-            .arg(&self.project_name)
-            .arg("-f")
-            .arg(COMPOSE_FILE)
+        let mut command = self.compose_command();
+        command
             .args(args)
-            .current_dir(&self.compose_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .expect("failed to run docker compose");
+            .stderr(Stdio::inherit());
+        let mut child = command.spawn().expect("failed to run docker compose");
 
         let started_at = Instant::now();
         let status = loop {
@@ -481,13 +481,26 @@ fn test_namespace() -> String {
 }
 
 fn dns_verification_enabled() -> bool {
-    match env::var(DNS_VERIFICATION_ENV) {
+    env_flag(DNS_VERIFICATION_ENV)
+}
+
+/// The ARM override swaps the amd64-only ISC bind9 image for a multi-arch one.
+fn compose_files() -> Vec<&'static str> {
+    if env_flag(ARM_STACK_ENV) {
+        vec![COMPOSE_FILE, ARM_COMPOSE_FILE]
+    } else {
+        vec![COMPOSE_FILE]
+    }
+}
+
+fn env_flag(name: &str) -> bool {
+    match env::var(name) {
         Err(env::VarError::NotPresent) => false,
-        Err(error) => panic!("failed to read {DNS_VERIFICATION_ENV}: {error}"),
+        Err(error) => panic!("failed to read {name}: {error}"),
         Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
             "1" | "true" | "yes" | "on" => true,
             "0" | "false" | "no" | "off" => false,
-            _ => panic!("invalid {DNS_VERIFICATION_ENV} value '{value}'; use true/false or 1/0"),
+            _ => panic!("invalid {name} value '{value}'; use true/false or 1/0"),
         },
     }
 }

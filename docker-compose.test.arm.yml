@@ -1,0 +1,15 @@
+# ARM override: the ISC bind9 image is amd64-only, so the secondaries swap to
+# the multi-arch ubuntu/bind9 rock. Its Pebble entrypoint takes no named flags
+# but already runs `named -g` with /etc/bind/named.conf, hence `command: []`.
+# Switching between the two images requires `down -v` (different named users).
+#
+# Usage: docker compose -f docker-compose.test.yml -f docker-compose.test.arm.yml up -d --build
+
+services:
+  bind9-1:
+    image: ubuntu/bind9:9.20-26.04
+    command: []
+
+  bind9-2:
+    image: ubuntu/bind9:9.20-26.04
+    command: []
