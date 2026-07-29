@@ -139,6 +139,58 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     }
 }
 
+/// One configured secondary's NOTIFY outcome.
+pub struct SecondaryNotify {
+    pub address: String,
+    pub result: Result<(), String>,
+}
+
+/// Send NOTIFY for a zone to every configured secondary, reporting each
+/// entry's outcome instead of collapsing failures into one error. An empty
+/// `secondary_addrs` yields an empty list.
+pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>, XfrError> {
+    let dns_config = &config::get_bindizr_config().dns;
+    let raw = dns_config.secondary_addrs.clone();
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
+    let retries = dns_config.notify_retries;
+
+    let qname = Name::<Vec<u8>>::from_str(zone_name)
+        .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
+
+    let mut reports = Vec::new();
+    for (entry, result) in super::resolve_secondary_entries(&raw).await {
+        let addrs = match result {
+            Ok(addrs) => addrs,
+            Err(e) => {
+                reports.push(SecondaryNotify {
+                    address: entry,
+                    result: Err(format!("failed to resolve: {}", e)),
+                });
+                continue;
+            }
+        };
+
+        let mut last = None;
+        for addr in addrs {
+            match send_notify_to_server(&qname, addr, timeout, retries).await {
+                Ok(()) => {
+                    last = Some((addr.to_string(), Ok(())));
+                    break;
+                }
+                Err(e) => last = Some((addr.to_string(), Err(e.to_string()))),
+            }
+        }
+
+        let (address, result) = last.expect("resolve_secondary_entries never yields an empty Ok");
+        reports.push(SecondaryNotify { address, result });
+    }
+
+    Ok(reports)
+}
+
 async fn resolve_secondary_servers(raw: &str) -> (Vec<SocketAddr>, Vec<String>) {
     let mut addrs = Vec::new();
     let mut failures = Vec::new();

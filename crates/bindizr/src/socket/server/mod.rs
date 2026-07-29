@@ -1,3 +1,4 @@
+mod doctor;
 mod notify;
 mod record;
 mod status;
@@ -73,6 +74,7 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::DiffZoneSnapshots => zone::diff_zone_snapshots(&cmd.data).await,
                 DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
                 DaemonCommandKind::ZoneStatus => zone::zone_status(&cmd.data).await,
+                DaemonCommandKind::Doctor => doctor::doctor().await,
             },
 
             Err(e) => {

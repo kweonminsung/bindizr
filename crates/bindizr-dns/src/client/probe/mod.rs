@@ -68,6 +68,18 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, X
     Ok(probes)
 }
 
+/// Query one explicit server for the zone's SOA serial (e.g. bindizr's own
+/// listener during health checks).
+pub async fn probe_server(
+    server_addr: SocketAddr,
+    zone_name: &str,
+    timeout: Duration,
+) -> Result<u32, String> {
+    let qname =
+        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
+    probe_one(&qname, server_addr, timeout).await
+}
+
 /// Probe the resolved addresses in order, reporting the first that answers (on
 /// failure, the last one tried). NOTIFY and the transfer ACL act on every
 /// resolved address, so probing only the first would contradict what

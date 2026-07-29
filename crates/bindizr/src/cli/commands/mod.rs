@@ -1,4 +1,5 @@
 pub(super) mod config;
+pub(super) mod doctor;
 pub(super) mod record;
 pub(super) mod start;
 pub(super) mod status;

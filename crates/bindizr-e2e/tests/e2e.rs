@@ -9,6 +9,7 @@ mod api {
 
 mod cli {
     mod config;
+    mod doctor;
     mod record;
     mod tsig_key;
     mod zone;

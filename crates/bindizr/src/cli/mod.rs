@@ -50,6 +50,12 @@ pub(crate) enum Command {
     },
     /// Show the status of the bindizr service
     Status,
+    /// Check that the bindizr installation is healthy
+    Doctor {
+        /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<String>,
+    },
     /// Inspect and validate configuration
     Config {
         #[command(subcommand)]
@@ -119,6 +125,7 @@ pub async fn execute() {
             .await
             .map_err(error::CliError::from),
         Command::Status => commands::status::handle_command().await,
+        Command::Doctor { config } => commands::doctor::handle_command(config).await,
         Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,

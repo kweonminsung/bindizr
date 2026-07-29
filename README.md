@@ -272,6 +272,9 @@ $ bindizr start -c <FILE>
 # Check the current status of bindizr service
 $ bindizr status
 
+# Verify the installation end to end (config, daemon, API, database, DNS, secondaries)
+$ bindizr doctor
+
 # Validate a configuration file without starting bindizr (defaults to /etc/bindizr/bindizr.conf.toml)
 $ bindizr config check [<FILE>]
 
