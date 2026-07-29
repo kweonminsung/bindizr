@@ -6,20 +6,21 @@ use utoipa::{
 use super::types::{
     BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
     CreateTsigKeyRequest, CreateZoneRequest, CreateZoneTsigPolicyRequest, ErrorResponse,
-    GetRecordResponse, GetTsigKeyResponse, GetZoneResponse, GetZoneTsigPolicyResponse, ImportMode,
-    ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse,
-    NotifyZoneRequest, Pagination, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
-    RecordListResponse, RecordResponse, RecordValueRequest, RollbackSummary, RollbackZoneRequest,
-    RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse, SnapshotDiffResponse,
-    SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse, TsigKeyResponse,
-    UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse, ZoneSnapshotResponse,
-    ZoneStatusResponse, ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
+    GetRecordResponse, GetTsigKeyResponse, GetZoneResponse, GetZoneTsigPolicyResponse,
+    HealthResponse, ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
+    MessageResponse, NotifyZoneRequest, Pagination, RecordDiff, RecordDiffEntry, RecordDiffSummary,
+    RecordDiffValue, RecordListResponse, RecordResponse, RecordValueRequest, RollbackSummary,
+    RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
+    SnapshotDiffResponse, SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse,
+    TsigKeyResponse, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
+    ZoneSnapshotResponse, ZoneStatusResponse, ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
 };
 
 /// OpenAPI document for the HTTP API (debug builds only).
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        super::health::get_health,
         super::zone::get_zones,
         super::zone::get_zone,
         super::zone::create_zone,
@@ -60,6 +61,7 @@ use super::types::{
         GetTsigKeyResponse,
         GetZoneResponse,
         GetZoneTsigPolicyResponse,
+        HealthResponse,
         ImportMode,
         ImportSummary,
         ImportZoneFileRequest,
@@ -95,6 +97,7 @@ use super::types::{
     )),
     modifiers(&SecurityAddon),
     tags(
+        (name = "Health", description = "Service health probe for load balancers and orchestrators."),
         (name = "Zone", description = "Manage DNS zones including creation, update, deletion, and retrieval."),
         (name = "Record", description = "Manage DNS records including creation, update, deletion, and retrieval."),
         (name = "Notify", description = "Send DNS NOTIFY messages to secondary servers."),

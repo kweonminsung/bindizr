@@ -603,6 +603,13 @@ pub struct MessageResponse {
     pub message: String,
 }
 
+/// Health probe response.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct HealthResponse {
+    #[schema(example = "healthy")]
+    pub status: String,
+}
+
 /// One entry of a zone's serial history, with SOA metadata in API form
 /// (`admin_email` converted back from SOA mailbox form).
 #[derive(Serialize, Debug, ToSchema)]

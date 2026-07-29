@@ -32,6 +32,9 @@ impl ApiRouter {
 
         let mut router = api_router;
 
+        // Outside the auth layer: probes must work without credentials.
+        router = router.route("/health", routing::get(super::health::get_health));
+
         #[cfg(debug_assertions)]
         {
             router = router
@@ -48,7 +51,7 @@ impl ApiRouter {
     async fn get_home() -> impl IntoResponse {
         (
             StatusCode::OK,
-            Json(json!({ "msg": "bindizr API running" })),
+            Json(json!({ "message": "bindizr API running" })),
         )
     }
 
