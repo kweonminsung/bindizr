@@ -272,6 +272,15 @@ $ bindizr start -c <FILE>
 # Check the current status of bindizr service
 $ bindizr status
 
+# Validate a configuration file without starting bindizr (defaults to /etc/bindizr/bindizr.conf.toml)
+$ bindizr config check [<FILE>]
+
+# Show the configuration loaded by the running daemon
+$ bindizr config list
+
+# Show a single configuration value by dotted key
+$ bindizr config get dns.secondary_addrs
+
 # Send NOTIFY to secondary DNS servers for a zone
 $ bindizr zone notify <ZONE_NAME>
 

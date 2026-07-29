@@ -8,6 +8,7 @@ mod api {
 }
 
 mod cli {
+    mod config;
     mod record;
     mod tsig_key;
     mod zone;

@@ -14,7 +14,8 @@ use clap::{Parser, Subcommand};
 use crate::{
     api,
     cli::commands::{
-        record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+        config::ConfigCommand, record::RecordCommand, token::TokenCommand,
+        tsig_key::TsigKeyCommand, zone::ZoneCommand,
     },
     socket,
 };
@@ -49,6 +50,11 @@ pub(crate) enum Command {
     },
     /// Show the status of the bindizr service
     Status,
+    /// Inspect and validate configuration
+    Config {
+        #[command(subcommand)]
+        subcommand: ConfigCommand,
+    },
     /// Manage API tokens
     Token {
         #[command(subcommand)]
@@ -113,6 +119,7 @@ pub async fn execute() {
             .await
             .map_err(error::CliError::from),
         Command::Status => commands::status::handle_command().await,
+        Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
