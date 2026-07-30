@@ -121,7 +121,7 @@ impl Metrics {
         let notify_sent_total = IntCounterVec::new(
             Opts::new(
                 "bindizr_notify_sent_total",
-                "NOTIFY messages sent to secondaries, by outcome.",
+                "NOTIFY delivery attempts to secondaries, by outcome.",
             ),
             &["result"],
         )
