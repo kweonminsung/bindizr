@@ -138,7 +138,7 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>,
         .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
 
     let mut reports = Vec::new();
-    for (entry, result) in super::resolve_secondary_entries(&raw).await {
+    for (entry, result) in super::resolve_secondary_entries(&raw, timeout).await {
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {

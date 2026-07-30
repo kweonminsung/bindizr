@@ -2,7 +2,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{config, dns::CATALOG_ZONE_NAME};
 use bindizr_dns::client::{notify, probe};
-use bindizr_service::{error::ServiceError, zone::ZoneService};
+use bindizr_service::{error::ServiceError, types::GetZonesFilter, zone::ZoneService};
 
 use crate::{
     net::loopback_if_unspecified,
@@ -21,10 +21,18 @@ const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 pub(super) async fn doctor() -> Result<DaemonResponse, ServiceError> {
     let config = config::get_bindizr_config();
 
-    let database = match tokio::time::timeout(DB_CHECK_TIMEOUT, ZoneService::list()).await {
-        Ok(Ok(zones)) => DoctorCheckResult {
+    // Count zones without materializing them; large tables must fit the deadline.
+    let zones_probe = ZoneService::list_by_filter(GetZonesFilter {
+        limit: Some(1),
+        ..GetZonesFilter::default()
+    });
+    let database = match tokio::time::timeout(DB_CHECK_TIMEOUT, zones_probe).await {
+        Ok(Ok(page)) => DoctorCheckResult {
             ok: true,
-            detail: format!("{} ({} zones)", config.database.database_type, zones.len()),
+            detail: format!(
+                "{} ({} zones)",
+                config.database.database_type, page.pagination.total
+            ),
         },
         Ok(Err(e)) => DoctorCheckResult {
             ok: false,

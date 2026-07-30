@@ -36,7 +36,7 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, X
 
     let mut probes = Vec::new();
     let mut tasks = Vec::new();
-    for (entry, result) in super::resolve_secondary_entries(&raw).await {
+    for (entry, result) in super::resolve_secondary_entries(&raw, timeout).await {
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {
