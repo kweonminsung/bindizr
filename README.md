@@ -478,6 +478,8 @@ scrape_configs:
 
 Set `metrics_enabled = false` in the `[api]` section (or `BINDIZR_API_METRICS_ENABLED=false`) to disable the endpoint.
 
+A ready-to-run Prometheus + Grafana stack with a pre-provisioned dashboard lives in [examples/monitoring/](examples/monitoring/).
+
 ## Benchmarks
 
 Bindizr measured against PowerDNS Authoritative, Technitium DNS, Knot DNS, CoreDNS, and plain BIND9 (nsupdate / rndc) on identical hardware, datasets, and container limits — the suite lives in [benchmarks/](benchmarks/README.md). Every figure is the mean of 5 runs on an 8-core AMD Ryzen 7 9800X3D, each container capped at 4 CPU / 4 GB.
