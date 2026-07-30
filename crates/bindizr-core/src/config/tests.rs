@@ -231,3 +231,14 @@ fn resolve_config_path_prefers_argument_then_env_then_default() {
         BINDIZR_CONF_PATH
     );
 }
+
+#[test]
+fn parse_bindizr_config_rejects_entryless_secondary_addrs() {
+    let err = parse_config(&TestConfigToml {
+        secondary_addrs: ",",
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert!(err.contains("dns.secondary_addrs contains no addresses"));
+}

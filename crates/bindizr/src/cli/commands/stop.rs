@@ -16,8 +16,8 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
         .await?;
     println!("{}", res.message);
 
-    let stopped = super::poll_daemon_status(&client, STOP_DEADLINE, |status| {
-        status.is_err().then_some(())
+    let stopped = super::poll_with_deadline(STOP_DEADLINE, async || {
+        client.daemon_socket_gone().await.then_some(())
     })
     .await;
 

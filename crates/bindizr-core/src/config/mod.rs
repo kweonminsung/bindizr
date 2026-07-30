@@ -290,6 +290,7 @@ fn parse_bindizr_config_with_env(
 
     apply_env_overrides_from(&mut bindizr_config, get_env)?;
     validate_database_config(&bindizr_config.database)?;
+    validate_dns_config(&bindizr_config.dns)?;
 
     Ok(bindizr_config)
 }
@@ -392,6 +393,19 @@ fn validate_database_config(config: &DatabaseConfig) -> Result<(), String> {
         ),
         _ => Ok(()),
     }
+}
+
+/// Reject separators-only `secondary_addrs` (e.g. ","), which would otherwise
+/// read as "no secondaries configured".
+fn validate_dns_config(config: &DnsConfig) -> Result<(), String> {
+    let raw = &config.secondary_addrs;
+    if !raw.trim().is_empty() && raw.split(',').all(|entry| entry.trim().is_empty()) {
+        return Err(
+            "dns.secondary_addrs contains no addresses; use \"\" when there are no secondaries"
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn exit_config_error(message: String) -> ! {

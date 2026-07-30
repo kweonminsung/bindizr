@@ -11,22 +11,16 @@ pub(super) mod zone;
 
 use std::time::Duration;
 
-use crate::{
-    cli::error::CliError,
-    socket::{client::DaemonSocketClient, types::DaemonStatusResponse},
-};
-
-/// Poll the daemon status every 100ms until `check` accepts it, bounded by
-/// `deadline`. Returns `None` on expiry.
-pub(super) async fn poll_daemon_status<T>(
-    client: &DaemonSocketClient,
+/// Poll `check` every 100ms until it yields a value, bounded by `deadline`.
+/// Returns `None` on expiry.
+pub(super) async fn poll_with_deadline<T>(
     deadline: Duration,
-    check: impl Fn(Result<DaemonStatusResponse, CliError>) -> Option<T>,
+    mut check: impl AsyncFnMut() -> Option<T>,
 ) -> Option<T> {
     let wait = async {
         loop {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            if let Some(value) = check(client.status().await) {
+            if let Some(value) = check().await {
                 break value;
             }
         }

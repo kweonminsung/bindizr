@@ -15,17 +15,27 @@ use crate::{
 /// Handle the `Doctor` command: the daemon-side installation checks. The
 /// catalog zone is probed because it exists on every installation, so serial
 /// comparison works before any user zone is created.
+/// A hung database must become a failed check, not a hung doctor.
+const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
+
 pub(super) async fn doctor() -> Result<DaemonResponse, ServiceError> {
     let config = config::get_bindizr_config();
 
-    let database = match ZoneService::list().await {
-        Ok(zones) => DoctorCheckResult {
+    let database = match tokio::time::timeout(DB_CHECK_TIMEOUT, ZoneService::list()).await {
+        Ok(Ok(zones)) => DoctorCheckResult {
             ok: true,
             detail: format!("{} ({} zones)", config.database.database_type, zones.len()),
         },
-        Err(e) => DoctorCheckResult {
+        Ok(Err(e)) => DoctorCheckResult {
             ok: false,
             detail: e.to_string(),
+        },
+        Err(_) => DoctorCheckResult {
+            ok: false,
+            detail: format!(
+                "database check timed out after {} seconds",
+                DB_CHECK_TIMEOUT.as_secs()
+            ),
         },
     };
 

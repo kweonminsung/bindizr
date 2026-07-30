@@ -121,9 +121,20 @@ async fn http_get_status_line(addr: SocketAddr) -> Result<String, String> {
             .await
             .map_err(|e| e.to_string())?;
 
-        let mut buf = [0u8; 256];
-        let read = stream.read(&mut buf).await.map_err(|e| e.to_string())?;
-        Ok::<_, String>(String::from_utf8_lossy(&buf[..read]).to_string())
+        // TCP may split the response; read until the status line is complete.
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 256];
+        loop {
+            let read = stream.read(&mut chunk).await.map_err(|e| e.to_string())?;
+            if read == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..read]);
+            if buf.contains(&b'\n') || buf.len() >= 1024 {
+                break;
+            }
+        }
+        Ok::<_, String>(String::from_utf8_lossy(&buf).to_string())
     };
 
     let response = tokio::time::timeout(API_CHECK_TIMEOUT, exchange)

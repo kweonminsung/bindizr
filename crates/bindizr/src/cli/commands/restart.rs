@@ -19,11 +19,12 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
     println!("{}", res.message);
 
     // exec keeps the PID, so a changed start time is the restart signal.
-    let replaced = super::poll_daemon_status(&client, RESTART_DEADLINE, |status| match status {
-        Ok(status) if status.started_at_ms != before.started_at_ms => Some(status),
-        _ => None,
-    })
-    .await;
+    let replaced =
+        super::poll_with_deadline(RESTART_DEADLINE, async || match client.status().await {
+            Ok(status) if status.started_at_ms != before.started_at_ms => Some(status),
+            _ => None,
+        })
+        .await;
 
     match replaced {
         Some(status) => {
