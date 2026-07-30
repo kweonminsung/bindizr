@@ -5,22 +5,34 @@ use crate::{
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
 
+const STOP_DEADLINE: Duration = Duration::from_secs(10);
+
 /// Handle the `stop` subcommand: request daemon shutdown and wait until the
 /// control socket stops answering.
 pub(crate) async fn handle_command() -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
     let res = client
-        .send_command(DaemonCommandKind::Shutdown, None)
+        .send_control_command(DaemonCommandKind::Shutdown)
         .await?;
     println!("{}", res.message);
 
-    for _ in 0..100 {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        if client.status().await.is_err() {
-            println!("Bindizr stopped.");
-            return Ok(());
+    let wait_until_gone = async {
+        loop {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if client.status().await.is_err() {
+                break;
+            }
         }
-    }
+    };
 
-    Err(CliError::from("Bindizr did not stop within 10 seconds"))
+    match tokio::time::timeout(STOP_DEADLINE, wait_until_gone).await {
+        Ok(()) => {
+            println!("Bindizr stopped.");
+            Ok(())
+        }
+        Err(_) => Err(CliError::from(format!(
+            "Bindizr did not stop within {} seconds",
+            STOP_DEADLINE.as_secs()
+        ))),
+    }
 }

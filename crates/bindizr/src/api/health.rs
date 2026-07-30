@@ -1,5 +1,5 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
-use bindizr_service::{types::GetZonesFilter, zone::ZoneService};
+use bindizr_service::zone::ZoneService;
 
 use super::types::HealthResponse;
 
@@ -17,12 +17,7 @@ use super::types::HealthResponse;
 /// Report whether the API can serve requests, backed by a minimal database
 /// query. Kept cheap and side-effect free because probes run frequently.
 pub(crate) async fn get_health() -> impl IntoResponse {
-    let filter = GetZonesFilter {
-        limit: Some(1),
-        ..GetZonesFilter::default()
-    };
-
-    match ZoneService::list_by_filter(filter).await {
+    match ZoneService::ping().await {
         Ok(_) => (
             StatusCode::OK,
             Json(HealthResponse {

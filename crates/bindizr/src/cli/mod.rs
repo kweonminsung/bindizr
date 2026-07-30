@@ -112,26 +112,28 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     socket::server::initialize().await?;
     api::initialize().await?;
 
-    let restart = tokio::select! {
-        result = tokio::signal::ctrl_c() => {
-            result.map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
-            log_info!("Shutdown signal received, exiting gracefully...");
-            false
-        }
-        control = control_rx.recv() => match control {
+    loop {
+        let control = tokio::select! {
+            result = tokio::signal::ctrl_c() => {
+                result.map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
+                log_info!("Shutdown signal received, exiting gracefully...");
+                break;
+            }
+            control = control_rx.recv() => control,
+        };
+
+        match control {
             Some(socket::server::control::DaemonControl::Restart) => {
                 log_info!("Restart requested, re-executing bindizr...");
-                true
+                // reexec only returns on failure; the listeners are still
+                // serving, so keep running instead of turning it into an outage.
+                log_error!("{}. Continuing with the current process.", reexec());
             }
             _ => {
                 log_info!("Shutdown requested, exiting gracefully...");
-                false
+                break;
             }
         }
-    };
-
-    if restart {
-        return Err(reexec());
     }
 
     Ok(())

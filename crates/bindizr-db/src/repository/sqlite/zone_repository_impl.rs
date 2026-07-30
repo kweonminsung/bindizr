@@ -196,6 +196,14 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(zones)
     }
 
+    async fn ping(&self) -> Result<(), DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+        sqlx::query("SELECT 1 FROM zones LIMIT 1")
+            .fetch_optional(&mut *conn)
+            .await?;
+        Ok(())
+    }
+
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());

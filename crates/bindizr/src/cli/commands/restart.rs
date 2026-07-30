@@ -5,6 +5,8 @@ use crate::{
     socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
 
+const RESTART_DEADLINE: Duration = Duration::from_secs(15);
+
 /// Handle the `restart` subcommand: ask the daemon to re-exec itself and wait
 /// for the replacement instance to answer.
 pub(crate) async fn handle_command() -> Result<(), CliError> {
@@ -12,16 +14,24 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
     let before = client.status().await?;
 
     let res = client
-        .send_command(DaemonCommandKind::Restart, None)
+        .send_control_command(DaemonCommandKind::Restart)
         .await?;
     println!("{}", res.message);
 
     // exec keeps the PID, so a changed start time is the restart signal.
-    for _ in 0..150 {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        if let Ok(status) = client.status().await
-            && status.started_at_ms != before.started_at_ms
-        {
+    let wait_until_replaced = async {
+        loop {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if let Ok(status) = client.status().await
+                && status.started_at_ms != before.started_at_ms
+            {
+                break status;
+            }
+        }
+    };
+
+    match tokio::time::timeout(RESTART_DEADLINE, wait_until_replaced).await {
+        Ok(status) => {
             let pid = status
                 .pid
                 .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
@@ -29,11 +39,11 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
                 "Bindizr restarted: pid {} (version {})",
                 pid, status.version
             );
-            return Ok(());
+            Ok(())
         }
+        Err(_) => Err(CliError::from(format!(
+            "Bindizr did not come back within {} seconds after the restart request",
+            RESTART_DEADLINE.as_secs()
+        ))),
     }
-
-    Err(CliError::from(
-        "Bindizr did not come back within 15 seconds after the restart request",
-    ))
 }

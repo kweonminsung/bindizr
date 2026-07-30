@@ -122,6 +122,13 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to count zones: {}", e)))
     }
 
+    pub(super) async fn ping_zones() -> Result<(), ServiceError> {
+        get_zone_repository()
+            .ping()
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to reach the zones table: {}", e)))
+    }
+
     pub(super) async fn update_catalog_serial_for_signature(
         name: &str,
         signature: &str,

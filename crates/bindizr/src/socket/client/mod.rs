@@ -23,9 +23,27 @@ impl DaemonSocketClient {
 
     /// Query the daemon's status.
     pub(crate) async fn status(&self) -> Result<DaemonStatusResponse, CliError> {
-        let res = self.send_command(DaemonCommandKind::Status, None).await?;
+        let res = self.send_control_command(DaemonCommandKind::Status).await?;
         serde_json::from_value(res.data)
             .map_err(|e| CliError::from(format!("Failed to parse status response: {}", e)))
+    }
+
+    /// Send a command the daemon answers from memory (status/lifecycle) under
+    /// a short deadline, so a wedged daemon cannot hang polling loops.
+    pub(crate) async fn send_control_command(
+        &self,
+        command: DaemonCommandKind,
+    ) -> Result<DaemonResponse, CliError> {
+        const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+        tokio::time::timeout(CONTROL_TIMEOUT, self.send_command(command, None))
+            .await
+            .map_err(|_| {
+                CliError::from(format!(
+                    "The daemon did not answer within {} seconds",
+                    CONTROL_TIMEOUT.as_secs()
+                ))
+            })?
     }
 
     /// Send a command to the daemon and return its parsed response.
