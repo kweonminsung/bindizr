@@ -33,7 +33,9 @@ impl DaemonSocketClient {
 
         match try_connect_daemon_socket().await {
             Ok(_) => false,
-            Err((err, Some(fallback_err))) => gone(&err) && gone(&fallback_err),
+            // Primary refused/missing/inaccessible; the fallback was also tried.
+            Err((_, Some(fallback_err))) => gone(&fallback_err),
+            // Primary failed in an unexpected way; the fallback was not tried.
             Err((err, None)) => gone(&err),
         }
     }
