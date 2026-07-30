@@ -14,8 +14,8 @@ use super::types::HealthResponse;
             (status = 503, description = "Service unhealthy", body = HealthResponse)
         )
 )]
-/// Report whether the API can serve requests, backed by a minimal database
-/// query. Kept cheap and side-effect free because probes run frequently.
+/// Minimal database round-trip, kept cheap and side-effect free because
+/// probes run frequently.
 pub(crate) async fn get_health() -> impl IntoResponse {
     match ZoneService::ping().await {
         Ok(_) => (

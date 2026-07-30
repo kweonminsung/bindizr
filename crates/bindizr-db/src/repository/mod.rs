@@ -183,8 +183,8 @@ pub trait ZoneRepository: Send + Sync {
     async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError>;
     async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError>;
-    /// Limit-1 probe of the zones table, for health checks that must stay
-    /// cheap on large tables (unlike a `COUNT(*)`).
+    /// Limit-1 probe of the zones table; health checks must stay cheap on
+    /// large tables.
     async fn ping(&self) -> Result<(), DatabaseError>;
     async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)

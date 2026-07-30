@@ -7,8 +7,8 @@ use crate::{
 
 const RESTART_DEADLINE: Duration = Duration::from_secs(15);
 
-/// Handle the `restart` subcommand: ask the daemon to re-exec itself and wait
-/// for the replacement instance to answer.
+/// Handle the `restart` subcommand: re-exec the daemon in place and wait for
+/// the replacement to answer.
 pub(crate) async fn handle_command() -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
     let before = client.status().await?;

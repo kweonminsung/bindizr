@@ -122,10 +122,9 @@ pub struct SecondaryNotify {
     pub result: Result<(), String>,
 }
 
-/// Send NOTIFY for a zone, reporting each resolved address separately: the
-/// transfer ACL admits every address, so replicas behind a multi-address
-/// hostname must each hear the change. An empty `secondary_addrs` yields an
-/// empty list.
+/// Send NOTIFY for a zone to every resolved secondary address (the transfer
+/// ACL admits each one, so every replica must hear the change). An empty
+/// `secondary_addrs` yields an empty list.
 pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>, XfrError> {
     let dns_config = &config::get_bindizr_config().dns;
     let raw = dns_config.secondary_addrs.clone();

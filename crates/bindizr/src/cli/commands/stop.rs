@@ -7,8 +7,8 @@ use crate::{
 
 const STOP_DEADLINE: Duration = Duration::from_secs(10);
 
-/// Handle the `stop` subcommand: request daemon shutdown and wait until the
-/// control socket stops answering.
+/// Handle the `stop` subcommand: request shutdown and wait until the daemon
+/// socket stops answering.
 pub(crate) async fn handle_command() -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
     let res = client
