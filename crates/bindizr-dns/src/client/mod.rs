@@ -87,9 +87,12 @@ pub(crate) fn build_question(opcode: Opcode, aa: bool, qname: &Name<Vec<u8>>) ->
 
 /// Resolve the comma-separated `secondary_addrs` config value into per-entry
 /// results: the original entry text plus its resolved addresses (all of them;
-/// callers pick what they need) or the resolution failure.
+/// callers pick what they need) or the resolution failure. `resolve_timeout`
+/// bounds each hostname lookup so a stalled system resolver fails the entry
+/// instead of hanging the caller.
 pub(crate) async fn resolve_secondary_entries(
     raw: &str,
+    resolve_timeout: Duration,
 ) -> Vec<(String, Result<Vec<SocketAddr>, String>)> {
     let mut entries = Vec::new();
 
@@ -101,20 +104,33 @@ pub(crate) async fn resolve_secondary_entries(
 
         let result = match parse_address_target(trimmed, 53) {
             ParsedAddress::SocketAddr(addr) => Ok(vec![addr]),
-            ParsedAddress::HostPort(host_port) => match lookup_host(&host_port).await {
-                Ok(resolved) => {
-                    let addrs: Vec<SocketAddr> = resolved.collect();
-                    if addrs.is_empty() {
-                        Err("no addresses".to_string())
-                    } else {
-                        Ok(addrs)
+            ParsedAddress::HostPort(host_port) => {
+                match tokio::time::timeout(resolve_timeout, lookup_host(&host_port)).await {
+                    Ok(Ok(resolved)) => {
+                        let addrs: Vec<SocketAddr> = resolved.collect();
+                        if addrs.is_empty() {
+                            Err("no addresses".to_string())
+                        } else {
+                            Ok(addrs)
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        log_error!("Invalid server address '{}': {}", trimmed, e);
+                        Err(e.to_string())
+                    }
+                    Err(_) => {
+                        log_error!(
+                            "Resolving server address '{}' timed out after {} seconds",
+                            trimmed,
+                            resolve_timeout.as_secs()
+                        );
+                        Err(format!(
+                            "resolution timed out after {} seconds",
+                            resolve_timeout.as_secs()
+                        ))
                     }
                 }
-                Err(e) => {
-                    log_error!("Invalid server address '{}': {}", trimmed, e);
-                    Err(e.to_string())
-                }
-            },
+            }
         };
         entries.push((trimmed.to_string(), result));
     }

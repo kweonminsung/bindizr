@@ -227,21 +227,41 @@ impl std::str::FromStr for LogLevel {
 /// Load configuration from `conf_file_path` (or the default path / env var),
 /// apply environment overrides, and store it as the global config.
 pub fn initialize(conf_file_path: Option<&str>) {
-    let conf_file_path = conf_file_path
-        .map(str::to_string)
-        .or_else(|| env::var("BINDIZR_CONFIG_PATH").ok())
-        .unwrap_or_else(|| BINDIZR_CONF_PATH.to_string());
-
-    if !PathBuf::from(&conf_file_path).exists() {
-        exit_config_error(format!("Bindizr config does not exist: {}", conf_file_path));
-    }
+    let conf_file_path = resolve_config_path(conf_file_path);
 
     println!("Initializing configuration from file: {}", conf_file_path);
 
-    let cfg = load_raw_config(&conf_file_path).unwrap_or_else(|err| exit_config_error(err));
-    let bindizr_config = parse_bindizr_config(cfg).unwrap_or_else(|err| exit_config_error(err));
+    let bindizr_config =
+        load_config_file(&conf_file_path).unwrap_or_else(|err| exit_config_error(err));
 
     BINDIZR_CONFIG.get_or_init(|| bindizr_config);
+}
+
+/// Resolve the config file path: explicit argument, then `BINDIZR_CONFIG_PATH`,
+/// then the default path.
+pub fn resolve_config_path(conf_file_path: Option<&str>) -> String {
+    resolve_config_path_with_env(conf_file_path, |name| env::var(name).ok())
+}
+
+fn resolve_config_path_with_env(
+    conf_file_path: Option<&str>,
+    get_env: impl Fn(&str) -> Option<String>,
+) -> String {
+    conf_file_path
+        .map(str::to_string)
+        .or_else(|| get_env("BINDIZR_CONFIG_PATH"))
+        .unwrap_or_else(|| BINDIZR_CONF_PATH.to_string())
+}
+
+/// Load and validate `conf_file_path`, applying environment overrides, without
+/// storing the result or exiting on failure.
+pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
+    if !PathBuf::from(conf_file_path).exists() {
+        return Err(format!("Bindizr config does not exist: {}", conf_file_path));
+    }
+
+    let cfg = load_raw_config(conf_file_path)?;
+    parse_bindizr_config(cfg)
 }
 
 fn load_raw_config(conf_file_path: &str) -> Result<Config, String> {
@@ -270,6 +290,7 @@ fn parse_bindizr_config_with_env(
 
     apply_env_overrides_from(&mut bindizr_config, get_env)?;
     validate_database_config(&bindizr_config.database)?;
+    validate_dns_config(&bindizr_config.dns)?;
 
     Ok(bindizr_config)
 }
@@ -372,6 +393,19 @@ fn validate_database_config(config: &DatabaseConfig) -> Result<(), String> {
         ),
         _ => Ok(()),
     }
+}
+
+/// Reject separators-only `secondary_addrs` (e.g. ","), which would otherwise
+/// read as "no secondaries configured".
+fn validate_dns_config(config: &DnsConfig) -> Result<(), String> {
+    let raw = &config.secondary_addrs;
+    if !raw.trim().is_empty() && raw.split(',').all(|entry| entry.trim().is_empty()) {
+        return Err(
+            "dns.secondary_addrs contains no addresses; use \"\" when there are no secondaries"
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn exit_config_error(message: String) -> ! {

@@ -41,6 +41,11 @@ impl ZoneService {
         RepositoryService::get_zone_changes_between_serials(zone_id, from_serial, to_serial).await
     }
 
+    /// Cheap database round-trip (limit-1 zones probe), for health checks.
+    pub async fn ping() -> Result<(), ServiceError> {
+        RepositoryService::ping_zones().await
+    }
+
     /// List all zones.
     pub async fn list() -> Result<Vec<Zone>, ServiceError> {
         RepositoryService::get_all_zones().await.map_err(|e| {

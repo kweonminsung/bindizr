@@ -1,7 +1,8 @@
 use config::{Config, File, FileFormat};
 
 use crate::config::{
-    BindizrConfig, DatabaseType, LogLevel, apply_env_overrides_from, parse_bindizr_config_with_env,
+    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogLevel, apply_env_overrides_from,
+    parse_bindizr_config_with_env, resolve_config_path_with_env,
 };
 
 /// Deviations from the base config TOML; the default renders a minimal valid
@@ -214,4 +215,30 @@ fn apply_env_overrides_rejects_invalid_values() {
     .unwrap_err();
 
     assert!(err.contains("Invalid BINDIZR_API_PORT environment variable"));
+}
+
+#[test]
+fn resolve_config_path_prefers_argument_then_env_then_default() {
+    let env = |name: &str| (name == "BINDIZR_CONFIG_PATH").then(|| "/env/path.toml".to_string());
+
+    assert_eq!(
+        resolve_config_path_with_env(Some("/arg/path.toml"), env),
+        "/arg/path.toml"
+    );
+    assert_eq!(resolve_config_path_with_env(None, env), "/env/path.toml");
+    assert_eq!(
+        resolve_config_path_with_env(None, |_| None),
+        BINDIZR_CONF_PATH
+    );
+}
+
+#[test]
+fn parse_bindizr_config_rejects_entryless_secondary_addrs() {
+    let err = parse_config(&TestConfigToml {
+        secondary_addrs: ",",
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert!(err.contains("dns.secondary_addrs contains no addresses"));
 }

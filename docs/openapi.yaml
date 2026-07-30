@@ -9,6 +9,26 @@ info:
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   version: 0.1.0-beta.5
 paths:
+  /health:
+    get:
+      tags:
+      - Health
+      summary: Health probe
+      description: Runs a minimal database query and reports whether the API can serve requests. Unauthenticated, intended for load-balancer and orchestrator probes; deeper checks (DNS listener, secondary sync) belong to 'bindizr doctor'.
+      operationId: get_health
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
   /notify/zones:
     post:
       tags:
@@ -1375,7 +1395,7 @@ components:
           - integer
           - 'null'
           format: int32
-          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+          description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
           example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
@@ -1449,7 +1469,7 @@ components:
           - integer
           - 'null'
           format: int32
-          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+          description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
           example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
@@ -1581,6 +1601,7 @@ components:
       - name
       - record_type
       - value
+      - ttl
       - zone_id
       properties:
         id:
@@ -1600,9 +1621,7 @@ components:
           type: string
           example: A
         ttl:
-          type:
-          - integer
-          - 'null'
+          type: integer
           format: int32
           example: 3600
         value:
@@ -1729,6 +1748,15 @@ components:
         tsig_key:
           type: string
           example: update-key
+    HealthResponse:
+      type: object
+      description: Health probe response.
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          example: healthy
     ImportMode:
       type: string
       description: How parsed records are reconciled with the records already in the zone.
@@ -1863,7 +1891,9 @@ components:
           minimum: 0
     RecordDiff:
       type: object
-      description: A record-level difference between two record sets, RRset by RRset.
+      description: |-
+        A record-level difference between two record sets, RRset by RRset. Empty on
+        a real apply, which does not need it; populated only for a dry-run preview.
       required:
       - entries
       - summary
@@ -1931,6 +1961,7 @@ components:
         placement) is left to the client; the value is in display form.
       required:
       - value
+      - ttl
       properties:
         priority:
           type:
@@ -1939,9 +1970,7 @@ components:
           format: int32
           example: 10
         ttl:
-          type:
-          - integer
-          - 'null'
+          type: integer
           format: int32
           example: 300
         value:
@@ -2122,6 +2151,7 @@ components:
       - name
       - record_type
       - value
+      - ttl
       properties:
         name:
           type: string
@@ -2136,14 +2166,11 @@ components:
           type: string
           example: A
         ttl:
-          type:
-          - integer
-          - 'null'
+          type: integer
           format: int32
           example: 3600
         value:
-          type: string
-          example: 192.0.2.1
+          $ref: '#/components/schemas/RecordValueRequest'
     TsigKeyListResponse:
       type: object
       description: List of TSIG keys (secrets omitted).
@@ -2188,7 +2215,7 @@ components:
           - integer
           - 'null'
           format: int32
-          description: Defaults to the zone TTL. Every record of an RRset (same name and type) must share one TTL.
+          description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
           example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
@@ -2319,6 +2346,8 @@ components:
       type: http
       scheme: bearer
 tags:
+- name: Health
+  description: Service health probe for load balancers and orchestrators.
 - name: Zone
   description: Manage DNS zones including creation, update, deletion, and retrieval.
 - name: Record

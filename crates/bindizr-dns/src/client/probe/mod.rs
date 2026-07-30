@@ -36,7 +36,7 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, X
 
     let mut probes = Vec::new();
     let mut tasks = Vec::new();
-    for (entry, result) in super::resolve_secondary_entries(&raw).await {
+    for (entry, result) in super::resolve_secondary_entries(&raw, timeout).await {
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {
@@ -66,6 +66,18 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, X
     }
 
     Ok(probes)
+}
+
+/// Query one explicit server for the zone's SOA serial (e.g. bindizr's own
+/// listener during health checks).
+pub async fn probe_server(
+    server_addr: SocketAddr,
+    zone_name: &str,
+    timeout: Duration,
+) -> Result<u32, String> {
+    let qname =
+        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
+    probe_one(&qname, server_addr, timeout).await
 }
 
 /// Probe the resolved addresses in order, reporting the first that answers (on

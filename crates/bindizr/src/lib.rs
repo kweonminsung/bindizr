@@ -3,6 +3,7 @@
 
 mod api;
 mod cli;
+mod net;
 mod socket;
 
 pub use cli::execute;

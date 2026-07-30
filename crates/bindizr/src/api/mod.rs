@@ -1,6 +1,7 @@
 //! HTTP API server: routing, middleware, and the zone/record/notify endpoints.
 
 pub(crate) mod error;
+pub(crate) mod health;
 pub(crate) mod middleware;
 pub(crate) mod notify;
 #[cfg(debug_assertions)]

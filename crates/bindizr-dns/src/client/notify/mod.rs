@@ -88,45 +88,22 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
             .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;
     }
 
-    let secondary_servers_str = &config::get_bindizr_config().dns.secondary_addrs;
-    if secondary_servers_str.trim().is_empty() {
+    let reports = notify_secondaries(zone_name).await?;
+    if reports.is_empty() {
         log_info!("No secondary DNS servers configured");
         return Ok(());
     }
 
-    let (server_addresses, mut failures) = resolve_secondary_servers(secondary_servers_str).await;
-
-    if server_addresses.is_empty() {
-        return Err(XfrError::NotifyFailed(format!(
-            "No valid secondary DNS servers found in config{}",
-            format_failures(&failures)
-        )));
-    }
-
-    log_info!(
-        "Sending NOTIFY to {} secondary DNS server(s) for zone {}",
-        server_addresses.len(),
-        zone_name
-    );
-
-    let notify_config = &config::get_bindizr_config().dns;
-    let notify_timeout = Duration::from_secs(notify_config.notify_timeout_secs);
-    let notify_retries = notify_config.notify_retries;
-
-    let qname = Name::<Vec<u8>>::from_str(zone_name)
-        .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
-
-    for server_addr in server_addresses {
-        match send_notify_to_server(&qname, server_addr, notify_timeout, notify_retries).await {
-            Ok(()) => {
-                log_info!("NOTIFY sent successfully to {}", server_addr);
-            }
-            Err(e) => {
-                log_error!("Failed to send NOTIFY to {}: {}", server_addr, e);
-                failures.push(format!("{}: {}", server_addr, e));
-            }
-        }
-    }
+    let failures: Vec<String> = reports
+        .iter()
+        .filter_map(|report| {
+            report
+                .result
+                .as_ref()
+                .err()
+                .map(|e| format!("{}: {}", report.address, e))
+        })
+        .collect();
 
     if failures.is_empty() {
         Ok(())
@@ -139,18 +116,59 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     }
 }
 
-async fn resolve_secondary_servers(raw: &str) -> (Vec<SocketAddr>, Vec<String>) {
-    let mut addrs = Vec::new();
-    let mut failures = Vec::new();
+/// One configured secondary's NOTIFY outcome.
+pub struct SecondaryNotify {
+    pub address: String,
+    pub result: Result<(), String>,
+}
 
-    for (entry, result) in super::resolve_secondary_entries(raw).await {
-        match result {
-            Ok(resolved) => addrs.extend(resolved),
-            Err(e) => failures.push(format!("{}: {}", entry, e)),
+/// Send NOTIFY for a zone to every resolved secondary address (the transfer
+/// ACL admits each one, so every replica must hear the change). An empty
+/// `secondary_addrs` yields an empty list.
+pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>, XfrError> {
+    let dns_config = &config::get_bindizr_config().dns;
+    let raw = dns_config.secondary_addrs.clone();
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
+    let retries = dns_config.notify_retries;
+
+    let qname = Name::<Vec<u8>>::from_str(zone_name)
+        .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
+
+    let mut reports = Vec::new();
+    for (entry, result) in super::resolve_secondary_entries(&raw, timeout).await {
+        let addrs = match result {
+            Ok(addrs) => addrs,
+            Err(e) => {
+                reports.push(SecondaryNotify {
+                    address: entry,
+                    result: Err(format!("failed to resolve: {}", e)),
+                });
+                continue;
+            }
+        };
+
+        for addr in addrs {
+            let result = match send_notify_to_server(&qname, addr, timeout, retries).await {
+                Ok(()) => {
+                    log_info!("NOTIFY sent successfully to {}", addr);
+                    Ok(())
+                }
+                Err(e) => {
+                    log_error!("Failed to send NOTIFY to {}: {}", addr, e);
+                    Err(e.to_string())
+                }
+            };
+            reports.push(SecondaryNotify {
+                address: addr.to_string(),
+                result,
+            });
         }
     }
 
-    (addrs, failures)
+    Ok(reports)
 }
 
 fn format_failures(failures: &[String]) -> String {

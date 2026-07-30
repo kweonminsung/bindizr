@@ -8,7 +8,7 @@ use crate::{
     cli::error::CliError,
     socket::{
         FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
-        types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
+        types::{DaemonCommand, DaemonCommandKind, DaemonResponse, DaemonStatusResponse},
     },
 };
 
@@ -19,6 +19,50 @@ impl DaemonSocketClient {
     /// Create a new [`DaemonSocketClient`].
     pub(crate) fn new() -> Self {
         DaemonSocketClient
+    }
+
+    /// True only when nothing listens on either socket path; a timeout or
+    /// garbled response may come from a live but wedged daemon.
+    pub(crate) async fn daemon_socket_gone(&self) -> bool {
+        fn gone(err: &std::io::Error) -> bool {
+            matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+            )
+        }
+
+        match try_connect_daemon_socket().await {
+            Ok(_) => false,
+            // Primary refused/missing/inaccessible; the fallback was also tried.
+            Err((_, Some(fallback_err))) => gone(&fallback_err),
+            // Primary failed in an unexpected way; the fallback was not tried.
+            Err((err, None)) => gone(&err),
+        }
+    }
+
+    /// Query the daemon's status.
+    pub(crate) async fn status(&self) -> Result<DaemonStatusResponse, CliError> {
+        let res = self.send_control_command(DaemonCommandKind::Status).await?;
+        serde_json::from_value(res.data)
+            .map_err(|e| CliError::from(format!("Failed to parse status response: {}", e)))
+    }
+
+    /// Send a command the daemon answers from memory (status/lifecycle) under
+    /// a short deadline, so a wedged daemon cannot hang polling loops.
+    pub(crate) async fn send_control_command(
+        &self,
+        command: DaemonCommandKind,
+    ) -> Result<DaemonResponse, CliError> {
+        const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+        tokio::time::timeout(CONTROL_TIMEOUT, self.send_command(command, None))
+            .await
+            .map_err(|_| {
+                CliError::from(format!(
+                    "The daemon did not answer within {} seconds",
+                    CONTROL_TIMEOUT.as_secs()
+                ))
+            })?
     }
 
     /// Send a command to the daemon and return its parsed response.
@@ -72,6 +116,24 @@ impl DaemonSocketClient {
 }
 
 async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
+    try_connect_daemon_socket()
+        .await
+        .map_err(|(err, fallback_err)| match fallback_err {
+            Some(fallback_err) => CliError::from(format!(
+                "Could not connect to the daemon socket at '{}' or fallback '{}': {}; fallback error: {}\nIs the bindizr daemon running?",
+                SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH, err, fallback_err
+            )),
+            None => CliError::from(format!(
+                "Could not connect to the daemon socket at '{}': {}\nIs the bindizr daemon running?",
+                SOCKET_FILE_PATH, err
+            )),
+        })
+}
+
+/// Io-level connect attempt, preserving the error(s) so callers can tell a
+/// vanished socket apart from other failures.
+async fn try_connect_daemon_socket() -> Result<UnixStream, (std::io::Error, Option<std::io::Error>)>
+{
     match UnixStream::connect(SOCKET_FILE_PATH).await {
         Ok(stream) => Ok(stream),
         Err(err)
@@ -82,18 +144,11 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
                     | std::io::ErrorKind::NotFound
             ) =>
         {
-            UnixStream::connect(FALLBACK_SOCKET_FILE_PATH)
-                .await
-                .map_err(|fallback_err| {
-                CliError::from(format!(
-                    "Could not connect to the daemon socket at '{}' or fallback '{}': {}; fallback error: {}\nIs the bindizr daemon running?",
-                    SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH, err, fallback_err
-                ))
-            })
+            match UnixStream::connect(FALLBACK_SOCKET_FILE_PATH).await {
+                Ok(stream) => Ok(stream),
+                Err(fallback_err) => Err((err, Some(fallback_err))),
+            }
         }
-        Err(err) => Err(CliError::from(format!(
-            "Could not connect to the daemon socket at '{}': {}\nIs the bindizr daemon running?",
-            SOCKET_FILE_PATH, err
-        ))),
+        Err(err) => Err((err, None)),
     }
 }

@@ -1,23 +1,8 @@
-use bindizr_core::log_debug;
-
-use crate::{
-    cli::error::CliError,
-    socket::{
-        client::DaemonSocketClient,
-        types::{DaemonCommandKind, DaemonStatusResponse},
-    },
-};
+use crate::{cli::error::CliError, socket::client::DaemonSocketClient};
 
 /// Handle the `status` subcommand by querying the daemon and printing its status.
 pub(crate) async fn handle_command() -> Result<(), CliError> {
-    let client = DaemonSocketClient::new();
-
-    let res = client.send_command(DaemonCommandKind::Status, None).await?;
-
-    log_debug!("Status command result: {:?}", res);
-
-    let status: DaemonStatusResponse = serde_json::from_value(res.data)
-        .map_err(|e| format!("Failed to parse status response: {}", e))?;
+    let status = DaemonSocketClient::new().status().await?;
 
     println!("=== BINDIZR STATUS ===");
 
@@ -30,87 +15,7 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
     println!("PID: {}", pid);
 
     println!("Version: {}", status.version);
-
-    println!("Loaded Configurations:");
-
-    println!("\x1b[36m[api]\x1b[0m");
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "listen_addr", status.config.api.listen_addr
-    );
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "listen_port", status.config.api.listen_port
-    );
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "require_authentication", status.config.api.require_authentication
-    );
     println!();
-
-    println!("\x1b[36m[database]\x1b[0m");
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "type", status.config.database.database_type
-    );
-    println!();
-
-    println!("\x1b[36m[database.mysql]\x1b[0m");
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "server_url", status.config.database.mysql.server_url
-    );
-    println!();
-
-    println!("\x1b[36m[database.sqlite]\x1b[0m");
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "file_path", status.config.database.sqlite.file_path
-    );
-    println!();
-
-    println!("\x1b[36m[database.postgresql]\x1b[0m");
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "server_url", status.config.database.postgresql.server_url
-    );
-    println!();
-
-    println!("\x1b[36m[dns]\x1b[0m");
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "listen_addr", status.config.dns.listen_addr
-    );
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "listen_port", status.config.dns.listen_port
-    );
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "secondary_addrs", status.config.dns.secondary_addrs
-    );
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "notify_after_update", status.config.dns.notify_after_update
-    );
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "notify_on_startup", status.config.dns.notify_on_startup
-    );
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "notify_retries", status.config.dns.notify_retries
-    );
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "notify_timeout_secs", status.config.dns.notify_timeout_secs
-    );
-    println!();
-
-    println!("\x1b[36m[logging]\x1b[0m");
-    println!(
-        "  \x1b[33m{:<22}\x1b[0m = {}",
-        "log_level", status.config.logging.log_level
-    );
+    println!("Run 'bindizr config list' to see the loaded configuration.");
     Ok(())
 }

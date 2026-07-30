@@ -14,7 +14,8 @@ use clap::{Parser, Subcommand};
 use crate::{
     api,
     cli::commands::{
-        record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+        config::ConfigCommand, record::RecordCommand, token::TokenCommand,
+        tsig_key::TsigKeyCommand, zone::ZoneCommand,
     },
     socket,
 };
@@ -49,6 +50,21 @@ pub(crate) enum Command {
     },
     /// Show the status of the bindizr service
     Status,
+    /// Stop the running bindizr daemon
+    Stop,
+    /// Restart the running bindizr daemon in place
+    Restart,
+    /// Check that the bindizr installation is healthy
+    Doctor {
+        /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<String>,
+    },
+    /// Inspect and validate configuration
+    Config {
+        #[command(subcommand)]
+        subcommand: ConfigCommand,
+    },
     /// Manage API tokens
     Token {
         #[command(subcommand)]
@@ -71,8 +87,16 @@ pub(crate) enum Command {
     },
 }
 
+/// Re-exec path captured at startup: after a package upgrade /proc/self/exe
+/// reads as a "(deleted)" path, while this path points at the replacement.
+static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
 /// Initialize config, logging, database, DNS, socket, and API servers, then run until Ctrl+C.
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = DAEMON_EXE.set(exe);
+    }
+
     config::initialize(config_file);
 
     logger::initialize();
@@ -92,16 +116,50 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     log_info!("For production use, please run bindizr as a systemd service:");
     log_info!("# systemctl start bindizr");
 
+    let mut control_rx = socket::server::control::init();
     socket::server::initialize().await?;
     api::initialize().await?;
 
-    tokio::signal::ctrl_c()
-        .await
-        .map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
+    loop {
+        let control = tokio::select! {
+            result = tokio::signal::ctrl_c() => {
+                result.map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
+                log_info!("Shutdown signal received, exiting gracefully...");
+                break;
+            }
+            control = control_rx.recv() => control,
+        };
 
-    log_info!("Shutdown signal received, exiting gracefully...");
+        match control {
+            Some(socket::server::control::DaemonControl::Restart) => {
+                log_info!("Restart requested, re-executing bindizr...");
+                // reexec only returns on failure; the listeners are still
+                // serving, so keep running instead of turning it into an outage.
+                log_error!("{}. Continuing with the current process.", reexec());
+            }
+            _ => {
+                log_info!("Shutdown requested, exiting gracefully...");
+                break;
+            }
+        }
+    }
 
     Ok(())
+}
+
+/// Re-exec the original command line in place. exec keeps the PID, so
+/// systemd/docker supervision and a foreground terminal stay attached.
+/// Returns only when exec itself fails.
+fn reexec() -> String {
+    use std::os::unix::process::CommandExt;
+
+    let Some(exe) = DAEMON_EXE.get() else {
+        return "Failed to locate the bindizr executable".to_string();
+    };
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+
+    let err = std::process::Command::new(exe).args(args).exec();
+    format!("Failed to re-execute bindizr: {}", err)
 }
 
 /// Parse CLI arguments and dispatch to the matching command handler.
@@ -113,6 +171,10 @@ pub async fn execute() {
             .await
             .map_err(error::CliError::from),
         Command::Status => commands::status::handle_command().await,
+        Command::Stop => commands::stop::handle_command().await,
+        Command::Restart => commands::restart::handle_command().await,
+        Command::Doctor { config } => commands::doctor::handle_command(config).await,
+        Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
