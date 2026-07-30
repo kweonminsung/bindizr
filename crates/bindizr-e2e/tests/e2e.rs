@@ -2,6 +2,7 @@ mod common;
 
 mod api {
     mod health;
+    mod metrics;
     mod notify;
     mod record;
     mod tsig_key;

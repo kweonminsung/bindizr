@@ -18,5 +18,6 @@ chrono.workspace = true
 config.workspace = true
 log.workspace = true
 once_cell.workspace = true
+prometheus.workspace = true
 serde.workspace = true
 sqlx.workspace = true

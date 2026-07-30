@@ -12,6 +12,8 @@ bindizr:
     listenAddr: "0.0.0.0"
     port: 8000
     requireAuthentication: true
+    # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
+    metricsEnabled: true
     service:
       type: ClusterIP
       port: 8000

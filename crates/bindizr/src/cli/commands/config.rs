@@ -78,6 +78,7 @@ fn print_config(config: &BindizrConfig) {
     print_value("listen_addr", config.api.listen_addr);
     print_value("listen_port", config.api.listen_port);
     print_value("require_authentication", config.api.require_authentication);
+    print_value("metrics_enabled", config.api.metrics_enabled);
     println!();
 
     print_section("database");

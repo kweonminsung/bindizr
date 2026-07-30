@@ -6,7 +6,9 @@ use domain::base::{
     iana::{Opcode, Rcode},
 };
 
-use crate::{config, error::XfrError, log_error, log_info, service::zone::ZoneService};
+use crate::{
+    config, error::XfrError, log_error, log_info, metrics::metrics, service::zone::ZoneService,
+};
 
 /// Sends DNS NOTIFY to all configured secondary servers.
 /// A `None` zone_name notifies all zones; `force` bumps the target serial first.
@@ -142,6 +144,12 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>,
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {
+                // Nothing was sent, so resolution failures must not inflate
+                // the send-failure rate.
+                metrics()
+                    .notify_sent_total
+                    .with_label_values(&["resolve_error"])
+                    .inc();
                 reports.push(SecondaryNotify {
                     address: entry,
                     result: Err(format!("failed to resolve: {}", e)),
@@ -154,10 +162,15 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>,
             let result = match send_notify_to_server(&qname, addr, timeout, retries).await {
                 Ok(()) => {
                     log_info!("NOTIFY sent successfully to {}", addr);
+                    metrics().notify_sent_total.with_label_values(&["ok"]).inc();
                     Ok(())
                 }
                 Err(e) => {
                     log_error!("Failed to send NOTIFY to {}: {}", addr, e);
+                    metrics()
+                        .notify_sent_total
+                        .with_label_values(&["error"])
+                        .inc();
                     Err(e.to_string())
                 }
             };

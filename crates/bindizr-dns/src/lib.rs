@@ -10,7 +10,7 @@ pub(crate) mod wire;
 
 use std::{io::ErrorKind, net::SocketAddr, time::Duration};
 
-pub(crate) use bindizr_core::{config, log_error, log_info, log_warn, model};
+pub(crate) use bindizr_core::{config, log_error, log_info, log_warn, metrics, model};
 pub(crate) use bindizr_service as service;
 use domain::base::iana::Rtype;
 use server::acl::SecondaryAcl;

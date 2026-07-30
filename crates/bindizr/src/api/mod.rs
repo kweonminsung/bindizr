@@ -2,6 +2,7 @@
 
 pub(crate) mod error;
 pub(crate) mod health;
+pub(crate) mod metrics;
 pub(crate) mod middleware;
 pub(crate) mod notify;
 #[cfg(debug_assertions)]
