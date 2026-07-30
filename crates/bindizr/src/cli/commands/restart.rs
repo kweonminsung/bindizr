@@ -19,19 +19,14 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
     println!("{}", res.message);
 
     // exec keeps the PID, so a changed start time is the restart signal.
-    let wait_until_replaced = async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            if let Ok(status) = client.status().await
-                && status.started_at_ms != before.started_at_ms
-            {
-                break status;
-            }
-        }
-    };
+    let replaced = super::poll_daemon_status(&client, RESTART_DEADLINE, |status| match status {
+        Ok(status) if status.started_at_ms != before.started_at_ms => Some(status),
+        _ => None,
+    })
+    .await;
 
-    match tokio::time::timeout(RESTART_DEADLINE, wait_until_replaced).await {
-        Ok(status) => {
+    match replaced {
+        Some(status) => {
             let pid = status
                 .pid
                 .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
@@ -41,7 +36,7 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
             );
             Ok(())
         }
-        Err(_) => Err(CliError::from(format!(
+        None => Err(CliError::from(format!(
             "Bindizr did not come back within {} seconds after the restart request",
             RESTART_DEADLINE.as_secs()
         ))),

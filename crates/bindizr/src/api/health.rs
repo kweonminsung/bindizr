@@ -1,7 +1,12 @@
+use std::time::Duration;
+
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use bindizr_service::zone::ZoneService;
 
 use super::types::HealthResponse;
+
+/// Orchestrator probes expect a prompt 503, not a hang on a wedged database.
+const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[utoipa::path(
         get,
@@ -17,14 +22,14 @@ use super::types::HealthResponse;
 /// Minimal database round-trip, kept cheap and side-effect free because
 /// probes run frequently.
 pub(crate) async fn get_health() -> impl IntoResponse {
-    match ZoneService::ping().await {
-        Ok(_) => (
+    match tokio::time::timeout(DB_PROBE_TIMEOUT, ZoneService::ping()).await {
+        Ok(Ok(())) => (
             StatusCode::OK,
             Json(HealthResponse {
                 status: "healthy".to_string(),
             }),
         ),
-        Err(_) => (
+        _ => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(HealthResponse {
                 status: "unhealthy".to_string(),

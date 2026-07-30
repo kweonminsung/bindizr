@@ -16,21 +16,17 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
         .await?;
     println!("{}", res.message);
 
-    let wait_until_gone = async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            if client.status().await.is_err() {
-                break;
-            }
-        }
-    };
+    let stopped = super::poll_daemon_status(&client, STOP_DEADLINE, |status| {
+        status.is_err().then_some(())
+    })
+    .await;
 
-    match tokio::time::timeout(STOP_DEADLINE, wait_until_gone).await {
-        Ok(()) => {
+    match stopped {
+        Some(()) => {
             println!("Bindizr stopped.");
             Ok(())
         }
-        Err(_) => Err(CliError::from(format!(
+        None => Err(CliError::from(format!(
             "Bindizr did not stop within {} seconds",
             STOP_DEADLINE.as_secs()
         ))),

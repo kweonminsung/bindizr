@@ -87,8 +87,16 @@ pub(crate) enum Command {
     },
 }
 
+/// Re-exec path captured at startup: after a package upgrade /proc/self/exe
+/// reads as a "(deleted)" path, while this path points at the replacement.
+static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
 /// Initialize config, logging, database, DNS, socket, and API servers, then run until Ctrl+C.
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = DAEMON_EXE.set(exe);
+    }
+
     config::initialize(config_file);
 
     logger::initialize();
@@ -145,9 +153,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 fn reexec() -> String {
     use std::os::unix::process::CommandExt;
 
-    let exe = match std::env::current_exe() {
-        Ok(exe) => exe,
-        Err(e) => return format!("Failed to locate the bindizr executable: {}", e),
+    let Some(exe) = DAEMON_EXE.get() else {
+        return "Failed to locate the bindizr executable".to_string();
     };
     let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
 
