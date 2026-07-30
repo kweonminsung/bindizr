@@ -8,7 +8,7 @@ use crate::{
     cli::error::CliError,
     socket::{
         FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
-        types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
+        types::{DaemonCommand, DaemonCommandKind, DaemonResponse, DaemonStatusResponse},
     },
 };
 
@@ -19,6 +19,13 @@ impl DaemonSocketClient {
     /// Create a new [`DaemonSocketClient`].
     pub(crate) fn new() -> Self {
         DaemonSocketClient
+    }
+
+    /// Query the daemon's status.
+    pub(crate) async fn status(&self) -> Result<DaemonStatusResponse, CliError> {
+        let res = self.send_command(DaemonCommandKind::Status, None).await?;
+        serde_json::from_value(res.data)
+            .map_err(|e| CliError::from(format!("Failed to parse status response: {}", e)))
     }
 
     /// Send a command to the daemon and return its parsed response.

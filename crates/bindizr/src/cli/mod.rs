@@ -50,6 +50,10 @@ pub(crate) enum Command {
     },
     /// Show the status of the bindizr service
     Status,
+    /// Stop the running bindizr daemon
+    Stop,
+    /// Restart the running bindizr daemon in place
+    Restart,
     /// Check that the bindizr installation is healthy
     Doctor {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
@@ -104,16 +108,49 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     log_info!("For production use, please run bindizr as a systemd service:");
     log_info!("# systemctl start bindizr");
 
+    let mut control_rx = socket::server::control::init();
     socket::server::initialize().await?;
     api::initialize().await?;
 
-    tokio::signal::ctrl_c()
-        .await
-        .map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
+    let restart = tokio::select! {
+        result = tokio::signal::ctrl_c() => {
+            result.map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
+            log_info!("Shutdown signal received, exiting gracefully...");
+            false
+        }
+        control = control_rx.recv() => match control {
+            Some(socket::server::control::DaemonControl::Restart) => {
+                log_info!("Restart requested, re-executing bindizr...");
+                true
+            }
+            _ => {
+                log_info!("Shutdown requested, exiting gracefully...");
+                false
+            }
+        }
+    };
 
-    log_info!("Shutdown signal received, exiting gracefully...");
+    if restart {
+        return Err(reexec());
+    }
 
     Ok(())
+}
+
+/// Re-exec the original command line in place. exec keeps the PID, so
+/// systemd/docker supervision and a foreground terminal stay attached.
+/// Returns only when exec itself fails.
+fn reexec() -> String {
+    use std::os::unix::process::CommandExt;
+
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(e) => return format!("Failed to locate the bindizr executable: {}", e),
+    };
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+
+    let err = std::process::Command::new(exe).args(args).exec();
+    format!("Failed to re-execute bindizr: {}", err)
 }
 
 /// Parse CLI arguments and dispatch to the matching command handler.
@@ -125,6 +162,8 @@ pub async fn execute() {
             .await
             .map_err(error::CliError::from),
         Command::Status => commands::status::handle_command().await,
+        Command::Stop => commands::stop::handle_command().await,
+        Command::Restart => commands::restart::handle_command().await,
         Command::Doctor { config } => commands::doctor::handle_command(config).await,
         Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,

@@ -1,8 +1,10 @@
 pub(super) mod config;
 pub(super) mod doctor;
 pub(super) mod record;
+pub(super) mod restart;
 pub(super) mod start;
 pub(super) mod status;
+pub(super) mod stop;
 pub(super) mod token;
 pub(super) mod tsig_key;
 pub(super) mod zone;

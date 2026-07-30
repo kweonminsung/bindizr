@@ -1,3 +1,4 @@
+pub(crate) mod control;
 mod doctor;
 mod notify;
 mod record;
@@ -75,6 +76,8 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
                 DaemonCommandKind::ZoneStatus => zone::zone_status(&cmd.data).await,
                 DaemonCommandKind::Doctor => doctor::doctor().await,
+                DaemonCommandKind::Shutdown => control::shutdown(),
+                DaemonCommandKind::Restart => control::restart(),
             },
 
             Err(e) => {
@@ -98,6 +101,7 @@ async fn handle_client(stream: UnixStream) {
 
 /// Bind the daemon's Unix socket and spawn the connection accept loop.
 pub(crate) async fn initialize() -> Result<(), String> {
+    status::record_start_time();
     let (socket_path, listener) = bind_daemon_socket().await?;
 
     log_info!("Daemon socket server listening on {}", socket_path);

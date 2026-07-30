@@ -10,6 +10,7 @@ mod api {
 
 mod cli {
     mod config;
+    mod daemon;
     mod doctor;
     mod record;
     mod tsig_key;

@@ -36,6 +36,8 @@ pub(crate) enum DaemonCommandKind {
     RollbackZone,
     ZoneStatus,
     Doctor,
+    Shutdown,
+    Restart,
 }
 
 /// A command and its payload sent to the daemon.
@@ -57,6 +59,9 @@ pub(crate) struct DaemonResponse {
 pub(crate) struct DaemonStatusResponse {
     pub pid: Option<u32>,
     pub version: String,
+    /// Restart detection marker: exec keeps the PID, so a new start time is
+    /// the only signal that the daemon was replaced.
+    pub started_at_ms: u64,
     pub config: BindizrConfig,
 }
 

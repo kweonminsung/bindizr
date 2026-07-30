@@ -77,15 +77,7 @@ async fn check_daemon(
     client: &DaemonSocketClient,
     report: &mut Report,
 ) -> Option<DaemonStatusResponse> {
-    let res = match client.send_command(DaemonCommandKind::Status, None).await {
-        Ok(res) => res,
-        Err(e) => {
-            report.fail(format!("Daemon not reachable: {}", e.message));
-            return None;
-        }
-    };
-
-    match serde_json::from_value::<DaemonStatusResponse>(res.data) {
+    match client.status().await {
         Ok(status) => {
             let pid = status
                 .pid
@@ -97,7 +89,7 @@ async fn check_daemon(
             Some(status)
         }
         Err(e) => {
-            report.fail(format!("Daemon status response was malformed: {}", e));
+            report.fail(format!("Daemon not reachable: {}", e.message));
             None
         }
     }

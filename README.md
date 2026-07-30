@@ -272,6 +272,12 @@ $ bindizr start -c <FILE>
 # Check the current status of bindizr service
 $ bindizr status
 
+# Stop the running daemon
+$ bindizr stop
+
+# Restart the daemon in place (the PID is kept)
+$ bindizr restart
+
 # Verify the installation end to end (config, daemon, API, database, DNS, secondaries)
 $ bindizr doctor
 

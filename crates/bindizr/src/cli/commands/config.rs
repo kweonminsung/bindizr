@@ -1,13 +1,7 @@
-use bindizr_core::{config, config::BindizrConfig, log_debug};
+use bindizr_core::{config, config::BindizrConfig};
 use clap::Subcommand;
 
-use crate::{
-    cli::error::CliError,
-    socket::{
-        client::DaemonSocketClient,
-        types::{DaemonCommandKind, DaemonStatusResponse},
-    },
-};
+use crate::{cli::error::CliError, socket::client::DaemonSocketClient};
 
 /// Subcommands for inspecting and validating configuration.
 #[derive(Subcommand, Debug)]
@@ -76,14 +70,7 @@ async fn get_config(key: &str) -> Result<(), CliError> {
 /// Fetch the running daemon's loaded config (file plus environment overrides),
 /// which can differ from what the file on disk currently says.
 async fn loaded_daemon_config() -> Result<BindizrConfig, CliError> {
-    let client = DaemonSocketClient::new();
-    let res = client.send_command(DaemonCommandKind::Status, None).await?;
-
-    log_debug!("Config command status result: {:?}", res);
-
-    let status: DaemonStatusResponse = serde_json::from_value(res.data)
-        .map_err(|e| format!("Failed to parse status response: {}", e))?;
-    Ok(status.config)
+    Ok(DaemonSocketClient::new().status().await?.config)
 }
 
 fn print_config(config: &BindizrConfig) {
