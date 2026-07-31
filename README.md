@@ -67,7 +67,7 @@ For production, create a Kubernetes Secret that points Bindizr to your external 
 $ kubectl create secret generic bindizr-db-secret \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 
-$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-stack \
+$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --version 0.1.0-beta.5 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
@@ -75,7 +75,7 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-stack \
 For development, the chart can run a single-replica MySQL or PostgreSQL StatefulSet:
 
 ```bash
-$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-stack \
+$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --version 0.1.0-beta.5 \
   --set bindizr.database.type=postgresql \
   --set bindizr.database.existingSecret= \

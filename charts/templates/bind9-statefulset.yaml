@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "bindizr-stack.fullname" . }}-bind9
+  name: {{ include "bindizr-chart.fullname" . }}-bind9
   labels:
-    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    {{- include "bindizr-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: bind9
 spec:
-  serviceName: {{ include "bindizr-stack.fullname" . }}-bind9-headless
+  serviceName: {{ include "bindizr-chart.fullname" . }}-bind9-headless
   replicas: {{ .Values.bind9.replicas }}
   selector:
     matchLabels:
-      {{- include "bindizr-stack.selectorLabels" . | nindent 6 }}
+      {{- include "bindizr-chart.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: bind9
   template:
     metadata:
       labels:
-        {{- include "bindizr-stack.selectorLabels" . | nindent 8 }}
+        {{- include "bindizr-chart.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: bind9
       {{- with .Values.bind9.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
-      serviceAccountName: {{ include "bindizr-stack.serviceAccountName" . }}
+      serviceAccountName: {{ include "bindizr-chart.serviceAccountName" . }}
       {{- with .Values.bind9.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -53,7 +53,7 @@ spec:
               protocol: UDP
           env:
             - name: BINDIZR_DNS_HOST
-              value: {{ printf "%s-dns" (include "bindizr-stack.fullname" .) | quote }}
+              value: {{ printf "%s-dns" (include "bindizr-chart.fullname" .) | quote }}
           {{- with .Values.bind9.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -73,7 +73,7 @@ spec:
       volumes:
         - name: config-template
           configMap:
-            name: {{ include "bindizr-stack.fullname" . }}-bind9-config
+            name: {{ include "bindizr-chart.fullname" . }}-bind9-config
         - name: cache
           emptyDir: {}
         {{- if not .Values.bind9.persistence.enabled }}
@@ -97,7 +97,7 @@ spec:
     - metadata:
         name: data
         labels:
-          {{- include "bindizr-stack.labels" . | nindent 10 }}
+          {{- include "bindizr-chart.labels" . | nindent 10 }}
           app.kubernetes.io/component: bind9
       spec:
         accessModes:

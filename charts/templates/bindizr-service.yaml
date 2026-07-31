@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "bindizr-stack.fullname" . }}-api
+  name: {{ include "bindizr-chart.fullname" . }}-api
   labels:
-    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    {{- include "bindizr-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr
 spec:
   type: {{ .Values.bindizr.api.service.type }}
@@ -13,15 +13,15 @@ spec:
       targetPort: api
       protocol: TCP
   selector:
-    {{- include "bindizr-stack.selectorLabels" . | nindent 4 }}
+    {{- include "bindizr-chart.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "bindizr-stack.fullname" . }}-dns
+  name: {{ include "bindizr-chart.fullname" . }}-dns
   labels:
-    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    {{- include "bindizr-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr
 spec:
   type: ClusterIP
@@ -35,5 +35,5 @@ spec:
       targetPort: dns-udp
       protocol: UDP
   selector:
-    {{- include "bindizr-stack.selectorLabels" . | nindent 4 }}
+    {{- include "bindizr-chart.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr

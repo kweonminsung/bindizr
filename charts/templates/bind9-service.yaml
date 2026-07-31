@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "bindizr-stack.fullname" . }}-bind9-headless
+  name: {{ include "bindizr-chart.fullname" . }}-bind9-headless
   labels:
-    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    {{- include "bindizr-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: bind9
 spec:
   clusterIP: None
@@ -17,15 +17,15 @@ spec:
       targetPort: dns-udp
       protocol: UDP
   selector:
-    {{- include "bindizr-stack.selectorLabels" . | nindent 4 }}
+    {{- include "bindizr-chart.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: bind9
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "bindizr-stack.fullname" . }}-bind9
+  name: {{ include "bindizr-chart.fullname" . }}-bind9
   labels:
-    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    {{- include "bindizr-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: bind9
   {{- with .Values.bind9.service.annotations }}
   annotations:
@@ -43,5 +43,5 @@ spec:
       targetPort: dns-udp
       protocol: UDP
   selector:
-    {{- include "bindizr-stack.selectorLabels" . | nindent 4 }}
+    {{- include "bindizr-chart.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: bind9

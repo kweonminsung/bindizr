@@ -1,4 +1,4 @@
-# bindizr-stack
+# bindizr-chart
 
 Deploys Bindizr as a DB-backed DNS control plane with BIND9 authoritative DNS pods.
 
@@ -28,7 +28,7 @@ kubectl create secret generic bindizr-db-secret \
 Install the released OCI chart from Docker Hub:
 
 ```sh
-helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-stack \
+helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --version 0.1.0-beta.5 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
