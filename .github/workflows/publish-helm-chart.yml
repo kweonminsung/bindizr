@@ -35,13 +35,15 @@ jobs:
           helm package charts
           helm push bindizr-chart-*.tgz oci://registry-1.docker.io/kweonminsung
 
-      # oras needs its own login; helm writes credentials to its own config.
+      # Credentials go straight to the push; a separate 'oras login' stores
+      # them under a key the push does not resolve.
       - name: Push Artifact Hub repository metadata
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          echo "$DOCKERHUB_TOKEN" | oras login registry-1.docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
-          oras push registry-1.docker.io/kweonminsung/bindizr-chart:artifacthub.io \
+          echo "$DOCKERHUB_TOKEN" | oras push \
+            --username "$DOCKERHUB_USERNAME" --password-stdin \
+            registry-1.docker.io/kweonminsung/bindizr-chart:artifacthub.io \
             --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
             artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
