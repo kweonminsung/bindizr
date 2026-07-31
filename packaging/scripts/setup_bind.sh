@@ -14,8 +14,7 @@ else
     exit 1
 fi
 
-# bindizr's DNS endpoint that BIND pulls the catalog and zones from.
-# Positional arguments win over environment variables: setup_bind.sh [host] [port]
+# bindizr's DNS endpoint: setup_bind.sh [host] [port], or BINDIZR_DNS_HOST/BINDIZR_DNS_PORT.
 HOST="${1:-${BINDIZR_DNS_HOST:-127.0.0.1}}"
 PORT="${2:-${BINDIZR_DNS_PORT:-53}}"
 
@@ -33,16 +32,14 @@ echo "Configuring BIND for bindizr at $HOST port $PORT"
 ##################################
 echo "Cleaning up broken syntax..."
 
-# Remove previously inserted allow-notify, ixfr-from-differences, and
-# catalog-zones. Host and port are matched generically so a re-run with a
-# different bindizr address replaces the old entries instead of stacking.
+# Remove previously inserted allow-notify, ixfr-from-differences, and catalog-zones;
+# host/port match generically so re-runs with a new address replace them.
 perl -0777 -pi -e 's/^[ \t]*allow-notify \{ (?:127\.0\.0\.1|any|key "[^"]+"); \};\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*ixfr-from-differences yes;\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" \{\r?\n[ \t]*default-primaries \{ [^ ;]+ port [0-9]+; \};\r?\n[ \t]*\};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" default-primaries \{ [^ ;]+ port [0-9]+; \};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
 
-# Remove a previously inserted catalog.bind zone (script-managed shape only)
-# so a changed host/port is re-appended below rather than silently kept.
+# Drop a script-shaped catalog.bind zone so a changed host/port is re-appended below.
 perl -0777 -pi -e 's/\r?\n?zone "catalog\.bind" \{\r?\n[ \t]*type secondary;\r?\n[ \t]*primaries \{ [^ ;]+ port [0-9]+; \};\r?\n[ \t]*file "[^"]*";\r?\n(?:[ \t]*allow-notify \{ any; \};\r?\n)?(?:[ \t]*ixfr-from-differences yes;\r?\n)?\};\r?\n//gm' "$MAIN_CONF"
 
 ##################################
