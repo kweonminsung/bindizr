@@ -4,6 +4,7 @@ use crate::{
     RepositoryTx,
     error::ServiceError,
     log_error,
+    metrics::metrics,
     model::{zone::Zone, zone_snapshot::ZoneSnapshot},
     repository::RepositoryService,
 };
@@ -37,6 +38,11 @@ pub async fn save_zone_snapshot_tx(
         log_error!("Failed to save SOA snapshot: {}", e);
         ServiceError::internal("Failed to save SOA snapshot".to_string())
     })?;
+
+    // Every serial-advancing path funnels through this snapshot write; count
+    // bumps here. Incremented pre-commit: a later rollback overcounts, which
+    // is acceptable for a monitoring counter.
+    metrics().zone_serial_bumps_total.inc();
 
     Ok(())
 }

@@ -2,6 +2,7 @@
 listen_addr = "0.0.0.0"
 listen_port = 8000
 require_authentication = true
+metrics_enabled = true
 
 [database]
 type = "mysql"

@@ -36,10 +36,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
-{{- define "bindizr-stack.tsigSecretName" -}}
-{{- default (printf "%s-tsig" (include "bindizr-stack.fullname" .)) .Values.tsig.existingSecret -}}
-{{- end -}}
-
 {{- define "bindizr-stack.databaseSecretName" -}}
 {{- default (printf "%s-db" (include "bindizr-stack.fullname" .)) .Values.bindizr.database.existingSecret -}}
 {{- end -}}

@@ -30,6 +30,7 @@ Create a configuration file at `/etc/bindizr/bindizr.conf.toml`:
 listen_addr = "127.0.0.1"     # HTTP API listen address
 listen_port = 3000            # HTTP API listen port
 require_authentication = true # Enable API authentication (true/false)
+metrics_enabled = true        # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only)
 
 [database]
 type = "mysql"                # Database type: mysql, sqlite, postgresql

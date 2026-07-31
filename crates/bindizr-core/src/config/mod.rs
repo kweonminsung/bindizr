@@ -28,6 +28,13 @@ pub struct ApiConfig {
     #[serde(alias = "port")]
     pub listen_port: u16,
     pub require_authentication: bool,
+    /// Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
+    #[serde(default = "default_metrics_enabled")]
+    pub metrics_enabled: bool,
+}
+
+fn default_metrics_enabled() -> bool {
+    true
 }
 
 /// Database backend selection and per-backend connection settings.
@@ -308,6 +315,9 @@ fn apply_env_overrides_from(
     if let Some(value) = get_env("BINDIZR_API_REQUIRE_AUTHENTICATION") {
         config.api.require_authentication =
             parse_env_value("BINDIZR_API_REQUIRE_AUTHENTICATION", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_API_METRICS_ENABLED") {
+        config.api.metrics_enabled = parse_env_value("BINDIZR_API_METRICS_ENABLED", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
         config.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;

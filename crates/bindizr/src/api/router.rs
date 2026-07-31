@@ -17,6 +17,8 @@ pub(crate) struct ApiRouter;
 impl ApiRouter {
     /// Build the full axum router with auth, CORS, and (in debug) OpenAPI routes.
     pub(crate) async fn routes() -> Router {
+        let api_config = &config::get_bindizr_config().api;
+
         let mut api_router = Router::new()
             .merge(ZoneApi::routes().await)
             .merge(RecordApi::routes().await)
@@ -24,7 +26,7 @@ impl ApiRouter {
             .merge(TsigKeyApi::routes().await)
             .route("/", routing::get(ApiRouter::get_home));
 
-        if config::get_bindizr_config().api.require_authentication {
+        if api_config.require_authentication {
             api_router = api_router.layer(axum::middleware::from_fn(
                 super::middleware::auth::auth_middleware,
             ));
@@ -35,6 +37,11 @@ impl ApiRouter {
         // Outside the auth layer: probes must work without credentials.
         router = router.route("/health", routing::get(super::health::get_health));
 
+        // Also outside auth: scrapers get only aggregate counts, no zone data.
+        if api_config.metrics_enabled {
+            router = router.route("/metrics", routing::get(super::metrics::get_metrics));
+        }
+
         #[cfg(debug_assertions)]
         {
             router = router
@@ -43,6 +50,14 @@ impl ApiRouter {
         }
 
         router = router.fallback(Self::not_found);
+
+        // Layered after the fallback so every route, including 404s, is measured.
+        if api_config.metrics_enabled {
+            router = router.layer(axum::middleware::from_fn(
+                super::middleware::metrics::track_http_metrics,
+            ));
+        }
+
         router = router.layer(CorsLayer::permissive());
 
         router

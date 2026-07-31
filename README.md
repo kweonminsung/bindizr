@@ -31,11 +31,28 @@ DNS Synchronization Service for BIND9
 
 - **Secondary DNS Servers**: Standard BIND9 (or any RFC-compliant DNS server) instances configured as secondaries. They automatically discover zones through the catalog zone, pull zone updates from Bindizr's XFR server via zone transfer, and respond to DNS queries from clients.
 
-- **nsupdate (Dynamic Update)**: Supports RFC 2136-style DNS dynamic updates via nsupdate.
-
 <br>
 
 &nbsp;<img src="public/concepts.png" width="462px">
+
+## Features
+
+- **Zone and Record Management**: Full CRUD over zones and records through the HTTP API or CLI, including bulk inserts, BIND master-file import/export, and dry-run diff previews.
+
+- **Multiple Database Backends**: Store DNS data in MySQL, PostgreSQL, or SQLite.
+
+- **Zone Transfers (AXFR/IXFR)**: Serve full and incremental zone transfers to secondaries, with automatic SOA serial management and an optional per-serial zone cache.
+
+- **Automatic Zone Provisioning**: DNS Catalog Zones (RFC 9432) let BIND9 secondaries discover created and deleted zones without configuration changes.
+
+- **DNS NOTIFY**: Notify secondaries after each change, with configurable retries and timeouts, plus a sync/async apply mode that batches NOTIFYs under load.
+
+- **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests, managed TSIG keys, and per-zone update policies.
+
+- **Zone History**: Per-serial SOA snapshots with diffs between serials and rollback to a previous serial.
+- **Authentication**: Token-based authentication for the HTTP API.
+
+- **Observability**: Health probe endpoint, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
 
 ## Deployment Options
 
@@ -67,7 +84,7 @@ $ helm install bindizr bindizr/bindizr-stack \
   --set postgresql.enabled=true
 ```
 
-SQLite is not supported by the Helm chart. See [charts/bindizr-stack](charts/bindizr-stack/README.md) for all Helm values and examples, including TSIG and bindizr-ui.
+SQLite is not supported by the Helm chart. See [charts/bindizr-stack](charts/bindizr-stack/README.md) for all Helm values and examples, including bindizr-ui.
 
 ### Docker Compose
 
@@ -100,6 +117,7 @@ Add the following configuration, adjusting values to match your environment:
 listen_addr = "127.0.0.1"     # HTTP API listen address
 listen_port = 3000            # HTTP API listen port
 require_authentication = true # Enable API authentication (true/false)
+metrics_enabled = true        # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only)
 
 [database]
 type = "mysql"                # Database type: mysql, sqlite, postgresql
@@ -428,6 +446,40 @@ When making API requests, include the token in the Authorization header:
 $ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/zones
 ```
 
+### Prometheus Metrics
+
+When `api.metrics_enabled` is on (the default), bindizr serves Prometheus text-format metrics at `GET /metrics`. Like `/health`, the endpoint is unauthenticated — it exposes only aggregate counters and gauges, never zone data — and it is not part of the OpenAPI spec.
+
+```bash
+$ curl http://localhost:3000/metrics
+```
+
+| Metric | Type | Description |
+| ------ | ---- | ----------- |
+| `bindizr_build_info{version}` | gauge | Build metadata; the value is always 1 |
+| `bindizr_started_at_seconds` | gauge | Unix time the process started |
+| `bindizr_database_up` | gauge | Whether the last scrape's database probe succeeded |
+| `bindizr_zones_total`, `bindizr_records_total` | gauge | Zone / record counts, refreshed at scrape time |
+| `bindizr_http_requests_total{method, route, status}` | counter | HTTP API requests, labeled by route pattern |
+| `bindizr_http_request_duration_seconds{method, route}` | histogram | HTTP API request latency |
+| `bindizr_xfr_total{type, result}` | counter | AXFR/IXFR requests served, by query type and outcome |
+| `bindizr_notify_sent_total{result}` | counter | NOTIFY delivery attempts to secondaries, by outcome |
+| `bindizr_nsupdate_requests_total{result}` | counter | RFC 2136 dynamic updates, by outcome |
+| `bindizr_zone_serial_bumps_total` | counter | Zone serial writes across every update path |
+
+Example Prometheus scrape configuration:
+
+```yaml
+scrape_configs:
+  - job_name: bindizr
+    static_configs:
+      - targets: ["localhost:3000"]
+```
+
+Set `metrics_enabled = false` in the `[api]` section (or `BINDIZR_API_METRICS_ENABLED=false`) to disable the endpoint.
+
+A ready-to-run Prometheus + Grafana stack with a pre-provisioned dashboard lives in [examples/monitoring/](examples/monitoring/).
+
 ## Benchmarks
 
 Bindizr measured against PowerDNS Authoritative, Technitium DNS, Knot DNS, CoreDNS, and plain BIND9 (nsupdate / rndc) on identical hardware, datasets, and container limits — the suite lives in [benchmarks/](benchmarks/README.md). Every figure is the mean of 5 runs on an 8-core AMD Ryzen 7 9800X3D, each container capped at 4 CPU / 4 GB.
@@ -514,12 +566,6 @@ The following features are planned for future releases. The roadmap may change b
 
   * Diagnose configuration, database connectivity, file permissions, BIND9 connectivity, and DNS synchronization issues.
   * Provide actionable warnings and recommended fixes.
-
-* [ ] **Prometheus metrics**
-
-  * Expose operational metrics through a `/metrics` endpoint.
-  * Include API request latency, database operation duration, zone synchronization status, reload results, NOTIFY results, and error counts.
-  * Provide example Prometheus scrape configuration and Grafana dashboards.
 
 * [ ] **DNSSEC support**
 

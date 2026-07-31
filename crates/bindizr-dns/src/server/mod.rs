@@ -16,7 +16,7 @@ use catalog::generate_catalog_zone;
 use domain::base::iana::{Rcode, Rtype};
 use tokio::net::TcpStream;
 
-use crate::{error::XfrError, log_info, log_warn, wire};
+use crate::{error::XfrError, log_info, log_warn, metrics::metrics, wire};
 
 /// Initializes XFR support by ensuring the catalog zone exists.
 pub async fn initialize() {
@@ -51,7 +51,26 @@ pub(crate) async fn handle_tcp_query(
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
 
-    validate_secondary_acl(client_ip, secondary_acl).await?;
+    // Counted at the dispatch so IXFR that internally falls back to AXFR
+    // still counts as ixfr; non-XFR qtypes are not transfer traffic.
+    let xfr_type = match query.qtype {
+        Rtype::AXFR => Some("axfr"),
+        Rtype::IXFR => Some("ixfr"),
+        _ => None,
+    };
+    let count_xfr = |result: &str| {
+        if let Some(xfr_type) = xfr_type {
+            metrics()
+                .xfr_total
+                .with_label_values(&[xfr_type, result])
+                .inc();
+        }
+    };
+
+    if let Err(err) = validate_secondary_acl(client_ip, secondary_acl).await {
+        count_xfr("refused");
+        return Err(err);
+    }
 
     log_info!(
         "XFR TCP query: zone={:?}, qtype={:?}, from={}",
@@ -74,6 +93,7 @@ pub(crate) async fn handle_tcp_query(
 
     if let Err(err) = result {
         if matches!(err, XfrError::ZoneNotFound(_)) {
+            count_xfr("notauth");
             let response = wire::build_error_response(
                 query.query_id,
                 &query.qname,
@@ -84,9 +104,11 @@ pub(crate) async fn handle_tcp_query(
             return Ok(());
         }
 
+        count_xfr("error");
         return Err(err);
     }
 
+    count_xfr("ok");
     Ok(())
 }
 

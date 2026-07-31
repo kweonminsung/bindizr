@@ -111,6 +111,13 @@ fn parse_bindizr_config_defaults_missing_optional_dns_fields() {
 }
 
 #[test]
+fn parse_bindizr_config_defaults_metrics_enabled_to_true() {
+    let parsed = parse_config(&TestConfigToml::default()).unwrap();
+
+    assert!(parsed.api.metrics_enabled);
+}
+
+#[test]
 fn parse_bindizr_config_defaults_unselected_database_sections() {
     let parsed = parse_config(&TestConfigToml {
         unselected_databases: false,
@@ -160,6 +167,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
         "BINDIZR_API_PORT" => Some("8000".to_string()),
         "BINDIZR_API_REQUIRE_AUTHENTICATION" => Some("false".to_string()),
+        "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
         "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
         "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
         "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
@@ -178,6 +186,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.api.listen_addr.to_string(), "0.0.0.0");
     assert_eq!(overridden.api.listen_port, 8000);
     assert!(!overridden.api.require_authentication);
+    assert!(!overridden.api.metrics_enabled);
     assert!(matches!(
         overridden.database.database_type,
         DatabaseType::Mysql

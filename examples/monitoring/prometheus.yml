@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: bindizr
+    static_configs:
+      # bindizr running on the Docker host; adjust for other deployments.
+      - targets: ["host.docker.internal:3000"]

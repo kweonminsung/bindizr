@@ -17,7 +17,7 @@ use domain::{
 };
 use tokio::net::{TcpStream, UdpSocket};
 
-use crate::{log_info, log_warn};
+use crate::{log_info, log_warn, metrics::metrics};
 
 /// Response-TSIG fudge for requests whose own fudge is unavailable
 /// (RFC 8945, Section 10 suggested default).
@@ -73,6 +73,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         Ok(req) => req,
         Err(e) => {
             log_warn!("NSUPDATE parse error from {}: {}", client_addr, e);
+            count_nsupdate("formerr");
             return build_response(query_data, Rcode::FORMERR, None, DEFAULT_FUDGE);
         }
     };
@@ -97,6 +98,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         // request's TSIG record (RFC 8945, Sections 5.2–5.3).
         Err(update::UpdateError::TsigFailed { msg, response }) => {
             log_warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
+            count_nsupdate("tsig_failed");
             return Some(response);
         }
         Err(update::UpdateError::Refused(msg)) => {
@@ -129,7 +131,31 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         }
     };
 
+    count_nsupdate(rcode_label(rcode));
     build_response(query_data, rcode, signer, fudge)
+}
+
+fn count_nsupdate(result: &str) {
+    metrics()
+        .nsupdate_requests_total
+        .with_label_values(&[result])
+        .inc();
+}
+
+// Bounded label values from the response code, never the free-form message.
+fn rcode_label(rcode: Rcode) -> &'static str {
+    match rcode {
+        Rcode::NOERROR => "noerror",
+        Rcode::FORMERR => "formerr",
+        Rcode::REFUSED => "refused",
+        Rcode::YXDOMAIN => "yxdomain",
+        Rcode::YXRRSET => "yxrrset",
+        Rcode::NXDOMAIN => "nxdomain",
+        Rcode::NXRRSET => "nxrrset",
+        Rcode::NOTZONE => "notzone",
+        Rcode::SERVFAIL => "servfail",
+        _ => "other",
+    }
 }
 
 /// Build the response: request ID/opcode/question echoed, RCODE set, and a
