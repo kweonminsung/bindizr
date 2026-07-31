@@ -68,7 +68,7 @@ $ kubectl create secret generic bindizr-db-secret \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 
 $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-beta.5 \
+  --version 0.1.0-beta.6 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 
@@ -76,7 +76,7 @@ For development, the chart can run a single-replica MySQL or PostgreSQL Stateful
 
 ```bash
 $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-beta.5 \
+  --version 0.1.0-beta.6 \
   --set bindizr.database.type=postgresql \
   --set bindizr.database.existingSecret= \
   --set postgresql.enabled=true
