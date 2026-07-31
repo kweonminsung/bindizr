@@ -18,14 +18,22 @@ fi
 HOST="${1:-${BINDIZR_DNS_HOST:-127.0.0.1}}"
 PORT="${2:-${BINDIZR_DNS_PORT:-53}}"
 
-# IPv4/IPv6/hostname characters only, so a malformed value cannot reach the
-# BIND config files.
+invalid_host() {
+    echo "Invalid host: $HOST (expected an IPv4 address)"
+    exit 1
+}
+
+# BIND primaries entries accept IP literals only.
 case "$HOST" in
-    '' | *[!A-Za-z0-9.:-]*)
-        echo "Invalid host: $HOST"
-        exit 1
-        ;;
+    '' | *[!0-9.]* | *.*.*.*.* | .* | *. | *..*) invalid_host ;;
+    *.*.*.*) ;;
+    *) invalid_host ;;
 esac
+IFS=. read -r o1 o2 o3 o4 <<< "$HOST"
+for o in "$o1" "$o2" "$o3" "$o4"; do
+    [ "$o" -le 255 ] || invalid_host
+done
+
 case "$PORT" in
     '' | *[!0-9]*)
         echo "Invalid port: $PORT"
@@ -51,8 +59,7 @@ perl -0777 -pi -e 's/^[ \t]*ixfr-from-differences yes;\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" \{\r?\n[ \t]*default-primaries \{ [^ ;]+ port [0-9]+; \};\r?\n[ \t]*\};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" default-primaries \{ [^ ;]+ port [0-9]+; \};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
 
-# Drop only the marker-tagged zone this script wrote, so a changed host/port is
-# re-appended below; unmarked (manual) blocks fall through to the warning instead.
+# Drop only the marker-tagged zone this script wrote; manual blocks are preserved.
 perl -0777 -pi -e 's/\r?\n?# managed by bindizr setup_bind\.sh\r?\nzone "catalog\.bind" \{\r?\n(?:[ \t].*\r?\n)*\};\r?\n//gm' "$MAIN_CONF"
 
 ##################################
