@@ -24,6 +24,10 @@ case "$PORT" in
         exit 1
         ;;
 esac
+if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+    echo "Invalid port: $PORT (expected 1-65535)"
+    exit 1
+fi
 
 echo "Configuring BIND for bindizr at $HOST port $PORT"
 
@@ -39,8 +43,9 @@ perl -0777 -pi -e 's/^[ \t]*ixfr-from-differences yes;\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" \{\r?\n[ \t]*default-primaries \{ [^ ;]+ port [0-9]+; \};\r?\n[ \t]*\};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" default-primaries \{ [^ ;]+ port [0-9]+; \};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
 
-# Drop a script-shaped catalog.bind zone so a changed host/port is re-appended below.
-perl -0777 -pi -e 's/\r?\n?zone "catalog\.bind" \{\r?\n[ \t]*type secondary;\r?\n[ \t]*primaries \{ [^ ;]+ port [0-9]+; \};\r?\n[ \t]*file "[^"]*";\r?\n(?:[ \t]*allow-notify \{ any; \};\r?\n)?(?:[ \t]*ixfr-from-differences yes;\r?\n)?\};\r?\n//gm' "$MAIN_CONF"
+# Drop only the marker-tagged zone this script wrote, so a changed host/port is
+# re-appended below; unmarked (manual) blocks fall through to the warning instead.
+perl -0777 -pi -e 's/\r?\n?# managed by bindizr setup_bind\.sh\r?\nzone "catalog\.bind" \{\r?\n(?:[ \t].*\r?\n)*\};\r?\n//gm' "$MAIN_CONF"
 
 ##################################
 # 2. Insert catalog-zones & allow-notify
@@ -91,12 +96,13 @@ mv "$OPTIONS_FILE.tmp" "$OPTIONS_FILE"
 # 3. Add catalog zone to MAIN_CONF
 ##################################
 if grep -q 'zone "catalog.bind"' "$MAIN_CONF"; then
-    echo "catalog.bind zone already exists in $MAIN_CONF (hand-edited?);"
+    echo "catalog.bind zone already exists in $MAIN_CONF but is not managed by this script;"
     echo "make sure its primaries entry points to $HOST port $PORT."
 else
     echo "Adding catalog.bind zone to $MAIN_CONF..."
     cat >> "$MAIN_CONF" <<EOF
 
+# managed by bindizr setup_bind.sh
 zone "catalog.bind" {
     type secondary;
     primaries { $HOST port $PORT; };
