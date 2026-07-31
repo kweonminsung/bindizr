@@ -84,7 +84,7 @@ $ helm install bindizr bindizr/bindizr-stack \
   --set postgresql.enabled=true
 ```
 
-SQLite is not supported by the Helm chart. See [charts/bindizr-stack](charts/bindizr-stack/README.md) for all Helm values and examples, including TSIG and bindizr-ui.
+SQLite is not supported by the Helm chart. See [charts/bindizr-stack](charts/bindizr-stack/README.md) for all Helm values and examples, including bindizr-ui.
 
 ### Docker Compose
 

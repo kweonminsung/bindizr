@@ -106,16 +106,6 @@ bind9:
   tolerations: []
   affinity: {}
 
-# Declares a `key` block in the bundled BIND9's named.conf. bindizr's own
-# nsupdate TSIG keys and per-zone policies are managed at runtime via the
-# bindizr CLI or HTTP API, not through these values.
-tsig:
-  existingSecret: ""
-  keyName: nsupdate-key
-  algorithm: hmac-sha256
-  # Used only when existingSecret is empty. Generate with: tsig-keygen -a hmac-sha256 nsupdate-key
-  secret: ""
-
 serviceAccount:
   create: true
   annotations: {}
