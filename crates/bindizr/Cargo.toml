@@ -22,10 +22,10 @@ name = "bindizr"
 path = "src/main.rs"
 
 [dependencies]
-bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.5" }
-bindizr-db = { path = "../bindizr-db", version = "0.1.0-beta.5" }
-bindizr-dns = { path = "../bindizr-dns", version = "0.1.0-beta.5" }
-bindizr-service = { path = "../bindizr-service", version = "0.1.0-beta.5" }
+bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.6" }
+bindizr-db = { path = "../bindizr-db", version = "0.1.0-beta.6" }
+bindizr-dns = { path = "../bindizr-dns", version = "0.1.0-beta.6" }
+bindizr-service = { path = "../bindizr-service", version = "0.1.0-beta.6" }
 async-trait.workspace = true
 axum.workspace = true
 clap.workspace = true

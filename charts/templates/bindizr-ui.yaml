@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "bindizr-stack.fullname" . }}-ui
+  name: {{ include "bindizr-chart.fullname" . }}-ui
   labels:
-    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    {{- include "bindizr-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr-ui
 spec:
   type: {{ .Values.bindizrUi.service.type }}
@@ -14,26 +14,26 @@ spec:
       targetPort: http
       protocol: TCP
   selector:
-    {{- include "bindizr-stack.selectorLabels" . | nindent 4 }}
+    {{- include "bindizr-chart.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr-ui
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "bindizr-stack.fullname" . }}-ui
+  name: {{ include "bindizr-chart.fullname" . }}-ui
   labels:
-    {{- include "bindizr-stack.labels" . | nindent 4 }}
+    {{- include "bindizr-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: bindizr-ui
 spec:
   replicas: {{ .Values.bindizrUi.replicas }}
   selector:
     matchLabels:
-      {{- include "bindizr-stack.selectorLabels" . | nindent 6 }}
+      {{- include "bindizr-chart.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: bindizr-ui
   template:
     metadata:
       labels:
-        {{- include "bindizr-stack.selectorLabels" . | nindent 8 }}
+        {{- include "bindizr-chart.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: bindizr-ui
       {{- with .Values.bindizrUi.podAnnotations }}
       annotations:

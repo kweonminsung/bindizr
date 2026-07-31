@@ -64,26 +64,25 @@ Use the Helm chart to deploy Bindizr, BIND9 secondary pods, and optional bundled
 For production, create a Kubernetes Secret that points Bindizr to your external MySQL or PostgreSQL database:
 
 ```bash
-$ helm repo add bindizr https://kweonminsung.github.io/bindizr/charts
-$ helm repo update
-
 $ kubectl create secret generic bindizr-db-secret \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 
-$ helm install bindizr bindizr/bindizr-stack \
+$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+  --version 0.1.0-beta.6 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 
 For development, the chart can run a single-replica MySQL or PostgreSQL StatefulSet:
 
 ```bash
-$ helm install bindizr bindizr/bindizr-stack \
+$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+  --version 0.1.0-beta.6 \
   --set bindizr.database.type=postgresql \
   --set bindizr.database.existingSecret= \
   --set postgresql.enabled=true
 ```
 
-SQLite is not supported by the Helm chart. See [charts/bindizr-stack](charts/bindizr-stack/README.md) for all Helm values and examples, including bindizr-ui.
+SQLite is not supported by the Helm chart. See [charts](charts/README.md) for all Helm values and examples, including bindizr-ui.
 
 ### Docker Compose
 
@@ -197,8 +196,11 @@ We provide two methods for configuring BIND: a recommended automated script and 
 This script automatically detects your BIND configuration directory and configures BIND to use Bindizr's catalog zone for automatic zone discovery.
 
 ```bash
-# Download and run the setup script
+# Download and run the setup script (defaults to bindizr DNS at 127.0.0.1 port 53)
 $ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/packaging/scripts/setup_bind.sh | sudo bash
+
+# Or pass the bindizr DNS host and port when bindizr runs elsewhere
+$ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/packaging/scripts/setup_bind.sh | sudo bash -s -- 10.0.0.5 5353
 
 # Restart bind service
 $ sudo systemctl restart bind9  # For Debian-based systems
