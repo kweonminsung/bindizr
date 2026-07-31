@@ -50,7 +50,6 @@ DNS Synchronization Service for BIND9
 - **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests, managed TSIG keys, and per-zone update policies.
 
 - **Zone History**: Per-serial SOA snapshots with diffs between serials and rollback to a previous serial.
-- **Authentication**: Token-based authentication for the HTTP API.
 
 - **Observability**: Health probe endpoint, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
 
@@ -290,12 +289,6 @@ $ bindizr start -c <FILE>
 # Check the current status of bindizr service
 $ bindizr status
 
-# Stop the running daemon
-$ bindizr stop
-
-# Restart the daemon in place (the PID is kept)
-$ bindizr restart
-
 # Verify the installation end to end (config, daemon, API, database, DNS, secondaries)
 $ bindizr doctor
 
@@ -305,9 +298,6 @@ $ bindizr config check [<FILE>]
 # Show the configuration loaded by the running daemon
 $ bindizr config list
 
-# Show a single configuration value by dotted key
-$ bindizr config get dns.secondary_addrs
-
 # Send NOTIFY to secondary DNS servers for a zone
 $ bindizr zone notify <ZONE_NAME>
 
@@ -316,9 +306,6 @@ $ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
 
 # Update a record, changing only the fields you pass
 $ bindizr record update <RECORD_ID> --value 127.0.0.1
-
-# Export a zone as BIND master-file text (the inverse of import)
-$ bindizr zone export <ZONE_NAME>
 
 # Preview a bulk insert or zone-file import as a +/-/~ diff (applies nothing)
 $ bindizr record bulk records.json --zone <ZONE_NAME> --preview
@@ -340,7 +327,7 @@ $ bindizr zone snapshot rollback <ZONE_NAME> <SERIAL> [--dry-run]
 $ bindizr zone status <ZONE_NAME>
 
 # Show help information
-$ bindizr --help
+$ bindizr help
 ```
 
 ### nsupdate (Dynamic Update)
@@ -561,11 +548,6 @@ Bulk import stays near-linear from 10k to 100k records on all three backends.
 ## Roadmap
 
 The following features are planned for future releases. The roadmap may change based on implementation complexity and community feedback.
-
-* [ ] **`bindizr doctor`**
-
-  * Diagnose configuration, database connectivity, file permissions, BIND9 connectivity, and DNS synchronization issues.
-  * Provide actionable warnings and recommended fixes.
 
 * [ ] **DNSSEC support**
 
