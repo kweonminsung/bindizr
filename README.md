@@ -64,26 +64,25 @@ Use the Helm chart to deploy Bindizr, BIND9 secondary pods, and optional bundled
 For production, create a Kubernetes Secret that points Bindizr to your external MySQL or PostgreSQL database:
 
 ```bash
-$ helm repo add bindizr https://kweonminsung.github.io/bindizr/charts
-$ helm repo update
-
 $ kubectl create secret generic bindizr-db-secret \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 
-$ helm install bindizr bindizr/bindizr-stack \
+$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-stack \
+  --version 0.1.0-beta.5 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 
 For development, the chart can run a single-replica MySQL or PostgreSQL StatefulSet:
 
 ```bash
-$ helm install bindizr bindizr/bindizr-stack \
+$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-stack \
+  --version 0.1.0-beta.5 \
   --set bindizr.database.type=postgresql \
   --set bindizr.database.existingSecret= \
   --set postgresql.enabled=true
 ```
 
-SQLite is not supported by the Helm chart. See [charts/bindizr-stack](charts/bindizr-stack/README.md) for all Helm values and examples, including bindizr-ui.
+SQLite is not supported by the Helm chart. See [charts](charts/README.md) for all Helm values and examples, including bindizr-ui.
 
 ### Docker Compose
 

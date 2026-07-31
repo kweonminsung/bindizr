@@ -25,24 +25,27 @@ kubectl create secret generic bindizr-db-secret \
   --from-literal=database-url='postgresql://user:password@postgresql:5432/bindizr'
 ```
 
-Install:
+Install the released OCI chart from Docker Hub:
 
 ```sh
-helm install bindizr ./charts/bindizr-stack \
+helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-stack \
+  --version 0.1.0-beta.5 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
+
+The examples below install from the local chart source instead.
 
 For local testing, the chart can create Secrets from values:
 
 ```sh
-helm install bindizr ./charts/bindizr-stack \
+helm install bindizr ./charts \
   --set bindizr.database.serverUrl='postgresql://user:password@postgresql:5432/bindizr'
 ```
 
 To run a bundled MySQL database for development:
 
 ```sh
-helm install bindizr ./charts/bindizr-stack \
+helm install bindizr ./charts \
   --set bindizr.database.type=mysql \
   --set bindizr.database.existingSecret= \
   --set mysql.enabled=true
@@ -51,7 +54,7 @@ helm install bindizr ./charts/bindizr-stack \
 To run a bundled PostgreSQL database for development:
 
 ```sh
-helm install bindizr ./charts/bindizr-stack \
+helm install bindizr ./charts \
   --set bindizr.database.type=postgresql \
   --set bindizr.database.existingSecret= \
   --set postgresql.enabled=true
@@ -60,7 +63,7 @@ helm install bindizr ./charts/bindizr-stack \
 To enable bindizr-ui:
 
 ```sh
-helm install bindizr ./charts/bindizr-stack \
+helm install bindizr ./charts \
   --set bindizrUi.enabled=true
 ```
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bindizr Helm Repository</title>
+  <title>Bindizr Documentation</title>
   <style>
     body {
       margin: 0;
@@ -43,11 +43,9 @@
 <body>
   <main>
     <h1>Bindizr</h1>
-    <p>This GitHub Pages site hosts the Bindizr API documentation and Helm chart repository.</p>
-    <pre><code>helm repo add bindizr https://kweonminsung.github.io/bindizr/charts
-helm repo update
-helm install bindizr bindizr/bindizr-stack</code></pre>
-    <p>The HTTP API documentation is available at <a href="./api/">/api</a>. The Helm chart repository is available at <a href="./charts/">/charts</a>.</p>
+    <p>This GitHub Pages site hosts the Bindizr API documentation, available at <a href="./api/">/api</a>.</p>
+    <p>The Helm chart is published to Docker Hub as an OCI artifact:</p>
+    <pre><code>helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-stack --version 0.1.0-beta.5</code></pre>
   </main>
 </body>
 </html>
