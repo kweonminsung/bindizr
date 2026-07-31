@@ -18,6 +18,14 @@ fi
 HOST="${1:-${BINDIZR_DNS_HOST:-127.0.0.1}}"
 PORT="${2:-${BINDIZR_DNS_PORT:-53}}"
 
+# IPv4/IPv6/hostname characters only, so a malformed value cannot reach the
+# BIND config files.
+case "$HOST" in
+    '' | *[!A-Za-z0-9.:-]*)
+        echo "Invalid host: $HOST"
+        exit 1
+        ;;
+esac
 case "$PORT" in
     '' | *[!0-9]*)
         echo "Invalid port: $PORT"
