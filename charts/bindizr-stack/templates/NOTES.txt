@@ -10,6 +10,5 @@ BIND9 replicas are exposed for authoritative DNS traffic.
 
 Before production use:
   - Set bindizr.image.repository and bindizr.image.tag if you need a different Bindizr image.
-  - nsupdate TSIG keys and per-zone policies are managed at runtime via the bindizr CLI or HTTP API.
   - BIND9 accepts NOTIFY from any source by default through allow-notify { any; }.
   - Set bindizr.database.existingSecret or bindizr.database.serverUrl when using mysql/postgresql.
