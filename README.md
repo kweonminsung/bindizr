@@ -197,8 +197,11 @@ We provide two methods for configuring BIND: a recommended automated script and 
 This script automatically detects your BIND configuration directory and configures BIND to use Bindizr's catalog zone for automatic zone discovery.
 
 ```bash
-# Download and run the setup script
+# Download and run the setup script (defaults to bindizr DNS at 127.0.0.1 port 53)
 $ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/packaging/scripts/setup_bind.sh | sudo bash
+
+# Or pass the bindizr DNS host and port when bindizr runs elsewhere
+$ wget -qO- https://raw.githubusercontent.com/kweonminsung/bindizr/main/packaging/scripts/setup_bind.sh | sudo bash -s -- 10.0.0.5 5353
 
 # Restart bind service
 $ sudo systemctl restart bind9  # For Debian-based systems
