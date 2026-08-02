@@ -31,7 +31,7 @@ For building from source, see the
 
     ```bash
     # Install using dpkg
-    $ sudo dpkg -i bindizr_0.1.0_amd64.deb
+    $ sudo dpkg -i bindizr_*_amd64.deb
 
     # Verify installation
     $ bindizr
@@ -41,7 +41,7 @@ For building from source, see the
 
     ```bash
     # Install the .rpm package
-    $ sudo rpm -i bindizr_0.1.0_amd64.rpm
+    $ sudo rpm -i bindizr-*.x86_64.rpm
 
     # Verify installation
     $ bindizr

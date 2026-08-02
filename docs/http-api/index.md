@@ -29,6 +29,6 @@ network.
 
 ## Unauthenticated endpoints
 
-`GET /health` and `GET /metrics` are always unauthenticated and are not part of
-the OpenAPI spec. Neither exposes zone data. See
+`GET /health` and `GET /metrics` are always unauthenticated, and neither exposes
+zone data. `/health` is part of the OpenAPI spec; `/metrics` is not. See
 [Prometheus Metrics](metrics.md).

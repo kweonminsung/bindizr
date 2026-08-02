@@ -42,14 +42,17 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 ## Quick Start
 
 ```bash
-# Kubernetes
-$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart --version 0.1.0-beta.6
+# Kubernetes, with the chart's bundled PostgreSQL.
+# Point it at your own database in production — see the Helm guide.
+$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+  --version 0.1.0-beta.6 --set postgresql.enabled=true
 
 # Docker Swarm
 $ docker stack deploy -c docker-compose.yml bindizr
 
-# Debian / Red Hat package (see the manual installation guide for BIND9 setup)
-$ sudo dpkg -i bindizr_0.1.0_amd64.deb
+# Package install (see the manual installation guide for BIND9 setup)
+$ sudo dpkg -i bindizr_*_amd64.deb    # Debian, Ubuntu
+$ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL
 $ sudo systemctl enable --now bindizr
 $ bindizr token create
 ```
