@@ -50,9 +50,12 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 # Docker Swarm
 $ docker stack deploy -c docker-compose.yml bindizr
 
-# Package install (see the manual installation guide for BIND9 setup)
+# Package install
 $ sudo dpkg -i bindizr_*_amd64.deb    # Debian, Ubuntu
 $ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL
+
+# The package ships a placeholder database URL — set yours in
+# /etc/bindizr/bindizr.conf.toml first, and see the manual guide for BIND9.
 $ sudo systemctl enable --now bindizr
 $ bindizr token create
 ```

@@ -3,10 +3,10 @@
 Bindizr can be deployed with Helm, Docker Compose for Docker Swarm, or a manual
 package-based setup.
 
-| Method | Use it when | Databases |
+| Method | Use it when | Databases as shipped |
 | --- | --- | --- |
 | [Helm](helm.md) | Running on Kubernetes, with BIND9 secondaries as pods | MySQL, PostgreSQL |
-| [Docker Compose](docker-compose.md) | Running a containerized stack on Docker Swarm | MySQL, PostgreSQL, SQLite |
+| [Docker Compose](docker-compose.md) | Running a containerized stack on Docker Swarm | PostgreSQL |
 | [Manual Installation](manual.md) | Running on a VM or bare-metal host from a `.deb` / `.rpm` | MySQL, PostgreSQL, SQLite |
 
 Whichever you pick, the shape is the same: Bindizr owns the zone data and serves
