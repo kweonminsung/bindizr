@@ -17,6 +17,11 @@ for the mapping.
 ## Using a different database
 
 The stack is PostgreSQL-only: `BINDIZR_DATABASE_TYPE` and
-`BINDIZR_DATABASE_URL` are pinned to the bundled `postgres` service. For MySQL
-or SQLite, repoint those two variables and drop the `postgres` service and its
-volume.
+`BINDIZR_DATABASE_URL` are pinned to the bundled `postgres` service. Edit them
+in the compose file to switch, and drop `postgres` and its volume once unused.
+
+- **MySQL** — `BINDIZR_DATABASE_TYPE=mysql`, with `BINDIZR_DATABASE_URL`
+  pointing at your server.
+- **SQLite** — `BINDIZR_DATABASE_TYPE=sqlite`, with `BINDIZR_SQLITE_FILE_PATH`
+  for the path; `BINDIZR_DATABASE_URL` is silently ignored. The image already
+  defaults to `/var/lib/bindizr/bindizr.db` inside the `bindizr-data` volume.
