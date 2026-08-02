@@ -18,7 +18,7 @@ DNS Synchronization Service for BIND9
     </a>
 </p>
 
-**📖 [Documentation](https://kweonminsung.github.io/bindizr/) &nbsp;·&nbsp; [API Reference](https://kweonminsung.github.io/bindizr/api/)**
+**[Documentation](https://kweonminsung.github.io/bindizr/) &nbsp;·&nbsp; [API Reference](https://kweonminsung.github.io/bindizr/api/)**
 
 </div>
 
@@ -41,26 +41,46 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 
 ## Quick Start
 
+Pick one. Each is walked through in full on the
+[documentation site](https://kweonminsung.github.io/bindizr/).
+
+### Kubernetes
+
+The chart can bring its own PostgreSQL for a first look; in production, point it
+at your database instead.
+
 ```bash
-# Kubernetes, with the chart's bundled PostgreSQL.
-# Point it at your own database in production — see the Helm guide.
 $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --version 0.1.0-beta.6 --set postgresql.enabled=true
+```
 
-# Docker Swarm
+### Docker Swarm
+
+Brings up Bindizr, PostgreSQL, and BIND9 on an overlay network.
+
+```bash
 $ docker stack deploy -c docker-compose.yml bindizr
+```
 
-# Package install
+### Package install
+
+```bash
 $ sudo dpkg -i bindizr_*_amd64.deb    # Debian, Ubuntu
 $ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL
+```
 
-# The package ships a placeholder database URL — set yours in
-# /etc/bindizr/bindizr.conf.toml first, and see the manual guide for BIND9.
+The package ships a placeholder database URL, so set yours in
+`/etc/bindizr/bindizr.conf.toml` before starting. BIND9 has to be pointed at the
+catalog zone as well — the manual installation guide covers both.
+
+```bash
 $ sudo systemctl enable --now bindizr
 $ bindizr token create
 ```
 
-Then check the whole path end to end:
+---
+
+However you installed it, this checks the whole path end to end:
 
 ```bash
 $ bindizr doctor
@@ -68,16 +88,8 @@ $ bindizr doctor
 
 ## Documentation
 
-Everything lives at **[kweonminsung.github.io/bindizr](https://kweonminsung.github.io/bindizr/)**:
-
-| | |
-| --- | --- |
-| [Deployment](https://kweonminsung.github.io/bindizr/deployment/) | Helm, Docker Compose, and manual installation with BIND9 |
-| [Configuration](https://kweonminsung.github.io/bindizr/configuration/) | Every `bindizr.conf.toml` option and its environment variable |
-| [CLI](https://kweonminsung.github.io/bindizr/cli/) | Zones, records, snapshots, TSIG keys, and API tokens |
-| [HTTP API](https://kweonminsung.github.io/bindizr/http-api/) | Authentication, Prometheus metrics, and the OpenAPI reference |
-| [Benchmarks](https://kweonminsung.github.io/bindizr/benchmarks/) | Measured against PowerDNS, Technitium, Knot, CoreDNS, and BIND9 |
-| [Roadmap](https://kweonminsung.github.io/bindizr/roadmap/) | What is planned next |
+Deployment, configuration, the CLI, the HTTP API, and the benchmarks are all at
+**[kweonminsung.github.io/bindizr](https://kweonminsung.github.io/bindizr/)**.
 
 ## Contributing
 
