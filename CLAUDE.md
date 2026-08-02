@@ -141,9 +141,10 @@ Pages CI rebuilds the hosted API docs when `docs/openapi.yaml` changes on
 `docs/` is the MkDocs Material source for
 <https://kweonminsung.github.io/bindizr/>, configured by `mkdocs.yml` and
 deployed by `.github/workflows/update-github-pages.yml` on pushes to `main`.
-Nothing under `docs/` is a committed build artifact any more — the workflow
-uploads `site/` straight to Pages (Pages source must stay on **GitHub Actions**,
-not "deploy from a branch").
+No rendered HTML is committed any more — the workflow uploads `site/` straight
+to Pages (Pages source must stay on **GitHub Actions**, not "deploy from a
+branch"). `docs/openapi.yaml` is still a committed generated artifact, per the
+section above.
 
 - Build locally with
   `uv run --with-requirements docs/requirements.txt mkdocs serve`. CI runs

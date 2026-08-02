@@ -9,10 +9,9 @@ on:
       - ".github/workflows/update-github-pages.yml"
   workflow_dispatch:
 
+# build installs from PyPI and npm, so Pages and OIDC scope live on deploy only.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: github-pages
@@ -25,6 +24,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -48,9 +49,6 @@ jobs:
       - name: Build OpenAPI docs
         run: npx --yes @redocly/cli build-docs docs/openapi.yaml -o site/api/index.html
 
-      - name: Configure Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -59,6 +57,10 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      id-token: write
 
     environment:
       name: github-pages
