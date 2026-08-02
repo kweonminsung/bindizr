@@ -1,0 +1,65 @@
+/* Palette taken from the logo: graphite gear, orange globe. */
+
+:root {
+  --bindizr-graphite: #3d4144;
+  --bindizr-orange: #d2763a;
+}
+
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: var(--bindizr-graphite);
+  --md-primary-fg-color--light: #5a5f63;
+  --md-primary-fg-color--dark: #2b2e30;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #ffffffb3;
+}
+
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: var(--bindizr-orange);
+  --md-accent-fg-color--transparent: #d2763a1a;
+}
+
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: #b9602a;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-typeset-a-color: #e08b52;
+}
+
+/* "Follow system" keeps scheme=default and swaps the palette from a media
+   query, so the link color has to be swapped the same way. */
+@media (prefers-color-scheme: dark) {
+  [data-md-color-media="(prefers-color-scheme)"] {
+    --md-typeset-a-color: #e08b52;
+  }
+}
+
+/* The home page h1 is the logo image, so it drops the usual heading chrome. */
+.md-typeset .bindizr-hero {
+  margin: 1.5rem 0 2.5rem;
+  text-align: center;
+}
+
+.md-typeset .bindizr-hero h1 {
+  margin: 0;
+}
+
+.md-typeset .bindizr-hero h1 .headerlink {
+  display: none;
+}
+
+.md-typeset .bindizr-hero img {
+  max-width: 420px;
+  width: 100%;
+}
+
+.md-typeset .bindizr-hero p {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+}
+
+.md-typeset .bindizr-concepts {
+  display: block;
+  margin: 0 auto;
+}

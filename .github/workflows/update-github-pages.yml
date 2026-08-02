@@ -4,48 +4,67 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "docs/openapi.yaml"
+      - "docs/**"
+      - "mkdocs.yml"
       - ".github/workflows/update-github-pages.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
 
 jobs:
-  build-pages:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          fetch-depth: 0
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+
+      - name: Install MkDocs Material
+        run: pip install -r docs/requirements.txt
+
+      - name: Build documentation site
+        run: mkdocs build --strict
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24"
 
-      - name: Install Redocly CLI
-        run: npm install -g @redocly/cli
-
+      # Rendered into /api/, the URL existing external links already point at.
       - name: Build OpenAPI docs
-        working-directory: docs
-        run: |
-          mkdir -p api
-          npx @redocly/cli build-docs openapi.yaml -o api/index.html
+        run: npx --yes @redocly/cli build-docs docs/openapi.yaml -o site/api/index.html
 
-      - name: Commit & Push updated Pages artifacts
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
-          git add docs/index.html docs/api/index.html
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
 
-          # Only commit and push if there are changes
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update github pages artifacts"
-            git push origin ${GITHUB_REF#refs/heads/}
-          else
-            echo "No changes to commit."
-          fi
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

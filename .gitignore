@@ -1,4 +1,5 @@
 /target
+/site
 /bindizr.conf.toml
 *.log
 *.tar.gz
@@ -6,3 +7,4 @@
 *.deb
 *.rpm
 .cr-release-packages
+.DS_Store

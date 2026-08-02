@@ -136,6 +136,28 @@ curl -s http://127.0.0.1:<api_port>/openapi.yaml > docs/openapi.yaml
 Pages CI rebuilds the hosted API docs when `docs/openapi.yaml` changes on
 `main`.
 
+### Documentation site
+
+`docs/` is the MkDocs Material source for
+<https://kweonminsung.github.io/bindizr/>, configured by `mkdocs.yml` and
+deployed by `.github/workflows/update-github-pages.yml` on pushes to `main`.
+Nothing under `docs/` is a committed build artifact any more — the workflow
+uploads `site/` straight to Pages (Pages source must stay on **GitHub Actions**,
+not "deploy from a branch").
+
+- Build locally with
+  `uv run --with-requirements docs/requirements.txt mkdocs serve`. CI runs
+  `mkdocs build --strict`, so a broken internal link fails the build.
+- `docs/requirements.txt` pins mkdocs and mkdocs-material exactly; it lives in
+  `docs_dir` and is kept out of the site by `exclude_docs` in `mkdocs.yml`.
+- Images live in `docs/assets/`, referenced as `assets/…` from docs pages and as
+  `docs/assets/…` from the README. There is no second copy.
+- The Redoc API reference is rendered into `site/api/` by the same workflow, so
+  the MkDocs nav links to it absolutely instead of owning a page. Do not add a
+  `docs/api/` directory — it would collide.
+- README.md is a landing page (pitch, quickstart, links into the site), not a
+  manual. New prose belongs in `docs/`.
+
 ### Benchmark results folders
 
 Every benchmark run writes to its own timestamped directory,

@@ -1,0 +1,5 @@
+# Documentation site (mkdocs.yml + docs/). Not part of the Cargo build.
+# mkdocs is pinned too: MkDocs 2.0 removes the plugin and theming systems that
+# Material builds on, with no migration path.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
