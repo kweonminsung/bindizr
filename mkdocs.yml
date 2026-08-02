@@ -1,0 +1,111 @@
+site_name: Bindizr
+site_description: DNS control plane for BIND9 — manage zones and records over HTTP/CLI and propagate them with AXFR/IXFR and catalog zones.
+site_url: https://kweonminsung.github.io/bindizr/
+site_author: kweonminsung
+
+repo_url: https://github.com/kweonminsung/bindizr
+repo_name: kweonminsung/bindizr
+edit_uri: edit/main/docs/
+
+copyright: Licensed under the Apache License 2.0
+
+# Build tooling that lives in docs_dir but must not ship in the site.
+# openapi.yaml is intentionally absent here — it is published at /openapi.yaml.
+exclude_docs: |
+  requirements.txt
+
+theme:
+  name: material
+  logo: assets/bindizr.png
+  favicon: assets/bindizr.png
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme)"
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - content.action.edit
+    - content.code.copy
+    - navigation.footer
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.suggest
+    - toc.follow
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/kweonminsung/bindizr
+    - icon: fontawesome/brands/docker
+      link: https://hub.docker.com/r/kweonminsung/bindizr
+    - icon: fontawesome/brands/rust
+      link: https://crates.io/crates/bindizr
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Deployment:
+      - Overview: deployment/index.md
+      - Helm: deployment/helm.md
+      - Docker Compose: deployment/docker-compose.md
+      - Manual Installation: deployment/manual.md
+  - Configuration: configuration.md
+  - CLI:
+      - Commands: cli/index.md
+      - Dynamic Updates: cli/nsupdate.md
+      - TSIG Keys: cli/tsig-keys.md
+      - API Tokens: cli/tokens.md
+  - HTTP API:
+      - Overview: http-api/index.md
+      - Prometheus Metrics: http-api/metrics.md
+      # Redocly renders this into site/api/ after mkdocs runs, so it is a link
+      # rather than a page.
+      - API Reference: https://kweonminsung.github.io/bindizr/api/
+  - Benchmarks: benchmarks.md
+  - Roadmap: roadmap.md
+  - Contributing: contributing.md
