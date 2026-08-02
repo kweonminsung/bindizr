@@ -75,7 +75,6 @@ catalog zone as well — the manual installation guide covers both.
 
 ```bash
 $ sudo systemctl enable --now bindizr
-$ bindizr token create
 ```
 
 ---
@@ -84,6 +83,13 @@ However you installed it, this checks the whole path end to end:
 
 ```bash
 $ bindizr doctor
+```
+
+API authentication is on by default for Helm and package installs — the Compose
+stack ships with it off. Create a token before calling the API:
+
+```bash
+$ bindizr token create
 ```
 
 ## Documentation
