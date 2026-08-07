@@ -36,13 +36,3 @@ pub(super) fn find_authoritative_zone<'a>(zones: &'a [Zone], name: &str) -> Opti
         .filter(|zone| name == zone.name || name.ends_with(&format!(".{}", zone.name)))
         .max_by_key(|zone| zone.name.len())
 }
-
-/// Stored (relative) owner name for `name` inside `zone`: `@` at the apex.
-/// `name` must already be inside the zone in lookup form.
-pub(super) fn stored_owner_name(name: &str, zone: &Zone) -> String {
-    if name == zone.name {
-        "@".to_string()
-    } else {
-        name[..name.len() - zone.name.len() - 1].to_string()
-    }
-}

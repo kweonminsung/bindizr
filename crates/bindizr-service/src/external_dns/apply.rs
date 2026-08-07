@@ -3,12 +3,15 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::{name::to_fqdn_lowercase, record::TxtRdata};
+use bindizr_core::dns::{
+    name::{to_encoded_owner_name, to_fqdn_lowercase},
+    record::TxtRdata,
+};
 use chrono::Utc;
 
 use super::{
     ExternalDnsService,
-    policy::{find_authoritative_zone, normalize_lookup_name, stored_owner_name},
+    policy::{find_authoritative_zone, normalize_lookup_name},
 };
 use crate::{
     authorization::{Caller, RecordWrite},
@@ -205,7 +208,8 @@ pub(super) fn group_ops_by_zone(
         })?;
 
         let mut op = pending.op;
-        op.name = stored_owner_name(&op.name, zone);
+        op.name = to_encoded_owner_name(&op.name, &zone.name)
+            .expect("find_authoritative_zone matched the name inside this zone");
         let entry = grouped.entry(zone.name.clone()).or_default();
         if pending.is_delete {
             entry.dels.push(op);

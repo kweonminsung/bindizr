@@ -175,6 +175,22 @@ pub fn to_display_owner_fqdn(name: &str, zone: &str) -> String {
     to_fqdn_lowercase(&to_owner_fqdn(name.trim(), zone))
 }
 
+/// Inverse of [`to_owner_fqdn`]: reduce an owner name to the relative form
+/// record rows encode (`@` at the apex), lowercased since record lookups bind
+/// the lowercase form. `None` when the name resolves outside `zone`.
+pub fn to_encoded_owner_name(name: &str, zone: &str) -> Option<String> {
+    let owner = to_owner_fqdn(name, zone).to_ascii_lowercase();
+    let zone_fqdn = to_fqdn(zone).to_ascii_lowercase();
+
+    if owner == zone_fqdn {
+        return Some("@".to_string());
+    }
+
+    owner
+        .strip_suffix(&format!(".{}", zone_fqdn))
+        .map(str::to_string)
+}
+
 /// Whether `name` equals `zone` or is a subdomain of it (exact string match).
 pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
     name == zone || name.ends_with(&format!(".{}", zone))

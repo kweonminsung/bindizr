@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use super::{
     apply::{ZoneOps, compute_zone_change_set, convert_request, convert_rrset, group_ops_by_zone},
-    policy::{find_authoritative_zone, normalize_lookup_name, stored_owner_name},
+    policy::{find_authoritative_zone, normalize_lookup_name},
 };
 use crate::{
     error::ErrorCode,
@@ -78,15 +78,6 @@ fn find_authoritative_zone_requires_label_boundary() {
 
     assert!(find_authoritative_zone(&zones, "notexample.com").is_none());
     assert!(find_authoritative_zone(&zones, "example.org").is_none());
-}
-
-#[test]
-fn stored_owner_name_maps_apex_and_subnames() {
-    let zone = test_zone(1, "example.com");
-
-    assert_eq!(stored_owner_name("example.com", &zone), "@");
-    assert_eq!(stored_owner_name("www.example.com", &zone), "www");
-    assert_eq!(stored_owner_name("a.b.example.com", &zone), "a.b");
 }
 
 #[test]

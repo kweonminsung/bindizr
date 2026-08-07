@@ -1,4 +1,6 @@
-use super::{split_presentation_labels, to_display_owner_fqdn, to_owner_fqdn};
+use super::{
+    split_presentation_labels, to_display_owner_fqdn, to_encoded_owner_name, to_owner_fqdn,
+};
 
 #[test]
 fn split_presentation_labels_preserves_escaped_dots_and_rejects_dangling_escape() {
@@ -32,6 +34,45 @@ fn to_owner_fqdn_handles_fqdn_and_apex() {
         "api.example.com."
     );
     assert_eq!(to_owner_fqdn("@", "example.com."), "example.com.");
+}
+
+#[test]
+fn to_encoded_owner_name_maps_apex_and_subnames_lowercased() {
+    assert_eq!(
+        to_encoded_owner_name("example.com.", "example.com").as_deref(),
+        Some("@")
+    );
+    assert_eq!(
+        to_encoded_owner_name("@", "example.com.").as_deref(),
+        Some("@")
+    );
+    assert_eq!(
+        to_encoded_owner_name("WWW.Example.COM.", "example.com").as_deref(),
+        Some("www")
+    );
+    assert_eq!(
+        to_encoded_owner_name("a.b.example.com.", "example.com.").as_deref(),
+        Some("a.b")
+    );
+    assert_eq!(
+        to_encoded_owner_name("mail", "example.com").as_deref(),
+        Some("mail")
+    );
+}
+
+#[test]
+fn to_encoded_owner_name_strips_the_zone_suffix_once() {
+    // Repeated stripping collapsed a repeated-zone owner to an empty name.
+    assert_eq!(
+        to_encoded_owner_name("example.com.example.com.", "example.com").as_deref(),
+        Some("example.com")
+    );
+}
+
+#[test]
+fn to_encoded_owner_name_rejects_names_outside_the_zone() {
+    assert_eq!(to_encoded_owner_name("other.org.", "example.com"), None);
+    assert_eq!(to_encoded_owner_name("aexample.com.", "example.com"), None);
 }
 
 #[test]

@@ -1,6 +1,9 @@
 use bindizr_core::{
     config,
-    dns::{name::to_fqdn, record::TxtRdata},
+    dns::{
+        name::{to_encoded_owner_name, to_fqdn},
+        record::TxtRdata,
+    },
 };
 use chrono::Utc;
 use domain::{
@@ -627,29 +630,13 @@ pub(super) fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String
 }
 
 pub(super) fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<String, UpdateError> {
-    let owner = to_fqdn(owner);
-    let zone = to_fqdn(zone_name);
-
-    if owner.eq_ignore_ascii_case(&zone) {
-        return Ok("@".to_string());
-    }
-
-    let owner_lower = owner.to_ascii_lowercase();
-    let zone_lower = zone.to_ascii_lowercase();
-    let zone_suffix = format!(".{}", zone_lower);
-
-    if !owner_lower.ends_with(&zone_suffix) {
-        return Err(UpdateError::NotZone(format!(
+    to_encoded_owner_name(owner, zone_name).ok_or_else(|| {
+        UpdateError::NotZone(format!(
             "owner '{}' is outside zone '{}'",
-            owner, zone
-        )));
-    }
-
-    let rel_len = owner.len() - zone.len() - 1;
-    let rel = owner[..rel_len].trim_end_matches('.');
-    // Store lowercase like the JSON/CLI path: owner names are case-insensitive and
-    // the scoped conflict lookups bind lowercased, so mixed case would escape them.
-    Ok(rel.to_ascii_lowercase())
+            to_fqdn(owner),
+            to_fqdn(zone_name)
+        ))
+    })
 }
 
 fn trim_dot(name: &str) -> &str {

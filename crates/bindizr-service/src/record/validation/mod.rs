@@ -2,7 +2,7 @@
 //! detection, and owner-name normalization.
 
 use bindizr_core::dns::{
-    name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn},
+    name::{is_apex_name, is_same_or_subdomain_fqdn, to_encoded_owner_name, to_fqdn},
     record::MxRecordValue,
 };
 
@@ -74,16 +74,14 @@ pub(crate) fn normalize_record_owner_name(
         }
     };
 
-    if !is_same_or_subdomain_fqdn(&owner_fqdn, &zone_fqdn) {
-        return Err(ServiceError::invalid_record_name(format!(
+    let stored_name = to_encoded_owner_name(&owner_fqdn, &zone_fqdn).ok_or_else(|| {
+        ServiceError::invalid_record_name(format!(
             "record name '{}' is outside zone '{}'",
             input_name, zone_name
-        )));
-    }
+        ))
+    })?;
 
-    Ok(NormalizedOwnerName {
-        stored_name: owner_fqdn_to_stored_name(&owner_fqdn, &zone_fqdn),
-    })
+    Ok(NormalizedOwnerName { stored_name })
 }
 
 fn normalize_absolute_owner_fqdn(value: &str) -> Result<String, ServiceError> {
@@ -104,17 +102,6 @@ fn normalize_absolute_owner_fqdn(value: &str) -> Result<String, ServiceError> {
     let fqdn = format!("{}.", without_trailing_dot.to_ascii_lowercase());
     validate_wire_labels(&fqdn, "record name")?;
     Ok(fqdn)
-}
-
-fn owner_fqdn_to_stored_name(owner_fqdn: &str, zone_fqdn: &str) -> String {
-    if owner_fqdn == zone_fqdn {
-        return "@".to_string();
-    }
-
-    owner_fqdn
-        .trim_end_matches(zone_fqdn)
-        .trim_end_matches('.')
-        .to_string()
 }
 
 /// Normalize `owner_name` and validate the add. Callers holding an already

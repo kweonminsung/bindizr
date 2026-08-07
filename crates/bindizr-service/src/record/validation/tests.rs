@@ -32,6 +32,15 @@ fn normalize_record_owner_name_accepts_relative_and_in_bailiwick_absolute_names(
 }
 
 #[test]
+fn normalize_record_owner_name_keeps_a_repeated_zone_suffix() {
+    // Repeated stripping collapsed a repeated-zone owner to an empty name.
+    let normalized =
+        normalize_record_owner_name("test.example.com.test.example.com.", "test.example.com")
+            .unwrap();
+    assert_eq!(normalized.stored_name, "test.example.com");
+}
+
+#[test]
 fn normalize_record_owner_name_rejects_out_of_bailiwick_absolute_names() {
     let zone = "test.example.com";
 
