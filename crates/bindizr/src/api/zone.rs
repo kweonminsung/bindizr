@@ -5,10 +5,8 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::model::zone::Zone;
 use bindizr_dns as dns;
 use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneService};
-use dns::client::probe::SecondaryProbe;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -19,9 +17,9 @@ use crate::api::{
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
         ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, PaginatedResponse,
-        RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
-        SnapshotDiffResponse, SnapshotRecordResponse, ZoneDetailResponse, ZoneResponse,
-        ZoneSnapshotResponse, ZoneStatusResponse,
+        RollbackZoneRequest, RollbackZoneResponse, SnapshotDetailResponse, SnapshotDiffResponse,
+        SnapshotRecordResponse, ZoneDetailResponse, ZoneResponse, ZoneSnapshotResponse,
+        ZoneStatusResponse,
     },
 };
 
@@ -56,42 +54,6 @@ impl ZoneApi {
     }
 }
 
-/// Assemble the per-secondary sync report by comparing each probe result with
-/// the zone's serial. Shared by the HTTP and daemon-socket handlers.
-pub(crate) fn build_zone_status(zone: &Zone, probes: Vec<SecondaryProbe>) -> ZoneStatusResponse {
-    let secondaries = probes
-        .into_iter()
-        .map(|probe| match probe.result {
-            Ok(visible) => {
-                let visible = i64::from(visible);
-                let status = match visible.cmp(&i64::from(zone.serial)) {
-                    std::cmp::Ordering::Equal => "in_sync",
-                    std::cmp::Ordering::Less => "lagging",
-                    std::cmp::Ordering::Greater => "ahead",
-                };
-                SecondaryStatusResponse {
-                    address: probe.address,
-                    status: status.to_string(),
-                    visible_serial: Some(visible),
-                    error: None,
-                }
-            }
-            Err(error) => SecondaryStatusResponse {
-                address: probe.address,
-                status: "unreachable".to_string(),
-                visible_serial: None,
-                error: Some(error),
-            },
-        })
-        .collect();
-
-    ZoneStatusResponse {
-        zone: zone.name.clone(),
-        serial: zone.serial,
-        secondaries,
-    }
-}
-
 #[utoipa::path(
         get,
         path = "/zones/{name}/status",
@@ -118,7 +80,9 @@ pub(crate) async fn get_zone_status(
     let probes = dns::client::probe::probe_secondaries(&zone.name)
         .await
         .map_err(|err| ApiError(ServiceError::internal(err.to_string())))?;
-    Ok((StatusCode::OK, Json(build_zone_status(&zone, probes))).into_response())
+    let status =
+        ZoneStatusResponse::from_probes(&zone, probes.into_iter().map(|p| (p.address, p.result)));
+    Ok((StatusCode::OK, Json(status)).into_response())
 }
 
 #[utoipa::path(

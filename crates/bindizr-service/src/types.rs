@@ -873,6 +873,47 @@ pub struct ZoneStatusResponse {
     pub secondaries: Vec<SecondaryStatusResponse>,
 }
 
+impl ZoneStatusResponse {
+    /// Classify each secondary's probed SOA serial against the zone's serial;
+    /// a probe error reads as `unreachable`.
+    pub fn from_probes(
+        zone: &Zone,
+        probes: impl IntoIterator<Item = (String, Result<u32, String>)>,
+    ) -> Self {
+        let secondaries = probes
+            .into_iter()
+            .map(|(address, result)| match result {
+                Ok(visible) => {
+                    let visible = i64::from(visible);
+                    let status = match visible.cmp(&i64::from(zone.serial)) {
+                        std::cmp::Ordering::Equal => "in_sync",
+                        std::cmp::Ordering::Less => "lagging",
+                        std::cmp::Ordering::Greater => "ahead",
+                    };
+                    SecondaryStatusResponse {
+                        address,
+                        status: status.to_string(),
+                        visible_serial: Some(visible),
+                        error: None,
+                    }
+                }
+                Err(error) => SecondaryStatusResponse {
+                    address,
+                    status: "unreachable".to_string(),
+                    visible_serial: None,
+                    error: Some(error),
+                },
+            })
+            .collect();
+
+        ZoneStatusResponse {
+            zone: zone.name.clone(),
+            serial: zone.serial,
+            secondaries,
+        }
+    }
+}
+
 /// Generic error response: a plain description plus a machine-readable code.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ErrorResponse {

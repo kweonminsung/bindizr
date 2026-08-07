@@ -5,6 +5,7 @@ mod export;
 mod force;
 mod get;
 pub mod history;
+mod notify;
 mod snapshot;
 pub mod token_policy;
 pub mod tsig_policy;

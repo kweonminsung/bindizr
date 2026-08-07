@@ -61,6 +61,6 @@ async fn notify_zone_all_and_force() {
         body["error"]
             .as_str()
             .unwrap()
-            .contains(&format!("Zone not found: {missing_zone_name}"))
+            .contains(&format!("Zone with name '{missing_zone_name}' not found"))
     );
 }

@@ -4,11 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_dns as dns;
-use bindizr_service::{
-    error::{ErrorCode, ServiceError},
-    zone::ZoneService,
-};
+use bindizr_service::zone::ZoneService;
 use serde_json::json;
 
 use crate::api::{
@@ -49,31 +45,15 @@ pub(crate) async fn notify_zones(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<NotifyZoneRequest>,
 ) -> Result<Response, ApiError> {
-    // Forcing bumps zone serials — a zone-plane mutation, not just a NOTIFY.
-    if body.force {
-        caller.require_global("force a NOTIFY")?;
-    }
-    match &body.zone_name {
-        Some(zone_name) => ZoneService::ensure_visible(&caller, zone_name).await?,
-        None => caller.require_global("send NOTIFY for all zones")?,
-    }
+    ZoneService::notify_for(&caller, body.zone_name.as_deref(), body.force).await?;
 
-    match dns::client::notify::send_notify(body.zone_name.as_deref(), body.force).await {
-        Ok(()) => {
-            let message = match body.zone_name {
-                Some(zone_name) if body.force => {
-                    format!("NOTIFY sent successfully for zone: {} (forced)", zone_name)
-                }
-                Some(zone_name) => format!("NOTIFY sent successfully for zone: {}", zone_name),
-                None if body.force => "NOTIFY sent successfully for all zones (forced)".to_string(),
-                None => "NOTIFY sent successfully for all zones".to_string(),
-            };
-            Ok((StatusCode::OK, Json(json!({ "message": message }))).into_response())
+    let message = match body.zone_name {
+        Some(zone_name) if body.force => {
+            format!("NOTIFY sent successfully for zone: {} (forced)", zone_name)
         }
-        Err(dns::error::XfrError::ZoneNotFound(zone_name)) => Err(ApiError(ServiceError::new(
-            ErrorCode::ZoneNotFound,
-            format!("Zone not found: {}", zone_name),
-        ))),
-        Err(err) => Err(ApiError(ServiceError::internal(err.to_string()))),
-    }
+        Some(zone_name) => format!("NOTIFY sent successfully for zone: {}", zone_name),
+        None if body.force => "NOTIFY sent successfully for all zones (forced)".to_string(),
+        None => "NOTIFY sent successfully for all zones".to_string(),
+    };
+    Ok((StatusCode::OK, Json(json!({ "message": message }))).into_response())
 }

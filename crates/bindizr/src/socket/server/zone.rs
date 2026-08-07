@@ -5,6 +5,7 @@ use crate::{
     api::types::{
         CreateZoneRequest, GetZoneResponse, GetZonesFilter, ImportZoneFileRequest,
         SnapshotDetailResponse, SnapshotRecordResponse, UpdateZonePatch, ZoneSnapshotResponse,
+        ZoneStatusResponse,
     },
     socket::{server::to_response_data, types::DaemonResponse},
 };
@@ -255,7 +256,8 @@ pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonRespon
     let probes = bindizr_dns::client::probe::probe_secondaries(&zone.name)
         .await
         .map_err(|e| ServiceError::internal(e.to_string()))?;
-    let response = crate::api::zone::build_zone_status(&zone, probes);
+    let response =
+        ZoneStatusResponse::from_probes(&zone, probes.into_iter().map(|p| (p.address, p.result)));
 
     let in_sync = response
         .secondaries
