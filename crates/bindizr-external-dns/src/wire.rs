@@ -3,12 +3,9 @@
 //! external-dns v0.21.0, plus their conversion to the bindizr
 //! `/external-dns` API shapes.
 
-use std::{
-    collections::BTreeMap,
-    net::{Ipv4Addr, Ipv6Addr},
-};
+use std::collections::BTreeMap;
 
-use bindizr_core::dns::name::to_fqdn_lowercase;
+use bindizr_core::model::record::RecordType;
 use serde::{Deserialize, Serialize};
 
 /// Exact media type external-dns compares the negotiation `Content-Type`
@@ -252,17 +249,9 @@ pub(crate) fn adjust_endpoints(endpoints: Vec<Endpoint>) -> Result<Vec<Endpoint>
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                 }
-                "CNAME" => {
-                    endpoint.targets = endpoint
-                        .targets
-                        .iter()
-                        .map(|target| to_fqdn_lowercase(target))
-                        .collect();
-                }
-                // Unparseable addresses pass through so the apply path
-                // reports its ordinary error instead of a mangled target.
-                "A" => canonicalize_targets::<Ipv4Addr>(&mut endpoint.targets),
-                "AAAA" => canonicalize_targets::<Ipv6Addr>(&mut endpoint.targets),
+                "CNAME" => canonicalize_targets(&RecordType::CNAME, &mut endpoint.targets),
+                "A" => canonicalize_targets(&RecordType::A, &mut endpoint.targets),
+                "AAAA" => canonicalize_targets(&RecordType::AAAA, &mut endpoint.targets),
                 _ => {}
             }
             Ok(endpoint)
@@ -270,10 +259,12 @@ pub(crate) fn adjust_endpoints(endpoints: Vec<Endpoint>) -> Result<Vec<Endpoint>
         .collect()
 }
 
-fn canonicalize_targets<T: std::str::FromStr + std::fmt::Display>(targets: &mut [String]) {
+/// Rewrite targets to the row-encoded spelling the server stores; unparseable
+/// targets pass through so the apply path reports its ordinary error.
+fn canonicalize_targets(record_type: &RecordType, targets: &mut [String]) {
     for target in targets {
-        if let Ok(address) = target.parse::<T>() {
-            *target = address.to_string();
+        if let Ok(encoded) = record_type.encoded_value(target, None) {
+            *target = encoded;
         }
     }
 }

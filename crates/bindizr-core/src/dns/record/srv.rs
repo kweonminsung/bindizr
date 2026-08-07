@@ -44,4 +44,15 @@ impl<'a> SrvRecordValue<'a> {
             to_fqdn_lowercase(self.target)
         )
     }
+
+    /// The value column's form: `<weight> <port> <target>` with a lowercase
+    /// FQDN target.
+    pub(crate) fn encoded(&self) -> String {
+        format!(
+            "{} {} {}",
+            self.weight,
+            self.port,
+            to_fqdn_lowercase(self.target)
+        )
+    }
 }

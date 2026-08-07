@@ -123,7 +123,10 @@ impl RecordService {
             let mut desired_by_name: HashMap<String, Vec<usize>> =
                 HashMap::with_capacity(parsed.records.len());
             for record in parsed.records {
-                let value = match record.value.to_storage_value(&record.record_type) {
+                let value = match record
+                    .value
+                    .to_encoded_value(&record.record_type, record.priority)
+                {
                     Ok(value) => value,
                     Err(e) => {
                         errors.push(format!("{}: {}", record.owner_fqdn, e));

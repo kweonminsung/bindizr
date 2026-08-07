@@ -3,10 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::{
-    name::{to_encoded_owner_name, to_fqdn_lowercase},
-    record::TxtRdata,
-};
+use bindizr_core::dns::name::to_encoded_owner_name;
 use chrono::Utc;
 
 use super::{
@@ -36,8 +33,8 @@ pub(super) fn is_supported_record_type(record_type: &RecordType) -> bool {
     )
 }
 
-/// One desired RRset operation; values are in storage form and the name in
-/// lookup form until zone grouping rewrites it to stored form.
+/// One desired RRset operation; values are row-encoded and the name stays in
+/// lookup form until zone grouping rewrites it to the encoded owner name.
 #[derive(Debug)]
 pub(super) struct RrsetOp {
     pub name: String,
@@ -77,40 +74,6 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
     Ok(parsed)
 }
 
-/// Encode one wire value into storage form, canonicalizing addresses so
-/// spelling variants compare equal.
-fn storage_value(record_type: &RecordType, value: &str) -> Result<String, ServiceError> {
-    if *record_type == RecordType::TXT {
-        return TxtRdata::from_presentation(value)
-            .map(TxtRdata::into_encoded)
-            .map_err(ServiceError::invalid_record_value);
-    }
-
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(ServiceError::invalid_record_value(
-            "record value must not be empty".to_string(),
-        ));
-    }
-
-    match record_type {
-        RecordType::A => trimmed
-            .parse::<std::net::Ipv4Addr>()
-            .map(|addr| addr.to_string())
-            .map_err(|_| {
-                ServiceError::invalid_record_value(format!("Invalid IPv4 address: {}", trimmed))
-            }),
-        RecordType::AAAA => trimmed
-            .parse::<std::net::Ipv6Addr>()
-            .map(|addr| addr.to_string())
-            .map_err(|_| {
-                ServiceError::invalid_record_value(format!("Invalid IPv6 address: {}", trimmed))
-            }),
-        RecordType::CNAME => Ok(to_fqdn_lowercase(trimmed)),
-        _ => unreachable!("parse_supported_record_type limits the type set"),
-    }
-}
-
 /// ExternalDNS sends TTL 0 for "not configured"; both resolve to the zone TTL.
 fn normalize_ttl(ttl: Option<i32>) -> Result<Option<i32>, ServiceError> {
     match ttl {
@@ -143,12 +106,14 @@ pub(super) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, Service
     // Deduplicate values that normalize identically (e.g. IPv6 spellings).
     let mut values: Vec<String> = Vec::with_capacity(rrset.values.len());
     for value in &rrset.values {
-        let storage = storage_value(&record_type, value)?;
+        let encoded = record_type
+            .encoded_value(value, None)
+            .map_err(ServiceError::invalid_record_value)?;
         if !values
             .iter()
-            .any(|existing| values_equal(existing, &storage, &record_type))
+            .any(|existing| values_equal(existing, &encoded, &record_type))
         {
-            values.push(storage);
+            values.push(encoded);
         }
     }
 

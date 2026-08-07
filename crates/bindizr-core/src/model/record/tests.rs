@@ -48,6 +48,81 @@ fn values_equal_normalizes_soa_records() {
 }
 
 #[test]
+fn encoded_value_produces_one_spelling_per_rdata() {
+    assert_eq!(
+        RecordType::AAAA
+            .encoded_value("2001:0DB8:0000:0000:0000:0000:0000:0001", None)
+            .as_deref(),
+        Ok("2001:db8::1")
+    );
+    assert_eq!(
+        RecordType::CNAME
+            .encoded_value("Target.Example.Net", None)
+            .as_deref(),
+        Ok("target.example.net.")
+    );
+    assert_eq!(
+        RecordType::MX
+            .encoded_value("Mail.Example.Com", Some(10))
+            .as_deref(),
+        Ok("mail.example.com.")
+    );
+    assert_eq!(
+        RecordType::SRV
+            .encoded_value("5 5060 Sip.Example.Com.", Some(10))
+            .as_deref(),
+        Ok("5 5060 sip.example.com.")
+    );
+    assert_eq!(
+        RecordType::SOA
+            .encoded_value(
+                "NS1.Example.COM hostmaster.example.com 1 7200 3600 1209600 3600",
+                None
+            )
+            .as_deref(),
+        Ok("ns1.example.com. hostmaster.example.com. 1 7200 3600 1209600 3600")
+    );
+}
+
+#[test]
+fn encoded_value_keeps_null_mx_and_srv_root_targets() {
+    assert_eq!(
+        RecordType::MX.encoded_value(".", Some(0)).as_deref(),
+        Ok(".")
+    );
+    assert_eq!(
+        RecordType::SRV.encoded_value("0 443 .", Some(0)).as_deref(),
+        Ok("0 443 .")
+    );
+}
+
+#[test]
+fn encoded_value_rejects_invalid_values() {
+    assert!(RecordType::A.encoded_value("not-an-ip", None).is_err());
+    assert!(
+        RecordType::CNAME
+            .encoded_value("bad..example.com", None)
+            .is_err()
+    );
+    assert!(
+        RecordType::MX
+            .encoded_value("10 mail.example.com", None)
+            .is_err()
+    );
+    assert!(RecordType::MX.encoded_value(".", Some(10)).is_err());
+    assert!(RecordType::TXT.encoded_value("", None).is_err());
+}
+
+#[test]
+fn encoded_value_round_trips_txt_presentation_form() {
+    let encoded = RecordType::TXT.encoded_value("\"a\" \"b\"", None).unwrap();
+    assert_eq!(
+        RecordType::TXT.presentation_rdata(&encoded, None),
+        "\"a\" \"b\""
+    );
+}
+
+#[test]
 fn presentation_rdata_txt_escapes_special_characters() {
     let ascii = TxtRdata::from_string("v=spf1 \"x\\y\"").into_encoded();
     assert_eq!(

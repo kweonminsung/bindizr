@@ -212,6 +212,38 @@ impl RecordType {
         }
     }
 
+    /// Counterpart of [`Self::canonical_value`] for writes: validate a value
+    /// (with its priority column) and return the one spelling record rows
+    /// encode, so every entry path stores equal bytes. TXT takes presentation
+    /// form; other TXT input grammars go through [`TxtRdata`] directly.
+    pub fn encoded_value(&self, value: &str, priority: Option<i32>) -> Result<String, String> {
+        // TXT keeps raw bytes; every other type tolerates surrounding whitespace.
+        let trimmed = value.trim();
+        match self {
+            RecordType::TXT => TxtRdata::from_presentation(value).map(TxtRdata::into_encoded),
+            RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::AAAA => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::CNAME => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::NS => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::PTR => PtrRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::MX => {
+                let parsed = MxRecordValue::parse(trimmed, priority)?;
+                parsed.validate()?;
+                Ok(parsed.encoded())
+            }
+            RecordType::SRV => {
+                let parsed = SrvRecordValue::parse(trimmed, priority)?;
+                parsed.validate()?;
+                Ok(parsed.encoded())
+            }
+            RecordType::SOA => {
+                let parsed = SoaRecordValue::parse(trimmed)?;
+                parsed.validate()?;
+                Ok(parsed.canonical())
+            }
+        }
+    }
+
     /// Format a stored value of this record type for display.
     pub fn display_value(&self, value: &str) -> String {
         if *self == RecordType::TXT {

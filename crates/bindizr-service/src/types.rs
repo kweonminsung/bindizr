@@ -282,8 +282,13 @@ pub enum RecordValueRequest {
 }
 
 impl RecordValueRequest {
-    /// Encode the request value into its stored form for the given record type.
-    pub fn to_storage_value(&self, record_type: &RecordType) -> Result<String, String> {
+    /// Encode the request value into its record-row form. A TXT string is raw
+    /// content (never presentation form), so quotes carry no special meaning.
+    pub fn to_encoded_value(
+        &self,
+        record_type: &RecordType,
+        priority: Option<i32>,
+    ) -> Result<String, String> {
         match (record_type, self) {
             (RecordType::TXT, RecordValueRequest::String(value)) => {
                 Ok(TxtRdata::from_string(value).into_encoded())
@@ -292,7 +297,7 @@ impl RecordValueRequest {
                 TxtRdata::from_segments(segments.iter().map(String::as_str))
                     .map(TxtRdata::into_encoded)
             }
-            (_, RecordValueRequest::String(value)) => Ok(value.clone()),
+            (_, RecordValueRequest::String(value)) => record_type.encoded_value(value, priority),
             (_, RecordValueRequest::Segments(_)) => {
                 Err("array value is only supported for TXT records".to_string())
             }

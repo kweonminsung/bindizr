@@ -48,4 +48,9 @@ impl<'a> MxRecordValue<'a> {
     pub(crate) fn canonical(&self) -> String {
         format!("{} {}", self.priority, to_fqdn_lowercase(self.target))
     }
+
+    /// The value column's form: the target host as a lowercase FQDN.
+    pub(crate) fn encoded(&self) -> String {
+        to_fqdn_lowercase(self.target)
+    }
 }

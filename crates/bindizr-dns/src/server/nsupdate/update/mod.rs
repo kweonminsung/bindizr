@@ -298,6 +298,15 @@ async fn add_record(
     new_serial: i32,
 ) -> Result<bool, UpdateError> {
     let (record_type, value, priority) = rr_to_record_value(update, query_data)?;
+    // Row-encode so nsupdate stores the same spelling as the other write
+    // paths; TXT arrives already encoded from the wire rdata.
+    let value = if record_type == RecordType::TXT {
+        value
+    } else {
+        record_type.encoded_value(&value, priority).map_err(|e| {
+            UpdateError::Refused(format!("invalid {} rdata: {}", record_type.as_str(), e))
+        })?
+    };
 
     let relative_name = absolute_to_relative(owner_name, &zone.name)?;
 

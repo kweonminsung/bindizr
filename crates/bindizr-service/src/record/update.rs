@@ -22,11 +22,11 @@ use crate::{
 };
 
 /// The record's fields after a full request or a patch has been resolved
-/// against the currently stored record. `storage_value` is already encoded.
+/// against the currently stored record. `encoded_value` is already in row form.
 struct ResolvedRecordUpdate {
     owner_name: String,
     record_type: RecordType,
-    storage_value: String,
+    encoded_value: String,
     ttl: i32,
     priority: Option<i32>,
 }
@@ -43,7 +43,7 @@ impl RecordService {
             let PreparedRecord {
                 owner_name,
                 record_type,
-                value: storage_value,
+                value: encoded_value,
                 ..
             } = prepare_record(
                 &request.name,
@@ -55,7 +55,7 @@ impl RecordService {
             Ok(ResolvedRecordUpdate {
                 owner_name,
                 record_type,
-                storage_value,
+                encoded_value,
                 ttl: request.ttl.unwrap_or(zone.ttl),
                 priority: request.priority,
             })
@@ -81,22 +81,22 @@ impl RecordService {
                     "value is required when changing a record's type".to_string(),
                 ));
             }
-            let storage_value = match &patch.value {
-                Some(value) => value
-                    .to_storage_value(&record_type)
-                    .map_err(ServiceError::invalid_record_value)?,
-                None => existing.value.clone(),
-            };
             // Only MX/SRV carry a priority, so retyping to any other type clears it.
             let priority = if matches!(record_type, RecordType::MX | RecordType::SRV) {
                 patch.priority.or(existing.priority)
             } else {
                 None
             };
+            let encoded_value = match &patch.value {
+                Some(value) => value
+                    .to_encoded_value(&record_type, priority)
+                    .map_err(ServiceError::invalid_record_value)?,
+                None => existing.value.clone(),
+            };
             Ok(ResolvedRecordUpdate {
                 owner_name: patch.name.clone().unwrap_or_else(|| existing.name.clone()),
                 record_type,
-                storage_value,
+                encoded_value,
                 ttl: patch.ttl.unwrap_or(existing.ttl),
                 priority,
             })
@@ -200,7 +200,7 @@ impl RecordService {
                 id: existing_record.id,
                 name: resolved.owner_name.clone(),
                 record_type: resolved.record_type.clone(),
-                value: resolved.storage_value.clone(),
+                value: resolved.encoded_value.clone(),
                 ttl: resolved.ttl,
                 priority: resolved.priority,
                 zone_id: zone.id,

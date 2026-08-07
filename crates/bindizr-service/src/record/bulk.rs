@@ -49,7 +49,7 @@ pub(super) struct PreparedRecord {
     pub priority: Option<i32>,
 }
 
-/// Parse the record type and encode the value into storage form.
+/// Parse the record type and encode the value into its record-row form.
 pub(super) fn prepare_record(
     name: &str,
     record_type: &str,
@@ -59,7 +59,7 @@ pub(super) fn prepare_record(
 ) -> Result<PreparedRecord, ServiceError> {
     let record_type = parse_record_type(record_type)?;
     let value = value
-        .to_storage_value(&record_type)
+        .to_encoded_value(&record_type, priority)
         .map_err(ServiceError::invalid_record_value)?;
 
     Ok(PreparedRecord {
