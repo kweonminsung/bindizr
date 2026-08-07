@@ -10,6 +10,8 @@ use crate::config::{
 struct TestConfigToml {
     api_listen_addr: &'static str,
     require_authentication: bool,
+    /// Renders `external_dns_enabled` in `[api]` when set; `None` omits it.
+    api_external_dns_enabled: Option<bool>,
     database_type: &'static str,
     /// Include the `[database.mysql]` / `[database.postgresql]` sections.
     unselected_databases: bool,
@@ -23,6 +25,7 @@ impl Default for TestConfigToml {
         Self {
             api_listen_addr: "127.0.0.1",
             require_authentication: false,
+            api_external_dns_enabled: None,
             database_type: "sqlite",
             unselected_databases: true,
             secondary_addrs: "",
@@ -38,13 +41,17 @@ impl TestConfigToml {
         } else {
             ""
         };
+        let api_external_dns = self
+            .api_external_dns_enabled
+            .map(|value| format!("external_dns_enabled = {}\n", value))
+            .unwrap_or_default();
         format!(
             r#"
 [api]
 listen_addr = "{api_listen_addr}"
 listen_port = 3000
 require_authentication = {require_authentication}
-
+{api_external_dns}
 [database]
 type = "{database_type}"
 
@@ -61,6 +68,7 @@ log_level = "debug"
 "#,
             api_listen_addr = self.api_listen_addr,
             require_authentication = self.require_authentication,
+            api_external_dns = api_external_dns,
             database_type = self.database_type,
             secondary_addrs = self.secondary_addrs,
             dns_notify = self.dns_notify,
@@ -118,6 +126,24 @@ fn parse_bindizr_config_defaults_metrics_enabled_to_true() {
 }
 
 #[test]
+fn parse_bindizr_config_defaults_external_dns_to_disabled() {
+    let parsed = parse_config(&TestConfigToml::default()).unwrap();
+
+    assert!(!parsed.api.external_dns_enabled);
+}
+
+#[test]
+fn parse_bindizr_config_accepts_external_dns_enabled() {
+    let parsed = parse_config(&TestConfigToml {
+        api_external_dns_enabled: Some(true),
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert!(parsed.api.external_dns_enabled);
+}
+
+#[test]
 fn parse_bindizr_config_defaults_unselected_database_sections() {
     let parsed = parse_config(&TestConfigToml {
         unselected_databases: false,
@@ -168,6 +194,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         "BINDIZR_API_PORT" => Some("8000".to_string()),
         "BINDIZR_API_REQUIRE_AUTHENTICATION" => Some("false".to_string()),
         "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
+        "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
         "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
         "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
         "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
@@ -187,6 +214,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.api.listen_port, 8000);
     assert!(!overridden.api.require_authentication);
     assert!(!overridden.api.metrics_enabled);
+    assert!(overridden.api.external_dns_enabled);
     assert!(matches!(
         overridden.database.database_type,
         DatabaseType::Mysql

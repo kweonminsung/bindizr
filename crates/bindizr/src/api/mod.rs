@@ -1,6 +1,7 @@
 //! HTTP API server: routing, middleware, and the zone/record/notify endpoints.
 
 pub(crate) mod error;
+pub(crate) mod external_dns;
 pub(crate) mod health;
 pub(crate) mod metrics;
 pub(crate) mod middleware;
@@ -9,15 +10,39 @@ pub(crate) mod notify;
 pub(crate) mod openapi;
 pub(crate) mod record;
 pub(crate) mod router;
+pub(crate) mod token_policy;
 pub(crate) mod tsig_key;
 pub(crate) mod types;
 pub(crate) mod zone;
 
-use std::net::SocketAddr;
+use std::{convert::Infallible, net::SocketAddr};
 
+use axum::{extract::FromRequestParts, http::request::Parts};
 use bindizr_core::{config, log_error, log_info};
+use bindizr_service::authorization::Caller;
 use router::ApiRouter;
 use tokio::net::TcpListener;
+
+/// The caller attached by the auth middleware; absent (auth disabled) means
+/// unrestricted access.
+pub(crate) struct RequestCaller(pub(crate) Caller);
+
+impl<S> FromRequestParts<S> for RequestCaller
+where
+    S: Send + Sync,
+{
+    type Rejection = Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Infallible> {
+        Ok(RequestCaller(
+            parts
+                .extensions
+                .get::<Caller>()
+                .cloned()
+                .unwrap_or(Caller::Global),
+        ))
+    }
+}
 
 /// Bind the HTTP API listener and spawn the axum server in the background.
 pub(crate) async fn initialize() -> Result<(), String> {

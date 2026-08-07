@@ -22,12 +22,14 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO api_tokens (token, description, expires_at)
-            VALUES (?, ?, ?)
+            INSERT INTO api_tokens (name, token, description, is_global, expires_at)
+            VALUES (?, ?, ?, ?, ?)
         "#,
         )
+        .bind(&token.name)
         .bind(&token.token)
         .bind(&token.description)
+        .bind(token.is_global)
         .bind(token.expires_at)
         .execute(&mut *conn)
         .await?;
@@ -41,9 +43,23 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         let mut conn = self.pool.acquire().await?;
 
         let row = sqlx::query_as::<_, ApiToken>(
-            "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?"
+            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?"
         )
         .bind(id)
+        .fetch_optional(&mut *conn)
+        .await
+        ?;
+
+        Ok(row)
+    }
+
+    async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let row = sqlx::query_as::<_, ApiToken>(
+            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE name = ?"
+        )
+        .bind(name)
         .fetch_optional(&mut *conn)
         .await
         ?;
@@ -55,7 +71,7 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         let mut conn = self.pool.acquire().await?;
 
         let row = sqlx::query_as::<_, ApiToken>(
-            "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens WHERE token = ?"
+            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE token = ?"
         )
         .bind(token)
         .fetch_optional(&mut *conn)
@@ -69,7 +85,7 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         let mut conn = self.pool.acquire().await?;
 
         let rows = sqlx::query_as::<_, ApiToken>(
-            "SELECT id, token, description, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC"
+            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC"
         )
         .fetch_all(&mut *conn)
         .await

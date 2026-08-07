@@ -14,6 +14,9 @@ bindizr:
     requireAuthentication: true
     # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
     metricsEnabled: true
+    # ExternalDNS provider API (/external-dns), consumed by the
+    # bindizr-external-dns adapter running next to external-dns.
+    externalDnsEnabled: false
     service:
       type: ClusterIP
       port: 8000

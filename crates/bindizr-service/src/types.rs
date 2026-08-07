@@ -15,7 +15,7 @@ use crate::{
         zone::Zone,
         zone_snapshot::ZoneSnapshot,
     },
-    zone::tsig_policy::ZoneTsigPolicyWithKey,
+    zone::{token_policy::ZoneTokenPolicyWithToken, tsig_policy::ZoneTsigPolicyWithKey},
 };
 
 /// A page of items together with its pagination metadata.
@@ -169,6 +169,47 @@ impl GetZoneTsigPolicyResponse {
     }
 }
 
+/// Request body for granting an API token record rights in a zone.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct CreateZoneTokenPolicyRequest {
+    /// Name of an existing non-global API token.
+    #[schema(example = "external-dns")]
+    pub api_token: String,
+    /// `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
+    /// Defaults to `*`.
+    #[schema(example = "*.dyn")]
+    pub record_name_pattern: Option<String>,
+    /// `*` or a comma-separated list of record types. Defaults to `*`.
+    #[schema(example = "A,AAAA,TXT")]
+    pub record_types: Option<String>,
+}
+
+/// API representation of a zone token policy.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct GetZoneTokenPolicyResponse {
+    #[schema(example = 1)]
+    pub id: i32,
+    #[schema(example = "external-dns")]
+    pub api_token: String,
+    #[schema(example = "*.dyn")]
+    pub record_name_pattern: String,
+    #[schema(example = "A,AAAA,TXT")]
+    pub record_types: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl GetZoneTokenPolicyResponse {
+    pub fn from_policy(policy: &ZoneTokenPolicyWithToken) -> Self {
+        GetZoneTokenPolicyResponse {
+            id: policy.policy.id,
+            api_token: policy.api_token_name.clone(),
+            record_name_pattern: policy.policy.record_name_pattern.clone(),
+            record_types: policy.policy.record_types.clone(),
+            created_at: policy.policy.created_at,
+        }
+    }
+}
+
 /// API representation of a record, optionally carrying its zone name.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct GetRecordResponse {
@@ -191,20 +232,6 @@ pub struct GetRecordResponse {
     pub zone_name: Option<String>,
 }
 impl GetRecordResponse {
-    /// Build a response from a [`Record`], leaving names in stored form and `zone_name` unset.
-    pub fn from_record(record: &Record) -> Self {
-        GetRecordResponse {
-            id: record.id,
-            name: record.name.clone(),
-            record_type: record.record_type.to_string(),
-            value: record_response_value(record, false),
-            ttl: record.ttl,
-            priority: record.priority,
-            zone_id: record.zone_id,
-            zone_name: None,
-        }
-    }
-
     /// Build a response from a [`Record`], rendering owner/value as display names within `zone_name`.
     pub fn from_record_and_zone_name(record: &Record, zone_name: &str) -> Self {
         GetRecordResponse {
@@ -583,6 +610,18 @@ pub struct ZoneTsigPolicyListResponse {
     pub tsig_policies: Vec<GetZoneTsigPolicyResponse>,
 }
 
+/// A single zone token policy wrapped in a response envelope.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ZoneTokenPolicyResponse {
+    pub token_policy: GetZoneTokenPolicyResponse,
+}
+
+/// List of a zone's token policies.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ZoneTokenPolicyListResponse {
+    pub token_policies: Vec<GetZoneTokenPolicyResponse>,
+}
+
 /// Paginated list of records.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct RecordListResponse {
@@ -594,6 +633,78 @@ pub struct RecordListResponse {
 #[derive(Serialize, Debug, ToSchema)]
 pub struct RecordResponse {
     pub record: GetRecordResponse,
+}
+
+/// One RRset (owner name and type) exchanged with the ExternalDNS API. Names
+/// are absolute; TXT values are quoted presentation strings.
+#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+pub struct ExternalDnsRrset {
+    #[schema(example = "app.example.com")]
+    pub name: String,
+    #[schema(example = "A")]
+    pub record_type: String,
+    /// Optional on writes; an omitted or zero TTL resolves to the zone TTL.
+    #[schema(example = 300)]
+    pub ttl: Option<i32>,
+    #[schema(example = json!(["192.0.2.10"]))]
+    pub values: Vec<String>,
+}
+
+/// An RRset replacement: `old` values are removed and `new` written in place.
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct ExternalDnsRrsetUpdate {
+    pub old: ExternalDnsRrset,
+    pub new: ExternalDnsRrset,
+}
+
+/// Request body for applying an ExternalDNS change set atomically.
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct ExternalDnsChangesRequest {
+    #[serde(default)]
+    pub creates: Vec<ExternalDnsRrset>,
+    #[serde(default)]
+    pub updates: Vec<ExternalDnsRrsetUpdate>,
+    #[serde(default)]
+    pub deletes: Vec<ExternalDnsRrset>,
+}
+
+/// Summary of an applied ExternalDNS change set.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ExternalDnsChangesResponse {
+    /// Zones whose serial advanced; empty when the request was a no-op.
+    #[schema(example = json!(["example.com"]))]
+    pub changed_zones: Vec<String>,
+    #[schema(example = 2)]
+    pub records_added: u32,
+    #[schema(example = 1)]
+    pub records_deleted: u32,
+}
+
+/// Zones the ExternalDNS caller may manage under the current policy.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ExternalDnsZonesResponse {
+    #[schema(example = json!(["example.com"]))]
+    pub zones: Vec<String>,
+}
+
+/// One record row managed through the ExternalDNS API: absolute owner name
+/// and the value in presentation form (TXT quoted).
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ExternalDnsRecordItem {
+    #[schema(example = "app.example.com")]
+    pub name: String,
+    #[schema(example = "A")]
+    pub record_type: String,
+    #[schema(example = 300)]
+    pub ttl: i32,
+    #[schema(example = "192.0.2.10")]
+    pub value: String,
+}
+
+/// Records of every ExternalDNS-managed zone, deterministically ordered.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ExternalDnsRecordsResponse {
+    pub records: Vec<ExternalDnsRecordItem>,
 }
 
 /// Generic success message response.

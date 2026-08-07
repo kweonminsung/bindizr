@@ -5,6 +5,7 @@ mod tsig_key_repository_impl;
 mod zone_change_repository_impl;
 mod zone_repository_impl;
 mod zone_snapshot_repository_impl;
+mod zone_token_policy_repository_impl;
 mod zone_tsig_policy_repository_impl;
 
 pub use api_token_repository_impl::MySqlApiTokenRepository;
@@ -14,4 +15,5 @@ pub use tsig_key_repository_impl::MySqlTsigKeyRepository;
 pub use zone_change_repository_impl::MySqlZoneChangeRepository;
 pub use zone_repository_impl::MySqlZoneRepository;
 pub use zone_snapshot_repository_impl::MySqlZoneSnapshotRepository;
+pub use zone_token_policy_repository_impl::MySqlZoneTokenPolicyRepository;
 pub use zone_tsig_policy_repository_impl::MySqlZoneTsigPolicyRepository;

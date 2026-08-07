@@ -1,9 +1,19 @@
-use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
+use axum::{
+    Json, Router,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing,
+};
 use bindizr_dns as dns;
-use bindizr_service::error::{ErrorCode, ServiceError};
+use bindizr_service::{
+    authorization,
+    error::{ErrorCode, ServiceError},
+    zone::ZoneService,
+};
 use serde_json::json;
 
 use crate::api::{
+    RequestCaller,
     error::ApiError,
     middleware::body_parser::JsonBody,
     types::{ErrorResponse, MessageResponse, NotifyZoneRequest},
@@ -35,7 +45,15 @@ impl NotifyApi {
         )
 )]
 /// Send DNS NOTIFY messages for a specific zone or all zones.
-pub(crate) async fn notify_zones(JsonBody(body): JsonBody<NotifyZoneRequest>) -> impl IntoResponse {
+pub(crate) async fn notify_zones(
+    RequestCaller(caller): RequestCaller,
+    JsonBody(body): JsonBody<NotifyZoneRequest>,
+) -> Result<Response, ApiError> {
+    match &body.zone_name {
+        Some(zone_name) => ZoneService::ensure_visible(&caller, zone_name).await?,
+        None => authorization::require_global(&caller, "send NOTIFY for all zones")?,
+    }
+
     match dns::client::notify::send_notify(body.zone_name.as_deref(), body.force).await {
         Ok(()) => {
             let message = match body.zone_name {
@@ -46,13 +64,12 @@ pub(crate) async fn notify_zones(JsonBody(body): JsonBody<NotifyZoneRequest>) ->
                 None if body.force => "NOTIFY sent successfully for all zones (forced)".to_string(),
                 None => "NOTIFY sent successfully for all zones".to_string(),
             };
-            (StatusCode::OK, Json(json!({ "message": message }))).into_response()
+            Ok((StatusCode::OK, Json(json!({ "message": message }))).into_response())
         }
-        Err(dns::error::XfrError::ZoneNotFound(zone_name)) => ApiError(ServiceError::new(
+        Err(dns::error::XfrError::ZoneNotFound(zone_name)) => Err(ApiError(ServiceError::new(
             ErrorCode::ZoneNotFound,
             format!("Zone not found: {}", zone_name),
-        ))
-        .into_response(),
-        Err(err) => ApiError(ServiceError::internal(err.to_string())).into_response(),
+        ))),
+        Err(err) => Err(ApiError(ServiceError::internal(err.to_string()))),
     }
 }

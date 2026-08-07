@@ -1,9 +1,18 @@
-use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse, routing};
-use bindizr_service::{tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService};
+use axum::{
+    Json, Router,
+    extract::Path,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing,
+};
+use bindizr_service::{
+    authorization, tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService,
+};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::api::{
+    RequestCaller,
     error::ApiError,
     middleware::body_parser::JsonBody,
     types::{
@@ -68,16 +77,15 @@ pub(crate) struct ZoneTsigPolicyParam {
         )
 )]
 /// List all TSIG keys (secrets omitted).
-pub(crate) async fn get_tsig_keys() -> impl IntoResponse {
-    match TsigKeyService::list().await {
-        Ok(keys) => {
-            let keys: Vec<GetTsigKeyResponse> =
-                keys.iter().map(GetTsigKeyResponse::from_key).collect();
-            let json_body = json!({ "tsig_keys": keys });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn get_tsig_keys(
+    RequestCaller(caller): RequestCaller,
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+
+    let keys = TsigKeyService::list().await?;
+    let keys: Vec<GetTsigKeyResponse> = keys.iter().map(GetTsigKeyResponse::from_key).collect();
+    let json_body = json!({ "tsig_keys": keys });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -98,23 +106,21 @@ pub(crate) async fn get_tsig_keys() -> impl IntoResponse {
 )]
 /// Create a TSIG key, generating a secret unless one is imported.
 pub(crate) async fn create_tsig_key(
+    RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
-) -> impl IntoResponse {
-    match TsigKeyService::create(
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+
+    let key = TsigKeyService::create(
         &body.name,
         body.algorithm.as_deref(),
         body.secret.as_deref(),
         body.global,
     )
-    .await
-    {
-        Ok(key) => {
-            let key = GetTsigKeyResponse::from_key(&key);
-            let json_body = json!({ "tsig_key": key });
-            (StatusCode::CREATED, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+    .await?;
+    let key = GetTsigKeyResponse::from_key(&key);
+    let json_body = json!({ "tsig_key": key });
+    Ok((StatusCode::CREATED, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -134,15 +140,16 @@ pub(crate) async fn create_tsig_key(
         )
 )]
 /// Get one TSIG key by name, including its secret.
-pub(crate) async fn get_tsig_key(Path(params): Path<TsigKeyNameParam>) -> impl IntoResponse {
-    match TsigKeyService::get(&params.name).await {
-        Ok(key) => {
-            let key = GetTsigKeyResponse::from_key(&key);
-            let json_body = json!({ "tsig_key": key });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn get_tsig_key(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<TsigKeyNameParam>,
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+
+    let key = TsigKeyService::get(&params.name).await?;
+    let key = GetTsigKeyResponse::from_key(&key);
+    let json_body = json!({ "tsig_key": key });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -163,14 +170,15 @@ pub(crate) async fn get_tsig_key(Path(params): Path<TsigKeyNameParam>) -> impl I
         )
 )]
 /// Delete a TSIG key that is not referenced by any policy.
-pub(crate) async fn delete_tsig_key(Path(params): Path<TsigKeyNameParam>) -> impl IntoResponse {
-    match TsigKeyService::delete(&params.name).await {
-        Ok(()) => {
-            let json_body = json!({ "message": "TSIG key deleted successfully" });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn delete_tsig_key(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<TsigKeyNameParam>,
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+
+    TsigKeyService::delete(&params.name).await?;
+    let json_body = json!({ "message": "TSIG key deleted successfully" });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -190,18 +198,19 @@ pub(crate) async fn delete_tsig_key(Path(params): Path<TsigKeyNameParam>) -> imp
         )
 )]
 /// List all TSIG policies of a zone.
-pub(crate) async fn get_zone_tsig_policies(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
-    match ZoneTsigPolicyService::list(&params.name).await {
-        Ok(policies) => {
-            let policies: Vec<GetZoneTsigPolicyResponse> = policies
-                .iter()
-                .map(GetZoneTsigPolicyResponse::from_policy)
-                .collect();
-            let json_body = json!({ "tsig_policies": policies });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn get_zone_tsig_policies(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+
+    let policies = ZoneTsigPolicyService::list(&params.name).await?;
+    let policies: Vec<GetZoneTsigPolicyResponse> = policies
+        .iter()
+        .map(GetZoneTsigPolicyResponse::from_policy)
+        .collect();
+    let json_body = json!({ "tsig_policies": policies });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -225,24 +234,22 @@ pub(crate) async fn get_zone_tsig_policies(Path(params): Path<ZoneNameParam>) ->
 )]
 /// Create a TSIG policy for a zone.
 pub(crate) async fn create_zone_tsig_policy(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneTsigPolicyRequest>,
-) -> impl IntoResponse {
-    match ZoneTsigPolicyService::add(
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+
+    let policy = ZoneTsigPolicyService::add(
         &params.name,
         &body.tsig_key,
         body.record_name_pattern.as_deref(),
         body.record_types.as_deref(),
     )
-    .await
-    {
-        Ok(policy) => {
-            let policy = GetZoneTsigPolicyResponse::from_policy(&policy);
-            let json_body = json!({ "tsig_policy": policy });
-            (StatusCode::CREATED, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+    .await?;
+    let policy = GetZoneTsigPolicyResponse::from_policy(&policy);
+    let json_body = json!({ "tsig_policy": policy });
+    Ok((StatusCode::CREATED, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -263,13 +270,12 @@ pub(crate) async fn create_zone_tsig_policy(
 )]
 /// Delete one TSIG policy of a zone.
 pub(crate) async fn delete_zone_tsig_policy(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneTsigPolicyParam>,
-) -> impl IntoResponse {
-    match ZoneTsigPolicyService::remove(&params.name, params.id).await {
-        Ok(()) => {
-            let json_body = json!({ "message": "TSIG policy deleted successfully" });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+
+    ZoneTsigPolicyService::remove(&params.name, params.id).await?;
+    let json_body = json!({ "message": "TSIG policy deleted successfully" });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }

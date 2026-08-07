@@ -67,8 +67,10 @@ pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS api_tokens (
             id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) UNIQUE NOT NULL,
             token VARCHAR(64) UNIQUE NOT NULL,
             description VARCHAR(255),
+            is_global BOOLEAN NOT NULL DEFAULT FALSE,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             expires_at DATETIME,
             last_used_at DATETIME
@@ -104,6 +106,20 @@ pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
             FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id),
             INDEX idx_zone_tsig_policies_zone (zone_id),
             INDEX idx_zone_tsig_policies_key (tsig_key_id)
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_token_policies (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            zone_id INT NOT NULL,
+            api_token_id INT NOT NULL,
+            record_name_pattern VARCHAR(255) NOT NULL,
+            record_types VARCHAR(255) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE,
+            INDEX idx_zone_token_policies_zone (zone_id),
+            INDEX idx_zone_token_policies_token (api_token_id)
         );
         "#,
     ]
@@ -180,8 +196,10 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS api_tokens (
             id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
             token VARCHAR(64) UNIQUE NOT NULL,
             description VARCHAR(255),
+            is_global BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             expires_at TIMESTAMPTZ,
             last_used_at TIMESTAMPTZ
@@ -222,6 +240,24 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
         "#,
         r#"
         CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_key ON zone_tsig_policies(tsig_key_id);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_token_policies (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            api_token_id INTEGER NOT NULL,
+            record_name_pattern VARCHAR(255) NOT NULL,
+            record_types VARCHAR(255) NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_zone ON zone_token_policies(zone_id);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_token ON zone_token_policies(api_token_id);
         "#,
     ]
 }
@@ -297,8 +333,10 @@ pub(super) fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS api_tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
             token TEXT UNIQUE NOT NULL,
             description TEXT,
+            is_global BOOLEAN NOT NULL DEFAULT FALSE,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             expires_at DATETIME,
             last_used_at DATETIME
@@ -339,6 +377,24 @@ pub(super) fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
         "#,
         r#"
         CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_key ON zone_tsig_policies(tsig_key_id);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_token_policies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            zone_id INTEGER NOT NULL,
+            api_token_id INTEGER NOT NULL,
+            record_name_pattern TEXT NOT NULL,
+            record_types TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_zone ON zone_token_policies(zone_id);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_token ON zone_token_policies(api_token_id);
         "#,
     ]
 }

@@ -2,17 +2,20 @@ use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, Query},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing,
 };
 use bindizr_core::model::zone::Zone;
 use bindizr_dns as dns;
-use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneService};
+use bindizr_service::{
+    authorization, error::ServiceError, record::RecordService, zone::ZoneService,
+};
 use dns::client::probe::SecondaryProbe;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::api::{
+    RequestCaller,
     error::ApiError,
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
@@ -108,16 +111,16 @@ pub(crate) fn build_zone_status(zone: &Zone, probes: Vec<SecondaryProbe>) -> Zon
         )
 )]
 /// Report the sync state of every configured secondary for a zone.
-pub(crate) async fn get_zone_status(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
-    let zone = match ZoneService::get_by_name(&params.name).await {
-        Ok(zone) => zone,
-        Err(err) => return ApiError::from(err).into_response(),
-    };
+pub(crate) async fn get_zone_status(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    let zone = ZoneService::get_by_name_for(&caller, &params.name).await?;
 
-    match dns::client::probe::probe_secondaries(&zone.name).await {
-        Ok(probes) => (StatusCode::OK, Json(build_zone_status(&zone, probes))).into_response(),
-        Err(err) => ApiError(ServiceError::internal(err.to_string())).into_response(),
-    }
+    let probes = dns::client::probe::probe_secondaries(&zone.name)
+        .await
+        .map_err(|err| ApiError(ServiceError::internal(err.to_string())))?;
+    Ok((StatusCode::OK, Json(build_zone_status(&zone, probes))).into_response())
 }
 
 #[utoipa::path(
@@ -137,16 +140,19 @@ pub(crate) async fn get_zone_status(Path(params): Path<ZoneNameParam>) -> impl I
         )
 )]
 /// Render a zone as BIND master-file text.
-pub(crate) async fn export_zone(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
-    match ZoneService::export_zone_file(&params.name).await {
-        Ok(zone_file) => (
-            StatusCode::OK,
-            [("content-type", "text/plain; charset=utf-8")],
-            zone_file,
-        )
-            .into_response(),
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn export_zone(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    ZoneService::ensure_visible(&caller, &params.name).await?;
+
+    let zone_file = ZoneService::export_zone_file(&params.name).await?;
+    Ok((
+        StatusCode::OK,
+        [("content-type", "text/plain; charset=utf-8")],
+        zone_file,
+    )
+        .into_response())
 }
 
 #[utoipa::path(
@@ -169,23 +175,19 @@ pub(crate) async fn export_zone(Path(params): Path<ZoneNameParam>) -> impl IntoR
 )]
 /// List a zone's snapshots, newest serial first.
 pub(crate) async fn list_zone_snapshots(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<SnapshotListQuery>,
-) -> impl IntoResponse {
-    match ZoneService::list_snapshots(&params.name, query.limit, query.offset).await {
-        Ok(response) => {
-            let mut items = Vec::with_capacity(response.items.len());
-            for snapshot in &response.items {
-                match ZoneSnapshotResponse::from_snapshot(snapshot) {
-                    Ok(item) => items.push(item),
-                    Err(err) => return ApiError::from(err).into_response(),
-                }
-            }
-            let json_body = json!({ "items": items, "pagination": response.pagination });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
+) -> Result<Response, ApiError> {
+    ZoneService::ensure_visible(&caller, &params.name).await?;
+
+    let response = ZoneService::list_snapshots(&params.name, query.limit, query.offset).await?;
+    let mut items = Vec::with_capacity(response.items.len());
+    for snapshot in &response.items {
+        items.push(ZoneSnapshotResponse::from_snapshot(snapshot)?);
     }
+    let json_body = json!({ "items": items, "pagination": response.pagination });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -206,22 +208,20 @@ pub(crate) async fn list_zone_snapshots(
         )
 )]
 /// Get one snapshot plus the reconstructed record set at that serial.
-pub(crate) async fn get_zone_snapshot(Path(params): Path<ZoneSnapshotParam>) -> impl IntoResponse {
-    match ZoneService::get_snapshot(&params.name, params.serial).await {
-        Ok((snapshot, records)) => {
-            let snapshot = match ZoneSnapshotResponse::from_snapshot(&snapshot) {
-                Ok(snapshot) => snapshot,
-                Err(err) => return ApiError::from(err).into_response(),
-            };
-            let records = records
-                .into_iter()
-                .map(SnapshotRecordResponse::from)
-                .collect::<Vec<_>>();
-            let response = SnapshotDetailResponse { snapshot, records };
-            (StatusCode::OK, Json(response)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn get_zone_snapshot(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneSnapshotParam>,
+) -> Result<Response, ApiError> {
+    ZoneService::ensure_visible(&caller, &params.name).await?;
+
+    let (snapshot, records) = ZoneService::get_snapshot(&params.name, params.serial).await?;
+    let snapshot = ZoneSnapshotResponse::from_snapshot(&snapshot)?;
+    let records = records
+        .into_iter()
+        .map(SnapshotRecordResponse::from)
+        .collect::<Vec<_>>();
+    let response = SnapshotDetailResponse { snapshot, records };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -245,13 +245,14 @@ pub(crate) async fn get_zone_snapshot(Path(params): Path<ZoneSnapshotParam>) -> 
 )]
 /// Roll a zone back to the state captured at a snapshot serial.
 pub(crate) async fn rollback_zone(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<RollbackZoneRequest>,
-) -> impl IntoResponse {
-    match ZoneService::rollback(&params.name, body.serial, body.dry_run).await {
-        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
-        Err(err) => ApiError::from(err).into_response(),
-    }
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "roll back zones")?;
+
+    let response = ZoneService::rollback(&params.name, body.serial, body.dry_run).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Query parameters for listing zone snapshots.
@@ -295,13 +296,14 @@ pub(crate) struct SnapshotDiffQuery {
 )]
 /// Diff the record sets at two of a zone's serials.
 pub(crate) async fn diff_zone_snapshots(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<SnapshotDiffQuery>,
-) -> impl IntoResponse {
-    match ZoneService::diff_snapshots(&params.name, query.from, query.to).await {
-        Ok(diff) => (StatusCode::OK, Json(diff)).into_response(),
-        Err(err) => ApiError::from(err).into_response(),
-    }
+) -> Result<Response, ApiError> {
+    ZoneService::ensure_visible(&caller, &params.name).await?;
+
+    let diff = ZoneService::diff_snapshots(&params.name, query.from, query.to).await?;
+    Ok((StatusCode::OK, Json(diff)).into_response())
 }
 
 #[utoipa::path(
@@ -330,19 +332,18 @@ pub(crate) async fn diff_zone_snapshots(
         )
 )]
 /// List DNS zones, optionally filtered and paginated.
-pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoResponse {
-    match ZoneService::list_by_filter(query).await {
-        Ok(response) => {
-            let zones = response
-                .items
-                .iter()
-                .map(GetZoneResponse::from_zone)
-                .collect::<Vec<GetZoneResponse>>();
-            let json_body = json!({ "items": zones, "pagination": response.pagination });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn get_zones(
+    RequestCaller(caller): RequestCaller,
+    Query(query): Query<GetZonesFilter>,
+) -> Result<Response, ApiError> {
+    let response = ZoneService::list_by_filter_for(&caller, query).await?;
+    let zones = response
+        .items
+        .iter()
+        .map(GetZoneResponse::from_zone)
+        .collect::<Vec<GetZoneResponse>>();
+    let json_body = json!({ "items": zones, "pagination": response.pagination });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -363,22 +364,14 @@ pub(crate) async fn get_zones(Query(query): Query<GetZonesFilter>) -> impl IntoR
 )]
 /// Get a single DNS zone, optionally including its records.
 pub(crate) async fn get_zone(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<GetZoneQuery>,
-) -> impl IntoResponse {
-    let zone_name = params.name;
-    let records_query = query.records;
+) -> Result<Response, ApiError> {
+    let raw_zone = ZoneService::get_by_name_for(&caller, &params.name).await?;
 
-    let raw_zone = match ZoneService::get_by_name(&zone_name).await {
-        Ok(zone) => zone,
-        Err(err) => return ApiError::from(err).into_response(),
-    };
-
-    let raw_records = match records_query {
-        Some(true) => match RecordService::list(Some(raw_zone.name.clone())).await {
-            Ok(records) => records,
-            Err(err) => return ApiError::from(err).into_response(),
-        },
+    let raw_records = match query.records {
+        Some(true) => RecordService::list(Some(raw_zone.name.clone())).await?,
         _ => vec![],
     };
     let records = raw_records
@@ -388,7 +381,7 @@ pub(crate) async fn get_zone(
 
     let zone = GetZoneResponse::from_zone(&raw_zone);
     let json_body = json!({ "zone": zone, "records": records });
-    (StatusCode::OK, Json(json_body)).into_response()
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -406,15 +399,16 @@ pub(crate) async fn get_zone(
         )
 )]
 /// Create a new DNS zone.
-pub(crate) async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> impl IntoResponse {
-    match ZoneService::create(&body).await {
-        Ok(zone) => {
-            let zone = GetZoneResponse::from_zone(&zone);
-            let json_body = json!({ "zone": zone });
-            (StatusCode::CREATED, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn create_zone(
+    RequestCaller(caller): RequestCaller,
+    JsonBody(body): JsonBody<CreateZoneRequest>,
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "create zones")?;
+
+    let zone = ZoneService::create(&body).await?;
+    let zone = GetZoneResponse::from_zone(&zone);
+    let json_body = json!({ "zone": zone });
+    Ok((StatusCode::CREATED, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -437,17 +431,16 @@ pub(crate) async fn create_zone(JsonBody(body): JsonBody<CreateZoneRequest>) -> 
 )]
 /// Update an existing DNS zone.
 pub(crate) async fn update_zone(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneRequest>,
-) -> impl IntoResponse {
-    match ZoneService::update(&params.name, &body).await {
-        Ok(zone) => {
-            let zone = GetZoneResponse::from_zone(&zone);
-            let json_body = json!({ "zone": zone });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "update zones")?;
+
+    let zone = ZoneService::update(&params.name, &body).await?;
+    let zone = GetZoneResponse::from_zone(&zone);
+    let json_body = json!({ "zone": zone });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -466,14 +459,15 @@ pub(crate) async fn update_zone(
         )
 )]
 /// Delete a DNS zone.
-pub(crate) async fn delete_zone(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
-    match ZoneService::delete(&params.name).await {
-        Ok(_) => {
-            let json_body = json!({ "message": "Zone deleted successfully" });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn delete_zone(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "delete zones")?;
+
+    ZoneService::delete(&params.name).await?;
+    let json_body = json!({ "message": "Zone deleted successfully" });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -497,13 +491,14 @@ pub(crate) async fn delete_zone(Path(params): Path<ZoneNameParam>) -> impl IntoR
 )]
 /// Import a BIND zone file into a zone, reconciling records in one transaction.
 pub(crate) async fn import_zone(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<ImportZoneFileRequest>,
-) -> impl IntoResponse {
-    match RecordService::import_zone_file(&params.name, &body).await {
-        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
-        Err(err) => ApiError::from(err).into_response(),
-    }
+) -> Result<Response, ApiError> {
+    authorization::require_global(&caller, "import zone files")?;
+
+    let response = RecordService::import_zone_file(&params.name, &body).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Path parameters addressing a zone by name.

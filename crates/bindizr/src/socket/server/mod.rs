@@ -1,3 +1,6 @@
+//! Unix-socket daemon API for the CLI; reachable only by the local daemon
+//! owner, so every command runs with global access (no token scoping).
+
 pub(crate) mod control;
 mod doctor;
 mod notify;
@@ -53,6 +56,15 @@ async fn handle_client(stream: UnixStream) {
                 }
                 DaemonCommandKind::ZoneTsigPolicyRemove => {
                     tsig_key::remove_zone_tsig_policy(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneTokenPolicyAdd => {
+                    token::add_zone_token_policy(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneTokenPolicyList => {
+                    token::list_zone_token_policies(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneTokenPolicyRemove => {
+                    token::remove_zone_token_policy(&cmd.data).await
                 }
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,

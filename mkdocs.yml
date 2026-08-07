@@ -95,6 +95,7 @@ nav:
       - Docker Compose: deployment/docker-compose.md
       - Manual Installation: deployment/manual.md
   - Configuration: configuration.md
+  - ExternalDNS: external-dns.md
   - CLI:
       - Commands: cli/index.md
       - Dynamic Updates: cli/nsupdate.md

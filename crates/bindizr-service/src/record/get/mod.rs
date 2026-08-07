@@ -4,6 +4,7 @@ use bindizr_db::repository::RecordFilter;
 use super::RecordService;
 use crate::{
     RepositoryTx,
+    authorization::{Caller, visible_zone_ids, zone_visible},
     error::ServiceError,
     log_error,
     model::{
@@ -82,36 +83,59 @@ impl RecordService {
         }
     }
 
-    /// List records with their zone name for a zone by name, or all records when `None`.
-    pub async fn list_with_zone(
-        zone_name: Option<String>,
-    ) -> Result<Vec<RecordWithZone>, ServiceError> {
-        match zone_name {
-            Some(name) => {
-                let lookup_name = normalize_zone_name(&name)?;
-                let zone = require_zone_by_name(&lookup_name, &name).await?;
+    /// [`Self::list_with_zone_by_filter`] restricted to the caller's visible
+    /// zones. Queries stay zone-scoped in SQL (one query per granted zone);
+    /// a filter naming an invisible zone reads as an empty page.
+    pub async fn list_with_zone_by_filter_for(
+        caller: &Caller,
+        filter: GetRecordsFilter,
+    ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
+        let Some(visible) = visible_zone_ids(caller) else {
+            return Self::list_with_zone_by_filter(filter).await;
+        };
 
-                match RepositoryService::get_records_by_zone_id_with_zone(zone.id).await {
-                    Ok(records) => Ok(records),
-                    Err(e) => {
-                        log_error!("Failed to fetch records for zone {}: {}", name, e);
-                        Err(ServiceError::internal(format!(
-                            "Failed to fetch records for zone {}",
-                            name
-                        )))
-                    }
-                }
-            }
-            None => match RepositoryService::get_all_records_with_zone().await {
-                Ok(records) => Ok(records),
-                Err(e) => {
-                    log_error!("Failed to fetch all records: {}", e);
-                    Err(ServiceError::internal(
-                        "Failed to fetch all records".to_string(),
-                    ))
-                }
-            },
+        let limit = filter.limit;
+        let offset = filter.offset;
+
+        let zones = RepositoryService::get_all_zones().await?;
+        let wanted = filter
+            .zone_name
+            .as_deref()
+            .map(normalize_zone_name)
+            .transpose()?;
+        let target_zones: Vec<&Zone> = zones
+            .iter()
+            .filter(|zone| visible.contains(&zone.id))
+            .filter(|zone| wanted.as_deref().is_none_or(|name| zone.name == name))
+            .collect();
+
+        let mut records: Vec<RecordWithZone> = Vec::new();
+        for zone in target_zones {
+            let page = Self::list_with_zone_by_filter(GetRecordsFilter {
+                zone_name: Some(zone.name.clone()),
+                limit: None,
+                offset: None,
+                ..filter.clone()
+            })
+            .await?;
+            records.extend(page.items);
         }
+
+        records.sort_by(|a, b| (&a.zone_name, &a.name, a.id).cmp(&(&b.zone_name, &b.name, b.id)));
+        Ok(paginate_items(records, limit, offset))
+    }
+
+    /// [`Self::get_by_id_with_zone`] with invisible zones reading as a
+    /// missing record, so scoped tokens cannot probe other zones' record ids.
+    pub async fn get_by_id_with_zone_for(
+        caller: &Caller,
+        record_id: i32,
+    ) -> Result<RecordWithZone, ServiceError> {
+        let record = Self::get_by_id_with_zone(record_id).await?;
+        if !zone_visible(caller, record.zone_id) {
+            return Err(ServiceError::record_not_found(record_id));
+        }
+        Ok(record)
     }
 
     /// List records with their zone name matching `filter`, returning a paginated response.

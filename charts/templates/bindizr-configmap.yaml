@@ -11,6 +11,7 @@ data:
     listen_port = {{ .Values.bindizr.api.port }}
     require_authentication = {{ .Values.bindizr.api.requireAuthentication }}
     metrics_enabled = {{ .Values.bindizr.api.metricsEnabled }}
+    external_dns_enabled = {{ .Values.bindizr.api.externalDnsEnabled }}
 
     [database]
     type = "{{ .Values.bindizr.database.type }}"

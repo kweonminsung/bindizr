@@ -235,6 +235,11 @@ pub fn get_zone_tsig_policy_repository() -> Box<dyn repository::ZoneTsigPolicyRe
     repository::RepositoryFactory::create_zone_tsig_policy_repository(pool)
 }
 
+pub fn get_zone_token_policy_repository() -> Box<dyn repository::ZoneTokenPolicyRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_zone_token_policy_repository(pool)
+}
+
 /// Return an API token repository backed by the global pool.
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();

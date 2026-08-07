@@ -5,7 +5,8 @@ use crate::{
         error::DatabaseError,
         get_api_token_repository, get_catalog_zone_state_repository, get_record_repository,
         get_tsig_key_repository, get_zone_change_repository, get_zone_repository,
-        get_zone_snapshot_repository, get_zone_tsig_policy_repository,
+        get_zone_snapshot_repository, get_zone_token_policy_repository,
+        get_zone_tsig_policy_repository,
         model::{
             api_token::ApiToken,
             record::{Record, RecordType, RecordWithZone},
@@ -13,6 +14,7 @@ use crate::{
             zone::Zone,
             zone_change::ZoneChange,
             zone_snapshot::ZoneSnapshot,
+            zone_token_policy::ZoneTokenPolicy,
             zone_tsig_policy::ZoneTsigPolicy,
         },
         repository as db_repository,
@@ -80,13 +82,6 @@ impl RepositoryService {
     ) -> Result<Option<Zone>, ServiceError> {
         get_zone_repository()
             .get_by_name_tx(tx, name)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to load zone: {}", e)))
-    }
-
-    pub(super) async fn get_zone_by_id(id: i32) -> Result<Option<Zone>, ServiceError> {
-        get_zone_repository()
-            .get_by_id(id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zone: {}", e)))
     }
@@ -662,11 +657,88 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to delete TSIG policy: {}", e)))
     }
 
-    pub(super) async fn create_api_token(token: ApiToken) -> Result<ApiToken, ServiceError> {
-        get_api_token_repository()
-            .create(token)
+    pub(super) async fn create_zone_token_policy(
+        policy: ZoneTokenPolicy,
+    ) -> Result<ZoneTokenPolicy, ServiceError> {
+        get_zone_token_policy_repository()
+            .create(policy)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to create token: {}", e)))
+            .map_err(|e| {
+                // The zone or token can be deleted between the service-level
+                // existence checks and this insert; the FK reports it.
+                if e.is_foreign_key_violation() {
+                    ServiceError::new(ErrorCode::ZoneNotFound, "Zone or token no longer exists")
+                } else {
+                    ServiceError::internal(format!("failed to create token policy: {}", e))
+                }
+            })
+    }
+
+    pub(super) async fn get_zone_token_policy_by_id(
+        id: i32,
+    ) -> Result<Option<ZoneTokenPolicy>, ServiceError> {
+        get_zone_token_policy_repository()
+            .get_by_id(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load token policy: {}", e)))
+    }
+
+    pub(super) async fn get_zone_token_policies_by_zone_id(
+        zone_id: i32,
+    ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
+        get_zone_token_policy_repository()
+            .get_by_zone_id(zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
+    }
+
+    pub(super) async fn get_zone_token_policies_by_token_id(
+        api_token_id: i32,
+    ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
+        get_zone_token_policy_repository()
+            .get_by_token_id(api_token_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
+    }
+
+    pub(super) async fn get_zone_token_policies_by_zone_and_token_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        api_token_id: i32,
+    ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
+        get_zone_token_policy_repository()
+            .get_by_zone_and_token_tx(tx, zone_id, api_token_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
+    }
+
+    pub(super) async fn delete_zone_token_policy(id: i32) -> Result<(), ServiceError> {
+        get_zone_token_policy_repository()
+            .delete(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete token policy: {}", e)))
+    }
+
+    pub(super) async fn create_api_token(token: ApiToken) -> Result<ApiToken, ServiceError> {
+        let name = token.name.clone();
+        get_api_token_repository().create(token).await.map_err(|e| {
+            // A concurrent create can slip past the service-level name check;
+            // surface the UNIQUE(name) backstop as the same conflict error.
+            if e.is_unique_violation() {
+                ServiceError::token_conflict(&name)
+            } else {
+                ServiceError::internal(format!("failed to create token: {}", e))
+            }
+        })
+    }
+
+    pub(super) async fn get_api_token_by_name(
+        name: &str,
+    ) -> Result<Option<ApiToken>, ServiceError> {
+        get_api_token_repository()
+            .get_by_name(name)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load token: {}", e)))
     }
 
     pub(super) async fn get_all_api_tokens() -> Result<Vec<ApiToken>, ServiceError> {
@@ -674,13 +746,6 @@ impl RepositoryService {
             .get_all()
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load tokens: {}", e)))
-    }
-
-    pub(super) async fn get_api_token_by_id(id: i32) -> Result<Option<ApiToken>, ServiceError> {
-        get_api_token_repository()
-            .get_by_id(id)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to load token: {}", e)))
     }
 
     pub(super) async fn get_api_token_by_token(

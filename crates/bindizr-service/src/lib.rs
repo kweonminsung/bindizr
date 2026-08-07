@@ -2,7 +2,9 @@
 //! workflows built on the repository layer.
 
 pub mod auth;
+pub mod authorization;
 pub mod error;
+pub mod external_dns;
 pub mod notify;
 mod pagination;
 pub mod record;

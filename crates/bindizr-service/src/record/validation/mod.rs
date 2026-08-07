@@ -15,12 +15,12 @@ use crate::{
     validation::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels},
 };
 
-pub(super) struct NormalizedOwnerName {
+pub(crate) struct NormalizedOwnerName {
     /// Name stored in the database according to the current relative-name policy.
     pub stored_name: String,
 }
 
-pub(super) fn normalize_record_owner_name(
+pub(crate) fn normalize_record_owner_name(
     input_name: &str,
     zone_name: &str,
 ) -> Result<NormalizedOwnerName, ServiceError> {
