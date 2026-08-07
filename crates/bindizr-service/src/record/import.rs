@@ -7,7 +7,7 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, delete_records_tx, insert_validated_records_tx, load_zone_tx},
+    bulk::{PreparedRecord, delete_records_tx, insert_validated_records_tx},
     record_value::record_values_equal,
     validation::{
         normalize_record_owner_name, validate_delete_constraints,
@@ -24,9 +24,11 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
+    timing::elapsed_ms,
     types::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff},
     zone::{
         history::{ReconstructedRecord, build_record_diff},
+        load_zone_tx,
         snapshot::save_zone_snapshot_tx,
     },
 };
@@ -79,6 +81,22 @@ struct AppliedImport {
     changed: bool,
 }
 
+/// Per-stage timings of one import, filled inside the transaction and emitted
+/// as a single debug summary after commit + NOTIFY. `db_write_ms`/`serial_ms`
+/// stay zero when the import is a dry run or a no-op.
+#[derive(Default)]
+struct ImportTimings {
+    load_zone_ms: f64,
+    load_existing_ms: f64,
+    parse_ms: f64,
+    normalize_ms: f64,
+    build_index_ms: f64,
+    reconcile_ms: f64,
+    validate_ms: f64,
+    db_write_ms: f64,
+    serial_ms: f64,
+}
+
 impl RecordService {
     /// Import a BIND zone file into an existing zone, reconciling it by mode. On
     /// apply the zone serial is incremented once and a single NOTIFY is sent. If
@@ -92,29 +110,18 @@ impl RecordService {
 
         let t_total = Instant::now();
 
-        // Per-stage timings, filled inside the transaction and emitted as a single
-        // debug summary after commit + NOTIFY (see log_debug! below). db_write/serial
-        // stay zero when the import is a dry run or a no-op.
-        let mut load_zone_ms = 0.0f64;
-        let mut load_existing_ms = 0.0f64;
-        let mut parse_ms = 0.0f64;
-        let mut normalize_ms = 0.0f64;
-        let mut build_index_ms = 0.0f64;
-        let mut reconcile_ms = 0.0f64;
-        let mut validate_ms = 0.0f64;
-        let mut db_write_ms = 0.0f64;
-        let mut serial_ms = 0.0f64;
+        let mut timings = ImportTimings::default();
 
         let mut tx = RepositoryService::begin_tx("Failed to import zone file").await?;
 
         let apply_result: Result<AppliedImport, ServiceError> = async {
             let t = Instant::now();
             let zone = load_zone_tx(&mut tx, zone_name).await?;
-            load_zone_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
             let parsed = parse_zone_file(&request.content, &zone.name, zone.ttl);
-            parse_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
 
@@ -189,7 +196,7 @@ impl RecordService {
                 });
             }
 
-            normalize_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.normalize_ms = elapsed_ms(t);
             let parsed_count = desired.len();
 
             // Append never deletes, so only rows sharing an owner name with the
@@ -215,7 +222,7 @@ impl RecordService {
                 log_error!("Failed to load zone records: {}", e);
                 ServiceError::internal("Failed to import zone file".to_string())
             })?;
-            load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.load_existing_ms = elapsed_ms(t);
 
             // Lowercase each existing owner name once and reuse it across the
             // passes below instead of recomputing it per pass.
@@ -235,7 +242,7 @@ impl RecordService {
                     .or_default()
                     .push(record);
             }
-            build_index_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.build_index_ms = elapsed_ms(t);
 
             let t = Instant::now();
             let desired_matches_existing = |e: &Record, e_lower: &str| {
@@ -306,7 +313,7 @@ impl RecordService {
                     unchanged += 1;
                 }
             }
-            reconcile_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.reconcile_ms = elapsed_ms(t);
 
             // Validate additions against an in-memory copy so constraint
             // violations are caught without writing anything. Simulated records
@@ -349,7 +356,7 @@ impl RecordService {
                     Err(e) => return Err(e),
                 }
             }
-            validate_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.validate_ms = elapsed_ms(t);
 
             let summary = ImportSummary {
                 parsed: parsed_count,
@@ -396,7 +403,7 @@ impl RecordService {
                     })
                     .collect();
                 insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
-                db_write_ms = t.elapsed().as_secs_f64() * 1000.0;
+                timings.db_write_ms = elapsed_ms(t);
 
                 let t = Instant::now();
                 // Increment zone serial once so IXFR consumers detect the import
@@ -408,7 +415,7 @@ impl RecordService {
                     })?;
 
                 save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
-                serial_ms = t.elapsed().as_secs_f64() * 1000.0;
+                timings.serial_ms = elapsed_ms(t);
             }
 
             let response = ImportZoneFileResponse {
@@ -450,7 +457,7 @@ impl RecordService {
         if changed && let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
-        let notify_ms = t.elapsed().as_secs_f64() * 1000.0;
+        let notify_ms = elapsed_ms(t);
 
         // Per-stage breakdown for profiling; debug-gated so it stays out of
         // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
@@ -463,17 +470,17 @@ impl RecordService {
             mode,
             response.summary.parsed,
             response.applied,
-            parse_ms,
-            load_zone_ms,
-            load_existing_ms,
-            normalize_ms,
-            build_index_ms,
-            reconcile_ms,
-            validate_ms,
-            db_write_ms,
-            serial_ms,
+            timings.parse_ms,
+            timings.load_zone_ms,
+            timings.load_existing_ms,
+            timings.normalize_ms,
+            timings.build_index_ms,
+            timings.reconcile_ms,
+            timings.validate_ms,
+            timings.db_write_ms,
+            timings.serial_ms,
             notify_ms,
-            t_total.elapsed().as_secs_f64() * 1000.0,
+            elapsed_ms(t_total),
         );
 
         Ok(response)

@@ -9,7 +9,9 @@ use bindizr_core::dns::{
 };
 use chrono::Utc;
 
-use super::{ZoneService, snapshot::save_zone_snapshot_tx, validation::normalize_zone_name};
+use super::{
+    ZoneService, load_zone_tx, snapshot::save_zone_snapshot_tx, validation::normalize_zone_name,
+};
 use crate::{
     RepositoryTx,
     authorization::{self, Caller},
@@ -22,7 +24,7 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     record::{
-        canonical_record_value, delete_records_tx, insert_validated_records_tx, load_zone_tx,
+        canonical_record_value, delete_records_tx, insert_validated_records_tx,
         validate_delete_constraints, validate_record_add_constraints_normalized,
     },
     repository::RepositoryService,
@@ -139,7 +141,7 @@ async fn reconstruct_records_at_serial(
         );
 
         match change.operation.as_str() {
-            "ADD" => match state.get_mut(&key).and_then(Vec::pop) {
+            ZoneChange::OP_ADD => match state.get_mut(&key).and_then(Vec::pop) {
                 Some(_) => {}
                 // Tolerated: history anomalies (e.g. rows removed outside
                 // the change log) must not brick reconstruction.
@@ -149,7 +151,7 @@ async fn reconstruct_records_at_serial(
                     change.record_type
                 ),
             },
-            "DEL" => {
+            ZoneChange::OP_DEL => {
                 // The recorded row existed before this serial; restore it.
                 state.entry(key).or_default().push(ReconstructedRecord {
                     name: change.record_name.clone(),
@@ -698,7 +700,7 @@ impl ZoneService {
                         id: 0,
                         zone_id: zone.id,
                         serial: new_serial,
-                        operation: "DEL".to_string(),
+                        operation: ZoneChange::OP_DEL.to_string(),
                         record_name: "@".to_string(),
                         record_type: "SOA".to_string(),
                         record_value: soa_rdata(&zone)?,
@@ -709,7 +711,7 @@ impl ZoneService {
                         id: 0,
                         zone_id: zone.id,
                         serial: new_serial,
-                        operation: "ADD".to_string(),
+                        operation: ZoneChange::OP_ADD.to_string(),
                         record_name: "@".to_string(),
                         record_type: "SOA".to_string(),
                         record_value: soa_rdata(&restored_zone)?,

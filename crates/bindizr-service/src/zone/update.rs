@@ -1,7 +1,7 @@
 use bindizr_core::dns::{CATALOG_ZONE_NAME, name::to_fqdn};
 use chrono::Utc;
 
-use super::{ZoneService, validation::normalize_zone_name};
+use super::{ZoneService, load_zone_tx};
 use crate::{
     RepositoryTx,
     error::{ErrorCode, ServiceError},
@@ -95,22 +95,12 @@ impl ZoneService {
         zone_name: &str,
         build: impl FnOnce(&Zone) -> CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
-        let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
 
         let apply_result: Result<AppliedZoneUpdate, ServiceError> = async {
             // Lock the zone row so the serial computed below stays ahead of
             // concurrent record mutations and nsupdate on the same zone.
-            let existing_zone = RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_name)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to fetch zone: {}", e);
-                    ServiceError::internal("Failed to update zone".to_string())
-                })?
-                .ok_or_else(|| {
-                    log_error!("Zone with name '{}' not found", zone_name);
-                    ServiceError::zone_not_found(zone_name)
-                })?;
+            let existing_zone = load_zone_tx(&mut tx, zone_name).await?;
             let zone_id = existing_zone.id;
 
             // Merge against the locked row, then validate.
@@ -231,7 +221,7 @@ impl ZoneService {
                     id: 0,
                     zone_id,
                     serial: new_serial,
-                    operation: "ADD".to_string(),
+                    operation: ZoneChange::OP_ADD.to_string(),
                     record_name: "@".to_string(),
                     record_type: "NS".to_string(),
                     record_value: updated_zone.primary_ns.clone(),
@@ -244,7 +234,7 @@ impl ZoneService {
                 id: 0,
                 zone_id,
                 serial: new_serial,
-                operation: "DEL".to_string(),
+                operation: ZoneChange::OP_DEL.to_string(),
                 record_name: "@".to_string(),
                 record_type: "SOA".to_string(),
                 record_value: soa_rdata(&existing_zone)?,
@@ -255,7 +245,7 @@ impl ZoneService {
                 id: 0,
                 zone_id,
                 serial: new_serial,
-                operation: "ADD".to_string(),
+                operation: ZoneChange::OP_ADD.to_string(),
                 record_name: "@".to_string(),
                 record_type: "SOA".to_string(),
                 record_value: soa_rdata(&updated_zone)?,

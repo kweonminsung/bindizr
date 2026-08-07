@@ -1,13 +1,15 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 
+use super::ZoneService;
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    model::{record::RecordType, tsig_key::TsigKey, zone_tsig_policy::ZoneTsigPolicy},
+    model::{record::RecordType, zone_tsig_policy::ZoneTsigPolicy},
     repository::RepositoryService,
-    tsig_key::normalize_key_name,
+    tsig_key::TsigKeyService,
     validation::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control},
-    zone::validation::normalize_zone_name,
 };
 
 /// Pattern/type values granting unrestricted rights.
@@ -33,8 +35,8 @@ impl ZoneTsigPolicyService {
         record_name_pattern: Option<&str>,
         record_types: Option<&str>,
     ) -> Result<ZoneTsigPolicyWithKey, ServiceError> {
-        let zone = find_zone(zone_name).await?;
-        let key = find_key(key_name).await?;
+        let zone = ZoneService::get_by_name(zone_name).await?;
+        let key = TsigKeyService::get(key_name).await?;
 
         if key.is_global {
             return Err(ServiceError::invalid_input(format!(
@@ -64,21 +66,22 @@ impl ZoneTsigPolicyService {
 
     /// List all TSIG policies of a zone with their key names.
     pub async fn list(zone_name: &str) -> Result<Vec<ZoneTsigPolicyWithKey>, ServiceError> {
-        let zone = find_zone(zone_name).await?;
+        let zone = ZoneService::get_by_name(zone_name).await?;
         let policies = RepositoryService::get_zone_tsig_policies_by_zone_id(zone.id).await?;
 
-        let keys = RepositoryService::get_all_tsig_keys().await?;
-        let key_name = |id: i32| {
-            keys.iter()
-                .find(|key| key.id == id)
-                .map(|key| key.name.clone())
-                .unwrap_or_default()
-        };
+        let key_names: HashMap<i32, String> = RepositoryService::get_all_tsig_keys()
+            .await?
+            .into_iter()
+            .map(|key| (key.id, key.name))
+            .collect();
 
         Ok(policies
             .into_iter()
             .map(|policy| ZoneTsigPolicyWithKey {
-                tsig_key_name: key_name(policy.tsig_key_id),
+                tsig_key_name: key_names
+                    .get(&policy.tsig_key_id)
+                    .cloned()
+                    .unwrap_or_default(),
                 policy,
             })
             .collect())
@@ -86,7 +89,7 @@ impl ZoneTsigPolicyService {
 
     /// Remove one policy of a zone by policy id.
     pub async fn remove(zone_name: &str, policy_id: i32) -> Result<(), ServiceError> {
-        let zone = find_zone(zone_name).await?;
+        let zone = ZoneService::get_by_name(zone_name).await?;
 
         let policy = RepositoryService::get_zone_tsig_policy_by_id(policy_id)
             .await?
@@ -149,20 +152,6 @@ pub(crate) fn types_match(types: &str, record_type: Option<&RecordType>) -> bool
         None => false,
         Some(record_type) => types.split(',').any(|t| t == record_type.as_str()),
     }
-}
-
-async fn find_zone(zone_name: &str) -> Result<crate::model::zone::Zone, ServiceError> {
-    let name = normalize_zone_name(zone_name)?;
-    RepositoryService::get_zone_by_name(&name)
-        .await?
-        .ok_or_else(|| ServiceError::zone_not_found(zone_name))
-}
-
-async fn find_key(key_name: &str) -> Result<TsigKey, ServiceError> {
-    let name = normalize_key_name(key_name)?;
-    RepositoryService::get_tsig_key_by_name(&name)
-        .await?
-        .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
 }
 
 /// Normalize and validate a record name pattern; `None` grants all names.

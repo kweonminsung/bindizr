@@ -7,7 +7,7 @@ use crate::{
     error::ServiceError,
     log_error,
     model::{zone::Zone, zone_change::ZoneChange},
-    pagination::{paginate_items, paginated_response},
+    pagination::paginated_response,
     repository::RepositoryService,
     types::{GetZonesFilter, PaginatedResponse},
 };
@@ -54,6 +54,28 @@ impl ZoneService {
     pub async fn list_by_filter(
         filter: GetZonesFilter,
     ) -> Result<PaginatedResponse<Zone>, ServiceError> {
+        Self::list_filtered(filter, None).await
+    }
+
+    /// [`Self::list_by_filter`] restricted to the caller's visible zones,
+    /// pushed into SQL so pagination stays database-side.
+    pub async fn list_by_filter_for(
+        caller: &Caller,
+        filter: GetZonesFilter,
+    ) -> Result<PaginatedResponse<Zone>, ServiceError> {
+        let Some(visible) = visible_zone_ids(caller) else {
+            return Self::list_by_filter(filter).await;
+        };
+
+        let mut ids: Vec<i32> = visible.into_iter().collect();
+        ids.sort_unstable();
+        Self::list_filtered(filter, Some(ids)).await
+    }
+
+    async fn list_filtered(
+        filter: GetZonesFilter,
+        ids: Option<Vec<i32>>,
+    ) -> Result<PaginatedResponse<Zone>, ServiceError> {
         let limit = filter.limit;
         let offset = filter.offset;
 
@@ -67,6 +89,7 @@ impl ZoneService {
             max_ttl: filter.max_ttl,
             serial: filter.serial,
             search: filter.search,
+            ids,
             limit,
             offset,
         };
@@ -74,32 +97,6 @@ impl ZoneService {
         let total = RepositoryService::count_zones_by_filter(zone_filter.clone()).await?;
         let zones = RepositoryService::get_zones_by_filter(zone_filter).await?;
         Ok(paginated_response(zones, limit, offset, total))
-    }
-
-    /// [`Self::list_by_filter`] restricted to the caller's visible zones,
-    /// with the pagination window applied after the visibility filter.
-    pub async fn list_by_filter_for(
-        caller: &Caller,
-        filter: GetZonesFilter,
-    ) -> Result<PaginatedResponse<Zone>, ServiceError> {
-        let Some(visible) = visible_zone_ids(caller) else {
-            return Self::list_by_filter(filter).await;
-        };
-
-        let limit = filter.limit;
-        let offset = filter.offset;
-        let unpaged = GetZonesFilter {
-            limit: None,
-            offset: None,
-            ..filter
-        };
-        let response = Self::list_by_filter(unpaged).await?;
-        let zones: Vec<Zone> = response
-            .items
-            .into_iter()
-            .filter(|zone| visible.contains(&zone.id))
-            .collect();
-        Ok(paginate_items(zones, limit, offset))
     }
 
     /// 404 for zones a scoped caller cannot see, so grants cannot be probed.
@@ -129,6 +126,23 @@ impl ZoneService {
                 log_error!("Failed to fetch zone: {}", e);
                 Err(ServiceError::internal("Failed to fetch zone".to_string()))
             }
+        }
+    }
+}
+
+/// Load (and lock) the target zone inside the transaction, returning `NotFound`
+/// if missing.
+pub(crate) async fn load_zone_tx(
+    tx: &mut RepositoryTx<'_>,
+    zone_name: &str,
+) -> Result<Zone, ServiceError> {
+    let lookup_zone_name = normalize_zone_name(zone_name)?;
+    match RepositoryService::get_zone_by_name_tx(tx, &lookup_zone_name).await {
+        Ok(Some(zone)) => Ok(zone),
+        Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
+        Err(e) => {
+            log_error!("Failed to fetch zone: {}", e);
+            Err(ServiceError::internal("Failed to fetch zone".to_string()))
         }
     }
 }

@@ -10,6 +10,7 @@ mod pagination;
 pub mod record;
 mod repository;
 pub mod serial;
+pub(crate) mod timing;
 pub mod token;
 pub mod tsig_key;
 pub mod types;

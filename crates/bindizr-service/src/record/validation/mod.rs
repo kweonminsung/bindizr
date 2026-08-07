@@ -15,6 +15,12 @@ use crate::{
     validation::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels},
 };
 
+pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
+    value
+        .parse::<RecordType>()
+        .map_err(|_| ServiceError::invalid_input(format!("Invalid record type: {}", value)))
+}
+
 pub(crate) struct NormalizedOwnerName {
     /// Name stored in the database according to the current relative-name policy.
     pub stored_name: String,

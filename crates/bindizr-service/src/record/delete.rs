@@ -1,4 +1,4 @@
-use super::{RecordService, validation::validate_delete_constraints};
+use super::{RecordService, bulk::delete_records_tx, validation::validate_delete_constraints};
 use crate::{
     RepositoryTx,
     authorization::{self, Caller, RecordWrite},
@@ -93,12 +93,14 @@ impl RecordService {
 
             validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
 
-            RepositoryService::delete_record_tx(&mut tx, record_id)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to delete record: {}", e);
-                    ServiceError::internal("Failed to delete record".to_string())
-                })?;
+            // Deletes the record with its DEL zone change for IXFR.
+            delete_records_tx(
+                &mut tx,
+                zone.id,
+                new_serial,
+                std::slice::from_ref(&existing_record),
+            )
+            .await?;
 
             // Increment zone serial so IXFR consumers can detect this change
             RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
@@ -107,27 +109,6 @@ impl RecordService {
                     log_error!("Failed to update zone serial: {}", e);
                     ServiceError::internal("Failed to update zone serial".to_string())
                 })?;
-
-            // Record zone change for IXFR
-            RepositoryService::create_zone_change_tx(
-                &mut tx,
-                crate::model::zone_change::ZoneChange {
-                    id: 0,
-                    zone_id: zone.id,
-                    serial: new_serial,
-                    operation: "DEL".to_string(),
-                    record_name: existing_record.name.clone(),
-                    record_type: existing_record.record_type.to_string(),
-                    record_value: existing_record.value.clone(),
-                    record_ttl: existing_record.ttl,
-                    record_priority: existing_record.priority,
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change: {}", e);
-                ServiceError::internal("Failed to create zone change".to_string())
-            })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 

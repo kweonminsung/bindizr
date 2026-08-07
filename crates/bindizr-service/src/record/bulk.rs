@@ -4,7 +4,9 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
+    validation::{
+        normalize_record_owner_name, parse_record_type, validate_record_add_constraints_normalized,
+    },
 };
 use crate::{
     RepositoryTx,
@@ -13,18 +15,31 @@ use crate::{
     log_debug, log_debug_enabled, log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType, RecordWithZone},
-        zone::Zone,
         zone_change::ZoneChange,
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{BulkRecordItem, RecordDiff, RecordValueRequest},
+    timing::{duration_ms, elapsed_ms},
+    types::{RecordDiff, RecordItem, RecordValueRequest},
     zone::{
         history::{ReconstructedRecord, build_record_diff},
+        load_zone_tx,
         snapshot::save_zone_snapshot_tx,
-        validation::normalize_zone_name,
     },
 };
+
+/// Per-stage timings of one bulk insert, filled inside the transaction and
+/// emitted as a single debug summary after commit + NOTIFY.
+#[derive(Default)]
+struct BulkTimings {
+    load_zone_ms: f64,
+    load_existing_ms: f64,
+    build_index_ms: f64,
+    normalize_ms: f64,
+    validate_ms: f64,
+    db_write_ms: f64,
+    serial_ms: f64,
+}
 
 /// A record whose type and value are parsed and ready to insert. The owner name
 /// is kept raw so the constraint validator can normalize it against the zone.
@@ -44,9 +59,7 @@ pub(super) fn prepare_record(
     ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Result<PreparedRecord, ServiceError> {
-    let record_type = record_type.parse::<RecordType>().map_err(|_| {
-        ServiceError::invalid_input(format!("Invalid record type: {}", record_type))
-    })?;
+    let record_type = parse_record_type(record_type)?;
     let value = value
         .to_storage_value(&record_type)
         .map_err(ServiceError::invalid_record_value)?;
@@ -60,7 +73,7 @@ pub(super) fn prepare_record(
     })
 }
 
-fn zone_changes_for(
+pub(super) fn zone_changes_for(
     zone_id: i32,
     new_serial: i32,
     operation: &str,
@@ -94,7 +107,7 @@ pub(crate) async fn insert_validated_records_tx(
     }
 
     let created_records = RepositoryService::create_records_tx(tx, records).await?;
-    let changes = zone_changes_for(zone_id, new_serial, "ADD", &created_records);
+    let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_ADD, &created_records);
     RepositoryService::create_zone_changes_tx(tx, &changes).await?;
     Ok(created_records)
 }
@@ -112,25 +125,9 @@ pub(crate) async fn delete_records_tx(
 
     let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
     RepositoryService::delete_records_tx(tx, &ids).await?;
-    let changes = zone_changes_for(zone_id, new_serial, "DEL", records);
+    let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_DEL, records);
     RepositoryService::create_zone_changes_tx(tx, &changes).await?;
     Ok(())
-}
-
-/// Load the target zone inside the transaction, returning `NotFound` if missing.
-pub(crate) async fn load_zone_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone_name: &str,
-) -> Result<Zone, ServiceError> {
-    let lookup_zone_name = normalize_zone_name(zone_name)?;
-    match RepositoryService::get_zone_by_name_tx(tx, &lookup_zone_name).await {
-        Ok(Some(zone)) => Ok(zone),
-        Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
-        Err(e) => {
-            log_error!("Failed to fetch zone: {}", e);
-            Err(ServiceError::internal("Failed to fetch zone".to_string()))
-        }
-    }
 }
 
 impl RecordService {
@@ -142,7 +139,7 @@ impl RecordService {
     /// IDs).
     pub async fn create_bulk(
         zone_name: &str,
-        items: &[BulkRecordItem],
+        items: &[RecordItem],
         dry_run: bool,
     ) -> Result<(Vec<RecordWithZone>, RecordDiff), ServiceError> {
         Self::create_bulk_for(&Caller::Global, zone_name, items, dry_run).await
@@ -153,7 +150,7 @@ impl RecordService {
     pub async fn create_bulk_for(
         caller: &Caller,
         zone_name: &str,
-        items: &[BulkRecordItem],
+        items: &[RecordItem],
         dry_run: bool,
     ) -> Result<(Vec<RecordWithZone>, RecordDiff), ServiceError> {
         if items.is_empty() {
@@ -178,24 +175,16 @@ impl RecordService {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let prepare_ms = t.elapsed().as_secs_f64() * 1000.0;
+        let prepare_ms = elapsed_ms(t);
 
-        // Per-stage timings, filled inside the transaction and emitted as a single
-        // debug summary after commit + NOTIFY (see log_debug! below).
-        let mut load_zone_ms = 0.0f64;
-        let mut load_existing_ms = 0.0f64;
-        let mut build_index_ms = 0.0f64;
-        let mut normalize_ms = 0.0f64;
-        let mut validate_ms = 0.0f64;
-        let mut db_write_ms = 0.0f64;
-        let mut serial_ms = 0.0f64;
+        let mut timings = BulkTimings::default();
 
         let mut tx = RepositoryService::begin_tx("Failed to create records").await?;
 
         let apply_result = async {
             let t = Instant::now();
             let zone = load_zone_tx(&mut tx, zone_name).await?;
-            load_zone_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.load_zone_ms = elapsed_ms(t);
 
             // Only records whose owner name appears in the batch can conflict, so
             // load just those instead of the whole zone. Normalization errors are
@@ -224,7 +213,7 @@ impl RecordService {
                     ));
                 }
             };
-            load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.load_existing_ms = elapsed_ms(t);
 
             let new_serial = generate_serial(Some(zone.serial))?;
 
@@ -248,17 +237,17 @@ impl RecordService {
                     .or_default()
                     .push(record);
             }
-            build_index_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.build_index_ms = elapsed_ms(t);
 
             // Time normalization and validation separately so validate_ms stays
             // comparable with zone import, which normalizes in an earlier pass;
             // debug-gated to keep the clock reads off the hot path.
-            let timing = log_debug_enabled!();
+            let timing_enabled = log_debug_enabled!();
             let mut normalize_dur = std::time::Duration::ZERO;
             let mut validate_dur = std::time::Duration::ZERO;
             let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
-                let t = timing.then(Instant::now);
+                let t = timing_enabled.then(Instant::now);
                 let normalized_owner =
                     normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
                 if let Some(t) = t {
@@ -272,7 +261,7 @@ impl RecordService {
                 // Fixed at write time: a later zone TTL change will not move it.
                 let ttl = prepared_record.ttl.unwrap_or(zone.ttl);
 
-                let t = timing.then(Instant::now);
+                let t = timing_enabled.then(Instant::now);
                 validate_record_add_constraints_normalized(
                     same_name,
                     &normalized_owner.stored_name,
@@ -299,8 +288,8 @@ impl RecordService {
                 same_name.push(record.clone());
                 to_insert.push(record);
             }
-            normalize_ms = normalize_dur.as_secs_f64() * 1000.0;
-            validate_ms = validate_dur.as_secs_f64() * 1000.0;
+            timings.normalize_ms = duration_ms(normalize_dur);
+            timings.validate_ms = duration_ms(validate_dur);
 
             // Dry runs authorize too, so a preview never claims a batch the
             // caller could not apply.
@@ -329,7 +318,7 @@ impl RecordService {
             let t = Instant::now();
             let created_records =
                 insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
-            db_write_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.db_write_ms = elapsed_ms(t);
 
             // Increment zone serial once so IXFR consumers detect the batch
             let t = Instant::now();
@@ -341,7 +330,7 @@ impl RecordService {
                 })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
-            serial_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.serial_ms = elapsed_ms(t);
 
             Ok::<(Vec<Record>, String, RecordDiff), ServiceError>((
                 created_records,
@@ -366,7 +355,7 @@ impl RecordService {
         {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
-        let notify_ms = t.elapsed().as_secs_f64() * 1000.0;
+        let notify_ms = elapsed_ms(t);
 
         // Per-stage breakdown for profiling; debug-gated so it stays out of
         // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
@@ -377,15 +366,15 @@ impl RecordService {
             zone_name,
             created_records.len(),
             prepare_ms,
-            load_zone_ms,
-            load_existing_ms,
-            build_index_ms,
-            normalize_ms,
-            validate_ms,
-            db_write_ms,
-            serial_ms,
+            timings.load_zone_ms,
+            timings.load_existing_ms,
+            timings.build_index_ms,
+            timings.normalize_ms,
+            timings.validate_ms,
+            timings.db_write_ms,
+            timings.serial_ms,
             notify_ms,
-            t_total.elapsed().as_secs_f64() * 1000.0,
+            elapsed_ms(t_total),
         );
 
         let records = created_records

@@ -238,7 +238,7 @@ impl GetRecordResponse {
             id: record.id,
             name: display_record_owner_name(&record.name, zone_name),
             record_type: record.record_type.to_string(),
-            value: record_response_value(record, true),
+            value: display_record_value_request(&record.value, &record.record_type),
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
@@ -248,16 +248,6 @@ impl GetRecordResponse {
 
     pub fn from_record_with_zone(record: &RecordWithZone) -> Self {
         Self::from_record_and_zone_name(&record.record(), &record.zone_name)
-    }
-}
-
-fn record_response_value(record: &Record, display_names: bool) -> RecordValueRequest {
-    if record.record_type == RecordType::TXT {
-        decode_txt_value_request(&record.value)
-    } else if display_names {
-        RecordValueRequest::String(display_record_value(&record.value, &record.record_type))
-    } else {
-        RecordValueRequest::String(record.value.clone())
     }
 }
 
@@ -352,10 +342,11 @@ pub struct CreateRecordRequest {
     pub zone_name: String,
 }
 
-/// A single record entry for bulk insertion. The zone is taken from the request
-/// path, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
+/// A record's data fields, used both as a bulk-insertion entry and as the
+/// record update request body. The zone is taken from the request path, so
+/// unlike [`CreateRecordRequest`] it carries no `zone_name`.
 #[derive(Deserialize, Debug, ToSchema)]
-pub struct BulkRecordItem {
+pub struct RecordItem {
     #[schema(example = "sub")]
     pub name: String,
     #[schema(example = "A")]
@@ -372,7 +363,7 @@ pub struct BulkRecordItem {
 /// Request body for bulk-inserting records into a zone.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct CreateBulkRecordsRequest {
-    pub records: Vec<BulkRecordItem>,
+    pub records: Vec<RecordItem>,
     /// When true, parse and validate without applying any change.
     #[serde(default, alias = "dryRun")]
     pub dry_run: bool,
@@ -514,22 +505,6 @@ pub struct GetRecordsFilter {
     pub offset: Option<u64>,
 }
 
-/// Request body for updating an existing record.
-#[derive(Deserialize, Debug, ToSchema)]
-pub struct UpdateRecordRequest {
-    #[schema(example = "sub")]
-    pub name: String,
-    #[schema(example = "A")]
-    pub record_type: String,
-    pub value: RecordValueRequest,
-    /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
-    #[schema(example = 3600)]
-    pub ttl: Option<i32>,
-    /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
-    #[schema(example = 10)]
-    pub priority: Option<i32>,
-}
-
 /// A partial record update; an omitted field keeps the current value. Merged
 /// inside the update transaction so a concurrent write is not lost.
 #[derive(Deserialize, Debug, Default)]
@@ -564,13 +539,6 @@ pub struct NotifyZoneRequest {
     #[serde(default)]
     #[schema(example = true)]
     pub force: bool,
-}
-
-/// Paginated list of zones.
-#[derive(Serialize, Debug, ToSchema)]
-pub struct ZoneListResponse {
-    pub items: Vec<GetZoneResponse>,
-    pub pagination: Pagination,
 }
 
 /// A zone together with all of its records.
@@ -620,13 +588,6 @@ pub struct ZoneTokenPolicyResponse {
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ZoneTokenPolicyListResponse {
     pub token_policies: Vec<GetZoneTokenPolicyResponse>,
-}
-
-/// Paginated list of records.
-#[derive(Serialize, Debug, ToSchema)]
-pub struct RecordListResponse {
-    pub items: Vec<GetRecordResponse>,
-    pub pagination: Pagination,
 }
 
 /// A single record wrapped in a response envelope.
@@ -761,13 +722,6 @@ impl ZoneSnapshotResponse {
             created_at: snapshot.created_at,
         })
     }
-}
-
-/// A page of zone snapshots.
-#[derive(Serialize, Debug, ToSchema)]
-pub struct SnapshotListResponse {
-    pub items: Vec<ZoneSnapshotResponse>,
-    pub pagination: Pagination,
 }
 
 /// A record reconstructed from the zone's change history; unlike stored

@@ -20,10 +20,10 @@ use crate::api::{
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, RollbackZoneRequest,
-        RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
-        SnapshotDiffResponse, SnapshotListResponse, SnapshotRecordResponse, ZoneDetailResponse,
-        ZoneListResponse, ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
+        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, PaginatedResponse,
+        RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
+        SnapshotDiffResponse, SnapshotRecordResponse, ZoneDetailResponse, ZoneResponse,
+        ZoneSnapshotResponse, ZoneStatusResponse,
     },
 };
 
@@ -165,7 +165,7 @@ pub(crate) async fn export_zone(
             ("offset" = Option<u64>, Query, description = "Number of snapshots to skip.")
         ),
         responses(
-            (status = 200, description = "A list of zone snapshots", body = SnapshotListResponse),
+            (status = 200, description = "A list of zone snapshots", body = PaginatedResponse<ZoneSnapshotResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -320,7 +320,7 @@ pub(crate) async fn diff_zone_snapshots(
             ("offset" = Option<u64>, Query, description = "Number of zones to skip.")
         ),
         responses(
-            (status = 200, description = "A list of DNS zones", body = ZoneListResponse),
+            (status = 200, description = "A list of DNS zones", body = PaginatedResponse<GetZoneResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)

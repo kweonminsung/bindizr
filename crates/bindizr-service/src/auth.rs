@@ -45,14 +45,8 @@ impl AuthService {
         }
 
         let updated_token = RepositoryService::update_api_token(ApiToken {
-            id: stored_token.id,
-            name: stored_token.name,
-            token: stored_token.token,
-            description: stored_token.description,
-            is_global: stored_token.is_global,
-            expires_at: stored_token.expires_at,
-            created_at: stored_token.created_at,
             last_used_at: Some(Utc::now()),
+            ..stored_token
         })
         .await
         .map_err(|e| {

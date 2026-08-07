@@ -2,6 +2,7 @@ use chrono::Utc;
 
 use super::{
     RecordService,
+    bulk::{PreparedRecord, insert_validated_records_tx, prepare_record},
     validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
 };
 use crate::{
@@ -9,14 +10,11 @@ use crate::{
     authorization::{self, Caller, RecordWrite},
     error::ServiceError,
     log_error, log_info, log_warn,
-    model::{
-        record::{Record, RecordType, RecordWithZone},
-        zone_change::ZoneChange,
-    },
+    model::record::{Record, RecordWithZone},
     repository::RepositoryService,
     serial::generate_serial,
     types::CreateRecordRequest,
-    zone::{snapshot::save_zone_snapshot_tx, validation::normalize_zone_name},
+    zone::{load_zone_tx, snapshot::save_zone_snapshot_tx},
 };
 
 impl RecordService {
@@ -41,39 +39,22 @@ impl RecordService {
         caller: &Caller,
         create_record_request: &CreateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
-        let record_type = create_record_request
-            .record_type
-            .parse::<RecordType>()
-            .map_err(|_| {
-                ServiceError::invalid_input(format!(
-                    "Invalid record type: {}",
-                    create_record_request.record_type
-                ))
-            })?;
-        let record_value = create_record_request
-            .value
-            .to_storage_value(&record_type)
-            .map_err(ServiceError::invalid_record_value)?;
+        let PreparedRecord {
+            record_type,
+            value: record_value,
+            ..
+        } = prepare_record(
+            &create_record_request.name,
+            &create_record_request.record_type,
+            &create_record_request.value,
+            create_record_request.ttl,
+            create_record_request.priority,
+        )?;
 
         let mut tx = RepositoryService::begin_tx("Failed to create record").await?;
 
         let apply_result = async {
-            let lookup_zone_name = normalize_zone_name(&create_record_request.zone_name)?;
-            let zone =
-                match RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_zone_name).await {
-                    Ok(Some(zone)) => zone,
-                    Ok(None) => {
-                        return Err(ServiceError::zone_not_found(
-                            &create_record_request.zone_name,
-                        ));
-                    }
-                    Err(e) => {
-                        log_error!("Failed to fetch zone: {}", e);
-                        return Err(ServiceError::internal(
-                            "Failed to create record".to_string(),
-                        ));
-                    }
-                };
+            let zone = load_zone_tx(&mut tx, &create_record_request.zone_name).await?;
 
             // Only records sharing the owner name can conflict, so load just
             // those instead of the whole zone.
@@ -123,9 +104,12 @@ impl RecordService {
 
             let new_serial = generate_serial(Some(zone.serial))?;
 
-            let created_record = RepositoryService::create_record_tx(
+            // Inserts the record with its ADD zone change for IXFR.
+            let created_record = insert_validated_records_tx(
                 &mut tx,
-                Record {
+                zone.id,
+                new_serial,
+                &[Record {
                     id: 0,
                     name: normalized_owner.stored_name,
                     record_type,
@@ -134,11 +118,12 @@ impl RecordService {
                     priority: create_record_request.priority,
                     zone_id: zone.id,
                     created_at: Utc::now(),
-                },
+                }],
             )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create record: {}", e);
+            .await?
+            .pop()
+            .ok_or_else(|| {
+                log_error!("Record insert returned no row");
                 ServiceError::internal("Failed to create record".to_string())
             })?;
 
@@ -149,27 +134,6 @@ impl RecordService {
                     log_error!("Failed to update zone serial: {}", e);
                     ServiceError::internal("Failed to update zone serial".to_string())
                 })?;
-
-            // Record zone change for IXFR
-            RepositoryService::create_zone_change_tx(
-                &mut tx,
-                ZoneChange {
-                    id: 0,
-                    zone_id: zone.id,
-                    serial: new_serial,
-                    operation: "ADD".to_string(),
-                    record_name: created_record.name.clone(),
-                    record_type: create_record_request.record_type.clone(),
-                    record_value: created_record.value.clone(),
-                    record_ttl: ttl,
-                    record_priority: create_record_request.priority,
-                },
-            )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change: {}", e);
-                ServiceError::internal("Failed to create zone change".to_string())
-            })?;
 
             save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
 

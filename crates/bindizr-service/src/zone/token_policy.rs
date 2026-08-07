@@ -1,6 +1,8 @@
 //! Per-zone record-plane grants for API tokens, the HTTP twin of
 //! [`super::tsig_policy`].
 
+use std::collections::HashMap;
+
 use chrono::Utc;
 
 use crate::{
@@ -8,8 +10,8 @@ use crate::{
     model::{api_token::ApiToken, zone_token_policy::ZoneTokenPolicy},
     repository::RepositoryService,
     zone::{
+        ZoneService,
         tsig_policy::{normalize_pattern, normalize_types},
-        validation::normalize_zone_name,
     },
 };
 
@@ -33,7 +35,7 @@ impl ZoneTokenPolicyService {
         record_name_pattern: Option<&str>,
         record_types: Option<&str>,
     ) -> Result<ZoneTokenPolicyWithToken, ServiceError> {
-        let zone = find_zone(zone_name).await?;
+        let zone = ZoneService::get_by_name(zone_name).await?;
         let token = find_token(token_name).await?;
 
         if token.is_global {
@@ -64,22 +66,22 @@ impl ZoneTokenPolicyService {
 
     /// List all token policies of a zone with their token names.
     pub async fn list(zone_name: &str) -> Result<Vec<ZoneTokenPolicyWithToken>, ServiceError> {
-        let zone = find_zone(zone_name).await?;
+        let zone = ZoneService::get_by_name(zone_name).await?;
         let policies = RepositoryService::get_zone_token_policies_by_zone_id(zone.id).await?;
 
-        let tokens = RepositoryService::get_all_api_tokens().await?;
-        let token_name = |id: i32| {
-            tokens
-                .iter()
-                .find(|token| token.id == id)
-                .map(|token| token.name.clone())
-                .unwrap_or_default()
-        };
+        let token_names: HashMap<i32, String> = RepositoryService::get_all_api_tokens()
+            .await?
+            .into_iter()
+            .map(|token| (token.id, token.name))
+            .collect();
 
         Ok(policies
             .into_iter()
             .map(|policy| ZoneTokenPolicyWithToken {
-                api_token_name: token_name(policy.api_token_id),
+                api_token_name: token_names
+                    .get(&policy.api_token_id)
+                    .cloned()
+                    .unwrap_or_default(),
                 policy,
             })
             .collect())
@@ -87,7 +89,7 @@ impl ZoneTokenPolicyService {
 
     /// Remove one policy of a zone by policy id.
     pub async fn remove(zone_name: &str, policy_id: i32) -> Result<(), ServiceError> {
-        let zone = find_zone(zone_name).await?;
+        let zone = ZoneService::get_by_name(zone_name).await?;
 
         let policy = RepositoryService::get_zone_token_policy_by_id(policy_id)
             .await?
@@ -96,13 +98,6 @@ impl ZoneTokenPolicyService {
 
         RepositoryService::delete_zone_token_policy(policy.id).await
     }
-}
-
-async fn find_zone(zone_name: &str) -> Result<crate::model::zone::Zone, ServiceError> {
-    let name = normalize_zone_name(zone_name)?;
-    RepositoryService::get_zone_by_name(&name)
-        .await?
-        .ok_or_else(|| ServiceError::zone_not_found(zone_name))
 }
 
 async fn find_token(token_name: &str) -> Result<ApiToken, ServiceError> {

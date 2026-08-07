@@ -289,7 +289,10 @@ async fn stream_ixfr_body(
         })
         .await?;
 
-        for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
+        for change in serial_changes
+            .iter()
+            .filter(|c| c.operation == delta::ZoneChange::OP_DEL)
+        {
             wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
                 add_change(builder, change, &zone.name)
             })
@@ -305,7 +308,10 @@ async fn stream_ixfr_body(
         })
         .await?;
 
-        for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
+        for change in serial_changes
+            .iter()
+            .filter(|c| c.operation == delta::ZoneChange::OP_ADD)
+        {
             wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
                 add_change(builder, change, &zone.name)
             })

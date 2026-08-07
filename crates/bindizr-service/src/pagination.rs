@@ -1,4 +1,4 @@
-//! In-memory pagination of list responses.
+//! Assembly of paginated list responses.
 
 use crate::types::{PaginatedResponse, Pagination};
 
@@ -21,31 +21,6 @@ pub(crate) fn paginated_response<T>(
         pagination: Pagination {
             limit: limit.unwrap_or_else(|| default_limit(total)),
             offset: offset.unwrap_or(0),
-            total,
-        },
-    }
-}
-
-pub(crate) fn paginate_items<T>(
-    items: Vec<T>,
-    limit: Option<u32>,
-    offset: Option<u64>,
-) -> PaginatedResponse<T> {
-    let total = items.len() as u64;
-    let offset = offset.unwrap_or(0);
-    let limit = limit.unwrap_or_else(|| default_limit(total));
-
-    let paginated_items = items
-        .into_iter()
-        .skip(usize::try_from(offset).unwrap_or(usize::MAX))
-        .take(limit as usize)
-        .collect();
-
-    PaginatedResponse {
-        items: paginated_items,
-        pagination: Pagination {
-            limit,
-            offset,
             total,
         },
     }

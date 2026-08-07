@@ -174,6 +174,7 @@ impl ZoneRepository for PostgresZoneRepository {
                     OR LOWER(primary_ns) LIKE LOWER($19)
                     OR LOWER(admin_email) LIKE LOWER($20)
               )
+              AND ($23::INT4[] IS NULL OR id = ANY($23))
             ORDER BY name
             LIMIT $21 OFFSET $22
             "#,
@@ -205,6 +206,7 @@ impl ZoneRepository for PostgresZoneRepository {
                 .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
                 .unwrap_or(0),
         )
+        .bind(&filter.ids)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -241,6 +243,7 @@ impl ZoneRepository for PostgresZoneRepository {
                     OR LOWER(primary_ns) LIKE LOWER($19)
                     OR LOWER(admin_email) LIKE LOWER($20)
               )
+              AND ($21::INT4[] IS NULL OR id = ANY($21))
             "#,
         )
         .bind(&filter.name)
@@ -263,6 +266,7 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
+        .bind(&filter.ids)
         .fetch_one(&mut *conn)
         .await?;
 

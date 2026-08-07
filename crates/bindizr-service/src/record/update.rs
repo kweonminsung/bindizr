@@ -1,6 +1,10 @@
 use super::{
     RecordService,
-    validation::{normalize_record_owner_name, validate_record_update_constraints_normalized},
+    bulk::{PreparedRecord, prepare_record, zone_changes_for},
+    validation::{
+        normalize_record_owner_name, parse_record_type,
+        validate_record_update_constraints_normalized,
+    },
 };
 use crate::{
     authorization::{self, Caller, RecordWrite},
@@ -13,7 +17,7 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{UpdateRecordPatch, UpdateRecordRequest},
+    types::{RecordItem, UpdateRecordPatch},
     zone::snapshot::save_zone_snapshot_tx,
 };
 
@@ -33,16 +37,23 @@ impl RecordService {
     pub async fn update_by_id_for(
         caller: &Caller,
         record_id: i32,
-        request: &UpdateRecordRequest,
+        request: &RecordItem,
     ) -> Result<RecordWithZone, ServiceError> {
         Self::update_locked(caller, record_id, |zone, _existing| {
-            let record_type = parse_record_type(&request.record_type)?;
-            let storage_value = request
-                .value
-                .to_storage_value(&record_type)
-                .map_err(ServiceError::invalid_record_value)?;
+            let PreparedRecord {
+                owner_name,
+                record_type,
+                value: storage_value,
+                ..
+            } = prepare_record(
+                &request.name,
+                &request.record_type,
+                &request.value,
+                request.ttl,
+                request.priority,
+            )?;
             Ok(ResolvedRecordUpdate {
-                owner_name: request.name.clone(),
+                owner_name,
                 record_type,
                 storage_value,
                 ttl: request.ttl.unwrap_or(zone.ttl),
@@ -224,30 +235,18 @@ impl RecordService {
                 })?;
 
             // Record DEL(old)+ADD(new) zone changes for IXFR in one batch.
-            let changes = vec![
-                ZoneChange {
-                    id: 0,
-                    zone_id: zone.id,
-                    serial: new_serial,
-                    operation: "DEL".to_string(),
-                    record_name: existing_record.name.clone(),
-                    record_type: existing_record.record_type.to_string(),
-                    record_value: existing_record.value.clone(),
-                    record_ttl: existing_record.ttl,
-                    record_priority: existing_record.priority,
-                },
-                ZoneChange {
-                    id: 0,
-                    zone_id: zone.id,
-                    serial: new_serial,
-                    operation: "ADD".to_string(),
-                    record_name: updated_record.name.clone(),
-                    record_type: updated_record.record_type.to_string(),
-                    record_value: updated_record.value.clone(),
-                    record_ttl: updated_record.ttl,
-                    record_priority: updated_record.priority,
-                },
-            ];
+            let mut changes = zone_changes_for(
+                zone.id,
+                new_serial,
+                ZoneChange::OP_DEL,
+                std::slice::from_ref(&existing_record),
+            );
+            changes.extend(zone_changes_for(
+                zone.id,
+                new_serial,
+                ZoneChange::OP_ADD,
+                std::slice::from_ref(&updated_record),
+            ));
             RepositoryService::create_zone_changes_tx(&mut tx, &changes)
                 .await
                 .map_err(|e| {
@@ -282,10 +281,4 @@ impl RecordService {
 
         Ok(RecordWithZone::new(updated_record, zone_name))
     }
-}
-
-fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
-    value
-        .parse::<RecordType>()
-        .map_err(|_| ServiceError::invalid_input(format!("Invalid record type: {}", value)))
 }

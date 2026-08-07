@@ -22,7 +22,7 @@ use crate::{
         zone::Zone,
     },
     record::{
-        canonical_record_value, delete_records_tx, insert_validated_records_tx,
+        delete_records_tx, insert_validated_records_tx, parse_record_type, record_values_equal,
         validate_record_add_constraints_normalized,
     },
     repository::RepositoryService,
@@ -70,9 +70,7 @@ pub(super) struct ZoneChangeSet {
 }
 
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {
-    let parsed = record_type.parse::<RecordType>().map_err(|_| {
-        ServiceError::invalid_input(format!("Invalid record type: {}", record_type))
-    })?;
+    let parsed = parse_record_type(record_type)?;
     if !is_supported_record_type(&parsed) {
         return Err(ServiceError::invalid_input(format!(
             "record type '{}' is not supported by the ExternalDNS API",
@@ -226,8 +224,7 @@ pub(super) fn group_ops_by_zone(
 }
 
 fn values_equal(left: &str, right: &str, record_type: &RecordType) -> bool {
-    canonical_record_value(left, None, record_type)
-        == canonical_record_value(right, None, record_type)
+    record_values_equal(left, None, right, None, record_type)
 }
 
 /// Resolve one zone's operations against its current records; idempotent

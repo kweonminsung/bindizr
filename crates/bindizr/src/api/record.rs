@@ -15,8 +15,8 @@ use crate::api::{
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
-        GetRecordResponse, GetRecordsFilter, MessageResponse, RecordListResponse, RecordResponse,
-        UpdateRecordRequest,
+        GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse, RecordItem,
+        RecordResponse,
     },
 };
 
@@ -61,7 +61,7 @@ impl RecordApi {
             ("offset" = Option<u64>, Query, description = "Number of records to skip.")
         ),
         responses(
-            (status = 200, description = "A list of DNS records", body = RecordListResponse),
+            (status = 200, description = "A list of DNS records", body = PaginatedResponse<GetRecordResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -148,7 +148,7 @@ pub(crate) async fn create_record(
         params(
             ("record_id" = i32, Path, description = "The ID of the DNS record to update.")
         ),
-        request_body = UpdateRecordRequest,
+        request_body = RecordItem,
         responses(
             (status = 200, description = "DNS record updated successfully", body = RecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
@@ -163,7 +163,7 @@ pub(crate) async fn create_record(
 pub(crate) async fn update_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
-    JsonBody(body): JsonBody<UpdateRecordRequest>,
+    JsonBody(body): JsonBody<RecordItem>,
 ) -> Result<Response, ApiError> {
     let raw_record = RecordService::update_by_id_for(&caller, params.record_id, &body).await?;
 

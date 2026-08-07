@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use sqlx::{MySql, Pool};
+use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::{
     error::DatabaseError,
@@ -157,8 +157,13 @@ impl ZoneRepository for MySqlZoneRepository {
     async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
+        let ids_clause = match filter.ids.as_deref() {
+            None => String::new(),
+            Some([]) => "AND 1 = 0".to_string(),
+            Some(ids) => format!("AND id IN ({})", vec!["?"; ids.len()].join(",")),
+        };
 
-        let zones = sqlx::query_as::<_, Zone>(
+        let mut query = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
             r#"
             SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at
             FROM zones
@@ -176,10 +181,11 @@ impl ZoneRepository for MySqlZoneRepository {
                     OR LOWER(primary_ns) LIKE LOWER(?)
                     OR LOWER(admin_email) LIKE LOWER(?)
               )
+            {ids_clause}
             ORDER BY name
             LIMIT ? OFFSET ?
-            "#,
-        )
+            "#
+        )))
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(filter.id)
@@ -199,16 +205,22 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&search)
-        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
-        .bind(
-            filter
-                .offset
-                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-                .unwrap_or(0),
-        )
-        .fetch_all(&mut *conn)
-        .await?;
+        .bind(&search);
+        if let Some(ids) = &filter.ids {
+            for zone_id in ids {
+                query = query.bind(zone_id);
+            }
+        }
+        let zones = query
+            .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+            .bind(
+                filter
+                    .offset
+                    .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+                    .unwrap_or(0),
+            )
+            .fetch_all(&mut *conn)
+            .await?;
 
         Ok(zones)
     }
@@ -224,8 +236,13 @@ impl ZoneRepository for MySqlZoneRepository {
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
+        let ids_clause = match filter.ids.as_deref() {
+            None => String::new(),
+            Some([]) => "AND 1 = 0".to_string(),
+            Some(ids) => format!("AND id IN ({})", vec!["?"; ids.len()].join(",")),
+        };
 
-        let count = sqlx::query_scalar::<_, i64>(
+        let mut query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
             FROM zones
@@ -243,8 +260,9 @@ impl ZoneRepository for MySqlZoneRepository {
                     OR LOWER(primary_ns) LIKE LOWER(?)
                     OR LOWER(admin_email) LIKE LOWER(?)
               )
-            "#,
-        )
+            {ids_clause}
+            "#
+        )))
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(filter.id)
@@ -264,9 +282,13 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&search)
-        .fetch_one(&mut *conn)
-        .await?;
+        .bind(&search);
+        if let Some(ids) = &filter.ids {
+            for zone_id in ids {
+                query = query.bind(zone_id);
+            }
+        }
+        let count = query.fetch_one(&mut *conn).await?;
 
         Ok(count as u64)
     }

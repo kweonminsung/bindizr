@@ -33,6 +33,8 @@ pub struct ZoneFilter {
     pub max_ttl: Option<i32>,
     pub serial: Option<i32>,
     pub search: Option<String>,
+    /// Restrict to these zones (scoped-token visibility); `None` is unrestricted.
+    pub ids: Option<Vec<i32>>,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }

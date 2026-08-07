@@ -6,14 +6,11 @@ use crate::{
     authorization::{Caller, visible_zone_ids, zone_visible},
     error::ServiceError,
     log_error,
-    model::{
-        record::{Record, RecordType, RecordWithZone},
-        zone::Zone,
-    },
+    model::record::{Record, RecordType, RecordWithZone},
     pagination::paginated_response,
     repository::RepositoryService,
     types::{GetRecordsFilter, PaginatedResponse},
-    zone::validation::normalize_zone_name,
+    zone::{ZoneService, validation::normalize_zone_name},
 };
 
 impl RecordService {
@@ -56,8 +53,7 @@ impl RecordService {
     pub async fn list(zone_name: Option<String>) -> Result<Vec<Record>, ServiceError> {
         match zone_name {
             Some(name) => {
-                let lookup_name = normalize_zone_name(&name)?;
-                let zone = require_zone_by_name(&lookup_name, &name).await?;
+                let zone = ZoneService::get_by_name(&name).await?;
 
                 match RepositoryService::get_records_by_zone_id(zone.id).await {
                     Ok(records) => Ok(records),
@@ -135,7 +131,7 @@ impl RecordService {
         if let Some(name) = zone_name.as_deref()
             && zone_ids.is_none()
         {
-            require_zone_by_name(name, name).await?;
+            ZoneService::get_by_name(name).await?;
         }
 
         let name = normalize_filter_record_name(filter.name, zone_name.as_deref());
@@ -183,19 +179,6 @@ impl RecordService {
                 log_error!("Failed to fetch record: {}", e);
                 Err(ServiceError::internal("Failed to fetch record".to_string()))
             }
-        }
-    }
-}
-
-/// Fetch a zone by (normalized) name, mapping a missing zone to `NotFound` with
-/// `display_name` in the message.
-async fn require_zone_by_name(lookup_name: &str, display_name: &str) -> Result<Zone, ServiceError> {
-    match RepositoryService::get_zone_by_name(lookup_name).await {
-        Ok(Some(zone)) => Ok(zone),
-        Ok(None) => Err(ServiceError::zone_not_found(display_name)),
-        Err(e) => {
-            log_error!("Failed to fetch zone: {}", e);
-            Err(ServiceError::internal("Failed to fetch zone".to_string()))
         }
     }
 }
