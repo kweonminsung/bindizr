@@ -218,14 +218,16 @@ pub(crate) fn group_records_into_endpoints(records: Vec<BindizrRecordItem>) -> V
         .collect()
 }
 
-/// Normalize TXT targets to the canonical quoted form `GET /records`
-/// returns, so the external-dns plan never sees a spurious diff; everything
-/// else is echoed unchanged.
+/// Normalize endpoints to their stored form so the external-dns plan never
+/// sees a spurious diff: TXT targets take the canonical quoted form
+/// `GET /records` returns, and provider-specific properties are dropped —
+/// removal in adjust is how a webhook provider declares them unsupported.
 pub(crate) fn adjust_endpoints(endpoints: Vec<Endpoint>) -> Result<Vec<Endpoint>, String> {
     endpoints
         .into_iter()
         .map(|mut endpoint| {
             validate_endpoint(&endpoint)?;
+            endpoint.provider_specific.clear();
             if endpoint.record_type.eq_ignore_ascii_case("TXT") {
                 endpoint.targets = endpoint
                     .targets

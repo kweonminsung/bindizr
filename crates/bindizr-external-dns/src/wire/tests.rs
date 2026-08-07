@@ -179,9 +179,15 @@ fn group_records_builds_one_endpoint_per_rrset() {
 }
 
 #[test]
-fn adjust_endpoints_normalizes_txt_targets_and_echoes_the_rest() {
+fn adjust_endpoints_normalizes_txt_and_strips_provider_specific() {
+    let mut with_props = endpoint("a.example.com", "A", 300, &["192.0.2.1"]);
+    with_props.provider_specific = vec![super::ProviderSpecificProperty {
+        name: "webhook/flag".to_string(),
+        value: "on".to_string(),
+    }];
+
     let adjusted = adjust_endpoints(vec![
-        endpoint("a.example.com", "A", 300, &["192.0.2.1"]),
+        with_props,
         endpoint("b.example.com", "TXT", 0, &["v=spf1 -all"]),
         endpoint(
             "c.example.com",

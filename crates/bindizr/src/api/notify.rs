@@ -39,6 +39,7 @@ impl NotifyApi {
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required to notify all zones", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)

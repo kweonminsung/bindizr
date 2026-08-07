@@ -73,6 +73,7 @@ pub(crate) struct ZoneTsigPolicyParam {
         responses(
             (status = 200, description = "All TSIG keys", body = TsigKeyListResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -99,6 +100,7 @@ pub(crate) async fn get_tsig_keys(
             (status = 201, description = "TSIG key created successfully", body = TsigKeyResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 409, description = "A TSIG key with the same name already exists", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -135,6 +137,7 @@ pub(crate) async fn create_tsig_key(
         responses(
             (status = 200, description = "The TSIG key", body = TsigKeyResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -164,6 +167,7 @@ pub(crate) async fn get_tsig_key(
         responses(
             (status = 200, description = "TSIG key deleted successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),
             (status = 409, description = "TSIG key is still referenced by zone TSIG policies", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -193,6 +197,7 @@ pub(crate) async fn delete_tsig_key(
         responses(
             (status = 200, description = "The zone's TSIG policies", body = ZoneTsigPolicyListResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -227,6 +232,7 @@ pub(crate) async fn get_zone_tsig_policies(
             (status = 201, description = "TSIG policy created successfully", body = ZoneTsigPolicyResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone or TSIG key not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -264,6 +270,7 @@ pub(crate) async fn create_zone_tsig_policy(
         responses(
             (status = 200, description = "TSIG policy deleted successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone or TSIG policy not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
