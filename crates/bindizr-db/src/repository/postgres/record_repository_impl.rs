@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use bindizr_core::dns::record::display_record_value;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
@@ -35,7 +34,7 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
-        .bind(display_record_value(&record.value, &record.record_type))
+        .bind(record.record_type.display_value(&record.value))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -64,7 +63,7 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
-        .bind(display_record_value(&record.value, &record.record_type))
+        .bind(record.record_type.display_value(&record.value))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -113,7 +112,7 @@ impl RecordRepository for PostgresRecordRepository {
                     .bind(r.name.clone())
                     .bind(r.record_type.to_string())
                     .bind(r.value.clone())
-                    .bind(display_record_value(&r.value, &r.record_type))
+                    .bind(r.record_type.display_value(&r.value))
                     .bind(r.ttl)
                     .bind(r.priority)
                     .bind(r.zone_id);
@@ -617,7 +616,7 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
-        .bind(display_record_value(&record.value, &record.record_type))
+        .bind(record.record_type.display_value(&record.value))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -645,7 +644,7 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
-        .bind(display_record_value(&record.value, &record.record_type))
+        .bind(record.record_type.display_value(&record.value))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)

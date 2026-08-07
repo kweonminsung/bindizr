@@ -1,4 +1,4 @@
-use bindizr_core::dns::record::value::SoaMailbox;
+use bindizr_core::dns::record::SoaMailbox;
 
 use crate::{
     error::ServiceError,

@@ -8,7 +8,7 @@ use std::{
 
 use bindizr_core::dns::{
     name::{to_fqdn, to_owner_fqdn},
-    record::value::{SoaMailbox, TxtRdata},
+    record::{SoaMailbox, TxtRdata},
 };
 use domain::{
     base::{

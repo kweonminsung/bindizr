@@ -10,7 +10,7 @@ mod tests;
 
 use std::collections::HashMap;
 
-use bindizr_core::dns::record::{display_record_owner_name, presentation_rdata};
+use bindizr_core::dns::record::display_record_owner_name;
 
 use crate::{
     authorization::Caller, error::ServiceError, model::zone::Zone, repository::RepositoryService,
@@ -62,7 +62,9 @@ impl ExternalDnsService {
                     .to_string(),
                 record_type: record.record_type.to_string(),
                 ttl: record.ttl,
-                value: presentation_rdata(&record.value, record.priority, &record.record_type),
+                value: record
+                    .record_type
+                    .presentation_rdata(&record.value, record.priority),
             });
         }
 

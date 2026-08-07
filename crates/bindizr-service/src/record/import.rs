@@ -8,7 +8,6 @@ use chrono::Utc;
 use super::{
     RecordService,
     bulk::PreparedRecord,
-    record_values_equal,
     validation::{
         normalize_record_owner_name, validate_delete_constraints,
         validate_record_add_constraints_normalized,
@@ -49,13 +48,7 @@ fn record_matches(
 ) -> bool {
     existing.name.eq_ignore_ascii_case(stored_name)
         && existing.record_type == *record_type
-        && record_values_equal(
-            &existing.value,
-            existing.priority,
-            value,
-            priority,
-            record_type,
-        )
+        && record_type.values_equal(&existing.value, existing.priority, value, priority)
 }
 
 fn desired_matches(existing: &Record, desired: &DesiredRecord) -> bool {
@@ -153,12 +146,11 @@ impl RecordService {
                 let duplicate_in_file = desired_by_name.get(&name_key).and_then(|idxs| {
                     idxs.iter().copied().find(|&i| {
                         desired[i].prepared.record_type == record.record_type
-                            && record_values_equal(
+                            && record.record_type.values_equal(
                                 &desired[i].prepared.value,
                                 desired[i].prepared.priority,
                                 &value,
                                 record.priority,
-                                &record.record_type,
                             )
                     })
                 });

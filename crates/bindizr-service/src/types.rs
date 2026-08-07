@@ -1,9 +1,6 @@
 use bindizr_core::dns::{
     name::to_fqdn_lowercase,
-    record::{
-        display_record_owner_name, display_record_value,
-        value::{SoaMailbox, TxtContent, TxtRdata},
-    },
+    record::{SoaMailbox, TxtContent, TxtRdata, display_record_owner_name},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -270,7 +267,7 @@ pub(crate) fn display_record_value_request(
     if *record_type == RecordType::TXT {
         decode_txt_value_request(value)
     } else {
-        RecordValueRequest::String(display_record_value(value, record_type))
+        RecordValueRequest::String(record_type.display_value(value))
     }
 }
 

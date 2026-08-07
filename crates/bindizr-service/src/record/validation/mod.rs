@@ -3,7 +3,7 @@
 
 use bindizr_core::dns::{
     name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn},
-    record::value::{is_null_mx_record_value, record_values_equal},
+    record::MxRecordValue,
 };
 
 use super::RecordService;
@@ -24,7 +24,8 @@ fn validate_record_value(
     value: &str,
     priority: Option<i32>,
 ) -> Result<(), ServiceError> {
-    bindizr_core::dns::record::value::validate_record_value(record_type, value, priority)
+    record_type
+        .validate_value(value, priority)
         .map_err(ServiceError::invalid_record_value)
 }
 
@@ -174,7 +175,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
 
     if existing_records_with_name.iter().any(|r| {
         r.record_type == *record_type
-            && record_values_equal(&r.value, r.priority, value, priority, record_type)
+            && record_type.values_equal(&r.value, r.priority, value, priority)
     }) {
         return Err(ServiceError::record_conflict(format!(
             "Record '{}' {} '{}' already exists in this zone",
@@ -183,9 +184,9 @@ pub(crate) fn validate_record_add_constraints_normalized(
     }
 
     if *record_type == RecordType::MX {
-        let adding_null_mx = is_null_mx_record_value(value, priority);
+        let adding_null_mx = MxRecordValue::is_null_value(value, priority);
         let has_existing_null_mx = existing_records_with_name.iter().any(|r| {
-            r.record_type == RecordType::MX && is_null_mx_record_value(&r.value, r.priority)
+            r.record_type == RecordType::MX && MxRecordValue::is_null_value(&r.value, r.priority)
         });
         let has_existing_mx = existing_records_with_name
             .iter()

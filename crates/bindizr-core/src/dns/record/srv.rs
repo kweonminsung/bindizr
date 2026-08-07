@@ -1,9 +1,9 @@
-use super::common::{
+use super::value::{
     canonical_domain_value, parse_optional_u16_record_field, parse_u16_record_field,
     validate_domain_record_value,
 };
 
-pub(super) struct SrvRecordValue<'a> {
+pub(crate) struct SrvRecordValue<'a> {
     priority: u16,
     weight: u16,
     port: u16,
@@ -13,7 +13,7 @@ pub(super) struct SrvRecordValue<'a> {
 impl<'a> SrvRecordValue<'a> {
     /// The value is '<weight> <port> <target>'; the priority comes from the
     /// priority field (default 10), never inline.
-    pub(super) fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
+    pub(crate) fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
         match value.split_whitespace().collect::<Vec<_>>().as_slice() {
             [weight, port, target] => Ok(Self {
                 priority: parse_optional_u16_record_field("SRV priority", fallback_priority)?,
@@ -27,7 +27,7 @@ impl<'a> SrvRecordValue<'a> {
         }
     }
 
-    pub(super) fn validate(&self) -> Result<(), String> {
+    pub(crate) fn validate(&self) -> Result<(), String> {
         if self.target.trim() == "." {
             return Ok(());
         }
@@ -35,7 +35,7 @@ impl<'a> SrvRecordValue<'a> {
         validate_domain_record_value("SRV record target", self.target)
     }
 
-    pub(super) fn canonical(&self) -> String {
+    pub(crate) fn canonical(&self) -> String {
         format!(
             "{} {} {} {}",
             self.priority,

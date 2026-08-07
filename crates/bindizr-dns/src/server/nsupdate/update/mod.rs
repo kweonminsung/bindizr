@@ -1,9 +1,6 @@
 use bindizr_core::{
     config,
-    dns::{
-        name::to_fqdn,
-        record::value::{TxtRdata, record_values_equal},
-    },
+    dns::{name::to_fqdn, record::TxtRdata},
 };
 use chrono::Utc;
 use domain::{
@@ -465,7 +462,7 @@ pub(super) fn record_value_matches(
     stored_value: &str,
     target_value: &str,
 ) -> bool {
-    record_values_equal(stored_value, None, target_value, None, record_type)
+    record_type.values_equal(stored_value, None, target_value, None)
 }
 
 fn validate_delete_update_shape(

@@ -117,7 +117,7 @@ impl TxtRdata {
     }
 
     /// Render as the canonical space-separated quoted form
-    /// [`crate::dns::record::presentation_rdata`] produces, so round trips
+    /// [`crate::model::record::RecordType::presentation_rdata`] produces, so round trips
     /// compare byte-equal.
     pub fn to_presentation(&self) -> String {
         let mut segments = Vec::new();
@@ -125,15 +125,29 @@ impl TxtRdata {
         while pos < self.0.len() {
             let len = self.0[pos] as usize;
             pos += 1;
-            segments.push(crate::dns::record::quote_txt_charstr(
-                &self.0[pos..pos + len],
-            ));
+            segments.push(Self::quote_charstr(&self.0[pos..pos + len]));
             pos += len;
         }
         if segments.is_empty() {
             segments.push("\"\"".to_string());
         }
         segments.join(" ")
+    }
+
+    /// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any
+    /// non-printable byte as a `\DDD` decimal escape (RFC 1035, Section 5.1).
+    pub fn quote_charstr(bytes: &[u8]) -> String {
+        let mut out = String::from("\"");
+        for &byte in bytes {
+            match byte {
+                b'"' => out.push_str("\\\""),
+                b'\\' => out.push_str("\\\\"),
+                0x20..=0x7e => out.push(byte as char),
+                _ => out.push_str(&format!("\\{:03}", byte)),
+            }
+        }
+        out.push('"');
+        out
     }
 
     /// The encoded form: prefixed base64 of the raw RDATA.
@@ -228,17 +242,17 @@ fn is_valid_txt_rdata(rdata: &[u8]) -> bool {
     true
 }
 
-pub(super) struct TxtRecordValue<'a> {
+pub(crate) struct TxtRecordValue<'a> {
     value: &'a str,
 }
 
 impl<'a> TxtRecordValue<'a> {
-    pub(super) fn parse(value: &'a str) -> Self {
+    pub(crate) fn parse(value: &'a str) -> Self {
         Self { value }
     }
 
     /// TXT values are stored already canonical.
-    pub(super) fn canonical(&self) -> std::borrow::Cow<'a, str> {
+    pub(crate) fn canonical(&self) -> std::borrow::Cow<'a, str> {
         std::borrow::Cow::Borrowed(self.value)
     }
 }

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use crate::dns::record::value::SoaMailbox;
+use crate::dns::record::SoaMailbox;
 
 /// Zone metadata used to generate the SOA and NS records.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bindizr_core::dns::{
     name::to_fqdn,
-    record::{display_record_owner_name, value::SoaMailbox},
+    record::{SoaMailbox, display_record_owner_name},
 };
 use chrono::Utc;
 
@@ -22,8 +22,7 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     record::{
-        RecordService, canonical_record_value, validate_delete_constraints,
-        validate_record_add_constraints_normalized,
+        RecordService, validate_delete_constraints, validate_record_add_constraints_normalized,
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -78,7 +77,7 @@ fn match_key(name: &str, record_type: &RecordType, value: &str, priority: Option
     (
         name.to_ascii_lowercase(),
         record_type.to_string(),
-        canonical_record_value(value, priority, record_type).into_owned(),
+        record_type.canonical_value(value, priority).into_owned(),
     )
 }
 
@@ -230,7 +229,9 @@ fn group_rrsets(
         );
         groups.entry(key).or_default().push(GroupedRecord {
             identity: (
-                canonical_record_value(&record.value, record.priority, &record.record_type)
+                record
+                    .record_type
+                    .canonical_value(&record.value, record.priority)
                     .into_owned(),
                 record.ttl,
             ),

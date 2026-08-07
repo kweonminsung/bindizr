@@ -1,8 +1,8 @@
 //! SOA record values, including the RNAME mailbox <-> email conversions.
 
-use super::common::{canonical_domain_value, parse_u32_record_field, validate_domain_record_value};
+use super::value::{canonical_domain_value, parse_u32_record_field, validate_domain_record_value};
 
-pub(super) struct SoaRecordValue<'a> {
+pub(crate) struct SoaRecordValue<'a> {
     mname: &'a str,
     rname: &'a str,
     serial: u32,
@@ -13,7 +13,7 @@ pub(super) struct SoaRecordValue<'a> {
 }
 
 impl<'a> SoaRecordValue<'a> {
-    pub(super) fn parse(value: &'a str) -> Result<Self, String> {
+    pub(crate) fn parse(value: &'a str) -> Result<Self, String> {
         // The trailing `None` rejects a value with more than seven fields.
         let mut fields = value.split_whitespace();
         match (
@@ -50,13 +50,13 @@ impl<'a> SoaRecordValue<'a> {
         }
     }
 
-    pub(super) fn validate(&self) -> Result<(), String> {
+    pub(crate) fn validate(&self) -> Result<(), String> {
         validate_domain_record_value("SOA mname", self.mname)?;
         validate_domain_record_value("SOA rname", self.rname)?;
         Ok(())
     }
 
-    pub(super) fn canonical(&self) -> String {
+    pub(crate) fn canonical(&self) -> String {
         format!(
             "{} {} {} {} {} {} {}",
             canonical_domain_value(self.mname),

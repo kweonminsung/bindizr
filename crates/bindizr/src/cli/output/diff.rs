@@ -1,6 +1,6 @@
 //! Client-side rendering of a `RecordDiff` as a zone-file `+`/`-`/`~` patch:
 //! the API sends structured records, and rdata assembly lives here.
-use bindizr_core::dns::record::quote_txt_charstr;
+use bindizr_core::dns::record::TxtRdata;
 use serde_json::Value;
 
 /// Render one record's value as zone-file rdata: MX/SRV carry the priority
@@ -20,7 +20,7 @@ fn rdata(value: &Value, record_type: &str) -> String {
             };
             segments
                 .iter()
-                .map(|segment| quote_txt_charstr(segment.as_bytes()))
+                .map(|segment| TxtRdata::quote_charstr(segment.as_bytes()))
                 .collect::<Vec<_>>()
                 .join(" ")
         }

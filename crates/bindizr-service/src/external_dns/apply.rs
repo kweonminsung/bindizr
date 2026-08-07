@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::{name::to_fqdn_lowercase, record::value::TxtRdata};
+use bindizr_core::dns::{name::to_fqdn_lowercase, record::TxtRdata};
 use chrono::Utc;
 
 use super::{
@@ -18,10 +18,7 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    record::{
-        RecordService, parse_record_type, record_values_equal,
-        validate_record_add_constraints_normalized,
-    },
+    record::{RecordService, parse_record_type, validate_record_add_constraints_normalized},
     repository::RepositoryService,
     serial::generate_serial,
     types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRrset},
@@ -221,7 +218,7 @@ pub(super) fn group_ops_by_zone(
 }
 
 fn values_equal(left: &str, right: &str, record_type: &RecordType) -> bool {
-    record_values_equal(left, None, right, None, record_type)
+    record_type.values_equal(left, None, right, None)
 }
 
 /// Resolve one zone's operations against its current records; idempotent
