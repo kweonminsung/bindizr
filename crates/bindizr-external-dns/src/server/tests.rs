@@ -166,6 +166,18 @@ async fn negotiate_forwards_bearer_token_and_returns_domain_filter() {
 }
 
 #[tokio::test]
+async fn negotiate_rejects_a_token_with_no_manageable_zones() {
+    let (_, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock((200, json!({"zones": []})), records, changes).await;
+    let base = spawn_adapter(mock.addr, Some("test-token")).await;
+
+    let (status, _, body) = get(&base, Some(MEDIA_TYPE)).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains("no manageable zones"));
+}
+
+#[tokio::test]
 async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
     let (zones, records, changes) = ok_mock_bodies();
     let mock = spawn_mock(zones, records, changes).await;

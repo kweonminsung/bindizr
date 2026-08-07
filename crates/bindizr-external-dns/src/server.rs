@@ -123,6 +123,14 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
     }
 
     let response = match state.upstream.get_zones().await {
+        // An empty DomainFilter reads as "manage everything" to external-dns;
+        // refuse retryably so a new grant heals negotiation without a restart.
+        Ok(zones) if zones.is_empty() => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no manageable zones: grant zones to the API token with \
+             'bindizr zone token-policy add', or create a zone first",
+        )
+            .into_response(),
         Ok(zones) => {
             log_info!("event=negotiate zones={}", zones.len());
             json_response(&DomainFilter { include: zones })

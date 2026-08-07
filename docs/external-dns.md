@@ -132,5 +132,6 @@ not authenticate the caller). The sidecar layout is the recommended default.
 | `403` every sync; allowed changes never apply | The grant is restricted by name pattern or type, which ExternalDNS cannot see, and a sync is all-or-nothing. Grant the whole zone (the `token-policy add` default), or narrow external-dns's `--domain-filter` to the granted names |
 | `404 No zone is authoritative for '<name>'` | Create the zone first; ExternalDNS never creates zones |
 | `502` from the adapter | Bindizr unreachable or 5xx; external-dns retries automatically |
+| `503 no manageable zones` at startup | The token has no zone grants (or no zones exist yet). Grant one: `bindizr zone token-policy add <zone> --token <NAME>`; negotiation recovers on its own |
 | `502` although the records were applied | With `apply_mode = "sync"`, NOTIFY retries to an unreachable secondary can outlast the adapter's timeout after the change already committed. Set `[dns] apply_mode = "async"` or raise `--timeout-secs`; the retried sync is a no-op |
 | external-dns exits over a content-type error | The webhook URL does not point at the adapter |
