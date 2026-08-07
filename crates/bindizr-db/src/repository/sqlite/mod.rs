@@ -5,6 +5,7 @@ mod tsig_key_repository_impl;
 mod zone_change_repository_impl;
 mod zone_repository_impl;
 mod zone_snapshot_repository_impl;
+mod zone_token_policy_repository_impl;
 mod zone_tsig_policy_repository_impl;
 
 pub use api_token_repository_impl::SqliteApiTokenRepository;
@@ -14,4 +15,5 @@ pub use tsig_key_repository_impl::SqliteTsigKeyRepository;
 pub use zone_change_repository_impl::SqliteZoneChangeRepository;
 pub use zone_repository_impl::SqliteZoneRepository;
 pub use zone_snapshot_repository_impl::SqliteZoneSnapshotRepository;
+pub use zone_token_policy_repository_impl::SqliteZoneTokenPolicyRepository;
 pub use zone_tsig_policy_repository_impl::SqliteZoneTsigPolicyRepository;

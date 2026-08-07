@@ -16,6 +16,7 @@ use super::model::{
     zone::Zone,
     zone_change::ZoneChange,
     zone_snapshot::ZoneSnapshot,
+    zone_token_policy::ZoneTokenPolicy,
     zone_tsig_policy::ZoneTsigPolicy,
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
@@ -50,6 +51,8 @@ pub struct RecordFilter {
     pub min_priority: Option<i32>,
     pub max_priority: Option<i32>,
     pub search: Option<String>,
+    /// Restrict to these zones (scoped-token visibility); `None` is unrestricted.
+    pub zone_ids: Option<Vec<i32>>,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }
@@ -181,6 +184,7 @@ pub trait ZoneRepository: Send + Sync {
         name: &str,
     ) -> Result<Option<Zone>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError>;
+    async fn get_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError>;
     async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError>;
     /// Limit-1 probe of the zones table; health checks must stay cheap on
@@ -235,6 +239,31 @@ pub trait ZoneTsigPolicyRepository: Send + Sync {
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
+/// Persistence operations for zone token policies, the HTTP twin of
+/// [`ZoneTsigPolicyRepository`].
+#[allow(dead_code)]
+#[async_trait]
+pub trait ZoneTokenPolicyRepository: Send + Sync {
+    async fn create(&self, policy: ZoneTokenPolicy) -> Result<ZoneTokenPolicy, DatabaseError>;
+    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTokenPolicy>, DatabaseError>;
+    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
+    /// Policies granting `api_token_id` rights in `zone_id`, for write
+    /// authorization inside the caller's transaction.
+    async fn get_by_zone_and_token_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        api_token_id: i32,
+    ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
+    /// Every policy granted to `api_token_id`; drives what a scoped token can
+    /// see and NOTIFY.
+    async fn get_by_token_id(
+        &self,
+        api_token_id: i32,
+    ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
 /// Persistence operations for records.
 #[allow(dead_code)]
 #[async_trait]
@@ -260,6 +289,8 @@ pub trait RecordRepository: Send + Sync {
         id: i32,
     ) -> Result<Option<Record>, DatabaseError>;
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
+    /// Records of every listed zone in one round trip.
+    async fn get_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
     async fn get_by_zone_id_with_zone(
         &self,
         zone_id: i32,
@@ -402,6 +433,7 @@ pub trait ZoneSnapshotRepository: Send + Sync {
 #[async_trait]
 pub trait ApiTokenRepository: Send + Sync {
     async fn create(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
+    async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
@@ -489,6 +521,22 @@ impl RepositoryFactory {
             ),
             DatabasePool::SQLite(sqlite_pool) => Box::new(
                 sqlite::SqliteZoneTsigPolicyRepository::new(sqlite_pool.clone()),
+            ),
+        }
+    }
+
+    pub fn create_zone_token_policy_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn ZoneTokenPolicyRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => Box::new(
+                mysql::MySqlZoneTokenPolicyRepository::new(mysql_pool.clone()),
+            ),
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresZoneTokenPolicyRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteZoneTokenPolicyRepository::new(sqlite_pool.clone()),
             ),
         }
     }

@@ -5,7 +5,7 @@ WORKDIR /usr/src/bindizr
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
-RUN cargo build --release --bin bindizr
+RUN cargo build --release --bin bindizr --bin bindizr-external-dns
 
 FROM debian:bookworm-slim AS runtime
 
@@ -17,6 +17,8 @@ RUN apt-get update \
     && chown -R bindizr:bindizr /etc/bindizr /run/bindizr /var/lib/bindizr
 
 COPY --from=builder /usr/src/bindizr/target/release/bindizr /usr/local/bin/bindizr
+# ExternalDNS webhook adapter, run as a sidecar next to external-dns.
+COPY --from=builder /usr/src/bindizr/target/release/bindizr-external-dns /usr/local/bin/bindizr-external-dns
 COPY --chown=bindizr:bindizr docker/bindizr.conf.toml /etc/bindizr/bindizr.conf.toml
 
 RUN setcap cap_net_bind_service=+ep /usr/local/bin/bindizr

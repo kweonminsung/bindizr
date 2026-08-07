@@ -12,6 +12,7 @@ pub enum ErrorCode {
     InvalidJsonBody,
     ZoneConflict,
     RecordConflict,
+    TokenConflict,
     ZoneNotFound,
     RecordNotFound,
     TokenNotFound,
@@ -20,8 +21,10 @@ pub enum ErrorCode {
     TsigKeyConflict,
     TsigKeyInUse,
     TsigPolicyNotFound,
+    TokenPolicyNotFound,
     Unauthorized,
     InvalidToken,
+    Forbidden,
     PayloadTooLarge,
     UnsupportedMediaType,
     Internal,
@@ -37,6 +40,7 @@ impl ErrorCode {
             ErrorCode::InvalidJsonBody => "INVALID_JSON_BODY",
             ErrorCode::ZoneConflict => "ZONE_CONFLICT",
             ErrorCode::RecordConflict => "RECORD_CONFLICT",
+            ErrorCode::TokenConflict => "TOKEN_CONFLICT",
             ErrorCode::ZoneNotFound => "ZONE_NOT_FOUND",
             ErrorCode::RecordNotFound => "RECORD_NOT_FOUND",
             ErrorCode::TokenNotFound => "TOKEN_NOT_FOUND",
@@ -45,8 +49,10 @@ impl ErrorCode {
             ErrorCode::TsigKeyConflict => "TSIG_KEY_CONFLICT",
             ErrorCode::TsigKeyInUse => "TSIG_KEY_IN_USE",
             ErrorCode::TsigPolicyNotFound => "TSIG_POLICY_NOT_FOUND",
+            ErrorCode::TokenPolicyNotFound => "TOKEN_POLICY_NOT_FOUND",
             ErrorCode::Unauthorized => "UNAUTHORIZED",
             ErrorCode::InvalidToken => "INVALID_TOKEN",
+            ErrorCode::Forbidden => "FORBIDDEN",
             ErrorCode::PayloadTooLarge => "PAYLOAD_TOO_LARGE",
             ErrorCode::UnsupportedMediaType => "UNSUPPORTED_MEDIA_TYPE",
             ErrorCode::Internal => "INTERNAL",
@@ -64,6 +70,7 @@ impl ErrorCode {
             "INVALID_JSON_BODY" => ErrorCode::InvalidJsonBody,
             "ZONE_CONFLICT" => ErrorCode::ZoneConflict,
             "RECORD_CONFLICT" => ErrorCode::RecordConflict,
+            "TOKEN_CONFLICT" => ErrorCode::TokenConflict,
             "ZONE_NOT_FOUND" => ErrorCode::ZoneNotFound,
             "RECORD_NOT_FOUND" => ErrorCode::RecordNotFound,
             "TOKEN_NOT_FOUND" => ErrorCode::TokenNotFound,
@@ -72,8 +79,10 @@ impl ErrorCode {
             "TSIG_KEY_CONFLICT" => ErrorCode::TsigKeyConflict,
             "TSIG_KEY_IN_USE" => ErrorCode::TsigKeyInUse,
             "TSIG_POLICY_NOT_FOUND" => ErrorCode::TsigPolicyNotFound,
+            "TOKEN_POLICY_NOT_FOUND" => ErrorCode::TokenPolicyNotFound,
             "UNAUTHORIZED" => ErrorCode::Unauthorized,
             "INVALID_TOKEN" => ErrorCode::InvalidToken,
+            "FORBIDDEN" => ErrorCode::Forbidden,
             "PAYLOAD_TOO_LARGE" => ErrorCode::PayloadTooLarge,
             "UNSUPPORTED_MEDIA_TYPE" => ErrorCode::UnsupportedMediaType,
             "INTERNAL" => ErrorCode::Internal,
@@ -89,14 +98,17 @@ impl ErrorCode {
             | ErrorCode::InvalidRecordValue
             | ErrorCode::InvalidJsonBody => 400,
             ErrorCode::Unauthorized | ErrorCode::InvalidToken => 401,
+            ErrorCode::Forbidden => 403,
             ErrorCode::ZoneNotFound
             | ErrorCode::RecordNotFound
             | ErrorCode::TokenNotFound
             | ErrorCode::SnapshotNotFound
             | ErrorCode::TsigKeyNotFound
-            | ErrorCode::TsigPolicyNotFound => 404,
+            | ErrorCode::TsigPolicyNotFound
+            | ErrorCode::TokenPolicyNotFound => 404,
             ErrorCode::ZoneConflict
             | ErrorCode::RecordConflict
+            | ErrorCode::TokenConflict
             | ErrorCode::TsigKeyConflict
             | ErrorCode::TsigKeyInUse => 409,
             ErrorCode::PayloadTooLarge => 413,
@@ -163,6 +175,10 @@ impl ServiceError {
         Self::new(ErrorCode::InvalidToken, message)
     }
 
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::Forbidden, message)
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::Internal, message)
     }
@@ -181,8 +197,18 @@ impl ServiceError {
         )
     }
 
-    pub fn token_not_found() -> Self {
-        Self::new(ErrorCode::TokenNotFound, "Token not found")
+    pub fn token_not_found(name: &str) -> Self {
+        Self::new(
+            ErrorCode::TokenNotFound,
+            format!("API token with name '{}' not found", name),
+        )
+    }
+
+    pub fn token_conflict(name: &str) -> Self {
+        Self::new(
+            ErrorCode::TokenConflict,
+            format!("API token with name '{}' already exists", name),
+        )
     }
 
     pub fn tsig_key_not_found(name: &str) -> Self {
@@ -215,6 +241,13 @@ impl ServiceError {
         Self::new(
             ErrorCode::TsigPolicyNotFound,
             format!("TSIG policy with id '{}' not found", id),
+        )
+    }
+
+    pub fn token_policy_not_found(id: i32) -> Self {
+        Self::new(
+            ErrorCode::TokenPolicyNotFound,
+            format!("Token policy with id '{}' not found", id),
         )
     }
 

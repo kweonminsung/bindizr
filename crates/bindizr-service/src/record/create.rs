@@ -6,6 +6,7 @@ use super::{
 };
 use crate::{
     RepositoryTx,
+    authorization::{self, Caller, RecordWrite},
     error::ServiceError,
     log_error, log_info, log_warn,
     model::{
@@ -29,6 +30,15 @@ impl RecordService {
 
     /// Create a record, bumping the zone serial and recording an ADD change for IXFR.
     pub async fn create(
+        create_record_request: &CreateRecordRequest,
+    ) -> Result<RecordWithZone, ServiceError> {
+        Self::create_for(&Caller::Global, create_record_request).await
+    }
+
+    /// Like [`Self::create`], authorizing `caller` inside the create
+    /// transaction so its grants are decided against the zone this tx locked.
+    pub async fn create_for(
+        caller: &Caller,
         create_record_request: &CreateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
         let record_type = create_record_request
@@ -69,6 +79,18 @@ impl RecordService {
             // those instead of the whole zone.
             let normalized_owner =
                 normalize_record_owner_name(&create_record_request.name, &zone.name)?;
+
+            authorization::authorize_record_writes_tx(
+                &mut tx,
+                caller,
+                &zone,
+                &[RecordWrite {
+                    relative_name: &normalized_owner.stored_name,
+                    record_type: Some(&record_type),
+                }],
+            )
+            .await?;
+
             let existing_records_with_name =
                 match RepositoryService::get_records_by_zone_id_and_name_tx(
                     &mut tx,

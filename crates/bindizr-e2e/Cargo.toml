@@ -9,12 +9,17 @@ autotests = false
 name = "bindizr"
 path = "src/bin/bindizr.rs"
 
+[[bin]]
+name = "bindizr-external-dns"
+path = "src/bin/external_dns.rs"
+
 [[test]]
 name = "e2e"
 path = "tests/e2e.rs"
 
 [dependencies]
 bindizr = { path = "../bindizr" }
+bindizr-external-dns = { path = "../bindizr-external-dns" }
 tokio.workspace = true
 
 [dev-dependencies]

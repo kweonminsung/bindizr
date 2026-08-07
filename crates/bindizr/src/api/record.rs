@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, Query},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing,
 };
 use bindizr_service::record::RecordService;
@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::api::{
+    RequestCaller,
     error::ApiError,
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
@@ -67,11 +68,11 @@ impl RecordApi {
         )
 )]
 /// List DNS records, optionally filtered and paginated.
-pub(crate) async fn get_records(Query(query): Query<GetRecordsFilter>) -> impl IntoResponse {
-    let raw_records = match RecordService::list_with_zone_by_filter(query).await {
-        Ok(records) => records,
-        Err(err) => return ApiError::from(err).into_response(),
-    };
+pub(crate) async fn get_records(
+    RequestCaller(caller): RequestCaller,
+    Query(query): Query<GetRecordsFilter>,
+) -> Result<Response, ApiError> {
+    let raw_records = RecordService::list_with_zone_by_filter_for(&caller, query).await?;
 
     let records = raw_records
         .items
@@ -80,7 +81,7 @@ pub(crate) async fn get_records(Query(query): Query<GetRecordsFilter>) -> impl I
         .collect::<Vec<_>>();
 
     let json_body = json!({ "items": records, "pagination": raw_records.pagination });
-    (StatusCode::OK, Json(json_body)).into_response()
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -99,16 +100,16 @@ pub(crate) async fn get_records(Query(query): Query<GetRecordsFilter>) -> impl I
         )
 )]
 /// Get a single DNS record by ID.
-pub(crate) async fn get_record(Path(params): Path<RecordIdParam>) -> impl IntoResponse {
-    let raw_record = match RecordService::get_by_id_with_zone(params.record_id).await {
-        Ok(record) => record,
-        Err(err) => return ApiError::from(err).into_response(),
-    };
+pub(crate) async fn get_record(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<RecordIdParam>,
+) -> Result<Response, ApiError> {
+    let raw_record = RecordService::get_by_id_with_zone_for(&caller, params.record_id).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
-    (StatusCode::OK, Json(json_body)).into_response()
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -121,23 +122,22 @@ pub(crate) async fn get_record(Path(params): Path<RecordIdParam>) -> impl IntoRe
             (status = 201, description = "DNS record created successfully", body = RecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The token's policies do not allow this record write", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 /// Create a new DNS record.
 pub(crate) async fn create_record(
+    RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRecordRequest>,
-) -> impl IntoResponse {
-    let raw_record = match RecordService::create(&body).await {
-        Ok(record) => record,
-        Err(err) => return ApiError::from(err).into_response(),
-    };
+) -> Result<Response, ApiError> {
+    let raw_record = RecordService::create_for(&caller, &body).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
-    (StatusCode::CREATED, Json(json_body)).into_response()
+    Ok((StatusCode::CREATED, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -153,6 +153,7 @@ pub(crate) async fn create_record(
             (status = 200, description = "DNS record updated successfully", body = RecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The token's policies do not allow this record write", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -160,18 +161,16 @@ pub(crate) async fn create_record(
 )]
 /// Update an existing DNS record.
 pub(crate) async fn update_record(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
     JsonBody(body): JsonBody<UpdateRecordRequest>,
-) -> impl IntoResponse {
-    let raw_record = match RecordService::update_by_id(params.record_id, &body).await {
-        Ok(record) => record,
-        Err(err) => return ApiError::from(err).into_response(),
-    };
+) -> Result<Response, ApiError> {
+    let raw_record = RecordService::update_by_id_for(&caller, params.record_id, &body).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
     let json_body = json!({ "record": record });
-    (StatusCode::OK, Json(json_body)).into_response()
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -185,19 +184,20 @@ pub(crate) async fn update_record(
         responses(
             (status = 200, description = "DNS record deleted successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The token's policies do not allow this record write", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 /// Delete a DNS record.
-pub(crate) async fn delete_record(Path(params): Path<RecordIdParam>) -> impl IntoResponse {
-    match RecordService::delete_by_id(params.record_id).await {
-        Ok(_) => {
-            let json_body = json!({ "message": "Record deleted successfully" });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn delete_record(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<RecordIdParam>,
+) -> Result<Response, ApiError> {
+    RecordService::delete_by_id_for(&caller, params.record_id).await?;
+
+    let json_body = json!({ "message": "Record deleted successfully" });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -215,6 +215,7 @@ pub(crate) async fn delete_record(Path(params): Path<RecordIdParam>) -> impl Int
             (status = 200, description = "Dry run validated successfully, nothing applied", body = BulkRecordsResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "The token's policies do not allow this record write", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -222,14 +223,13 @@ pub(crate) async fn delete_record(Path(params): Path<RecordIdParam>) -> impl Int
 )]
 /// Bulk insert DNS records into a zone in a single transaction.
 pub(crate) async fn create_records_bulk(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneScopedParam>,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
-) -> impl IntoResponse {
+) -> Result<Response, ApiError> {
     let (raw_records, diff) =
-        match RecordService::create_bulk(&params.zone_name, &body.records, body.dry_run).await {
-            Ok(result) => result,
-            Err(err) => return ApiError::from(err).into_response(),
-        };
+        RecordService::create_bulk_for(&caller, &params.zone_name, &body.records, body.dry_run)
+            .await?;
 
     let records = raw_records
         .iter()
@@ -248,7 +248,7 @@ pub(crate) async fn create_records_bulk(
     } else {
         StatusCode::CREATED
     };
-    (status, Json(response)).into_response()
+    Ok((status, Json(response)).into_response())
 }
 
 /// Path parameters scoped to a zone.

@@ -3,7 +3,9 @@ use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 use super::{error::ServiceError, repository::RepositoryService};
-use crate::model::api_token::ApiToken;
+use crate::{model::api_token::ApiToken, validation::has_whitespace_or_control};
+
+const MAX_TOKEN_NAME_LEN: usize = 255;
 
 /// Creates, lists, and revokes API tokens.
 pub struct TokenService;
@@ -15,12 +17,23 @@ pub(crate) fn hash_token(token: &str) -> String {
 }
 
 impl TokenService {
-    /// Create a new API token; the returned token carries the raw secret to show once.
+    /// Create a new API token; the returned token carries the raw secret to
+    /// show once.
     pub async fn create_token(
+        name: &str,
         description: Option<&str>,
         expires_in_days: Option<i64>,
+        is_global: bool,
     ) -> Result<ApiToken, ServiceError> {
+        let name = validate_token_name(name)?;
         validate_expires_in_days(expires_in_days)?;
+
+        if RepositoryService::get_api_token_by_name(&name)
+            .await?
+            .is_some()
+        {
+            return Err(ServiceError::token_conflict(&name));
+        }
 
         let raw_token: String = rand::rng()
             .sample_iter(Alphanumeric)
@@ -34,8 +47,10 @@ impl TokenService {
 
         let mut created = RepositoryService::create_api_token(ApiToken {
             id: 0,
+            name,
             token: token_hash,
             description: description.map(|d| d.to_string()),
+            is_global,
             expires_at,
             created_at: Utc::now(),
             last_used_at: None,
@@ -55,15 +70,35 @@ impl TokenService {
         Ok(tokens)
     }
 
-    /// Delete the API token with the given id, returning `NotFound` if it is absent.
-    pub async fn delete_token(token_id: i32) -> Result<(), ServiceError> {
-        let exists = RepositoryService::get_api_token_by_id(token_id).await?;
-        if exists.is_none() {
-            return Err(ServiceError::token_not_found());
-        }
+    /// Delete the API token with the given name, returning `NotFound` if it
+    /// is absent.
+    pub async fn delete_token(name: &str) -> Result<(), ServiceError> {
+        let token = RepositoryService::get_api_token_by_name(name.trim())
+            .await?
+            .ok_or_else(|| ServiceError::token_not_found(name))?;
 
-        RepositoryService::delete_api_token(token_id).await
+        RepositoryService::delete_api_token(token.id).await
     }
+}
+
+fn validate_token_name(name: &str) -> Result<String, ServiceError> {
+    let trimmed = name.trim();
+
+    if trimmed.is_empty() {
+        return Err(ServiceError::invalid_input("token name must not be empty"));
+    }
+    if has_whitespace_or_control(trimmed) {
+        return Err(ServiceError::invalid_input(
+            "token name must not contain whitespace or control characters",
+        ));
+    }
+    if trimmed.len() > MAX_TOKEN_NAME_LEN {
+        return Err(ServiceError::invalid_input(
+            "token name must be 255 bytes or fewer",
+        ));
+    }
+
+    Ok(trimmed.to_string())
 }
 
 fn validate_expires_in_days(expires_in_days: Option<i64>) -> Result<(), ServiceError> {

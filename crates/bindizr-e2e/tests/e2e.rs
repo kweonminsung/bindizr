@@ -1,10 +1,12 @@
 mod common;
 
 mod api {
+    mod external_dns;
     mod health;
     mod metrics;
     mod notify;
     mod record;
+    mod token_policy;
     mod tsig_key;
     mod zone;
 }

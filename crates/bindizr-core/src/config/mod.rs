@@ -31,6 +31,10 @@ pub struct ApiConfig {
     /// Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
     #[serde(default = "default_metrics_enabled")]
     pub metrics_enabled: bool,
+    /// Register the `/external-dns` provider API endpoints. Which zones a
+    /// caller may manage is decided by its API token's zone policies.
+    #[serde(default)]
+    pub external_dns_enabled: bool,
 }
 
 fn default_metrics_enabled() -> bool {
@@ -318,6 +322,10 @@ fn apply_env_overrides_from(
     }
     if let Some(value) = get_env("BINDIZR_API_METRICS_ENABLED") {
         config.api.metrics_enabled = parse_env_value("BINDIZR_API_METRICS_ENABLED", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_API_EXTERNAL_DNS_ENABLED") {
+        config.api.external_dns_enabled =
+            parse_env_value("BINDIZR_API_EXTERNAL_DNS_ENABLED", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
         config.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;

@@ -124,7 +124,7 @@ pub fn authorize_update(
 /// Match a relative owner name (`@`, `www`, `a.b`, ...) against a policy
 /// pattern: `*` (any name), `@` (apex only), `*.sub` (sub and everything under
 /// it), or an exact relative name.
-fn pattern_matches_name(pattern: &str, relative_name: &str) -> bool {
+pub(crate) fn pattern_matches_name(pattern: &str, relative_name: &str) -> bool {
     let name = relative_name.to_ascii_lowercase();
 
     if pattern == MATCH_ANY {
@@ -138,7 +138,7 @@ fn pattern_matches_name(pattern: &str, relative_name: &str) -> bool {
     name == pattern
 }
 
-fn types_match(types: &str, record_type: Option<&RecordType>) -> bool {
+pub(crate) fn types_match(types: &str, record_type: Option<&RecordType>) -> bool {
     if types == MATCH_ANY {
         return true;
     }
@@ -166,7 +166,7 @@ async fn find_key(key_name: &str) -> Result<TsigKey, ServiceError> {
 }
 
 /// Normalize and validate a record name pattern; `None` grants all names.
-fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceError> {
+pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceError> {
     let raw = match value.map(str::trim) {
         None | Some("") => return Ok(MATCH_ANY.to_string()),
         Some(raw) => raw,
@@ -219,7 +219,7 @@ fn validate_relative_name(name: &str) -> Result<(), ServiceError> {
 }
 
 /// Normalize and validate a record type list; `None` grants all types.
-fn normalize_types(value: Option<&str>) -> Result<String, ServiceError> {
+pub(crate) fn normalize_types(value: Option<&str>) -> Result<String, ServiceError> {
     let raw = match value.map(str::trim) {
         None | Some("") => return Ok(MATCH_ANY.to_string()),
         Some(raw) => raw,

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bindizr_core::dns::record::display_record_value;
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 use crate::{
@@ -26,13 +27,14 @@ impl RecordRepository for SqliteRecordRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO records (name, record_type, value, ttl, priority, zone_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -52,13 +54,14 @@ impl RecordRepository for SqliteRecordRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO records (name, record_type, value, ttl, priority, zone_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -81,13 +84,13 @@ impl RecordRepository for SqliteRecordRepository {
         let mut out = Vec::with_capacity(records.len());
         for chunk in records.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
+                "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id) VALUES ",
             );
             for i in 0..chunk.len() {
                 sql.push_str(if i == 0 {
-                    "(?, ?, ?, ?, ?, ?)"
+                    "(?, ?, ?, ?, ?, ?, ?)"
                 } else {
-                    ",(?, ?, ?, ?, ?, ?)"
+                    ",(?, ?, ?, ?, ?, ?, ?)"
                 });
             }
 
@@ -97,6 +100,7 @@ impl RecordRepository for SqliteRecordRepository {
                     .bind(r.name.clone())
                     .bind(r.record_type.to_string())
                     .bind(r.value.clone())
+                    .bind(display_record_value(&r.value, &r.record_type))
                     .bind(r.ttl)
                     .bind(r.priority)
                     .bind(r.zone_id);
@@ -237,6 +241,34 @@ impl RecordRepository for SqliteRecordRepository {
         .await?;
 
         Ok(records)
+    }
+
+    async fn get_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError> {
+        if zone_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut conn = self.pool.acquire().await?;
+
+        const CHUNK: usize = 400;
+        let mut out = Vec::new();
+        for chunk in zone_ids.chunks(CHUNK) {
+            let mut sql = String::from(
+                "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id IN (",
+            );
+            for i in 0..chunk.len() {
+                sql.push_str(if i == 0 { "?" } else { ",?" });
+            }
+            sql.push(')');
+
+            let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql));
+            for zone_id in chunk {
+                query = query.bind(zone_id);
+            }
+            let mut rows = query.fetch_all(&mut *conn).await?;
+            out.append(&mut rows);
+        }
+        Ok(out)
     }
 
     async fn get_by_zone_id_and_names_tx(
@@ -399,9 +431,15 @@ impl RecordRepository for SqliteRecordRepository {
     ) -> Result<Vec<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(normalize_partial_value);
+        let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
+        let zone_ids_clause = match filter.zone_ids.as_deref() {
+            None => String::new(),
+            Some([]) => "AND 1 = 0".to_string(),
+            Some(ids) => format!("AND r.zone_id IN ({})", vec!["?"; ids.len()].join(",")),
+        };
 
-        let records = sqlx::query_as::<_, RecordWithZone>(
+        let mut query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
             SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
                    r.zone_id, z.name AS zone_name
@@ -414,7 +452,10 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
-              AND (? IS NULL OR INSTR(LOWER(r.value), LOWER(?)) > 0 OR r.record_type = 'TXT')
+              AND (? IS NULL OR (CASE
+                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
+                    ELSE INSTR(r.display_value, ?) > 0
+              END))
               AND (? IS NULL OR r.ttl = ?)
               AND (? IS NULL OR r.ttl >= ?)
               AND (? IS NULL OR r.ttl <= ?)
@@ -427,13 +468,13 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(r.name) LIKE LOWER(?)
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
                     OR LOWER(r.record_type) LIKE LOWER(?)
-                    OR LOWER(r.value) LIKE LOWER(?)
-                    OR r.record_type = 'TXT'
+                    OR LOWER(r.display_value) LIKE LOWER(?)
             )
+            {zone_ids_clause}
             ORDER BY r.name
             LIMIT ? OFFSET ?
-            "#,
-        )
+            "#
+        )))
         .bind(&filter.zone_name)
         .bind(&filter.zone_name)
         .bind(&filter.name)
@@ -443,6 +484,7 @@ impl RecordRepository for SqliteRecordRepository {
         .bind(&filter.record_type)
         .bind(&value)
         .bind(&value)
+        .bind(value_exact)
         .bind(filter.ttl)
         .bind(filter.ttl)
         .bind(filter.min_ttl)
@@ -460,16 +502,22 @@ impl RecordRepository for SqliteRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&search)
-        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
-        .bind(
-            filter
-                .offset
-                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-                .unwrap_or(0),
-        )
-        .fetch_all(&mut *conn)
-        .await?;
+        .bind(&search);
+        if let Some(ids) = &filter.zone_ids {
+            for zone_id in ids {
+                query = query.bind(zone_id);
+            }
+        }
+        let records = query
+            .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+            .bind(
+                filter
+                    .offset
+                    .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+                    .unwrap_or(0),
+            )
+            .fetch_all(&mut *conn)
+            .await?;
 
         Ok(records)
     }
@@ -477,9 +525,15 @@ impl RecordRepository for SqliteRecordRepository {
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(normalize_partial_value);
+        let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
+        let zone_ids_clause = match filter.zone_ids.as_deref() {
+            None => String::new(),
+            Some([]) => "AND 1 = 0".to_string(),
+            Some(ids) => format!("AND r.zone_id IN ({})", vec!["?"; ids.len()].join(",")),
+        };
 
-        let count = sqlx::query_scalar::<_, i64>(
+        let mut query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
             FROM records r
@@ -491,7 +545,10 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
-              AND (? IS NULL OR INSTR(LOWER(r.value), LOWER(?)) > 0 OR r.record_type = 'TXT')
+              AND (? IS NULL OR (CASE
+                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
+                    ELSE INSTR(r.display_value, ?) > 0
+              END))
               AND (? IS NULL OR r.ttl = ?)
               AND (? IS NULL OR r.ttl >= ?)
               AND (? IS NULL OR r.ttl <= ?)
@@ -504,11 +561,11 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(r.name) LIKE LOWER(?)
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
                     OR LOWER(r.record_type) LIKE LOWER(?)
-                    OR LOWER(r.value) LIKE LOWER(?)
-                    OR r.record_type = 'TXT'
+                    OR LOWER(r.display_value) LIKE LOWER(?)
             )
-            "#,
-        )
+            {zone_ids_clause}
+            "#
+        )))
         .bind(&filter.zone_name)
         .bind(&filter.zone_name)
         .bind(&filter.name)
@@ -518,6 +575,7 @@ impl RecordRepository for SqliteRecordRepository {
         .bind(&filter.record_type)
         .bind(&value)
         .bind(&value)
+        .bind(value_exact)
         .bind(filter.ttl)
         .bind(filter.ttl)
         .bind(filter.min_ttl)
@@ -535,9 +593,13 @@ impl RecordRepository for SqliteRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&search)
-        .fetch_one(&mut *conn)
-        .await?;
+        .bind(&search);
+        if let Some(ids) = &filter.zone_ids {
+            for zone_id in ids {
+                query = query.bind(zone_id);
+            }
+        }
+        let count = query.fetch_one(&mut *conn).await?;
 
         Ok(count as u64)
     }
@@ -548,13 +610,14 @@ impl RecordRepository for SqliteRecordRepository {
         sqlx::query(
             r#"
             UPDATE records 
-            SET name = ?, record_type = ?, value = ?, ttl = ?, priority = ?, zone_id = ?
+            SET name = ?, record_type = ?, value = ?, display_value = ?, ttl = ?, priority = ?, zone_id = ?
             WHERE id = ?
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -575,13 +638,14 @@ impl RecordRepository for SqliteRecordRepository {
         sqlx::query(
             r#"
             UPDATE records 
-            SET name = ?, record_type = ?, value = ?, ttl = ?, priority = ?, zone_id = ?
+            SET name = ?, record_type = ?, value = ?, display_value = ?, ttl = ?, priority = ?, zone_id = ?
             WHERE id = ?
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)

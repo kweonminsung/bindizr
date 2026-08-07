@@ -25,6 +25,7 @@ listen_addr = "127.0.0.1"     # HTTP API listen address
 listen_port = 3000            # HTTP API listen port
 require_authentication = true # Enable API authentication (true/false)
 metrics_enabled = true        # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only)
+external_dns_enabled = false  # Register the ExternalDNS provider API at /external-dns
 
 [database]
 type = "mysql"                # Database type: mysql, sqlite, postgresql
@@ -64,6 +65,7 @@ log_level = "debug"           # Log level: error, warn, info, debug, trace
 | `BINDIZR_API_PORT` | `api.listen_port` | |
 | `BINDIZR_API_REQUIRE_AUTHENTICATION` | `api.require_authentication` | |
 | `BINDIZR_API_METRICS_ENABLED` | `api.metrics_enabled` | |
+| `BINDIZR_API_EXTERNAL_DNS_ENABLED` | `api.external_dns_enabled` | See [ExternalDNS](external-dns.md) |
 | `BINDIZR_DATABASE_TYPE` | `database.type` | `mysql`, `postgresql`, or `sqlite` |
 | `BINDIZR_DATABASE_URL` | the URL for the selected backend | Ignored when the type is `sqlite` |
 | `BINDIZR_MYSQL_SERVER_URL` | `database.mysql.server_url` | |

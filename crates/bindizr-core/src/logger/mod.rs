@@ -83,7 +83,13 @@ impl log::Log for Logger {
 
 /// Install the global logger using the configured log level.
 pub fn initialize() {
-    let log_level = match config::get_bindizr_config().logging.log_level {
+    initialize_with_level(config::get_bindizr_config().logging.log_level);
+}
+
+/// Install the global logger at an explicit level, for binaries that do not
+/// load the bindizr configuration file (e.g. the ExternalDNS adapter).
+pub fn initialize_with_level(level: config::LogLevel) {
+    let log_level = match level {
         config::LogLevel::Error => Level::Error,
         config::LogLevel::Warn => Level::Warn,
         config::LogLevel::Debug => Level::Debug,

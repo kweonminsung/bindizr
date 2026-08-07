@@ -4,6 +4,7 @@ use bindizr_core::dns::{name::to_fqdn, record::presentation_rdata};
 
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
+    authorization::{self, Caller},
     error::ServiceError,
     model::{
         record::{Record, RecordType},
@@ -17,6 +18,15 @@ impl ZoneService {
     /// output round-trips through `zone import`, which manages the SOA itself
     /// and so ignores the SOA line on the way back in.
     pub async fn export_zone_file(zone_name: &str) -> Result<String, ServiceError> {
+        Self::export_zone_file_for(&Caller::Global, zone_name).await
+    }
+
+    /// Like [`Self::export_zone_file`], checking visibility on the row this
+    /// tx locked so a same-name recreation cannot swap the zone in.
+    pub async fn export_zone_file_for(
+        caller: &Caller,
+        zone_name: &str,
+    ) -> Result<String, ServiceError> {
         // Read the zone and records in one locked transaction so the export is a
         // single consistent snapshot, not stale SOA metadata with newer records.
         let lookup_name = normalize_zone_name(zone_name)?;
@@ -25,6 +35,10 @@ impl ZoneService {
             let zone = RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_name)
                 .await?
                 .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
+            // Invisible zones read as 404 so scoped tokens cannot probe them.
+            if !authorization::zone_visible(caller, zone.id) {
+                return Err(ServiceError::zone_not_found(zone_name));
+            }
             let records = RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await?;
             Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
         }

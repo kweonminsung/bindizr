@@ -1,0 +1,34 @@
+[package]
+name = "bindizr-external-dns"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "ExternalDNS webhook provider adapter for bindizr"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "bindizr_external_dns"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bindizr-external-dns"
+path = "src/main.rs"
+
+[dependencies]
+bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.6" }
+axum.workspace = true
+clap = { workspace = true, features = ["env"] }
+log.workspace = true
+prometheus.workspace = true
+reqwest = { workspace = true, features = ["rustls"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

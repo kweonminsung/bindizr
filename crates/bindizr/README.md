@@ -68,7 +68,7 @@ Use the CLI to inspect and manage resources:
 
 ```bash
 bindizr status
-bindizr token create --description admin
+bindizr token create --name admin --global
 bindizr zone create --name example.com --primary-ns ns1.example.com --admin-email admin.example.com --ttl 3600
 bindizr zone list
 bindizr zone import example.com db.example.com --mode upsert

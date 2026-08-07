@@ -36,6 +36,7 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus a sync/async apply mode that batches NOTIFYs under load.
 - **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone update policies.
+- **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone History** — per-serial snapshots with diffs between serials and rollback.
 - **Observability** — health probe, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
 
@@ -89,7 +90,7 @@ API authentication is on by default for Helm and package installs — the Compos
 stack ships with it off. Create a token before calling the API:
 
 ```bash
-$ bindizr token create
+$ bindizr token create --name admin --global
 ```
 
 ## Documentation

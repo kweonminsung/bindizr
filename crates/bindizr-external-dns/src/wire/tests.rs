@@ -1,0 +1,238 @@
+use serde_json::json;
+
+use super::{
+    BindizrRecordItem, Changes, DomainFilter, Endpoint, adjust_endpoints,
+    group_records_into_endpoints, to_bindizr_changes, validate_endpoint,
+};
+
+fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> Endpoint {
+    Endpoint {
+        dns_name: dns_name.to_string(),
+        record_type: record_type.to_string(),
+        record_ttl: ttl,
+        targets: targets.iter().map(|t| t.to_string()).collect(),
+        ..Endpoint::default()
+    }
+}
+
+// Field names and casing are the v0.21.0 endpoint.Endpoint json tags.
+#[test]
+fn endpoint_deserializes_external_dns_wire_format() {
+    let parsed: Endpoint = serde_json::from_value(json!({
+        "dnsName": "app.example.com",
+        "targets": ["192.0.2.10"],
+        "recordType": "A",
+        "recordTTL": 300,
+        "labels": {"owner": "default"},
+        "providerSpecific": [{"name": "x", "value": "y"}]
+    }))
+    .unwrap();
+
+    assert_eq!(parsed.dns_name, "app.example.com");
+    assert_eq!(parsed.targets, vec!["192.0.2.10"]);
+    assert_eq!(parsed.record_type, "A");
+    assert_eq!(parsed.record_ttl, 300);
+    assert_eq!(
+        parsed.labels.get("owner").map(String::as_str),
+        Some("default")
+    );
+    assert_eq!(parsed.provider_specific[0].name, "x");
+}
+
+#[test]
+fn endpoint_serializes_with_omitempty_semantics() {
+    let serialized =
+        serde_json::to_value(endpoint("app.example.com", "A", 300, &["192.0.2.10"])).unwrap();
+
+    assert_eq!(
+        serialized,
+        json!({
+            "dnsName": "app.example.com",
+            "targets": ["192.0.2.10"],
+            "recordType": "A",
+            "recordTTL": 300
+        })
+    );
+
+    // TTL 0 means "not configured" and is omitted, like Go's omitempty.
+    let serialized =
+        serde_json::to_value(endpoint("app.example.com", "A", 0, &["192.0.2.10"])).unwrap();
+    assert!(serialized.get("recordTTL").is_none());
+}
+
+#[test]
+fn changes_deserializes_plan_wire_format() {
+    let parsed: Changes = serde_json::from_value(json!({
+        "create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A"}],
+        "updateOld": [{"dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A"}],
+        "updateNew": [{"dnsName": "b.example.com", "targets": ["192.0.2.3"], "recordType": "A"}],
+        "delete": [{"dnsName": "c.example.com", "targets": ["192.0.2.4"], "recordType": "A"}]
+    }))
+    .unwrap();
+
+    assert_eq!(parsed.create.len(), 1);
+    assert_eq!(parsed.update_old.len(), 1);
+    assert_eq!(parsed.update_new.len(), 1);
+    assert_eq!(parsed.delete.len(), 1);
+
+    let empty: Changes = serde_json::from_value(json!({})).unwrap();
+    assert!(empty.create.is_empty());
+}
+
+#[test]
+fn domain_filter_serializes_include_list() {
+    let filter = DomainFilter {
+        include: vec!["example.com".to_string()],
+    };
+    assert_eq!(
+        serde_json::to_value(&filter).unwrap(),
+        json!({"include": ["example.com"]})
+    );
+    assert_eq!(
+        serde_json::to_value(DomainFilter::default()).unwrap(),
+        json!({})
+    );
+}
+
+#[test]
+fn validate_endpoint_rejects_unsupported_shapes() {
+    assert!(validate_endpoint(&endpoint("", "A", 0, &["192.0.2.1"])).is_err());
+    assert!(validate_endpoint(&endpoint("a.example.com", "NS", 0, &["x"])).is_err());
+    assert!(validate_endpoint(&endpoint("a.example.com", "MX", 0, &["x"])).is_err());
+    assert!(validate_endpoint(&endpoint("a.example.com", "A", 0, &[])).is_err());
+    assert!(validate_endpoint(&endpoint("a.example.com", "A", 0, &[""])).is_err());
+    assert!(validate_endpoint(&endpoint("a.example.com", "CNAME", 0, &["a.", "b."])).is_err());
+    assert!(validate_endpoint(&endpoint("a.example.com", "A", -1, &["192.0.2.1"])).is_err());
+
+    let mut with_set_id = endpoint("a.example.com", "A", 0, &["192.0.2.1"]);
+    with_set_id.set_identifier = "weighted".to_string();
+    assert!(validate_endpoint(&with_set_id).is_err());
+
+    assert!(validate_endpoint(&endpoint("a.example.com", "a", 300, &["192.0.2.1"])).is_ok());
+}
+
+#[test]
+fn to_bindizr_changes_pairs_updates_and_maps_ttl() {
+    let changes: Changes = serde_json::from_value(json!({
+        "create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": 300}],
+        "updateOld": [{"dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A"}],
+        "updateNew": [{"dnsName": "b.example.com", "targets": ["192.0.2.3"], "recordType": "A"}]
+    }))
+    .unwrap();
+
+    let bindizr = to_bindizr_changes(&changes).unwrap();
+
+    assert_eq!(bindizr.creates.len(), 1);
+    assert_eq!(bindizr.creates[0].ttl, Some(300));
+    assert_eq!(bindizr.updates.len(), 1);
+    // TTL 0 (unset) maps to None so the server applies the zone TTL.
+    assert_eq!(bindizr.updates[0].old.ttl, None);
+    assert_eq!(bindizr.updates[0].new.values, vec!["192.0.2.3"]);
+    assert!(bindizr.deletes.is_empty());
+}
+
+#[test]
+fn to_bindizr_changes_rejects_mismatched_update_pairs() {
+    let changes: Changes = serde_json::from_value(json!({
+        "updateOld": [{"dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A"}],
+        "updateNew": []
+    }))
+    .unwrap();
+
+    assert!(to_bindizr_changes(&changes).is_err());
+}
+
+#[test]
+fn group_records_builds_one_endpoint_per_rrset() {
+    let records = vec![
+        BindizrRecordItem {
+            name: "app.example.com".to_string(),
+            record_type: "A".to_string(),
+            ttl: 300,
+            value: "192.0.2.2".to_string(),
+        },
+        BindizrRecordItem {
+            name: "app.example.com".to_string(),
+            record_type: "A".to_string(),
+            ttl: 300,
+            value: "192.0.2.1".to_string(),
+        },
+        BindizrRecordItem {
+            name: "app.example.com".to_string(),
+            record_type: "TXT".to_string(),
+            ttl: 3600,
+            value: "\"heritage=external-dns,external-dns/owner=default\"".to_string(),
+        },
+    ];
+
+    let endpoints = group_records_into_endpoints(records);
+
+    assert_eq!(endpoints.len(), 2);
+    assert_eq!(endpoints[0].record_type, "A");
+    assert_eq!(endpoints[0].targets, vec!["192.0.2.1", "192.0.2.2"]);
+    assert_eq!(endpoints[0].record_ttl, 300);
+    assert_eq!(endpoints[1].record_type, "TXT");
+    assert_eq!(
+        endpoints[1].targets,
+        vec!["\"heritage=external-dns,external-dns/owner=default\""]
+    );
+}
+
+#[test]
+fn adjust_endpoints_canonicalizes_cname_and_address_targets() {
+    let adjusted = adjust_endpoints(vec![
+        endpoint("c.example.com", "CNAME", 300, &["CDN.Example.NET"]),
+        endpoint("v6.example.com", "AAAA", 0, &["2001:0DB8:0:0:0:0:0:1"]),
+        endpoint("v4.example.com", "A", 0, &["192.0.2.1"]),
+        // Unparseable addresses pass through for apply to reject.
+        endpoint("bad.example.com", "A", 0, &["not-an-ip"]),
+    ])
+    .unwrap();
+
+    assert_eq!(adjusted[0].targets, vec!["cdn.example.net."]);
+    assert_eq!(adjusted[1].targets, vec!["2001:db8::1"]);
+    assert_eq!(adjusted[2].targets, vec!["192.0.2.1"]);
+    assert_eq!(adjusted[3].targets, vec!["not-an-ip"]);
+}
+
+#[test]
+fn validate_keeps_whitespace_only_txt_targets() {
+    let adjusted = adjust_endpoints(vec![endpoint("t.example.com", "TXT", 0, &["   "])]).unwrap();
+    assert_eq!(adjusted[0].targets, vec![r#""   ""#]);
+
+    assert!(adjust_endpoints(vec![endpoint("a.example.com", "A", 300, &["   "])]).is_err());
+}
+
+#[test]
+fn adjust_endpoints_normalizes_txt_and_strips_provider_specific() {
+    let mut with_props = endpoint("a.example.com", "A", 300, &["192.0.2.1"]);
+    with_props.provider_specific = vec![super::ProviderSpecificProperty {
+        name: "webhook/flag".to_string(),
+        value: "on".to_string(),
+    }];
+
+    let adjusted = adjust_endpoints(vec![
+        with_props,
+        endpoint("b.example.com", "TXT", 0, &["v=spf1 -all"]),
+        endpoint(
+            "c.example.com",
+            "TXT",
+            0,
+            &["\"heritage=external-dns,external-dns/owner=default\""],
+        ),
+    ])
+    .unwrap();
+
+    assert_eq!(
+        adjusted[0],
+        endpoint("a.example.com", "A", 300, &["192.0.2.1"])
+    );
+    assert_eq!(adjusted[1].targets, vec!["\"v=spf1 -all\""]);
+    // Already-canonical ownership records pass through byte-identical.
+    assert_eq!(
+        adjusted[2].targets,
+        vec!["\"heritage=external-dns,external-dns/owner=default\""]
+    );
+
+    assert!(adjust_endpoints(vec![endpoint("a.example.com", "SRV", 0, &["x"])]).is_err());
+}

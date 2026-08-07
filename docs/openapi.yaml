@@ -9,6 +9,120 @@ info:
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   version: 0.1.0-beta.6
 paths:
+  /external-dns/changes:
+    post:
+      tags:
+      - ExternalDNS
+      summary: Apply an ExternalDNS change set atomically
+      description: Applies creates, updates, and deletes in one transaction. Idempotent operations resolve to no change; only zones with a remaining delta advance their serial (once per request) and record IXFR history.
+      operationId: apply_external_dns_changes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalDnsChangesRequest'
+        required: true
+      responses:
+        '200':
+          description: Change set applied (or resolved to a no-op)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalDnsChangesResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The token is not allowed to manage a target record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No authoritative zone for a record name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /external-dns/records:
+    get:
+      tags:
+      - ExternalDNS
+      summary: List the records of every ExternalDNS-managed zone
+      description: Records of every zone the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT), with absolute owner names and presentation-form values.
+      operationId: get_external_dns_records
+      responses:
+        '200':
+          description: Records of the allowed zones
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalDnsRecordsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /external-dns/zones:
+    get:
+      tags:
+      - ExternalDNS
+      summary: List the zones ExternalDNS may manage
+      description: 'Zones the calling token may manage: every zone for a global token, otherwise the zones granted through token policies.'
+      operationId: get_external_dns_zones
+      responses:
+        '200':
+          description: Allowed zones
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalDnsZonesResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /health:
     get:
       tags:
@@ -29,6 +143,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+      security:
+      - {}
   /notify/zones:
     post:
       tags:
@@ -56,6 +172,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required to notify all zones or to force a NOTIFY
           content:
             application/json:
               schema:
@@ -228,6 +350,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The token's policies do not allow this record write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
           content:
@@ -317,6 +445,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The token's policies do not allow this record write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Record not found
           content:
@@ -361,6 +495,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The token's policies do not allow this record write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Record not found
           content:
@@ -389,6 +529,12 @@ paths:
                 $ref: '#/components/schemas/TsigKeyListResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
           content:
             application/json:
               schema:
@@ -426,6 +572,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
           content:
             application/json:
               schema:
@@ -475,6 +627,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: TSIG key not found
           content:
@@ -509,6 +667,12 @@ paths:
                 $ref: '#/components/schemas/MessageResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
           content:
             application/json:
               schema:
@@ -668,6 +832,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
           content:
@@ -761,6 +931,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
           content:
@@ -800,6 +976,12 @@ paths:
                 $ref: '#/components/schemas/MessageResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
           content:
             application/json:
               schema:
@@ -894,6 +1076,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
           content:
@@ -947,6 +1135,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
           content:
             application/json:
               schema:
@@ -1162,6 +1356,163 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/token-policies:
+    get:
+      tags:
+      - Token
+      summary: List a zone's API token policies
+      operationId: get_zone_token_policies
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The zone's token policies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZoneTokenPolicyListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Token
+      summary: Grant an API token record rights in a zone
+      description: 'Creates a token policy granting the token record-plane rights in the zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global tokens are rejected: they already cover every zone and never carry policies.'
+      operationId: create_zone_token_policy
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateZoneTokenPolicyRequest'
+        required: true
+      responses:
+        '201':
+          description: Token policy created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZoneTokenPolicyResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or token not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/token-policies/{id}:
+    delete:
+      tags:
+      - Token
+      summary: Remove a token policy from a zone
+      operationId: delete_zone_token_policy
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        description: The id of the token policy to remove.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: Token policy deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}/tsig-policies:
     get:
       tags:
@@ -1185,6 +1536,12 @@ paths:
                 $ref: '#/components/schemas/ZoneTsigPolicyListResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
           content:
             application/json:
               schema:
@@ -1239,6 +1596,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone or TSIG key not found
           content:
@@ -1286,6 +1649,12 @@ paths:
                 $ref: '#/components/schemas/MessageResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
           content:
             application/json:
               schema:
@@ -1343,6 +1712,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The token's policies do not allow this record write
           content:
             application/json:
               schema:
@@ -1556,6 +1931,30 @@ components:
           type: integer
           format: int32
           example: 3600
+    CreateZoneTokenPolicyRequest:
+      type: object
+      description: Request body for granting an API token record rights in a zone.
+      required:
+      - api_token
+      properties:
+        api_token:
+          type: string
+          description: Name of an existing non-global API token.
+          example: external-dns
+        record_name_pattern:
+          type:
+          - string
+          - 'null'
+          description: |-
+            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
+            Defaults to `*`.
+          example: '*.dyn'
+        record_types:
+          type:
+          - string
+          - 'null'
+          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
+          example: A,AAAA,TXT
     CreateZoneTsigPolicyRequest:
       type: object
       description: Request body for granting a TSIG key nsupdate rights in a zone.
@@ -1593,6 +1992,133 @@ components:
         error:
           type: string
           example: Zone with name 'example.com' not found
+    ExternalDnsChangesRequest:
+      type: object
+      description: Request body for applying an ExternalDNS change set atomically.
+      properties:
+        creates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRrset'
+        deletes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRrset'
+        updates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRrsetUpdate'
+    ExternalDnsChangesResponse:
+      type: object
+      description: Summary of an applied ExternalDNS change set.
+      required:
+      - changed_zones
+      - records_added
+      - records_deleted
+      properties:
+        changed_zones:
+          type: array
+          items:
+            type: string
+          description: Zones whose serial advanced; empty when the request was a no-op.
+          example:
+          - example.com
+        records_added:
+          type: integer
+          format: int32
+          example: 2
+          minimum: 0
+        records_deleted:
+          type: integer
+          format: int32
+          example: 1
+          minimum: 0
+    ExternalDnsRecordItem:
+      type: object
+      description: |-
+        One record row managed through the ExternalDNS API: absolute owner name
+        and the value in presentation form (TXT quoted).
+      required:
+      - name
+      - record_type
+      - ttl
+      - value
+      properties:
+        name:
+          type: string
+          example: app.example.com
+        record_type:
+          type: string
+          example: A
+        ttl:
+          type: integer
+          format: int32
+          example: 300
+        value:
+          type: string
+          example: 192.0.2.10
+    ExternalDnsRecordsResponse:
+      type: object
+      description: Records of every ExternalDNS-managed zone, deterministically ordered.
+      required:
+      - records
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRecordItem'
+    ExternalDnsRrset:
+      type: object
+      description: |-
+        One RRset (owner name and type) exchanged with the ExternalDNS API. Names
+        are absolute; TXT values are quoted presentation strings.
+      required:
+      - name
+      - record_type
+      - values
+      properties:
+        name:
+          type: string
+          example: app.example.com
+        record_type:
+          type: string
+          example: A
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Optional on writes; an omitted or zero TTL resolves to the zone TTL.
+          example: 300
+        values:
+          type: array
+          items:
+            type: string
+          example:
+          - 192.0.2.10
+    ExternalDnsRrsetUpdate:
+      type: object
+      description: 'An RRset replacement: `old` values are removed and `new` written in place.'
+      required:
+      - old
+      - new
+      properties:
+        new:
+          $ref: '#/components/schemas/ExternalDnsRrset'
+        old:
+          $ref: '#/components/schemas/ExternalDnsRrset'
+    ExternalDnsZonesResponse:
+      type: object
+      description: Zones the ExternalDNS caller may manage under the current policy.
+      required:
+      - zones
+      properties:
+        zones:
+          type: array
+          items:
+            type: string
+          example:
+          - example.com
     GetRecordResponse:
       type: object
       description: API representation of a record, optionally carrying its zone name.
@@ -1722,6 +2248,32 @@ components:
           type: integer
           format: int32
           example: 3600
+    GetZoneTokenPolicyResponse:
+      type: object
+      description: API representation of a zone token policy.
+      required:
+      - id
+      - api_token
+      - record_name_pattern
+      - record_types
+      - created_at
+      properties:
+        api_token:
+          type: string
+          example: external-dns
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: integer
+          format: int32
+          example: 1
+        record_name_pattern:
+          type: string
+          example: '*.dyn'
+        record_types:
+          type: string
+          example: A,AAAA,TXT
     GetZoneTsigPolicyResponse:
       type: object
       description: API representation of a zone TSIG policy.
@@ -2323,6 +2875,24 @@ components:
         zone:
           type: string
           example: example.com
+    ZoneTokenPolicyListResponse:
+      type: object
+      description: List of a zone's token policies.
+      required:
+      - token_policies
+      properties:
+        token_policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetZoneTokenPolicyResponse'
+    ZoneTokenPolicyResponse:
+      type: object
+      description: A single zone token policy wrapped in a response envelope.
+      required:
+      - token_policy
+      properties:
+        token_policy:
+          $ref: '#/components/schemas/GetZoneTokenPolicyResponse'
     ZoneTsigPolicyListResponse:
       type: object
       description: List of a zone's TSIG policies.
@@ -2345,6 +2915,8 @@ components:
     bearer_auth:
       type: http
       scheme: bearer
+security:
+- bearer_auth: []
 tags:
 - name: Health
   description: Service health probe for load balancers and orchestrators.
@@ -2356,3 +2928,7 @@ tags:
   description: Send DNS NOTIFY messages to secondary servers.
 - name: TSIG
   description: Manage TSIG keys and per-zone TSIG policies for nsupdate authentication.
+- name: Token
+  description: 'Per-zone API token policies: record-plane grants for scoped tokens.'
+- name: ExternalDNS
+  description: Provider endpoints for the ExternalDNS webhook adapter; registered only when api.external_dns_enabled is set.
