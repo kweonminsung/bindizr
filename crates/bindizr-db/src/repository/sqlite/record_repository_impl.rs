@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bindizr_core::dns::record::display_record_value;
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 use crate::{
@@ -26,13 +27,14 @@ impl RecordRepository for SqliteRecordRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO records (name, record_type, value, ttl, priority, zone_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -52,13 +54,14 @@ impl RecordRepository for SqliteRecordRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO records (name, record_type, value, ttl, priority, zone_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -81,13 +84,13 @@ impl RecordRepository for SqliteRecordRepository {
         let mut out = Vec::with_capacity(records.len());
         for chunk in records.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
+                "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id) VALUES ",
             );
             for i in 0..chunk.len() {
                 sql.push_str(if i == 0 {
-                    "(?, ?, ?, ?, ?, ?)"
+                    "(?, ?, ?, ?, ?, ?, ?)"
                 } else {
-                    ",(?, ?, ?, ?, ?, ?)"
+                    ",(?, ?, ?, ?, ?, ?, ?)"
                 });
             }
 
@@ -97,6 +100,7 @@ impl RecordRepository for SqliteRecordRepository {
                     .bind(r.name.clone())
                     .bind(r.record_type.to_string())
                     .bind(r.value.clone())
+                    .bind(display_record_value(&r.value, &r.record_type))
                     .bind(r.ttl)
                     .bind(r.priority)
                     .bind(r.zone_id);
@@ -427,6 +431,7 @@ impl RecordRepository for SqliteRecordRepository {
     ) -> Result<Vec<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(normalize_partial_value);
+        let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let zone_ids_clause = match filter.zone_ids.as_deref() {
             None => String::new(),
@@ -447,7 +452,10 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
-              AND (? IS NULL OR INSTR(LOWER(r.value), LOWER(?)) > 0 OR r.record_type = 'TXT')
+              AND (? IS NULL OR (CASE
+                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
+                    ELSE INSTR(r.display_value, ?) > 0
+              END))
               AND (? IS NULL OR r.ttl = ?)
               AND (? IS NULL OR r.ttl >= ?)
               AND (? IS NULL OR r.ttl <= ?)
@@ -460,8 +468,7 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(r.name) LIKE LOWER(?)
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
                     OR LOWER(r.record_type) LIKE LOWER(?)
-                    OR LOWER(r.value) LIKE LOWER(?)
-                    OR r.record_type = 'TXT'
+                    OR LOWER(r.display_value) LIKE LOWER(?)
             )
             {zone_ids_clause}
             ORDER BY r.name
@@ -477,6 +484,7 @@ impl RecordRepository for SqliteRecordRepository {
         .bind(&filter.record_type)
         .bind(&value)
         .bind(&value)
+        .bind(value_exact)
         .bind(filter.ttl)
         .bind(filter.ttl)
         .bind(filter.min_ttl)
@@ -517,6 +525,7 @@ impl RecordRepository for SqliteRecordRepository {
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(normalize_partial_value);
+        let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let zone_ids_clause = match filter.zone_ids.as_deref() {
             None => String::new(),
@@ -536,7 +545,10 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
-              AND (? IS NULL OR INSTR(LOWER(r.value), LOWER(?)) > 0 OR r.record_type = 'TXT')
+              AND (? IS NULL OR (CASE
+                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
+                    ELSE INSTR(r.display_value, ?) > 0
+              END))
               AND (? IS NULL OR r.ttl = ?)
               AND (? IS NULL OR r.ttl >= ?)
               AND (? IS NULL OR r.ttl <= ?)
@@ -549,8 +561,7 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(r.name) LIKE LOWER(?)
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
                     OR LOWER(r.record_type) LIKE LOWER(?)
-                    OR LOWER(r.value) LIKE LOWER(?)
-                    OR r.record_type = 'TXT'
+                    OR LOWER(r.display_value) LIKE LOWER(?)
             )
             {zone_ids_clause}
             "#
@@ -564,6 +575,7 @@ impl RecordRepository for SqliteRecordRepository {
         .bind(&filter.record_type)
         .bind(&value)
         .bind(&value)
+        .bind(value_exact)
         .bind(filter.ttl)
         .bind(filter.ttl)
         .bind(filter.min_ttl)
@@ -598,13 +610,14 @@ impl RecordRepository for SqliteRecordRepository {
         sqlx::query(
             r#"
             UPDATE records 
-            SET name = ?, record_type = ?, value = ?, ttl = ?, priority = ?, zone_id = ?
+            SET name = ?, record_type = ?, value = ?, display_value = ?, ttl = ?, priority = ?, zone_id = ?
             WHERE id = ?
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -625,13 +638,14 @@ impl RecordRepository for SqliteRecordRepository {
         sqlx::query(
             r#"
             UPDATE records 
-            SET name = ?, record_type = ?, value = ?, ttl = ?, priority = ?, zone_id = ?
+            SET name = ?, record_type = ?, value = ?, display_value = ?, ttl = ?, priority = ?, zone_id = ?
             WHERE id = ?
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)

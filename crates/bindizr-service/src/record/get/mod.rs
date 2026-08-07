@@ -1,4 +1,3 @@
-use bindizr_core::dns::record::{display_record_owner_name, display_record_value};
 use bindizr_db::repository::RecordFilter;
 
 use super::RecordService;
@@ -11,7 +10,7 @@ use crate::{
         record::{Record, RecordType, RecordWithZone},
         zone::Zone,
     },
-    pagination::{paginate_items, paginated_response},
+    pagination::paginated_response,
     repository::RepositoryService,
     types::{GetRecordsFilter, PaginatedResponse},
     zone::validation::normalize_zone_name,
@@ -128,8 +127,6 @@ impl RecordService {
             .as_deref()
             .map(normalize_zone_name)
             .transpose()?;
-        let value_filter = filter.value.clone();
-        let search_filter = filter.search.clone();
         let limit = filter.limit;
         let offset = filter.offset;
 
@@ -143,7 +140,6 @@ impl RecordService {
 
         let name = normalize_filter_record_name(filter.name, zone_name.as_deref());
 
-        let use_display_filters = value_filter.is_some() || search_filter.is_some();
         let record_filter = RecordFilter {
             zone_name,
             name,
@@ -157,23 +153,9 @@ impl RecordService {
             max_priority: filter.max_priority,
             search: filter.search,
             zone_ids,
-            limit: if use_display_filters { None } else { limit },
-            offset: if use_display_filters { None } else { offset },
+            limit,
+            offset,
         };
-
-        if use_display_filters {
-            let mut records =
-                RepositoryService::get_records_by_filter_with_zone(record_filter).await?;
-            records.retain(|record| {
-                record_matches_display_filters(
-                    record,
-                    value_filter.as_deref(),
-                    search_filter.as_deref(),
-                )
-            });
-
-            return Ok(paginate_items(records, limit, offset));
-        }
 
         let total = RepositoryService::count_records_by_filter(record_filter.clone()).await?;
         let records = RepositoryService::get_records_by_filter_with_zone(record_filter).await?;
@@ -239,66 +221,3 @@ fn normalize_filter_record_name(name: Option<String>, zone_name: Option<&str>) -
         }
     })
 }
-
-fn record_matches_display_filters(
-    record: &RecordWithZone,
-    value_filter: Option<&str>,
-    search_filter: Option<&str>,
-) -> bool {
-    let raw_record = record.record();
-    let display_name = display_record_owner_name(&raw_record.name, &record.zone_name);
-    let display_value = display_record_value(&raw_record.value, &raw_record.record_type);
-
-    matches_record_value(
-        &display_value,
-        &raw_record.record_type,
-        value_filter.map(str::trim),
-    ) && matches_record_search(
-        &raw_record,
-        &record.zone_name,
-        &display_name,
-        &display_value,
-        search_filter.map(str::trim),
-    )
-}
-
-fn matches_record_value(actual: &str, record_type: &RecordType, expected: Option<&str>) -> bool {
-    expected.is_none_or(|expected| {
-        if record_type.is_name_like_value() {
-            actual
-                .to_ascii_lowercase()
-                .contains(&expected.trim_end_matches('.').to_ascii_lowercase())
-        } else {
-            actual.contains(expected)
-        }
-    })
-}
-
-fn matches_record_search(
-    record: &Record,
-    zone_name: &str,
-    display_name: &str,
-    display_value: &str,
-    search: Option<&str>,
-) -> bool {
-    search.is_none_or(|search| {
-        let search = search.trim_end_matches('.').to_ascii_lowercase();
-        if search.is_empty() {
-            return true;
-        }
-
-        let record_type = record.record_type.to_string();
-        [
-            record.name.as_str(),
-            display_name,
-            zone_name,
-            record_type.as_str(),
-            display_value,
-        ]
-        .iter()
-        .any(|value| value.to_ascii_lowercase().contains(&search))
-    })
-}
-
-#[cfg(test)]
-mod tests;

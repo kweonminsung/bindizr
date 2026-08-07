@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bindizr_core::dns::record::display_record_value;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
@@ -26,14 +27,15 @@ impl RecordRepository for PostgresRecordRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO records (name, record_type, value, ttl, priority, zone_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -54,14 +56,15 @@ impl RecordRepository for PostgresRecordRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO records (name, record_type, value, ttl, priority, zone_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -83,7 +86,7 @@ impl RecordRepository for PostgresRecordRepository {
         let mut out = Vec::with_capacity(records.len());
         for chunk in records.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO records (name, record_type, value, ttl, priority, zone_id) VALUES ",
+                "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id) VALUES ",
             );
             let mut p = 1;
             for i in 0..chunk.len() {
@@ -91,15 +94,16 @@ impl RecordRepository for PostgresRecordRepository {
                     sql.push(',');
                 }
                 sql.push_str(&format!(
-                    "(${}, ${}, ${}, ${}, ${}, ${})",
+                    "(${}, ${}, ${}, ${}, ${}, ${}, ${})",
                     p,
                     p + 1,
                     p + 2,
                     p + 3,
                     p + 4,
-                    p + 5
+                    p + 5,
+                    p + 6
                 ));
-                p += 6;
+                p += 7;
             }
             sql.push_str(" RETURNING id");
 
@@ -109,6 +113,7 @@ impl RecordRepository for PostgresRecordRepository {
                     .bind(r.name.clone())
                     .bind(r.record_type.to_string())
                     .bind(r.value.clone())
+                    .bind(display_record_value(&r.value, &r.record_type))
                     .bind(r.ttl)
                     .bind(r.priority)
                     .bind(r.zone_id);
@@ -444,6 +449,7 @@ impl RecordRepository for PostgresRecordRepository {
     ) -> Result<Vec<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(normalize_partial_value);
+        let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
 
         let records = sqlx::query_as::<_, RecordWithZone>(
@@ -459,7 +465,10 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
               AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
-              AND ($8::TEXT IS NULL OR POSITION(LOWER($9) IN LOWER(r.value)) > 0 OR r.record_type = 'TXT')
+              AND ($8::TEXT IS NULL OR (CASE
+                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
+                    ELSE POSITION($31 IN r.display_value) > 0
+              END))
               AND ($10::INT4 IS NULL OR r.ttl = $11)
               AND ($12::INT4 IS NULL OR r.ttl >= $13)
               AND ($14::INT4 IS NULL OR r.ttl <= $15)
@@ -472,8 +481,7 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.name) LIKE LOWER($24)
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
                     OR LOWER(r.record_type) LIKE LOWER($26)
-                    OR LOWER(r.value) LIKE LOWER($27)
-                    OR r.record_type = 'TXT'
+                    OR LOWER(r.display_value) LIKE LOWER($27)
             )
             AND ($30::INT4[] IS NULL OR r.zone_id = ANY($30))
             ORDER BY r.name
@@ -515,6 +523,7 @@ impl RecordRepository for PostgresRecordRepository {
                 .unwrap_or(0),
         )
         .bind(&filter.zone_ids)
+        .bind(value_exact)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -524,6 +533,7 @@ impl RecordRepository for PostgresRecordRepository {
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(normalize_partial_value);
+        let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
 
         let count = sqlx::query_scalar::<_, i64>(
@@ -538,7 +548,10 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
               AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
-              AND ($8::TEXT IS NULL OR POSITION(LOWER($9) IN LOWER(r.value)) > 0 OR r.record_type = 'TXT')
+              AND ($8::TEXT IS NULL OR (CASE
+                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
+                    ELSE POSITION($29 IN r.display_value) > 0
+              END))
               AND ($10::INT4 IS NULL OR r.ttl = $11)
               AND ($12::INT4 IS NULL OR r.ttl >= $13)
               AND ($14::INT4 IS NULL OR r.ttl <= $15)
@@ -551,8 +564,7 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.name) LIKE LOWER($24)
                     OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
                     OR LOWER(r.record_type) LIKE LOWER($26)
-                    OR LOWER(r.value) LIKE LOWER($27)
-                    OR r.record_type = 'TXT'
+                    OR LOWER(r.display_value) LIKE LOWER($27)
             )
             AND ($28::INT4[] IS NULL OR r.zone_id = ANY($28))
             "#,
@@ -585,6 +597,7 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&filter.zone_ids)
+        .bind(value_exact)
         .fetch_one(&mut *conn)
         .await?;
 
@@ -597,13 +610,14 @@ impl RecordRepository for PostgresRecordRepository {
         sqlx::query(
             r#"
             UPDATE records
-            SET name = $1, record_type = $2, value = $3, ttl = $4, priority = $5, zone_id = $6
-            WHERE id = $7
+            SET name = $1, record_type = $2, value = $3, display_value = $4, ttl = $5, priority = $6, zone_id = $7
+            WHERE id = $8
         "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -624,13 +638,14 @@ impl RecordRepository for PostgresRecordRepository {
         sqlx::query(
             r#"
             UPDATE records
-            SET name = $1, record_type = $2, value = $3, ttl = $4, priority = $5, zone_id = $6
-            WHERE id = $7
+            SET name = $1, record_type = $2, value = $3, display_value = $4, ttl = $5, priority = $6, zone_id = $7
+            WHERE id = $8
             "#,
         )
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
+        .bind(display_record_value(&record.value, &record.record_type))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
