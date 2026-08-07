@@ -44,7 +44,9 @@ $ bindizr zone token-policy remove example.com <POLICY_ID>
 ```
 
 A scoped token sees only its granted zones: other zones read as 404 and
-writes outside its grants return 403. Creating, updating, or deleting zones —
+writes outside its grants return 403. The name pattern and type list restrict
+**writes** only — within a granted zone the token reads every record.
+Creating, updating, or deleting zones —
 and managing tokens, keys, or policies over HTTP — always requires a global
 token. The CLI talks to the daemon over its local socket and is not subject
 to token scoping.

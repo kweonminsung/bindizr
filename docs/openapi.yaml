@@ -143,6 +143,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+      security:
+      - {}
   /notify/zones:
     post:
       tags:
@@ -2811,6 +2813,8 @@ components:
     bearer_auth:
       type: http
       scheme: bearer
+security:
+- bearer_auth: []
 tags:
 - name: Health
   description: Service health probe for load balancers and orchestrators.

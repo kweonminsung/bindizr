@@ -116,6 +116,10 @@ use super::types::{
         ZoneTsigPolicyListResponse,
         ZoneTsigPolicyResponse
     )),
+    // Global requirement; /health opts out with an empty per-path security.
+    security(
+        ("bearer_auth" = [])
+    ),
     modifiers(&SecurityAddon),
     tags(
         (name = "Health", description = "Service health probe for load balancers and orchestrators."),

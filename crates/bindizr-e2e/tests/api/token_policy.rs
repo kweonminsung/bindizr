@@ -47,6 +47,18 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     create_zone(&app, &granted_zone).await;
     create_zone(&app, &other_zone).await;
 
+    // Persist a record in the ungranted zone so listing assertions can prove
+    // exclusion, not pass over an empty zone.
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&other_zone, "app", "A", "192.0.2.9")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let ungranted_record_id = body["record"]["id"].as_i64().unwrap();
+
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(&[
         "zone",
@@ -108,13 +120,14 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(
-        body["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|r| r["zone_name"].as_str().unwrap().contains(&granted_zone))
-    );
+    let listed_ids: Vec<i64> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_i64().unwrap())
+        .collect();
+    assert!(listed_ids.contains(&record_id));
+    assert!(!listed_ids.contains(&ungranted_record_id));
 
     // The zone plane requires a global token.
     let new_zone = app.zone_name("new.com");
@@ -145,6 +158,16 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Records of ungranted zones are invisible even when addressed by id.
+    let (status, _) = app
+        .request(
+            Method::DELETE,
+            &format!("/records/{ungranted_record_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Deleting an own record still works.
     let (status, _) = app

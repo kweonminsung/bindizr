@@ -15,32 +15,33 @@ pub(crate) mod tsig_key;
 pub(crate) mod types;
 pub(crate) mod zone;
 
-use std::{convert::Infallible, net::SocketAddr};
+use std::net::SocketAddr;
 
 use axum::{extract::FromRequestParts, http::request::Parts};
 use bindizr_core::{config, log_error, log_info};
-use bindizr_service::authorization::Caller;
+use bindizr_service::{authorization::Caller, error::ServiceError};
+use error::ApiError;
 use router::ApiRouter;
 use tokio::net::TcpListener;
 
-/// The caller attached by the auth middleware; absent (auth disabled) means
-/// unrestricted access.
+/// The caller attached by the auth middleware, or by the router's
+/// `Caller::Global` layer when authentication is disabled. A request without
+/// one reached a handler outside both layers, so extraction fails closed.
 pub(crate) struct RequestCaller(pub(crate) Caller);
 
 impl<S> FromRequestParts<S> for RequestCaller
 where
     S: Send + Sync,
 {
-    type Rejection = Infallible;
+    type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Infallible> {
-        Ok(RequestCaller(
-            parts
-                .extensions
-                .get::<Caller>()
-                .cloned()
-                .unwrap_or(Caller::Global),
-        ))
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
+        parts
+            .extensions
+            .get::<Caller>()
+            .cloned()
+            .map(RequestCaller)
+            .ok_or_else(|| ApiError(ServiceError::unauthorized("Request has no caller identity")))
     }
 }
 

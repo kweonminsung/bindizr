@@ -14,6 +14,7 @@ const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
         tag = "Health",
         summary = "Health probe",
         description = "Runs a minimal database query and reports whether the API can serve requests. Unauthenticated, intended for load-balancer and orchestrator probes; deeper checks (DNS listener, secondary sync) belong to 'bindizr doctor'.",
+        security(()),
         responses(
             (status = 200, description = "Service healthy", body = HealthResponse),
             (status = 503, description = "Service unhealthy", body = HealthResponse)
