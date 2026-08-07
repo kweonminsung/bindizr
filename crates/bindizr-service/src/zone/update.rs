@@ -3,7 +3,6 @@ use chrono::Utc;
 
 use super::ZoneService;
 use crate::{
-    RepositoryTx,
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::{
@@ -24,20 +23,36 @@ struct AppliedZoneUpdate {
     new_serial: i32,
 }
 
+/// DEL(old)+ADD(new) apex SOA changes for an in-place zone row update, so IXFR
+/// consumers replay the SOA transition.
+pub(super) fn soa_replacement_changes(
+    old_zone: &Zone,
+    new_zone: &Zone,
+    new_serial: i32,
+) -> Result<Vec<ZoneChange>, ServiceError> {
+    let change = |operation: &str, zone: &Zone| -> Result<ZoneChange, ServiceError> {
+        Ok(ZoneChange {
+            id: 0,
+            zone_id: old_zone.id,
+            serial: new_serial,
+            operation: operation.to_string(),
+            record_name: "@".to_string(),
+            record_type: "SOA".to_string(),
+            record_value: zone
+                .soa_rdata()
+                .map_err(|e| ServiceError::invalid_zone(e.to_string()))?,
+            record_ttl: zone.ttl,
+            record_priority: None,
+        })
+    };
+
+    Ok(vec![
+        change(ZoneChange::OP_DEL, old_zone)?,
+        change(ZoneChange::OP_ADD, new_zone)?,
+    ])
+}
+
 impl ZoneService {
-    /// Persist a zone within the caller's transaction.
-    pub async fn update_tx(tx: &mut RepositoryTx<'_>, zone: Zone) -> Result<Zone, ServiceError> {
-        RepositoryService::update_zone_tx(tx, zone).await
-    }
-
-    /// Record a zone change (IXFR log entry) within the caller's transaction.
-    pub async fn create_change_tx(
-        tx: &mut RepositoryTx<'_>,
-        zone_change: ZoneChange,
-    ) -> Result<ZoneChange, ServiceError> {
-        RepositoryService::create_zone_change_tx(tx, zone_change).await
-    }
-
     /// Full replacement (HTTP PUT): the request supplies every field.
     pub async fn update(
         zone_name: &str,
@@ -179,11 +194,6 @@ impl ZoneService {
                     && to_fqdn(&r.value).eq_ignore_ascii_case(&to_fqdn(&updated_zone.primary_ns))
             });
 
-            let soa_rdata = |zone: &Zone| -> Result<String, ServiceError> {
-                zone.soa_rdata()
-                    .map_err(|e| ServiceError::invalid_zone(e.to_string()))
-            };
-
             // Collect the IXFR changes and write them in one batch: the new apex
             // NS (when missing), then the SOA replacement (DEL old, ADD new).
             let mut changes: Vec<ZoneChange> = Vec::new();
@@ -227,28 +237,11 @@ impl ZoneService {
                 });
             }
 
-            changes.push(ZoneChange {
-                id: 0,
-                zone_id,
-                serial: new_serial,
-                operation: ZoneChange::OP_DEL.to_string(),
-                record_name: "@".to_string(),
-                record_type: "SOA".to_string(),
-                record_value: soa_rdata(&existing_zone)?,
-                record_ttl: existing_zone.ttl,
-                record_priority: None,
-            });
-            changes.push(ZoneChange {
-                id: 0,
-                zone_id,
-                serial: new_serial,
-                operation: ZoneChange::OP_ADD.to_string(),
-                record_name: "@".to_string(),
-                record_type: "SOA".to_string(),
-                record_value: soa_rdata(&updated_zone)?,
-                record_ttl: updated_zone.ttl,
-                record_priority: None,
-            });
+            changes.extend(soa_replacement_changes(
+                &existing_zone,
+                &updated_zone,
+                new_serial,
+            )?);
 
             RepositoryService::create_zone_changes_tx(&mut tx, &changes)
                 .await

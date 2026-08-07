@@ -226,14 +226,6 @@ impl RecordService {
                     ServiceError::internal("Failed to update record".to_string())
                 })?;
 
-            // Increment zone serial so IXFR consumers can detect this change
-            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::internal("Failed to update zone serial".to_string())
-                })?;
-
             // Record DEL(old)+ADD(new) zone changes for IXFR in one batch.
             let mut changes = zone_changes_for(
                 zone.id,
@@ -254,7 +246,7 @@ impl RecordService {
                     ServiceError::internal("Failed to create zone change".to_string())
                 })?;
 
-            ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok::<(Record, String), ServiceError>((updated_record, zone_name))
         }

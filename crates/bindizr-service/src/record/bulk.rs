@@ -96,7 +96,7 @@ pub(super) fn zone_changes_for(
 impl RecordService {
     /// Insert records with their ADD zone changes for IXFR. The caller has
     /// already validated the rows.
-    pub(crate) async fn insert_records_with_changes_tx(
+    pub async fn insert_records_with_changes_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         new_serial: i32,
@@ -113,7 +113,7 @@ impl RecordService {
     }
 
     /// Delete records with their DEL zone changes for IXFR.
-    pub(crate) async fn delete_records_with_changes_tx(
+    pub async fn delete_records_with_changes_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         new_serial: i32,
@@ -325,16 +325,9 @@ impl RecordService {
             .await?;
             timings.db_write_ms = elapsed_ms(t);
 
-            // Increment zone serial once so IXFR consumers detect the batch
+            // Advance the serial once so IXFR consumers detect the batch
             let t = Instant::now();
-            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::internal("Failed to update zone serial".to_string())
-                })?;
-
-            ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
             timings.serial_ms = elapsed_ms(t);
 
             Ok::<(Vec<Record>, String, RecordDiff), ServiceError>((

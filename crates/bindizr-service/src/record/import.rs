@@ -405,15 +405,8 @@ impl RecordService {
                 timings.db_write_ms = elapsed_ms(t);
 
                 let t = Instant::now();
-                // Increment zone serial once so IXFR consumers detect the import
-                RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
-                    .await
-                    .map_err(|e| {
-                        log_error!("Failed to update zone serial: {}", e);
-                        ServiceError::internal("Failed to update zone serial".to_string())
-                    })?;
-
-                ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
+                // Advance the serial once so IXFR consumers detect the import
+                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
                 timings.serial_ms = elapsed_ms(t);
             }
 

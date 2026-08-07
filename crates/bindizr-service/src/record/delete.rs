@@ -1,6 +1,5 @@
 use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
-    RepositoryTx,
     authorization::{Caller, RecordWrite},
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
@@ -19,11 +18,6 @@ struct DeletedRecord {
 }
 
 impl RecordService {
-    /// Delete a record by id within the caller's transaction.
-    pub async fn delete_tx(tx: &mut RepositoryTx<'_>, record_id: i32) -> Result<(), ServiceError> {
-        RepositoryService::delete_record_tx(tx, record_id).await
-    }
-
     /// Delete a record by id, bumping the zone serial and recording a DEL change for IXFR.
     pub async fn delete_by_id(record_id: i32) -> Result<(), ServiceError> {
         Self::delete_by_id_for(&Caller::Global, record_id).await
@@ -101,15 +95,7 @@ impl RecordService {
             )
             .await?;
 
-            // Increment zone serial so IXFR consumers can detect this change
-            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::internal("Failed to update zone serial".to_string())
-                })?;
-
-            ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok(DeletedRecord {
                 zone_name: zone.name,

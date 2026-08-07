@@ -11,6 +11,23 @@ use crate::{
 };
 
 impl ZoneService {
+    /// Advance the zone serial so IXFR consumers detect the change, and
+    /// snapshot it in the same transaction.
+    pub async fn advance_serial_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        new_serial: i32,
+    ) -> Result<(), ServiceError> {
+        RepositoryService::update_zone_serial_tx(tx, zone.id, new_serial)
+            .await
+            .map_err(|e| {
+                log_error!("Failed to update zone serial: {}", e);
+                ServiceError::internal("Failed to update zone serial".to_string())
+            })?;
+
+        Self::save_snapshot_tx(tx, zone, new_serial).await
+    }
+
     /// Save a snapshot of the zone's SOA data for historical tracking.
     pub async fn save_snapshot_tx(
         tx: &mut RepositoryTx<'_>,

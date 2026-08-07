@@ -9,7 +9,7 @@ use bindizr_core::dns::{
 };
 use chrono::Utc;
 
-use super::{ZoneService, validation::normalize_zone_name};
+use super::{ZoneService, update::soa_replacement_changes, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
     authorization::Caller,
@@ -692,34 +692,7 @@ impl ZoneService {
             RepositoryService::update_zone_tx(&mut tx, restored_zone.clone()).await?;
 
             if soa_changed {
-                let soa_rdata = |zone: &Zone| -> Result<String, ServiceError> {
-                    zone.soa_rdata()
-                        .map_err(|e| ServiceError::invalid_zone(e.to_string()))
-                };
-                let changes = vec![
-                    ZoneChange {
-                        id: 0,
-                        zone_id: zone.id,
-                        serial: new_serial,
-                        operation: ZoneChange::OP_DEL.to_string(),
-                        record_name: "@".to_string(),
-                        record_type: "SOA".to_string(),
-                        record_value: soa_rdata(&zone)?,
-                        record_ttl: zone.ttl,
-                        record_priority: None,
-                    },
-                    ZoneChange {
-                        id: 0,
-                        zone_id: zone.id,
-                        serial: new_serial,
-                        operation: ZoneChange::OP_ADD.to_string(),
-                        record_name: "@".to_string(),
-                        record_type: "SOA".to_string(),
-                        record_value: soa_rdata(&restored_zone)?,
-                        record_ttl: restored_zone.ttl,
-                        record_priority: None,
-                    },
-                ];
+                let changes = soa_replacement_changes(&zone, &restored_zone, new_serial)?;
                 RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
             }
 

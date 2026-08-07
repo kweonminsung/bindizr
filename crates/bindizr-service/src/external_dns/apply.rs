@@ -375,8 +375,7 @@ impl ExternalDnsService {
                     &change_set.creates,
                 )
                 .await?;
-                RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial).await?;
-                ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
+                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
                 records_deleted += change_set.deletes.len() as u32;
                 records_added += change_set.creates.len() as u32;

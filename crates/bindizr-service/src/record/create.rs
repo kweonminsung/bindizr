@@ -6,7 +6,6 @@ use super::{
     validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
 };
 use crate::{
-    RepositoryTx,
     authorization::{Caller, RecordWrite},
     error::ServiceError,
     log_error, log_info, log_warn,
@@ -18,14 +17,6 @@ use crate::{
 };
 
 impl RecordService {
-    /// Insert a record within the caller's transaction.
-    pub async fn create_tx(
-        tx: &mut RepositoryTx<'_>,
-        record: Record,
-    ) -> Result<Record, ServiceError> {
-        RepositoryService::create_record_tx(tx, record).await
-    }
-
     /// Create a record, bumping the zone serial and recording an ADD change for IXFR.
     pub async fn create(
         create_record_request: &CreateRecordRequest,
@@ -127,15 +118,7 @@ impl RecordService {
                 ServiceError::internal("Failed to create record".to_string())
             })?;
 
-            // Increment zone serial so IXFR consumers can detect this change
-            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::internal("Failed to update zone serial".to_string())
-                })?;
-
-            ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok::<(Record, String), ServiceError>((created_record, zone.name))
         }
