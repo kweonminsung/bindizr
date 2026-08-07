@@ -102,6 +102,16 @@ impl DatabasePool {
     pub async fn new_mysql(url: &str) -> Self {
         let pool = MySqlPoolOptions::new()
             .max_connections(networked_pool_max_connections())
+            .after_connect(|conn, _| {
+                Box::pin(async move {
+                    // Row locks, not snapshot isolation, carry correctness:
+                    // READ COMMITTED matches PostgreSQL and sheds gap locking.
+                    sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+                        .execute(conn)
+                        .await
+                        .map(|_| ())
+                })
+            })
             .connect(url)
             .await
             .unwrap_or_else(|e| {
@@ -123,6 +133,17 @@ impl DatabasePool {
     pub async fn new_postgres(url: &str) -> Self {
         let pool = PgPoolOptions::new()
             .max_connections(networked_pool_max_connections())
+            .after_connect(|conn, _| {
+                Box::pin(async move {
+                    // Already the default; pinned so all backends state one contract.
+                    sqlx::query(
+                        "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED",
+                    )
+                    .execute(conn)
+                    .await
+                    .map(|_| ())
+                })
+            })
             .connect(url)
             .await
             .unwrap_or_else(|e| {
