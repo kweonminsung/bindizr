@@ -39,7 +39,7 @@ impl NotifyApi {
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required to notify all zones", body = ErrorResponse),
+            (status = 403, description = "A global API token is required to notify all zones or to force a NOTIFY", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -50,6 +50,10 @@ pub(crate) async fn notify_zones(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<NotifyZoneRequest>,
 ) -> Result<Response, ApiError> {
+    // Forcing bumps zone serials — a zone-plane mutation, not just a NOTIFY.
+    if body.force {
+        authorization::require_global(&caller, "force a NOTIFY")?;
+    }
     match &body.zone_name {
         Some(zone_name) => ZoneService::ensure_visible(&caller, zone_name).await?,
         None => authorization::require_global(&caller, "send NOTIFY for all zones")?,

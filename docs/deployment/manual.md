@@ -156,8 +156,8 @@ environment.
 $ sudo systemctl enable bindizr
 $ sudo systemctl start bindizr
 
-# Create an API token for authentication
-$ bindizr token create
+# Create an admin API token for authentication
+$ bindizr token create --name admin --global
 ```
 
 Then confirm the whole path works end to end:

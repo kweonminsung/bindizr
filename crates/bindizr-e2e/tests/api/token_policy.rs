@@ -149,6 +149,16 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
+    // So does forced NOTIFY: it bumps the zone serial.
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/notify/zones",
+            Some(json!({ "zone_name": granted_zone, "force": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
     // So does policy management (no self-escalation).
     let (status, _) = app
         .request(

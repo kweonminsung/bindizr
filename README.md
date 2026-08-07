@@ -90,7 +90,7 @@ API authentication is on by default for Helm and package installs — the Compos
 stack ships with it off. Create a token before calling the API:
 
 ```bash
-$ bindizr token create
+$ bindizr token create --name admin --global
 ```
 
 ## Documentation

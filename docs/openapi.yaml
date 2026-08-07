@@ -177,7 +177,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required to notify all zones
+          description: A global API token is required to notify all zones or to force a NOTIFY
           content:
             application/json:
               schema:
