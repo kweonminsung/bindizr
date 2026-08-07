@@ -3,7 +3,7 @@ use bindizr_db::repository::RecordFilter;
 use super::RecordService;
 use crate::{
     RepositoryTx,
-    authorization::{Caller, visible_zone_ids, zone_visible},
+    authorization::Caller,
     error::ServiceError,
     log_error,
     model::record::{Record, RecordType, RecordWithZone},
@@ -85,7 +85,7 @@ impl RecordService {
         caller: &Caller,
         filter: GetRecordsFilter,
     ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
-        let Some(visible) = visible_zone_ids(caller) else {
+        let Some(visible) = caller.visible_zone_ids() else {
             return Self::list_with_zone_by_filter(filter).await;
         };
 
@@ -101,7 +101,7 @@ impl RecordService {
         record_id: i32,
     ) -> Result<RecordWithZone, ServiceError> {
         let record = Self::get_by_id_with_zone(record_id).await?;
-        if !zone_visible(caller, record.zone_id) {
+        if !caller.zone_visible(record.zone_id) {
             return Err(ServiceError::record_not_found(record_id));
         }
         Ok(record)

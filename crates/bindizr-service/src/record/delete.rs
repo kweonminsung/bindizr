@@ -1,7 +1,7 @@
 use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
     RepositoryTx,
-    authorization::{self, Caller, RecordWrite},
+    authorization::{Caller, RecordWrite},
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     repository::RepositoryService,
@@ -75,19 +75,19 @@ impl RecordService {
                 };
 
             // Invisible zones read as 404 so scoped tokens cannot probe ids.
-            if !authorization::zone_visible(caller, zone.id) {
+            if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::record_not_found(record_id));
             }
-            authorization::authorize_record_writes_tx(
-                &mut tx,
-                caller,
-                &zone,
-                &[RecordWrite {
-                    relative_name: &existing_record.name,
-                    record_type: Some(&existing_record.record_type),
-                }],
-            )
-            .await?;
+            caller
+                .authorize_record_writes_tx(
+                    &mut tx,
+                    &zone,
+                    &[RecordWrite {
+                        relative_name: &existing_record.name,
+                        record_type: Some(&existing_record.record_type),
+                    }],
+                )
+                .await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
 

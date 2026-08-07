@@ -4,7 +4,7 @@ use bindizr_core::dns::{name::to_fqdn, record::presentation_rdata};
 
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
-    authorization::{self, Caller},
+    authorization::Caller,
     error::ServiceError,
     model::{
         record::{Record, RecordType},
@@ -36,7 +36,7 @@ impl ZoneService {
                 .await?
                 .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
             // Invisible zones read as 404 so scoped tokens cannot probe them.
-            if !authorization::zone_visible(caller, zone.id) {
+            if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
             let records = RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await?;

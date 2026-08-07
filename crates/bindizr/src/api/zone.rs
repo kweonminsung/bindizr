@@ -7,9 +7,7 @@ use axum::{
 };
 use bindizr_core::model::zone::Zone;
 use bindizr_dns as dns;
-use bindizr_service::{
-    authorization, error::ServiceError, record::RecordService, zone::ZoneService,
-};
+use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneService};
 use dns::client::probe::SecondaryProbe;
 use serde::Deserialize;
 use serde_json::json;
@@ -246,7 +244,7 @@ pub(crate) async fn rollback_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<RollbackZoneRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "roll back zones")?;
+    caller.require_global("roll back zones")?;
 
     let response = ZoneService::rollback(&params.name, body.serial, body.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
@@ -399,7 +397,7 @@ pub(crate) async fn create_zone(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "create zones")?;
+    caller.require_global("create zones")?;
 
     let zone = ZoneService::create(&body).await?;
     let zone = GetZoneResponse::from_zone(&zone);
@@ -432,7 +430,7 @@ pub(crate) async fn update_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "update zones")?;
+    caller.require_global("update zones")?;
 
     let zone = ZoneService::update(&params.name, &body).await?;
     let zone = GetZoneResponse::from_zone(&zone);
@@ -461,7 +459,7 @@ pub(crate) async fn delete_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "delete zones")?;
+    caller.require_global("delete zones")?;
 
     ZoneService::delete(&params.name).await?;
     let json_body = json!({ "message": "Zone deleted successfully" });
@@ -494,7 +492,7 @@ pub(crate) async fn import_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<ImportZoneFileRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "import zone files")?;
+    caller.require_global("import zone files")?;
 
     let response = RecordService::import_zone_file(&params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())

@@ -27,25 +27,6 @@ pub enum Caller {
     },
 }
 
-impl Caller {
-    pub fn is_global(&self) -> bool {
-        matches!(self, Caller::Global)
-    }
-}
-
-/// Build the request's caller from its authenticated token, preloading a
-/// scoped token's grants.
-pub async fn caller_for_token(token: &ApiToken) -> Result<Caller, ServiceError> {
-    if token.is_global {
-        return Ok(Caller::Global);
-    }
-    let grants = RepositoryService::get_zone_token_policies_by_token_id(token.id).await?;
-    Ok(Caller::Token {
-        id: token.id,
-        grants: grants.into(),
-    })
-}
-
 /// One record-plane write to authorize: the owner name relative to the zone
 /// (stored form) and its type. `None` types only match unrestricted policies.
 pub struct RecordWrite<'a> {
@@ -53,40 +34,81 @@ pub struct RecordWrite<'a> {
     pub record_type: Option<&'a RecordType>,
 }
 
-/// Reject non-global callers for zone-plane and management operations.
-pub fn require_global(caller: &Caller, action: &str) -> Result<(), ServiceError> {
-    if caller.is_global() {
-        return Ok(());
+impl Caller {
+    pub fn is_global(&self) -> bool {
+        matches!(self, Caller::Global)
     }
-    Err(ServiceError::forbidden(format!(
-        "a global API token is required to {}",
-        action
-    )))
-}
 
-/// Zone ids the caller may see; `None` means unrestricted.
-pub fn visible_zone_ids(caller: &Caller) -> Option<HashSet<i32>> {
-    match caller {
-        Caller::Global => None,
-        Caller::Token { grants, .. } => Some(grants.iter().map(|p| p.zone_id).collect()),
+    /// Build the request's caller from its authenticated token, preloading a
+    /// scoped token's grants.
+    pub async fn for_token(token: &ApiToken) -> Result<Caller, ServiceError> {
+        if token.is_global {
+            return Ok(Caller::Global);
+        }
+        let grants = RepositoryService::get_zone_token_policies_by_token_id(token.id).await?;
+        Ok(Caller::Token {
+            id: token.id,
+            grants: grants.into(),
+        })
     }
-}
 
-/// Whether the caller may see `zone_id`.
-pub fn zone_visible(caller: &Caller, zone_id: i32) -> bool {
-    match caller {
-        Caller::Global => true,
-        Caller::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
+    /// Reject non-global callers for zone-plane and management operations.
+    pub fn require_global(&self, action: &str) -> Result<(), ServiceError> {
+        if self.is_global() {
+            return Ok(());
+        }
+        Err(ServiceError::forbidden(format!(
+            "a global API token is required to {}",
+            action
+        )))
     }
-}
 
-/// 404 for zones the caller cannot see, so scoped tokens cannot probe zone
-/// existence.
-pub fn ensure_zone_visible(caller: &Caller, zone: &Zone) -> Result<(), ServiceError> {
-    if zone_visible(caller, zone.id) {
-        Ok(())
-    } else {
-        Err(ServiceError::zone_not_found(&zone.name))
+    /// Zone ids the caller may see; `None` means unrestricted.
+    pub fn visible_zone_ids(&self) -> Option<HashSet<i32>> {
+        match self {
+            Caller::Global => None,
+            Caller::Token { grants, .. } => Some(grants.iter().map(|p| p.zone_id).collect()),
+        }
+    }
+
+    /// Whether the caller may see `zone_id`.
+    pub fn zone_visible(&self, zone_id: i32) -> bool {
+        match self {
+            Caller::Global => true,
+            Caller::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
+        }
+    }
+
+    /// 404 for zones the caller cannot see, so scoped tokens cannot probe zone
+    /// existence.
+    pub fn ensure_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
+        if self.zone_visible(zone.id) {
+            Ok(())
+        } else {
+            Err(ServiceError::zone_not_found(&zone.name))
+        }
+    }
+
+    /// Authorize record-plane writes in `zone`, re-reading the caller's
+    /// policies inside the transaction so the decision is atomic with the
+    /// mutation.
+    pub async fn authorize_record_writes_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        writes: &[RecordWrite<'_>],
+    ) -> Result<(), ServiceError> {
+        match self {
+            Caller::Global => Ok(()),
+            Caller::Token { id, .. } => {
+                let policies = RepositoryService::get_zone_token_policies_by_zone_and_token_tx(
+                    tx, zone.id, *id,
+                )
+                .await?;
+                let policies: Vec<&ZoneTokenPolicy> = policies.iter().collect();
+                authorize_with_policies(&policies, zone, writes)
+            }
+        }
     }
 }
 
@@ -113,26 +135,6 @@ fn authorize_with_policies(
         }
     }
     Ok(())
-}
-
-/// Authorize record-plane writes in `zone`, re-reading the caller's policies
-/// inside the transaction so the decision is atomic with the mutation.
-pub async fn authorize_record_writes_tx(
-    tx: &mut RepositoryTx<'_>,
-    caller: &Caller,
-    zone: &Zone,
-    writes: &[RecordWrite<'_>],
-) -> Result<(), ServiceError> {
-    match caller {
-        Caller::Global => Ok(()),
-        Caller::Token { id, .. } => {
-            let policies =
-                RepositoryService::get_zone_token_policies_by_zone_and_token_tx(tx, zone.id, *id)
-                    .await?;
-            let policies: Vec<&ZoneTokenPolicy> = policies.iter().collect();
-            authorize_with_policies(&policies, zone, writes)
-        }
-    }
 }
 
 #[cfg(test)]

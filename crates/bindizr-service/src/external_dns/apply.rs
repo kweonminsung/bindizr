@@ -14,7 +14,7 @@ use super::{
     policy::{find_authoritative_zone, normalize_lookup_name, stored_owner_name},
 };
 use crate::{
-    authorization::{Caller, RecordWrite, authorize_record_writes_tx},
+    authorization::{Caller, RecordWrite},
     error::{ErrorCode, ServiceError},
     log_info, log_warn,
     model::{
@@ -373,7 +373,9 @@ impl ExternalDnsService {
                         record_type: Some(&op.record_type),
                     })
                     .collect();
-                authorize_record_writes_tx(&mut tx, caller, &zone, &writes).await?;
+                caller
+                    .authorize_record_writes_tx(&mut tx, &zone, &writes)
+                    .await?;
 
                 // Only records sharing an owner name with the request can be
                 // touched or conflict, so load just those.

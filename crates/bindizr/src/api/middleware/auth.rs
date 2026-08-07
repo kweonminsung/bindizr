@@ -33,7 +33,7 @@ pub(crate) async fn auth_middleware(
     let token = &auth_str[7..];
 
     match AuthService::validate_token(token).await {
-        Ok(api_token) => match authorization::caller_for_token(&api_token).await {
+        Ok(api_token) => match authorization::Caller::for_token(&api_token).await {
             Ok(caller) => {
                 req.extensions_mut().insert(caller);
                 Ok(next.run(req).await)

@@ -7,7 +7,7 @@ use super::{
     },
 };
 use crate::{
-    authorization::{self, Caller, RecordWrite},
+    authorization::{Caller, RecordWrite},
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::{
@@ -152,7 +152,7 @@ impl RecordService {
                 };
 
             // Invisible zones read as 404 so scoped tokens cannot probe ids.
-            if !authorization::zone_visible(caller, zone.id) {
+            if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::record_not_found(record_id));
             }
 
@@ -164,22 +164,22 @@ impl RecordService {
 
             // An update is a delete plus an add, so both the stored identity
             // and the requested one must be granted.
-            authorization::authorize_record_writes_tx(
-                &mut tx,
-                caller,
-                &zone,
-                &[
-                    RecordWrite {
-                        relative_name: &existing_record.name,
-                        record_type: Some(&existing_record.record_type),
-                    },
-                    RecordWrite {
-                        relative_name: &lookup_owner.stored_name,
-                        record_type: Some(&resolved.record_type),
-                    },
-                ],
-            )
-            .await?;
+            caller
+                .authorize_record_writes_tx(
+                    &mut tx,
+                    &zone,
+                    &[
+                        RecordWrite {
+                            relative_name: &existing_record.name,
+                            record_type: Some(&existing_record.record_type),
+                        },
+                        RecordWrite {
+                            relative_name: &lookup_owner.stored_name,
+                            record_type: Some(&resolved.record_type),
+                        },
+                    ],
+                )
+                .await?;
             let zone_records = match RepositoryService::get_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone.id,

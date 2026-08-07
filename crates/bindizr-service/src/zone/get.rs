@@ -3,7 +3,7 @@ use bindizr_db::repository::ZoneFilter;
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
-    authorization::{Caller, ensure_zone_visible, visible_zone_ids},
+    authorization::Caller,
     error::ServiceError,
     log_error,
     model::{zone::Zone, zone_change::ZoneChange},
@@ -63,7 +63,7 @@ impl ZoneService {
         caller: &Caller,
         filter: GetZonesFilter,
     ) -> Result<PaginatedResponse<Zone>, ServiceError> {
-        let Some(visible) = visible_zone_ids(caller) else {
+        let Some(visible) = caller.visible_zone_ids() else {
             return Self::list_by_filter(filter).await;
         };
 
@@ -105,13 +105,13 @@ impl ZoneService {
             return Ok(());
         }
         let zone = Self::get_by_name(zone_name).await?;
-        ensure_zone_visible(caller, &zone)
+        caller.ensure_zone_visible(&zone)
     }
 
     /// [`Self::get_by_name`] with scoped-caller visibility applied.
     pub async fn get_by_name_for(caller: &Caller, zone_name: &str) -> Result<Zone, ServiceError> {
         let zone = Self::get_by_name(zone_name).await?;
-        ensure_zone_visible(caller, &zone)?;
+        caller.ensure_zone_visible(&zone)?;
         Ok(zone)
     }
 

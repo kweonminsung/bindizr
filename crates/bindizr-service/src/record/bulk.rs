@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     RepositoryTx,
-    authorization::{self, Caller, RecordWrite},
+    authorization::{Caller, RecordWrite},
     error::ServiceError,
     log_debug, log_debug_enabled, log_error, log_info, log_warn,
     model::{
@@ -302,7 +302,9 @@ impl RecordService {
                     record_type: Some(&record.record_type),
                 })
                 .collect();
-            authorization::authorize_record_writes_tx(&mut tx, caller, &zone, &writes).await?;
+            caller
+                .authorize_record_writes_tx(&mut tx, &zone, &writes)
+                .await?;
 
             if dry_run {
                 // `after` = existing plus the inserts, so an insert into an

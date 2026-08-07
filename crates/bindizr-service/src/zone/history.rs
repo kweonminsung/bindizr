@@ -12,7 +12,7 @@ use chrono::Utc;
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
-    authorization::{self, Caller},
+    authorization::Caller,
     error::ServiceError,
     log_info, log_warn,
     model::{
@@ -395,7 +395,7 @@ impl ZoneService {
     ) -> Result<PaginatedResponse<ZoneSnapshot>, ServiceError> {
         let zone = Self::get_by_name(zone_name).await?;
         // Invisible zones read as 404 so scoped tokens cannot probe them.
-        if !authorization::zone_visible(caller, zone.id) {
+        if !caller.zone_visible(zone.id) {
             return Err(ServiceError::zone_not_found(zone_name));
         }
 
@@ -434,7 +434,7 @@ impl ZoneService {
 
         let result = async {
             let zone = ZoneService::get_by_name_tx(&mut tx, &lookup_name).await?;
-            if !authorization::zone_visible(caller, zone.id) {
+            if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
             let snapshot =
@@ -475,7 +475,7 @@ impl ZoneService {
 
         let result = async {
             let zone = ZoneService::get_by_name_tx(&mut tx, &lookup_name).await?;
-            if !authorization::zone_visible(caller, zone.id) {
+            if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
             let to_serial = to_serial.unwrap_or(zone.serial);

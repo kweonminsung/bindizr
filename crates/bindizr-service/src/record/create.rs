@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     RepositoryTx,
-    authorization::{self, Caller, RecordWrite},
+    authorization::{Caller, RecordWrite},
     error::ServiceError,
     log_error, log_info, log_warn,
     model::record::{Record, RecordWithZone},
@@ -62,16 +62,16 @@ impl RecordService {
             let normalized_owner =
                 normalize_record_owner_name(&create_record_request.name, &zone.name)?;
 
-            authorization::authorize_record_writes_tx(
-                &mut tx,
-                caller,
-                &zone,
-                &[RecordWrite {
-                    relative_name: &normalized_owner.stored_name,
-                    record_type: Some(&record_type),
-                }],
-            )
-            .await?;
+            caller
+                .authorize_record_writes_tx(
+                    &mut tx,
+                    &zone,
+                    &[RecordWrite {
+                        relative_name: &normalized_owner.stored_name,
+                        record_type: Some(&record_type),
+                    }],
+                )
+                .await?;
 
             let existing_records_with_name =
                 match RepositoryService::get_records_by_zone_id_and_name_tx(

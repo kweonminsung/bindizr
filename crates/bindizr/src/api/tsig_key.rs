@@ -5,9 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_service::{
-    authorization, tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService,
-};
+use bindizr_service::{tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -81,7 +79,7 @@ pub(crate) struct ZoneTsigPolicyParam {
 pub(crate) async fn get_tsig_keys(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+    caller.require_global("manage TSIG keys and policies")?;
 
     let keys = TsigKeyService::list().await?;
     let keys: Vec<GetTsigKeyResponse> = keys.iter().map(GetTsigKeyResponse::from_key).collect();
@@ -111,7 +109,7 @@ pub(crate) async fn create_tsig_key(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+    caller.require_global("manage TSIG keys and policies")?;
 
     let key = TsigKeyService::create(
         &body.name,
@@ -147,7 +145,7 @@ pub(crate) async fn get_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+    caller.require_global("manage TSIG keys and policies")?;
 
     let key = TsigKeyService::get(&params.name).await?;
     let key = GetTsigKeyResponse::from_key(&key);
@@ -178,7 +176,7 @@ pub(crate) async fn delete_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+    caller.require_global("manage TSIG keys and policies")?;
 
     TsigKeyService::delete(&params.name).await?;
     let json_body = json!({ "message": "TSIG key deleted successfully" });
@@ -207,7 +205,7 @@ pub(crate) async fn get_zone_tsig_policies(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+    caller.require_global("manage TSIG keys and policies")?;
 
     let policies = ZoneTsigPolicyService::list(&params.name).await?;
     let policies: Vec<GetZoneTsigPolicyResponse> = policies
@@ -244,7 +242,7 @@ pub(crate) async fn create_zone_tsig_policy(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneTsigPolicyRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+    caller.require_global("manage TSIG keys and policies")?;
 
     let policy = ZoneTsigPolicyService::add(
         &params.name,
@@ -280,7 +278,7 @@ pub(crate) async fn delete_zone_tsig_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneTsigPolicyParam>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage TSIG keys and policies")?;
+    caller.require_global("manage TSIG keys and policies")?;
 
     ZoneTsigPolicyService::remove(&params.name, params.id).await?;
     let json_body = json!({ "message": "TSIG policy deleted successfully" });

@@ -13,10 +13,7 @@ use std::collections::HashMap;
 use bindizr_core::dns::record::{display_record_owner_name, presentation_rdata};
 
 use crate::{
-    authorization::{Caller, visible_zone_ids},
-    error::ServiceError,
-    model::zone::Zone,
-    repository::RepositoryService,
+    authorization::Caller, error::ServiceError, model::zone::Zone, repository::RepositoryService,
     types::ExternalDnsRecordItem,
 };
 
@@ -26,7 +23,7 @@ pub struct ExternalDnsService;
 impl ExternalDnsService {
     /// Names of the zones the caller may manage.
     pub async fn list_zones(caller: &Caller) -> Result<Vec<String>, ServiceError> {
-        let visible = visible_zone_ids(caller);
+        let visible = caller.visible_zone_ids();
         let zones = RepositoryService::get_all_zones().await?;
         Ok(zones
             .into_iter()
@@ -39,7 +36,7 @@ impl ExternalDnsService {
     /// ExternalDNS-supported record types, with absolute owner names and
     /// presentation-form values.
     pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecordItem>, ServiceError> {
-        let visible = visible_zone_ids(caller);
+        let visible = caller.visible_zone_ids();
         let zones = RepositoryService::get_all_zones().await?;
         let zones_by_id: HashMap<i32, &Zone> = zones
             .iter()

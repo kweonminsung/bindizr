@@ -6,7 +6,6 @@ use axum::{
 };
 use bindizr_dns as dns;
 use bindizr_service::{
-    authorization,
     error::{ErrorCode, ServiceError},
     zone::ZoneService,
 };
@@ -52,11 +51,11 @@ pub(crate) async fn notify_zones(
 ) -> Result<Response, ApiError> {
     // Forcing bumps zone serials — a zone-plane mutation, not just a NOTIFY.
     if body.force {
-        authorization::require_global(&caller, "force a NOTIFY")?;
+        caller.require_global("force a NOTIFY")?;
     }
     match &body.zone_name {
         Some(zone_name) => ZoneService::ensure_visible(&caller, zone_name).await?,
-        None => authorization::require_global(&caller, "send NOTIFY for all zones")?,
+        None => caller.require_global("send NOTIFY for all zones")?,
     }
 
     match dns::client::notify::send_notify(body.zone_name.as_deref(), body.force).await {
