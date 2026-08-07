@@ -1,7 +1,7 @@
 use bindizr_core::dns::{CATALOG_ZONE_NAME, name::to_fqdn};
 use chrono::Utc;
 
-use super::{ZoneService, load_zone_tx};
+use super::ZoneService;
 use crate::{
     RepositoryTx,
     error::{ErrorCode, ServiceError},
@@ -14,10 +14,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::{CreateZoneRequest, UpdateZonePatch},
-    zone::{
-        snapshot::save_zone_snapshot_tx,
-        validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
-    },
+    zone::validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
 };
 
 /// Outcome of the transactional part of a zone update.
@@ -100,7 +97,7 @@ impl ZoneService {
         let apply_result: Result<AppliedZoneUpdate, ServiceError> = async {
             // Lock the zone row so the serial computed below stays ahead of
             // concurrent record mutations and nsupdate on the same zone.
-            let existing_zone = load_zone_tx(&mut tx, zone_name).await?;
+            let existing_zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
             let zone_id = existing_zone.id;
 
             // Merge against the locked row, then validate.
@@ -260,7 +257,7 @@ impl ZoneService {
                     ServiceError::internal("Failed to create zone change".to_string())
                 })?;
 
-            save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
+            ZoneService::save_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
 
             Ok(AppliedZoneUpdate {
                 zone: updated_zone,

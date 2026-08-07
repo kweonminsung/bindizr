@@ -3,7 +3,10 @@
 
 use bindizr_core::dns::name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn};
 
-use super::record_value::{is_null_mx_record_value, record_values_equal, validate_record_value};
+use super::{
+    RecordService,
+    record_value::{is_null_mx_record_value, record_values_equal, validate_record_value},
+};
 use crate::{
     error::ServiceError,
     log_error,
@@ -296,40 +299,42 @@ pub(super) fn validate_record_update_constraints_normalized(
     Ok(())
 }
 
-/// Validate an add against conflicting records loaded within the caller's transaction.
-pub async fn validate_add_constraints_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
-    owner_name: &str,
-    record_type: &RecordType,
-    value: &str,
-    ttl: i32,
-    priority: Option<i32>,
-) -> Result<(), ServiceError> {
-    // Only records sharing the owner name can conflict, so load just those
-    // instead of the whole zone.
-    let lookup_owner = normalize_record_owner_name(owner_name, &zone.name)?;
-    let zone_records = RepositoryService::get_records_by_zone_id_and_name_tx(
-        tx,
-        zone.id,
-        &lookup_owner.stored_name,
-    )
-    .await
-    .map_err(|e| {
-        log_error!("Failed to load zone records: {}", e);
-        ServiceError::internal("Failed to load zone records".to_string())
-    })?;
+impl RecordService {
+    /// Validate an add against conflicting records loaded within the caller's transaction.
+    pub async fn validate_add_constraints_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        owner_name: &str,
+        record_type: &RecordType,
+        value: &str,
+        ttl: i32,
+        priority: Option<i32>,
+    ) -> Result<(), ServiceError> {
+        // Only records sharing the owner name can conflict, so load just those
+        // instead of the whole zone.
+        let lookup_owner = normalize_record_owner_name(owner_name, &zone.name)?;
+        let zone_records = RepositoryService::get_records_by_zone_id_and_name_tx(
+            tx,
+            zone.id,
+            &lookup_owner.stored_name,
+        )
+        .await
+        .map_err(|e| {
+            log_error!("Failed to load zone records: {}", e);
+            ServiceError::internal("Failed to load zone records".to_string())
+        })?;
 
-    validate_record_add_constraints(
-        zone,
-        &zone_records,
-        owner_name,
-        record_type,
-        value,
-        ttl,
-        priority,
-    )
-    .map(|_| ())
+        validate_record_add_constraints(
+            zone,
+            &zone_records,
+            owner_name,
+            record_type,
+            value,
+            ttl,
+            priority,
+        )
+        .map(|_| ())
+    }
 }
 
 #[cfg(test)]

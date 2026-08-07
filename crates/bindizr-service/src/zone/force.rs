@@ -1,7 +1,7 @@
-use super::{ZoneService, load_zone_tx};
+use super::ZoneService;
 use crate::{
     error::ServiceError, log_error, log_info, model::zone::Zone, repository::RepositoryService,
-    serial::generate_serial, zone::snapshot::save_zone_snapshot_tx,
+    serial::generate_serial,
 };
 
 impl ZoneService {
@@ -34,7 +34,7 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to force increment zone serial").await?;
 
         let apply_result = async {
-            let zone = load_zone_tx(&mut tx, zone_name).await?;
+            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let updated_zone = RepositoryService::update_zone_tx(
@@ -50,7 +50,7 @@ impl ZoneService {
                 ServiceError::internal("Failed to force increment zone serial".to_string())
             })?;
 
-            save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
+            ZoneService::save_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
 
             Ok::<Zone, ServiceError>(updated_zone)
         }

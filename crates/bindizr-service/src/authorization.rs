@@ -11,8 +11,8 @@ use crate::{
     model::{
         api_token::ApiToken, record::RecordType, zone::Zone, zone_token_policy::ZoneTokenPolicy,
     },
+    policy_pattern::{pattern_matches_name, types_match},
     repository::RepositoryService,
-    zone::tsig_policy::{pattern_matches_name, types_match},
 };
 
 /// The identity a request acts as. The daemon socket and disabled

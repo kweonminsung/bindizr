@@ -22,9 +22,8 @@ use crate::{
     timing::{duration_ms, elapsed_ms},
     types::{RecordDiff, RecordItem, RecordValueRequest},
     zone::{
+        ZoneService,
         history::{ReconstructedRecord, build_record_diff},
-        load_zone_tx,
-        snapshot::save_zone_snapshot_tx,
     },
 };
 
@@ -95,39 +94,42 @@ pub(super) fn zone_changes_for(
         .collect()
 }
 
-/// Insert records that the caller has already validated, with their ADD zone changes.
-pub(crate) async fn insert_validated_records_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone_id: i32,
-    new_serial: i32,
-    records: &[Record],
-) -> Result<Vec<Record>, ServiceError> {
-    if records.is_empty() {
-        return Ok(Vec::new());
+impl RecordService {
+    /// Insert records with their ADD zone changes for IXFR. The caller has
+    /// already validated the rows.
+    pub(crate) async fn insert_records_with_changes_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        new_serial: i32,
+        records: &[Record],
+    ) -> Result<Vec<Record>, ServiceError> {
+        if records.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let created_records = RepositoryService::create_records_tx(tx, records).await?;
+        let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_ADD, &created_records);
+        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
+        Ok(created_records)
     }
 
-    let created_records = RepositoryService::create_records_tx(tx, records).await?;
-    let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_ADD, &created_records);
-    RepositoryService::create_zone_changes_tx(tx, &changes).await?;
-    Ok(created_records)
-}
+    /// Delete records with their DEL zone changes for IXFR.
+    pub(crate) async fn delete_records_with_changes_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        new_serial: i32,
+        records: &[Record],
+    ) -> Result<(), ServiceError> {
+        if records.is_empty() {
+            return Ok(());
+        }
 
-/// Delete records, with their DEL zone changes.
-pub(crate) async fn delete_records_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone_id: i32,
-    new_serial: i32,
-    records: &[Record],
-) -> Result<(), ServiceError> {
-    if records.is_empty() {
-        return Ok(());
+        let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
+        RepositoryService::delete_records_tx(tx, &ids).await?;
+        let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_DEL, records);
+        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
+        Ok(())
     }
-
-    let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
-    RepositoryService::delete_records_tx(tx, &ids).await?;
-    let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_DEL, records);
-    RepositoryService::create_zone_changes_tx(tx, &changes).await?;
-    Ok(())
 }
 
 impl RecordService {
@@ -183,7 +185,7 @@ impl RecordService {
 
         let apply_result = async {
             let t = Instant::now();
-            let zone = load_zone_tx(&mut tx, zone_name).await?;
+            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
             timings.load_zone_ms = elapsed_ms(t);
 
             // Only records whose owner name appears in the batch can conflict, so
@@ -316,8 +318,10 @@ impl RecordService {
             }
 
             let t = Instant::now();
-            let created_records =
-                insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+            let created_records = RecordService::insert_records_with_changes_tx(
+                &mut tx, zone.id, new_serial, &to_insert,
+            )
+            .await?;
             timings.db_write_ms = elapsed_ms(t);
 
             // Increment zone serial once so IXFR consumers detect the batch
@@ -329,7 +333,7 @@ impl RecordService {
                     ServiceError::internal("Failed to update zone serial".to_string())
                 })?;
 
-            save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
             timings.serial_ms = elapsed_ms(t);
 
             Ok::<(Vec<Record>, String, RecordDiff), ServiceError>((

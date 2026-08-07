@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, insert_validated_records_tx, prepare_record},
+    bulk::{PreparedRecord, prepare_record},
     validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
 };
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::CreateRecordRequest,
-    zone::{load_zone_tx, snapshot::save_zone_snapshot_tx},
+    zone::ZoneService,
 };
 
 impl RecordService {
@@ -54,7 +54,8 @@ impl RecordService {
         let mut tx = RepositoryService::begin_tx("Failed to create record").await?;
 
         let apply_result = async {
-            let zone = load_zone_tx(&mut tx, &create_record_request.zone_name).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, &create_record_request.zone_name).await?;
 
             // Only records sharing the owner name can conflict, so load just
             // those instead of the whole zone.
@@ -105,7 +106,7 @@ impl RecordService {
             let new_serial = generate_serial(Some(zone.serial))?;
 
             // Inserts the record with its ADD zone change for IXFR.
-            let created_record = insert_validated_records_tx(
+            let created_record = Self::insert_records_with_changes_tx(
                 &mut tx,
                 zone.id,
                 new_serial,
@@ -135,7 +136,7 @@ impl RecordService {
                     ServiceError::internal("Failed to update zone serial".to_string())
                 })?;
 
-            save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
             Ok::<(Record, String), ServiceError>((created_record, zone.name))
         }

@@ -7,6 +7,7 @@ pub mod error;
 pub mod external_dns;
 pub mod notify;
 mod pagination;
+pub(crate) mod policy_pattern;
 pub mod record;
 mod repository;
 pub mod serial;

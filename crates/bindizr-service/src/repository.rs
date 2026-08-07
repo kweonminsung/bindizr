@@ -344,7 +344,7 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load record: {}", e)))
     }
 
-    pub(super) async fn get_record(
+    pub(super) async fn find_record_matching(
         zone_id: Option<i32>,
         name: &str,
         record_type: &RecordType,
@@ -358,7 +358,7 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load record: {}", e)))
     }
 
-    pub(super) async fn get_record_tx(
+    pub(super) async fn find_record_matching_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: Option<i32>,
         name: &str,

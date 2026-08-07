@@ -28,7 +28,7 @@ impl RecordService {
     }
 
     /// Find a single matching record within the caller's transaction.
-    pub async fn find_tx(
+    pub async fn find_matching_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: Option<i32>,
         name: &str,
@@ -37,7 +37,7 @@ impl RecordService {
         priority: Option<i32>,
         match_priority: bool,
     ) -> Result<Option<Record>, ServiceError> {
-        RepositoryService::get_record_tx(
+        RepositoryService::find_record_matching_tx(
             tx,
             zone_id,
             name,

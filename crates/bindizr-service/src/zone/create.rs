@@ -14,7 +14,6 @@ use crate::{
     types::CreateZoneRequest,
     zone::{
         DEFAULT_EXPIRE, DEFAULT_MINIMUM_TTL, DEFAULT_REFRESH, DEFAULT_RETRY,
-        snapshot::save_zone_snapshot_tx,
         validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
     },
 };
@@ -105,7 +104,7 @@ impl ZoneService {
                     ServiceError::internal("Failed to create primary NS record".to_string())
                 })?;
 
-            save_zone_snapshot_tx(&mut tx, &created_zone, created_zone.serial).await?;
+            ZoneService::save_snapshot_tx(&mut tx, &created_zone, created_zone.serial).await?;
 
             Ok::<Zone, ServiceError>(created_zone)
         }

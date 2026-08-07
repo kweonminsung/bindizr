@@ -14,13 +14,13 @@ use crate::{
 
 impl ZoneService {
     /// Look up a zone by name, returning `None` if it does not exist.
-    pub async fn find(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
+    pub async fn find_by_name(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
         RepositoryService::get_zone_by_name(&lookup_name).await
     }
 
     /// Look up a zone by name within the caller's transaction.
-    pub async fn find_tx(
+    pub async fn find_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
     ) -> Result<Option<Zone>, ServiceError> {
@@ -128,21 +128,21 @@ impl ZoneService {
             }
         }
     }
-}
 
-/// Load (and lock) the target zone inside the transaction, returning `NotFound`
-/// if missing.
-pub(crate) async fn load_zone_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone_name: &str,
-) -> Result<Zone, ServiceError> {
-    let lookup_zone_name = normalize_zone_name(zone_name)?;
-    match RepositoryService::get_zone_by_name_tx(tx, &lookup_zone_name).await {
-        Ok(Some(zone)) => Ok(zone),
-        Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
-        Err(e) => {
-            log_error!("Failed to fetch zone: {}", e);
-            Err(ServiceError::internal("Failed to fetch zone".to_string()))
+    /// Fetch (and lock) a zone by name within the caller's transaction,
+    /// returning `NotFound` if it does not exist.
+    pub async fn get_by_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_name: &str,
+    ) -> Result<Zone, ServiceError> {
+        let lookup_name = normalize_zone_name(zone_name)?;
+        match RepositoryService::get_zone_by_name_tx(tx, &lookup_name).await {
+            Ok(Some(zone)) => Ok(zone),
+            Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
+            Err(e) => {
+                log_error!("Failed to fetch zone: {}", e);
+                Err(ServiceError::internal("Failed to fetch zone".to_string()))
+            }
         }
     }
 }

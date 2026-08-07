@@ -18,7 +18,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::{RecordItem, UpdateRecordPatch},
-    zone::snapshot::save_zone_snapshot_tx,
+    zone::ZoneService,
 };
 
 /// The record's fields after a full request or a patch has been resolved
@@ -254,7 +254,7 @@ impl RecordService {
                     ServiceError::internal("Failed to create zone change".to_string())
                 })?;
 
-            save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
             Ok::<(Record, String), ServiceError>((updated_record, zone_name))
         }

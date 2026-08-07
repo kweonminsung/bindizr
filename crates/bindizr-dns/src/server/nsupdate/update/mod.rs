@@ -24,12 +24,11 @@ use crate::{
     service,
     service::{
         RepositoryTx,
-        record::{RecordService, validate_add_constraints_tx, validate_delete_constraints},
+        record::{RecordService, validate_delete_constraints},
         serial::generate_serial,
         tsig_key::TsigKeyService,
         zone::{
             ZoneService,
-            snapshot::save_zone_snapshot_tx,
             tsig_policy::{self, ZoneTsigPolicyService},
         },
     },
@@ -97,7 +96,7 @@ async fn apply_update_inner(
         // this lets even NOTZONE/REFUSED responses be signed.
         let key = authenticate_request(&mut tx, &request, query_data, signer).await?;
 
-        let zone = ZoneService::find_tx(&mut tx, zone_name)
+        let zone = ZoneService::find_by_name_tx(&mut tx, zone_name)
             .await
             .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
             .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
@@ -306,7 +305,7 @@ async fn add_record(
     }
     let ttl = update.ttl as i32;
 
-    validate_add_constraints_tx(
+    RecordService::validate_add_constraints_tx(
         tx,
         zone,
         &relative_name,
@@ -318,7 +317,7 @@ async fn add_record(
     .await
     .map_err(|e| UpdateError::Refused(e.to_string()))?;
 
-    if RecordService::find_tx(
+    if RecordService::find_matching_tx(
         tx,
         Some(zone.id),
         &relative_name,
@@ -681,7 +680,7 @@ async fn save_zone_snapshot(
     zone: &Zone,
     serial: i32,
 ) -> Result<(), UpdateError> {
-    save_zone_snapshot_tx(tx, zone, serial)
+    ZoneService::save_snapshot_tx(tx, zone, serial)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to save zone snapshot: {}", e)))?;
 

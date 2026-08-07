@@ -9,9 +9,7 @@ use bindizr_core::dns::{
 };
 use chrono::Utc;
 
-use super::{
-    ZoneService, load_zone_tx, snapshot::save_zone_snapshot_tx, validation::normalize_zone_name,
-};
+use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
     authorization::{self, Caller},
@@ -24,8 +22,8 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     record::{
-        canonical_record_value, delete_records_tx, insert_validated_records_tx,
-        validate_delete_constraints, validate_record_add_constraints_normalized,
+        RecordService, canonical_record_value, validate_delete_constraints,
+        validate_record_add_constraints_normalized,
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -435,7 +433,7 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to load snapshot").await?;
 
         let result = async {
-            let zone = load_zone_tx(&mut tx, &lookup_name).await?;
+            let zone = ZoneService::get_by_name_tx(&mut tx, &lookup_name).await?;
             if !authorization::zone_visible(caller, zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
@@ -476,7 +474,7 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to diff snapshots").await?;
 
         let result = async {
-            let zone = load_zone_tx(&mut tx, &lookup_name).await?;
+            let zone = ZoneService::get_by_name_tx(&mut tx, &lookup_name).await?;
             if !authorization::zone_visible(caller, zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
@@ -513,7 +511,7 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to roll back zone").await?;
 
         let apply_result = async {
-            let zone = load_zone_tx(&mut tx, &lookup_name).await?;
+            let zone = ZoneService::get_by_name_tx(&mut tx, &lookup_name).await?;
 
             if target_serial < 1 || target_serial >= zone.serial {
                 return Err(ServiceError::invalid_input(format!(
@@ -722,9 +720,11 @@ impl ZoneService {
                 RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
             }
 
-            delete_records_tx(&mut tx, zone.id, new_serial, &dels).await?;
-            insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
-            save_zone_snapshot_tx(&mut tx, &restored_zone, new_serial).await?;
+            RecordService::delete_records_with_changes_tx(&mut tx, zone.id, new_serial, &dels)
+                .await?;
+            RecordService::insert_records_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert)
+                .await?;
+            ZoneService::save_snapshot_tx(&mut tx, &restored_zone, new_serial).await?;
 
             Ok((
                 RollbackZoneResponse {

@@ -125,10 +125,10 @@ databases" is a non-issue under this policy.
 One locking model covers the service layer; keep new code on it:
 
 - A **zone-data mutation** (records, serial, IXFR changes, snapshots) is one
-  transaction that locks the zone row (`get_zone_by_*_tx` / `load_zone_tx`,
-  `FOR UPDATE`) **before** any record rows — that order is the deadlock rule.
-  Authorization, validation, and conflict checks decide on rows loaded inside
-  that transaction, never on an earlier unlocked read.
+  transaction that locks the zone row (`ZoneService::get_by_name_tx` /
+  `get_zone_by_*_tx`, `FOR UPDATE`) **before** any record rows — that order is
+  the deadlock rule. Authorization, validation, and conflict checks decide on
+  rows loaded inside that transaction, never on an earlier unlocked read.
 - Outside the transaction belong: pure input parsing/normalization,
   non-locking pre-reads done only to learn the lock target (commented at each
   site), friendly duplicate pre-checks that a UNIQUE/FK constraint backstops,
@@ -145,6 +145,25 @@ One locking model covers the service layer; keep new code on it:
   ExternalDNS apply resolves authoritative zones from committed state inside
   its transaction; the residual race with concurrent zone creation is
   accepted.
+
+### Service / repository naming
+
+- `RepositoryService` methods are one SQL call plus error mapping — nothing
+  more. They always name the entity, as
+  `<verb>_<entity>[_by_<key>][_with_<join>][_tx]`
+  (`get_zone_by_name_tx`); `get_*` returns `Option` — 404 mapping happens in
+  the service layer, never here.
+- `XxxService` methods carry the domain semantics and omit the entity the
+  struct already names (`ZoneService::get_by_name`, not `get_zone_by_name`).
+  Verbs: `get_*` maps a miss to NotFound, `find_*` returns `Option`, `list_*`
+  returns a collection, `count_*` a count.
+- `_tx` means the function runs on the caller's transaction and takes `tx` as
+  its first parameter.
+- A record mutation that also writes IXFR zone changes says so in the name:
+  `*_with_changes_tx`. Preconditions (e.g. "caller already validated the
+  rows") belong in the doc comment, not the name.
+- Adjacent layers never reuse one name for different semantics (e.g. a raw
+  row delete in the facade vs. a delete-plus-IXFR-log in the service).
 
 ### OpenAPI spec — generated only, never hand-edited
 

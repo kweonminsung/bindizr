@@ -22,13 +22,13 @@ use crate::{
         zone::Zone,
     },
     record::{
-        delete_records_tx, insert_validated_records_tx, parse_record_type, record_values_equal,
+        RecordService, parse_record_type, record_values_equal,
         validate_record_add_constraints_normalized,
     },
     repository::RepositoryService,
     serial::generate_serial,
     types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRrset},
-    zone::snapshot::save_zone_snapshot_tx,
+    zone::ZoneService,
 };
 
 /// Record types ExternalDNS may manage through this API.
@@ -396,11 +396,22 @@ impl ExternalDnsService {
                 }
 
                 let new_serial = generate_serial(Some(zone.serial))?;
-                delete_records_tx(&mut tx, zone.id, new_serial, &change_set.deletes).await?;
-                insert_validated_records_tx(&mut tx, zone.id, new_serial, &change_set.creates)
-                    .await?;
+                RecordService::delete_records_with_changes_tx(
+                    &mut tx,
+                    zone.id,
+                    new_serial,
+                    &change_set.deletes,
+                )
+                .await?;
+                RecordService::insert_records_with_changes_tx(
+                    &mut tx,
+                    zone.id,
+                    new_serial,
+                    &change_set.creates,
+                )
+                .await?;
                 RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial).await?;
-                save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+                ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
                 records_deleted += change_set.deletes.len() as u32;
                 records_added += change_set.creates.len() as u32;

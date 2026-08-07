@@ -1,4 +1,4 @@
-use super::{RecordService, bulk::delete_records_tx, validation::validate_delete_constraints};
+use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
     RepositoryTx,
     authorization::{self, Caller, RecordWrite},
@@ -6,7 +6,7 @@ use crate::{
     log_error, log_info, log_warn,
     repository::RepositoryService,
     serial::generate_serial,
-    zone::snapshot::save_zone_snapshot_tx,
+    zone::ZoneService,
 };
 
 /// Identity of the deleted record, carried out of the transaction for logging.
@@ -94,7 +94,7 @@ impl RecordService {
             validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
 
             // Deletes the record with its DEL zone change for IXFR.
-            delete_records_tx(
+            Self::delete_records_with_changes_tx(
                 &mut tx,
                 zone.id,
                 new_serial,
@@ -110,7 +110,7 @@ impl RecordService {
                     ServiceError::internal("Failed to update zone serial".to_string())
                 })?;
 
-            save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
 
             Ok(DeletedRecord {
                 zone_name: zone.name,

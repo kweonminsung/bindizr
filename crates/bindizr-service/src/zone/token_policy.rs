@@ -8,11 +8,9 @@ use chrono::Utc;
 use crate::{
     error::ServiceError,
     model::{api_token::ApiToken, zone_token_policy::ZoneTokenPolicy},
+    policy_pattern::{normalize_pattern, normalize_types},
     repository::RepositoryService,
-    zone::{
-        ZoneService,
-        tsig_policy::{normalize_pattern, normalize_types},
-    },
+    zone::ZoneService,
 };
 
 /// A zone token policy joined with the name of the token it grants.

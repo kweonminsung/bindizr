@@ -7,7 +7,7 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, delete_records_tx, insert_validated_records_tx},
+    bulk::PreparedRecord,
     record_value::record_values_equal,
     validation::{
         normalize_record_owner_name, validate_delete_constraints,
@@ -27,9 +27,8 @@ use crate::{
     timing::elapsed_ms,
     types::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff},
     zone::{
+        ZoneService,
         history::{ReconstructedRecord, build_record_diff},
-        load_zone_tx,
-        snapshot::save_zone_snapshot_tx,
     },
 };
 
@@ -116,7 +115,7 @@ impl RecordService {
 
         let apply_result: Result<AppliedImport, ServiceError> = async {
             let t = Instant::now();
-            let zone = load_zone_tx(&mut tx, zone_name).await?;
+            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
@@ -387,7 +386,10 @@ impl RecordService {
                 let t = Instant::now();
                 let mut all_dels = dels;
                 all_dels.extend(ttl_dels);
-                delete_records_tx(&mut tx, zone.id, new_serial, &all_dels).await?;
+                RecordService::delete_records_with_changes_tx(
+                    &mut tx, zone.id, new_serial, &all_dels,
+                )
+                .await?;
 
                 let to_insert: Vec<Record> = adds
                     .iter()
@@ -402,7 +404,10 @@ impl RecordService {
                         created_at: Utc::now(),
                     })
                     .collect();
-                insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+                RecordService::insert_records_with_changes_tx(
+                    &mut tx, zone.id, new_serial, &to_insert,
+                )
+                .await?;
                 timings.db_write_ms = elapsed_ms(t);
 
                 let t = Instant::now();
@@ -414,7 +419,7 @@ impl RecordService {
                         ServiceError::internal("Failed to update zone serial".to_string())
                     })?;
 
-                save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+                ZoneService::save_snapshot_tx(&mut tx, &zone, new_serial).await?;
                 timings.serial_ms = elapsed_ms(t);
             }
 

@@ -84,7 +84,7 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
 
     if !is_catalog_zone(zone_name) {
-        ZoneService::find(zone_name)
+        ZoneService::find_by_name(zone_name)
             .await
             .map_err(|e| XfrError::DatabaseError(e.to_string()))?
             .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;

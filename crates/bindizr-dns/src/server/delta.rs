@@ -1,9 +1,6 @@
 //! IXFR delta computation: the zone changes between two serials.
 
-use crate::{
-    error::XfrError,
-    service::zone::{ZoneService, snapshot},
-};
+use crate::{error::XfrError, service::zone::ZoneService};
 
 pub(crate) type ZoneChange = bindizr_core::model::zone_change::ZoneChange;
 pub(crate) type ZoneSnapshot = bindizr_core::model::zone_snapshot::ZoneSnapshot;
@@ -23,7 +20,7 @@ pub(crate) async fn get_zone_snapshot(
     zone_id: i32,
     serial: u32,
 ) -> Result<Option<ZoneSnapshot>, XfrError> {
-    snapshot::get_by_serial(zone_id, serial as i32)
+    ZoneService::find_snapshot_by_serial(zone_id, serial as i32)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))
 }
@@ -34,7 +31,7 @@ pub(crate) async fn get_zone_snapshots(
     from_serial: u32,
     to_serial: u32,
 ) -> Result<Vec<ZoneSnapshot>, XfrError> {
-    snapshot::get_in_range(zone_id, from_serial as i32, to_serial as i32)
+    ZoneService::list_snapshots_in_range(zone_id, from_serial as i32, to_serial as i32)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))
 }

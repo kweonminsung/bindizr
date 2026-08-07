@@ -5,13 +5,11 @@ mod export;
 mod force;
 mod get;
 pub mod history;
-pub mod snapshot;
+mod snapshot;
 pub mod token_policy;
 pub mod tsig_policy;
 mod update;
 pub(crate) mod validation;
-
-pub(crate) use get::load_zone_tx;
 
 // Default SOA timing fields (seconds) applied when a request omits them.
 // Bindizr drives propagation with NOTIFY, so keep refresh/retry short: they
