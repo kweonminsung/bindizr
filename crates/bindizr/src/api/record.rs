@@ -5,10 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_service::{
-    authorization::{self, NamedRecordWrite},
-    record::RecordService,
-};
+use bindizr_service::record::RecordService;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -135,17 +132,7 @@ pub(crate) async fn create_record(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::authorize_named_record_writes(
-        &caller,
-        &body.zone_name,
-        &[NamedRecordWrite {
-            name: body.name.clone(),
-            record_type: Some(body.record_type.clone()),
-        }],
-    )
-    .await?;
-
-    let raw_record = RecordService::create(&body).await?;
+    let raw_record = RecordService::create_for(&caller, &body).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
@@ -240,18 +227,9 @@ pub(crate) async fn create_records_bulk(
     Path(params): Path<ZoneScopedParam>,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
 ) -> Result<Response, ApiError> {
-    let writes: Vec<NamedRecordWrite> = body
-        .records
-        .iter()
-        .map(|item| NamedRecordWrite {
-            name: item.name.clone(),
-            record_type: Some(item.record_type.clone()),
-        })
-        .collect();
-    authorization::authorize_named_record_writes(&caller, &params.zone_name, &writes).await?;
-
     let (raw_records, diff) =
-        RecordService::create_bulk(&params.zone_name, &body.records, body.dry_run).await?;
+        RecordService::create_bulk_for(&caller, &params.zone_name, &body.records, body.dry_run)
+            .await?;
 
     let records = raw_records
         .iter()

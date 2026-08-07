@@ -53,12 +53,6 @@ pub struct RecordWrite<'a> {
     pub record_type: Option<&'a RecordType>,
 }
 
-/// One record write as HTTP requests address it: raw owner name and type.
-pub struct NamedRecordWrite {
-    pub name: String,
-    pub record_type: Option<String>,
-}
-
 /// Reject non-global callers for zone-plane and management operations.
 pub fn require_global(caller: &Caller, action: &str) -> Result<(), ServiceError> {
     if caller.is_global() {
@@ -121,67 +115,8 @@ fn authorize_with_policies(
     Ok(())
 }
 
-/// Authorize record-plane writes in `zone` against the caller's grants.
-pub fn authorize_record_writes(
-    caller: &Caller,
-    zone: &Zone,
-    writes: &[RecordWrite<'_>],
-) -> Result<(), ServiceError> {
-    match caller {
-        Caller::Global => Ok(()),
-        Caller::Token { grants, .. } => {
-            let policies: Vec<&ZoneTokenPolicy> = grants
-                .iter()
-                .filter(|policy| policy.zone_id == zone.id)
-                .collect();
-            authorize_with_policies(&policies, zone, writes)
-        }
-    }
-}
-
-/// Authorize record-plane writes addressed by zone name and raw owner names.
-/// Unknown zones and malformed names or types pass through so the real flow
-/// reports its ordinary error instead of a misleading 403.
-pub async fn authorize_named_record_writes(
-    caller: &Caller,
-    zone_name: &str,
-    writes: &[NamedRecordWrite],
-) -> Result<(), ServiceError> {
-    if caller.is_global() {
-        return Ok(());
-    }
-
-    let Ok(lookup_name) = crate::zone::validation::normalize_zone_name(zone_name) else {
-        return Ok(());
-    };
-    let Some(zone) = RepositoryService::get_zone_by_name(&lookup_name).await? else {
-        return Ok(());
-    };
-
-    let mut normalized: Vec<(String, Option<RecordType>)> = Vec::with_capacity(writes.len());
-    for write in writes {
-        let Ok(owner) = crate::record::normalize_record_owner_name(&write.name, &zone.name) else {
-            continue;
-        };
-        let record_type = write
-            .record_type
-            .as_deref()
-            .and_then(|value| value.parse::<RecordType>().ok());
-        normalized.push((owner.stored_name, record_type));
-    }
-
-    let writes: Vec<RecordWrite<'_>> = normalized
-        .iter()
-        .map(|(name, record_type)| RecordWrite {
-            relative_name: name,
-            record_type: record_type.as_ref(),
-        })
-        .collect();
-    authorize_record_writes(caller, &zone, &writes)
-}
-
-/// Like [`authorize_record_writes`] but re-reading the caller's policies
-/// inside the transaction, for flows that must decide atomically.
+/// Authorize record-plane writes in `zone`, re-reading the caller's policies
+/// inside the transaction so the decision is atomic with the mutation.
 pub async fn authorize_record_writes_tx(
     tx: &mut RepositoryTx<'_>,
     caller: &Caller,

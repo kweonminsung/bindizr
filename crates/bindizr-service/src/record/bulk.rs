@@ -8,6 +8,7 @@ use super::{
 };
 use crate::{
     RepositoryTx,
+    authorization::{self, Caller, RecordWrite},
     error::ServiceError,
     log_debug, log_debug_enabled, log_error, log_info, log_warn,
     model::{
@@ -140,6 +141,17 @@ impl RecordService {
     /// the returned records are the validated would-be records (placeholder
     /// IDs).
     pub async fn create_bulk(
+        zone_name: &str,
+        items: &[BulkRecordItem],
+        dry_run: bool,
+    ) -> Result<(Vec<RecordWithZone>, RecordDiff), ServiceError> {
+        Self::create_bulk_for(&Caller::Global, zone_name, items, dry_run).await
+    }
+
+    /// Like [`Self::create_bulk`], authorizing `caller` inside the bulk
+    /// transaction so its grants are decided against the zone this tx locked.
+    pub async fn create_bulk_for(
+        caller: &Caller,
         zone_name: &str,
         items: &[BulkRecordItem],
         dry_run: bool,
@@ -289,6 +301,17 @@ impl RecordService {
             }
             normalize_ms = normalize_dur.as_secs_f64() * 1000.0;
             validate_ms = validate_dur.as_secs_f64() * 1000.0;
+
+            // Dry runs authorize too, so a preview never claims a batch the
+            // caller could not apply.
+            let writes: Vec<RecordWrite<'_>> = to_insert
+                .iter()
+                .map(|record| RecordWrite {
+                    relative_name: &record.name,
+                    record_type: Some(&record.record_type),
+                })
+                .collect();
+            authorization::authorize_record_writes_tx(&mut tx, caller, &zone, &writes).await?;
 
             if dry_run {
                 // `after` = existing plus the inserts, so an insert into an

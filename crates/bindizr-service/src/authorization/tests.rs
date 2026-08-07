@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
-use super::{Caller, RecordWrite, authorize_record_writes, require_global};
+use super::{Caller, RecordWrite, authorize_with_policies, require_global};
 use crate::{
     error::ErrorCode,
     model::{record::RecordType, zone::Zone, zone_token_policy::ZoneTokenPolicy},
@@ -35,11 +35,12 @@ fn policy(pattern: &str, types: &str) -> ZoneTokenPolicy {
     }
 }
 
-fn scoped(grants: Vec<ZoneTokenPolicy>) -> Caller {
-    Caller::Token {
-        id: 3,
-        grants: Arc::from(grants),
-    }
+fn authorize(
+    policies: &[ZoneTokenPolicy],
+    writes: &[RecordWrite<'_>],
+) -> Result<(), crate::error::ServiceError> {
+    let policies: Vec<&ZoneTokenPolicy> = policies.iter().collect();
+    authorize_with_policies(&policies, &test_zone(), writes)
 }
 
 fn write<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordWrite<'a> {
@@ -53,96 +54,62 @@ fn write<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordWrite<
 fn require_global_rejects_scoped_tokens() {
     assert!(require_global(&Caller::Global, "create zones").is_ok());
 
-    let err = require_global(&scoped(vec![]), "create zones").unwrap_err();
+    let scoped = Caller::Token {
+        id: 3,
+        grants: Arc::from(vec![]),
+    };
+    let err = require_global(&scoped, "create zones").unwrap_err();
     assert_eq!(err.code, ErrorCode::Forbidden);
     assert!(err.message.contains("create zones"));
 }
 
 #[test]
 fn authorize_grants_writes_matching_pattern_and_types() {
-    let zone = test_zone();
-    let caller = scoped(vec![policy("*", "*")]);
+    let policies = [policy("*", "*")];
 
-    assert!(authorize_record_writes(&caller, &zone, &[write("app", Some(&RecordType::A))]).is_ok());
-    assert!(authorize_record_writes(&caller, &zone, &[write("@", None)]).is_ok());
-    assert!(
-        authorize_record_writes(
-            &Caller::Global,
-            &zone,
-            &[write("app", Some(&RecordType::A))]
-        )
-        .is_ok()
-    );
+    assert!(authorize(&policies, &[write("app", Some(&RecordType::A))]).is_ok());
+    assert!(authorize(&policies, &[write("@", None)]).is_ok());
 }
 
 #[test]
-fn authorize_rejects_writes_without_any_grant() {
-    let zone = test_zone();
-
-    let err = authorize_record_writes(
-        &scoped(vec![]),
-        &zone,
-        &[write("app", Some(&RecordType::A))],
-    )
-    .unwrap_err();
+fn authorize_rejects_writes_without_any_policy() {
+    let err = authorize(&[], &[write("app", Some(&RecordType::A))]).unwrap_err();
     assert_eq!(err.code, ErrorCode::Forbidden);
     assert!(err.message.contains("example.com"));
 }
 
 #[test]
-fn authorize_ignores_grants_of_other_zones() {
-    let zone = test_zone();
-    let mut other_zone_policy = policy("*", "*");
-    other_zone_policy.zone_id = 2;
-    let caller = scoped(vec![other_zone_policy]);
-
-    let err =
-        authorize_record_writes(&caller, &zone, &[write("app", Some(&RecordType::A))]).unwrap_err();
-    assert_eq!(err.code, ErrorCode::Forbidden);
-}
-
-#[test]
 fn authorize_enforces_record_name_patterns() {
-    let zone = test_zone();
-    let caller = scoped(vec![policy("*.dyn", "*")]);
+    let policies = [policy("*.dyn", "*")];
 
-    assert!(
-        authorize_record_writes(&caller, &zone, &[write("host.dyn", Some(&RecordType::A))]).is_ok()
-    );
-    assert!(authorize_record_writes(&caller, &zone, &[write("dyn", Some(&RecordType::A))]).is_ok());
+    assert!(authorize(&policies, &[write("host.dyn", Some(&RecordType::A))]).is_ok());
+    assert!(authorize(&policies, &[write("dyn", Some(&RecordType::A))]).is_ok());
 
-    let err =
-        authorize_record_writes(&caller, &zone, &[write("www", Some(&RecordType::A))]).unwrap_err();
+    let err = authorize(&policies, &[write("www", Some(&RecordType::A))]).unwrap_err();
     assert_eq!(err.code, ErrorCode::Forbidden);
 }
 
 #[test]
 fn authorize_enforces_record_types() {
-    let zone = test_zone();
-    let caller = scoped(vec![policy("*", "A,TXT")]);
+    let policies = [policy("*", "A,TXT")];
 
-    assert!(authorize_record_writes(&caller, &zone, &[write("app", Some(&RecordType::A))]).is_ok());
-    assert!(
-        authorize_record_writes(&caller, &zone, &[write("app", Some(&RecordType::TXT))]).is_ok()
-    );
+    assert!(authorize(&policies, &[write("app", Some(&RecordType::A))]).is_ok());
+    assert!(authorize(&policies, &[write("app", Some(&RecordType::TXT))]).is_ok());
 
-    let err = authorize_record_writes(&caller, &zone, &[write("app", Some(&RecordType::CNAME))])
-        .unwrap_err();
+    let err = authorize(&policies, &[write("app", Some(&RecordType::CNAME))]).unwrap_err();
     assert_eq!(err.code, ErrorCode::Forbidden);
 
     // A typeless write (whole-name delete) needs an unrestricted-type policy.
-    let err = authorize_record_writes(&caller, &zone, &[write("app", None)]).unwrap_err();
+    let err = authorize(&policies, &[write("app", None)]).unwrap_err();
     assert_eq!(err.code, ErrorCode::Forbidden);
 }
 
 #[test]
 fn authorize_rejects_when_any_single_write_is_denied() {
-    let zone = test_zone();
-    let caller = scoped(vec![policy("app", "*")]);
+    let policies = [policy("app", "*")];
 
-    let err = authorize_record_writes(
-        &caller,
-        &zone,
+    let err = authorize(
+        &policies,
         &[
             write("app", Some(&RecordType::A)),
             write("other", Some(&RecordType::A)),
