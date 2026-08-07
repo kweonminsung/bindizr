@@ -4,8 +4,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bindizr_core::dns::{
-    name::{soa_mailbox_to_email, to_fqdn},
-    record::display_record_owner_name,
+    name::to_fqdn,
+    record::{display_record_owner_name, value::SoaMailbox},
 };
 use chrono::Utc;
 
@@ -346,9 +346,11 @@ fn restored_zone_from_snapshot(
     snapshot: &ZoneSnapshot,
     new_serial: i32,
 ) -> Result<Zone, ServiceError> {
-    let admin_email = soa_mailbox_to_email(&snapshot.admin_email).map_err(|e| {
-        ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
-    })?;
+    let admin_email = SoaMailbox::from_encoded(&snapshot.admin_email)
+        .to_email()
+        .map_err(|e| {
+            ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
+        })?;
 
     Ok(Zone {
         id: zone.id,

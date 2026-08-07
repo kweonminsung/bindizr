@@ -1,7 +1,9 @@
 use bindizr_core::dns::{
-    name::{soa_mailbox_to_email, to_fqdn_lowercase},
-    record::{display_record_owner_name, display_record_value},
-    txt,
+    name::to_fqdn_lowercase,
+    record::{
+        display_record_owner_name, display_record_value,
+        value::{SoaMailbox, TxtContent, TxtRdata},
+    },
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -50,7 +52,7 @@ pub struct GetZoneResponse {
     #[schema(example = 3600)]
     pub ttl: i32,
     #[schema(example = 42)]
-    pub serial: Option<i32>,
+    pub serial: i32,
     #[schema(example = 7200)]
     pub refresh: i32,
     #[schema(example = 3600)]
@@ -68,7 +70,7 @@ impl GetZoneResponse {
             primary_ns: zone.primary_ns.clone(),
             admin_email: zone.admin_email.clone(),
             ttl: zone.ttl,
-            serial: Some(zone.serial),
+            serial: zone.serial,
             refresh: zone.refresh,
             retry: zone.retry,
             expire: zone.expire,
@@ -252,9 +254,9 @@ impl GetRecordResponse {
 }
 
 fn decode_txt_value_request(value: &str) -> RecordValueRequest {
-    match txt::decode_raw_txt_value(value) {
-        Some(txt::DecodedTxtValue::String(value)) => RecordValueRequest::String(value),
-        Some(txt::DecodedTxtValue::Segments(segments)) => RecordValueRequest::Segments(segments),
+    match TxtRdata::from_encoded(value).and_then(|rdata| rdata.to_content()) {
+        Some(TxtContent::Single(value)) => RecordValueRequest::String(value),
+        Some(TxtContent::Segments(segments)) => RecordValueRequest::Segments(segments),
         None => RecordValueRequest::String(value.to_string()),
     }
 }
@@ -287,10 +289,11 @@ impl RecordValueRequest {
     pub fn to_storage_value(&self, record_type: &RecordType) -> Result<String, String> {
         match (record_type, self) {
             (RecordType::TXT, RecordValueRequest::String(value)) => {
-                Ok(txt::encode_txt_string(value))
+                Ok(TxtRdata::from_string(value).into_encoded())
             }
             (RecordType::TXT, RecordValueRequest::Segments(segments)) => {
-                txt::encode_txt_segments(segments.iter().map(String::as_str))
+                TxtRdata::from_segments(segments.iter().map(String::as_str))
+                    .map(TxtRdata::into_encoded)
             }
             (_, RecordValueRequest::String(value)) => Ok(value.clone()),
             (_, RecordValueRequest::Segments(_)) => {
@@ -707,9 +710,11 @@ pub struct ZoneSnapshotResponse {
 
 impl ZoneSnapshotResponse {
     pub fn from_snapshot(snapshot: &ZoneSnapshot) -> Result<Self, ServiceError> {
-        let admin_email = soa_mailbox_to_email(&snapshot.admin_email).map_err(|e| {
-            ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
-        })?;
+        let admin_email = SoaMailbox::from_encoded(&snapshot.admin_email)
+            .to_email()
+            .map_err(|e| {
+                ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
+            })?;
         Ok(ZoneSnapshotResponse {
             serial: snapshot.serial,
             primary_ns: snapshot.primary_ns.clone(),

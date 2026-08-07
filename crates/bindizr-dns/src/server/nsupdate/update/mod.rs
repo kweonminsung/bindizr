@@ -1,4 +1,10 @@
-use bindizr_core::{config, dns::name::to_fqdn};
+use bindizr_core::{
+    config,
+    dns::{
+        name::to_fqdn,
+        record::value::{TxtRdata, record_values_equal},
+    },
+};
 use chrono::Utc;
 use domain::{
     base::{
@@ -32,7 +38,6 @@ use crate::{
             tsig_policy::{self, ZoneTsigPolicyService},
         },
     },
-    txt,
 };
 
 #[derive(Debug)]
@@ -453,17 +458,14 @@ async fn delete_records(
     Ok(true)
 }
 
+/// Canonical comparison so spelling variants (IPv6 forms, name case, trailing
+/// dots) match like wire-format rdata; priority is filtered separately.
 pub(super) fn record_value_matches(
     record_type: &RecordType,
     stored_value: &str,
     target_value: &str,
 ) -> bool {
-    match record_type {
-        RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX => {
-            stored_value.eq_ignore_ascii_case(target_value)
-        }
-        _ => stored_value == target_value,
-    }
+    record_values_equal(stored_value, None, target_value, None, record_type)
 }
 
 fn validate_delete_update_shape(
@@ -554,7 +556,7 @@ pub(super) fn rr_to_record_value(
             }
             Ok((
                 RecordType::TXT,
-                txt::encode_raw_txt_rdata(&update.rdata),
+                TxtRdata::from_rdata(&update.rdata).into_encoded(),
                 None,
             ))
         }

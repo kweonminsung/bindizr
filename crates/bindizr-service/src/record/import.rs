@@ -8,7 +8,7 @@ use chrono::Utc;
 use super::{
     RecordService,
     bulk::PreparedRecord,
-    record_value::record_values_equal,
+    record_values_equal,
     validation::{
         normalize_record_owner_name, validate_delete_constraints,
         validate_record_add_constraints_normalized,
@@ -80,9 +80,8 @@ struct AppliedImport {
     changed: bool,
 }
 
-/// Per-stage timings of one import, filled inside the transaction and emitted
-/// as a single debug summary after commit + NOTIFY. `db_write_ms`/`serial_ms`
-/// stay zero when the import is a dry run or a no-op.
+/// Per-stage timings, emitted as one debug summary after commit + NOTIFY;
+/// `db_write_ms`/`serial_ms` stay zero on a dry run or no-op.
 #[derive(Default)]
 struct ImportTimings {
     load_zone_ms: f64,

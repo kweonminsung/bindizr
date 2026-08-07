@@ -2172,6 +2172,7 @@ components:
       - primary_ns
       - admin_email
       - ttl
+      - serial
       - refresh
       - retry
       - expire
@@ -2207,9 +2208,7 @@ components:
           format: int32
           example: 3600
         serial:
-          type:
-          - integer
-          - 'null'
+          type: integer
           format: int32
           example: 42
         ttl:
@@ -2457,6 +2456,7 @@ components:
             - primary_ns
             - admin_email
             - ttl
+            - serial
             - refresh
             - retry
             - expire
@@ -2492,9 +2492,7 @@ components:
                 format: int32
                 example: 3600
               serial:
-                type:
-                - integer
-                - 'null'
+                type: integer
                 format: int32
                 example: 42
               ttl:

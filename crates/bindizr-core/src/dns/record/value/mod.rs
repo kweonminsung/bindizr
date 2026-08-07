@@ -1,8 +1,9 @@
-//! Per-record-type parsing, validation, and storage encoding of record values.
+//! Per-record-type parsing, validation, and canonical comparison of record
+//! values. Errors are plain messages; callers map them to their own error kind.
 
 use std::borrow::Cow;
 
-use crate::{error::ServiceError, model::record::RecordType};
+use crate::model::record::RecordType;
 
 mod a;
 mod aaaa;
@@ -21,21 +22,20 @@ use cname::CnameRecordValue;
 use mx::MxRecordValue;
 use ns::NsRecordValue;
 use ptr::PtrRecordValue;
+pub use soa::SoaMailbox;
 use soa::SoaRecordValue;
 use srv::SrvRecordValue;
 use txt::TxtRecordValue;
+pub use txt::{TxtContent, TxtRdata};
 
-pub(super) fn validate_record_value(
+pub fn validate_record_value(
     record_type: &RecordType,
     value: &str,
     priority: Option<i32>,
-) -> Result<(), ServiceError> {
+) -> Result<(), String> {
     // Only MX and SRV encode a priority
     if priority.is_some() && !matches!(record_type, RecordType::MX | RecordType::SRV) {
-        return Err(ServiceError::invalid_record_value(format!(
-            "{} records do not take a priority",
-            record_type
-        )));
+        return Err(format!("{} records do not take a priority", record_type));
     }
 
     match record_type {
@@ -54,7 +54,7 @@ pub(super) fn validate_record_value(
     }
 }
 
-pub(crate) fn record_values_equal(
+pub fn record_values_equal(
     left: &str,
     left_priority: Option<i32>,
     right: &str,
@@ -65,14 +65,14 @@ pub(crate) fn record_values_equal(
         == canonical_record_value(right, right_priority, record_type)
 }
 
-pub(super) fn is_null_mx_record_value(value: &str, priority: Option<i32>) -> bool {
+pub fn is_null_mx_record_value(value: &str, priority: Option<i32>) -> bool {
     MxRecordValue::parse(value, priority)
-        .map(|parsed| parsed.priority == 0 && parsed.target.trim() == ".")
+        .map(|parsed| parsed.is_null())
         .unwrap_or(false)
 }
 
 /// Canonical form used only to compare two values, never to store them.
-pub(crate) fn canonical_record_value<'a>(
+pub fn canonical_record_value<'a>(
     value: &'a str,
     fallback_priority: Option<i32>,
     record_type: &RecordType,
@@ -105,3 +105,6 @@ pub(crate) fn canonical_record_value<'a>(
             .unwrap_or_else(|_| Cow::Owned(common::canonical_domain_value(value))),
     }
 }
+
+#[cfg(test)]
+mod tests;

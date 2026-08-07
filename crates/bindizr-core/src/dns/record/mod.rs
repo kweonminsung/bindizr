@@ -1,4 +1,7 @@
-use super::{name::to_fqdn_lowercase, txt};
+pub mod value;
+
+use self::value::{TxtContent, TxtRdata};
+use super::name::to_fqdn_lowercase;
 use crate::model::record::RecordType;
 
 /// Resolve a stored owner name to its display FQDN within `zone_name`.
@@ -25,9 +28,9 @@ pub fn display_record_owner_name(stored_name: &str, zone_name: &str) -> String {
 /// Format a stored record value for display according to its `record_type`.
 pub fn display_record_value(value: &str, record_type: &RecordType) -> String {
     if *record_type == RecordType::TXT {
-        return match txt::decode_raw_txt_value(value) {
-            Some(txt::DecodedTxtValue::String(value)) => value,
-            Some(txt::DecodedTxtValue::Segments(segments)) => segments.join(""),
+        return match TxtRdata::from_encoded(value).and_then(|rdata| rdata.to_content()) {
+            Some(TxtContent::Single(value)) => value,
+            Some(TxtContent::Segments(segments)) => segments.join(""),
             None => value.to_string(),
         };
     }
@@ -65,23 +68,11 @@ pub fn presentation_rdata(value: &str, priority: Option<i32>, record_type: &Reco
 /// Render stored TXT RDATA as space-separated quoted character-strings,
 /// escaping bytes per RFC 1035, Section 5.1.
 fn txt_presentation(value: &str) -> String {
-    let Some(rdata) = txt::decode_raw_txt_rdata(value) else {
+    match TxtRdata::from_encoded(value) {
+        Some(rdata) => rdata.to_presentation(),
         // Not an encoded TXT value; quote it as a single character-string.
-        return quote_txt_charstr(value.as_bytes());
-    };
-
-    let mut segments = Vec::new();
-    let mut pos = 0;
-    while pos < rdata.len() {
-        let len = rdata[pos] as usize;
-        pos += 1;
-        segments.push(quote_txt_charstr(&rdata[pos..pos + len]));
-        pos += len;
+        None => quote_txt_charstr(value.as_bytes()),
     }
-    if segments.is_empty() {
-        segments.push("\"\"".to_string());
-    }
-    segments.join(" ")
 }
 
 /// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any

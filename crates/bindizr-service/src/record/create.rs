@@ -105,7 +105,6 @@ impl RecordService {
 
             let new_serial = generate_serial(Some(zone.serial))?;
 
-            // Inserts the record with its ADD zone change for IXFR.
             let created_record = Self::insert_records_with_changes_tx(
                 &mut tx,
                 zone.id,

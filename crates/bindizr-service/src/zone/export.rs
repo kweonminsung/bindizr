@@ -60,7 +60,7 @@ impl ZoneService {
             "@\t{}\tIN\tSOA\t{} {} {} {} {} {} {}\n",
             zone.ttl,
             to_fqdn(&zone.primary_ns),
-            to_fqdn(&mailbox),
+            to_fqdn(mailbox.as_str()),
             zone.serial,
             zone.refresh,
             zone.retry,

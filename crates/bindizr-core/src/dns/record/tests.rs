@@ -1,16 +1,16 @@
-use super::{display_record_owner_name, display_record_value, presentation_rdata};
-use crate::{dns::txt, model::record::RecordType};
+use super::{display_record_owner_name, display_record_value, presentation_rdata, value::TxtRdata};
+use crate::model::record::RecordType;
 
 #[test]
 fn presentation_rdata_txt_escapes_special_characters() {
-    let ascii = txt::encode_txt_string("v=spf1 \"x\\y\"");
+    let ascii = TxtRdata::from_string("v=spf1 \"x\\y\"").into_encoded();
     assert_eq!(
         presentation_rdata(&ascii, None, &RecordType::TXT),
         "\"v=spf1 \\\"x\\\\y\\\"\""
     );
 
     // Control bytes are escaped as \DDD per RFC 1035, Section 5.1.
-    let control = txt::encode_txt_string("a\u{1}b");
+    let control = TxtRdata::from_string("a\u{1}b").into_encoded();
     assert_eq!(
         presentation_rdata(&control, None, &RecordType::TXT),
         "\"a\\001b\""

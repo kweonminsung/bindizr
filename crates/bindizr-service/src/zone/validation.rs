@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::email_to_soa_mailbox;
+use bindizr_core::dns::record::value::SoaMailbox;
 
 use crate::{
     error::ServiceError,
@@ -230,9 +230,9 @@ fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
 // (plain ASCII labels, each <= 63 bytes), so only the derived SOA RNAME, whose
 // label boundaries can shift during the email-to-mailbox escaping, needs rechecking.
 fn validate_soa_wire_safety(admin_email: &str) -> Result<(), ServiceError> {
-    let soa_mailbox =
-        email_to_soa_mailbox(admin_email).map_err(|e| ServiceError::invalid_zone(e.to_string()))?;
-    validate_wire_labels(&soa_mailbox, "admin email SOA RNAME")
+    let soa_mailbox = SoaMailbox::from_email(admin_email)
+        .map_err(|e| ServiceError::invalid_zone(e.to_string()))?;
+    validate_wire_labels(soa_mailbox.as_str(), "admin email SOA RNAME")
 }
 
 fn is_valid_email_local_char(c: char) -> bool {

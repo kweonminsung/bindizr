@@ -204,6 +204,23 @@ fn record_value_matches_ignores_case_for_name_like_values() {
 }
 
 #[test]
+fn record_value_matches_normalizes_like_wire_rdata_comparison() {
+    // A wire-derived delete names the same rdata regardless of how the stored
+    // value spelled the address or whether it carried the trailing dot.
+    assert!(record_value_matches(
+        &RecordType::AAAA,
+        "0:0:0:0:0:0:0:1",
+        "::1"
+    ));
+    assert!(!record_value_matches(&RecordType::AAAA, "::1", "::2"));
+    assert!(record_value_matches(
+        &RecordType::NS,
+        "ns1.example.com",
+        "ns1.example.com."
+    ));
+}
+
+#[test]
 fn rr_to_record_value_splits_srv_priority_into_its_own_column() {
     // priority 10, weight 20, port 5060, target sip.example.com.
     let mut rdata = vec![0, 10, 0, 20, 0x13, 0xC4];

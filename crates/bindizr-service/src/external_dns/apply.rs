@@ -3,10 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::{
-    name::to_fqdn_lowercase,
-    txt::{encode_txt_segments, parse_txt_presentation},
-};
+use bindizr_core::dns::{name::to_fqdn_lowercase, record::value::TxtRdata};
 use chrono::Utc;
 
 use super::{
@@ -84,8 +81,8 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
 /// spelling variants compare equal.
 fn storage_value(record_type: &RecordType, value: &str) -> Result<String, ServiceError> {
     if *record_type == RecordType::TXT {
-        return parse_txt_presentation(value)
-            .and_then(|segments| encode_txt_segments(segments.iter().map(String::as_str)))
+        return TxtRdata::from_presentation(value)
+            .map(TxtRdata::into_encoded)
             .map_err(ServiceError::invalid_record_value);
     }
 

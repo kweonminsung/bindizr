@@ -6,7 +6,10 @@ use std::{
     str::FromStr,
 };
 
-use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn, to_owner_fqdn};
+use bindizr_core::dns::{
+    name::{to_fqdn, to_owner_fqdn},
+    record::value::{SoaMailbox, TxtRdata},
+};
 use domain::{
     base::{
         Message, MessageBuilder, Name, Serial, ToName, Ttl, UnknownRecordData,
@@ -21,7 +24,6 @@ use crate::{
     error::XfrError,
     log_info,
     model::{record::Record, zone::Zone},
-    txt,
 };
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix).
@@ -48,11 +50,11 @@ impl DnsMessageBuilder {
     }
 
     pub(crate) fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
-        let admin_email = email_to_soa_mailbox(&zone.admin_email)
+        let admin_email = SoaMailbox::from_email(&zone.admin_email)
             .map_err(|e| XfrError::ProtocolError(e.to_string()))?;
         let soa = Soa::new(
             parse_name(&zone.primary_ns)?,
-            parse_name(&admin_email)?,
+            parse_name(admin_email.as_str())?,
             Serial(serial),
             Ttl::from_secs(zone.refresh as u32),
             Ttl::from_secs(zone.retry as u32),
@@ -177,7 +179,7 @@ impl DnsMessageBuilder {
         let owner = parse_name(name)?;
 
         // Operator-supplied raw rdata is passed through unchanged.
-        if let Some(rdata) = txt::decode_raw_txt_rdata(text) {
+        if let Some(rdata) = TxtRdata::from_encoded(text).map(TxtRdata::into_rdata) {
             let data = UnknownRecordData::from_octets(Rtype::TXT, rdata)
                 .map_err(|e| XfrError::ProtocolError(format!("Invalid TXT rdata: {}", e)))?;
             self.add_answer(owner, ttl, data);

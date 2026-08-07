@@ -27,8 +27,7 @@ use crate::{
     },
 };
 
-/// Per-stage timings of one bulk insert, filled inside the transaction and
-/// emitted as a single debug summary after commit + NOTIFY.
+/// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
 #[derive(Default)]
 struct BulkTimings {
     load_zone_ms: f64,

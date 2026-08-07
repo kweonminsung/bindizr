@@ -1,20 +1,74 @@
+//! Domain-name presentation-form handling: label and length limits,
+//! escape-aware label iteration, FQDN normalization, containment/apex checks,
+//! and the whitespace/control hygiene check shared by name-like inputs.
+
 /// Maximum length of a single DNS label, in bytes (RFC 1035).
 pub const MAX_DNS_LABEL_LEN: usize = 63;
 /// Maximum length of a domain name, in bytes (RFC 1035).
 pub const MAX_DOMAIN_LEN: usize = 253;
 
-/// Errors from parsing domain names or email addresses.
+/// Whether the value contains any whitespace or ASCII control character.
+pub fn has_whitespace_or_control(value: &str) -> bool {
+    value
+        .chars()
+        .any(|c| c.is_ascii_control() || c.is_whitespace())
+}
+
+/// Validate one domain-name label: non-empty, at most 63 bytes, LDH charset
+/// (plus `_` when `allow_underscore`), no leading/trailing hyphen. `invalid`
+/// maps the message to the caller's error kind.
+pub fn validate_domain_label<E>(
+    label: &str,
+    field: &str,
+    allow_underscore: bool,
+    invalid: impl Fn(String) -> E,
+) -> Result<(), E> {
+    if label.is_empty() {
+        return Err(invalid(format!("{} must not contain empty labels", field)));
+    }
+
+    if label.len() > MAX_DNS_LABEL_LEN {
+        return Err(invalid(format!(
+            "{} labels must be 63 bytes or fewer",
+            field
+        )));
+    }
+
+    if !label
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || (allow_underscore && c == '_'))
+    {
+        let allowed = if allow_underscore {
+            "ASCII letters, digits, hyphens, or underscores"
+        } else {
+            "ASCII letters, digits, or hyphens"
+        };
+        return Err(invalid(format!(
+            "{} labels must contain only {}",
+            field, allowed
+        )));
+    }
+
+    if label.starts_with('-') || label.ends_with('-') {
+        return Err(invalid(format!(
+            "{} labels must not start or end with hyphens",
+            field
+        )));
+    }
+
+    Ok(())
+}
+
+/// Errors from parsing domain names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NameError {
     DanglingEscape,
-    InvalidEmail,
 }
 
 impl std::fmt::Display for NameError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NameError::DanglingEscape => write!(f, "domain name contains a dangling escape"),
-            NameError::InvalidEmail => write!(f, "email must contain exactly one @"),
         }
     }
 }
@@ -124,63 +178,6 @@ pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
 /// Whether `name` refers to the zone apex (`@` or the zone name itself).
 pub fn is_apex_name(name: &str, zone_name: &str) -> bool {
     name == "@" || to_fqdn(name).eq_ignore_ascii_case(&to_fqdn(zone_name))
-}
-
-/// Convert an email address into SOA RNAME mailbox form, escaping the
-/// local part's dots.
-pub fn email_to_soa_mailbox(value: &str) -> Result<String, NameError> {
-    if value.matches('@').count() != 1 {
-        return Err(NameError::InvalidEmail);
-    }
-
-    let (local, domain) = value.split_once('@').ok_or(NameError::InvalidEmail)?;
-
-    Ok(format!(
-        "{}.{}.",
-        escape_soa_local_part(local),
-        domain.trim_end_matches('.')
-    ))
-}
-
-fn escape_soa_local_part(local: &str) -> String {
-    let mut escaped = String::with_capacity(local.len());
-
-    for c in local.chars() {
-        if c == '.' || c == '\\' {
-            escaped.push('\\');
-        }
-        escaped.push(c);
-    }
-
-    escaped
-}
-
-/// Inverse of [`email_to_soa_mailbox`]: convert an SOA RNAME mailbox back into
-/// an email address. The first unescaped '.' separates the local part from the
-/// domain; `\.` and `\\` in the local part are unescaped.
-pub fn soa_mailbox_to_email(value: &str) -> Result<String, NameError> {
-    let mailbox = value.trim_end_matches('.');
-    let mut local = String::with_capacity(mailbox.len());
-    let mut chars = mailbox.chars();
-
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' => match chars.next() {
-                Some(escaped) => local.push(escaped),
-                None => return Err(NameError::DanglingEscape),
-            },
-            '.' => {
-                let domain: String = chars.collect();
-                if local.is_empty() || domain.is_empty() {
-                    return Err(NameError::InvalidEmail);
-                }
-                return Ok(format!("{}@{}", local, domain));
-            }
-            c => local.push(c),
-        }
-    }
-
-    Err(NameError::InvalidEmail)
 }
 
 #[cfg(test)]

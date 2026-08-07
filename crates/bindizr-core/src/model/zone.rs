@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use crate::dns::name::{NameError, email_to_soa_mailbox};
+use crate::dns::record::value::SoaMailbox;
 
 /// Zone metadata used to generate the SOA and NS records.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
@@ -21,12 +21,12 @@ pub struct Zone {
 
 impl Zone {
     /// SOA RNAME (mailbox) in presentation form, e.g. `admin.example.com`.
-    pub fn soa_mailbox(&self) -> Result<String, NameError> {
-        email_to_soa_mailbox(&self.admin_email)
+    pub fn soa_mailbox(&self) -> Result<SoaMailbox, String> {
+        SoaMailbox::from_email(&self.admin_email)
     }
 
     /// SOA record RDATA: `<mname> <rname> <serial> <refresh> <retry> <expire> <minimum>`.
-    pub fn soa_rdata(&self) -> Result<String, NameError> {
+    pub fn soa_rdata(&self) -> Result<String, String> {
         Ok(format!(
             "{} {} {} {} {} {} {}",
             self.primary_ns,

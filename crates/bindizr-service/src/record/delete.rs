@@ -93,7 +93,6 @@ impl RecordService {
 
             validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
 
-            // Deletes the record with its DEL zone change for IXFR.
             Self::delete_records_with_changes_tx(
                 &mut tx,
                 zone.id,

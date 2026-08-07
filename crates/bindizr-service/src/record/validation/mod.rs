@@ -1,12 +1,12 @@
 //! DNS record constraint validation: CNAME/NS/MX/SOA rules, duplicate
 //! detection, and owner-name normalization.
 
-use bindizr_core::dns::name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn};
-
-use super::{
-    RecordService,
-    record_value::{is_null_mx_record_value, record_values_equal, validate_record_value},
+use bindizr_core::dns::{
+    name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn},
+    record::value::{is_null_mx_record_value, record_values_equal},
 };
+
+use super::RecordService;
 use crate::{
     error::ServiceError,
     log_error,
@@ -17,6 +17,16 @@ use crate::{
     repository::{RepositoryService, RepositoryTx},
     validation::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels},
 };
+
+/// Core value validation with the error mapped to `INVALID_RECORD_VALUE`.
+fn validate_record_value(
+    record_type: &RecordType,
+    value: &str,
+    priority: Option<i32>,
+) -> Result<(), ServiceError> {
+    bindizr_core::dns::record::value::validate_record_value(record_type, value, priority)
+        .map_err(ServiceError::invalid_record_value)
+}
 
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
     value
