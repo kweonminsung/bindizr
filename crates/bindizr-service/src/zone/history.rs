@@ -12,6 +12,7 @@ use chrono::Utc;
 use super::{ZoneService, snapshot::save_zone_snapshot_tx, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
+    authorization::{self, Caller},
     error::ServiceError,
     log_info, log_warn,
     model::{
@@ -381,7 +382,22 @@ impl ZoneService {
         limit: Option<u32>,
         offset: Option<u64>,
     ) -> Result<PaginatedResponse<ZoneSnapshot>, ServiceError> {
+        Self::list_snapshots_for(&Caller::Global, zone_name, limit, offset).await
+    }
+
+    /// Like [`Self::list_snapshots`], checking visibility on the row whose id
+    /// the queries use, so a same-name recreation cannot swap the zone in.
+    pub async fn list_snapshots_for(
+        caller: &Caller,
+        zone_name: &str,
+        limit: Option<u32>,
+        offset: Option<u64>,
+    ) -> Result<PaginatedResponse<ZoneSnapshot>, ServiceError> {
         let zone = Self::get_by_name(zone_name).await?;
+        // Invisible zones read as 404 so scoped tokens cannot probe them.
+        if !authorization::zone_visible(caller, zone.id) {
+            return Err(ServiceError::zone_not_found(zone_name));
+        }
 
         let total = RepositoryService::count_zone_snapshots(zone.id).await?;
         let effective_limit = limit.unwrap_or(50);
@@ -403,11 +419,24 @@ impl ZoneService {
         zone_name: &str,
         serial: i32,
     ) -> Result<(ZoneSnapshot, Vec<ReconstructedRecord>), ServiceError> {
+        Self::get_snapshot_for(&Caller::Global, zone_name, serial).await
+    }
+
+    /// Like [`Self::get_snapshot`], checking visibility on the row this tx
+    /// locked so a same-name recreation cannot swap the zone in.
+    pub async fn get_snapshot_for(
+        caller: &Caller,
+        zone_name: &str,
+        serial: i32,
+    ) -> Result<(ZoneSnapshot, Vec<ReconstructedRecord>), ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to load snapshot").await?;
 
         let result = async {
             let zone = load_zone_tx(&mut tx, &lookup_name).await?;
+            if !authorization::zone_visible(caller, zone.id) {
+                return Err(ServiceError::zone_not_found(zone_name));
+            }
             let snapshot =
                 RepositoryService::get_zone_snapshot_by_serial_tx(&mut tx, zone.id, serial)
                     .await?
@@ -430,11 +459,25 @@ impl ZoneService {
         from_serial: i32,
         to_serial: Option<i32>,
     ) -> Result<SnapshotDiffResponse, ServiceError> {
+        Self::diff_snapshots_for(&Caller::Global, zone_name, from_serial, to_serial).await
+    }
+
+    /// Like [`Self::diff_snapshots`], checking visibility on the row this tx
+    /// locked so a same-name recreation cannot swap the zone in.
+    pub async fn diff_snapshots_for(
+        caller: &Caller,
+        zone_name: &str,
+        from_serial: i32,
+        to_serial: Option<i32>,
+    ) -> Result<SnapshotDiffResponse, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to diff snapshots").await?;
 
         let result = async {
             let zone = load_zone_tx(&mut tx, &lookup_name).await?;
+            if !authorization::zone_visible(caller, zone.id) {
+                return Err(ServiceError::zone_not_found(zone_name));
+            }
             let to_serial = to_serial.unwrap_or(zone.serial);
 
             require_serial(&mut tx, &zone, from_serial).await?;

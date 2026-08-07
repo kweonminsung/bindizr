@@ -144,9 +144,7 @@ pub(crate) async fn export_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    ZoneService::ensure_visible(&caller, &params.name).await?;
-
-    let zone_file = ZoneService::export_zone_file(&params.name).await?;
+    let zone_file = ZoneService::export_zone_file_for(&caller, &params.name).await?;
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],
@@ -179,9 +177,8 @@ pub(crate) async fn list_zone_snapshots(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<SnapshotListQuery>,
 ) -> Result<Response, ApiError> {
-    ZoneService::ensure_visible(&caller, &params.name).await?;
-
-    let response = ZoneService::list_snapshots(&params.name, query.limit, query.offset).await?;
+    let response =
+        ZoneService::list_snapshots_for(&caller, &params.name, query.limit, query.offset).await?;
     let mut items = Vec::with_capacity(response.items.len());
     for snapshot in &response.items {
         items.push(ZoneSnapshotResponse::from_snapshot(snapshot)?);
@@ -212,9 +209,8 @@ pub(crate) async fn get_zone_snapshot(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneSnapshotParam>,
 ) -> Result<Response, ApiError> {
-    ZoneService::ensure_visible(&caller, &params.name).await?;
-
-    let (snapshot, records) = ZoneService::get_snapshot(&params.name, params.serial).await?;
+    let (snapshot, records) =
+        ZoneService::get_snapshot_for(&caller, &params.name, params.serial).await?;
     let snapshot = ZoneSnapshotResponse::from_snapshot(&snapshot)?;
     let records = records
         .into_iter()
@@ -301,9 +297,7 @@ pub(crate) async fn diff_zone_snapshots(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<SnapshotDiffQuery>,
 ) -> Result<Response, ApiError> {
-    ZoneService::ensure_visible(&caller, &params.name).await?;
-
-    let diff = ZoneService::diff_snapshots(&params.name, query.from, query.to).await?;
+    let diff = ZoneService::diff_snapshots_for(&caller, &params.name, query.from, query.to).await?;
     Ok((StatusCode::OK, Json(diff)).into_response())
 }
 
