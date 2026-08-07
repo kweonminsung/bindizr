@@ -3,8 +3,12 @@
 //! external-dns v0.21.0, plus their conversion to the bindizr
 //! `/external-dns` API shapes.
 
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    net::{Ipv4Addr, Ipv6Addr},
+};
 
+use bindizr_core::dns::name::to_fqdn_lowercase;
 use serde::{Deserialize, Serialize};
 
 /// Exact media type external-dns compares the negotiation `Content-Type`
@@ -226,26 +230,49 @@ pub(crate) fn group_records_into_endpoints(records: Vec<BindizrRecordItem>) -> V
         .collect()
 }
 
-/// Normalize endpoints to their stored form so the external-dns plan never
-/// sees a spurious diff: TXT targets take the canonical quoted form
-/// `GET /records` returns, and provider-specific properties are dropped —
-/// removal in adjust is how a webhook provider declares them unsupported.
+/// Normalize endpoints to the stored form `GET /records` returns — quoted
+/// TXT, lowercase FQDN CNAME targets, canonical address spellings — so the
+/// external-dns plan never sees a spurious diff. Provider-specific
+/// properties are dropped: removal in adjust is how a webhook provider
+/// declares them unsupported.
 pub(crate) fn adjust_endpoints(endpoints: Vec<Endpoint>) -> Result<Vec<Endpoint>, String> {
     endpoints
         .into_iter()
         .map(|mut endpoint| {
             validate_endpoint(&endpoint)?;
             endpoint.provider_specific.clear();
-            if endpoint.record_type.eq_ignore_ascii_case("TXT") {
-                endpoint.targets = endpoint
-                    .targets
-                    .iter()
-                    .map(|target| bindizr_core::dns::txt::canonical_txt_presentation(target))
-                    .collect::<Result<Vec<_>, _>>()?;
+            match endpoint.record_type.to_ascii_uppercase().as_str() {
+                "TXT" => {
+                    endpoint.targets = endpoint
+                        .targets
+                        .iter()
+                        .map(|target| bindizr_core::dns::txt::canonical_txt_presentation(target))
+                        .collect::<Result<Vec<_>, _>>()?;
+                }
+                "CNAME" => {
+                    endpoint.targets = endpoint
+                        .targets
+                        .iter()
+                        .map(|target| to_fqdn_lowercase(target))
+                        .collect();
+                }
+                // Unparseable addresses pass through so the apply path
+                // reports its ordinary error instead of a mangled target.
+                "A" => canonicalize_targets::<Ipv4Addr>(&mut endpoint.targets),
+                "AAAA" => canonicalize_targets::<Ipv6Addr>(&mut endpoint.targets),
+                _ => {}
             }
             Ok(endpoint)
         })
         .collect()
+}
+
+fn canonicalize_targets<T: std::str::FromStr + std::fmt::Display>(targets: &mut [String]) {
+    for target in targets {
+        if let Ok(address) = target.parse::<T>() {
+            *target = address.to_string();
+        }
+    }
 }
 
 #[cfg(test)]

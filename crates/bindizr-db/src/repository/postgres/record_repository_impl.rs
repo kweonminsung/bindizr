@@ -475,6 +475,7 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.value) LIKE LOWER($27)
                     OR r.record_type = 'TXT'
             )
+            AND ($30::INT4[] IS NULL OR r.zone_id = ANY($30))
             ORDER BY r.name
             LIMIT $28 OFFSET $29
             "#,
@@ -513,6 +514,7 @@ impl RecordRepository for PostgresRecordRepository {
                 .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
                 .unwrap_or(0),
         )
+        .bind(&filter.zone_ids)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -552,6 +554,7 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.value) LIKE LOWER($27)
                     OR r.record_type = 'TXT'
             )
+            AND ($28::INT4[] IS NULL OR r.zone_id = ANY($28))
             "#,
         )
         .bind(&filter.zone_name)
@@ -581,6 +584,7 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
+        .bind(&filter.zone_ids)
         .fetch_one(&mut *conn)
         .await?;
 

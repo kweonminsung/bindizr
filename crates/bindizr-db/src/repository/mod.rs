@@ -51,6 +51,8 @@ pub struct RecordFilter {
     pub min_priority: Option<i32>,
     pub max_priority: Option<i32>,
     pub search: Option<String>,
+    /// Restrict to these zones (scoped-token visibility); `None` is unrestricted.
+    pub zone_ids: Option<Vec<i32>>,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }

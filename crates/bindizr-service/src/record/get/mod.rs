@@ -84,8 +84,8 @@ impl RecordService {
     }
 
     /// [`Self::list_with_zone_by_filter`] restricted to the caller's visible
-    /// zones. Queries stay zone-scoped in SQL (one query per granted zone);
-    /// a filter naming an invisible zone reads as an empty page.
+    /// zones, pushed into SQL so pagination stays database-side. A filter
+    /// naming an unknown or invisible zone reads as an empty page.
     pub async fn list_with_zone_by_filter_for(
         caller: &Caller,
         filter: GetRecordsFilter,
@@ -94,35 +94,9 @@ impl RecordService {
             return Self::list_with_zone_by_filter(filter).await;
         };
 
-        let limit = filter.limit;
-        let offset = filter.offset;
-
-        let zones = RepositoryService::get_all_zones().await?;
-        let wanted = filter
-            .zone_name
-            .as_deref()
-            .map(normalize_zone_name)
-            .transpose()?;
-        let target_zones: Vec<&Zone> = zones
-            .iter()
-            .filter(|zone| visible.contains(&zone.id))
-            .filter(|zone| wanted.as_deref().is_none_or(|name| zone.name == name))
-            .collect();
-
-        let mut records: Vec<RecordWithZone> = Vec::new();
-        for zone in target_zones {
-            let page = Self::list_with_zone_by_filter(GetRecordsFilter {
-                zone_name: Some(zone.name.clone()),
-                limit: None,
-                offset: None,
-                ..filter.clone()
-            })
-            .await?;
-            records.extend(page.items);
-        }
-
-        records.sort_by(|a, b| (&a.zone_name, &a.name, a.id).cmp(&(&b.zone_name, &b.name, b.id)));
-        Ok(paginate_items(records, limit, offset))
+        let mut zone_ids: Vec<i32> = visible.into_iter().collect();
+        zone_ids.sort_unstable();
+        Self::list_filtered(filter, Some(zone_ids)).await
     }
 
     /// [`Self::get_by_id_with_zone`] with invisible zones reading as a
@@ -142,6 +116,13 @@ impl RecordService {
     pub async fn list_with_zone_by_filter(
         filter: GetRecordsFilter,
     ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
+        Self::list_filtered(filter, None).await
+    }
+
+    async fn list_filtered(
+        filter: GetRecordsFilter,
+        zone_ids: Option<Vec<i32>>,
+    ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
         let zone_name = filter
             .zone_name
             .as_deref()
@@ -152,7 +133,11 @@ impl RecordService {
         let limit = filter.limit;
         let offset = filter.offset;
 
-        if let Some(name) = zone_name.as_deref() {
+        // Scoped callers read unknown and invisible zones alike as empty
+        // pages, so skip the 404 probe.
+        if let Some(name) = zone_name.as_deref()
+            && zone_ids.is_none()
+        {
             require_zone_by_name(name, name).await?;
         }
 
@@ -171,6 +156,7 @@ impl RecordService {
             min_priority: filter.min_priority,
             max_priority: filter.max_priority,
             search: filter.search,
+            zone_ids,
             limit: if use_display_filters { None } else { limit },
             offset: if use_display_filters { None } else { offset },
         };

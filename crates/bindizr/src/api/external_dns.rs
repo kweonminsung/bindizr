@@ -1,5 +1,6 @@
 use axum::{
     Json, Router,
+    extract::DefaultBodyLimit,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
@@ -10,7 +11,7 @@ use serde_json::json;
 use crate::api::{
     RequestCaller,
     error::ApiError,
-    middleware::body_parser::JsonBody,
+    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     types::{
         ErrorResponse, ExternalDnsChangesRequest, ExternalDnsChangesResponse,
         ExternalDnsRecordsResponse, ExternalDnsZonesResponse,
@@ -32,7 +33,10 @@ impl ExternalDnsApi {
             )
             .route(
                 "/external-dns/changes",
-                routing::post(apply_external_dns_changes),
+                // A whole external-dns plan arrives in one request, so it gets
+                // the same upload cap as bulk insert, not axum's 2 MiB default.
+                routing::post(apply_external_dns_changes)
+                    .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
     }
 }

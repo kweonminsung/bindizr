@@ -439,8 +439,13 @@ impl RecordRepository for MySqlRecordRepository {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(normalize_partial_value);
         let search = like_pattern(filter.search.as_deref());
+        let zone_ids_clause = match filter.zone_ids.as_deref() {
+            None => String::new(),
+            Some([]) => "AND 1 = 0".to_string(),
+            Some(ids) => format!("AND r.zone_id IN ({})", vec!["?"; ids.len()].join(",")),
+        };
 
-        let records = sqlx::query_as::<_, RecordWithZone>(
+        let mut query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
             SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
                    r.zone_id, z.name AS zone_name
@@ -469,10 +474,11 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(r.value) LIKE LOWER(?)
                     OR r.record_type = 'TXT'
             )
+            {zone_ids_clause}
             ORDER BY r.name
             LIMIT ? OFFSET ?
-            "#,
-        )
+            "#
+        )))
         .bind(&filter.zone_name)
         .bind(&filter.zone_name)
         .bind(&filter.name)
@@ -499,16 +505,22 @@ impl RecordRepository for MySqlRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&search)
-        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
-        .bind(
-            filter
-                .offset
-                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-                .unwrap_or(0),
-        )
-        .fetch_all(&mut *conn)
-        .await?;
+        .bind(&search);
+        if let Some(ids) = &filter.zone_ids {
+            for zone_id in ids {
+                query = query.bind(zone_id);
+            }
+        }
+        let records = query
+            .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+            .bind(
+                filter
+                    .offset
+                    .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+                    .unwrap_or(0),
+            )
+            .fetch_all(&mut *conn)
+            .await?;
 
         Ok(records)
     }
@@ -517,8 +529,13 @@ impl RecordRepository for MySqlRecordRepository {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(normalize_partial_value);
         let search = like_pattern(filter.search.as_deref());
+        let zone_ids_clause = match filter.zone_ids.as_deref() {
+            None => String::new(),
+            Some([]) => "AND 1 = 0".to_string(),
+            Some(ids) => format!("AND r.zone_id IN ({})", vec!["?"; ids.len()].join(",")),
+        };
 
-        let count = sqlx::query_scalar::<_, i64>(
+        let mut query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
             FROM records r
@@ -546,8 +563,9 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(r.value) LIKE LOWER(?)
                     OR r.record_type = 'TXT'
             )
-            "#,
-        )
+            {zone_ids_clause}
+            "#
+        )))
         .bind(&filter.zone_name)
         .bind(&filter.zone_name)
         .bind(&filter.name)
@@ -574,9 +592,13 @@ impl RecordRepository for MySqlRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&search)
-        .fetch_one(&mut *conn)
-        .await?;
+        .bind(&search);
+        if let Some(ids) = &filter.zone_ids {
+            for zone_id in ids {
+                query = query.bind(zone_id);
+            }
+        }
+        let count = query.fetch_one(&mut *conn).await?;
 
         Ok(count as u64)
     }

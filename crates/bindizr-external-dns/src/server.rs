@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Instant};
 
 use axum::{
     Router,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing,
@@ -24,12 +24,17 @@ pub(crate) struct AppState {
     pub upstream: UpstreamClient,
 }
 
+/// Whole-plan and whole-desired-set POSTs outgrow axum's 2 MiB default on
+/// large initial reconciliations; matches the bindizr server's upload cap.
+const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
+
 /// Build the webhook router served on the (localhost) provider listener.
 pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", routing::get(negotiate))
         .route("/records", routing::get(get_records).post(apply_changes))
         .route("/adjustendpoints", routing::post(adjust_endpoints_handler))
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state)
 }
 

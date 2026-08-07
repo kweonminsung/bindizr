@@ -179,6 +179,23 @@ fn group_records_builds_one_endpoint_per_rrset() {
 }
 
 #[test]
+fn adjust_endpoints_canonicalizes_cname_and_address_targets() {
+    let adjusted = adjust_endpoints(vec![
+        endpoint("c.example.com", "CNAME", 300, &["CDN.Example.NET"]),
+        endpoint("v6.example.com", "AAAA", 0, &["2001:0DB8:0:0:0:0:0:1"]),
+        endpoint("v4.example.com", "A", 0, &["192.0.2.1"]),
+        // Unparseable addresses pass through for apply to reject.
+        endpoint("bad.example.com", "A", 0, &["not-an-ip"]),
+    ])
+    .unwrap();
+
+    assert_eq!(adjusted[0].targets, vec!["cdn.example.net."]);
+    assert_eq!(adjusted[1].targets, vec!["2001:db8::1"]);
+    assert_eq!(adjusted[2].targets, vec!["192.0.2.1"]);
+    assert_eq!(adjusted[3].targets, vec!["not-an-ip"]);
+}
+
+#[test]
 fn validate_keeps_whitespace_only_txt_targets() {
     let adjusted = adjust_endpoints(vec![endpoint("t.example.com", "TXT", 0, &["   "])]).unwrap();
     assert_eq!(adjusted[0].targets, vec![r#""   ""#]);
