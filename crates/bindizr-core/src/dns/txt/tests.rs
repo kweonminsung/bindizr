@@ -126,6 +126,23 @@ fn parse_txt_presentation_treats_bare_value_as_content() {
 }
 
 #[test]
+fn parse_txt_presentation_keeps_bare_value_whitespace() {
+    assert_eq!(
+        super::parse_txt_presentation(" padded "),
+        Ok(vec![" padded ".to_string()])
+    );
+    assert_eq!(
+        super::parse_txt_presentation("   "),
+        Ok(vec!["   ".to_string()])
+    );
+    // Whitespace around a quoted value is formatting, not content.
+    assert_eq!(
+        super::parse_txt_presentation(r#"  "padded"  "#),
+        Ok(vec!["padded".to_string()])
+    );
+}
+
+#[test]
 fn parse_txt_presentation_splits_long_bare_value() {
     let value = "a".repeat(300);
     assert_eq!(

@@ -101,20 +101,21 @@ pub fn decode_raw_txt_value(value: &str) -> Option<DecodedTxtValue> {
 
 /// Parse a TXT value in presentation form into its UTF-8 character-strings.
 ///
-/// A value starting with `"` is read as space-separated quoted
-/// character-strings (max 255 bytes each) with `\"`, `\\`, and `\DDD`
-/// escapes per RFC 1035, Section 5.1; any other value is one raw
-/// character-string, split at 255 bytes on UTF-8 boundaries.
+/// A value whose first non-whitespace character is `"` is read as
+/// space-separated quoted character-strings (max 255 bytes each) with `\"`,
+/// `\\`, and `\DDD` escapes per RFC 1035, Section 5.1; any other value is
+/// one raw character-string kept byte-for-byte, whitespace included, split
+/// at 255 bytes on UTF-8 boundaries.
 pub fn parse_txt_presentation(value: &str) -> Result<Vec<String>, String> {
     let trimmed = value.trim();
 
     if !trimmed.starts_with('"') {
-        if trimmed.is_empty() {
+        if value.is_empty() {
             return Err("TXT value must not be empty".to_string());
         }
         // Reuse the storage encoder's splitting so long raw content and its
         // quoted rendering stay byte-identical across round trips.
-        return match decode_raw_txt_value(&encode_txt_string(trimmed)) {
+        return match decode_raw_txt_value(&encode_txt_string(value)) {
             Some(DecodedTxtValue::String(segment)) => Ok(vec![segment]),
             Some(DecodedTxtValue::Segments(segments)) => Ok(segments),
             None => Err("TXT value could not be encoded".to_string()),

@@ -3,6 +3,7 @@ use super::{
     validation::{normalize_record_owner_name, validate_record_update_constraints_normalized},
 };
 use crate::{
+    authorization::{self, Caller, RecordWrite},
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::{
@@ -27,12 +28,14 @@ struct ResolvedRecordUpdate {
 }
 
 impl RecordService {
-    /// Full replacement (HTTP PUT): every field comes from the request.
-    pub async fn update_by_id(
+    /// Full replacement (HTTP PUT): every field comes from the request. The
+    /// caller is authorized inside the update transaction.
+    pub async fn update_by_id_for(
+        caller: &Caller,
         record_id: i32,
         request: &UpdateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(record_id, |zone, _existing| {
+        Self::update_locked(caller, record_id, |zone, _existing| {
             let record_type = parse_record_type(&request.record_type)?;
             let storage_value = request
                 .value
@@ -55,7 +58,7 @@ impl RecordService {
         record_id: i32,
         patch: &UpdateRecordPatch,
     ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(record_id, |_zone, existing| {
+        Self::update_locked(&Caller::Global, record_id, |_zone, existing| {
             let record_type = match &patch.record_type {
                 Some(record_type) => parse_record_type(record_type)?,
                 None => existing.record_type.clone(),
@@ -93,6 +96,7 @@ impl RecordService {
     /// Load the record inside the transaction, resolve the update against it,
     /// then write it, bumping the zone serial and recording DEL+ADD IXFR changes.
     async fn update_locked(
+        caller: &Caller,
         record_id: i32,
         resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
     ) -> Result<RecordWithZone, ServiceError> {
@@ -136,11 +140,35 @@ impl RecordService {
                     }
                 };
 
+            // Invisible zones read as 404 so scoped tokens cannot probe ids.
+            if !authorization::zone_visible(caller, zone.id) {
+                return Err(ServiceError::record_not_found(record_id));
+            }
+
             let resolved = resolve(&zone, &existing_record)?;
 
             // Only records sharing the new owner name can conflict, so load just
             // those instead of the whole zone.
             let lookup_owner = normalize_record_owner_name(&resolved.owner_name, &zone.name)?;
+
+            // An update is a delete plus an add, so both the stored identity
+            // and the requested one must be granted.
+            authorization::authorize_record_writes_tx(
+                &mut tx,
+                caller,
+                &zone,
+                &[
+                    RecordWrite {
+                        relative_name: &existing_record.name,
+                        record_type: Some(&existing_record.record_type),
+                    },
+                    RecordWrite {
+                        relative_name: &lookup_owner.stored_name,
+                        record_type: Some(&resolved.record_type),
+                    },
+                ],
+            )
+            .await?;
             let zone_records = match RepositoryService::get_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone.id,

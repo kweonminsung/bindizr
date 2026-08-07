@@ -176,28 +176,7 @@ pub(crate) async fn update_record(
     Path(params): Path<RecordIdParam>,
     JsonBody(body): JsonBody<UpdateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    if !caller.is_global() {
-        // Both the record's current identity and its requested one must be
-        // granted, since an update is a delete plus an add.
-        let existing = RecordService::get_by_id_with_zone_for(&caller, params.record_id).await?;
-        authorization::authorize_named_record_writes(
-            &caller,
-            &existing.zone_name,
-            &[
-                NamedRecordWrite {
-                    name: existing.name.clone(),
-                    record_type: Some(existing.record_type.to_string()),
-                },
-                NamedRecordWrite {
-                    name: body.name.clone(),
-                    record_type: Some(body.record_type.clone()),
-                },
-            ],
-        )
-        .await?;
-    }
-
-    let raw_record = RecordService::update_by_id(params.record_id, &body).await?;
+    let raw_record = RecordService::update_by_id_for(&caller, params.record_id, &body).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
@@ -225,20 +204,7 @@ pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
 ) -> Result<Response, ApiError> {
-    if !caller.is_global() {
-        let existing = RecordService::get_by_id_with_zone_for(&caller, params.record_id).await?;
-        authorization::authorize_named_record_writes(
-            &caller,
-            &existing.zone_name,
-            &[NamedRecordWrite {
-                name: existing.name.clone(),
-                record_type: Some(existing.record_type.to_string()),
-            }],
-        )
-        .await?;
-    }
-
-    RecordService::delete_by_id(params.record_id).await?;
+    RecordService::delete_by_id_for(&caller, params.record_id).await?;
 
     let json_body = json!({ "message": "Record deleted successfully" });
     Ok((StatusCode::OK, Json(json_body)).into_response())

@@ -37,6 +37,11 @@ $ kubectl -n external-dns create secret generic bindizr-external-dns \
 The token's grants become the ExternalDNS domain filter automatically; a
 global token covers every zone. See [API Tokens](cli/tokens.md).
 
+Grant whole zones, as above. The domain filter only carries zone names, so
+a grant restricted by record name pattern or type is invisible to
+ExternalDNS and makes it plan changes bindizr will reject — and TXT must
+stay granted or ownership records (`--registry=txt`) fail.
+
 **3. Add the adapter** as a second container in the external-dns Deployment.
 The default webhook URL (`http://localhost:8888`) already points at it:
 
@@ -124,6 +129,7 @@ not authenticate the caller). The sidecar layout is the recommended default.
 | --- | --- |
 | `401` in the adapter log | Token missing, expired, or wrong |
 | `403 API token is not allowed to manage ...` | Grant the zone: `bindizr zone token-policy add <zone> --token <NAME>` |
+| `403` every sync; allowed changes never apply | The grant is restricted by name pattern or type, which ExternalDNS cannot see, and a sync is all-or-nothing. Grant the whole zone (the `token-policy add` default), or narrow external-dns's `--domain-filter` to the granted names |
 | `404 No zone is authoritative for '<name>'` | Create the zone first; ExternalDNS never creates zones |
 | `502` from the adapter | Bindizr unreachable or 5xx; external-dns retries automatically |
 | external-dns exits over a content-type error | The webhook URL does not point at the adapter |
