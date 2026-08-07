@@ -121,7 +121,15 @@ pub(crate) fn validate_endpoint(endpoint: &Endpoint) -> Result<(), String> {
     if endpoint.targets.is_empty() {
         return Err(format!("endpoint '{}' has no targets", endpoint.dns_name));
     }
-    if endpoint.targets.iter().any(|t| t.trim().is_empty()) {
+    // Whitespace-only TXT content is valid; for other types it is garbage.
+    let is_txt = record_type == "TXT";
+    if endpoint.targets.iter().any(|t| {
+        if is_txt {
+            t.is_empty()
+        } else {
+            t.trim().is_empty()
+        }
+    }) {
         return Err(format!(
             "endpoint '{}' has an empty target",
             endpoint.dns_name

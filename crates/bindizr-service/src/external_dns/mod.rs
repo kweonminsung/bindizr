@@ -8,11 +8,14 @@ mod policy;
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
+
 use bindizr_core::dns::record::{display_record_owner_name, presentation_rdata};
 
 use crate::{
     authorization::{Caller, visible_zone_ids},
     error::ServiceError,
+    model::zone::Zone,
     repository::RepositoryService,
     types::ExternalDnsRecordItem,
 };
@@ -38,26 +41,32 @@ impl ExternalDnsService {
     pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecordItem>, ServiceError> {
         let visible = visible_zone_ids(caller);
         let zones = RepositoryService::get_all_zones().await?;
-        let mut items = Vec::new();
-
-        for zone in zones
+        let zones_by_id: HashMap<i32, &Zone> = zones
             .iter()
             .filter(|zone| visible.as_ref().is_none_or(|ids| ids.contains(&zone.id)))
-        {
-            let records = RepositoryService::get_records_by_zone_id(zone.id).await?;
-            for record in records {
-                if !apply::is_supported_record_type(&record.record_type) {
-                    continue;
-                }
-                items.push(ExternalDnsRecordItem {
-                    name: display_record_owner_name(&record.name, &zone.name)
-                        .trim_end_matches('.')
-                        .to_string(),
-                    record_type: record.record_type.to_string(),
-                    ttl: record.ttl,
-                    value: presentation_rdata(&record.value, record.priority, &record.record_type),
-                });
+            .map(|zone| (zone.id, zone))
+            .collect();
+
+        // One batched query; a round trip per zone stalls large deployments.
+        let zone_ids: Vec<i32> = zones_by_id.keys().copied().collect();
+        let records = RepositoryService::get_records_by_zone_ids(&zone_ids).await?;
+
+        let mut items = Vec::new();
+        for record in records {
+            if !apply::is_supported_record_type(&record.record_type) {
+                continue;
             }
+            let Some(zone) = zones_by_id.get(&record.zone_id) else {
+                continue;
+            };
+            items.push(ExternalDnsRecordItem {
+                name: display_record_owner_name(&record.name, &zone.name)
+                    .trim_end_matches('.')
+                    .to_string(),
+                record_type: record.record_type.to_string(),
+                ttl: record.ttl,
+                value: presentation_rdata(&record.value, record.priority, &record.record_type),
+            });
         }
 
         // Deterministic order so an unchanged state never reads as a diff.

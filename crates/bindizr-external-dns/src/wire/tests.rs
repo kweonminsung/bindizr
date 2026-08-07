@@ -179,6 +179,14 @@ fn group_records_builds_one_endpoint_per_rrset() {
 }
 
 #[test]
+fn validate_keeps_whitespace_only_txt_targets() {
+    let adjusted = adjust_endpoints(vec![endpoint("t.example.com", "TXT", 0, &["   "])]).unwrap();
+    assert_eq!(adjusted[0].targets, vec![r#""   ""#]);
+
+    assert!(adjust_endpoints(vec![endpoint("a.example.com", "A", 300, &["   "])]).is_err());
+}
+
+#[test]
 fn adjust_endpoints_normalizes_txt_and_strips_provider_specific() {
     let mut with_props = endpoint("a.example.com", "A", 300, &["192.0.2.1"]);
     with_props.provider_specific = vec![super::ProviderSpecificProperty {

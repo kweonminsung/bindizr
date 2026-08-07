@@ -103,6 +103,15 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load zones: {}", e)))
     }
 
+    pub(super) async fn get_all_zones_tx(
+        tx: &mut RepositoryTx<'_>,
+    ) -> Result<Vec<Zone>, ServiceError> {
+        get_zone_repository()
+            .get_all_tx(tx)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load zones: {}", e)))
+    }
+
     pub(super) async fn get_zones_by_filter(filter: ZoneFilter) -> Result<Vec<Zone>, ServiceError> {
         get_zone_repository()
             .get_by_filter(filter)
@@ -171,6 +180,15 @@ impl RepositoryService {
     pub(super) async fn get_records_by_zone_id(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
         get_record_repository()
             .get_by_zone_id(zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
+    }
+
+    pub(super) async fn get_records_by_zone_ids(
+        zone_ids: &[i32],
+    ) -> Result<Vec<Record>, ServiceError> {
+        get_record_repository()
+            .get_by_zone_ids(zone_ids)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }

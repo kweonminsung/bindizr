@@ -248,6 +248,37 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(records)
     }
 
+    async fn get_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError> {
+        if zone_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut conn = self.pool.acquire().await?;
+
+        const CHUNK: usize = 5000;
+        let mut out = Vec::new();
+        for chunk in zone_ids.chunks(CHUNK) {
+            let mut sql = String::from(
+                "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id IN (",
+            );
+            for i in 0..chunk.len() {
+                if i > 0 {
+                    sql.push(',');
+                }
+                sql.push_str(&format!("${}", i + 1));
+            }
+            sql.push(')');
+
+            let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql));
+            for zone_id in chunk {
+                query = query.bind(zone_id);
+            }
+            let mut rows = query.fetch_all(&mut *conn).await?;
+            out.append(&mut rows);
+        }
+        Ok(out)
+    }
+
     async fn get_by_zone_id_and_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

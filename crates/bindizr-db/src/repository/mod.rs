@@ -182,6 +182,7 @@ pub trait ZoneRepository: Send + Sync {
         name: &str,
     ) -> Result<Option<Zone>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError>;
+    async fn get_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError>;
     async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError>;
     /// Limit-1 probe of the zones table; health checks must stay cheap on
@@ -286,6 +287,8 @@ pub trait RecordRepository: Send + Sync {
         id: i32,
     ) -> Result<Option<Record>, DatabaseError>;
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
+    /// Records of every listed zone in one round trip.
+    async fn get_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
     async fn get_by_zone_id_with_zone(
         &self,
         zone_id: i32,

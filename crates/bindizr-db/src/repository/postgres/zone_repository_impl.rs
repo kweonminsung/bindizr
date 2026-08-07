@@ -142,6 +142,16 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zones)
     }
 
+    async fn get_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError> {
+        let postgres_tx = tx.as_postgres()?;
+
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
+            .fetch_all(&mut **postgres_tx)
+            .await?;
+
+        Ok(zones)
+    }
+
     async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());

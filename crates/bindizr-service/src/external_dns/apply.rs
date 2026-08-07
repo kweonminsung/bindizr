@@ -339,21 +339,14 @@ impl ExternalDnsService {
         let ops = convert_request(request)?;
         let requested_ops = ops.len();
 
-        let zones = RepositoryService::get_all_zones().await?;
-        let zone_ops = group_ops_by_zone(&zones, ops)?;
-
-        if zone_ops.is_empty() {
-            log_info!("event=external_dns_apply zones= ops=0 added=0 deleted=0 noop=true ms=0.0");
-            return Ok(ExternalDnsChangesResponse {
-                changed_zones: Vec::new(),
-                records_added: 0,
-                records_deleted: 0,
-            });
-        }
-
         let mut tx = RepositoryService::begin_tx("Failed to apply ExternalDNS changes").await?;
 
         let apply_result = async {
+            // Resolve authoritative zones inside the tx so grouping and the
+            // row locks below share one snapshot of the zone set.
+            let zones = RepositoryService::get_all_zones_tx(&mut tx).await?;
+            let zone_ops = group_ops_by_zone(&zones, ops)?;
+
             let mut changed_zones = Vec::new();
             let mut records_added = 0u32;
             let mut records_deleted = 0u32;
