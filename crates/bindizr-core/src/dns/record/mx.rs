@@ -1,6 +1,5 @@
-use super::value::{
-    canonical_domain_value, parse_optional_u16_record_field, validate_domain_record_value,
-};
+use super::value::{parse_optional_u16_record_field, validate_domain_record_value};
+use crate::dns::name::to_fqdn_lowercase;
 
 pub struct MxRecordValue<'a> {
     priority: u16,
@@ -47,6 +46,6 @@ impl<'a> MxRecordValue<'a> {
     }
 
     pub(crate) fn canonical(&self) -> String {
-        format!("{} {}", self.priority, canonical_domain_value(self.target))
+        format!("{} {}", self.priority, to_fqdn_lowercase(self.target))
     }
 }

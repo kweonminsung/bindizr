@@ -170,6 +170,11 @@ pub fn to_owner_fqdn(name: &str, zone: &str) -> String {
     format!("{}.{}.", owner_trimmed, zone_trimmed)
 }
 
+/// [`to_owner_fqdn`] normalized for display: trimmed and lowercased.
+pub fn to_display_owner_fqdn(name: &str, zone: &str) -> String {
+    to_fqdn_lowercase(&to_owner_fqdn(name.trim(), zone))
+}
+
 /// Whether `name` equals `zone` or is a subdomain of it (exact string match).
 pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
     name == zone || name.ends_with(&format!(".{}", zone))

@@ -1,4 +1,5 @@
-use super::value::{canonical_domain_value, validate_domain_record_value};
+use super::value::validate_domain_record_value;
+use crate::dns::name::to_fqdn_lowercase;
 
 pub(crate) struct PtrRecordValue<'a> {
     target: &'a str,
@@ -11,6 +12,6 @@ impl<'a> PtrRecordValue<'a> {
     }
 
     pub(crate) fn canonical(&self) -> String {
-        canonical_domain_value(self.target)
+        to_fqdn_lowercase(self.target)
     }
 }

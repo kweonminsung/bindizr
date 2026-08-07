@@ -1,31 +1,8 @@
-//! Cross-type helpers for stored record values: shared parsing/validation
-//! helpers and owner-name display rendering.
+//! Shared field parsing/validation helpers for stored record values.
 
 use crate::dns::name::{
-    MAX_DOMAIN_LEN, has_whitespace_or_control, presentation_labels, to_fqdn_lowercase,
-    validate_domain_label,
+    MAX_DOMAIN_LEN, has_whitespace_or_control, presentation_labels, validate_domain_label,
 };
-
-/// Resolve a stored owner name to its display FQDN within `zone_name`.
-pub fn display_record_owner_name(stored_name: &str, zone_name: &str) -> String {
-    let zone_fqdn = to_fqdn_lowercase(zone_name);
-    let trimmed = stored_name.trim();
-
-    if trimmed == "@" {
-        return zone_fqdn;
-    }
-
-    if trimmed.ends_with('.') {
-        return to_fqdn_lowercase(trimmed);
-    }
-
-    let candidate = to_fqdn_lowercase(trimmed);
-    if candidate == zone_fqdn || candidate.ends_with(&format!(".{}", zone_fqdn)) {
-        candidate
-    } else {
-        to_fqdn_lowercase(&format!("{}.{}", trimmed, zone_fqdn))
-    }
-}
 
 pub(crate) fn parse_optional_u16_record_field(
     field: &str,
@@ -75,10 +52,3 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
 
     Ok(())
 }
-
-pub(crate) fn canonical_domain_value(value: &str) -> String {
-    to_fqdn_lowercase(value)
-}
-
-#[cfg(test)]
-mod tests;

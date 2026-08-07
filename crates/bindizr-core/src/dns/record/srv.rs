@@ -1,7 +1,7 @@
 use super::value::{
-    canonical_domain_value, parse_optional_u16_record_field, parse_u16_record_field,
-    validate_domain_record_value,
+    parse_optional_u16_record_field, parse_u16_record_field, validate_domain_record_value,
 };
+use crate::dns::name::to_fqdn_lowercase;
 
 pub(crate) struct SrvRecordValue<'a> {
     priority: u16,
@@ -41,7 +41,7 @@ impl<'a> SrvRecordValue<'a> {
             self.priority,
             self.weight,
             self.port,
-            canonical_domain_value(self.target)
+            to_fqdn_lowercase(self.target)
         )
     }
 }

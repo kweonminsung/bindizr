@@ -1,6 +1,7 @@
 //! SOA record values, including the RNAME mailbox <-> email conversions.
 
-use super::value::{canonical_domain_value, parse_u32_record_field, validate_domain_record_value};
+use super::value::{parse_u32_record_field, validate_domain_record_value};
+use crate::dns::name::to_fqdn_lowercase;
 
 pub(crate) struct SoaRecordValue<'a> {
     mname: &'a str,
@@ -59,8 +60,8 @@ impl<'a> SoaRecordValue<'a> {
     pub(crate) fn canonical(&self) -> String {
         format!(
             "{} {} {} {} {} {} {}",
-            canonical_domain_value(self.mname),
-            canonical_domain_value(self.rname),
+            to_fqdn_lowercase(self.mname),
+            to_fqdn_lowercase(self.rname),
             self.serial,
             self.refresh,
             self.retry,

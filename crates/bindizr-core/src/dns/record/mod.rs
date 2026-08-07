@@ -24,4 +24,3 @@ pub(crate) use soa::SoaRecordValue;
 pub(crate) use srv::SrvRecordValue;
 pub(crate) use txt::TxtRecordValue;
 pub use txt::{TxtContent, TxtRdata};
-pub use value::display_record_owner_name;
