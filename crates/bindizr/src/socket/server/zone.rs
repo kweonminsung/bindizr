@@ -4,8 +4,8 @@ use serde_json::json;
 use crate::{
     api::types::{
         CreateZoneRequest, GetZoneResponse, GetZonesFilter, ImportZoneFileRequest,
-        SnapshotDetailResponse, SnapshotRecordResponse, UpdateZonePatch, ZoneSnapshotResponse,
-        ZoneStatusResponse,
+        RollbackZoneRequest, SnapshotDetailResponse, SnapshotRecordResponse, UpdateZonePatch,
+        ZoneSnapshotResponse, ZoneStatusResponse,
     },
     socket::{server::to_response_data, types::DaemonResponse},
 };
@@ -220,13 +220,9 @@ pub(super) async fn rollback_zone(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let name = required_name(data)?;
-    let serial = required_serial(data)?;
-    let dry_run = data
-        .get("dry_run")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let request: RollbackZoneRequest = super::parse_params(data)?;
 
-    let response = ZoneService::rollback(name, serial, dry_run).await?;
+    let response = ZoneService::rollback(name, request.serial, request.dry_run).await?;
     let message = if response.dry_run {
         format!(
             "Dry run: rollback to serial {} would add {} and delete {} record(s); nothing applied",

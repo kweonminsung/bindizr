@@ -26,6 +26,22 @@ fn parse_params_rejects_wrongly_typed_fields() {
     assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
 }
 
+#[test]
+fn parse_params_rejects_a_wrongly_typed_rollback_dry_run() {
+    use crate::api::types::RollbackZoneRequest;
+
+    let ok: RollbackZoneRequest = parse_params(&json!({ "serial": 7 })).unwrap();
+    assert!(!ok.dry_run);
+
+    // A wrongly typed dry_run once defaulted to false, applying a rollback the
+    // caller asked to preview.
+    for dry_run in [json!("true"), json!(1)] {
+        let err = parse_params::<RollbackZoneRequest>(&json!({ "serial": 7, "dry_run": dry_run }))
+            .unwrap_err();
+        assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
+    }
+}
+
 #[tokio::test]
 async fn prepare_socket_path_creates_parent_directory() {
     let dir = tempfile::tempdir().unwrap();
