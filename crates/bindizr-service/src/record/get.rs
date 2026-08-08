@@ -6,7 +6,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     log_error,
-    model::record::{Record, RecordType, RecordWithZone},
+    model::record::{Record, RecordWithZone},
     pagination::paginated_response,
     repository::RepositoryService,
     types::{GetRecordsFilter, PaginatedResponse},
@@ -25,28 +25,6 @@ impl RecordService {
         zone_id: i32,
     ) -> Result<Vec<Record>, ServiceError> {
         RepositoryService::get_records_by_zone_id_tx(tx, zone_id).await
-    }
-
-    /// Find a single matching record within the caller's transaction.
-    pub async fn find_matching_tx(
-        tx: &mut RepositoryTx<'_>,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, ServiceError> {
-        RepositoryService::find_record_matching_tx(
-            tx,
-            zone_id,
-            name,
-            record_type,
-            value,
-            priority,
-            match_priority,
-        )
-        .await
     }
 
     /// List records for a zone by name, or all records when `None`.

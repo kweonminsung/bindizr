@@ -29,7 +29,7 @@ use crate::{
     service,
     service::{
         RepositoryTx,
-        record::{RecordService, validate_delete_constraints},
+        record::{AddOutcome, RecordService, validate_delete_constraints},
         serial::generate_serial,
         tsig_key::TsigKeyService,
         zone::{
@@ -321,26 +321,7 @@ async fn add_record(
     }
     let ttl = update.ttl as i32;
 
-    // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op,
-    // checked before validation so the duplicate rule cannot refuse it. The
-    // TTL-replace clause is not implemented; RRset TTLs change via the API.
-    if RecordService::find_matching_tx(
-        tx,
-        Some(zone.id),
-        &relative_name,
-        &record_type,
-        Some(&value),
-        priority,
-        true,
-    )
-    .await
-    .map_err(|e| UpdateError::Internal(e.to_string()))?
-    .is_some()
-    {
-        return Ok(false);
-    }
-
-    RecordService::validate_add_constraints_tx(
+    let outcome = RecordService::validate_add_tx(
         tx,
         zone,
         &relative_name,
@@ -350,7 +331,20 @@ async fn add_record(
         priority,
     )
     .await
-    .map_err(|e| UpdateError::Refused(e.to_string()))?;
+    .map_err(|e| {
+        // A backend failure must answer SERVFAIL, not REFUSED.
+        if e.code.http_status() < 500 {
+            UpdateError::Refused(e.to_string())
+        } else {
+            UpdateError::Internal(e.to_string())
+        }
+    })?;
+
+    // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
+    // TTL-replace clause is not implemented; RRset TTLs change via the API.
+    if matches!(outcome, AddOutcome::Duplicate) {
+        return Ok(false);
+    }
 
     RecordService::insert_records_with_changes_tx(
         tx,

@@ -1,12 +1,15 @@
 use chrono::Utc;
 
 use super::{
-    normalize_record_owner_name, validate_delete_constraints, validate_record_add_constraints,
-    validate_record_value,
+    normalize_record_owner_name, validate_delete_constraints,
+    validate_record_add_constraints_normalized, validate_record_value,
 };
-use crate::model::{
-    record::{Record, RecordType},
-    zone::Zone,
+use crate::{
+    error::ServiceError,
+    model::{
+        record::{Record, RecordType},
+        zone::Zone,
+    },
 };
 
 /// TTL of every [`test_record`], so adds under test share their RRset's TTL
@@ -196,12 +199,29 @@ fn validate_soa_value_rejects_invalid_forms() {
     }
 }
 
+/// Validate an add whose owner name is already in stored form.
+fn validate_add(
+    zone_records: &[Record],
+    stored_name: &str,
+    record_type: &RecordType,
+    value: &str,
+    ttl: i32,
+    priority: Option<i32>,
+) -> Result<(), ServiceError> {
+    validate_record_add_constraints_normalized(
+        zone_records,
+        stored_name,
+        record_type,
+        value,
+        ttl,
+        priority,
+        None,
+    )
+}
+
 #[test]
 fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
-    let zone = test_zone();
-
-    let cname_at_apex = validate_record_add_constraints(
-        &zone,
+    let cname_at_apex = validate_add(
         &[],
         "@",
         &RecordType::CNAME,
@@ -211,8 +231,7 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
     );
     assert!(cname_at_apex.is_err());
 
-    let ns_below_apex = validate_record_add_constraints(
-        &zone,
+    let ns_below_apex = validate_add(
         &[],
         "child",
         &RecordType::NS,
@@ -223,8 +242,7 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
     assert!(ns_below_apex.is_err());
 
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
-    let cname_conflict = validate_record_add_constraints(
-        &zone,
+    let cname_conflict = validate_add(
         &[existing_a],
         "www",
         &RecordType::CNAME,
@@ -237,12 +255,9 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
 
 #[test]
 fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates() {
-    let zone = test_zone();
-
     // Case and trailing-dot differences canonicalize equal, so the add is a duplicate.
     let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
-    let duplicate_mx = validate_record_add_constraints(
-        &zone,
+    let duplicate_mx = validate_add(
         &[existing_mx],
         "@",
         &RecordType::MX,
@@ -259,8 +274,7 @@ fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates
         "5 5060 sip.example.com",
         Some(10),
     );
-    let duplicate_srv = validate_record_add_constraints(
-        &zone,
+    let duplicate_srv = validate_add(
         &[existing_srv],
         "_sip._tcp",
         &RecordType::SRV,
@@ -272,12 +286,25 @@ fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates
 }
 
 #[test]
-fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
-    let zone = test_zone();
+fn validate_record_add_constraints_treats_an_omitted_mx_priority_as_the_default() {
+    // A stored MX with no priority and an add carrying the default 10 are the
+    // same rdata, so nsupdate can no-op the add instead of refusing it.
+    let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com.", None);
+    let duplicate_mx = validate_add(
+        &[existing_mx],
+        "@",
+        &RecordType::MX,
+        "mail.example.com.",
+        RRSET_TTL,
+        Some(10),
+    );
+    assert!(duplicate_mx.is_err());
+}
 
+#[test]
+fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
     let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
-    let null_mx_with_existing_mx = validate_record_add_constraints(
-        &zone,
+    let null_mx_with_existing_mx = validate_add(
         &[existing_mx],
         "@",
         &RecordType::MX,
@@ -288,8 +315,7 @@ fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
     assert!(null_mx_with_existing_mx.is_err());
 
     let existing_null_mx = test_record(2, "@", RecordType::MX, ".", Some(0));
-    let mx_with_existing_null_mx = validate_record_add_constraints(
-        &zone,
+    let mx_with_existing_null_mx = validate_add(
         &[existing_null_mx],
         "@",
         &RecordType::MX,
@@ -302,11 +328,9 @@ fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
 
 #[test]
 fn validate_record_add_constraints_enforces_one_ttl_per_rrset() {
-    let zone = test_zone();
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
 
-    let differing_ttl = validate_record_add_constraints(
-        &zone,
+    let differing_ttl = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
         &RecordType::A,
@@ -316,8 +340,7 @@ fn validate_record_add_constraints_enforces_one_ttl_per_rrset() {
     );
     assert!(differing_ttl.is_err());
 
-    let matching_ttl = validate_record_add_constraints(
-        &zone,
+    let matching_ttl = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
         &RecordType::A,
@@ -328,8 +351,7 @@ fn validate_record_add_constraints_enforces_one_ttl_per_rrset() {
     assert!(matching_ttl.is_ok());
 
     // A different type at the same owner name is a different RRset.
-    let other_rrset = validate_record_add_constraints(
-        &zone,
+    let other_rrset = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
         &RecordType::TXT,

@@ -104,28 +104,18 @@ fn normalize_absolute_owner_fqdn(value: &str) -> Result<String, ServiceError> {
     Ok(fqdn)
 }
 
-/// Normalize `owner_name` and validate the add. Callers holding an already
-/// normalized name should use [`validate_record_add_constraints_normalized`].
-pub(super) fn validate_record_add_constraints(
-    zone: &Zone,
-    zone_records: &[Record],
-    owner_name: &str,
+/// Whether any record already holds the candidate's rdata. Canonical
+/// comparison keeps protocol and API callers agreeing on "already exists".
+fn has_matching_rdata<'a>(
+    records: impl IntoIterator<Item = &'a Record>,
     record_type: &RecordType,
     value: &str,
-    ttl: i32,
     priority: Option<i32>,
-) -> Result<NormalizedOwnerName, ServiceError> {
-    let normalized_owner = normalize_record_owner_name(owner_name, &zone.name)?;
-    validate_record_add_constraints_normalized(
-        zone_records,
-        &normalized_owner.stored_name,
-        record_type,
-        value,
-        ttl,
-        priority,
-        None,
-    )?;
-    Ok(normalized_owner)
+) -> bool {
+    records.into_iter().any(|r| {
+        r.record_type == *record_type
+            && record_type.values_equal(&r.value, r.priority, value, priority)
+    })
 }
 
 /// Validate an add whose owner name has already been normalized to `stored_name`.
@@ -160,10 +150,12 @@ pub(crate) fn validate_record_add_constraints_normalized(
         })
         .collect();
 
-    if existing_records_with_name.iter().any(|r| {
-        r.record_type == *record_type
-            && record_type.values_equal(&r.value, r.priority, value, priority)
-    }) {
+    if has_matching_rdata(
+        existing_records_with_name.iter().copied(),
+        record_type,
+        value,
+        priority,
+    ) {
         return Err(ServiceError::record_conflict(format!(
             "Record '{}' {} '{}' already exists in this zone",
             stored_name, record_type, value
@@ -297,9 +289,20 @@ pub(super) fn validate_record_update_constraints_normalized(
     Ok(())
 }
 
+/// What an add resolves to against the records already in the zone.
+pub enum AddOutcome {
+    /// Nothing holds this rdata and every constraint passed.
+    New,
+    Duplicate,
+}
+
 impl RecordService {
-    /// Validate an add against conflicting records loaded within the caller's transaction.
-    pub async fn validate_add_constraints_tx(
+    /// Validate an add against conflicting records loaded within the caller's
+    /// transaction, reporting an rdata-identical record as
+    /// [`AddOutcome::Duplicate`] instead of rejecting it: RFC 2136,
+    /// Section 3.4.2.2 makes such an add a silent no-op. The API paths call the
+    /// validator directly and keep treating it as a conflict.
+    pub async fn validate_add_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         owner_name: &str,
@@ -307,7 +310,7 @@ impl RecordService {
         value: &str,
         ttl: i32,
         priority: Option<i32>,
-    ) -> Result<(), ServiceError> {
+    ) -> Result<AddOutcome, ServiceError> {
         // Only records sharing the owner name can conflict, so load just those
         // instead of the whole zone.
         let lookup_owner = normalize_record_owner_name(owner_name, &zone.name)?;
@@ -322,16 +325,21 @@ impl RecordService {
             ServiceError::internal("Failed to load zone records".to_string())
         })?;
 
-        validate_record_add_constraints(
-            zone,
+        if has_matching_rdata(zone_records.iter(), record_type, value, priority) {
+            return Ok(AddOutcome::Duplicate);
+        }
+
+        validate_record_add_constraints_normalized(
             &zone_records,
-            owner_name,
+            &lookup_owner.stored_name,
             record_type,
             value,
             ttl,
             priority,
-        )
-        .map(|_| ())
+            None,
+        )?;
+
+        Ok(AddOutcome::New)
     }
 }
 
