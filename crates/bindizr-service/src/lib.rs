@@ -1,7 +1,6 @@
 //! Application services for bindizr: zone, record, token, and NOTIFY
 //! workflows built on the repository layer.
 
-pub mod auth;
 pub mod authorization;
 pub mod dynamic_update;
 pub mod error;

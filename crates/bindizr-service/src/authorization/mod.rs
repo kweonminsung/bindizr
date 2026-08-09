@@ -12,15 +12,18 @@
 use std::{collections::HashSet, sync::Arc};
 
 use bindizr_core::dns::name::OwnerName;
+use chrono::{Duration, Utc};
 
 use crate::{
     RepositoryTx,
     error::ServiceError,
+    log_error,
     model::{
         api_token::ApiToken, record::RecordType, zone::Zone, zone_token_policy::ZoneTokenPolicy,
     },
     policy_pattern::{pattern_matches_name, types_match},
     repository::RepositoryService,
+    token::hash_token,
 };
 
 /// The identity a request acts as. The daemon socket and disabled
@@ -47,9 +50,11 @@ impl Caller {
         matches!(self, Caller::Global)
     }
 
-    /// Build the request's caller from its authenticated token, preloading a
-    /// scoped token's grants.
-    pub async fn for_token(token: &ApiToken) -> Result<Caller, ServiceError> {
+    /// Resolve who a Bearer token acts as: validate the token, then preload a
+    /// scoped token's grants so the rest of the request decides against one
+    /// read.
+    pub async fn authenticate(bearer_token: &str) -> Result<Caller, ServiceError> {
+        let token = validate_token(bearer_token).await?;
         if token.is_global {
             return Ok(Caller::Global);
         }
@@ -143,6 +148,54 @@ fn authorize_with_policies(
         }
     }
     Ok(())
+}
+
+/// How long a `last_used_at` stamp stays fresh; stamping every request would
+/// put a database write on the hot path for no added precision.
+const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
+
+/// Validate an API token, rejecting expired tokens and stamping `last_used_at`.
+async fn validate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
+    let token_hash = hash_token(token_str);
+    let stored_token = match RepositoryService::get_api_token_by_token(&token_hash).await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return Err(ServiceError::invalid_token(
+                "Invalid or expired token".to_string(),
+            ));
+        }
+        Err(e) => {
+            log_error!("Failed to validate token: {}", e);
+            return Err(ServiceError::internal(
+                "Failed to validate token".to_string(),
+            ));
+        }
+    };
+
+    if let Some(expires_at) = &stored_token.expires_at
+        && Utc::now() >= *expires_at
+    {
+        return Err(ServiceError::invalid_token("Token has expired".to_string()));
+    }
+
+    let stamp_is_fresh = stored_token.last_used_at.is_some_and(|last_used| {
+        Utc::now() - last_used < Duration::seconds(LAST_USED_STAMP_INTERVAL_SECS)
+    });
+    if stamp_is_fresh {
+        return Ok(stored_token);
+    }
+
+    let updated_token = RepositoryService::update_api_token(ApiToken {
+        last_used_at: Some(Utc::now()),
+        ..stored_token
+    })
+    .await
+    .map_err(|e| {
+        log_error!("Failed to update last_used_at: {}", e);
+        ServiceError::internal("Failed to update last_used_at".to_string())
+    })?;
+
+    Ok(updated_token)
 }
 
 #[cfg(test)]
