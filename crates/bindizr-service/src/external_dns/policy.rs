@@ -1,6 +1,6 @@
 //! Authoritative zone matching for the ExternalDNS API.
 
-use bindizr_core::dns::name::to_lookup_name;
+use bindizr_core::dns::name::{is_same_or_subdomain_fqdn, to_lookup_name};
 
 use crate::{error::ServiceError, model::zone::Zone};
 
@@ -17,6 +17,6 @@ pub(super) fn normalize_lookup_name(name: &str) -> Result<String, ServiceError> 
 pub(super) fn find_authoritative_zone<'a>(zones: &'a [Zone], name: &str) -> Option<&'a Zone> {
     zones
         .iter()
-        .filter(|zone| name == zone.name || name.ends_with(&format!(".{}", zone.name)))
+        .filter(|zone| is_same_or_subdomain_fqdn(name, &zone.name))
         .max_by_key(|zone| zone.name.len())
 }
