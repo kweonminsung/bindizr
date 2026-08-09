@@ -52,6 +52,10 @@ pub(super) enum ParseError {
     InvalidHeader,
     InvalidZoneSection,
     InvalidName,
+    /// A well-formed name bindizr declines to handle. A label may hold any
+    /// octet (RFC 2181, Section 11), including `.`, but bindizr stores names
+    /// unescaped, so such a name has no representation here.
+    UnsupportedName,
     InvalidRr,
     InvalidTsig,
 }
@@ -64,6 +68,9 @@ impl fmt::Display for ParseError {
             ParseError::InvalidHeader => write!(f, "Invalid DNS UPDATE header"),
             ParseError::InvalidZoneSection => write!(f, "Invalid DNS UPDATE zone section"),
             ParseError::InvalidName => write!(f, "Invalid compressed domain name"),
+            ParseError::UnsupportedName => {
+                write!(f, "Domain name with a dot or backslash inside a label")
+            }
             ParseError::InvalidRr => write!(f, "Invalid resource record in UPDATE section"),
             ParseError::InvalidTsig => write!(f, "Invalid TSIG resource record"),
         }
@@ -214,7 +221,7 @@ pub(super) fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, Pars
 
         let text = std::str::from_utf8(label.as_slice()).map_err(|_| ParseError::InvalidName)?;
         if text.contains(['.', '\\']) {
-            return Err(ParseError::InvalidName);
+            return Err(ParseError::UnsupportedName);
         }
         out.push_str(text);
         out.push('.');

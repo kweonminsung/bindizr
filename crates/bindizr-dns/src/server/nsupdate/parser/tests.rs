@@ -109,7 +109,7 @@ fn parse_update_request_rejects_a_dot_inside_a_tsig_owner_label() {
 
     assert!(matches!(
         parse_update_request(&message),
-        Err(ParseError::InvalidName)
+        Err(ParseError::UnsupportedName)
     ));
 }
 
@@ -135,7 +135,7 @@ fn parse_update_request_rejects_a_dot_inside_a_zone_label() {
 
     assert!(matches!(
         parse_update_request(&message),
-        Err(ParseError::InvalidName)
+        Err(ParseError::UnsupportedName)
     ));
 }
 

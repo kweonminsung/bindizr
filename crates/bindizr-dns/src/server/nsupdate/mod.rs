@@ -71,6 +71,17 @@ pub(crate) async fn handle_udp_nsupdate(
 async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> Option<Vec<u8>> {
     let parsed = match parser::parse_update_request(query_data) {
         Ok(req) => req,
+        // A name bindizr will not represent is a policy refusal, not a
+        // malformed message: FORMERR would tell the client its UPDATE was
+        // unreadable (RFC 1035, Section 4.1.1).
+        Err(parser::ParseError::UnsupportedName) => {
+            log_warn!(
+                "NSUPDATE refused from {}: unsupported domain name",
+                client_addr
+            );
+            count_nsupdate("refused");
+            return build_response(query_data, Rcode::REFUSED, None, DEFAULT_FUDGE);
+        }
         Err(e) => {
             log_warn!("NSUPDATE parse error from {}: {}", client_addr, e);
             count_nsupdate("formerr");
