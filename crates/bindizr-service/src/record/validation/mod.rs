@@ -31,7 +31,7 @@ fn validate_record_value(
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
     value
         .parse::<RecordType>()
-        .map_err(|_| ServiceError::invalid_input(format!("Invalid record type: {}", value)))
+        .map_err(|_| ServiceError::invalid_input(format!("invalid record type: {}", value)))
 }
 
 #[derive(Debug)]

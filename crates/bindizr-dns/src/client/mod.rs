@@ -80,7 +80,9 @@ pub(crate) fn build_question(opcode: Opcode, aa: bool, qname: &Name<Vec<u8>>) ->
 
     let mut question = builder.question();
     // Composing one question into a Vec cannot fail.
-    question.push((qname, Rtype::SOA)).unwrap();
+    question
+        .push((qname, Rtype::SOA))
+        .expect("composing into a Vec cannot run out of space");
 
     (query_id, question.finish())
 }

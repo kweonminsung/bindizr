@@ -1,4 +1,4 @@
-use crate::common::TestApp;
+use crate::common::{TestApp, assert_cli_success};
 
 const VALID_CONFIG: &str = r#"
 [api]
@@ -39,7 +39,18 @@ async fn doctor_reports_healthy_installation() {
         vec!["doctor", "-c", path]
     };
 
-    let output = app.run_cli_success(&args).await;
+    // Secondaries transfer asynchronously after NOTIFY, so behind a burst of
+    // zone writes doctor can catch them one catalog serial short.
+    let mut result = app.run_cli(&args).await;
+    for _ in 0..30 {
+        if result.status.success() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        result = app.run_cli(&args).await;
+    }
+    assert_cli_success(&args, &result);
+    let output = String::from_utf8(result.stdout).expect("CLI stdout was not UTF-8");
 
     assert!(output.contains("Config valid"));
     assert!(output.contains("Daemon running"));

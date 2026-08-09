@@ -30,7 +30,7 @@ pub(super) struct RepositoryService;
 /// the service-level pre-check produces; anything else stays internal.
 fn zone_name_race_error(name: &str, action: &str, e: DatabaseError) -> ServiceError {
     if e.is_unique_violation() {
-        ServiceError::zone_conflict(format!("Zone with name '{}' already exists", name))
+        ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
     } else {
         ServiceError::internal(format!("failed to {} zone: {}", action, e))
     }

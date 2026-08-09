@@ -300,7 +300,9 @@ impl DnsMessageBuilder {
         let record = domain::base::Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
         let mut answer = Vec::new();
         // Composing into a Vec is infallible.
-        record.compose_record(&mut answer).unwrap();
+        record
+            .compose_record(&mut answer)
+            .expect("composing into a Vec cannot run out of space");
         self.push_answer(answer);
     }
 
@@ -450,7 +452,9 @@ pub(crate) fn build_error_response(
 
     let mut question = builder.question();
     // Composing one question into a Vec cannot fail.
-    question.push((qname, qtype)).unwrap();
+    question
+        .push((qname, qtype))
+        .expect("composing into a Vec cannot run out of space");
 
     question.finish()
 }
