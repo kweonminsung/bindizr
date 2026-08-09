@@ -1,10 +1,9 @@
-use bindizr_service::{authorization::Caller, error::ServiceError, zone::ZoneService};
+use bindizr_service::{
+    authorization::Caller, error::ServiceError, types::NotifyZoneRequest, zone::ZoneService,
+};
 use serde_json::json;
 
-use crate::{
-    api::types::NotifyZoneRequest,
-    socket::{server::parse_params, types::DaemonResponse},
-};
+use crate::socket::{server::parse_params, types::DaemonResponse};
 
 /// Handle the `NotifyZone` command by sending DNS NOTIFY for a zone or all zones.
 pub(super) async fn handle_notify_zone(

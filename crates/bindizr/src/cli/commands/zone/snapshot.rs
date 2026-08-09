@@ -1,9 +1,9 @@
 //! The `zone snapshot` subcommands: list, show, diff, and rollback.
 
+use bindizr_service::types::RollbackZoneRequest;
 use clap::Subcommand;
 
 use crate::{
-    api::types::RollbackZoneRequest,
     cli::{
         error::CliError,
         output::{

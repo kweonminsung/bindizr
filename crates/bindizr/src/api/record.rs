@@ -5,7 +5,14 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_service::record::RecordService;
+use bindizr_service::{
+    record::RecordService,
+    types::{
+        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
+        GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse, RecordItem,
+        RecordResponse,
+    },
+};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -13,11 +20,6 @@ use crate::api::{
     RequestCaller,
     error::ApiError,
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
-    types::{
-        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
-        GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse, RecordItem,
-        RecordResponse,
-    },
 };
 
 /// Route group for record endpoints.
@@ -227,22 +229,10 @@ pub(crate) async fn create_records_bulk(
     Path(params): Path<ZoneScopedParam>,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
 ) -> Result<Response, ApiError> {
-    let (raw_records, diff) =
+    let response =
         RecordService::create_bulk_for(&caller, &params.zone_name, &body.records, body.dry_run)
             .await?;
 
-    let records = raw_records
-        .iter()
-        .map(GetRecordResponse::from_record_with_zone)
-        .collect::<Vec<_>>();
-
-    let response = BulkRecordsResponse {
-        applied: !body.dry_run,
-        dry_run: body.dry_run,
-        inserted: if body.dry_run { 0 } else { records.len() },
-        records,
-        diff,
-    };
     let status = if body.dry_run {
         StatusCode::OK
     } else {

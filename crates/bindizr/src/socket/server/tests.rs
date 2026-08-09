@@ -11,7 +11,7 @@ fn try_bind_test_socket(socket_path: &str) -> Option<UnixListener> {
 
 #[test]
 fn parse_params_rejects_wrongly_typed_fields() {
-    use crate::api::types::CreateTsigKeyRequest;
+    use bindizr_service::types::CreateTsigKeyRequest;
 
     // Absent/null optional fields deserialize as their defaults...
     let ok: CreateTsigKeyRequest =
@@ -28,7 +28,7 @@ fn parse_params_rejects_wrongly_typed_fields() {
 
 #[test]
 fn parse_params_rejects_a_wrongly_typed_rollback_dry_run() {
-    use crate::api::types::RollbackZoneRequest;
+    use bindizr_service::types::RollbackZoneRequest;
 
     let ok: RollbackZoneRequest = parse_params(&json!({ "serial": 7 })).unwrap();
     assert!(!ok.dry_run);
@@ -44,10 +44,9 @@ fn parse_params_rejects_a_wrongly_typed_rollback_dry_run() {
 
 #[test]
 fn command_payloads_round_trip_between_client_and_server() {
-    use crate::{
-        api::types::{RollbackZoneRequest, UpdateZonePatch},
-        socket::types::{RollbackZoneParams, UpdateZoneParams},
-    };
+    use bindizr_service::types::{RollbackZoneRequest, UpdateZonePatch};
+
+    use crate::socket::types::{RollbackZoneParams, UpdateZoneParams};
 
     // The CLI serializes these and the daemon parses them back, so a flattened
     // request body must survive the round trip alongside its target field.

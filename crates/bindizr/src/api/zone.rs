@@ -6,14 +6,8 @@ use axum::{
     routing,
 };
 use bindizr_dns as dns;
-use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneService};
-use serde::Deserialize;
-use serde_json::json;
-
-use crate::api::{
-    RequestCaller,
-    error::ApiError,
-    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
+use bindizr_service::{
+    record::RecordService,
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
         ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, PaginatedResponse,
@@ -21,6 +15,15 @@ use crate::api::{
         SnapshotRecordResponse, ZoneDetailResponse, ZoneResponse, ZoneSnapshotResponse,
         ZoneStatusResponse,
     },
+    zone::ZoneService,
+};
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::api::{
+    RequestCaller,
+    error::ApiError,
+    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
 
 /// Route group for zone endpoints.
@@ -75,13 +78,7 @@ pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    let zone = ZoneService::get_by_name_for(&caller, &params.name).await?;
-
-    let probes = dns::client::probe::probe_secondaries(&zone.name)
-        .await
-        .map_err(|err| ApiError(ServiceError::internal(err.to_string())))?;
-    let status =
-        ZoneStatusResponse::from_probes(&zone, probes.into_iter().map(|p| (p.address, p.result)));
+    let status = dns::status::zone_status(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 

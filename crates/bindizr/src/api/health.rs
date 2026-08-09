@@ -1,9 +1,7 @@
 use std::time::Duration;
 
 use axum::{Json, http::StatusCode, response::IntoResponse};
-use bindizr_service::zone::ZoneService;
-
-use super::types::HealthResponse;
+use bindizr_service::{types::HealthResponse, zone::ZoneService};
 
 /// Orchestrator probes expect a prompt 503, not a hang on a wedged database.
 const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);

@@ -1,9 +1,9 @@
 //! The `zone token-policy` subcommands.
 
+use bindizr_service::types::CreateZoneTokenPolicyRequest;
 use clap::Subcommand;
 
 use crate::{
-    api::types::CreateZoneTokenPolicyRequest,
     cli::error::CliError,
     socket::{
         client::DaemonSocketClient,
@@ -99,7 +99,7 @@ pub(super) async fn handle_command(
 }
 
 fn print_token_policies(data: &serde_json::Value) -> Result<(), String> {
-    let policies: Vec<crate::api::types::GetZoneTokenPolicyResponse> =
+    let policies: Vec<bindizr_service::types::GetZoneTokenPolicyResponse> =
         serde_json::from_value(data.clone())
             .map_err(|e| format!("Failed to parse token policy list response: {}", e))?;
 

@@ -15,13 +15,13 @@ use crate::{
     error::ServiceError,
     log_debug, log_debug_enabled, log_error, log_info, log_warn,
     model::{
-        record::{Record, RecordType, RecordWithZone},
+        record::{Record, RecordType},
         zone_change::ZoneChange,
     },
     repository::RepositoryService,
     serial::generate_serial,
     timing::{duration_ms, elapsed_ms},
-    types::{RecordDiff, RecordItem, RecordValueRequest},
+    types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
     zone::{
         ZoneService,
         history::{ReconstructedRecord, build_record_diff},
@@ -143,7 +143,7 @@ impl RecordService {
         zone_name: &str,
         items: &[RecordItem],
         dry_run: bool,
-    ) -> Result<(Vec<RecordWithZone>, RecordDiff), ServiceError> {
+    ) -> Result<BulkRecordsResponse, ServiceError> {
         Self::create_bulk_for(&Caller::Global, zone_name, items, dry_run).await
     }
 
@@ -154,7 +154,7 @@ impl RecordService {
         zone_name: &str,
         items: &[RecordItem],
         dry_run: bool,
-    ) -> Result<(Vec<RecordWithZone>, RecordDiff), ServiceError> {
+    ) -> Result<BulkRecordsResponse, ServiceError> {
         if items.is_empty() {
             return Err(ServiceError::invalid_input(
                 "no records provided for bulk insert".to_string(),
@@ -377,9 +377,15 @@ impl RecordService {
         );
 
         let records = created_records
-            .into_iter()
-            .map(|record| RecordWithZone::new(record, zone_name.clone()))
+            .iter()
+            .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone_name))
             .collect();
-        Ok((records, diff))
+        Ok(BulkRecordsResponse {
+            applied: !dry_run,
+            dry_run,
+            inserted: if dry_run { 0 } else { created_records.len() },
+            records,
+            diff,
+        })
     }
 }

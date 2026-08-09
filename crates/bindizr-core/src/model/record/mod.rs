@@ -302,6 +302,16 @@ pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
     RecordType::SRV,
 ];
 
+/// Record types the ExternalDNS provider manages. The API server and the
+/// webhook adapter share no crate below core, so the set lives here rather
+/// than being spelled out in each.
+pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
+    RecordType::A,
+    RecordType::AAAA,
+    RecordType::CNAME,
+    RecordType::TXT,
+];
+
 // The priority lives in its own column, never in the value: MX stores `target`
 // and SRV `weight port target`.
 const MX_FIELD_COUNTS: &[usize] = &[1];

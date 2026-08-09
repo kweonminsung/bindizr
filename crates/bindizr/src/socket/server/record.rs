@@ -1,12 +1,13 @@
-use bindizr_service::{error::ServiceError, record::RecordService};
+use bindizr_service::{
+    error::ServiceError,
+    record::RecordService,
+    types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
+};
 use serde_json::json;
 
-use crate::{
-    api::types::{BulkRecordsResponse, CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
-    socket::{
-        server::{parse_params, to_response_data},
-        types::{BulkCreateRecordsParams, DaemonResponse, RecordIdParams, UpdateRecordParams},
-    },
+use crate::socket::{
+    server::{parse_params, to_response_data},
+    types::{BulkCreateRecordsParams, DaemonResponse, RecordIdParams, UpdateRecordParams},
 };
 
 /// Handle the `GetRecord` command by returning a record by ID.
@@ -95,26 +96,14 @@ pub(super) async fn bulk_create_records(
     let BulkCreateRecordsParams { zone_name, request } = parse_params(data)?;
 
     match RecordService::create_bulk(&zone_name, &request.records, request.dry_run).await {
-        Ok((records, diff)) => {
-            let records = records
-                .iter()
-                .map(GetRecordResponse::from_record_with_zone)
-                .collect::<Vec<_>>();
-
-            let message = if request.dry_run {
+        Ok(response) => {
+            let message = if response.dry_run {
                 format!(
                     "Dry run: {} record(s) validated; nothing applied",
-                    records.len()
+                    response.records.len()
                 )
             } else {
-                format!("Inserted {} record(s)", records.len())
-            };
-            let response = BulkRecordsResponse {
-                applied: !request.dry_run,
-                dry_run: request.dry_run,
-                inserted: if request.dry_run { 0 } else { records.len() },
-                records,
-                diff,
+                format!("Inserted {} record(s)", response.inserted)
             };
 
             Ok(DaemonResponse {

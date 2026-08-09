@@ -12,7 +12,6 @@ pub(crate) mod record;
 pub(crate) mod router;
 pub(crate) mod token_policy;
 pub(crate) mod tsig_key;
-pub(crate) mod types;
 pub(crate) mod zone;
 
 use std::net::SocketAddr;

@@ -1,9 +1,4 @@
-use utoipa::{
-    Modify, OpenApi,
-    openapi::security::{Http, HttpAuthScheme, SecurityScheme},
-};
-
-use super::types::{
+use bindizr_service::types::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, CreateTsigKeyRequest,
     CreateZoneRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest, ErrorResponse,
     ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRecordItem,
@@ -17,6 +12,10 @@ use super::types::{
     TsigKeyListResponse, TsigKeyResponse, ZoneDetailResponse, ZoneResponse, ZoneSnapshotResponse,
     ZoneStatusResponse, ZoneTokenPolicyListResponse, ZoneTokenPolicyResponse,
     ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
+};
+use utoipa::{
+    Modify, OpenApi,
+    openapi::security::{Http, HttpAuthScheme, SecurityScheme},
 };
 
 /// OpenAPI document for the HTTP API (debug builds only).

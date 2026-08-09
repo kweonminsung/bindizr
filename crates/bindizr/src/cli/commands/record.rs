@@ -1,10 +1,10 @@
+use bindizr_service::types::{
+    CreateBulkRecordsRequest, CreateRecordRequest, GetRecordsFilter, RecordItem,
+    RecordValueRequest, UpdateRecordPatch,
+};
 use clap::Subcommand;
 
 use crate::{
-    api::types::{
-        CreateBulkRecordsRequest, CreateRecordRequest, GetRecordsFilter, RecordItem,
-        RecordValueRequest, UpdateRecordPatch,
-    },
     cli::{
         error::CliError,
         output::{OutputFormat, RecordRow, print_output_with_table, render_change_preview},

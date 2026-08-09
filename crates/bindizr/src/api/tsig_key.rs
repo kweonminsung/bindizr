@@ -5,20 +5,19 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_service::{tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService};
-use serde::Deserialize;
-use serde_json::json;
-
-use crate::api::{
-    RequestCaller,
-    error::ApiError,
-    middleware::body_parser::JsonBody,
+use bindizr_service::{
+    tsig_key::TsigKeyService,
     types::{
         CreateTsigKeyRequest, CreateZoneTsigPolicyRequest, ErrorResponse, GetTsigKeyResponse,
         GetZoneTsigPolicyResponse, MessageResponse, TsigKeyListResponse, TsigKeyResponse,
         ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
     },
+    zone::tsig_policy::ZoneTsigPolicyService,
 };
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
 /// Route group for TSIG key and zone TSIG policy endpoints.
 pub(crate) struct TsigKeyApi;

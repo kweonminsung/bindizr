@@ -1,16 +1,14 @@
 use bindizr_core::log_error;
 use bindizr_service::{
-    error::ServiceError, token::TokenService, zone::token_policy::ZoneTokenPolicyService,
+    error::ServiceError, token::TokenService, types::GetZoneTokenPolicyResponse,
+    zone::token_policy::ZoneTokenPolicyService,
 };
 
-use crate::{
-    api::types::GetZoneTokenPolicyResponse,
-    socket::{
-        server::{parse_params, to_response_data},
-        types::{
-            AddZoneTokenPolicyParams, CreateTokenParams, DaemonResponse, RemoveZonePolicyParams,
-            TokenNameParams, ZonePolicyListParams,
-        },
+use crate::socket::{
+    server::{parse_params, to_response_data},
+    types::{
+        AddZoneTokenPolicyParams, CreateTokenParams, DaemonResponse, RemoveZonePolicyParams,
+        TokenNameParams, ZonePolicyListParams,
     },
 };
 

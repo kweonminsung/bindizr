@@ -1,15 +1,15 @@
 use bindizr_service::{
-    error::ServiceError, tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService,
+    error::ServiceError,
+    tsig_key::TsigKeyService,
+    types::{CreateTsigKeyRequest, GetTsigKeyResponse, GetZoneTsigPolicyResponse},
+    zone::tsig_policy::ZoneTsigPolicyService,
 };
 
-use crate::{
-    api::types::{CreateTsigKeyRequest, GetTsigKeyResponse, GetZoneTsigPolicyResponse},
-    socket::{
-        server::{parse_params, to_response_data},
-        types::{
-            AddZoneTsigPolicyParams, DaemonResponse, RemoveZonePolicyParams, TsigKeyNameParams,
-            ZonePolicyListParams,
-        },
+use crate::socket::{
+    server::{parse_params, to_response_data},
+    types::{
+        AddZoneTsigPolicyParams, DaemonResponse, RemoveZonePolicyParams, TsigKeyNameParams,
+        ZonePolicyListParams,
     },
 };
 

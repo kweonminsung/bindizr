@@ -4,15 +4,13 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_service::zone::ZoneService;
+use bindizr_service::{
+    types::{ErrorResponse, MessageResponse, NotifyZoneRequest},
+    zone::ZoneService,
+};
 use serde_json::json;
 
-use crate::api::{
-    RequestCaller,
-    error::ApiError,
-    middleware::body_parser::JsonBody,
-    types::{ErrorResponse, MessageResponse, NotifyZoneRequest},
-};
+use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
 /// Route group for NOTIFY endpoints.
 pub(crate) struct NotifyApi;

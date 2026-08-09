@@ -5,17 +5,16 @@ mod snapshot;
 mod token_policy;
 mod tsig_policy;
 
-use bindizr_service::types::ImportMode as ServiceImportMode;
+use bindizr_service::types::{
+    CreateZoneRequest, GetZonesFilter, ImportMode as ServiceImportMode, ImportZoneFileRequest,
+    NotifyZoneRequest, UpdateZonePatch,
+};
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use snapshot::ZoneSnapshotCommand;
 pub(crate) use token_policy::ZoneTokenPolicyCommand;
 pub(crate) use tsig_policy::ZoneTsigPolicyCommand;
 
 use crate::{
-    api::types::{
-        CreateZoneRequest, GetZonesFilter, ImportZoneFileRequest, NotifyZoneRequest,
-        UpdateZonePatch,
-    },
     cli::{
         error::CliError,
         output::{

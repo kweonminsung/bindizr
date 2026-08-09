@@ -15,7 +15,7 @@ use crate::{
     error::{ErrorCode, ServiceError},
     log_info, log_warn,
     model::{
-        record::{Record, RecordType},
+        record::{EXTERNAL_DNS_RECORD_TYPES, Record, RecordType},
         zone::Zone,
     },
     record::{RecordService, parse_record_type, validate_record_add_constraints_normalized},
@@ -27,10 +27,7 @@ use crate::{
 
 /// Record types ExternalDNS may manage through this API.
 pub(super) fn is_supported_record_type(record_type: &RecordType) -> bool {
-    matches!(
-        record_type,
-        RecordType::A | RecordType::AAAA | RecordType::CNAME | RecordType::TXT
-    )
+    EXTERNAL_DNS_RECORD_TYPES.contains(record_type)
 }
 
 /// One desired RRset operation; values are row-encoded and the name stays in

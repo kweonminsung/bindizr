@@ -5,15 +5,12 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::model::record::RecordType;
+use bindizr_core::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordType};
 use serde::{Deserialize, Serialize};
 
 /// Exact media type external-dns compares the negotiation `Content-Type`
 /// against (byte-for-byte, no media-type parsing).
 pub(crate) const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
-
-/// Record types the adapter accepts; everything else is rejected explicitly.
-pub(crate) const SUPPORTED_RECORD_TYPES: [&str; 4] = ["A", "AAAA", "CNAME", "TXT"];
 
 /// JSON shape of external-dns `endpoint.Endpoint` (all fields omitempty).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -103,27 +100,39 @@ pub(crate) struct BindizrRecordItem {
     pub value: String,
 }
 
+/// The endpoint's record type, if bindizr's ExternalDNS API manages it.
+fn supported_record_type(record_type: &str) -> Option<RecordType> {
+    let parsed = record_type.parse::<RecordType>().ok()?;
+    EXTERNAL_DNS_RECORD_TYPES
+        .contains(&parsed)
+        .then_some(parsed)
+}
+
 /// Validate an endpoint against what the adapter supports; the message
-/// becomes a permanent (4xx) error body.
+/// becomes a permanent (4xx) error body. Mirrors the server's own validation
+/// so a bad plan fails without a round trip.
 pub(crate) fn validate_endpoint(endpoint: &Endpoint) -> Result<(), String> {
     if endpoint.dns_name.trim().is_empty() {
         return Err("dnsName must not be empty".to_string());
     }
 
-    let record_type = endpoint.record_type.to_ascii_uppercase();
-    if !SUPPORTED_RECORD_TYPES.contains(&record_type.as_str()) {
+    let Some(record_type) = supported_record_type(&endpoint.record_type) else {
         return Err(format!(
             "record type '{}' is not supported (supported: {})",
             endpoint.record_type,
-            SUPPORTED_RECORD_TYPES.join(", ")
+            EXTERNAL_DNS_RECORD_TYPES
+                .iter()
+                .map(RecordType::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
-    }
+    };
 
     if endpoint.targets.is_empty() {
         return Err(format!("endpoint '{}' has no targets", endpoint.dns_name));
     }
     // Whitespace-only TXT content is valid; for other types it is garbage.
-    let is_txt = record_type == "TXT";
+    let is_txt = record_type == RecordType::TXT;
     if endpoint.targets.iter().any(|t| {
         if is_txt {
             t.is_empty()
@@ -136,7 +145,7 @@ pub(crate) fn validate_endpoint(endpoint: &Endpoint) -> Result<(), String> {
             endpoint.dns_name
         ));
     }
-    if record_type == "CNAME" && endpoint.targets.len() > 1 {
+    if record_type == RecordType::CNAME && endpoint.targets.len() > 1 {
         return Err(format!(
             "CNAME endpoint '{}' must have exactly one target",
             endpoint.dns_name
@@ -238,8 +247,8 @@ pub(crate) fn adjust_endpoints(endpoints: Vec<Endpoint>) -> Result<Vec<Endpoint>
         .map(|mut endpoint| {
             validate_endpoint(&endpoint)?;
             endpoint.provider_specific.clear();
-            match endpoint.record_type.to_ascii_uppercase().as_str() {
-                "TXT" => {
+            match supported_record_type(&endpoint.record_type) {
+                Some(RecordType::TXT) => {
                     endpoint.targets = endpoint
                         .targets
                         .iter()
@@ -249,10 +258,9 @@ pub(crate) fn adjust_endpoints(endpoints: Vec<Endpoint>) -> Result<Vec<Endpoint>
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                 }
-                "CNAME" => canonicalize_targets(&RecordType::CNAME, &mut endpoint.targets),
-                "A" => canonicalize_targets(&RecordType::A, &mut endpoint.targets),
-                "AAAA" => canonicalize_targets(&RecordType::AAAA, &mut endpoint.targets),
-                _ => {}
+                Some(record_type) => canonicalize_targets(&record_type, &mut endpoint.targets),
+                // validate_endpoint already rejected everything else.
+                None => {}
             }
             Ok(endpoint)
         })

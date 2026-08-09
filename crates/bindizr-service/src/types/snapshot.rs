@@ -5,8 +5,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::record::RecordValueRequest;
-use crate::{error::ServiceError, model::zone_snapshot::ZoneSnapshot};
+use super::record::{RecordValueRequest, display_record_value_request};
+use crate::{
+    error::ServiceError, model::zone_snapshot::ZoneSnapshot, zone::history::ReconstructedRecord,
+};
 
 /// One entry of a zone's serial history, with SOA metadata in API form
 /// (`admin_email` converted back from SOA mailbox form).
@@ -65,6 +67,19 @@ pub struct SnapshotRecordResponse {
     pub ttl: i32,
     #[schema(example = 10)]
     pub priority: Option<i32>,
+}
+
+impl From<ReconstructedRecord> for SnapshotRecordResponse {
+    fn from(record: ReconstructedRecord) -> Self {
+        SnapshotRecordResponse {
+            name: record.name,
+            record_type: record.record_type.to_string(),
+            // Decode TXT out of its stored form, as the record endpoints do.
+            value: display_record_value_request(&record.value, &record.record_type),
+            ttl: record.ttl,
+            priority: record.priority,
+        }
+    }
 }
 
 /// One snapshot plus the reconstructed record set at that serial.

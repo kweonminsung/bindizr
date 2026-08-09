@@ -1,10 +1,9 @@
 use bindizr_core::config::BindizrConfig;
-use serde::{Deserialize, Serialize};
-
-use crate::api::types::{
+use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
     ImportZoneFileRequest, RollbackZoneRequest, UpdateRecordPatch, UpdateZonePatch,
 };
+use serde::{Deserialize, Serialize};
 
 /// Command kinds accepted by the daemon over the Unix socket.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]

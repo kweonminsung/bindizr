@@ -1,8 +1,8 @@
 use bindizr_core::log_debug;
+use bindizr_service::types::{CreateTsigKeyRequest, GetTsigKeyResponse};
 use clap::Subcommand;
 
 use crate::{
-    api::types::{CreateTsigKeyRequest, GetTsigKeyResponse},
     cli::error::CliError,
     socket::{
         client::DaemonSocketClient,

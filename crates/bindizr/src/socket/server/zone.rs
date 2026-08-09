@@ -1,17 +1,20 @@
-use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneService};
+use bindizr_service::{
+    authorization::Caller,
+    error::ServiceError,
+    record::RecordService,
+    types::{
+        CreateZoneRequest, GetZoneResponse, GetZonesFilter, SnapshotDetailResponse,
+        SnapshotRecordResponse, ZoneSnapshotResponse,
+    },
+    zone::ZoneService,
+};
 use serde_json::json;
 
-use crate::{
-    api::types::{
-        CreateZoneRequest, GetZoneResponse, GetZonesFilter, SnapshotDetailResponse,
-        SnapshotRecordResponse, ZoneSnapshotResponse, ZoneStatusResponse,
-    },
-    socket::{
-        server::{parse_params, to_response_data},
-        types::{
-            DaemonResponse, DiffZoneSnapshotsParams, ImportZoneFileParams, ListZoneSnapshotsParams,
-            RollbackZoneParams, UpdateZoneParams, ZoneNameParams, ZoneSnapshotParams,
-        },
+use crate::socket::{
+    server::{parse_params, to_response_data},
+    types::{
+        DaemonResponse, DiffZoneSnapshotsParams, ImportZoneFileParams, ListZoneSnapshotsParams,
+        RollbackZoneParams, UpdateZoneParams, ZoneNameParams, ZoneSnapshotParams,
     },
 };
 
@@ -218,12 +221,7 @@ pub(super) async fn rollback_zone(
 pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let zone = ZoneService::get_by_name(&params.name).await?;
-    let probes = bindizr_dns::client::probe::probe_secondaries(&zone.name)
-        .await
-        .map_err(|e| ServiceError::internal(e.to_string()))?;
-    let response =
-        ZoneStatusResponse::from_probes(&zone, probes.into_iter().map(|p| (p.address, p.result)));
+    let response = bindizr_dns::status::zone_status(&Caller::Global, &params.name).await?;
 
     let in_sync = response
         .secondaries

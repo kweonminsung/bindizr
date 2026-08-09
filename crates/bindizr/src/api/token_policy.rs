@@ -5,19 +5,17 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_service::zone::token_policy::ZoneTokenPolicyService;
-use serde::Deserialize;
-use serde_json::json;
-
-use crate::api::{
-    RequestCaller,
-    error::ApiError,
-    middleware::body_parser::JsonBody,
+use bindizr_service::{
     types::{
         CreateZoneTokenPolicyRequest, ErrorResponse, GetZoneTokenPolicyResponse, MessageResponse,
         ZoneTokenPolicyListResponse, ZoneTokenPolicyResponse,
     },
+    zone::token_policy::ZoneTokenPolicyService,
 };
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
 /// Route group for zone token-policy endpoints.
 pub(crate) struct TokenPolicyApi;
