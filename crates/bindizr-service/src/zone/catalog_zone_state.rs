@@ -8,6 +8,16 @@ impl ZoneService {
         signature: &str,
         base_serial: i32,
     ) -> Result<i32, ServiceError> {
-        RepositoryService::update_catalog_serial_for_signature(name, signature, base_serial).await
+        let mut tx = RepositoryService::begin_tx("Failed to update catalog state").await?;
+
+        let apply_result = RepositoryService::update_catalog_serial_for_signature_tx(
+            &mut tx,
+            name,
+            signature,
+            base_serial,
+        )
+        .await;
+
+        RepositoryService::finish_tx(tx, apply_result, "Failed to update catalog state").await
     }
 }

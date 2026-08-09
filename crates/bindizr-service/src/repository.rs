@@ -132,25 +132,17 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to reach the zones table: {}", e)))
     }
 
-    pub(super) async fn update_catalog_serial_for_signature(
+    pub(super) async fn update_catalog_serial_for_signature_tx(
+        tx: &mut RepositoryTx<'_>,
         name: &str,
         signature: &str,
         base_serial: i32,
     ) -> Result<i32, ServiceError> {
-        let mut tx = Self::begin_tx("Failed to update catalog state").await?;
-
-        let apply_result = async {
-            get_catalog_zone_state_repository()
-                .update_serial_for_signature_tx(&mut tx, name, signature, base_serial)
-                .await
-                .map(|state| state.serial)
-                .map_err(|e| {
-                    ServiceError::internal(format!("failed to update catalog state: {}", e))
-                })
-        }
-        .await;
-
-        Self::finish_tx(tx, apply_result, "Failed to update catalog state").await
+        get_catalog_zone_state_repository()
+            .update_serial_for_signature_tx(tx, name, signature, base_serial)
+            .await
+            .map(|state| state.serial)
+            .map_err(|e| ServiceError::internal(format!("failed to update catalog state: {}", e)))
     }
 
     pub(super) async fn get_records_by_zone_id(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
