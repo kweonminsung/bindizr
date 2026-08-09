@@ -1,3 +1,4 @@
+use bindizr_core::dns::name::OwnerName;
 use domain::base::iana::{Class, Rtype};
 
 use super::{
@@ -136,7 +137,7 @@ fn evaluate_prerequisites_against_records(
 }
 
 fn is_owner_existing(relative_name: &str, records: &[Record]) -> bool {
-    if relative_name == "@" {
+    if relative_name == OwnerName::APEX {
         return true;
     }
 

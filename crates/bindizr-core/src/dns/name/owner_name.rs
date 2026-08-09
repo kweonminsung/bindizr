@@ -1,6 +1,8 @@
 //! A record's owner name, held as decoded labels.
 
-use super::{MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control};
+use super::{
+    MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control,
+};
 
 /// A record's owner name as its decoded labels, relative to its zone; the apex
 /// is the empty label list. A `.` inside a label is data, so no spelling can
@@ -40,8 +42,7 @@ impl OwnerName {
             return Ok(Self::apex());
         }
 
-        let absolute = trimmed.ends_with('.');
-        let labels = super::decode_name_labels(trimmed)?;
+        let (labels, absolute) = decode_checked(trimmed)?;
         let zone_labels = zone.labels();
 
         // A relative name that happens to end in the zone was already absolute.
@@ -66,7 +67,7 @@ impl OwnerName {
             return Ok(Self::apex());
         }
 
-        let labels = super::decode_name_labels(trimmed)?;
+        let (labels, _) = decode_checked(trimmed)?;
         strip_zone_suffix(&labels, zone.labels().as_slice())
             .map(Self)
             .ok_or(ParseNameError::OutsideZone)
@@ -78,11 +79,15 @@ impl OwnerName {
             return Self::apex();
         }
 
-        match decode_labels(value.trim_end_matches('.')) {
-            Ok(labels) => Self(labels),
-            // Rows only ever hold what parse_in_zone wrote; a malformed one
-            // becomes a single literal label rather than silently re-splitting.
-            Err(_) => Self(vec![value.to_ascii_lowercase()]),
+        match decode_checked(value) {
+            Ok((labels, _)) => Self(labels),
+            // Only parse_in_zone writes these rows, so a decode failure means
+            // the row was edited outside bindizr; one literal label matches
+            // nothing rather than re-splitting into a name it never was.
+            Err(e) => {
+                crate::log_error!("undecodable owner name in a record row: {} ({})", value, e);
+                Self(vec![value.to_ascii_lowercase()])
+            }
         }
     }
 
@@ -182,6 +187,35 @@ pub(super) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
         escaped.push(c);
     }
     std::borrow::Cow::Owned(escaped)
+}
+
+/// Decode a name and apply the wire limits, reporting whether it ended at the
+/// root so a caller can tell an absolute name from a relative one.
+pub(super) fn decode_checked(name: &str) -> Result<(Vec<String>, bool), ParseNameError> {
+    let mut labels = decode_labels(name)?;
+
+    // The root's empty label terminates a name rather than being one. Deciding
+    // that here keeps an escaped trailing dot (`a\.`) from reading as the root.
+    let absolute = labels.len() > 1 && labels[labels.len() - 1].is_empty();
+    if absolute {
+        labels.pop();
+    }
+
+    let mut total = 0;
+    for label in &labels {
+        if label.is_empty() {
+            return Err(ParseNameError::EmptyLabel);
+        }
+        if label.len() > MAX_DNS_LABEL_LEN {
+            return Err(ParseNameError::LabelTooLong);
+        }
+        total += label.len() + 1;
+    }
+    if total > MAX_DOMAIN_LEN {
+        return Err(ParseNameError::TooLong);
+    }
+
+    Ok((labels, absolute))
 }
 
 /// The 253-byte limit, measured on the decoded octets the wire carries.

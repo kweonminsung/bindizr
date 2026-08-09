@@ -1,4 +1,4 @@
-use bindizr_core::dns::CATALOG_ZONE_NAME;
+use bindizr_core::dns::{CATALOG_ZONE_NAME, name::OwnerName};
 
 use super::{ZoneService, apex_ns_rrset_ttl};
 use crate::{
@@ -32,7 +32,7 @@ pub(super) fn soa_replacement_changes(
             zone_id: old_zone.id,
             serial: new_serial,
             operation: operation.to_string(),
-            record_name: "@".to_string(),
+            record_name: OwnerName::APEX.to_string(),
             record_type: "SOA".to_string(),
             record_value: zone
                 .soa_rdata()
@@ -178,13 +178,16 @@ impl ZoneService {
 
             // A rename / primary_ns change must keep an apex NS matching the new
             // primary_ns; only apex rows can satisfy that, so load just those.
-            let apex_records =
-                RepositoryService::get_records_by_zone_id_and_name_tx(&mut tx, zone_id, "@")
-                    .await
-                    .map_err(|e| {
-                        log_error!("Failed to fetch apex records: {}", e);
-                        ServiceError::internal("Failed to update zone".to_string())
-                    })?;
+            let apex_records = RepositoryService::get_records_by_zone_id_and_name_tx(
+                &mut tx,
+                zone_id,
+                OwnerName::APEX,
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to fetch apex records: {}", e);
+                ServiceError::internal("Failed to update zone".to_string())
+            })?;
             let has_primary_ns = apex_records
                 .iter()
                 .any(|r| updated_zone.is_primary_ns(&r.record_type, &r.name, &r.value));

@@ -1,9 +1,10 @@
+use bindizr_core::dns::name::has_whitespace_or_control;
 use chrono::{Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 use super::{error::ServiceError, repository::RepositoryService};
-use crate::{model::api_token::ApiToken, validation::has_whitespace_or_control};
+use crate::model::api_token::ApiToken;
 
 const MAX_TOKEN_NAME_LEN: usize = 255;
 

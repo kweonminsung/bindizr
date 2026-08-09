@@ -15,7 +15,6 @@ pub(crate) mod timing;
 pub mod token;
 pub mod tsig_key;
 pub mod types;
-pub(crate) mod validation;
 pub mod zone;
 
 pub(crate) use bindizr_core::{

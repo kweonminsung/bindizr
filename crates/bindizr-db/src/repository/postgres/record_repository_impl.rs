@@ -4,7 +4,9 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 use crate::{
     error::DatabaseError,
     model::record::{Record, RecordWithZone},
-    repository::{RecordFilter, RecordRepository, RepositoryTx, name_like_types_sql},
+    repository::{
+        RecordFilter, RecordRepository, RepositoryTx, apex_owner_sql, name_like_types_sql,
+    },
 };
 
 /// PostgreSQL-backed implementation of `RecordRepository`.
@@ -295,6 +297,7 @@ impl RecordRepository for PostgresRecordRepository {
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
+        let apex_owner = apex_owner_sql();
 
         let records = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
@@ -306,7 +309,7 @@ impl RecordRepository for PostgresRecordRepository {
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(r.name) = LOWER($4)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
               AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
               AND ($8::TEXT IS NULL OR (CASE
@@ -323,7 +326,7 @@ impl RecordRepository for PostgresRecordRepository {
                     $22::TEXT IS NULL
                     OR LOWER(z.name) LIKE LOWER($23)
                     OR LOWER(r.name) LIKE LOWER($24)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
                     OR LOWER(r.record_type) LIKE LOWER($26)
                     OR LOWER(r.display_value) LIKE LOWER($27)
             )
@@ -380,6 +383,7 @@ impl RecordRepository for PostgresRecordRepository {
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
+        let apex_owner = apex_owner_sql();
 
         let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
@@ -390,7 +394,7 @@ impl RecordRepository for PostgresRecordRepository {
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(r.name) = LOWER($4)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
               AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
               AND ($8::TEXT IS NULL OR (CASE
@@ -407,7 +411,7 @@ impl RecordRepository for PostgresRecordRepository {
                     $22::TEXT IS NULL
                     OR LOWER(z.name) LIKE LOWER($23)
                     OR LOWER(r.name) LIKE LOWER($24)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
                     OR LOWER(r.record_type) LIKE LOWER($26)
                     OR LOWER(r.display_value) LIKE LOWER($27)
             )

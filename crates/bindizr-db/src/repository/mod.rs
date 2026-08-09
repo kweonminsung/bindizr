@@ -6,6 +6,7 @@ pub mod postgres;
 pub mod sqlite;
 
 use async_trait::async_trait;
+use bindizr_core::dns::name::OwnerName;
 use sqlx::{MySql, Postgres, Sqlite};
 
 use super::model::{
@@ -21,6 +22,12 @@ use super::model::{
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
 
+/// The owner name the apex is stored under, as an SQL literal. Rendered from
+/// the core constant so the filter queries cannot drift from it.
+pub(crate) fn apex_owner_sql() -> String {
+    format!("'{}'", OwnerName::APEX)
+}
+
 /// The record types that compare case-insensitively, as an SQL `IN` list.
 /// Rendered from the core set so no backend's filter query can drift from it.
 pub(crate) fn name_like_types_sql() -> String {
@@ -33,7 +40,14 @@ pub(crate) fn name_like_types_sql() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::name_like_types_sql;
+    use super::{apex_owner_sql, name_like_types_sql};
+
+    #[test]
+    fn apex_owner_renders_as_a_quoted_sql_literal() {
+        // Interpolated straight into `r.name = ...`, so the quoting is part of
+        // the query's syntax.
+        assert_eq!(apex_owner_sql(), "'@'");
+    }
 
     #[test]
     fn name_like_types_render_as_a_quoted_sql_list() {

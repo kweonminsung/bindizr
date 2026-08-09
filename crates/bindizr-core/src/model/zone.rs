@@ -3,7 +3,7 @@ use sqlx::FromRow;
 
 use crate::{
     dns::{
-        name::{is_apex_name, to_fqdn},
+        name::{OwnerName, ZoneName, to_fqdn},
         record::SoaMailbox,
     },
     model::record::{Record, RecordType},
@@ -33,7 +33,9 @@ impl Zone {
 
     /// Whether the record is an apex NS row, whatever it points at.
     pub fn is_apex_ns(&self, record_type: &RecordType, name: &str) -> bool {
-        *record_type == RecordType::NS && is_apex_name(name, &self.name)
+        *record_type == RecordType::NS
+            && OwnerName::parse_in_zone(name, &ZoneName::from_row(&self.name))
+                .is_ok_and(|owner| owner.is_apex())
     }
 
     /// Whether the record is the apex NS this zone's `primary_ns` names. One
@@ -47,7 +49,7 @@ impl Zone {
     pub fn primary_ns_record(&self, ttl: i32) -> Record {
         Record {
             id: 0,
-            name: "@".to_string(),
+            name: OwnerName::APEX.to_string(),
             record_type: RecordType::NS,
             value: self.primary_ns.clone(),
             ttl,

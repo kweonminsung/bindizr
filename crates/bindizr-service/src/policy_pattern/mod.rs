@@ -1,13 +1,11 @@
 //! Record-name-pattern and record-type grant matching, shared by zone TSIG
 //! policies (nsupdate) and zone token policies (HTTP API).
 
-use bindizr_core::dns::name::{OwnerName, decode_name_labels, join_labels};
-
-use crate::{
-    error::ServiceError,
-    model::record::RecordType,
-    validation::{has_whitespace_or_control, validate_wire_labels},
+use bindizr_core::dns::name::{
+    OwnerName, decode_name_labels, has_whitespace_or_control, join_labels,
 };
+
+use crate::{error::ServiceError, model::record::RecordType};
 
 /// Pattern/type values granting unrestricted rights.
 const MATCH_ANY: &str = "*";
@@ -48,25 +46,23 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
         Some(raw) => raw,
     };
 
-    if raw == MATCH_ANY || raw == "@" {
+    if raw == MATCH_ANY || raw == OwnerName::APEX {
         return Ok(raw.to_string());
     }
 
     let name_part = raw.strip_prefix("*.").unwrap_or(raw);
-    validate_relative_name(name_part)?;
 
     // Store the canonical spelling so one name is one pattern.
-    let canonical = join_labels(
-        &decode_name_labels(name_part)
-            .map_err(|e| ServiceError::invalid_input(format!("record name pattern {}", e)))?,
-    );
+    let canonical = join_labels(&parse_relative_name(name_part)?);
     Ok(match raw.strip_prefix("*.") {
         Some(_) => format!("*.{}", canonical),
         None => canonical,
     })
 }
 
-fn validate_relative_name(name: &str) -> Result<(), ServiceError> {
+/// Check a pattern's name part against the pattern grammar, then decode it as
+/// a DNS name. Any DNS-level rejection is phrased as a pattern error.
+fn parse_relative_name(name: &str) -> Result<Vec<String>, ServiceError> {
     if name.is_empty() {
         return Err(ServiceError::invalid_input(
             "record name pattern must not be empty",
@@ -88,7 +84,8 @@ fn validate_relative_name(name: &str) -> Result<(), ServiceError> {
         ));
     }
 
-    validate_wire_labels(name, "record name pattern")
+    decode_name_labels(name)
+        .map_err(|e| ServiceError::invalid_input(format!("record name pattern {}", e)))
 }
 
 /// Normalize and validate a record type list; `None` grants all types.

@@ -27,6 +27,19 @@ fn decode_resolves_decimal_escapes() {
 }
 
 #[test]
+fn an_escaped_trailing_dot_is_label_data_not_the_root() {
+    // Trimming the dot off the text first would leave a dangling escape.
+    assert_eq!(decode_name_labels(r"a\.").unwrap(), vec!["a."]);
+    assert_eq!(decode_name_labels("www.example.com.").unwrap().len(), 3);
+
+    let zone = ZoneName::parse("example.com").unwrap();
+    assert_eq!(
+        OwnerName::parse_in_zone(r"a\.", &zone).unwrap().labels(),
+        ["a."]
+    );
+}
+
+#[test]
 fn decode_rejects_malformed_escapes() {
     for (name, expected) in [
         (r"bad.example.com\", ParseNameError::DanglingEscape),

@@ -64,30 +64,7 @@ pub(crate) fn validate_domain_label(
 /// Decode a name into its labels, applying the 253-byte and per-label limits
 /// but not the LDH charset rule that only zone names take.
 pub fn decode_name_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
-    let bare = name.trim_end_matches('.');
-    let labels = owner_name::decode_labels(bare)?;
-
-    let mut total = 0;
-    for label in &labels {
-        if label.is_empty() {
-            return Err(ParseNameError::EmptyLabel);
-        }
-        if label.len() > MAX_DNS_LABEL_LEN {
-            return Err(ParseNameError::LabelTooLong);
-        }
-        total += label.len() + 1;
-    }
-    if total > MAX_DOMAIN_LEN {
-        return Err(ParseNameError::TooLong);
-    }
-
-    Ok(labels)
-}
-
-/// [`decode_name_labels`] discarding the labels, for callers that only need
-/// the name checked.
-pub fn classify_wire_labels(name: &str) -> Result<(), ParseNameError> {
-    decode_name_labels(name).map(|_| ())
+    owner_name::decode_checked(name).map(|(labels, _)| labels)
 }
 
 /// Normalize a name to lookup form: trimmed, no trailing dot, lowercase, and
@@ -130,13 +107,6 @@ pub fn to_fqdn_lowercase(value: &str) -> String {
 /// Return `value` with a single trailing dot, preserving case.
 pub fn to_fqdn(value: &str) -> String {
     format!("{}.", value.trim_end_matches('.'))
-}
-
-/// Whether a stored owner name refers to the zone apex.
-pub(crate) fn is_apex_name(name: &str, zone_name: &str) -> bool {
-    OwnerName::parse_in_zone(name, &ZoneName::from_row(zone_name))
-        .map(|owner| owner.is_apex())
-        .unwrap_or(false)
 }
 
 #[cfg(test)]

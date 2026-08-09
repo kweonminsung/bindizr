@@ -1,6 +1,9 @@
-use bindizr_core::dns::{name::ZoneName, record::SoaMailbox};
+use bindizr_core::dns::{
+    name::{ZoneName, has_whitespace_or_control},
+    record::SoaMailbox,
+};
 
-use crate::{error::ServiceError, types::CreateZoneRequest, validation::has_whitespace_or_control};
+use crate::{error::ServiceError, types::CreateZoneRequest};
 
 const MAX_EMAIL_LEN: usize = 254;
 const MAX_EMAIL_LOCAL_LEN: usize = 64;

@@ -4,7 +4,9 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::record::{Record, RecordWithZone},
-    repository::{RecordFilter, RecordRepository, RepositoryTx, name_like_types_sql},
+    repository::{
+        RecordFilter, RecordRepository, RepositoryTx, apex_owner_sql, name_like_types_sql,
+    },
 };
 
 /// SQLite-backed implementation of `RecordRepository`.
@@ -280,6 +282,7 @@ impl RecordRepository for SqliteRecordRepository {
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
+        let apex_owner = apex_owner_sql();
         let zone_ids_clause = match filter.zone_ids.as_deref() {
             None => String::new(),
             Some([]) => "AND 1 = 0".to_string(),
@@ -296,7 +299,7 @@ impl RecordRepository for SqliteRecordRepository {
               AND (
                     ? IS NULL
                     OR LOWER(r.name) = LOWER(?)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
               AND (? IS NULL OR (CASE
@@ -313,7 +316,7 @@ impl RecordRepository for SqliteRecordRepository {
                     ? IS NULL
                     OR LOWER(z.name) LIKE LOWER(?)
                     OR LOWER(r.name) LIKE LOWER(?)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
                     OR LOWER(r.record_type) LIKE LOWER(?)
                     OR LOWER(r.display_value) LIKE LOWER(?)
             )
@@ -375,6 +378,7 @@ impl RecordRepository for SqliteRecordRepository {
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
+        let apex_owner = apex_owner_sql();
         let zone_ids_clause = match filter.zone_ids.as_deref() {
             None => String::new(),
             Some([]) => "AND 1 = 0".to_string(),
@@ -390,7 +394,7 @@ impl RecordRepository for SqliteRecordRepository {
               AND (
                     ? IS NULL
                     OR LOWER(r.name) = LOWER(?)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
               AND (? IS NULL OR (CASE
@@ -407,7 +411,7 @@ impl RecordRepository for SqliteRecordRepository {
                     ? IS NULL
                     OR LOWER(z.name) LIKE LOWER(?)
                     OR LOWER(r.name) LIKE LOWER(?)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
                     OR LOWER(r.record_type) LIKE LOWER(?)
                     OR LOWER(r.display_value) LIKE LOWER(?)
             )
