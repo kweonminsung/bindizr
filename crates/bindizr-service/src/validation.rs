@@ -1,6 +1,6 @@
 use bindizr_core::dns::name::presentation_labels;
 pub(crate) use bindizr_core::dns::name::{
-    MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label,
+    MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control,
 };
 
 use crate::error::ServiceError;

@@ -11,8 +11,11 @@ pub enum ParseNameError {
     TooLong,
     EmptyLabel,
     LabelTooLong,
-    /// Only the LDH charset rule, which applies to zone names but not owner names.
-    InvalidLabel(String),
+    /// The LDH charset rule, which applies to zone names but not owner names.
+    LabelCharset {
+        underscore_allowed: bool,
+    },
+    LabelHyphen,
     DanglingEscape,
     OutsideZone,
 }
@@ -26,7 +29,16 @@ impl std::fmt::Display for ParseNameError {
             Self::TooLong => write!(f, "must be {} bytes or fewer", MAX_DOMAIN_LEN),
             Self::EmptyLabel => write!(f, "must not contain empty labels"),
             Self::LabelTooLong => write!(f, "labels must be {} bytes or fewer", MAX_DNS_LABEL_LEN),
-            Self::InvalidLabel(detail) => write!(f, "{}", detail),
+            Self::LabelCharset { underscore_allowed } => write!(
+                f,
+                "labels must contain only {}",
+                if *underscore_allowed {
+                    "ASCII letters, digits, hyphens, or underscores"
+                } else {
+                    "ASCII letters, digits, or hyphens"
+                }
+            ),
+            Self::LabelHyphen => write!(f, "labels must not start or end with hyphens"),
             Self::DanglingEscape => write!(f, "contains a dangling escape"),
             Self::OutsideZone => write!(f, "is outside the zone"),
         }

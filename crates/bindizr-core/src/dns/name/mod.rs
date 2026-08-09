@@ -14,49 +14,42 @@ pub fn has_whitespace_or_control(value: &str) -> bool {
         .any(|c| c.is_ascii_control() || c.is_whitespace())
 }
 
-/// Validate one domain-name label: non-empty, at most 63 bytes, LDH charset
-/// (plus `_` when `allow_underscore`), no leading/trailing hyphen. `invalid`
-/// maps the message to the caller's error kind.
-pub fn validate_domain_label<E>(
-    label: &str,
-    field: &str,
-    allow_underscore: bool,
-    invalid: impl Fn(String) -> E,
-) -> Result<(), E> {
+/// Classify one label's problem, if any: non-empty, at most 63 bytes, LDH
+/// charset (plus `_` when `allow_underscore`), no leading/trailing hyphen.
+pub fn classify_domain_label(label: &str, allow_underscore: bool) -> Result<(), ParseNameError> {
     if label.is_empty() {
-        return Err(invalid(format!("{} must not contain empty labels", field)));
+        return Err(ParseNameError::EmptyLabel);
     }
 
     if label.len() > MAX_DNS_LABEL_LEN {
-        return Err(invalid(format!(
-            "{} labels must be 63 bytes or fewer",
-            field
-        )));
+        return Err(ParseNameError::LabelTooLong);
     }
 
     if !label
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || (allow_underscore && c == '_'))
     {
-        let allowed = if allow_underscore {
-            "ASCII letters, digits, hyphens, or underscores"
-        } else {
-            "ASCII letters, digits, or hyphens"
-        };
-        return Err(invalid(format!(
-            "{} labels must contain only {}",
-            field, allowed
-        )));
+        return Err(ParseNameError::LabelCharset {
+            underscore_allowed: allow_underscore,
+        });
     }
 
     if label.starts_with('-') || label.ends_with('-') {
-        return Err(invalid(format!(
-            "{} labels must not start or end with hyphens",
-            field
-        )));
+        return Err(ParseNameError::LabelHyphen);
     }
 
     Ok(())
+}
+
+/// [`classify_domain_label`] with the problem phrased against `field` and
+/// mapped to the caller's error kind.
+pub fn validate_domain_label<E>(
+    label: &str,
+    field: &str,
+    allow_underscore: bool,
+    invalid: impl Fn(String) -> E,
+) -> Result<(), E> {
+    classify_domain_label(label, allow_underscore).map_err(|e| invalid(format!("{} {}", field, e)))
 }
 
 /// Errors from parsing domain names.

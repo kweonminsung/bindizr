@@ -1,11 +1,9 @@
-use bindizr_core::dns::record::SoaMailbox;
+use bindizr_core::dns::{name::ZoneName, record::SoaMailbox};
 
 use crate::{
     error::ServiceError,
     types::CreateZoneRequest,
-    validation::{
-        MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label, validate_wire_labels,
-    },
+    validation::{has_whitespace_or_control, validate_wire_labels},
 };
 
 const MAX_EMAIL_LEN: usize = 254;
@@ -140,44 +138,12 @@ fn normalize_primary_ns(value: &str) -> Result<String, ServiceError> {
     normalize_domain_name(value, "primary NS")
 }
 
+/// Parse a domain name, phrasing any rejection against `field`. The rules
+/// live on [`ZoneName`]; this only maps the failure to a zone error.
 fn normalize_domain_name(value: &str, field: &str) -> Result<String, ServiceError> {
-    let trimmed = value.trim();
-
-    if trimmed.is_empty() {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must not be empty",
-            field
-        )));
-    }
-
-    if has_whitespace_or_control(trimmed) {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must not contain whitespace or control characters",
-            field
-        )));
-    }
-
-    let without_trailing_dot = trimmed.strip_suffix('.').unwrap_or(trimmed);
-
-    if without_trailing_dot.is_empty() {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must not be empty",
-            field
-        )));
-    }
-
-    if without_trailing_dot.len() > MAX_DOMAIN_LEN {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must be 253 bytes or fewer",
-            field
-        )));
-    }
-
-    for label in without_trailing_dot.split('.') {
-        validate_domain_label(label, field, false, ServiceError::invalid_zone)?;
-    }
-
-    Ok(without_trailing_dot.to_ascii_lowercase())
+    ZoneName::parse(value)
+        .map(|name| name.as_str().to_string())
+        .map_err(|e| ServiceError::invalid_zone(format!("{} {}", field, e)))
 }
 
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {

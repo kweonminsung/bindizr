@@ -166,16 +166,18 @@ fn zone_name_parse_rejects_malformed_names() {
         assert_eq!(ZoneName::parse(value).unwrap_err(), expected, "{value:?}");
     }
 
-    // Per-label problems keep the detail the label check phrased. Underscore
-    // labels are refused here but accepted as owner names.
-    for value in ["bad..example.com", "_svc.example.com", "-bad.example.com"] {
-        assert!(
-            matches!(
-                ZoneName::parse(value).unwrap_err(),
-                ParseNameError::InvalidLabel(_)
-            ),
-            "{value:?}"
-        );
+    // Underscore labels are refused here but accepted as owner names.
+    for (value, expected) in [
+        ("bad..example.com", ParseNameError::EmptyLabel),
+        (
+            "_svc.example.com",
+            ParseNameError::LabelCharset {
+                underscore_allowed: false,
+            },
+        ),
+        ("-bad.example.com", ParseNameError::LabelHyphen),
+    ] {
+        assert_eq!(ZoneName::parse(value).unwrap_err(), expected, "{value:?}");
     }
 }
 
