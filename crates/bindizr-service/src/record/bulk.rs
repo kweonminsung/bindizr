@@ -1,5 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
+use bindizr_core::dns::name::OwnerName;
 use chrono::Utc;
 
 use super::{
@@ -194,7 +195,7 @@ impl RecordService {
             let mut batch_names: Vec<String> = prepared
                 .iter()
                 .filter_map(|p| normalize_record_owner_name(&p.owner_name, &zone.name).ok())
-                .map(|n| n.stored_name.to_ascii_lowercase())
+                .map(|n| n.stored_name.to_string())
                 .collect();
             batch_names.sort();
             batch_names.dedup();
@@ -230,11 +231,11 @@ impl RecordService {
             // only same-name records; new records join the index as we go so
             // intra-batch conflicts are still detected.
             let t = Instant::now();
-            let mut records_by_name: HashMap<String, Vec<Record>> =
+            let mut records_by_name: HashMap<OwnerName, Vec<Record>> =
                 HashMap::with_capacity(existing_records.len());
             for record in existing_records {
                 records_by_name
-                    .entry(record.name.to_ascii_lowercase())
+                    .entry(OwnerName::from_row(&record.name))
                     .or_default()
                     .push(record);
             }
@@ -256,7 +257,7 @@ impl RecordService {
                 }
 
                 let same_name = records_by_name
-                    .entry(normalized_owner.stored_name.to_ascii_lowercase())
+                    .entry(normalized_owner.stored_name.clone())
                     .or_default();
 
                 // Fixed at write time: a later zone TTL change will not move it.
@@ -278,7 +279,7 @@ impl RecordService {
 
                 let record = Record {
                     id: 0,
-                    name: normalized_owner.stored_name,
+                    name: normalized_owner.stored_name.to_string(),
                     record_type: prepared_record.record_type.clone(),
                     value: prepared_record.value.clone(),
                     ttl,

@@ -3,7 +3,10 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use bindizr_core::dns::{name::to_display_owner_fqdn, record::SoaMailbox};
+use bindizr_core::dns::{
+    name::{OwnerName, to_display_owner_fqdn},
+    record::SoaMailbox,
+};
 use chrono::Utc;
 
 use super::{
@@ -616,24 +619,24 @@ impl ZoneService {
 
             // Validate the adds in-memory against the post-delete record set
             // (mirrors the import reconcile).
-            let mut records_by_name: HashMap<String, Vec<Record>> = HashMap::new();
+            let mut records_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
             for record in &current_records {
                 if deleted_ids.contains(&record.id) {
                     continue;
                 }
                 records_by_name
-                    .entry(record.name.to_ascii_lowercase())
+                    .entry(OwnerName::from_row(&record.name))
                     .or_default()
                     .push(record.clone());
             }
             let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());
             for target in &to_add {
                 let same_name = records_by_name
-                    .entry(target.name.to_ascii_lowercase())
+                    .entry(OwnerName::from_row(&target.name))
                     .or_default();
                 validate_record_add_constraints_normalized(
                     same_name,
-                    &target.name,
+                    &OwnerName::from_row(&target.name),
                     &target.record_type,
                     &target.value,
                     target.ttl,

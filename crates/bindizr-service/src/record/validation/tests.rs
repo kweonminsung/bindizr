@@ -1,3 +1,4 @@
+use bindizr_core::dns::name::OwnerName;
 use chrono::Utc;
 
 use super::{
@@ -17,40 +18,19 @@ use crate::{
 const RRSET_TTL: i32 = 3600;
 
 #[test]
-fn normalize_record_owner_name_accepts_relative_and_in_bailiwick_absolute_names() {
+fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
+    // Parsing itself is core's; what this layer owns is the ErrorCode and the
+    // message naming the offending input and zone.
     let zone = "test.example.com";
 
-    let apex = normalize_record_owner_name("@", zone).unwrap();
-    assert_eq!(apex.stored_name, "@");
+    let outside = normalize_record_owner_name("a1.other.com.", zone).unwrap_err();
+    assert_eq!(outside.code, ErrorCode::InvalidRecordName);
+    assert!(outside.message.contains("a1.other.com."));
+    assert!(outside.message.contains(zone));
 
-    let relative = normalize_record_owner_name("a1", zone).unwrap();
-    assert_eq!(relative.stored_name, "a1");
-
-    let relative_with_zone_suffix =
-        normalize_record_owner_name("A1.Test.Example.Com", zone).unwrap();
-    assert_eq!(relative_with_zone_suffix.stored_name, "a1");
-
-    let absolute = normalize_record_owner_name("A1.Test.Example.Com.", zone).unwrap();
-    assert_eq!(absolute.stored_name, "a1");
-}
-
-#[test]
-fn normalize_record_owner_name_rejects_out_of_bailiwick_absolute_names() {
-    let zone = "test.example.com";
-
-    for name in [
-        "a1.",
-        "example.com.",
-        "a1.example.com.",
-        "other.com.",
-        "a1.other.com.",
-        "badtest.example.com.",
-    ] {
-        assert!(
-            normalize_record_owner_name(name, zone).is_err(),
-            "{name} should be rejected"
-        );
-    }
+    let empty = normalize_record_owner_name("  ", zone).unwrap_err();
+    assert_eq!(empty.code, ErrorCode::InvalidRecordName);
+    assert!(empty.message.starts_with("record name "));
 }
 
 #[test]
@@ -201,7 +181,7 @@ fn validate_add(
 ) -> Result<(), ServiceError> {
     validate_record_add_constraints_normalized(
         zone_records,
-        stored_name,
+        &OwnerName::from_row(stored_name),
         record_type,
         value,
         ttl,

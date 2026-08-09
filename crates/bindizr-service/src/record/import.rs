@@ -3,6 +3,7 @@ use std::{
     time::Instant,
 };
 
+use bindizr_core::dns::name::OwnerName;
 use chrono::Utc;
 
 use super::{
@@ -35,18 +36,18 @@ use crate::{
 /// it can be compared against existing records.
 struct DesiredRecord {
     prepared: PreparedRecord,
-    stored_name: String,
+    stored_name: OwnerName,
 }
 
 /// Whether `existing` is the record described by (name, type, value, priority).
 fn record_matches(
     existing: &Record,
-    stored_name: &str,
+    stored_name: &OwnerName,
     record_type: &RecordType,
     value: &str,
     priority: Option<i32>,
 ) -> bool {
-    existing.name.eq_ignore_ascii_case(stored_name)
+    OwnerName::from_row(&existing.name) == *stored_name
         && existing.record_type == *record_type
         && record_type.values_equal(&existing.value, existing.priority, value, priority)
 }
@@ -120,7 +121,7 @@ impl RecordService {
             // indexed by owner name so the dedup check scans only same-name entries.
             let t = Instant::now();
             let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
-            let mut desired_by_name: HashMap<String, Vec<usize>> =
+            let mut desired_by_name: HashMap<OwnerName, Vec<usize>> =
                 HashMap::with_capacity(parsed.records.len());
             for record in parsed.records {
                 let value = match record
@@ -145,7 +146,7 @@ impl RecordService {
                     Err(e) => return Err(e),
                 };
 
-                let name_key = stored_name.to_ascii_lowercase();
+                let name_key = stored_name.clone();
                 let duplicate_in_file = desired_by_name.get(&name_key).and_then(|idxs| {
                     idxs.iter().copied().find(|&i| {
                         desired[i].prepared.record_type == record.record_type
@@ -198,10 +199,8 @@ impl RecordService {
             let t = Instant::now();
             let existing_records = match mode {
                 ImportMode::Append => {
-                    let mut names: Vec<String> = desired
-                        .iter()
-                        .map(|d| d.stored_name.to_ascii_lowercase())
-                        .collect();
+                    let mut names: Vec<String> =
+                        desired.iter().map(|d| d.stored_name.to_string()).collect();
                     names.sort();
                     names.dedup();
                     RepositoryService::get_records_by_zone_id_and_names_tx(&mut tx, zone.id, &names)
@@ -217,34 +216,34 @@ impl RecordService {
             })?;
             timings.load_existing_ms = elapsed_ms(t);
 
-            // Lowercase each existing owner name once and reuse it across the
-            // passes below instead of recomputing it per pass.
+            // Parse each existing owner name once and reuse it across the
+            // passes below instead of reparsing per pass.
             let t = Instant::now();
-            let existing_lower: Vec<String> = existing_records
+            let existing_names: Vec<OwnerName> = existing_records
                 .iter()
-                .map(|e| e.name.to_ascii_lowercase())
+                .map(|e| OwnerName::from_row(&e.name))
                 .collect();
 
             // Index existing records by owner name so each existing/desired
             // record is reconciled against only same-name rows.
-            let mut existing_by_name: HashMap<String, Vec<&Record>> =
+            let mut existing_by_name: HashMap<OwnerName, Vec<&Record>> =
                 HashMap::with_capacity(existing_records.len());
             for (i, record) in existing_records.iter().enumerate() {
                 existing_by_name
-                    .entry(existing_lower[i].clone())
+                    .entry(existing_names[i].clone())
                     .or_default()
                     .push(record);
             }
             timings.build_index_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let desired_matches_existing = |e: &Record, e_lower: &str| {
+            let desired_matches_existing = |e: &Record, e_name: &OwnerName| {
                 desired_by_name
-                    .get(e_lower)
+                    .get(e_name)
                     .is_some_and(|idxs| idxs.iter().any(|&i| desired_matches(e, &desired[i])))
             };
-            let desired_key_matches_existing = |e: &Record, e_lower: &str| {
-                desired_by_name.get(e_lower).is_some_and(|idxs| {
+            let desired_key_matches_existing = |e: &Record, e_name: &OwnerName| {
+                desired_by_name.get(e_name).is_some_and(|idxs| {
                     idxs.iter()
                         .any(|&i| desired[i].prepared.record_type == e.record_type)
                 })
@@ -257,7 +256,7 @@ impl RecordService {
                     .iter()
                     .enumerate()
                     .filter(|(i, e)| {
-                        !is_protected(&zone, e) && !desired_matches_existing(e, &existing_lower[*i])
+                        !is_protected(&zone, e) && !desired_matches_existing(e, &existing_names[*i])
                     })
                     .map(|(_, e)| e.clone())
                     .collect(),
@@ -265,9 +264,9 @@ impl RecordService {
                     .iter()
                     .enumerate()
                     .filter(|(i, e)| {
-                        desired_key_matches_existing(e, &existing_lower[*i])
+                        desired_key_matches_existing(e, &existing_names[*i])
                             && !is_protected(&zone, e)
-                            && !desired_matches_existing(e, &existing_lower[*i])
+                            && !desired_matches_existing(e, &existing_names[*i])
                     })
                     .map(|(_, e)| e.clone())
                     .collect(),
@@ -285,7 +284,7 @@ impl RecordService {
                 let desired_ttl = effective_ttl(d.prepared.ttl);
                 let mut present = false;
                 let mut stale = false;
-                if let Some(es) = existing_by_name.get(&d.stored_name.to_ascii_lowercase()) {
+                if let Some(es) = existing_by_name.get(&d.stored_name) {
                     for &e in es {
                         if desired_matches(e, d) {
                             present = true;
@@ -313,19 +312,19 @@ impl RecordService {
             // are indexed by name so each check scans only same-name candidates.
             let t = Instant::now();
             let del_ids: HashSet<i32> = dels.iter().chain(&ttl_dels).map(|d| d.id).collect();
-            let mut simulated_by_name: HashMap<String, Vec<Record>> =
+            let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
                 HashMap::with_capacity(existing_records.len());
             for (i, e) in existing_records.iter().enumerate() {
                 if !del_ids.contains(&e.id) {
                     simulated_by_name
-                        .entry(existing_lower[i].clone())
+                        .entry(existing_names[i].clone())
                         .or_default()
                         .push(e.clone());
                 }
             }
             for add in &adds {
                 let same_name = simulated_by_name
-                    .entry(add.stored_name.to_ascii_lowercase())
+                    .entry(add.stored_name.clone())
                     .or_default();
                 match validate_record_add_constraints_normalized(
                     same_name,
@@ -389,7 +388,7 @@ impl RecordService {
                     .iter()
                     .map(|add| Record {
                         id: 0,
-                        name: add.stored_name.clone(),
+                        name: add.stored_name.to_string(),
                         record_type: add.prepared.record_type.clone(),
                         value: add.prepared.value.clone(),
                         ttl: effective_ttl(add.prepared.ttl),
@@ -502,7 +501,7 @@ fn import_diff(
         .map(ReconstructedRecord::from)
         .collect();
     after.extend(adds.iter().map(|add| ReconstructedRecord {
-        name: add.stored_name.clone(),
+        name: add.stored_name.to_string(),
         record_type: add.prepared.record_type.clone(),
         value: add.prepared.value.clone(),
         ttl: add.prepared.ttl.unwrap_or(zone.ttl),
@@ -515,7 +514,7 @@ fn import_diff(
 /// A placeholder record for in-memory comparison only; the negative id keeps it
 /// distinct from persisted rows.
 fn synthetic_record(
-    stored_name: &str,
+    stored_name: &OwnerName,
     record_type: &RecordType,
     value: &str,
     ttl: i32,

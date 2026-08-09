@@ -58,7 +58,7 @@ impl RecordService {
                     &mut tx,
                     &zone,
                     &[RecordWrite {
-                        relative_name: &normalized_owner.stored_name,
+                        relative_name: normalized_owner.stored_name.as_str(),
                         record_type: Some(&record_type),
                     }],
                 )
@@ -68,7 +68,7 @@ impl RecordService {
                 match RepositoryService::get_records_by_zone_id_and_name_tx(
                     &mut tx,
                     zone.id,
-                    &normalized_owner.stored_name,
+                    normalized_owner.stored_name.as_str(),
                 )
                 .await
                 {
@@ -102,7 +102,7 @@ impl RecordService {
                 new_serial,
                 &[Record {
                     id: 0,
-                    name: normalized_owner.stored_name,
+                    name: normalized_owner.stored_name.to_string(),
                     record_type,
                     value: record_value,
                     ttl,

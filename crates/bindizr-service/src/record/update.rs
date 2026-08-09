@@ -174,7 +174,7 @@ impl RecordService {
                             record_type: Some(&existing_record.record_type),
                         },
                         RecordWrite {
-                            relative_name: &lookup_owner.stored_name,
+                            relative_name: lookup_owner.stored_name.as_str(),
                             record_type: Some(&resolved.record_type),
                         },
                     ],
@@ -183,7 +183,7 @@ impl RecordService {
             let zone_records = match RepositoryService::get_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone.id,
-                &lookup_owner.stored_name,
+                lookup_owner.stored_name.as_str(),
             )
             .await
             {
@@ -214,7 +214,7 @@ impl RecordService {
                 &candidate_updated,
                 &lookup_owner.stored_name,
             )?;
-            candidate_updated.name = lookup_owner.stored_name;
+            candidate_updated.name = lookup_owner.stored_name.to_string();
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();

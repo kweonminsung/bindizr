@@ -34,9 +34,10 @@ pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError>
         .map_err(|_| ServiceError::invalid_input(format!("Invalid record type: {}", value)))
 }
 
+#[derive(Debug)]
 pub(crate) struct NormalizedOwnerName {
     /// Name stored in the database according to the current relative-name policy.
-    pub stored_name: String,
+    pub stored_name: OwnerName,
 }
 
 pub(crate) fn normalize_record_owner_name(
@@ -52,9 +53,7 @@ pub(crate) fn normalize_record_owner_name(
         other => ServiceError::invalid_record_name(format!("record name {}", other)),
     })?;
 
-    Ok(NormalizedOwnerName {
-        stored_name: owner.as_str().to_string(),
-    })
+    Ok(NormalizedOwnerName { stored_name: owner })
 }
 
 /// Whether any record already holds the candidate's rdata. Canonical
@@ -74,7 +73,7 @@ fn has_matching_rdata<'a>(
 /// Validate an add whose owner name has already been normalized to `stored_name`.
 pub(crate) fn validate_record_add_constraints_normalized(
     zone_records: &[Record],
-    stored_name: &str,
+    stored_name: &OwnerName,
     record_type: &RecordType,
     value: &str,
     ttl: i32,
@@ -89,7 +88,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
 
     validate_record_value(record_type, value, priority)?;
 
-    if *record_type == RecordType::CNAME && stored_name == "@" {
+    if *record_type == RecordType::CNAME && stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
             "CNAME record cannot have '@' as name".to_string(),
         ));
@@ -98,7 +97,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
     let existing_records_with_name: Vec<_> = zone_records
         .iter()
         .filter(|r| {
-            r.name.eq_ignore_ascii_case(stored_name)
+            OwnerName::from_row(&r.name) == *stored_name
                 && except_record_id.map(|id| id != r.id).unwrap_or(true)
         })
         .collect();
@@ -150,7 +149,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         }
     }
 
-    if *record_type == RecordType::NS && stored_name != "@" {
+    if *record_type == RecordType::NS && !stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
             "NS records must use apex owner name '@'".to_string(),
         ));
@@ -201,7 +200,7 @@ pub(super) fn validate_record_update_constraints_normalized(
     zone_records: &[Record],
     existing_record: &Record,
     updated_record: &Record,
-    stored_name: &str,
+    stored_name: &OwnerName,
 ) -> Result<(), ServiceError> {
     // SOA is managed via the zone's own fields and cannot be set on a record.
     if updated_record.record_type == RecordType::SOA {
@@ -270,7 +269,7 @@ impl RecordService {
         let zone_records = RepositoryService::get_records_by_zone_id_and_name_tx(
             tx,
             zone.id,
-            &lookup_owner.stored_name,
+            lookup_owner.stored_name.as_str(),
         )
         .await
         .map_err(|e| {

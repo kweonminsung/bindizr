@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::name::to_encoded_owner_name;
+use bindizr_core::dns::name::{OwnerName, to_encoded_owner_name};
 use chrono::Utc;
 
 use super::{
@@ -201,7 +201,7 @@ pub(super) fn compute_zone_change_set(
     for del in &ops.dels {
         for value in &del.values {
             for row in existing {
-                if row.name.eq_ignore_ascii_case(&del.name)
+                if OwnerName::from_row(&row.name) == OwnerName::from_row(&del.name)
                     && row.record_type == del.record_type
                     && values_equal(&row.value, value, &del.record_type)
                     && !deletes.iter().any(|d| d.id == row.id)
@@ -217,7 +217,7 @@ pub(super) fn compute_zone_change_set(
         let ttl = add.ttl.unwrap_or(zone.ttl);
         for value in &add.values {
             let matches = |row: &Record| {
-                row.name.eq_ignore_ascii_case(&add.name)
+                OwnerName::from_row(&row.name) == OwnerName::from_row(&add.name)
                     && row.record_type == add.record_type
                     && row.ttl == ttl
                     && values_equal(&row.value, value, &add.record_type)
@@ -261,20 +261,20 @@ pub(super) fn compute_zone_change_set(
             .iter()
             .filter(|row| {
                 deletes.iter().all(|d| d.id != row.id)
-                    && row.name.eq_ignore_ascii_case(&create.name)
+                    && OwnerName::from_row(&row.name) == OwnerName::from_row(&create.name)
             })
             .cloned()
             .collect();
         same_name.extend(
             creates[..index]
                 .iter()
-                .filter(|row| row.name.eq_ignore_ascii_case(&create.name))
+                .filter(|row| OwnerName::from_row(&row.name) == OwnerName::from_row(&create.name))
                 .cloned(),
         );
 
         validate_record_add_constraints_normalized(
             &same_name,
-            &create.name,
+            &OwnerName::from_row(&create.name),
             &create.record_type,
             &create.value,
             create.ttl,
@@ -346,7 +346,7 @@ impl ExternalDnsService {
                     .adds
                     .iter()
                     .chain(ops.dels.iter())
-                    .map(|op| op.name.to_ascii_lowercase())
+                    .map(|op| op.name.clone())
                     .collect();
                 names.sort();
                 names.dedup();
