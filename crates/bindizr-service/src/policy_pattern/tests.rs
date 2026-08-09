@@ -49,3 +49,22 @@ fn pattern_matching_covers_all_forms() {
     assert!(!pattern_matches_name("*.sub", "sub.other"));
     assert!(!pattern_matches_name("*.sub", "xsub"));
 }
+
+#[test]
+fn subtree_pattern_rejects_a_name_whose_escaped_dot_spells_the_suffix() {
+    // `a\.sub` is the single label `a.sub`, not a name under `sub`, so a
+    // subtree grant must not reach it (RFC 1035, Section 5.1).
+    assert!(!pattern_matches_name("*.sub", r"a\.sub"));
+    assert!(!pattern_matches_name("*.b.sub", r"a\.b.sub"));
+    assert!(pattern_matches_name("*.sub", r"a\.b.sub"));
+}
+
+#[test]
+fn normalize_pattern_rejects_dangling_escape_and_trailing_dot() {
+    for invalid in [r"a\", "www.", "*.sub."] {
+        let err = normalize_pattern(Some(invalid)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput, "input: {:?}", invalid);
+    }
+
+    assert_eq!(normalize_pattern(Some(r"a\.sub")).unwrap(), r"a\.sub");
+}

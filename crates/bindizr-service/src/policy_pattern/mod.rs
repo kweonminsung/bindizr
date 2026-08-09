@@ -1,10 +1,12 @@
 //! Record-name-pattern and record-type grant matching, shared by zone TSIG
 //! policies (nsupdate) and zone token policies (HTTP API).
 
+use bindizr_core::dns::name::is_same_or_subdomain_fqdn;
+
 use crate::{
     error::ServiceError,
     model::record::RecordType,
-    validation::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, has_whitespace_or_control},
+    validation::{has_whitespace_or_control, validate_wire_labels},
 };
 
 /// Pattern/type values granting unrestricted rights.
@@ -20,8 +22,10 @@ pub(crate) fn pattern_matches_name(pattern: &str, relative_name: &str) -> bool {
         return true;
     }
 
+    // Compared label by label: a name whose escaped dot merely spells the
+    // suffix (`a\.sub`) is not under `sub` and must not inherit its grant.
     if let Some(suffix) = pattern.strip_prefix("*.") {
-        return name == suffix || name.ends_with(&format!(".{}", suffix));
+        return is_same_or_subdomain_fqdn(&name, suffix);
     }
 
     name == pattern
@@ -71,26 +75,15 @@ fn validate_relative_name(name: &str) -> Result<(), ServiceError> {
         )));
     }
 
-    if name.len() > MAX_DOMAIN_LEN {
+    // A pattern is a relative owner name, so a trailing dot would leave an
+    // empty label that no stored name can match.
+    if name.ends_with('.') {
         return Err(ServiceError::invalid_input(
-            "record name pattern must be 253 bytes or fewer",
+            "record name pattern must not contain empty labels",
         ));
     }
 
-    for label in name.split('.') {
-        if label.is_empty() {
-            return Err(ServiceError::invalid_input(
-                "record name pattern must not contain empty labels",
-            ));
-        }
-        if label.len() > MAX_DNS_LABEL_LEN {
-            return Err(ServiceError::invalid_input(
-                "record name pattern labels must be 63 bytes or fewer",
-            ));
-        }
-    }
-
-    Ok(())
+    validate_wire_labels(name, "record name pattern")
 }
 
 /// Normalize and validate a record type list; `None` grants all types.
