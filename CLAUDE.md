@@ -33,10 +33,13 @@ cargo +nightly fmt                                         # format (needs night
 - `bindizr-db` — repository layer. One impl per backend under
   `repository/{mysql,postgres,sqlite}/`. **The three backends are intentionally
   duplicated** (per-backend SQL + error text); do not try to deduplicate them.
-- `bindizr-dns` — XFR server (AXFR/IXFR/catalog/NOTIFY), wire encoding, nsupdate.
+- `bindizr-dns` — XFR server (AXFR/IXFR/catalog/NOTIFY), wire encoding, and the
+  nsupdate front end: TSIG plus decoding an UPDATE message into the operations
+  the service applies.
 - `bindizr-service` — business logic for zones/records (create/update/delete,
-  bulk, zone-file import, tokens, serial bumping).
-- `bindizr` — the binary: HTTP API (axum), CLI (clap), Unix-socket daemon IPC.
+  bulk, zone-file import, tokens, serial bumping, RFC 2136 apply).
+- `bindizr` — the binary: the daemon runtime (`daemon.rs`), HTTP API (axum),
+  CLI (clap), Unix-socket daemon IPC.
 - `bindizr-external-dns` — a second binary: the ExternalDNS webhook provider
   adapter. It speaks the webhook protocol and forwards to bindizr's
   `/external-dns` API over HTTP; no DNS logic or state of its own.
@@ -131,6 +134,24 @@ is why MySQL may define indexes inline in `CREATE TABLE` while Postgres/SQLite
 use separate `CREATE INDEX` statements — a per-backend syntax requirement, not
 a migration step. A reviewer flagging "the inline index won't reach existing
 databases" is a non-issue under this policy.
+
+### Who decides what
+
+- **Authorization is the service's.** Every service operation a front end can
+  reach takes a `Caller` first and gates itself; a transport never calls
+  `require_global` on its own. The daemon socket passes `Caller::Global`.
+  Service-internal lookups that must skip visibility are `pub(crate)` under
+  their own name (`ZoneService::lookup_by_name`). DNS-plane operations
+  (transfers, NOTIFY, nsupdate) take no caller — ACL and TSIG authorize there.
+- **Transactions are the service's.** No other crate opens one, so `*_tx`
+  methods and `RepositoryTx` are `pub(crate)`.
+- **A use case has one home.** When two front ends answer the same question,
+  the assembly lives below both (`bindizr_dns::status::zone_status`), not
+  once per transport.
+- **Payload shapes are the service's.** `bindizr_service::types` is the wire
+  contract of the HTTP API, the daemon socket, and the CLI alike; response
+  types the CLI reads back derive `Deserialize` too. Front ends convert to
+  their own presentation (CLI table rows), never re-derive the payload.
 
 ### Transactions and locking
 
