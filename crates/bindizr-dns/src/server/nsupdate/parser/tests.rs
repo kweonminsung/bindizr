@@ -93,10 +93,10 @@ fn parse_update_request_accepts_opt_before_tsig() {
     assert_eq!(tsig.fudge, 300);
 }
 
-/// Dots inside a key-name label must survive into the presentation-form name
-/// used for the key lookup.
+/// Escaping keeps a one-label key name from matching the stored key that a
+/// multi-label name of the same spelling would.
 #[test]
-fn parse_update_request_preserves_tsig_owner_label_dots() {
+fn parse_update_request_escapes_dots_inside_a_tsig_owner_label() {
     let mut message = minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_tsig_rr_with_owner(
@@ -108,7 +108,30 @@ fn parse_update_request_preserves_tsig_owner_label_dots() {
 
     let request = parse_update_request(&message).unwrap();
     let tsig = request.tsig.unwrap();
-    assert_eq!(tsig.name, "Key.With.Dot.");
+    assert_eq!(tsig.name, r"Key\.With\.Dot.");
+}
+
+/// An unescaped dotted label would read as a label boundary downstream,
+/// letting a single label impersonate a real subdomain.
+#[test]
+fn parse_update_request_escapes_dots_inside_a_zone_label() {
+    let mut message = Vec::new();
+    message.extend_from_slice(&[
+        0x12, 0x34, // ID
+        0x28, 0x00, // Opcode UPDATE
+        0x00, 0x01, // ZOCOUNT
+        0x00, 0x00, // PRCOUNT
+        0x00, 0x00, // UPCOUNT
+        0x00, 0x00, // ADCOUNT
+        0x0c, b'e', b'v', b'i', b'l', b'.', b'e', b'x', b'a', b'm', b'p', b'l',
+        b'e', // One label
+        0x03, b'c', b'o', b'm', 0x00,
+    ]);
+    message.extend_from_slice(&6u16.to_be_bytes());
+    message.extend_from_slice(&1u16.to_be_bytes());
+
+    let request = parse_update_request(&message).unwrap();
+    assert_eq!(request.zone_name, r"evil\.example.com.");
 }
 
 #[test]

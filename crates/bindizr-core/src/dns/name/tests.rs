@@ -1,4 +1,5 @@
 use super::{
+    escape_presentation_label, is_same_or_subdomain_fqdn, presentation_labels,
     split_presentation_labels, to_display_owner_fqdn, to_encoded_owner_name, to_owner_fqdn,
 };
 
@@ -9,6 +10,20 @@ fn split_presentation_labels_preserves_escaped_dots_and_rejects_dangling_escape(
         vec!["host.name", "example", "com"]
     );
     assert!(split_presentation_labels(r"bad.example.com\").is_err());
+}
+
+#[test]
+fn escape_presentation_label_round_trips_through_presentation_labels() {
+    assert_eq!(escape_presentation_label("plain"), "plain");
+    assert_eq!(escape_presentation_label("host.name"), r"host\.name");
+    assert_eq!(escape_presentation_label(r"back\slash"), r"back\\slash");
+
+    // A dotted label must stay one label, not read as a label boundary.
+    let escaped = format!("{}.example.com", escape_presentation_label("host.name"));
+    assert_eq!(
+        presentation_labels(&escaped).unwrap().collect::<Vec<_>>(),
+        vec!["host.name", "example", "com"]
+    );
 }
 
 #[test]
@@ -73,6 +88,35 @@ fn to_encoded_owner_name_strips_the_zone_suffix_once() {
 fn to_encoded_owner_name_rejects_names_outside_the_zone() {
     assert_eq!(to_encoded_owner_name("other.org.", "example.com"), None);
     assert_eq!(to_encoded_owner_name("aexample.com.", "example.com"), None);
+}
+
+#[test]
+fn to_encoded_owner_name_keeps_an_escaped_dot_inside_one_label() {
+    assert_eq!(
+        to_encoded_owner_name(r"host\.name.example.com.", "example.com").as_deref(),
+        Some(r"host\.name")
+    );
+}
+
+#[test]
+fn zone_containment_reads_an_escaped_dot_as_label_content() {
+    // The two-label name [evil.example, com] is outside example.com; reading
+    // the escape as a boundary would let one label impersonate a subdomain.
+    assert!(!is_same_or_subdomain_fqdn(
+        r"evil\.example.com.",
+        "example.com."
+    ));
+    assert_eq!(
+        to_encoded_owner_name(r"evil\.example.com.", "example.com"),
+        None
+    );
+
+    assert!(is_same_or_subdomain_fqdn(
+        "www.example.com.",
+        "example.com."
+    ));
+    assert!(is_same_or_subdomain_fqdn("example.com.", "example.com."));
+    assert!(!is_same_or_subdomain_fqdn("aexample.com.", "example.com."));
 }
 
 #[test]

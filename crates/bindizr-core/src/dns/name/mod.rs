@@ -103,6 +103,23 @@ pub fn presentation_labels(name: &str) -> Result<PresentationLabels<'_>, NameErr
     }
 }
 
+/// Inverse of [`presentation_labels`] for one label: escape `.` and `\` so the
+/// label survives a round trip as a single label (RFC 1035, Section 5.1).
+pub fn escape_presentation_label(label: &str) -> std::borrow::Cow<'_, str> {
+    if !label.contains(['.', '\\']) {
+        return std::borrow::Cow::Borrowed(label);
+    }
+
+    let mut escaped = String::with_capacity(label.len() + 1);
+    for c in label.chars() {
+        if c == '.' || c == '\\' {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    std::borrow::Cow::Owned(escaped)
+}
+
 /// Split a presentation-format name into labels, honoring `\` escapes.
 fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
     let mut labels = Vec::new();
@@ -160,10 +177,10 @@ pub fn to_owner_fqdn(name: &str, zone: &str) -> String {
     }
 
     let owner_trimmed = name.trim_end_matches('.');
-    let zone_lower = zone_trimmed.to_ascii_lowercase();
-    let zone_suffix = format!(".{}", zone_lower);
-    let owner_lower = owner_trimmed.to_ascii_lowercase();
-    if owner_lower == zone_lower || owner_lower.ends_with(&zone_suffix) {
+    if is_same_or_subdomain_fqdn(
+        &owner_trimmed.to_ascii_lowercase(),
+        &zone_trimmed.to_ascii_lowercase(),
+    ) {
         return format!("{}.", owner_trimmed);
     }
 
@@ -186,14 +203,40 @@ pub fn to_encoded_owner_name(name: &str, zone: &str) -> Option<String> {
         return Some("@".to_string());
     }
 
-    owner
-        .strip_suffix(&format!(".{}", zone_fqdn))
-        .map(str::to_string)
+    let owner_labels = label_vec(&owner)?;
+    let zone_labels = label_vec(&zone_fqdn)?;
+    if owner_labels.len() <= zone_labels.len() || !is_label_suffix(&owner_labels, &zone_labels) {
+        return None;
+    }
+
+    Some(
+        owner_labels[..owner_labels.len() - zone_labels.len()]
+            .iter()
+            .map(|label| escape_presentation_label(label))
+            .collect::<Vec<_>>()
+            .join("."),
+    )
 }
 
-/// Whether `name` equals `zone` or is a subdomain of it (exact string match).
+/// Whether `name` equals `zone` or is a subdomain of it, compared label by
+/// label so an escaped dot cannot pose as a label boundary. Both sides must
+/// already share the same case and trailing-dot form.
 pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
-    name == zone || name.ends_with(&format!(".{}", zone))
+    match (label_vec(name), label_vec(zone)) {
+        (Some(name_labels), Some(zone_labels)) => is_label_suffix(&name_labels, &zone_labels),
+        _ => false,
+    }
+}
+
+fn label_vec(name: &str) -> Option<Vec<std::borrow::Cow<'_, str>>> {
+    presentation_labels(name).ok().map(Iterator::collect)
+}
+
+fn is_label_suffix(
+    name_labels: &[std::borrow::Cow<'_, str>],
+    suffix: &[std::borrow::Cow<'_, str>],
+) -> bool {
+    name_labels.len() >= suffix.len() && name_labels[name_labels.len() - suffix.len()..] == *suffix
 }
 
 /// Whether `name` refers to the zone apex (`@` or the zone name itself).

@@ -1,5 +1,6 @@
 use std::fmt;
 
+use bindizr_core::dns::name::escape_presentation_label;
 use domain::{
     base::{
         Message,
@@ -201,8 +202,8 @@ fn parse_tsig_rr(
 }
 
 /// Renders a parsed name the way the update flow stores names: labels joined
-/// with '.', trailing dot, label bytes unescaped (dots inside a label survive
-/// as-is).
+/// with '.', trailing dot, and a `.` or `\` inside a label escaped so the label
+/// cannot read as a label boundary downstream nor re-split on the way to wire.
 pub(super) fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
     let mut out = String::new();
 
@@ -212,7 +213,7 @@ pub(super) fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, Pars
         }
 
         let text = std::str::from_utf8(label.as_slice()).map_err(|_| ParseError::InvalidName)?;
-        out.push_str(text);
+        out.push_str(&escape_presentation_label(text));
         out.push('.');
     }
 

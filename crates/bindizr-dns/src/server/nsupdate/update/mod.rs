@@ -1,7 +1,7 @@
 use bindizr_core::{
     config,
     dns::{
-        name::{to_encoded_owner_name, to_fqdn},
+        name::{is_same_or_subdomain_fqdn, to_encoded_owner_name, to_fqdn},
         record::TxtRdata,
     },
 };
@@ -599,9 +599,7 @@ pub(super) fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String
 
     let owner_no_dot = trim_dot(&owner).to_ascii_lowercase();
 
-    if owner_no_dot == normalized_zone_no_dot
-        || owner_no_dot.ends_with(&format!(".{}", normalized_zone_no_dot))
-    {
+    if is_same_or_subdomain_fqdn(&owner_no_dot, &normalized_zone_no_dot) {
         return Ok(owner);
     }
 
