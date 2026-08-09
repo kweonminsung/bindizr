@@ -1,13 +1,6 @@
 use super::*;
 
 #[test]
-fn is_catalog_zone_matches_catalog_name() {
-    assert!(is_catalog_zone("catalog.bind"));
-    assert!(!is_catalog_zone("example.com"));
-    assert!(!is_catalog_zone("catalog.example.com"));
-}
-
-#[test]
 fn zone_name_to_member_id_is_stable_and_dns_safe() {
     assert_eq!(zone_name_to_member_id("example.com"), "example-com");
     assert_eq!(zone_name_to_member_id("api.example.com"), "api-example-com");

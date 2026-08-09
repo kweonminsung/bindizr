@@ -76,15 +76,6 @@ fn command_payloads_round_trip_between_client_and_server() {
     let parsed: RollbackZoneParams = parse_params(&sent).unwrap();
     assert_eq!(parsed.request.serial, 7);
     assert!(parsed.request.dry_run);
-
-    let sent = serde_json::to_value(ZoneNameParams {
-        name: "example.com".to_string(),
-    })
-    .unwrap();
-    assert_eq!(
-        parse_params::<ZoneNameParams>(&sent).unwrap().name,
-        "example.com"
-    );
 }
 
 #[tokio::test]

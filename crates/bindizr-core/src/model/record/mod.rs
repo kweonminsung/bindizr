@@ -133,14 +133,6 @@ impl RecordType {
         }
     }
 
-    /// Whether the record's value is (or ends with) a domain name.
-    pub fn is_name_like_value(&self) -> bool {
-        matches!(
-            self,
-            RecordType::CNAME | RecordType::NS | RecordType::PTR | RecordType::MX | RecordType::SRV
-        )
-    }
-
     /// Validate a stored value (and its priority column) for this record type.
     /// Errors are plain messages; callers map them to their own error kind.
     pub fn validate_value(&self, value: &str, priority: Option<i32>) -> Result<(), String> {
@@ -280,10 +272,10 @@ impl RecordType {
     }
 }
 
-// Priority may live in the separate column, so it can be omitted from the value:
-// MX is `[priority] target`, SRV is `[priority] weight port target`.
-const MX_FIELD_COUNTS: &[usize] = &[1, 2];
-const SRV_FIELD_COUNTS: &[usize] = &[3, 4];
+// The priority lives in its own column, never in the value: MX stores `target`
+// and SRV `weight port target`.
+const MX_FIELD_COUNTS: &[usize] = &[1];
+const SRV_FIELD_COUNTS: &[usize] = &[3];
 
 fn display_last_name_field(value: &str, valid_field_counts: &[usize]) -> String {
     let mut fields = value

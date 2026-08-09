@@ -39,3 +39,6 @@ pub(super) fn apex_ns_rrset_ttl<'a>(
 /// Business logic for creating, updating, and querying DNS zones.
 #[derive(Clone)]
 pub struct ZoneService;
+
+#[cfg(test)]
+mod tests;

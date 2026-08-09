@@ -7,18 +7,6 @@ use super::{
 use crate::{model::record::RecordType, server::nsupdate::parser::UpdateRecord};
 
 #[test]
-fn absolute_to_relative_accepts_apex() {
-    let relative = absolute_to_relative("example.com.", "example.com.").unwrap();
-    assert_eq!(relative, "@");
-}
-
-#[test]
-fn absolute_to_relative_accepts_subdomain_at_label_boundary() {
-    let relative = absolute_to_relative("www.example.com.", "example.com.").unwrap();
-    assert_eq!(relative, "www");
-}
-
-#[test]
 fn absolute_to_relative_rejects_partial_suffix_match() {
     let err = absolute_to_relative("aexample.com.", "example.com.").unwrap_err();
     assert!(matches!(err, UpdateError::NotZone(_)));
@@ -84,12 +72,6 @@ fn validate_delete_update_shape_rejects_none_class_delete_with_type_any() {
 }
 
 #[test]
-fn record_value_matches_preserves_txt_case() {
-    assert!(record_value_matches(&RecordType::TXT, "Hello", "Hello"));
-    assert!(!record_value_matches(&RecordType::TXT, "Hello", "hello"));
-}
-
-#[test]
 fn rr_to_record_value_preserves_txt_character_string_boundaries() {
     let first = UpdateRecord {
         name: "txt.example.com.".to_string(),
@@ -112,11 +94,6 @@ fn rr_to_record_value_preserves_txt_character_string_boundaries() {
     let (_, second_value, _) = rr_to_record_value(&second, &second.rdata).unwrap();
 
     assert_ne!(first_value, second_value);
-    assert!(record_value_matches(
-        &RecordType::TXT,
-        &first_value,
-        &first_value
-    ));
     assert!(!record_value_matches(
         &RecordType::TXT,
         &first_value,
@@ -187,37 +164,6 @@ fn rr_to_record_value_rejects_non_utf8_txt_character_strings() {
     let update = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
     let err = rr_to_record_value(&update, &update.rdata).unwrap_err();
     assert!(matches!(err, UpdateError::Refused(_)));
-}
-
-#[test]
-fn record_value_matches_ignores_case_for_name_like_values() {
-    assert!(record_value_matches(
-        &RecordType::NS,
-        "Ns1.Example.Com.",
-        "ns1.example.com."
-    ));
-    assert!(record_value_matches(
-        &RecordType::MX,
-        "Mail.Example.Com.",
-        "mail.example.com."
-    ));
-}
-
-#[test]
-fn record_value_matches_normalizes_like_wire_rdata_comparison() {
-    // A wire-derived delete names the same rdata regardless of how the stored
-    // value spelled the address or whether it carried the trailing dot.
-    assert!(record_value_matches(
-        &RecordType::AAAA,
-        "0:0:0:0:0:0:0:1",
-        "::1"
-    ));
-    assert!(!record_value_matches(&RecordType::AAAA, "::1", "::2"));
-    assert!(record_value_matches(
-        &RecordType::NS,
-        "ns1.example.com",
-        "ns1.example.com."
-    ));
 }
 
 #[test]

@@ -149,12 +149,12 @@ fn display_value_adds_trailing_dot_for_name_like_values() {
         "target.example.net."
     );
     assert_eq!(
-        RecordType::MX.display_value("10 mail.example.com"),
-        "10 mail.example.com."
+        RecordType::MX.display_value("mail.example.com"),
+        "mail.example.com."
     );
     assert_eq!(
-        RecordType::SRV.display_value("10 5 5060 sip.example.com"),
-        "10 5 5060 sip.example.com."
+        RecordType::SRV.display_value("5 5060 sip.example.com"),
+        "5 5060 sip.example.com."
     );
     assert_eq!(
         RecordType::PTR.display_value("host.example.com"),
@@ -173,23 +173,10 @@ fn display_value_keeps_non_name_values_unchanged() {
 }
 
 #[test]
-fn display_value_keeps_split_priority_forms() {
-    // Priority can live in the separate column, so the stored value omits it.
-    assert_eq!(
-        RecordType::MX.display_value("mail.example.com"),
-        "mail.example.com."
-    );
-    assert_eq!(
-        RecordType::SRV.display_value("5 5060 sip.example.com"),
-        "5 5060 sip.example.com."
-    );
-}
-
-#[test]
 fn display_value_leaves_wrong_field_count_unchanged() {
     // Values whose field count cannot match any valid MX/SRV form must not be
     // rewritten into a fake hostname (e.g. a trailing numeric field gaining a dot).
-    for value in ["", "10 mail.example.com extra"] {
+    for value in ["", "10 mail.example.com", "10 mail.example.com extra"] {
         assert_eq!(
             RecordType::MX.display_value(value),
             value,
@@ -197,7 +184,7 @@ fn display_value_leaves_wrong_field_count_unchanged() {
         );
     }
 
-    for value in ["", "10 5", "10 5 5060 sip.example.com extra"] {
+    for value in ["", "10 5", "10 5 5060 sip.example.com"] {
         assert_eq!(
             RecordType::SRV.display_value(value),
             value,

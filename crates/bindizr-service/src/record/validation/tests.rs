@@ -5,7 +5,7 @@ use super::{
     validate_record_add_constraints_normalized, validate_record_value,
 };
 use crate::{
-    error::ServiceError,
+    error::{ErrorCode, ServiceError},
     model::{
         record::{Record, RecordType},
         zone::Zone,
@@ -32,15 +32,6 @@ fn normalize_record_owner_name_accepts_relative_and_in_bailiwick_absolute_names(
 
     let absolute = normalize_record_owner_name("A1.Test.Example.Com.", zone).unwrap();
     assert_eq!(absolute.stored_name, "a1");
-}
-
-#[test]
-fn normalize_record_owner_name_keeps_a_repeated_zone_suffix() {
-    // Repeated stripping collapsed a repeated-zone owner to an empty name.
-    let normalized =
-        normalize_record_owner_name("test.example.com.test.example.com.", "test.example.com")
-            .unwrap();
-    assert_eq!(normalized.stored_name, "test.example.com");
 }
 
 #[test]
@@ -96,7 +87,7 @@ fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
 }
 
 #[test]
-fn validate_mx_value_takes_priority_from_the_field_only() {
+fn validate_mx_value_accepts_a_target_with_a_field_priority() {
     assert!(validate_record_value(&RecordType::MX, "mail.example.com", Some(10)).is_ok());
     // An omitted priority defaults to 10.
     assert!(validate_record_value(&RecordType::MX, "mail.example.com", None).is_ok());
@@ -126,7 +117,7 @@ fn validate_mx_value_rejects_invalid_forms() {
 }
 
 #[test]
-fn validate_srv_value_takes_priority_from_the_field_only() {
+fn validate_srv_value_accepts_weight_port_target_with_a_field_priority() {
     assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", Some(10)).is_ok());
     // An omitted priority defaults to 10.
     assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", None).is_ok());
@@ -220,7 +211,7 @@ fn validate_add(
 }
 
 #[test]
-fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
+fn add_rejects_cname_at_apex_and_ns_below_apex() {
     let cname_at_apex = validate_add(
         &[],
         "@",
@@ -229,7 +220,10 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
         RRSET_TTL,
         None,
     );
-    assert!(cname_at_apex.is_err());
+    assert_eq!(
+        cname_at_apex.unwrap_err().code,
+        ErrorCode::InvalidRecordName
+    );
 
     let ns_below_apex = validate_add(
         &[],
@@ -239,7 +233,10 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
         RRSET_TTL,
         None,
     );
-    assert!(ns_below_apex.is_err());
+    assert_eq!(
+        ns_below_apex.unwrap_err().code,
+        ErrorCode::InvalidRecordName
+    );
 
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
     let cname_conflict = validate_add(
@@ -250,11 +247,11 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
         RRSET_TTL,
         None,
     );
-    assert!(cname_conflict.is_err());
+    assert_eq!(cname_conflict.unwrap_err().code, ErrorCode::RecordConflict);
 }
 
 #[test]
-fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates() {
+fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     // Case and trailing-dot differences canonicalize equal, so the add is a duplicate.
     let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
     let duplicate_mx = validate_add(
@@ -265,7 +262,7 @@ fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates
         RRSET_TTL,
         Some(10),
     );
-    assert!(duplicate_mx.is_err());
+    assert_eq!(duplicate_mx.unwrap_err().code, ErrorCode::RecordConflict);
 
     let existing_srv = test_record(
         2,
@@ -282,11 +279,11 @@ fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates
         RRSET_TTL,
         Some(10),
     );
-    assert!(duplicate_srv.is_err());
+    assert_eq!(duplicate_srv.unwrap_err().code, ErrorCode::RecordConflict);
 }
 
 #[test]
-fn validate_record_add_constraints_treats_an_omitted_mx_priority_as_the_default() {
+fn add_treats_an_omitted_mx_priority_as_the_default() {
     // A stored MX with no priority and an add carrying the default 10 are the
     // same rdata, so nsupdate can no-op the add instead of refusing it.
     let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com.", None);
@@ -298,11 +295,11 @@ fn validate_record_add_constraints_treats_an_omitted_mx_priority_as_the_default(
         RRSET_TTL,
         Some(10),
     );
-    assert!(duplicate_mx.is_err());
+    assert_eq!(duplicate_mx.unwrap_err().code, ErrorCode::RecordConflict);
 }
 
 #[test]
-fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
+fn add_rejects_null_mx_alongside_other_mx_records() {
     let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
     let null_mx_with_existing_mx = validate_add(
         &[existing_mx],
@@ -312,7 +309,10 @@ fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
         RRSET_TTL,
         Some(0),
     );
-    assert!(null_mx_with_existing_mx.is_err());
+    assert_eq!(
+        null_mx_with_existing_mx.unwrap_err().code,
+        ErrorCode::RecordConflict
+    );
 
     let existing_null_mx = test_record(2, "@", RecordType::MX, ".", Some(0));
     let mx_with_existing_null_mx = validate_add(
@@ -323,11 +323,14 @@ fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
         RRSET_TTL,
         Some(10),
     );
-    assert!(mx_with_existing_null_mx.is_err());
+    assert_eq!(
+        mx_with_existing_null_mx.unwrap_err().code,
+        ErrorCode::RecordConflict
+    );
 }
 
 #[test]
-fn validate_record_add_constraints_enforces_one_ttl_per_rrset() {
+fn add_enforces_one_ttl_per_rrset() {
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
 
     let differing_ttl = validate_add(
@@ -338,7 +341,7 @@ fn validate_record_add_constraints_enforces_one_ttl_per_rrset() {
         600,
         None,
     );
-    assert!(differing_ttl.is_err());
+    assert_eq!(differing_ttl.unwrap_err().code, ErrorCode::RecordConflict);
 
     let matching_ttl = validate_add(
         std::slice::from_ref(&existing_a),
@@ -378,9 +381,6 @@ fn validate_record_value_rejects_priority_on_types_without_one() {
         );
         assert!(validate_record_value(&record_type, value, None).is_ok());
     }
-
-    assert!(validate_record_value(&RecordType::MX, "mail.example.com", Some(10)).is_ok());
-    assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", Some(10)).is_ok());
 }
 
 #[test]

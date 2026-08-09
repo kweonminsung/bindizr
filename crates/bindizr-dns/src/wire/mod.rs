@@ -373,7 +373,6 @@ fn parse_mx_record_value(
 ) -> Result<(u16, &str), XfrError> {
     let fields = value.split_whitespace().collect::<Vec<_>>();
     match fields.as_slice() {
-        [priority, target] => Ok((parse_u16_field(priority, "MX priority")?, target)),
         [target] => Ok((
             parse_optional_priority(fallback_priority, "MX priority")?,
             target,
@@ -390,12 +389,6 @@ fn parse_srv_record_value(
 ) -> Result<(u16, u16, u16, &str), XfrError> {
     let fields = value.split_whitespace().collect::<Vec<_>>();
     let (priority, weight, port, target) = match fields.as_slice() {
-        [priority, weight, port, target] => (
-            parse_u16_field(priority, "SRV priority")?,
-            *weight,
-            *port,
-            *target,
-        ),
         [weight, port, target] => (
             parse_optional_priority(fallback_priority, "SRV priority")?,
             *weight,
