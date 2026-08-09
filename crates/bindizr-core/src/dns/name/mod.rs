@@ -244,9 +244,13 @@ pub fn is_apex_name(name: &str, zone_name: &str) -> bool {
     name == "@" || to_fqdn(name).eq_ignore_ascii_case(&to_fqdn(zone_name))
 }
 
-mod owner;
+mod error;
+mod owner_name;
+mod zone_name;
 
-pub use owner::{OwnerName, ParseNameError, ZoneName};
+pub use error::ParseNameError;
+pub use owner_name::OwnerName;
+pub use zone_name::ZoneName;
 
 #[cfg(test)]
 mod tests;
