@@ -1,9 +1,8 @@
 //! A record's owner name, canonical by construction.
 
 use super::{
-    MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, escape_presentation_label,
-    has_whitespace_or_control, is_same_or_subdomain_fqdn, presentation_labels,
-    to_encoded_owner_name, to_owner_fqdn,
+    ParseNameError, ZoneName, classify_wire_labels, escape_presentation_label,
+    has_whitespace_or_control, is_same_or_subdomain_fqdn, to_encoded_owner_name, to_owner_fqdn,
 };
 
 /// A record's owner name as rows encode it: `@` at the apex, otherwise a
@@ -40,7 +39,7 @@ impl OwnerName {
 
         let zone_fqdn = zone.to_fqdn();
         let candidate = to_owner_fqdn(trimmed, zone.as_str());
-        validate_wire_labels(&candidate)?;
+        classify_wire_labels(&candidate)?;
 
         // A relative name that happens to end in the zone was already absolute.
         if !is_same_or_subdomain_fqdn(&candidate.to_ascii_lowercase(), &zone_fqdn) {
@@ -85,23 +84,4 @@ impl std::fmt::Display for OwnerName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
-}
-
-/// The 253-byte and per-label limits, without the LDH charset rule.
-fn validate_wire_labels(name: &str) -> Result<(), ParseNameError> {
-    let bare = name.trim_end_matches('.');
-    if bare.len() > MAX_DOMAIN_LEN {
-        return Err(ParseNameError::TooLong);
-    }
-
-    for label in presentation_labels(bare).map_err(|_| ParseNameError::DanglingEscape)? {
-        if label.is_empty() {
-            return Err(ParseNameError::EmptyLabel);
-        }
-        if label.len() > MAX_DNS_LABEL_LEN {
-            return Err(ParseNameError::LabelTooLong);
-        }
-    }
-
-    Ok(())
 }

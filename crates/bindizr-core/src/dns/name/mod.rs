@@ -144,6 +144,26 @@ fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
     Ok(labels)
 }
 
+/// The 253-byte and per-label limits every name must meet on the wire,
+/// without the LDH charset rule that only zone names take.
+pub fn classify_wire_labels(name: &str) -> Result<(), ParseNameError> {
+    let bare = name.trim_end_matches('.');
+    if bare.len() > MAX_DOMAIN_LEN {
+        return Err(ParseNameError::TooLong);
+    }
+
+    for label in presentation_labels(bare).map_err(|_| ParseNameError::DanglingEscape)? {
+        if label.is_empty() {
+            return Err(ParseNameError::EmptyLabel);
+        }
+        if label.len() > MAX_DNS_LABEL_LEN {
+            return Err(ParseNameError::LabelTooLong);
+        }
+    }
+
+    Ok(())
+}
+
 /// Return `value` as a lowercase, trailing-dot FQDN.
 pub fn to_fqdn_lowercase(value: &str) -> String {
     format!(
