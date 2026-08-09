@@ -3,8 +3,8 @@ use domain::base::iana::{Class, Rtype};
 use super::{
     parser::UpdateRecord,
     update::{
-        UpdateError, absolute_to_relative, normalize_owner_name, record_value_matches,
-        rr_to_record_value, rr_type_to_record_type,
+        UpdateError, encoded_owner_name, normalize_owner_name, rr_to_record_value,
+        rr_type_to_record_type,
     },
 };
 use crate::{
@@ -43,7 +43,7 @@ fn evaluate_prerequisites_against_records(
         }
 
         let owner = normalize_owner_name(&rr.name, &zone.name)?;
-        let relative = absolute_to_relative(&owner, &zone.name)?;
+        let relative = encoded_owner_name(&owner, &zone.name)?;
         let owner_exists = is_owner_existing(&relative, zone_records);
 
         match rr.class {
@@ -113,7 +113,9 @@ fn evaluate_prerequisites_against_records(
                 let exists = zone_records.iter().any(|record| {
                     record.name.eq_ignore_ascii_case(&relative)
                         && record.record_type == target_type
-                        && record_value_matches(&record.record_type, &record.value, &target_value)
+                        && record
+                            .record_type
+                            .values_equal(&record.value, None, &target_value, None)
                         && record.priority == target_priority
                 });
 

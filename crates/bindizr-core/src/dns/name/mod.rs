@@ -2,6 +2,14 @@
 //! escape-aware label iteration, FQDN normalization, containment/apex checks,
 //! and the whitespace/control hygiene check shared by name-like inputs.
 
+mod error;
+mod owner_name;
+mod zone_name;
+
+pub use error::ParseNameError;
+pub use owner_name::OwnerName;
+pub use zone_name::ZoneName;
+
 /// Maximum length of a single DNS label, in bytes (RFC 1035).
 pub const MAX_DNS_LABEL_LEN: usize = 63;
 /// Maximum length of a domain name, in bytes (RFC 1035).
@@ -16,7 +24,7 @@ pub fn has_whitespace_or_control(value: &str) -> bool {
 
 /// Classify one label's problem, if any: non-empty, at most 63 bytes, LDH
 /// charset (plus `_` when `allow_underscore`), no leading/trailing hyphen.
-pub fn classify_domain_label(label: &str, allow_underscore: bool) -> Result<(), ParseNameError> {
+fn classify_domain_label(label: &str, allow_underscore: bool) -> Result<(), ParseNameError> {
     if label.is_empty() {
         return Err(ParseNameError::EmptyLabel);
     }
@@ -41,35 +49,17 @@ pub fn classify_domain_label(label: &str, allow_underscore: bool) -> Result<(), 
     Ok(())
 }
 
-/// [`classify_domain_label`] with the problem phrased against `field` and
-/// mapped to the caller's error kind.
-pub fn validate_domain_label<E>(
+/// [`classify_domain_label`] with the problem phrased against `field`.
+pub(crate) fn validate_domain_label(
     label: &str,
     field: &str,
     allow_underscore: bool,
-    invalid: impl Fn(String) -> E,
-) -> Result<(), E> {
-    classify_domain_label(label, allow_underscore).map_err(|e| invalid(format!("{} {}", field, e)))
+) -> Result<(), String> {
+    classify_domain_label(label, allow_underscore).map_err(|e| format!("{} {}", field, e))
 }
-
-/// Errors from parsing domain names.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NameError {
-    DanglingEscape,
-}
-
-impl std::fmt::Display for NameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NameError::DanglingEscape => write!(f, "domain name contains a dangling escape"),
-        }
-    }
-}
-
-impl std::error::Error for NameError {}
 
 /// Labels of a presentation-format name.
-pub enum PresentationLabels<'a> {
+pub(crate) enum PresentationLabels<'a> {
     Borrowed(std::str::Split<'a, char>),
     Owned(std::vec::IntoIter<String>),
 }
@@ -86,7 +76,7 @@ impl<'a> Iterator for PresentationLabels<'a> {
 }
 
 /// Iterate a presentation-format name's labels, honoring `\` escapes.
-pub fn presentation_labels(name: &str) -> Result<PresentationLabels<'_>, NameError> {
+pub(crate) fn presentation_labels(name: &str) -> Result<PresentationLabels<'_>, ParseNameError> {
     if name.contains('\\') {
         Ok(PresentationLabels::Owned(
             split_presentation_labels(name)?.into_iter(),
@@ -114,7 +104,7 @@ pub fn escape_presentation_label(label: &str) -> std::borrow::Cow<'_, str> {
 }
 
 /// Split a presentation-format name into labels, honoring `\` escapes.
-fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
+fn split_presentation_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
     let mut labels = Vec::new();
     let mut label = String::new();
     let mut escaped = false;
@@ -137,7 +127,7 @@ fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
     }
 
     if escaped {
-        return Err(NameError::DanglingEscape);
+        return Err(ParseNameError::DanglingEscape);
     }
 
     labels.push(label);
@@ -152,7 +142,7 @@ pub fn classify_wire_labels(name: &str) -> Result<(), ParseNameError> {
         return Err(ParseNameError::TooLong);
     }
 
-    for label in presentation_labels(bare).map_err(|_| ParseNameError::DanglingEscape)? {
+    for label in presentation_labels(bare)? {
         if label.is_empty() {
             return Err(ParseNameError::EmptyLabel);
         }
@@ -269,17 +259,9 @@ fn is_label_suffix(
 }
 
 /// Whether `name` refers to the zone apex (`@` or the zone name itself).
-pub fn is_apex_name(name: &str, zone_name: &str) -> bool {
+pub(crate) fn is_apex_name(name: &str, zone_name: &str) -> bool {
     name == "@" || to_fqdn(name).eq_ignore_ascii_case(&to_fqdn(zone_name))
 }
-
-mod error;
-mod owner_name;
-mod zone_name;
-
-pub use error::ParseNameError;
-pub use owner_name::OwnerName;
-pub use zone_name::ZoneName;
 
 #[cfg(test)]
 mod tests;

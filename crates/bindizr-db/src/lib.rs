@@ -192,7 +192,7 @@ impl DatabasePool {
     async fn create_tables(&self) -> Result<(), String> {
         match self {
             DatabasePool::MySQL(pool) => {
-                for query in schema::get_mysql_table_creation_queries() {
+                for query in schema::mysql_table_creation_queries() {
                     let mut conn = pool.acquire().await.map_err(|e| {
                         log_error!("Failed to acquire MySQL connection: {}", e);
                         e.to_string()
@@ -204,7 +204,7 @@ impl DatabasePool {
                 }
             }
             DatabasePool::PostgreSQL(pool) => {
-                for query in schema::get_postgres_table_creation_queries() {
+                for query in schema::postgres_table_creation_queries() {
                     let mut conn = pool.acquire().await.map_err(|e| {
                         log_error!("Failed to acquire PostgreSQL connection: {}", e);
                         e.to_string()
@@ -216,7 +216,7 @@ impl DatabasePool {
                 }
             }
             DatabasePool::SQLite(pool) => {
-                for query in schema::get_sqlite_table_creation_queries() {
+                for query in schema::sqlite_table_creation_queries() {
                     let mut conn = pool.acquire().await.map_err(|e| {
                         log_error!("Failed to acquire SQLite connection: {}", e);
                         e.to_string()

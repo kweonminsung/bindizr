@@ -1,14 +1,14 @@
 use domain::base::iana::{Class, Rtype};
 
 use super::{
-    UpdateError, absolute_to_relative, normalize_owner_name, record_value_matches,
-    rr_to_record_value, validate_delete_update_shape,
+    UpdateError, encoded_owner_name, normalize_owner_name, rr_to_record_value,
+    validate_delete_update_shape,
 };
 use crate::{model::record::RecordType, server::nsupdate::parser::UpdateRecord};
 
 #[test]
-fn absolute_to_relative_rejects_partial_suffix_match() {
-    let err = absolute_to_relative("aexample.com.", "example.com.").unwrap_err();
+fn encoded_owner_name_rejects_partial_suffix_match() {
+    let err = encoded_owner_name("aexample.com.", "example.com.").unwrap_err();
     assert!(matches!(err, UpdateError::NotZone(_)));
 }
 
@@ -94,11 +94,7 @@ fn rr_to_record_value_preserves_txt_character_string_boundaries() {
     let (_, second_value, _) = rr_to_record_value(&second, &second.rdata).unwrap();
 
     assert_ne!(first_value, second_value);
-    assert!(!record_value_matches(
-        &RecordType::TXT,
-        &first_value,
-        &second_value
-    ));
+    assert!(!RecordType::TXT.values_equal(&first_value, None, &second_value, None));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Table-creation DDL for each backend, run at startup to bring the schema up.
 
-pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
+pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (
@@ -126,7 +126,7 @@ pub(super) fn get_mysql_table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
-pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
+pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (
@@ -264,7 +264,7 @@ pub(super) fn get_postgres_table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
-pub(super) fn get_sqlite_table_creation_queries() -> Vec<&'static str> {
+pub(super) fn sqlite_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (

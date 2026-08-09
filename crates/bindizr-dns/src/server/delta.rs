@@ -5,8 +5,8 @@ use crate::{error::XfrError, service::zone::ZoneService};
 pub(crate) type ZoneChange = bindizr_core::model::zone_change::ZoneChange;
 pub(crate) type ZoneSnapshot = bindizr_core::model::zone_snapshot::ZoneSnapshot;
 
-/// Gets zone changes between two serials for IXFR.
-pub(crate) async fn get_zone_changes(
+/// Zone changes between two serials, for IXFR.
+pub(crate) async fn list_zone_changes(
     zone_id: i32,
     from_serial: u32,
     to_serial: u32,
@@ -16,7 +16,7 @@ pub(crate) async fn get_zone_changes(
         .map_err(|e| XfrError::DatabaseError(e.to_string()))
 }
 
-pub(crate) async fn get_zone_snapshot(
+pub(crate) async fn find_zone_snapshot(
     zone_id: i32,
     serial: u32,
 ) -> Result<Option<ZoneSnapshot>, XfrError> {
@@ -26,7 +26,7 @@ pub(crate) async fn get_zone_snapshot(
 }
 
 /// Fetch every snapshot for a zone with serial in `[from_serial, to_serial]`.
-pub(crate) async fn get_zone_snapshots(
+pub(crate) async fn list_zone_snapshots(
     zone_id: i32,
     from_serial: u32,
     to_serial: u32,

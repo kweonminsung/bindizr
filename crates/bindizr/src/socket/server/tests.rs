@@ -46,7 +46,7 @@ fn parse_params_rejects_a_wrongly_typed_rollback_dry_run() {
 fn command_payloads_round_trip_between_client_and_server() {
     use crate::{
         api::types::{RollbackZoneRequest, UpdateZonePatch},
-        socket::types::{RollbackZoneParams, UpdateZoneParams, ZoneNameParams},
+        socket::types::{RollbackZoneParams, UpdateZoneParams},
     };
 
     // The CLI serializes these and the daemon parses them back, so a flattened

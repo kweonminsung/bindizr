@@ -111,7 +111,7 @@ pub(super) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, Service
             .map_err(ServiceError::invalid_record_value)?;
         if !values
             .iter()
-            .any(|existing| values_equal(existing, &encoded, &record_type))
+            .any(|existing| record_type.values_equal(existing, None, &encoded, None))
         {
             values.push(encoded);
         }
@@ -186,10 +186,6 @@ pub(super) fn group_ops_by_zone(
     Ok(grouped)
 }
 
-fn values_equal(left: &str, right: &str, record_type: &RecordType) -> bool {
-    record_type.values_equal(left, None, right, None)
-}
-
 /// Resolve one zone's operations against its current records; idempotent
 /// operations cancel out, so an effect-free request yields an empty set.
 pub(super) fn compute_zone_change_set(
@@ -203,7 +199,7 @@ pub(super) fn compute_zone_change_set(
             for row in existing {
                 if OwnerName::from_row(&row.name) == OwnerName::from_row(&del.name)
                     && row.record_type == del.record_type
-                    && values_equal(&row.value, value, &del.record_type)
+                    && del.record_type.values_equal(&row.value, None, value, None)
                     && !deletes.iter().any(|d| d.id == row.id)
                 {
                     deletes.push(row.clone());
@@ -220,7 +216,7 @@ pub(super) fn compute_zone_change_set(
                 OwnerName::from_row(&row.name) == OwnerName::from_row(&add.name)
                     && row.record_type == add.record_type
                     && row.ttl == ttl
-                    && values_equal(&row.value, value, &add.record_type)
+                    && add.record_type.values_equal(&row.value, None, value, None)
             };
 
             // An unchanged update cancels its own delete instead of

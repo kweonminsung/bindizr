@@ -46,8 +46,10 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
         return Err(format!("{} must be 253 bytes or fewer", field));
     }
 
-    for label in presentation_labels(without_trailing_dot).map_err(|e| e.to_string())? {
-        validate_domain_label(&label, field, true, |message| message)?;
+    for label in
+        presentation_labels(without_trailing_dot).map_err(|e| format!("{} {}", field, e))?
+    {
+        validate_domain_label(&label, field, true)?;
     }
 
     Ok(())

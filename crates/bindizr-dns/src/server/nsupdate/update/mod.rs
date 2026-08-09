@@ -84,7 +84,7 @@ async fn apply_update_inner(
     query_data: &[u8],
     signer: &mut Option<ResponseSigner>,
 ) -> Result<UpdateResult, UpdateError> {
-    let zone_name = trim_dot(&request.zone_name);
+    let zone_name = request.zone_name.trim_end_matches('.');
     if zone_name.is_empty() {
         return Err(UpdateError::NotZone(
             "root zone is not supported".to_string(),
@@ -243,7 +243,7 @@ async fn authorize_key(
 
     for update in &request.updates {
         let owner_name = normalize_owner_name(&update.name, &zone.name)?;
-        let relative_name = absolute_to_relative(&owner_name, &zone.name)?;
+        let relative_name = encoded_owner_name(&owner_name, &zone.name)?;
         let record_type = if update.rr_type == Rtype::ANY {
             None
         } else {
@@ -310,7 +310,7 @@ async fn add_record(
         })?
     };
 
-    let relative_name = absolute_to_relative(owner_name, &zone.name)?;
+    let relative_name = encoded_owner_name(owner_name, &zone.name)?;
 
     if update.ttl > i32::MAX as u32 {
         return Err(UpdateError::Refused(format!(
@@ -378,7 +378,7 @@ async fn delete_records(
 ) -> Result<bool, UpdateError> {
     validate_delete_update_shape(update, is_rrset_delete)?;
 
-    let relative_name = absolute_to_relative(owner_name, &zone.name)?;
+    let relative_name = encoded_owner_name(owner_name, &zone.name)?;
     let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
@@ -408,8 +408,11 @@ async fn delete_records(
             continue;
         }
 
+        // Priority is filtered separately, so compare rdata alone.
         if let Some(ref value) = target_value
-            && !record_value_matches(&record.record_type, &record.value, value)
+            && !record
+                .record_type
+                .values_equal(&record.value, None, value, None)
         {
             continue;
         }
@@ -438,16 +441,6 @@ async fn delete_records(
         .map_err(|e| UpdateError::Internal(format!("failed to delete records: {}", e)))?;
 
     Ok(true)
-}
-
-/// Canonical comparison so spelling variants (IPv6 forms, name case, trailing
-/// dots) match like wire-format rdata; priority is filtered separately.
-pub(super) fn record_value_matches(
-    record_type: &RecordType,
-    stored_value: &str,
-    target_value: &str,
-) -> bool {
-    record_type.values_equal(stored_value, None, target_value, None)
 }
 
 fn validate_delete_update_shape(
@@ -587,7 +580,7 @@ pub(super) fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, Updat
 
 pub(super) fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String, UpdateError> {
     let normalized_zone = to_fqdn(zone_name);
-    let normalized_zone_no_dot = trim_dot(&normalized_zone).to_ascii_lowercase();
+    let normalized_zone_no_dot = normalized_zone.trim_end_matches('.').to_ascii_lowercase();
 
     let owner = if name == "." {
         return Err(UpdateError::NotZone(
@@ -597,7 +590,7 @@ pub(super) fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String
         to_fqdn(name)
     };
 
-    let owner_no_dot = trim_dot(&owner).to_ascii_lowercase();
+    let owner_no_dot = owner.trim_end_matches('.').to_ascii_lowercase();
 
     if is_same_or_subdomain_fqdn(&owner_no_dot, &normalized_zone_no_dot) {
         return Ok(owner);
@@ -609,7 +602,8 @@ pub(super) fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String
     )))
 }
 
-pub(super) fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<String, UpdateError> {
+/// The stored owner-name form for an in-zone absolute owner.
+pub(super) fn encoded_owner_name(owner: &str, zone_name: &str) -> Result<String, UpdateError> {
     to_encoded_owner_name(owner, zone_name).ok_or_else(|| {
         UpdateError::NotZone(format!(
             "owner '{}' is outside zone '{}'",
@@ -617,10 +611,6 @@ pub(super) fn absolute_to_relative(owner: &str, zone_name: &str) -> Result<Strin
             to_fqdn(zone_name)
         ))
     })
-}
-
-fn trim_dot(name: &str) -> &str {
-    name.trim_end_matches('.')
 }
 
 #[cfg(test)]

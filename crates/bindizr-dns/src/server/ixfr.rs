@@ -43,7 +43,7 @@ pub(crate) async fn handle_ixfr(
 
     if client_serial == current_serial {
         log_info!("IXFR: Client is up-to-date (serial={})", current_serial);
-        let current_soa = match delta::get_zone_snapshot(zone.id, current_serial).await? {
+        let current_soa = match delta::find_zone_snapshot(zone.id, current_serial).await? {
             Some(snapshot) => snapshot,
             None => {
                 log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
@@ -62,7 +62,7 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    let changes = delta::get_zone_changes(zone.id, client_serial, current_serial).await?;
+    let changes = delta::list_zone_changes(zone.id, client_serial, current_serial).await?;
 
     if changes.is_empty() {
         log_warn!(
@@ -109,7 +109,7 @@ pub(crate) async fn handle_ixfr(
 
     // Fetch the whole serial span in one query; missing snapshots are caught
     // by the chain validation below.
-    for snapshot in delta::get_zone_snapshots(zone.id, client_serial, current_serial).await? {
+    for snapshot in delta::list_zone_snapshots(zone.id, client_serial, current_serial).await? {
         if let Ok(serial) = delta::serial_to_u32(snapshot.serial) {
             snapshots_by_serial.insert(serial, snapshot);
         }
