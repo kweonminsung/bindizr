@@ -19,9 +19,8 @@ impl OwnerName {
     }
 
     /// Parse client input — `@`, a relative name, or an absolute name inside
-    /// `zone` — into the stored form. Labels are checked for wire safety only:
-    /// owner names legitimately carry `_`-prefixed labels that a zone name may
-    /// not.
+    /// `zone` — into the stored form. Labels are checked for wire safety only,
+    /// since owner names carry the `_` labels a zone name may not.
     pub fn parse_in_zone(input: &str, zone: &ZoneName) -> Result<Self, ParseNameError> {
         let trimmed = input.trim();
         if trimmed.is_empty() {

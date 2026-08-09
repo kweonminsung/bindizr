@@ -62,9 +62,9 @@ pub(crate) struct DaemonResponse {
     pub data: serde_json::Value,
 }
 
-// Command payloads. The CLI serializes one and the daemon deserializes the
-// same type, so a renamed field breaks at compile time. Commands whose payload
-// is exactly a service request type send that type directly.
+// Command payloads. The CLI serializes one and the daemon deserializes the same
+// type, so a renamed field breaks at compile time. A payload that is exactly a
+// service request type is sent as that type.
 
 /// Payload addressing a zone by name.
 #[derive(Serialize, Deserialize, Debug)]

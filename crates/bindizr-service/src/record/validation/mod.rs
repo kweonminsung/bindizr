@@ -251,9 +251,9 @@ pub enum AddOutcome {
 impl RecordService {
     /// Validate an add against conflicting records loaded within the caller's
     /// transaction, reporting an rdata-identical record as
-    /// [`AddOutcome::Duplicate`] instead of rejecting it: RFC 2136,
-    /// Section 3.4.2.2 makes such an add a silent no-op. The API paths call the
-    /// validator directly and keep treating it as a conflict.
+    /// [`AddOutcome::Duplicate`] rather than rejecting it — RFC 2136,
+    /// Section 3.4.2.2 makes it a silent no-op. The API paths call the
+    /// validator directly, where the same case stays a conflict.
     pub async fn validate_add_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,

@@ -24,8 +24,8 @@ pub(crate) const DEFAULT_EXPIRE: i32 = 3_600_000;
 pub(crate) const DEFAULT_MINIMUM_TTL: i32 = 86_400;
 
 /// TTL a synthesized apex NS must take to join the existing RRset rather than
-/// split it (RFC 2181, Section 5.2). `candidates` are scanned in priority
-/// order; the zone TTL is the fallback.
+/// split it (RFC 2181, Section 5.2). `candidates` are scanned in priority order,
+/// falling back to the zone TTL.
 pub(super) fn apex_ns_rrset_ttl<'a>(
     zone: &Zone,
     candidates: impl IntoIterator<Item = (&'a RecordType, &'a str, i32)>,

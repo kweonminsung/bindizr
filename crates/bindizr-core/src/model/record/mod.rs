@@ -204,10 +204,9 @@ impl RecordType {
         }
     }
 
-    /// Counterpart of [`Self::canonical_value`] for writes: validate a value
-    /// (with its priority column) and return the one spelling record rows
-    /// encode, so every entry path stores equal bytes. TXT takes presentation
-    /// form; other TXT input grammars go through [`TxtRdata`] directly.
+    /// Counterpart of [`Self::canonical_value`] for writes: the one spelling
+    /// record rows encode, so every entry path stores equal bytes. TXT takes
+    /// presentation form; other TXT grammars go through [`TxtRdata`] directly.
     pub fn encoded_value(&self, value: &str, priority: Option<i32>) -> Result<String, String> {
         // TXT keeps raw bytes; every other type tolerates surrounding whitespace.
         let trimmed = value.trim();

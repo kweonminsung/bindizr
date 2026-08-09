@@ -164,9 +164,8 @@ pub fn classify_wire_labels(name: &str) -> Result<(), ParseNameError> {
     Ok(())
 }
 
-/// Normalize a name to lookup form: trimmed, no trailing dot, lowercase, after
-/// checking it is usable on the wire. Unlike [`ZoneName::parse`] the LDH charset
-/// rule is left out, so `_`-prefixed labels pass.
+/// Normalize a name to lookup form: trimmed, no trailing dot, lowercase. The
+/// LDH rule [`ZoneName::parse`] applies is left out, so `_` labels pass.
 pub fn to_lookup_name(value: &str) -> Result<String, ParseNameError> {
     let trimmed = value.trim().trim_end_matches('.');
 
@@ -222,9 +221,9 @@ pub fn to_display_owner_fqdn(name: &str, zone: &str) -> String {
     to_fqdn_lowercase(&to_owner_fqdn(name.trim(), zone))
 }
 
-/// Inverse of [`to_owner_fqdn`]: reduce an owner name to the relative form
-/// record rows encode (`@` at the apex), lowercased since record lookups bind
-/// the lowercase form. `None` when the name resolves outside `zone`.
+/// Inverse of [`to_owner_fqdn`]: the relative form record rows encode (`@` at
+/// the apex), lowercased to match how lookups bind. `None` when `name` resolves
+/// outside `zone`.
 pub fn to_encoded_owner_name(name: &str, zone: &str) -> Option<String> {
     let owner = to_owner_fqdn(name, zone).to_ascii_lowercase();
     let zone_fqdn = to_fqdn(zone).to_ascii_lowercase();
@@ -249,8 +248,8 @@ pub fn to_encoded_owner_name(name: &str, zone: &str) -> Option<String> {
 }
 
 /// Whether `name` equals `zone` or is a subdomain of it, compared label by
-/// label so an escaped dot cannot pose as a label boundary. Both sides must
-/// already share the same case and trailing-dot form.
+/// label so an escaped dot cannot pose as a boundary. Both sides must already
+/// share the same case and trailing-dot form.
 pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
     match (label_vec(name), label_vec(zone)) {
         (Some(name_labels), Some(zone_labels)) => is_label_suffix(&name_labels, &zone_labels),
