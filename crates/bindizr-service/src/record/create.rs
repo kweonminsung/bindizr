@@ -58,7 +58,7 @@ impl RecordService {
                     &mut tx,
                     &zone,
                     &[RecordWrite {
-                        relative_name: normalized_owner.stored_name.as_str(),
+                        relative_name: normalized_owner.stored_name.clone(),
                         record_type: Some(&record_type),
                     }],
                 )
@@ -68,7 +68,7 @@ impl RecordService {
                 match RepositoryService::get_records_by_zone_id_and_name_tx(
                     &mut tx,
                     zone.id,
-                    normalized_owner.stored_name.as_str(),
+                    &normalized_owner.stored_name.to_stored(),
                 )
                 .await
                 {

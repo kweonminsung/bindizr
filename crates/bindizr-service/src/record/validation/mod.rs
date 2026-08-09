@@ -269,7 +269,7 @@ impl RecordService {
         let zone_records = RepositoryService::get_records_by_zone_id_and_name_tx(
             tx,
             zone.id,
-            lookup_owner.stored_name.as_str(),
+            &lookup_owner.stored_name.to_stored(),
         )
         .await
         .map_err(|e| {

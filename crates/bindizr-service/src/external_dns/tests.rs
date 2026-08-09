@@ -81,11 +81,14 @@ fn find_authoritative_zone_requires_label_boundary() {
 }
 
 #[test]
-fn normalize_lookup_name_rejects_an_escaped_name() {
-    // Zone resolution splits on '.', so a name that could hide a dot inside a
-    // label is refused before it can pick a zone.
-    let err = normalize_lookup_name(r"evil\.example.com").unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidRecordName);
+fn an_escaped_dot_does_not_put_a_name_inside_the_zone_it_spells() {
+    // `evil\.example.com` is the two labels [evil.example, com], so no zone
+    // named example.com is authoritative for it.
+    let zones = vec![test_zone(1, "example.com")];
+    let name = normalize_lookup_name(r"evil\.example.com").unwrap();
+
+    assert_eq!(name, r"evil\.example.com");
+    assert!(find_authoritative_zone(&zones, &name).is_none());
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! Record-name-pattern and record-type grant matching, shared by zone TSIG
 //! policies (nsupdate) and zone token policies (HTTP API).
 
-use bindizr_core::dns::name::is_same_or_subdomain_fqdn;
+use bindizr_core::dns::name::{OwnerName, decode_name_labels, join_labels};
 
 use crate::{
     error::ServiceError,
@@ -15,19 +15,17 @@ const MATCH_ANY: &str = "*";
 /// Match a relative owner name (`@`, `www`, `a.b`, ...) against a policy
 /// pattern: `*` (any name), `@` (apex only), `*.sub` (sub and everything under
 /// it), or an exact relative name.
-pub(crate) fn pattern_matches_name(pattern: &str, relative_name: &str) -> bool {
-    let name = relative_name.to_ascii_lowercase();
-
+pub(crate) fn pattern_matches_name(pattern: &str, name: &OwnerName) -> bool {
     if pattern == MATCH_ANY {
         return true;
     }
 
     // Compared label by label so `xsub` does not read as inside `sub`.
     if let Some(suffix) = pattern.strip_prefix("*.") {
-        return is_same_or_subdomain_fqdn(&name, suffix);
+        return name.is_same_or_under(&OwnerName::from_row(suffix));
     }
 
-    name == pattern
+    *name == OwnerName::from_row(pattern)
 }
 
 pub(crate) fn types_match(types: &str, record_type: Option<&RecordType>) -> bool {
@@ -57,7 +55,15 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
     let name_part = raw.strip_prefix("*.").unwrap_or(raw);
     validate_relative_name(name_part)?;
 
-    Ok(raw.to_ascii_lowercase())
+    // Store the canonical spelling so one name is one pattern.
+    let canonical = join_labels(
+        &decode_name_labels(name_part)
+            .map_err(|e| ServiceError::invalid_input(format!("record name pattern {}", e)))?,
+    );
+    Ok(match raw.strip_prefix("*.") {
+        Some(_) => format!("*.{}", canonical),
+        None => canonical,
+    })
 }
 
 fn validate_relative_name(name: &str) -> Result<(), ServiceError> {

@@ -1,5 +1,5 @@
 use bindizr_core::dns::{
-    name::{to_display_owner_fqdn, to_fqdn_lowercase},
+    name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{SoaMailbox, TxtContent, TxtRdata},
 };
 use chrono::{DateTime, Utc};
@@ -235,7 +235,7 @@ impl GetRecordResponse {
     pub fn from_record_and_zone_name(record: &Record, zone_name: &str) -> Self {
         GetRecordResponse {
             id: record.id,
-            name: to_display_owner_fqdn(&record.name, zone_name),
+            name: OwnerName::from_row(&record.name).to_fqdn(&ZoneName::from_row(zone_name)),
             record_type: record.record_type.to_string(),
             value: display_record_value_request(&record.value, &record.record_type),
             ttl: record.ttl,

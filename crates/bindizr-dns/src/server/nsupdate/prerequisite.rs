@@ -2,10 +2,7 @@ use domain::base::iana::{Class, Rtype};
 
 use super::{
     parser::UpdateRecord,
-    update::{
-        UpdateError, encoded_owner_name, normalize_owner_name, rr_to_record_value,
-        rr_type_to_record_type,
-    },
+    update::{UpdateError, owner_in_zone, rr_to_record_value, rr_type_to_record_type},
 };
 use crate::{
     model::{record::Record, zone::Zone},
@@ -42,8 +39,8 @@ fn evaluate_prerequisites_against_records(
             ));
         }
 
-        let owner = normalize_owner_name(&rr.name, &zone.name)?;
-        let relative = encoded_owner_name(&owner, &zone.name)?;
+        let owner = owner_in_zone(&rr.name, &zone.name)?;
+        let relative = owner.to_stored();
         let owner_exists = is_owner_existing(&relative, zone_records);
 
         match rr.class {

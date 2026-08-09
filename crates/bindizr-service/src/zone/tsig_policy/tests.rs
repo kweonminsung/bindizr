@@ -19,19 +19,35 @@ fn authorize_update_requires_name_and_type_match() {
 
     assert!(authorize_update(
         &policies,
-        "host.dyn",
+        &OwnerName::from_row("host.dyn"),
         Some(&RecordType::A)
     ));
-    assert!(authorize_update(&policies, "@", Some(&RecordType::TXT)));
+    assert!(authorize_update(
+        &policies,
+        &OwnerName::from_row("@"),
+        Some(&RecordType::TXT)
+    ));
     // Whole-name delete (TYPE ANY) is only covered by unrestricted types.
-    assert!(authorize_update(&policies, "@", None));
-    assert!(!authorize_update(&policies, "host.dyn", None));
+    assert!(authorize_update(&policies, &OwnerName::from_row("@"), None));
+    assert!(!authorize_update(
+        &policies,
+        &OwnerName::from_row("host.dyn"),
+        None
+    ));
 
     assert!(!authorize_update(
         &policies,
-        "host.dyn",
+        &OwnerName::from_row("host.dyn"),
         Some(&RecordType::TXT)
     ));
-    assert!(!authorize_update(&policies, "www", Some(&RecordType::A)));
-    assert!(!authorize_update(&policies, "", Some(&RecordType::A)));
+    assert!(!authorize_update(
+        &policies,
+        &OwnerName::from_row("www"),
+        Some(&RecordType::A)
+    ));
+    assert!(!authorize_update(
+        &policies,
+        &OwnerName::from_row(""),
+        Some(&RecordType::A)
+    ));
 }

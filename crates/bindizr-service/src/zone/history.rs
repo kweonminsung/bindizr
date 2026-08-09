@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bindizr_core::dns::{
-    name::{OwnerName, to_display_owner_fqdn},
+    name::{OwnerName, ZoneName},
     record::SoaMailbox,
 };
 use chrono::Utc;
@@ -227,7 +227,7 @@ fn group_rrsets(
     let mut groups: BTreeMap<(String, String), Vec<GroupedRecord>> = BTreeMap::new();
     for record in records {
         let key = (
-            to_display_owner_fqdn(&record.name, &zone.name),
+            OwnerName::from_row(&record.name).to_fqdn(&ZoneName::from_row(&zone.name)),
             record.record_type.to_string(),
         );
         groups.entry(key).or_default().push(GroupedRecord {

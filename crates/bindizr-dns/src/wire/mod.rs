@@ -7,7 +7,7 @@ use std::{
 };
 
 use bindizr_core::dns::{
-    name::{to_fqdn, to_owner_fqdn},
+    name::{OwnerName, ZoneName, to_fqdn},
     record::{SoaMailbox, TxtRdata},
 };
 use domain::{
@@ -257,7 +257,7 @@ impl DnsMessageBuilder {
         priority: Option<i32>,
     ) -> Result<(), XfrError> {
         let ttl = ttl as u32;
-        let owner_name = to_owner_fqdn(name, zone_name);
+        let owner_name = OwnerName::from_row(name).to_fqdn(&ZoneName::from_row(zone_name));
 
         match record_type {
             "A" => {

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::name::{OwnerName, to_encoded_owner_name};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
@@ -173,8 +173,9 @@ pub(super) fn group_ops_by_zone(
         })?;
 
         let mut op = pending.op;
-        op.name = to_encoded_owner_name(&op.name, &zone.name)
-            .expect("find_authoritative_zone matched the name inside this zone");
+        op.name = OwnerName::parse_absolute_in_zone(&op.name, &ZoneName::from_row(&zone.name))
+            .expect("find_authoritative_zone matched the name inside this zone")
+            .to_stored();
         let entry = grouped.entry(zone.name.clone()).or_default();
         if pending.is_delete {
             entry.dels.push(op);
@@ -328,7 +329,7 @@ impl ExternalDnsService {
                     .iter()
                     .chain(ops.dels.iter())
                     .map(|op| RecordWrite {
-                        relative_name: &op.name,
+                        relative_name: OwnerName::from_row(&op.name),
                         record_type: Some(&op.record_type),
                     })
                     .collect();

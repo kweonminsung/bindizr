@@ -1,3 +1,5 @@
+use bindizr_core::dns::name::OwnerName;
+
 use super::*;
 use crate::error::ErrorCode;
 
@@ -33,29 +35,57 @@ fn normalize_types_parses_and_dedupes() {
 
 #[test]
 fn pattern_matching_covers_all_forms() {
-    assert!(pattern_matches_name("*", "@"));
-    assert!(pattern_matches_name("*", "anything.at.all"));
+    assert!(pattern_matches_name("*", &OwnerName::from_row("@")));
+    assert!(pattern_matches_name(
+        "*",
+        &OwnerName::from_row("anything.at.all")
+    ));
 
-    assert!(pattern_matches_name("@", "@"));
-    assert!(!pattern_matches_name("@", "www"));
+    assert!(pattern_matches_name("@", &OwnerName::from_row("@")));
+    assert!(!pattern_matches_name("@", &OwnerName::from_row("www")));
 
-    assert!(pattern_matches_name("www", "www"));
-    assert!(pattern_matches_name("www", "WWW"));
-    assert!(!pattern_matches_name("www", "sub.www"));
+    assert!(pattern_matches_name("www", &OwnerName::from_row("www")));
+    assert!(pattern_matches_name("www", &OwnerName::from_row("WWW")));
+    assert!(!pattern_matches_name(
+        "www",
+        &OwnerName::from_row("sub.www")
+    ));
 
-    assert!(pattern_matches_name("*.sub", "sub"));
-    assert!(pattern_matches_name("*.sub", "a.sub"));
-    assert!(pattern_matches_name("*.sub", "a.b.sub"));
-    assert!(!pattern_matches_name("*.sub", "sub.other"));
-    assert!(!pattern_matches_name("*.sub", "xsub"));
+    assert!(pattern_matches_name("*.sub", &OwnerName::from_row("sub")));
+    assert!(pattern_matches_name("*.sub", &OwnerName::from_row("a.sub")));
+    assert!(pattern_matches_name(
+        "*.sub",
+        &OwnerName::from_row("a.b.sub")
+    ));
+    assert!(!pattern_matches_name(
+        "*.sub",
+        &OwnerName::from_row("sub.other")
+    ));
+    assert!(!pattern_matches_name("*.sub", &OwnerName::from_row("xsub")));
 }
 
 #[test]
-fn normalize_pattern_rejects_escapes_and_trailing_dots() {
-    // An escaped dot would make one label spell a subtree it is not under, so
-    // a pattern that needs one is refused rather than compared later.
-    for invalid in [r"a\.sub", r"a\", "www.", "*.sub."] {
+fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
+    // A pattern is stored canonically so one name has one spelling, and
+    // matching decodes it back to labels.
+    assert_eq!(normalize_pattern(Some(r"a\046sub")).unwrap(), r"a\.sub");
+    assert_eq!(normalize_pattern(Some(r"*.a\.b")).unwrap(), r"*.a\.b");
+
+    for invalid in [r"a\", "www.", "*.sub."] {
         let err = normalize_pattern(Some(invalid)).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput, "input: {:?}", invalid);
     }
+}
+
+#[test]
+fn a_subtree_grant_does_not_reach_a_label_that_merely_spells_it() {
+    // `a\.sub` is the single label `a.sub`, not a name under `sub`.
+    assert!(!pattern_matches_name(
+        "*.sub",
+        &OwnerName::from_row(r"a\.sub")
+    ));
+    assert!(pattern_matches_name(
+        "*.sub",
+        &OwnerName::from_row(r"a\.b.sub")
+    ));
 }

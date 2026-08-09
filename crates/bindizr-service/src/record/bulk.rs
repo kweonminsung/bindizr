@@ -298,7 +298,7 @@ impl RecordService {
             let writes: Vec<RecordWrite<'_>> = to_insert
                 .iter()
                 .map(|record| RecordWrite {
-                    relative_name: &record.name,
+                    relative_name: OwnerName::from_row(&record.name),
                     record_type: Some(&record.record_type),
                 })
                 .collect();

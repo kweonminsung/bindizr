@@ -42,6 +42,12 @@ impl ZoneName {
         &self.0
     }
 
+    /// The zone's labels. The LDH rule [`Self::parse`] applies leaves no
+    /// escapes, so every `.` is a boundary.
+    pub fn labels(&self) -> Vec<String> {
+        self.0.split('.').map(str::to_string).collect()
+    }
+
     /// The absolute form, with the trailing dot.
     pub fn to_fqdn(&self) -> String {
         to_fqdn(&self.0)

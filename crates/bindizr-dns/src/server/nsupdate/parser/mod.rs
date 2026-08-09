@@ -1,5 +1,6 @@
 use std::fmt;
 
+use bindizr_core::dns::name::join_labels;
 use domain::{
     base::{
         Message,
@@ -52,10 +53,6 @@ pub(super) enum ParseError {
     InvalidHeader,
     InvalidZoneSection,
     InvalidName,
-    /// A well-formed name bindizr declines to handle. A label may hold any
-    /// octet (RFC 2181, Section 11), including `.`, but bindizr stores names
-    /// unescaped, so such a name has no representation here.
-    UnsupportedName,
     InvalidRr,
     InvalidTsig,
 }
@@ -68,9 +65,6 @@ impl fmt::Display for ParseError {
             ParseError::InvalidHeader => write!(f, "Invalid DNS UPDATE header"),
             ParseError::InvalidZoneSection => write!(f, "Invalid DNS UPDATE zone section"),
             ParseError::InvalidName => write!(f, "Invalid compressed domain name"),
-            ParseError::UnsupportedName => {
-                write!(f, "Domain name with a dot or backslash inside a label")
-            }
             ParseError::InvalidRr => write!(f, "Invalid resource record in UPDATE section"),
             ParseError::InvalidTsig => write!(f, "Invalid TSIG resource record"),
         }
@@ -207,12 +201,10 @@ fn parse_tsig_rr(
     })
 }
 
-/// Renders a parsed name the way the update flow stores names: labels joined
-/// with '.', trailing dot. A label holding a `.` or `\` is refused rather than
-/// escaped, because bindizr stores names unescaped and an escape would have to
-/// survive every later comparison to stay in the right zone.
+/// Renders a parsed name in presentation form, escaping a `.` or `\` inside a
+/// label so the text decodes back to the same labels (RFC 1035, Section 5.1).
 pub(super) fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
-    let mut out = String::new();
+    let mut labels = Vec::new();
 
     for label in name.iter() {
         if label.is_root() {
@@ -220,18 +212,14 @@ pub(super) fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, Pars
         }
 
         let text = std::str::from_utf8(label.as_slice()).map_err(|_| ParseError::InvalidName)?;
-        if text.contains(['.', '\\']) {
-            return Err(ParseError::UnsupportedName);
-        }
-        out.push_str(text);
-        out.push('.');
+        labels.push(text.to_string());
     }
 
-    if out.is_empty() {
-        out.push('.');
+    if labels.is_empty() {
+        return Ok(".".to_string());
     }
 
-    Ok(out)
+    Ok(format!("{}.", join_labels(&labels)))
 }
 
 #[cfg(test)]

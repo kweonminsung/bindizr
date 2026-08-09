@@ -1,7 +1,7 @@
 use bindizr_core::{
     config,
     dns::{
-        name::{is_same_or_subdomain_fqdn, to_encoded_owner_name, to_fqdn},
+        name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
         record::TxtRdata,
     },
 };
@@ -242,19 +242,18 @@ async fn authorize_key(
     }
 
     for update in &request.updates {
-        let owner_name = normalize_owner_name(&update.name, &zone.name)?;
-        let relative_name = encoded_owner_name(&owner_name, &zone.name)?;
+        let owner = owner_in_zone(&update.name, &zone.name)?;
         let record_type = if update.rr_type == Rtype::ANY {
             None
         } else {
             Some(rr_type_to_record_type(update.rr_type)?)
         };
 
-        if !tsig_policy::authorize_update(&policies, &relative_name, record_type.as_ref()) {
+        if !tsig_policy::authorize_update(&policies, &owner, record_type.as_ref()) {
             return Err(UpdateError::Refused(format!(
                 "TSIG key '{}' is not authorized to update '{}' ({}) in zone '{}'",
                 key.name,
-                relative_name,
+                owner,
                 record_type
                     .as_ref()
                     .map(|record_type| record_type.as_str())
@@ -274,15 +273,13 @@ async fn apply_single_update(
     query_data: &[u8],
     new_serial: i32,
 ) -> Result<bool, UpdateError> {
-    let owner_name = normalize_owner_name(&update.name, &zone.name)?;
+    let owner = owner_in_zone(&update.name, &zone.name)?;
 
     match update.class {
-        Class::IN => add_record(tx, zone, &owner_name, update, query_data, new_serial).await,
-        Class::ANY => {
-            delete_records(tx, zone, &owner_name, update, true, query_data, new_serial).await
-        }
+        Class::IN => add_record(tx, zone, &owner, update, query_data, new_serial).await,
+        Class::ANY => delete_records(tx, zone, &owner, update, true, query_data, new_serial).await,
         Class::NONE => {
-            delete_records(tx, zone, &owner_name, update, false, query_data, new_serial).await
+            delete_records(tx, zone, &owner, update, false, query_data, new_serial).await
         }
         class => Err(UpdateError::Refused(format!(
             "unsupported update class: {}",
@@ -294,7 +291,7 @@ async fn apply_single_update(
 async fn add_record(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
-    owner_name: &str,
+    owner: &OwnerName,
     update: &UpdateRecord,
     query_data: &[u8],
     new_serial: i32,
@@ -310,7 +307,7 @@ async fn add_record(
         })?
     };
 
-    let relative_name = encoded_owner_name(owner_name, &zone.name)?;
+    let relative_name = owner.to_stored();
 
     if update.ttl > i32::MAX as u32 {
         return Err(UpdateError::Refused(format!(
@@ -370,7 +367,7 @@ async fn add_record(
 async fn delete_records(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
-    owner_name: &str,
+    owner: &OwnerName,
     update: &UpdateRecord,
     is_rrset_delete: bool,
     query_data: &[u8],
@@ -378,7 +375,7 @@ async fn delete_records(
 ) -> Result<bool, UpdateError> {
     validate_delete_update_shape(update, is_rrset_delete)?;
 
-    let relative_name = encoded_owner_name(owner_name, &zone.name)?;
+    let relative_name = owner.to_stored();
     let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
@@ -578,38 +575,22 @@ pub(super) fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, Updat
     }
 }
 
-pub(super) fn normalize_owner_name(name: &str, zone_name: &str) -> Result<String, UpdateError> {
-    let normalized_zone = to_fqdn(zone_name);
-    let normalized_zone_no_dot = normalized_zone.trim_end_matches('.').to_ascii_lowercase();
-
-    let owner = if name == "." {
+/// The owner of an update RR. The wire carries owners absolutely, so a name
+/// outside the zone is NOTZONE rather than something to qualify.
+pub(super) fn owner_in_zone(name: &str, zone_name: &str) -> Result<OwnerName, UpdateError> {
+    if name.trim_end_matches('.').is_empty() {
         return Err(UpdateError::NotZone(
             "root owner is not supported".to_string(),
         ));
-    } else {
-        to_fqdn(name)
-    };
-
-    let owner_no_dot = owner.trim_end_matches('.').to_ascii_lowercase();
-
-    if is_same_or_subdomain_fqdn(&owner_no_dot, &normalized_zone_no_dot) {
-        return Ok(owner);
     }
 
-    Err(UpdateError::NotZone(format!(
-        "owner '{}' is outside zone '{}'",
-        owner, normalized_zone
-    )))
-}
-
-/// The stored owner-name form for an in-zone absolute owner.
-pub(super) fn encoded_owner_name(owner: &str, zone_name: &str) -> Result<String, UpdateError> {
-    to_encoded_owner_name(owner, zone_name).ok_or_else(|| {
-        UpdateError::NotZone(format!(
+    OwnerName::parse_absolute_in_zone(name, &ZoneName::from_row(zone_name)).map_err(|e| match e {
+        ParseNameError::OutsideZone => UpdateError::NotZone(format!(
             "owner '{}' is outside zone '{}'",
-            to_fqdn(owner),
+            to_fqdn(name),
             to_fqdn(zone_name)
-        ))
+        )),
+        other => UpdateError::Refused(format!("owner '{}' {}", to_fqdn(name), other)),
     })
 }
 

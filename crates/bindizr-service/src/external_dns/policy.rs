@@ -1,6 +1,6 @@
 //! Authoritative zone matching for the ExternalDNS API.
 
-use bindizr_core::dns::name::{is_same_or_subdomain_fqdn, to_lookup_name};
+use bindizr_core::dns::name::{ZoneName, decode_name_labels, labels_in_zone, to_lookup_name};
 
 use crate::{error::ServiceError, model::zone::Zone};
 
@@ -15,8 +15,9 @@ pub(super) fn normalize_lookup_name(name: &str) -> Result<String, ServiceError> 
 /// authorization, so a name in a denied subzone never falls back to a
 /// granted parent zone.
 pub(super) fn find_authoritative_zone<'a>(zones: &'a [Zone], name: &str) -> Option<&'a Zone> {
+    let labels = decode_name_labels(name).ok()?;
     zones
         .iter()
-        .filter(|zone| is_same_or_subdomain_fqdn(name, &zone.name))
+        .filter(|zone| labels_in_zone(&labels, &ZoneName::from_row(&zone.name).labels()))
         .max_by_key(|zone| zone.name.len())
 }

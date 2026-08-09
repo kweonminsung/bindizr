@@ -1,3 +1,5 @@
+use bindizr_core::dns::name::OwnerName;
+
 use super::{
     RecordService,
     bulk::{PreparedRecord, prepare_record, zone_changes_for},
@@ -170,11 +172,11 @@ impl RecordService {
                     &zone,
                     &[
                         RecordWrite {
-                            relative_name: &existing_record.name,
+                            relative_name: OwnerName::from_row(&existing_record.name),
                             record_type: Some(&existing_record.record_type),
                         },
                         RecordWrite {
-                            relative_name: lookup_owner.stored_name.as_str(),
+                            relative_name: lookup_owner.stored_name.clone(),
                             record_type: Some(&resolved.record_type),
                         },
                     ],
@@ -183,7 +185,7 @@ impl RecordService {
             let zone_records = match RepositoryService::get_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone.id,
-                lookup_owner.stored_name.as_str(),
+                &lookup_owner.stored_name.to_stored(),
             )
             .await
             {

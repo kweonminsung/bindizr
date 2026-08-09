@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::{is_same_or_subdomain_fqdn, to_fqdn_lowercase};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_db::repository::RecordFilter;
 
 use super::RecordService;
@@ -171,11 +171,10 @@ fn normalize_filter_record_name(name: Option<String>, zone_name: Option<&str>) -
 
         // An in-zone name is matched in its absolute form; anything else is
         // passed through so the filter can still match it literally.
-        let candidate = to_fqdn_lowercase(trimmed);
-        if is_same_or_subdomain_fqdn(&candidate, &to_fqdn_lowercase(zone_name)) {
-            candidate
-        } else {
-            trimmed.to_string()
+        let zone = ZoneName::from_row(zone_name);
+        match OwnerName::parse_absolute_in_zone(trimmed, &zone) {
+            Ok(owner) => owner.to_fqdn(&zone),
+            Err(_) => trimmed.to_string(),
         }
     })
 }

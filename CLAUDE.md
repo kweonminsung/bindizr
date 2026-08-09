@@ -173,22 +173,34 @@ One locking model covers the service layer; keep new code on it:
 - Adjacent layers never reuse one name for different semantics (e.g. a raw
   row delete in the facade vs. a delete-plus-IXFR-log in the service).
 
-### Names are unescaped
+### Names are labels, not strings
 
-A DNS name bindizr parses, stores, or compares never contains a `\` escape.
-`dns::name::classify_wire_labels` rejects it, and every write path reaches
-that check through `OwnerName::parse_in_zone`, `to_lookup_name`, or (for
-nsupdate) the wire-to-presentation step, which refuses a label holding a `.`
-instead of escaping it. This is what lets name comparisons split on `.`: no
-label can hide a dot that would read as a boundary, so a single label cannot
-impersonate a subdomain. Do not reintroduce escape handling in a name path —
-fix the parse boundary instead.
+Presentation form is a rendering of a DNS name, not its representation. A
+name is decoded into labels at the parse boundary — `OwnerName::parse_in_zone`
+/ `parse_absolute_in_zone`, `ZoneName::parse`, `dns::name::decode_name_labels`
+— resolving the `\.`, `\\`, and `\DDD` escapes of RFC 1035, Section 5.1. Every
+comparison then runs on labels, so a dot inside a label is data and can never
+read as a boundary.
 
-The one exception is the SOA RNAME, derived from the admin email by
-`SoaMailbox`, which escapes the local part's dots per RFC 1035, Section 5.1.
-It owns its own escaping and label check, is only ever written to the wire,
-and is never compared as an owner name. TXT rdata escaping (`TxtRdata`) is
-unrelated to names.
+Do not answer a question about names with string operations. `ends_with`,
+`split('.')`, or `strip_suffix` on a name is a bug even when it looks right:
+it is how `evil\.example.com` came to be read as inside `example.com`. Use
+`OwnerName`'s methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or
+`labels_in_zone`.
+
+Names are canonical by construction: labels are lowercased (RFC 4343) and
+rendered back with only `.` and `\` escaped, so one name has one spelling.
+That is what lets the record-filter SQL compare owner names as text and
+concatenate them into FQDNs — every write path stores the canonical form.
+Rows hold that presentation string; `OwnerName::from_row` decodes it.
+
+`OwnerName::parse_in_zone` qualifies a relative name by appending the zone;
+`parse_absolute_in_zone` never does, and is what input carrying no trailing
+dot (lookup form, wire owners) must use, or an out-of-zone name is silently
+qualified instead of rejected.
+
+Two escapes are unrelated to names and own their own encoding: the SOA RNAME
+(`SoaMailbox`, from the admin email) and TXT rdata (`TxtRdata`).
 
 ### Free-function helper naming
 

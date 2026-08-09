@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bindizr_core::dns::name::OwnerName;
 use chrono::Utc;
 
 use super::ZoneService;
@@ -112,7 +113,7 @@ impl ZoneTsigPolicyService {
 /// which only a policy with unrestricted types may authorize.
 pub fn authorize_update(
     policies: &[ZoneTsigPolicy],
-    relative_name: &str,
+    relative_name: &OwnerName,
     record_type: Option<&RecordType>,
 ) -> bool {
     policies.iter().any(|policy| {

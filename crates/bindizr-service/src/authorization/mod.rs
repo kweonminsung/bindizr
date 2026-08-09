@@ -5,6 +5,8 @@
 
 use std::{collections::HashSet, sync::Arc};
 
+use bindizr_core::dns::name::OwnerName;
+
 use crate::{
     RepositoryTx,
     error::ServiceError,
@@ -30,7 +32,7 @@ pub enum Caller {
 /// One record-plane write to authorize: the owner name relative to the zone
 /// (stored form) and its type. `None` types only match unrestricted policies.
 pub struct RecordWrite<'a> {
-    pub relative_name: &'a str,
+    pub relative_name: OwnerName,
     pub record_type: Option<&'a RecordType>,
 }
 
@@ -119,7 +121,7 @@ fn authorize_with_policies(
 ) -> Result<(), ServiceError> {
     for write in writes {
         let granted = policies.iter().any(|policy| {
-            pattern_matches_name(&policy.record_name_pattern, write.relative_name)
+            pattern_matches_name(&policy.record_name_pattern, &write.relative_name)
                 && types_match(&policy.record_types, write.record_type)
         });
         if !granted {

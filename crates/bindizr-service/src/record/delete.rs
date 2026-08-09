@@ -1,3 +1,5 @@
+use bindizr_core::dns::name::OwnerName;
+
 use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
     authorization::{Caller, RecordWrite},
@@ -77,7 +79,7 @@ impl RecordService {
                     &mut tx,
                     &zone,
                     &[RecordWrite {
-                        relative_name: &existing_record.name,
+                        relative_name: OwnerName::from_row(&existing_record.name),
                         record_type: Some(&existing_record.record_type),
                     }],
                 )

@@ -1,24 +1,42 @@
 use domain::base::iana::{Class, Rtype};
 
-use super::{
-    UpdateError, encoded_owner_name, normalize_owner_name, rr_to_record_value,
-    validate_delete_update_shape,
-};
+use super::{UpdateError, owner_in_zone, rr_to_record_value, validate_delete_update_shape};
 use crate::{model::record::RecordType, server::nsupdate::parser::UpdateRecord};
 
 #[test]
-fn encoded_owner_name_rejects_partial_suffix_match() {
-    let err = encoded_owner_name("aexample.com.", "example.com.").unwrap_err();
-    assert!(matches!(err, UpdateError::NotZone(_)));
+fn owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
+    assert_eq!(
+        owner_in_zone("www.example.com.", "example.com.")
+            .unwrap()
+            .to_stored(),
+        "www"
+    );
+    assert!(
+        owner_in_zone("example.com.", "example.com.")
+            .unwrap()
+            .is_apex()
+    );
+    // A dotted wire label is one label, so it is data rather than a boundary.
+    assert_eq!(
+        owner_in_zone(r"host\.name.example.com.", "example.com.")
+            .unwrap()
+            .labels(),
+        ["host.name"]
+    );
 }
 
 #[test]
-fn normalize_owner_name_rejects_out_of_zone_suffix_matches() {
-    assert!(normalize_owner_name("www.example.com.", "example.com.").is_ok());
-
-    for owner in ["badexample.com.", "www.badexample.com.", "."] {
-        let err = normalize_owner_name(owner, "example.com.").unwrap_err();
-        assert!(matches!(err, UpdateError::NotZone(_)));
+fn owner_in_zone_rejects_owners_outside_the_zone() {
+    for owner in [
+        "aexample.com.",
+        "badexample.com.",
+        "www.badexample.com.",
+        ".",
+        // One label spelling the zone is not inside it.
+        r"evil\.example.com.",
+    ] {
+        let err = owner_in_zone(owner, "example.com.").unwrap_err();
+        assert!(matches!(err, UpdateError::NotZone(_)), "{owner:?}");
     }
 }
 

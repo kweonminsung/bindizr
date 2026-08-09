@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bindizr_core::dns::name::OwnerName;
 use chrono::Utc;
 
 use super::{Caller, RecordWrite, authorize_with_policies};
@@ -45,7 +46,7 @@ fn authorize(
 
 fn write<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordWrite<'a> {
     RecordWrite {
-        relative_name: name,
+        relative_name: OwnerName::from_row(name),
         record_type,
     }
 }

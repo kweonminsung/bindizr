@@ -93,11 +93,10 @@ fn parse_update_request_accepts_opt_before_tsig() {
     assert_eq!(tsig.fudge, 300);
 }
 
-/// bindizr stores names unescaped, so a label that would need an escape is
-/// refused instead: a one-label key name must never match the stored key that
-/// a multi-label name of the same spelling would.
+/// Escaping keeps the one-label key name distinct from the multi-label name of
+/// the same spelling, which decodes to different labels.
 #[test]
-fn parse_update_request_rejects_a_dot_inside_a_tsig_owner_label() {
+fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
     let mut message = minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_tsig_rr_with_owner(
@@ -107,17 +106,14 @@ fn parse_update_request_rejects_a_dot_inside_a_tsig_owner_label() {
         ],
     );
 
-    assert!(matches!(
-        parse_update_request(&message),
-        Err(ParseError::UnsupportedName)
-    ));
+    let request = parse_update_request(&message).unwrap();
+    assert_eq!(request.tsig.unwrap().name, r"Key\.With\.Dot.");
 }
 
-/// A dotted label has no unescaped spelling, and an escaped one would have to
-/// survive every later comparison to stay in the right zone, so it is refused
-/// at the wire boundary.
+/// The wire carries one label holding a dot; rendering it unescaped would let
+/// it read as two and land the update in a zone it is not in.
 #[test]
-fn parse_update_request_rejects_a_dot_inside_a_zone_label() {
+fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
     let mut message = Vec::new();
     message.extend_from_slice(&[
         0x12, 0x34, // ID
@@ -133,10 +129,8 @@ fn parse_update_request_rejects_a_dot_inside_a_zone_label() {
     message.extend_from_slice(&6u16.to_be_bytes());
     message.extend_from_slice(&1u16.to_be_bytes());
 
-    assert!(matches!(
-        parse_update_request(&message),
-        Err(ParseError::UnsupportedName)
-    ));
+    let request = parse_update_request(&message).unwrap();
+    assert_eq!(request.zone_name, r"evil\.example.com.");
 }
 
 #[test]
