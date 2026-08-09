@@ -1,10 +1,6 @@
 use bindizr_core::dns::{name::ZoneName, record::SoaMailbox};
 
-use crate::{
-    error::ServiceError,
-    types::CreateZoneRequest,
-    validation::{has_whitespace_or_control, validate_wire_labels},
-};
+use crate::{error::ServiceError, types::CreateZoneRequest, validation::has_whitespace_or_control};
 
 const MAX_EMAIL_LEN: usize = 254;
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
@@ -198,7 +194,9 @@ fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
 fn validate_soa_wire_safety(admin_email: &str) -> Result<(), ServiceError> {
     let soa_mailbox = SoaMailbox::from_email(admin_email)
         .map_err(|e| ServiceError::invalid_zone(e.to_string()))?;
-    validate_wire_labels(soa_mailbox.as_str(), "admin email SOA RNAME")
+    soa_mailbox
+        .classify_wire_labels()
+        .map_err(|e| ServiceError::invalid_zone(format!("admin email SOA RNAME {}", e)))
 }
 
 fn is_valid_email_local_char(c: char) -> bool {

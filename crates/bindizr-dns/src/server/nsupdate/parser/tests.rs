@@ -93,10 +93,11 @@ fn parse_update_request_accepts_opt_before_tsig() {
     assert_eq!(tsig.fudge, 300);
 }
 
-/// Escaping keeps a one-label key name from matching the stored key that a
-/// multi-label name of the same spelling would.
+/// bindizr stores names unescaped, so a label that would need an escape is
+/// refused instead: a one-label key name must never match the stored key that
+/// a multi-label name of the same spelling would.
 #[test]
-fn parse_update_request_escapes_dots_inside_a_tsig_owner_label() {
+fn parse_update_request_rejects_a_dot_inside_a_tsig_owner_label() {
     let mut message = minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_tsig_rr_with_owner(
@@ -106,15 +107,17 @@ fn parse_update_request_escapes_dots_inside_a_tsig_owner_label() {
         ],
     );
 
-    let request = parse_update_request(&message).unwrap();
-    let tsig = request.tsig.unwrap();
-    assert_eq!(tsig.name, r"Key\.With\.Dot.");
+    assert!(matches!(
+        parse_update_request(&message),
+        Err(ParseError::InvalidName)
+    ));
 }
 
-/// An unescaped dotted label would read as a label boundary downstream,
-/// letting a single label impersonate a real subdomain.
+/// A dotted label has no unescaped spelling, and an escaped one would have to
+/// survive every later comparison to stay in the right zone, so it is refused
+/// at the wire boundary.
 #[test]
-fn parse_update_request_escapes_dots_inside_a_zone_label() {
+fn parse_update_request_rejects_a_dot_inside_a_zone_label() {
     let mut message = Vec::new();
     message.extend_from_slice(&[
         0x12, 0x34, // ID
@@ -130,8 +133,10 @@ fn parse_update_request_escapes_dots_inside_a_zone_label() {
     message.extend_from_slice(&6u16.to_be_bytes());
     message.extend_from_slice(&1u16.to_be_bytes());
 
-    let request = parse_update_request(&message).unwrap();
-    assert_eq!(request.zone_name, r"evil\.example.com.");
+    assert!(matches!(
+        parse_update_request(&message),
+        Err(ParseError::InvalidName)
+    ));
 }
 
 #[test]

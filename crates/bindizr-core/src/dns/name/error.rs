@@ -16,7 +16,9 @@ pub enum ParseNameError {
         underscore_allowed: bool,
     },
     LabelHyphen,
-    DanglingEscape,
+    /// bindizr stores names unescaped, so `\` is rejected rather than read as
+    /// an escape (RFC 1035, Section 5.1).
+    Escape,
     OutsideZone,
 }
 
@@ -39,7 +41,7 @@ impl std::fmt::Display for ParseNameError {
                 }
             ),
             Self::LabelHyphen => write!(f, "labels must not start or end with hyphens"),
-            Self::DanglingEscape => write!(f, "contains a dangling escape"),
+            Self::Escape => write!(f, "must not contain escapes"),
             Self::OutsideZone => write!(f, "is outside the zone"),
         }
     }

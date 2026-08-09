@@ -78,11 +78,14 @@ fn find_authoritative_zone_requires_label_boundary() {
 
     assert!(find_authoritative_zone(&zones, "notexample.com").is_none());
     assert!(find_authoritative_zone(&zones, "example.org").is_none());
+}
 
-    // `evil\.example.com` is the two labels `evil.example` and `com`, so it is
-    // not in `example.com` (RFC 1035, Section 5.1). A string suffix test says
-    // it is, and the owner name would then be stored under the wrong zone.
-    assert!(find_authoritative_zone(&zones, r"evil\.example.com").is_none());
+#[test]
+fn normalize_lookup_name_rejects_an_escaped_name() {
+    // Zone resolution splits on '.', so a name that could hide a dot inside a
+    // label is refused before it can pick a zone.
+    let err = normalize_lookup_name(r"evil\.example.com").unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidRecordName);
 }
 
 #[test]

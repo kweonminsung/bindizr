@@ -1,8 +1,8 @@
 //! A record's owner name, canonical by construction.
 
 use super::{
-    ParseNameError, ZoneName, classify_wire_labels, escape_presentation_label,
-    has_whitespace_or_control, is_same_or_subdomain_fqdn, to_encoded_owner_name, to_owner_fqdn,
+    ParseNameError, ZoneName, classify_wire_labels, has_whitespace_or_control,
+    is_same_or_subdomain_fqdn, to_encoded_owner_name, to_owner_fqdn,
 };
 
 /// A record's owner name as rows encode it: `@` at the apex, otherwise a
@@ -66,16 +66,6 @@ impl OwnerName {
     /// The absolute form within `zone`.
     pub fn to_fqdn(&self, zone: &ZoneName) -> String {
         to_owner_fqdn(&self.0, zone.as_str())
-    }
-
-    /// Prefix this owner name with `label`, escaping a dot inside it.
-    pub fn prefixed(&self, label: &str) -> Self {
-        let label = escape_presentation_label(label).to_ascii_lowercase();
-        if self.is_apex() {
-            Self(label)
-        } else {
-            Self(format!("{}.{}", label, self.0))
-        }
     }
 }
 

@@ -16,6 +16,9 @@ fn encode_tcp_message_rejects_oversized_payload() {
     assert!(matches!(err, XfrError::ProtocolError(_)));
 }
 
+/// The SOA RNAME is the one name bindizr escapes — an admin email whose local
+/// part has a dot encodes to `admin\.dns.example.com.` — so the encoder must
+/// keep that dot inside one label (RFC 1035, Section 5.1).
 #[test]
 fn parse_name_respects_escaped_dots() {
     let name = parse_name(r"admin\.dns.example.com.").unwrap();

@@ -1,7 +1,7 @@
 //! SOA record values, including the RNAME mailbox <-> email conversions.
 
 use super::value::{parse_u32_record_field, validate_domain_record_value};
-use crate::dns::name::to_fqdn_lowercase;
+use crate::dns::name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, to_fqdn_lowercase};
 
 pub(crate) struct SoaRecordValue<'a> {
     mname: &'a str,
@@ -124,6 +124,30 @@ impl SoaMailbox {
         Err("SOA mailbox is not a valid encoded email".to_string())
     }
 
+    /// The wire limits, measured on the decoded labels. The RNAME is the one
+    /// name bindizr escapes, and escaping the local part can push a label past
+    /// 63 bytes or the whole name past 253.
+    pub fn classify_wire_labels(&self) -> Result<(), String> {
+        let bare = self.0.trim_end_matches('.');
+        if bare.len() > MAX_DOMAIN_LEN {
+            return Err(format!("must be {} bytes or fewer", MAX_DOMAIN_LEN));
+        }
+
+        for label in decode_labels(bare)? {
+            if label.is_empty() {
+                return Err("must not contain empty labels".to_string());
+            }
+            if label.len() > MAX_DNS_LABEL_LEN {
+                return Err(format!(
+                    "labels must be {} bytes or fewer",
+                    MAX_DNS_LABEL_LEN
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -131,6 +155,28 @@ impl SoaMailbox {
     pub fn into_encoded(self) -> String {
         self.0
     }
+}
+
+/// Split a mailbox into its decoded labels, so the local part's escaped dots
+/// stay inside one label (RFC 1035, Section 5.1).
+fn decode_labels(mailbox: &str) -> Result<Vec<String>, String> {
+    let mut labels = Vec::new();
+    let mut label = String::new();
+    let mut chars = mailbox.chars();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => match chars.next() {
+                Some(escaped) => label.push(escaped),
+                None => return Err("contains a dangling escape".to_string()),
+            },
+            '.' => labels.push(std::mem::take(&mut label)),
+            c => label.push(c),
+        }
+    }
+
+    labels.push(label);
+    Ok(labels)
 }
 
 impl std::fmt::Display for SoaMailbox {

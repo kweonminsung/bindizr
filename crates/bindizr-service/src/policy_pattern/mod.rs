@@ -22,8 +22,7 @@ pub(crate) fn pattern_matches_name(pattern: &str, relative_name: &str) -> bool {
         return true;
     }
 
-    // Compared label by label: a name whose escaped dot merely spells the
-    // suffix (`a\.sub`) is not under `sub` and must not inherit its grant.
+    // Compared label by label so `xsub` does not read as inside `sub`.
     if let Some(suffix) = pattern.strip_prefix("*.") {
         return is_same_or_subdomain_fqdn(&name, suffix);
     }

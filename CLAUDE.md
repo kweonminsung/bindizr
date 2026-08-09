@@ -173,6 +173,23 @@ One locking model covers the service layer; keep new code on it:
 - Adjacent layers never reuse one name for different semantics (e.g. a raw
   row delete in the facade vs. a delete-plus-IXFR-log in the service).
 
+### Names are unescaped
+
+A DNS name bindizr parses, stores, or compares never contains a `\` escape.
+`dns::name::classify_wire_labels` rejects it, and every write path reaches
+that check through `OwnerName::parse_in_zone`, `to_lookup_name`, or (for
+nsupdate) the wire-to-presentation step, which refuses a label holding a `.`
+instead of escaping it. This is what lets name comparisons split on `.`: no
+label can hide a dot that would read as a boundary, so a single label cannot
+impersonate a subdomain. Do not reintroduce escape handling in a name path —
+fix the parse boundary instead.
+
+The one exception is the SOA RNAME, derived from the admin email by
+`SoaMailbox`, which escapes the local part's dots per RFC 1035, Section 5.1.
+It owns its own escaping and label check, is only ever written to the wire,
+and is never compared as an owner name. TXT rdata escaping (`TxtRdata`) is
+unrelated to names.
+
 ### Free-function helper naming
 
 The `get_*`/`find_*`/`list_*`/`count_*` verbs above are reserved for data

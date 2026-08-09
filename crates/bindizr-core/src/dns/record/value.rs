@@ -1,8 +1,6 @@
 //! Shared field parsing/validation helpers for stored record values.
 
-use crate::dns::name::{
-    MAX_DOMAIN_LEN, has_whitespace_or_control, presentation_labels, validate_domain_label,
-};
+use crate::dns::name::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label};
 
 pub(crate) fn parse_optional_u16_record_field(
     field: &str,
@@ -46,10 +44,8 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
         return Err(format!("{} must be 253 bytes or fewer", field));
     }
 
-    for label in
-        presentation_labels(without_trailing_dot).map_err(|e| format!("{} {}", field, e))?
-    {
-        validate_domain_label(&label, field, true)?;
+    for label in without_trailing_dot.split('.') {
+        validate_domain_label(label, field, true)?;
     }
 
     Ok(())

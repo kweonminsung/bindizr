@@ -1,6 +1,10 @@
-//! Domain-name presentation-form handling: label and length limits,
-//! escape-aware label iteration, FQDN normalization, containment/apex checks,
-//! and the whitespace/control hygiene check shared by name-like inputs.
+//! Domain-name presentation-form handling: label and length limits, FQDN
+//! normalization, containment/apex checks, and the whitespace/control hygiene
+//! check shared by name-like inputs.
+//!
+//! Names here are unescaped: `\` is rejected at every parse boundary, so every
+//! `.` is a label boundary and comparisons can split on it. The SOA RNAME is
+//! the one escaped name in the system and lives in [`crate::dns::record`].
 
 mod error;
 mod owner_name;
@@ -58,91 +62,21 @@ pub(crate) fn validate_domain_label(
     classify_domain_label(label, allow_underscore).map_err(|e| format!("{} {}", field, e))
 }
 
-/// Labels of a presentation-format name.
-pub(crate) enum PresentationLabels<'a> {
-    Borrowed(std::str::Split<'a, char>),
-    Owned(std::vec::IntoIter<String>),
-}
-
-impl<'a> Iterator for PresentationLabels<'a> {
-    type Item = std::borrow::Cow<'a, str>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Borrowed(labels) => labels.next().map(std::borrow::Cow::Borrowed),
-            Self::Owned(labels) => labels.next().map(std::borrow::Cow::Owned),
-        }
-    }
-}
-
-/// Iterate a presentation-format name's labels, honoring `\` escapes.
-pub(crate) fn presentation_labels(name: &str) -> Result<PresentationLabels<'_>, ParseNameError> {
-    if name.contains('\\') {
-        Ok(PresentationLabels::Owned(
-            split_presentation_labels(name)?.into_iter(),
-        ))
-    } else {
-        Ok(PresentationLabels::Borrowed(name.split('.')))
-    }
-}
-
-/// Inverse of [`presentation_labels`] for one label: escape `.` and `\` so the
-/// label survives a round trip as a single label (RFC 1035, Section 5.1).
-pub fn escape_presentation_label(label: &str) -> std::borrow::Cow<'_, str> {
-    if !label.contains(['.', '\\']) {
-        return std::borrow::Cow::Borrowed(label);
-    }
-
-    let mut escaped = String::with_capacity(label.len() + 1);
-    for c in label.chars() {
-        if c == '.' || c == '\\' {
-            escaped.push('\\');
-        }
-        escaped.push(c);
-    }
-    std::borrow::Cow::Owned(escaped)
-}
-
-/// Split a presentation-format name into labels, honoring `\` escapes.
-fn split_presentation_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
-    let mut labels = Vec::new();
-    let mut label = String::new();
-    let mut escaped = false;
-
-    for c in name.chars() {
-        if escaped {
-            label.push(c);
-            escaped = false;
-            continue;
-        }
-
-        match c {
-            '\\' => escaped = true,
-            '.' => {
-                labels.push(label);
-                label = String::new();
-            }
-            _ => label.push(c),
-        }
-    }
-
-    if escaped {
-        return Err(ParseNameError::DanglingEscape);
-    }
-
-    labels.push(label);
-    Ok(labels)
-}
-
-/// The 253-byte and per-label limits every name must meet on the wire,
-/// without the LDH charset rule that only zone names take.
+/// The 253-byte and per-label limits every name must meet on the wire, plus
+/// the no-escape rule, without the LDH charset rule that only zone names take.
 pub fn classify_wire_labels(name: &str) -> Result<(), ParseNameError> {
     let bare = name.trim_end_matches('.');
     if bare.len() > MAX_DOMAIN_LEN {
         return Err(ParseNameError::TooLong);
     }
 
-    for label in presentation_labels(bare)? {
+    // Rejecting `\` here is what lets every other name comparison split on
+    // '.' and be exact: no label can hide a dot that reads as a boundary.
+    if bare.contains('\\') {
+        return Err(ParseNameError::Escape);
+    }
+
+    for label in bare.split('.') {
         if label.is_empty() {
             return Err(ParseNameError::EmptyLabel);
         }
@@ -222,39 +156,26 @@ pub fn to_encoded_owner_name(name: &str, zone: &str) -> Option<String> {
         return Some("@".to_string());
     }
 
-    let owner_labels = label_vec(&owner)?;
-    let zone_labels = label_vec(&zone_fqdn)?;
+    let owner_labels: Vec<&str> = owner.split('.').collect();
+    let zone_labels: Vec<&str> = zone_fqdn.split('.').collect();
     if owner_labels.len() <= zone_labels.len() || !is_label_suffix(&owner_labels, &zone_labels) {
         return None;
     }
 
-    Some(
-        owner_labels[..owner_labels.len() - zone_labels.len()]
-            .iter()
-            .map(|label| escape_presentation_label(label))
-            .collect::<Vec<_>>()
-            .join("."),
-    )
+    Some(owner_labels[..owner_labels.len() - zone_labels.len()].join("."))
 }
 
 /// Whether `name` equals `zone` or is a subdomain of it, compared label by
-/// label so an escaped dot cannot pose as a boundary. Both sides must already
-/// share the same case and trailing-dot form.
+/// label so `aexample.com` is not read as inside `example.com`. Both sides
+/// must already share the same case and trailing-dot form.
 pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
-    match (label_vec(name), label_vec(zone)) {
-        (Some(name_labels), Some(zone_labels)) => is_label_suffix(&name_labels, &zone_labels),
-        _ => false,
-    }
+    is_label_suffix(
+        &name.split('.').collect::<Vec<_>>(),
+        &zone.split('.').collect::<Vec<_>>(),
+    )
 }
 
-fn label_vec(name: &str) -> Option<Vec<std::borrow::Cow<'_, str>>> {
-    presentation_labels(name).ok().map(Iterator::collect)
-}
-
-fn is_label_suffix(
-    name_labels: &[std::borrow::Cow<'_, str>],
-    suffix: &[std::borrow::Cow<'_, str>],
-) -> bool {
+fn is_label_suffix(name_labels: &[&str], suffix: &[&str]) -> bool {
     name_labels.len() >= suffix.len() && name_labels[name_labels.len() - suffix.len()..] == *suffix
 }
 
