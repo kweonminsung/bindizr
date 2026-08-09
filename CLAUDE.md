@@ -37,7 +37,11 @@ cargo +nightly fmt                                         # format (needs night
 - `bindizr-service` — business logic for zones/records (create/update/delete,
   bulk, zone-file import, tokens, serial bumping).
 - `bindizr` — the binary: HTTP API (axum), CLI (clap), Unix-socket daemon IPC.
-- `bindizr-e2e` — end-to-end API/CLI/DNS tests.
+- `bindizr-external-dns` — a second binary: the ExternalDNS webhook provider
+  adapter. It speaks the webhook protocol and forwards to bindizr's
+  `/external-dns` API over HTTP; no DNS logic or state of its own.
+- `bindizr-e2e` — end-to-end API/CLI/DNS tests. Its `[[bin]]` targets exist
+  only so `env!("CARGO_BIN_EXE_…")` resolves inside the test package.
 
 ## Conventions
 
@@ -172,6 +176,14 @@ One locking model covers the service layer; keep new code on it:
   rows") belong in the doc comment, not the name.
 - Adjacent layers never reuse one name for different semantics (e.g. a raw
   row delete in the facade vs. a delete-plus-IXFR-log in the service).
+
+### Only the entry point ends the process
+
+`std::process::exit` belongs in the `execute()` of a binary crate — that
+function is the body of `main`, so deciding to stop is its call. Everywhere
+else, including `bindizr-core` and `bindizr-db`, report the failure and let
+it propagate; a library that exits takes that decision away from whoever
+embedded it, and the e2e suite runs both binaries in-process.
 
 ### Names are labels, not strings
 

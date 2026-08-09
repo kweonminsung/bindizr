@@ -53,10 +53,9 @@ pub(crate) async fn initialize() -> Result<(), String> {
         bindizr_config.api.listen_port,
     ));
 
-    let listener = TcpListener::bind(addr).await.unwrap_or_else(|e| {
-        log_error!("Failed to bind to address {}: {:?}", addr, e);
-        std::process::exit(1);
-    });
+    let listener = TcpListener::bind(addr)
+        .await
+        .map_err(|e| format!("Failed to bind the HTTP API to {}: {}", addr, e))?;
 
     log_info!("HTTP API server listening on http://{}", addr);
 

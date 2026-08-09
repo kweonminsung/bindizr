@@ -15,6 +15,7 @@ mod utils;
 
 pub use bindizr_core::model;
 pub(crate) use bindizr_core::{config, log_error, log_info};
+use error::DatabaseError;
 
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
 static INITIALIZE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -36,15 +37,15 @@ pub enum DatabaseType {
 }
 
 /// Initialize the global database pool from configuration. Idempotent.
-pub async fn initialize() {
+pub async fn initialize() -> Result<(), DatabaseError> {
     if is_initialized() {
-        return;
+        return Ok(());
     }
 
     let initialize_guard = INITIALIZE_LOCK.lock().await;
 
     if is_initialized() {
-        return;
+        return Ok(());
     }
 
     let bindizr_config = config::get_bindizr_config();
@@ -59,24 +60,22 @@ pub async fn initialize() {
         DatabaseType::MySQL => bindizr_config.database.mysql.server_url.clone(),
         DatabaseType::PostgreSQL => bindizr_config.database.postgresql.server_url.clone(),
         DatabaseType::SQLite => utils::to_sqlite_url(&bindizr_config.database.sqlite.file_path)
-            .unwrap_or_else(|e| {
-                log_error!("{}", e);
-                std::process::exit(1);
-            }),
+            .map_err(DatabaseError::PoolError)?,
     };
 
     let pool = match database_type {
-        DatabaseType::MySQL => DatabasePool::new_mysql(&database_url).await,
-        DatabaseType::PostgreSQL => DatabasePool::new_postgres(&database_url).await,
-        DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await,
+        DatabaseType::MySQL => DatabasePool::new_mysql(&database_url).await?,
+        DatabaseType::PostgreSQL => DatabasePool::new_postgres(&database_url).await?,
+        DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await?,
     };
 
     if DATABASE_POOL.set(pool).is_err() {
-        return;
+        return Ok(());
     }
 
     drop(initialize_guard);
     log_info!("Database pool initialized");
+    Ok(())
 }
 
 fn is_initialized() -> bool {
@@ -99,7 +98,7 @@ fn networked_pool_max_connections() -> u32 {
 
 impl DatabasePool {
     /// Connect to MySQL, create tables, and return the pool.
-    pub async fn new_mysql(url: &str) -> Self {
+    pub async fn new_mysql(url: &str) -> Result<Self, DatabaseError> {
         let pool = MySqlPoolOptions::new()
             .max_connections(networked_pool_max_connections())
             .after_connect(|conn, _| {
@@ -114,23 +113,21 @@ impl DatabasePool {
             })
             .connect(url)
             .await
-            .unwrap_or_else(|e| {
-                log_error!("Failed to create MySQL database pool: {}", e);
-                std::process::exit(1);
-            });
+            .map_err(|e| {
+                DatabaseError::PoolError(format!("Failed to create MySQL database pool: {}", e))
+            })?;
 
         let database_pool = DatabasePool::MySQL(pool);
-
-        if let Err(e) = database_pool.create_tables().await {
-            log_error!("Failed to create tables: {}", e);
-            std::process::exit(1);
-        }
-
         database_pool
+            .create_tables()
+            .await
+            .map_err(DatabaseError::QueryFailed)?;
+
+        Ok(database_pool)
     }
 
     /// Connect to PostgreSQL, create tables, and return the pool.
-    pub async fn new_postgres(url: &str) -> Self {
+    pub async fn new_postgres(url: &str) -> Result<Self, DatabaseError> {
         let pool = PgPoolOptions::new()
             .max_connections(networked_pool_max_connections())
             .after_connect(|conn, _| {
@@ -146,22 +143,23 @@ impl DatabasePool {
             })
             .connect(url)
             .await
-            .unwrap_or_else(|e| {
-                log_error!("Failed to create PostgreSQL database pool: {}", e);
-                std::process::exit(1);
-            });
+            .map_err(|e| {
+                DatabaseError::PoolError(format!(
+                    "Failed to create PostgreSQL database pool: {}",
+                    e
+                ))
+            })?;
 
         let database_pool = DatabasePool::PostgreSQL(pool);
-
-        if let Err(e) = database_pool.create_tables().await {
-            log_error!("Failed to create tables: {}", e);
-            std::process::exit(1);
-        }
-
         database_pool
+            .create_tables()
+            .await
+            .map_err(DatabaseError::QueryFailed)?;
+
+        Ok(database_pool)
     }
     /// Connect to SQLite, create tables, and return the pool.
-    pub async fn new_sqlite(url: &str) -> Self {
+    pub async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
         let pool = SqlitePoolOptions::new()
             .after_connect(|conn, _| {
                 Box::pin(async move {
@@ -174,19 +172,17 @@ impl DatabasePool {
             })
             .connect(url)
             .await
-            .unwrap_or_else(|e| {
-                log_error!("Failed to create SQLite database pool: {}", e);
-                std::process::exit(1);
-            });
+            .map_err(|e| {
+                DatabaseError::PoolError(format!("Failed to create SQLite database pool: {}", e))
+            })?;
 
         let database_pool = DatabasePool::SQLite(pool);
-
-        if let Err(e) = database_pool.create_tables().await {
-            log_error!("Failed to create tables: {}", e);
-            std::process::exit(1);
-        }
-
         database_pool
+            .create_tables()
+            .await
+            .map_err(DatabaseError::QueryFailed)?;
+
+        Ok(database_pool)
     }
 
     async fn create_tables(&self) -> Result<(), String> {

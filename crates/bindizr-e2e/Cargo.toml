@@ -6,11 +6,11 @@ publish = false
 autotests = false
 
 [[bin]]
-name = "bindizr"
+name = "bindizr-e2e-server"
 path = "src/bin/bindizr.rs"
 
 [[bin]]
-name = "bindizr-external-dns"
+name = "bindizr-e2e-external-dns"
 path = "src/bin/external_dns.rs"
 
 [[test]]

@@ -80,7 +80,7 @@ impl TestApp {
         let config_path = temp_dir.path().join("bindizr.conf.toml");
         write_config(&config_path, api_port, dns_port, &db_path, &options);
 
-        let mut child = Command::new(env!("CARGO_BIN_EXE_bindizr"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server"))
             .arg("start")
             .arg("-c")
             .arg(&config_path)
@@ -285,7 +285,7 @@ impl TestApp {
             _ => None,
         };
         let mut command = match self.runtime.as_ref().expect("test runtime is missing") {
-            TestRuntime::Local { .. } => Command::new(env!("CARGO_BIN_EXE_bindizr")),
+            TestRuntime::Local { .. } => Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server")),
             TestRuntime::Compose(stack) => stack.cli_command(),
         };
         command.args(args);
@@ -669,7 +669,7 @@ impl ExternalDnsAdapter {
         let webhook_port = reserve_tcp_port();
         let health_port = reserve_tcp_port();
 
-        let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr-external-dns"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-external-dns"));
         command
             .arg("--bindizr-url")
             .arg(bindizr_url)

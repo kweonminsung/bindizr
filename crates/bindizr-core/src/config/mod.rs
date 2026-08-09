@@ -237,15 +237,15 @@ impl std::str::FromStr for LogLevel {
 
 /// Load configuration from `conf_file_path` (or the default path / env var),
 /// apply environment overrides, and store it as the global config.
-pub fn initialize(conf_file_path: Option<&str>) {
+pub fn initialize(conf_file_path: Option<&str>) -> Result<(), String> {
     let conf_file_path = resolve_config_path(conf_file_path);
 
     println!("Initializing configuration from file: {}", conf_file_path);
 
-    let bindizr_config =
-        load_config_file(&conf_file_path).unwrap_or_else(|err| exit_config_error(err));
-
+    let bindizr_config = load_config_file(&conf_file_path)?;
     BINDIZR_CONFIG.get_or_init(|| bindizr_config);
+
+    Ok(())
 }
 
 /// Resolve the config file path: explicit argument, then `BINDIZR_CONFIG_PATH`,
@@ -424,11 +424,6 @@ fn validate_dns_config(config: &DnsConfig) -> Result<(), String> {
         );
     }
     Ok(())
-}
-
-fn exit_config_error(message: String) -> ! {
-    eprintln!("{}", message);
-    std::process::exit(1);
 }
 
 /// Return the global configuration; panics if [`initialize`] has not run.

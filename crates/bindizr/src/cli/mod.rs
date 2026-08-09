@@ -97,7 +97,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
         let _ = DAEMON_EXE.set(exe);
     }
 
-    config::initialize(config_file);
+    config::initialize(config_file)?;
 
     logger::initialize();
     // Touch the metrics registry so bindizr_started_at_seconds reflects process start.
@@ -106,7 +106,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
     service::notify::init_apply_worker();
 
-    database::initialize().await;
+    database::initialize().await.map_err(|e| e.to_string())?;
 
     dns::initialize().await;
 
