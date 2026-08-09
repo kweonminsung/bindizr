@@ -2,7 +2,7 @@
 //! detection, and owner-name normalization.
 
 use bindizr_core::dns::{
-    name::{is_same_or_subdomain_fqdn, to_encoded_owner_name, to_fqdn},
+    name::{OwnerName, ParseNameError, ZoneName},
     record::MxRecordValue,
 };
 
@@ -15,7 +15,6 @@ use crate::{
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    validation::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels},
 };
 
 /// Core value validation with the error mapped to `INVALID_RECORD_VALUE`.
@@ -44,64 +43,18 @@ pub(crate) fn normalize_record_owner_name(
     input_name: &str,
     zone_name: &str,
 ) -> Result<NormalizedOwnerName, ServiceError> {
-    let input = input_name.trim();
-
-    if input.is_empty() {
-        return Err(ServiceError::invalid_record_name(
-            "record name must not be empty".to_string(),
-        ));
-    }
-
-    if has_whitespace_or_control(input) {
-        return Err(ServiceError::invalid_record_name(
-            "record name must not contain whitespace or control characters".to_string(),
-        ));
-    }
-
-    let zone_fqdn = normalize_absolute_owner_fqdn(&to_fqdn(zone_name))?;
-    let owner_fqdn = if input == "@" {
-        zone_fqdn.clone()
-    } else if input.ends_with('.') {
-        normalize_absolute_owner_fqdn(input)?
-    } else {
-        let candidate = format!("{}.", input.to_ascii_lowercase());
-        validate_wire_labels(&candidate, "record name")?;
-
-        if is_same_or_subdomain_fqdn(&candidate, &zone_fqdn) {
-            candidate
-        } else {
-            normalize_absolute_owner_fqdn(&format!("{}.{}", input, zone_fqdn))?
-        }
-    };
-
-    let stored_name = to_encoded_owner_name(&owner_fqdn, &zone_fqdn).ok_or_else(|| {
-        ServiceError::invalid_record_name(format!(
+    let zone = ZoneName::from_row(zone_name);
+    let owner = OwnerName::parse_in_zone(input_name, &zone).map_err(|e| match e {
+        ParseNameError::OutsideZone => ServiceError::invalid_record_name(format!(
             "record name '{}' is outside zone '{}'",
             input_name, zone_name
-        ))
+        )),
+        other => ServiceError::invalid_record_name(format!("record name {}", other)),
     })?;
 
-    Ok(NormalizedOwnerName { stored_name })
-}
-
-fn normalize_absolute_owner_fqdn(value: &str) -> Result<String, ServiceError> {
-    let without_trailing_dot = value.trim().trim_end_matches('.');
-
-    if without_trailing_dot.is_empty() {
-        return Err(ServiceError::invalid_record_name(
-            "record name must not be the root zone".to_string(),
-        ));
-    }
-
-    if without_trailing_dot.len() > MAX_DOMAIN_LEN {
-        return Err(ServiceError::invalid_record_name(
-            "record name must be 253 bytes or fewer".to_string(),
-        ));
-    }
-
-    let fqdn = format!("{}.", without_trailing_dot.to_ascii_lowercase());
-    validate_wire_labels(&fqdn, "record name")?;
-    Ok(fqdn)
+    Ok(NormalizedOwnerName {
+        stored_name: owner.as_str().to_string(),
+    })
 }
 
 /// Whether any record already holds the candidate's rdata. Canonical
