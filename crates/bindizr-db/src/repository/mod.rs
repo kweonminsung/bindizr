@@ -11,7 +11,7 @@ use sqlx::{MySql, Postgres, Sqlite};
 use super::model::{
     api_token::ApiToken,
     catalog_zone_state::CatalogZoneState,
-    record::{Record, RecordWithZone},
+    record::{NAME_LIKE_RECORD_TYPES, Record, RecordWithZone},
     tsig_key::TsigKey,
     zone::Zone,
     zone_change::ZoneChange,
@@ -20,6 +20,28 @@ use super::model::{
     zone_tsig_policy::ZoneTsigPolicy,
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
+
+/// The record types that compare case-insensitively, as an SQL `IN` list.
+/// Rendered from the core set so no backend's filter query can drift from it.
+pub(crate) fn name_like_types_sql() -> String {
+    NAME_LIKE_RECORD_TYPES
+        .iter()
+        .map(|record_type| format!("'{}'", record_type.as_str()))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::name_like_types_sql;
+
+    #[test]
+    fn name_like_types_render_as_a_quoted_sql_list() {
+        // Interpolated straight into `IN (...)`, so the quoting and separator
+        // are part of the query's syntax.
+        assert_eq!(name_like_types_sql(), "'CNAME','NS','PTR','MX','SRV'");
+    }
+}
 
 /// Optional criteria for querying zones.
 #[derive(Clone, Debug, Default)]

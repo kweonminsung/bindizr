@@ -260,11 +260,16 @@ impl RecordType {
         }
 
         match self {
-            RecordType::CNAME | RecordType::NS | RecordType::PTR => to_fqdn_lowercase(value),
             RecordType::MX => display_last_name_field(value, MX_FIELD_COUNTS),
             RecordType::SRV => display_last_name_field(value, SRV_FIELD_COUNTS),
+            _ if self.is_name_like() => to_fqdn_lowercase(value),
             _ => value.to_string(),
         }
+    }
+
+    /// Whether this type's display form is a domain name.
+    pub fn is_name_like(&self) -> bool {
+        NAME_LIKE_RECORD_TYPES.contains(self)
     }
 
     /// Render a stored value plus its priority column as zone-file rdata:
@@ -284,6 +289,18 @@ impl RecordType {
         }
     }
 }
+
+/// Types whose display form is a domain name, so their values compare
+/// case-insensitively (RFC 4343). The record-filter SQL selects on this same
+/// set, which is why it is rendered from here rather than spelled out per
+/// backend.
+pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
+    RecordType::CNAME,
+    RecordType::NS,
+    RecordType::PTR,
+    RecordType::MX,
+    RecordType::SRV,
+];
 
 // The priority lives in its own column, never in the value: MX stores `target`
 // and SRV `weight port target`.

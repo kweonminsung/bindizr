@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::record::{Record, RecordWithZone},
-    repository::{RecordFilter, RecordRepository, RepositoryTx},
+    repository::{RecordFilter, RecordRepository, RepositoryTx, name_like_types_sql},
 };
 
 /// SQLite-backed implementation of `RecordRepository`.
@@ -279,6 +279,7 @@ impl RecordRepository for SqliteRecordRepository {
         let value = filter.value.as_deref().map(normalize_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
+        let name_like_types = name_like_types_sql();
         let zone_ids_clause = match filter.zone_ids.as_deref() {
             None => String::new(),
             Some([]) => "AND 1 = 0".to_string(),
@@ -299,7 +300,7 @@ impl RecordRepository for SqliteRecordRepository {
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
               AND (? IS NULL OR (CASE
-                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
+                    WHEN r.record_type IN ({name_like_types}) THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
                     ELSE INSTR(r.display_value, ?) > 0
               END))
               AND (? IS NULL OR r.ttl = ?)
@@ -373,6 +374,7 @@ impl RecordRepository for SqliteRecordRepository {
         let value = filter.value.as_deref().map(normalize_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
+        let name_like_types = name_like_types_sql();
         let zone_ids_clause = match filter.zone_ids.as_deref() {
             None => String::new(),
             Some([]) => "AND 1 = 0".to_string(),
@@ -392,7 +394,7 @@ impl RecordRepository for SqliteRecordRepository {
               )
               AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
               AND (? IS NULL OR (CASE
-                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
+                    WHEN r.record_type IN ({name_like_types}) THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
                     ELSE INSTR(r.display_value, ?) > 0
               END))
               AND (? IS NULL OR r.ttl = ?)

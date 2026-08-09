@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 use crate::{
     error::DatabaseError,
     model::record::{Record, RecordWithZone},
-    repository::{RecordFilter, RecordRepository, RepositoryTx},
+    repository::{RecordFilter, RecordRepository, RepositoryTx, name_like_types_sql},
 };
 
 /// PostgreSQL-backed implementation of `RecordRepository`.
@@ -294,8 +294,9 @@ impl RecordRepository for PostgresRecordRepository {
         let value = filter.value.as_deref().map(normalize_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
+        let name_like_types = name_like_types_sql();
 
-        let records = sqlx::query_as::<_, RecordWithZone>(
+        let records = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
             SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
                    r.zone_id, z.name AS zone_name
@@ -309,7 +310,7 @@ impl RecordRepository for PostgresRecordRepository {
               )
               AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
               AND ($8::TEXT IS NULL OR (CASE
-                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
+                    WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                     ELSE POSITION($31 IN r.display_value) > 0
               END))
               AND ($10::INT4 IS NULL OR r.ttl = $11)
@@ -329,8 +330,8 @@ impl RecordRepository for PostgresRecordRepository {
             AND ($30::INT4[] IS NULL OR r.zone_id = ANY($30))
             ORDER BY r.name
             LIMIT $28 OFFSET $29
-            "#,
-        )
+            "#
+        )))
         .bind(&filter.zone_name)
         .bind(&filter.zone_name)
         .bind(&filter.name)
@@ -378,8 +379,9 @@ impl RecordRepository for PostgresRecordRepository {
         let value = filter.value.as_deref().map(normalize_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
+        let name_like_types = name_like_types_sql();
 
-        let count = sqlx::query_scalar::<_, i64>(
+        let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
             FROM records r
@@ -392,7 +394,7 @@ impl RecordRepository for PostgresRecordRepository {
               )
               AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
               AND ($8::TEXT IS NULL OR (CASE
-                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
+                    WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                     ELSE POSITION($29 IN r.display_value) > 0
               END))
               AND ($10::INT4 IS NULL OR r.ttl = $11)
@@ -410,8 +412,8 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.display_value) LIKE LOWER($27)
             )
             AND ($28::INT4[] IS NULL OR r.zone_id = ANY($28))
-            "#,
-        )
+            "#
+        )))
         .bind(&filter.zone_name)
         .bind(&filter.zone_name)
         .bind(&filter.name)
