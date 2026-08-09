@@ -21,31 +21,6 @@ impl PostgresRecordRepository {
 
 #[async_trait]
 impl RecordRepository for PostgresRecordRepository {
-    async fn create(&self, mut record: Record) -> Result<Record, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id
-            "#,
-        )
-        .bind(&record.name)
-        .bind(record.record_type.to_string())
-        .bind(&record.value)
-        .bind(record.record_type.display_value(&record.value))
-        .bind(record.ttl)
-        .bind(record.priority)
-        .bind(record.zone_id)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        record.id = result.get::<i32, _>(0);
-
-        Ok(record)
-    }
-
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -472,30 +447,6 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(count as u64)
     }
 
-    async fn update(&self, record: Record) -> Result<Record, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        sqlx::query(
-            r#"
-            UPDATE records
-            SET name = $1, record_type = $2, value = $3, display_value = $4, ttl = $5, priority = $6, zone_id = $7
-            WHERE id = $8
-        "#,
-        )
-        .bind(&record.name)
-        .bind(record.record_type.to_string())
-        .bind(&record.value)
-        .bind(record.record_type.display_value(&record.value))
-        .bind(record.ttl)
-        .bind(record.priority)
-        .bind(record.zone_id)
-        .bind(record.id)
-        .execute(&mut *conn)
-        .await?;
-
-        Ok(record)
-    }
-
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -522,25 +473,6 @@ impl RecordRepository for PostgresRecordRepository {
         .await?;
 
         Ok(record)
-    }
-
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-        sqlx::query("DELETE FROM records WHERE id = $1")
-            .bind(id)
-            .execute(&mut *conn)
-            .await?;
-        Ok(())
-    }
-
-    async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
-        let postgres_tx = tx.as_postgres()?;
-
-        sqlx::query("DELETE FROM records WHERE id = $1")
-            .bind(id)
-            .execute(&mut **postgres_tx)
-            .await?;
-        Ok(())
     }
 
     async fn delete_many_tx(

@@ -167,13 +167,10 @@ impl<'a> RepositoryTx<'a> {
 }
 
 /// Persistence operations for zones.
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneRepository: Send + Sync {
-    async fn create(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, DatabaseError>;
     async fn get_by_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -192,7 +189,6 @@ pub trait ZoneRepository: Send + Sync {
     /// Limit-1 probe of the zones table; health checks must stay cheap on
     /// large tables.
     async fn ping(&self) -> Result<(), DatabaseError>;
-    async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
     /// Bump only the serial, leaving the zone's other columns untouched.
@@ -202,16 +198,13 @@ pub trait ZoneRepository: Send + Sync {
         zone_id: i32,
         serial: i32,
     ) -> Result<(), DatabaseError>;
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
 }
 
 /// Persistence operations for TSIG keys.
-#[allow(dead_code)]
 #[async_trait]
 pub trait TsigKeyRepository: Send + Sync {
     async fn create(&self, key: TsigKey) -> Result<TsigKey, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<TsigKey>, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError>;
     async fn get_by_name_tx(
         &self,
@@ -223,7 +216,6 @@ pub trait TsigKeyRepository: Send + Sync {
 }
 
 /// Persistence operations for zone TSIG policies.
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneTsigPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTsigPolicy) -> Result<ZoneTsigPolicy, DatabaseError>;
@@ -243,7 +235,6 @@ pub trait ZoneTsigPolicyRepository: Send + Sync {
 
 /// Persistence operations for zone token policies, the HTTP twin of
 /// [`ZoneTsigPolicyRepository`].
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneTokenPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTokenPolicy) -> Result<ZoneTokenPolicy, DatabaseError>;
@@ -267,10 +258,8 @@ pub trait ZoneTokenPolicyRepository: Send + Sync {
 }
 
 /// Persistence operations for records.
-#[allow(dead_code)]
 #[async_trait]
 pub trait RecordRepository: Send + Sync {
-    async fn create(&self, record: Record) -> Result<Record, DatabaseError>;
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -318,14 +307,11 @@ pub trait RecordRepository: Send + Sync {
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError>;
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError>;
-    async fn update(&self, record: Record) -> Result<Record, DatabaseError>;
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError>;
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
-    async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
     /// Delete many records in as few statements as the backend's bind limit allows.
     async fn delete_many_tx(
         &self,
@@ -335,15 +321,8 @@ pub trait RecordRepository: Send + Sync {
 }
 
 /// Persistence operations for zone changes.
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneChangeRepository: Send + Sync {
-    async fn create(&self, zone_change: ZoneChange) -> Result<ZoneChange, DatabaseError>;
-    async fn create_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        zone_change: ZoneChange,
-    ) -> Result<ZoneChange, DatabaseError>;
     /// Insert many zone changes in one statement (chunked). Ids are not returned.
     async fn create_many_tx(
         &self,
@@ -368,7 +347,6 @@ pub trait ZoneChangeRepository: Send + Sync {
 }
 
 /// Persistence operations for zone snapshots.
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneSnapshotRepository: Send + Sync {
     async fn upsert_tx(
@@ -411,7 +389,6 @@ pub trait ZoneSnapshotRepository: Send + Sync {
 pub trait ApiTokenRepository: Send + Sync {
     async fn create(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;

@@ -216,8 +216,7 @@ impl RecordService {
             })?;
             timings.load_existing_ms = elapsed_ms(t);
 
-            // Parse each existing owner name once and reuse it across the
-            // passes below instead of reparsing per pass.
+            // Parse each existing owner name once; the passes below reuse it.
             let t = Instant::now();
             let existing_names: Vec<OwnerName> = existing_records
                 .iter()

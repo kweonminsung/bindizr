@@ -21,33 +21,6 @@ impl MySqlZoneRepository {
 
 #[async_trait]
 impl ZoneRepository for MySqlZoneRepository {
-    async fn create(&self, mut zone: Zone) -> Result<Zone, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO zones (name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&zone.name)
-        .bind(&zone.primary_ns)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
-        .bind(zone.serial)
-        .bind(zone.refresh)
-        .bind(zone.retry)
-        .bind(zone.expire)
-        .bind(zone.minimum_ttl)
-        .execute(&mut *conn)
-        .await
-        ?;
-
-        zone.id = result.last_insert_id() as i32;
-
-        Ok(zone)
-    }
-
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -74,18 +47,6 @@ impl ZoneRepository for MySqlZoneRepository {
         .await?;
 
         zone.id = result.last_insert_id() as i32;
-        Ok(zone)
-    }
-
-    async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&mut *conn)
-            .await
-            ?;
-
         Ok(zone)
     }
 
@@ -293,32 +254,6 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(count as u64)
     }
 
-    async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        sqlx::query(
-            r#"
-            UPDATE zones 
-            SET name = ?, primary_ns = ?, admin_email = ?, ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(&zone.name)
-        .bind(&zone.primary_ns)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
-        .bind(zone.serial)
-        .bind(zone.refresh)
-        .bind(zone.retry)
-        .bind(zone.expire)
-        .bind(zone.minimum_ttl)
-        .bind(zone.id)
-        .execute(&mut *conn)
-        .await?;
-
-        Ok(zone)
-    }
-
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -347,17 +282,6 @@ impl ZoneRepository for MySqlZoneRepository {
         .await?;
 
         Ok(zone)
-    }
-
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        sqlx::query("DELETE FROM zones WHERE id = ?")
-            .bind(id)
-            .execute(&mut *conn)
-            .await?;
-
-        Ok(())
     }
 
     async fn update_serial_tx(

@@ -70,9 +70,17 @@ Specifically avoid:
 When citing an RFC section, write it out as `RFC 2181, Section 5.2` (and
 `Sections 5.2–5.3` for a range) — never the `§` glyph.
 
-`#[allow(dead_code)]` on repository traits and a few facade methods is
-deliberate (trait surface consumed across crates / kept to satisfy lints) —
-leave it in place.
+### No dead code, no `#[allow(dead_code)]`
+
+The workspace builds warning-free with no `#[allow(dead_code)]` anywhere; keep
+it that way. Repository traits and the `RepositoryService` facade carry only
+methods with a live caller — do **not** add a method "for symmetry" with an
+existing `_tx`/non-`_tx` pair or to round out a trait's surface.
+
+Because the traits are `pub` and consumed across crates, rustc cannot see when
+a facade method's removal orphans the trait method beneath it. After deleting
+anything from the facade, re-check the layer below: a dead facade method,
+its trait declaration, and its three backend impls all go together.
 
 The same rule applies in tests: the test **name** states *what* behavior is
 verified (never restate it in a comment); comments are for *why* the case

@@ -42,19 +42,6 @@ impl TsigKeyRepository for MySqlTsigKeyRepository {
         Ok(key)
     }
 
-    async fn get_by_id(&self, id: i32) -> Result<Option<TsigKey>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let key = sqlx::query_as::<_, TsigKey>(
-            "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        Ok(key)
-    }
-
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

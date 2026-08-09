@@ -19,8 +19,7 @@ const RRSET_TTL: i32 = 3600;
 
 #[test]
 fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
-    // Parsing itself is core's; what this layer owns is the ErrorCode and the
-    // message naming the offending input and zone.
+    // Core owns the parsing; this layer owns the code and the message.
     let zone = "test.example.com";
 
     let outside = normalize_record_owner_name("a1.other.com.", zone).unwrap_err();

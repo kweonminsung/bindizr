@@ -38,20 +38,6 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
         Ok(token)
     }
 
-    async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let token = sqlx::query_as::<_, ApiToken>(
-            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?"
-        )
-        .bind(id)
-        .fetch_optional(&mut *conn)
-        .await
-        ?;
-
-        Ok(token)
-    }
-
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

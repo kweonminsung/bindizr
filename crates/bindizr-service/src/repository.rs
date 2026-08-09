@@ -36,7 +36,6 @@ fn zone_name_race_error(name: &str, action: &str, e: DatabaseError) -> ServiceEr
     }
 }
 
-#[allow(dead_code)]
 impl RepositoryService {
     pub(super) async fn begin_tx(
         internal_msg: &'static str,
@@ -154,29 +153,6 @@ impl RepositoryService {
         Self::finish_tx(tx, apply_result, "Failed to update catalog state").await
     }
 
-    pub(super) async fn update_zone(zone: Zone) -> Result<Zone, ServiceError> {
-        let name = zone.name.clone();
-        get_zone_repository()
-            .update(zone)
-            .await
-            .map_err(|e| zone_name_race_error(&name, "update", e))
-    }
-
-    pub(super) async fn create_zone(zone: Zone) -> Result<Zone, ServiceError> {
-        let name = zone.name.clone();
-        get_zone_repository()
-            .create(zone)
-            .await
-            .map_err(|e| zone_name_race_error(&name, "create", e))
-    }
-
-    pub(super) async fn delete_zone(zone_id: i32) -> Result<(), ServiceError> {
-        get_zone_repository()
-            .delete(zone_id)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to delete zone: {}", e)))
-    }
-
     pub(super) async fn get_records_by_zone_id(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
         get_record_repository()
             .get_by_zone_id(zone_id)
@@ -225,13 +201,6 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
-    pub(super) async fn create_record(record: Record) -> Result<Record, ServiceError> {
-        get_record_repository()
-            .create(record)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to create record: {}", e)))
-    }
-
     pub(super) async fn create_record_tx(
         tx: &mut RepositoryTx<'_>,
         record: Record,
@@ -260,13 +229,6 @@ impl RepositoryService {
             .delete_many_tx(tx, ids)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to delete records: {}", e)))
-    }
-
-    pub(super) async fn update_record(record: Record) -> Result<Record, ServiceError> {
-        get_record_repository()
-            .update(record)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to update record: {}", e)))
     }
 
     pub(super) async fn update_record_tx(
@@ -326,13 +288,6 @@ impl RepositoryService {
             .get_by_id_tx(tx, record_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load record: {}", e)))
-    }
-
-    pub(super) async fn delete_record(record_id: i32) -> Result<(), ServiceError> {
-        get_record_repository()
-            .delete(record_id)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to delete record: {}", e)))
     }
 
     pub(super) async fn create_zone_changes_tx(
