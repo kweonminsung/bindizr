@@ -3,7 +3,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
     error::DatabaseError,
-    model::record::{Record, RecordType, RecordWithZone},
+    model::record::{Record, RecordWithZone},
     repository::{RecordFilter, RecordRepository, RepositoryTx},
 };
 
@@ -191,29 +191,6 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(records)
     }
 
-    async fn get_by_zone_id_with_zone(
-        &self,
-        zone_id: i32,
-    ) -> Result<Vec<RecordWithZone>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let records = sqlx::query_as::<_, RecordWithZone>(
-            r#"
-            SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
-                   r.zone_id, z.name AS zone_name
-            FROM records r
-            INNER JOIN zones z ON z.id = r.zone_id
-            WHERE r.zone_id = $1
-            ORDER BY r.name
-            "#,
-        )
-        .bind(zone_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(records)
-    }
-
     async fn get_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -323,96 +300,6 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(out)
     }
 
-    async fn get(
-        &self,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-        let value_filter = if record_type.is_name_like_value() {
-            "AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))"
-        } else {
-            "AND ($5::TEXT IS NULL OR value = $6)"
-        };
-
-        let query = format!(
-            r#"
-            SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
-            FROM records
-            WHERE ($1::INT4 IS NULL OR zone_id = $2)
-              AND LOWER(name) = LOWER($3)
-              AND record_type = $4
-              {value_filter}
-              AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
-            "#
-        );
-
-        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
-            .bind(zone_id)
-            .bind(zone_id)
-            .bind(name)
-            .bind(record_type.to_string())
-            .bind(value)
-            .bind(value)
-            .bind(if match_priority { 1 } else { 0 })
-            .bind(priority)
-            .bind(priority)
-            .fetch_optional(&mut *conn)
-            .await?;
-
-        Ok(record)
-    }
-
-    async fn get_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, DatabaseError> {
-        let postgres_tx = tx.as_postgres()?;
-        let value_filter = if record_type.is_name_like_value() {
-            "AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))"
-        } else {
-            "AND ($5::TEXT IS NULL OR value = $6)"
-        };
-
-        let query = format!(
-            r#"
-            SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
-            FROM records
-            WHERE ($1::INT4 IS NULL OR zone_id = $2)
-              AND LOWER(name) = LOWER($3)
-              AND record_type = $4
-              {value_filter}
-              AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
-            FOR UPDATE
-            "#
-        );
-
-        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
-            .bind(zone_id)
-            .bind(zone_id)
-            .bind(name)
-            .bind(record_type.to_string())
-            .bind(value)
-            .bind(value)
-            .bind(if match_priority { 1 } else { 0 })
-            .bind(priority)
-            .bind(priority)
-            .fetch_optional(&mut **postgres_tx)
-            .await?;
-
-        Ok(record)
-    }
-
     async fn get_all(&self) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -420,24 +307,6 @@ impl RecordRepository for PostgresRecordRepository {
             .fetch_all(&mut *conn)
             .await
             ?;
-
-        Ok(records)
-    }
-
-    async fn get_all_with_zone(&self) -> Result<Vec<RecordWithZone>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let records = sqlx::query_as::<_, RecordWithZone>(
-            r#"
-            SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
-                   r.zone_id, z.name AS zone_name
-            FROM records r
-            INNER JOIN zones z ON z.id = r.zone_id
-            ORDER BY r.name
-            "#,
-        )
-        .fetch_all(&mut *conn)
-        .await?;
 
         Ok(records)
     }

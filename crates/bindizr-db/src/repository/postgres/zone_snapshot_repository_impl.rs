@@ -21,37 +21,6 @@ impl PostgresZoneSnapshotRepository {
 
 #[async_trait]
 impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
-    async fn upsert(&self, snapshot: ZoneSnapshot) -> Result<ZoneSnapshot, DatabaseError> {
-        sqlx::query_as::<_, ZoneSnapshot>(
-            r#"
-            INSERT INTO zone_soa_history (zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (zone_id, serial)
-            DO UPDATE SET
-                primary_ns = EXCLUDED.primary_ns,
-                admin_email = EXCLUDED.admin_email,
-                ttl = EXCLUDED.ttl,
-                refresh = EXCLUDED.refresh,
-                retry = EXCLUDED.retry,
-                expire = EXCLUDED.expire,
-                minimum_ttl = EXCLUDED.minimum_ttl
-            RETURNING id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
-            "#,
-        )
-        .bind(snapshot.zone_id)
-        .bind(snapshot.serial)
-        .bind(&snapshot.primary_ns)
-        .bind(&snapshot.admin_email)
-        .bind(snapshot.ttl)
-        .bind(snapshot.refresh)
-        .bind(snapshot.retry)
-        .bind(snapshot.expire)
-        .bind(snapshot.minimum_ttl)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
-    }
-
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

@@ -11,7 +11,7 @@ use sqlx::{MySql, Postgres, Sqlite};
 use super::model::{
     api_token::ApiToken,
     catalog_zone_state::CatalogZoneState,
-    record::{Record, RecordType, RecordWithZone},
+    record::{Record, RecordWithZone},
     tsig_key::TsigKey,
     zone::Zone,
     zone_change::ZoneChange,
@@ -293,10 +293,6 @@ pub trait RecordRepository: Send + Sync {
     async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     /// Records of every listed zone in one round trip.
     async fn get_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_by_zone_id_with_zone(
-        &self,
-        zone_id: i32,
-    ) -> Result<Vec<RecordWithZone>, DatabaseError>;
     async fn get_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -316,27 +312,7 @@ pub trait RecordRepository: Send + Sync {
         zone_id: i32,
         names: &[String],
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn get(
-        &self,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, DatabaseError>;
-    async fn get_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_all_with_zone(&self) -> Result<Vec<RecordWithZone>, DatabaseError>;
     async fn get_by_filter_with_zone(
         &self,
         filter: RecordFilter,
@@ -395,7 +371,6 @@ pub trait ZoneChangeRepository: Send + Sync {
 #[allow(dead_code)]
 #[async_trait]
 pub trait ZoneSnapshotRepository: Send + Sync {
-    async fn upsert(&self, snapshot: ZoneSnapshot) -> Result<ZoneSnapshot, DatabaseError>;
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -446,12 +421,6 @@ pub trait ApiTokenRepository: Send + Sync {
 /// Persistence operations for catalog zone state.
 #[async_trait]
 pub trait CatalogZoneStateRepository: Send + Sync {
-    async fn update_serial_for_signature(
-        &self,
-        name: &str,
-        signature: &str,
-        base_serial: i32,
-    ) -> Result<CatalogZoneState, DatabaseError>;
     async fn update_serial_for_signature_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -593,15 +562,9 @@ impl RepositoryFactory {
         pool: &DatabasePool,
     ) -> Box<dyn CatalogZoneStateRepository> {
         match pool {
-            DatabasePool::MySQL(mysql_pool) => Box::new(
-                mysql::MySqlCatalogZoneStateRepository::new(mysql_pool.clone()),
-            ),
-            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
-                postgres::PostgresCatalogZoneStateRepository::new(postgres_pool.clone()),
-            ),
-            DatabasePool::SQLite(sqlite_pool) => Box::new(
-                sqlite::SqliteCatalogZoneStateRepository::new(sqlite_pool.clone()),
-            ),
+            DatabasePool::MySQL(_) => Box::new(mysql::MySqlCatalogZoneStateRepository),
+            DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresCatalogZoneStateRepository),
+            DatabasePool::SQLite(_) => Box::new(sqlite::SqliteCatalogZoneStateRepository),
         }
     }
 }
