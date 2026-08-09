@@ -1,11 +1,7 @@
 use async_trait::async_trait;
 use sqlx::{Pool, Sqlite};
 
-use crate::{
-    error::DatabaseError,
-    model::tsig_key::TsigKey,
-    repository::{RepositoryTx, TsigKeyRepository},
-};
+use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
 
 /// SQLite-backed implementation of `TsigKeyRepository`.
 pub struct SqliteTsigKeyRepository {
@@ -49,23 +45,6 @@ impl TsigKeyRepository for SqliteTsigKeyRepository {
         )
         .bind(name)
         .fetch_optional(&mut *conn)
-        .await?;
-
-        Ok(key)
-    }
-
-    async fn get_by_name_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        name: &str,
-    ) -> Result<Option<TsigKey>, DatabaseError> {
-        let sqlite_tx = tx.as_sqlite()?;
-
-        let key = sqlx::query_as::<_, TsigKey>(
-            "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE name = ?",
-        )
-        .bind(name)
-        .fetch_optional(&mut **sqlite_tx)
         .await?;
 
         Ok(key)

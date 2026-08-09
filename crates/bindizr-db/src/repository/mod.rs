@@ -242,11 +242,6 @@ pub trait ZoneRepository: Send + Sync {
 pub trait TsigKeyRepository: Send + Sync {
     async fn create(&self, key: TsigKey) -> Result<TsigKey, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError>;
-    async fn get_by_name_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        name: &str,
-    ) -> Result<Option<TsigKey>, DatabaseError>;
     async fn get_all(&self) -> Result<Vec<TsigKey>, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }

@@ -1,90 +1,53 @@
 use domain::base::iana::{Class, Rtype};
 
-use super::{UpdateError, owner_in_zone, rr_to_record_value, validate_delete_update_shape};
+use super::{UpdateError, rr_to_record_value, validate_delete_shape};
 use crate::{model::record::RecordType, server::nsupdate::parser::UpdateRecord};
-
-#[test]
-fn owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
-    assert_eq!(
-        owner_in_zone("www.example.com.", "example.com.")
-            .unwrap()
-            .to_stored(),
-        "www"
-    );
-    assert!(
-        owner_in_zone("example.com.", "example.com.")
-            .unwrap()
-            .is_apex()
-    );
-    // A dotted wire label is one label, so it is data rather than a boundary.
-    assert_eq!(
-        owner_in_zone(r"host\.name.example.com.", "example.com.")
-            .unwrap()
-            .labels(),
-        ["host.name"]
-    );
-}
-
-#[test]
-fn owner_in_zone_rejects_owners_outside_the_zone() {
-    for owner in [
-        "aexample.com.",
-        "badexample.com.",
-        "www.badexample.com.",
-        ".",
-        // One label spelling the zone is not inside it.
-        r"evil\.example.com.",
-    ] {
-        let err = owner_in_zone(owner, "example.com.").unwrap_err();
-        assert!(matches!(err, UpdateError::NotZone(_)), "{owner:?}");
-    }
-}
 
 // Delete-update wire shapes are fixed by RFC 2136: delete-RRset is CLASS ANY +
 // TTL 0 + empty RDATA (Section 2.5.2), delete-specific-RR is CLASS NONE + TTL 0 +
 // RDATA present (Section 2.5.4); every other combination must be refused.
 #[test]
-fn validate_delete_update_shape_accepts_any_class_rrset_delete() {
+fn validate_delete_shape_accepts_any_class_rrset_delete() {
     let update = update_record(Rtype::A, Class::ANY, 0, Vec::new());
 
-    validate_delete_update_shape(&update, true).unwrap();
+    validate_delete_shape(&update, true).unwrap();
 }
 
 #[test]
-fn validate_delete_update_shape_accepts_none_class_exact_delete() {
+fn validate_delete_shape_accepts_none_class_exact_delete() {
     let update = update_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1]);
 
-    validate_delete_update_shape(&update, false).unwrap();
+    validate_delete_shape(&update, false).unwrap();
 }
 
 #[test]
-fn validate_delete_update_shape_rejects_delete_with_nonzero_ttl() {
+fn validate_delete_shape_rejects_delete_with_nonzero_ttl() {
     let update = update_record(Rtype::A, Class::ANY, 60, Vec::new());
-    let err = validate_delete_update_shape(&update, true).unwrap_err();
+    let err = validate_delete_shape(&update, true).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
 #[test]
-fn validate_delete_update_shape_rejects_any_class_delete_with_rdata() {
+fn validate_delete_shape_rejects_any_class_delete_with_rdata() {
     let update = update_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]);
-    let err = validate_delete_update_shape(&update, true).unwrap_err();
+    let err = validate_delete_shape(&update, true).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
 #[test]
-fn validate_delete_update_shape_rejects_none_class_delete_without_rdata() {
+fn validate_delete_shape_rejects_none_class_delete_without_rdata() {
     let update = update_record(Rtype::A, Class::NONE, 0, Vec::new());
-    let err = validate_delete_update_shape(&update, false).unwrap_err();
+    let err = validate_delete_shape(&update, false).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
 #[test]
-fn validate_delete_update_shape_rejects_none_class_delete_with_type_any() {
+fn validate_delete_shape_rejects_none_class_delete_with_type_any() {
     let update = update_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]);
-    let err = validate_delete_update_shape(&update, false).unwrap_err();
+    let err = validate_delete_shape(&update, false).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
 }

@@ -1,11 +1,7 @@
 use async_trait::async_trait;
 use sqlx::{MySql, Pool};
 
-use crate::{
-    error::DatabaseError,
-    model::tsig_key::TsigKey,
-    repository::{RepositoryTx, TsigKeyRepository},
-};
+use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
 
 /// MySQL-backed implementation of `TsigKeyRepository`.
 pub struct MySqlTsigKeyRepository {
@@ -50,23 +46,6 @@ impl TsigKeyRepository for MySqlTsigKeyRepository {
         )
         .bind(name)
         .fetch_optional(&mut *conn)
-        .await?;
-
-        Ok(key)
-    }
-
-    async fn get_by_name_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        name: &str,
-    ) -> Result<Option<TsigKey>, DatabaseError> {
-        let mysql_tx = tx.as_mysql()?;
-
-        let key = sqlx::query_as::<_, TsigKey>(
-            "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE name = ?",
-        )
-        .bind(name)
-        .fetch_optional(&mut **mysql_tx)
         .await?;
 
         Ok(key)

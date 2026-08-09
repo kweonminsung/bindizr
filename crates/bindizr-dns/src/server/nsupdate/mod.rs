@@ -3,7 +3,6 @@
 
 mod auth;
 mod parser;
-mod prerequisite;
 mod update;
 
 use std::net::SocketAddr;

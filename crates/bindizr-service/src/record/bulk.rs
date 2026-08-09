@@ -97,7 +97,7 @@ pub(super) fn zone_changes_for(
 impl RecordService {
     /// Insert records with their ADD zone changes for IXFR. The caller has
     /// already validated the rows.
-    pub async fn insert_records_with_changes_tx(
+    pub(crate) async fn insert_records_with_changes_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         new_serial: i32,
@@ -114,7 +114,7 @@ impl RecordService {
     }
 
     /// Delete records with their DEL zone changes for IXFR.
-    pub async fn delete_records_with_changes_tx(
+    pub(crate) async fn delete_records_with_changes_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         new_serial: i32,

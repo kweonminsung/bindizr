@@ -1,11 +1,8 @@
-use bindizr_core::{
-    config,
-    dns::{
-        name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
-        record::TxtRdata,
-    },
-};
-use chrono::Utc;
+//! Decoding an UPDATE message into the operations the service applies:
+//! TSIG verification, the wire shapes RFC 2136 fixes for each section, and
+//! rdata parsing. Everything that touches zone data lives in the service.
+
+use bindizr_core::{config, dns::record::TxtRdata};
 use domain::{
     base::{
         iana::{Class, Rtype},
@@ -20,22 +17,12 @@ use super::{
     parser::{UpdateRecord, UpdateRequest, presentation_name},
 };
 use crate::{
-    log_error, log_info,
-    model::{
-        record::{Record, RecordType},
-        tsig_key::TsigKey,
-        zone::Zone,
-    },
-    service,
+    model::{record::RecordType, tsig_key::TsigKey},
     service::{
-        RepositoryTx,
-        record::{AddOutcome, RecordService, validate_delete_constraints},
-        serial::generate_serial,
-        tsig_key::TsigKeyService,
-        zone::{
-            ZoneService,
-            tsig_policy::{self, ZoneTsigPolicyService},
+        dynamic_update::{
+            DynamicUpdate, DynamicUpdateError, DynamicUpdateService, Prerequisite, UpdateOp,
         },
+        tsig_key::TsigKeyService,
     },
 };
 
@@ -57,15 +44,22 @@ pub(super) enum UpdateError {
     Internal(String),
 }
 
-pub(super) enum UpdateResult {
-    Applied { changed: bool },
+impl From<DynamicUpdateError> for UpdateError {
+    fn from(err: DynamicUpdateError) -> Self {
+        match err {
+            DynamicUpdateError::Refused(msg) => UpdateError::Refused(msg),
+            DynamicUpdateError::YxDomain(msg) => UpdateError::YxDomain(msg),
+            DynamicUpdateError::YxRrset(msg) => UpdateError::YxRrset(msg),
+            DynamicUpdateError::NxDomain(msg) => UpdateError::NxDomain(msg),
+            DynamicUpdateError::NxRrset(msg) => UpdateError::NxRrset(msg),
+            DynamicUpdateError::NotZone(msg) => UpdateError::NotZone(msg),
+            DynamicUpdateError::Internal(msg) => UpdateError::Internal(msg),
+        }
+    }
 }
 
-/// Outcome of the transactional part of an applied update.
-struct AppliedUpdate {
-    changed: bool,
-    zone: Zone,
-    new_serial: i32,
+pub(super) enum UpdateResult {
+    Applied { changed: bool },
 }
 
 /// Apply an UPDATE request. The returned signer is `Some` once the request's
@@ -91,93 +85,18 @@ async fn apply_update_inner(
         ));
     }
 
-    let mut tx = service::begin_tx("failed to begin NSUPDATE transaction")
-        .await
-        .map_err(|e| UpdateError::Internal(e.to_string()))?;
+    // Authenticate before anything zone-specific: keys are zone-independent,
+    // and this lets even NOTZONE/REFUSED responses be signed.
+    let key = authenticate_request(&request, query_data, signer).await?;
 
-    let apply_result: Result<AppliedUpdate, UpdateError> = async {
-        // Authenticate before the zone lookup: keys are zone-independent, and
-        // this lets even NOTZONE/REFUSED responses be signed.
-        let key = authenticate_request(&mut tx, &request, query_data, signer).await?;
-
-        let zone = ZoneService::find_by_name_tx(&mut tx, zone_name)
-            .await
-            .map_err(|e| UpdateError::Internal(format!("failed to load zone: {}", e)))?
-            .ok_or_else(|| UpdateError::NotZone(format!("zone '{}' not found", zone_name)))?;
-
-        authorize_key(&mut tx, &zone, key.as_ref(), &request).await?;
-
-        super::prerequisite::evaluate_prerequisites_tx(
-            &mut tx,
-            &zone,
-            &request.prerequisites,
-            query_data,
-        )
-        .await?;
-
-        // An exhausted serial cannot advance, so refuse rather than commit
-        // changes secondaries could never detect.
-        let new_serial =
-            generate_serial(Some(zone.serial)).map_err(|e| UpdateError::Refused(e.to_string()))?;
-        let mut changed = false;
-
-        for update in &request.updates {
-            let this_changed =
-                apply_single_update(&mut tx, &zone, update, query_data, new_serial).await?;
-            changed = changed || this_changed;
-        }
-
-        if changed {
-            // Bump the serial and snapshot it so secondaries detect the change via
-            // SOA/NOTIFY and can serve it as an IXFR delta.
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial)
-                .await
-                .map_err(|e| {
-                    UpdateError::Internal(format!("failed to advance zone serial: {}", e))
-                })?;
-        }
-
-        Ok(AppliedUpdate {
-            changed,
-            zone,
-            new_serial,
-        })
-    }
-    .await;
-
-    let AppliedUpdate {
-        changed,
-        zone,
-        new_serial,
-    } = match apply_result {
-        Ok(result) => {
-            tx.commit().await.map_err(|e| {
-                UpdateError::Internal(format!("failed to commit NSUPDATE transaction: {}", e))
-            })?;
-            result
-        }
-        Err(err) => {
-            if let Err(e) = tx.rollback().await {
-                log_error!("failed to rollback NSUPDATE transaction: {}", e);
-            }
-            return Err(err);
-        }
+    let update = DynamicUpdate {
+        zone_name: zone_name.to_string(),
+        key,
+        prerequisites: decode_prerequisites(&request.prerequisites, query_data)?,
+        updates: decode_updates(&request.updates, query_data)?,
     };
 
-    if changed {
-        log_info!(
-            "NSUPDATE committed for zone {} with serial {}",
-            zone.name,
-            new_serial
-        );
-
-        // Queue through the service like every other mutation path, so
-        // `dns.apply_mode` governs RFC 2136 writes too.
-        if let Err(e) = service::notify::send_notify_after_update(Some(&zone.name)).await {
-            log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
-        }
-    }
-
+    let changed = DynamicUpdateService::apply(update).await?;
     Ok(UpdateResult::Applied { changed })
 }
 
@@ -186,7 +105,6 @@ async fn apply_update_inner(
 /// accepted via `dns.nsupdate_allow_unsigned` (not recommended in
 /// production); signed requests are always verified.
 async fn authenticate_request(
-    tx: &mut RepositoryTx<'_>,
     request: &UpdateRequest,
     query_data: &[u8],
     signer: &mut Option<ResponseSigner>,
@@ -203,7 +121,7 @@ async fn authenticate_request(
         }
     };
 
-    let key = TsigKeyService::find_by_name_tx(tx, &tsig.name)
+    let key = TsigKeyService::find_by_wire_name(&tsig.name)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?;
 
@@ -215,71 +133,119 @@ async fn authenticate_request(
     Ok(key)
 }
 
-/// Authorize an authenticated request: global keys may update anything, other
-/// keys need a zone policy matching every update RR. `key` is `None` for an
-/// accepted unsigned request, which skips authorization entirely.
-async fn authorize_key(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
-    key: Option<&TsigKey>,
-    request: &UpdateRequest,
-) -> Result<(), UpdateError> {
-    let key = match key {
-        None => return Ok(()),
-        Some(key) if key.is_global => return Ok(()),
-        Some(key) => key,
-    };
-
-    let policies = ZoneTsigPolicyService::get_by_zone_and_key_tx(tx, zone.id, key.id)
-        .await
-        .map_err(|e| UpdateError::Internal(format!("failed to load TSIG policies: {}", e)))?;
-
-    if policies.is_empty() {
-        return Err(UpdateError::Refused(format!(
-            "TSIG key '{}' is not authorized for zone '{}'",
-            key.name, zone.name
-        )));
-    }
-
-    for update in &request.updates {
-        let owner = owner_in_zone(&update.name, &zone.name)?;
-        let record_type = if update.rr_type == Rtype::ANY {
-            None
-        } else {
-            Some(rr_type_to_record_type(update.rr_type)?)
-        };
-
-        if !tsig_policy::authorize_update(&policies, &owner, record_type.as_ref()) {
-            return Err(UpdateError::Refused(format!(
-                "TSIG key '{}' is not authorized to update '{}' ({}) in zone '{}'",
-                key.name,
-                owner,
-                record_type
-                    .as_ref()
-                    .map(|record_type| record_type.as_str())
-                    .unwrap_or("ANY"),
-                zone.name
-            )));
-        }
-    }
-
-    Ok(())
+fn decode_prerequisites(
+    prerequisites: &[UpdateRecord],
+    query_data: &[u8],
+) -> Result<Vec<Prerequisite>, UpdateError> {
+    prerequisites
+        .iter()
+        .map(|rr| decode_prerequisite(rr, query_data))
+        .collect()
 }
 
-async fn apply_single_update(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
-    update: &UpdateRecord,
-    query_data: &[u8],
-    new_serial: i32,
-) -> Result<bool, UpdateError> {
-    let owner = owner_in_zone(&update.name, &zone.name)?;
+/// One prerequisite RR, with the wire shapes of RFC 2136, Section 2.4 enforced:
+/// TTL is always 0, and only a CLASS IN prerequisite carries rdata.
+fn decode_prerequisite(rr: &UpdateRecord, query_data: &[u8]) -> Result<Prerequisite, UpdateError> {
+    if rr.ttl != 0 {
+        return Err(UpdateError::Refused(
+            "prerequisite TTL must be 0".to_string(),
+        ));
+    }
 
-    match update.class {
-        Class::IN => add_record(tx, zone, &owner, update, query_data, new_serial).await,
-        Class::ANY => delete_records(tx, zone, &owner, update, true, query_data, new_serial).await,
+    let name = rr.name.clone();
+    match rr.class {
+        Class::ANY | Class::NONE => {
+            if !rr.rdata.is_empty() {
+                return Err(UpdateError::Refused(format!(
+                    "{}-class prerequisite must have empty rdata",
+                    class_label(rr.class)
+                )));
+            }
+
+            let is_any_class = rr.class == Class::ANY;
+            Ok(match (is_any_class, rr.rr_type) {
+                (true, Rtype::ANY) => Prerequisite::NameInUse { name },
+                (false, Rtype::ANY) => Prerequisite::NameNotInUse { name },
+                (true, rr_type) => Prerequisite::RrsetInUse {
+                    name,
+                    record_type: rr_type_to_record_type(rr_type)?,
+                },
+                (false, rr_type) => Prerequisite::RrsetNotInUse {
+                    name,
+                    record_type: rr_type_to_record_type(rr_type)?,
+                },
+            })
+        }
+        Class::IN => {
+            if rr.rr_type == Rtype::ANY || rr.rdata.is_empty() {
+                return Err(UpdateError::Refused(
+                    "IN-class prerequisite must specify rrtype and rdata".to_string(),
+                ));
+            }
+
+            let (record_type, value, priority) = rr_to_record_value(rr, query_data)?;
+            Ok(Prerequisite::RrInUse {
+                name,
+                record_type,
+                value,
+                priority,
+            })
+        }
+        other => Err(UpdateError::Refused(format!(
+            "unsupported prerequisite class: {}",
+            other
+        ))),
+    }
+}
+
+fn decode_updates(
+    updates: &[UpdateRecord],
+    query_data: &[u8],
+) -> Result<Vec<UpdateOp>, UpdateError> {
+    updates
+        .iter()
+        .map(|rr| decode_update(rr, query_data))
+        .collect()
+}
+
+fn decode_update(rr: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, UpdateError> {
+    let name = rr.name.clone();
+    match rr.class {
+        Class::IN => {
+            let (record_type, value, priority) = rr_to_record_value(rr, query_data)?;
+            if rr.ttl > i32::MAX as u32 {
+                return Err(UpdateError::Refused(format!(
+                    "TTL value {} exceeds maximum allowed value ({})",
+                    rr.ttl,
+                    i32::MAX
+                )));
+            }
+            Ok(UpdateOp::Add {
+                name,
+                record_type,
+                value,
+                ttl: rr.ttl as i32,
+                priority,
+            })
+        }
+        Class::ANY => {
+            validate_delete_shape(rr, true)?;
+            Ok(UpdateOp::DeleteRrset {
+                name,
+                record_type: (rr.rr_type != Rtype::ANY)
+                    .then(|| rr_type_to_record_type(rr.rr_type))
+                    .transpose()?,
+            })
+        }
         Class::NONE => {
-            delete_records(tx, zone, &owner, update, false, query_data, new_serial).await
+            validate_delete_shape(rr, false)?;
+            let (record_type, value, priority) = rr_to_record_value(rr, query_data)?;
+            Ok(UpdateOp::DeleteRr {
+                name,
+                record_type,
+                value,
+                priority,
+            })
         }
         class => Err(UpdateError::Refused(format!(
             "unsupported update class: {}",
@@ -288,162 +254,11 @@ async fn apply_single_update(
     }
 }
 
-async fn add_record(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
-    owner: &OwnerName,
-    update: &UpdateRecord,
-    query_data: &[u8],
-    new_serial: i32,
-) -> Result<bool, UpdateError> {
-    let (record_type, value, priority) = rr_to_record_value(update, query_data)?;
-    // Row-encode so nsupdate stores the same spelling as the other write
-    // paths; TXT arrives already encoded from the wire rdata.
-    let value = if record_type == RecordType::TXT {
-        value
-    } else {
-        record_type.encoded_value(&value, priority).map_err(|e| {
-            UpdateError::Refused(format!("invalid {} rdata: {}", record_type.as_str(), e))
-        })?
-    };
-
-    let relative_name = owner.to_stored();
-
-    if update.ttl > i32::MAX as u32 {
-        return Err(UpdateError::Refused(format!(
-            "TTL value {} exceeds maximum allowed value ({})",
-            update.ttl,
-            i32::MAX
-        )));
-    }
-    let ttl = update.ttl as i32;
-
-    let outcome = RecordService::validate_add_tx(
-        tx,
-        zone,
-        &relative_name,
-        &record_type,
-        &value,
-        ttl,
-        priority,
-    )
-    .await
-    .map_err(|e| {
-        // A backend failure must answer SERVFAIL, not REFUSED.
-        if e.code.http_status() < 500 {
-            UpdateError::Refused(e.to_string())
-        } else {
-            UpdateError::Internal(e.to_string())
-        }
-    })?;
-
-    // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
-    // TTL-replace clause is not implemented; RRset TTLs change via the API.
-    if matches!(outcome, AddOutcome::Duplicate) {
-        return Ok(false);
-    }
-
-    RecordService::insert_records_with_changes_tx(
-        tx,
-        zone.id,
-        new_serial,
-        &[Record {
-            id: 0,
-            name: relative_name,
-            record_type,
-            value,
-            ttl,
-            priority,
-            zone_id: zone.id,
-            created_at: Utc::now(),
-        }],
-    )
-    .await
-    .map_err(|e| UpdateError::Internal(format!("failed to create record: {}", e)))?;
-
-    Ok(true)
+fn class_label(class: Class) -> &'static str {
+    if class == Class::ANY { "ANY" } else { "NONE" }
 }
 
-async fn delete_records(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
-    owner: &OwnerName,
-    update: &UpdateRecord,
-    is_rrset_delete: bool,
-    query_data: &[u8],
-    new_serial: i32,
-) -> Result<bool, UpdateError> {
-    validate_delete_update_shape(update, is_rrset_delete)?;
-
-    let relative_name = owner.to_stored();
-    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id)
-        .await
-        .map_err(|e| UpdateError::Internal(format!("failed to load records: {}", e)))?;
-
-    let target_type = if update.rr_type == Rtype::ANY {
-        None
-    } else {
-        Some(rr_type_to_record_type(update.rr_type)?)
-    };
-
-    let (target_value, target_priority) = if is_rrset_delete || update.rdata.is_empty() {
-        (None, None)
-    } else {
-        let (_, value, priority) = rr_to_record_value(update, query_data)?;
-        (Some(value), priority)
-    };
-
-    let mut matched: Vec<Record> = Vec::new();
-    for record in &zone_records {
-        if !record.name.eq_ignore_ascii_case(&relative_name) {
-            continue;
-        }
-
-        if let Some(ref typ) = target_type
-            && &record.record_type != typ
-        {
-            continue;
-        }
-
-        // Priority is filtered separately, so compare rdata alone.
-        if let Some(ref value) = target_value
-            && !record
-                .record_type
-                .values_equal(&record.value, None, value, None)
-        {
-            continue;
-        }
-
-        if let Some(pri) = target_priority
-            && record.priority != Some(pri)
-        {
-            continue;
-        }
-
-        if record.record_type == RecordType::SOA {
-            continue;
-        }
-
-        matched.push(record.clone());
-    }
-
-    if matched.is_empty() {
-        return Ok(false);
-    }
-
-    validate_delete_constraints(zone, &matched).map_err(|e| UpdateError::Refused(e.to_string()))?;
-
-    RecordService::delete_records_with_changes_tx(tx, zone.id, new_serial, &matched)
-        .await
-        .map_err(|e| UpdateError::Internal(format!("failed to delete records: {}", e)))?;
-
-    Ok(true)
-}
-
-fn validate_delete_update_shape(
-    update: &UpdateRecord,
-    is_rrset_delete: bool,
-) -> Result<(), UpdateError> {
+fn validate_delete_shape(update: &UpdateRecord, is_rrset_delete: bool) -> Result<(), UpdateError> {
     if update.ttl != 0 {
         return Err(UpdateError::Refused(
             "delete update TTL must be 0".to_string(),
@@ -573,25 +388,6 @@ pub(super) fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, Updat
             rr_type
         ))),
     }
-}
-
-/// The owner of an update RR. The wire carries owners absolutely, so a name
-/// outside the zone is NOTZONE rather than something to qualify.
-pub(super) fn owner_in_zone(name: &str, zone_name: &str) -> Result<OwnerName, UpdateError> {
-    if name.trim_end_matches('.').is_empty() {
-        return Err(UpdateError::NotZone(
-            "root owner is not supported".to_string(),
-        ));
-    }
-
-    OwnerName::parse_absolute_in_zone(name, &ZoneName::from_row(zone_name)).map_err(|e| match e {
-        ParseNameError::OutsideZone => UpdateError::NotZone(format!(
-            "owner '{}' is outside zone '{}'",
-            to_fqdn(name),
-            to_fqdn(zone_name)
-        )),
-        other => UpdateError::Refused(format!("owner '{}' {}", to_fqdn(name), other)),
-    })
 }
 
 #[cfg(test)]

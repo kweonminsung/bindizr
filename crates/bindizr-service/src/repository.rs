@@ -46,16 +46,19 @@ impl RepositoryService {
         })
     }
 
-    pub(super) async fn finish_tx<T>(
+    /// Commit on success, roll back on failure. `E` is the caller's error
+    /// type, so a front end with its own error taxonomy keeps this one
+    /// transaction helper.
+    pub(super) async fn finish_tx<T, E: From<ServiceError>>(
         tx: RepositoryTx<'static>,
-        apply_result: Result<T, ServiceError>,
+        apply_result: Result<T, E>,
         internal_msg: &'static str,
-    ) -> Result<T, ServiceError> {
+    ) -> Result<T, E> {
         match apply_result {
             Ok(value) => {
                 tx.commit().await.map_err(|e| {
                     log_error!("Failed to commit transaction: {}", e);
-                    ServiceError::internal(internal_msg.to_string())
+                    E::from(ServiceError::internal(internal_msg.to_string()))
                 })?;
                 Ok(value)
             }
@@ -428,16 +431,6 @@ impl RepositoryService {
     pub(super) async fn get_tsig_key_by_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
         get_tsig_key_repository()
             .get_by_name(name)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
-    }
-
-    pub(super) async fn get_tsig_key_by_name_tx(
-        tx: &mut RepositoryTx<'_>,
-        name: &str,
-    ) -> Result<Option<TsigKey>, ServiceError> {
-        get_tsig_key_repository()
-            .get_by_name_tx(tx, name)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
     }

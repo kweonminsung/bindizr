@@ -4,7 +4,6 @@ use chrono::Utc;
 use rand::RngExt;
 
 use crate::{
-    RepositoryTx,
     authorization::Caller,
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
@@ -84,14 +83,11 @@ impl TsigKeyService {
             .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
     }
 
-    /// Look up a key by (wire) name within the caller's transaction. Used by
-    /// the nsupdate path to resolve the key named in an incoming TSIG record.
-    pub async fn find_by_name_tx(
-        tx: &mut RepositoryTx<'_>,
-        name: &str,
-    ) -> Result<Option<TsigKey>, ServiceError> {
+    /// Look up the key an incoming TSIG record names. The nsupdate path
+    /// authenticates before it opens its transaction, so this is a plain read.
+    pub async fn find_by_wire_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
         let name = name.trim().trim_end_matches('.').to_ascii_lowercase();
-        RepositoryService::get_tsig_key_by_name_tx(tx, &name).await
+        RepositoryService::get_tsig_key_by_name(&name).await
     }
 
     /// Delete a TSIG key by name; refused while any zone TSIG policy uses it.

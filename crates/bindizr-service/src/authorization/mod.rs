@@ -100,7 +100,7 @@ impl Caller {
     /// Authorize record-plane writes in `zone`, re-reading the caller's
     /// policies inside the transaction so the decision is atomic with the
     /// mutation.
-    pub async fn authorize_record_writes_tx(
+    pub(crate) async fn authorize_record_writes_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,

@@ -11,6 +11,10 @@ mod api {
     mod zone;
 }
 
+mod dns {
+    mod nsupdate;
+}
+
 mod cli {
     mod config;
     mod daemon;

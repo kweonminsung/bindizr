@@ -16,6 +16,7 @@ fn authed_enabled_options() -> TestAppOptions {
     TestAppOptions {
         require_authentication: true,
         external_dns_enabled: true,
+        ..TestAppOptions::default()
     }
 }
 

@@ -254,7 +254,7 @@ impl RecordService {
     /// [`AddOutcome::Duplicate`] rather than rejecting it — RFC 2136,
     /// Section 3.4.2.2 makes it a silent no-op. The API paths call the
     /// validator directly, where the same case stays a conflict.
-    pub async fn validate_add_tx(
+    pub(crate) async fn validate_add_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         owner_name: &str,

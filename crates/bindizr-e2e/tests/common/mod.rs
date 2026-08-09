@@ -18,6 +18,7 @@ use tempfile::TempDir;
 
 mod assertions;
 mod dns;
+pub(crate) mod nsupdate;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 use dns::{dns_expected_value, dns_key_from_record, dns_record_type, wait_for_dns_records};
@@ -38,6 +39,7 @@ pub(crate) struct TestApp {
     runtime: Option<TestRuntime>,
     client: Client,
     base_url: String,
+    dns_port: Option<u16>,
     dns_secondary_ports: Vec<u16>,
     namespace: String,
     auth_token: Option<String>,
@@ -48,6 +50,7 @@ pub(crate) struct TestApp {
 pub(crate) struct TestAppOptions {
     pub require_authentication: bool,
     pub external_dns_enabled: bool,
+    pub nsupdate_allow_unsigned: bool,
 }
 
 enum TestRuntime {
@@ -98,6 +101,7 @@ impl TestApp {
             runtime: Some(TestRuntime::Local { temp_dir, child }),
             client,
             base_url,
+            dns_port: Some(dns_port),
             dns_secondary_ports: Vec::new(),
             namespace: test_namespace(),
             auth_token: None,
@@ -113,6 +117,7 @@ impl TestApp {
             runtime: Some(TestRuntime::Compose(compose_stack)),
             client,
             base_url: COMPOSE_API_BASE_URL.to_string(),
+            dns_port: None,
             dns_secondary_ports: SECONDARY_PORTS.to_vec(),
             namespace: test_namespace(),
             auth_token: None,
@@ -121,6 +126,12 @@ impl TestApp {
 
     pub(crate) fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    /// Port bindizr's own DNS listener is bound to; only the local runtime
+    /// picks one, the compose stack fixes it.
+    pub(crate) fn dns_port(&self) -> u16 {
+        self.dns_port.expect("local runtime binds a DNS port")
     }
 
     /// Bearer token attached to every subsequent HTTP request.
@@ -226,6 +237,33 @@ impl TestApp {
         };
 
         (status, body)
+    }
+
+    /// A zone's records as the API reports them.
+    pub(crate) async fn list_records(&self, zone_name: &str) -> Vec<Value> {
+        let (status, body) = self
+            .request(
+                Method::GET,
+                &format!("/zones/{zone_name}?records=true"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        body["records"]
+            .as_array()
+            .expect("zone detail carries a records array")
+            .clone()
+    }
+
+    /// A zone's current SOA serial.
+    pub(crate) async fn zone_serial(&self, zone_name: &str) -> i64 {
+        let (status, body) = self
+            .request(Method::GET, &format!("/zones/{zone_name}"), None)
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        body["zone"]["serial"]
+            .as_i64()
+            .expect("zone carries a serial")
     }
 
     pub(crate) async fn create_test_zone(&self) -> Value {
@@ -622,7 +660,7 @@ notify_after_update = false
 notify_on_startup = false
 notify_retries = 0
 notify_timeout_secs = 1
-nsupdate_allow_unsigned = false
+nsupdate_allow_unsigned = {nsupdate_allow_unsigned}
 
 [logging]
 log_level = "error"
@@ -630,6 +668,7 @@ log_level = "error"
         db_path.display(),
         require_authentication = options.require_authentication,
         external_dns_enabled = options.external_dns_enabled,
+        nsupdate_allow_unsigned = options.nsupdate_allow_unsigned,
     );
 
     fs::write(config_path, config).expect("failed to write bindizr config");

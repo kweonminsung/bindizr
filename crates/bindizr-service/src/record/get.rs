@@ -21,7 +21,7 @@ impl RecordService {
     }
 
     /// List all records in a zone by zone id, within the caller's transaction.
-    pub async fn list_by_zone_id_tx(
+    pub(crate) async fn list_by_zone_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, ServiceError> {

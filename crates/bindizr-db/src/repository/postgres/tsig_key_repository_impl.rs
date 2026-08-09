@@ -1,11 +1,7 @@
 use async_trait::async_trait;
 use sqlx::{Pool, Postgres, Row};
 
-use crate::{
-    error::DatabaseError,
-    model::tsig_key::TsigKey,
-    repository::{RepositoryTx, TsigKeyRepository},
-};
+use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
 
 /// PostgreSQL-backed implementation of `TsigKeyRepository`.
 pub struct PostgresTsigKeyRepository {
@@ -51,23 +47,6 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         )
         .bind(name)
         .fetch_optional(&mut *conn)
-        .await?;
-
-        Ok(key)
-    }
-
-    async fn get_by_name_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        name: &str,
-    ) -> Result<Option<TsigKey>, DatabaseError> {
-        let postgres_tx = tx.as_postgres()?;
-
-        let key = sqlx::query_as::<_, TsigKey>(
-            "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE name = $1",
-        )
-        .bind(name)
-        .fetch_optional(&mut **postgres_tx)
         .await?;
 
         Ok(key)
