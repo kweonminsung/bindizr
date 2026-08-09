@@ -43,7 +43,7 @@ pub(crate) async fn notify_zones(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<NotifyZoneRequest>,
 ) -> Result<Response, ApiError> {
-    ZoneService::notify_for(&caller, body.zone_name.as_deref(), body.force).await?;
+    ZoneService::notify(&caller, body.zone_name.as_deref(), body.force).await?;
 
     let message = match body.zone_name {
         Some(zone_name) if body.force => {

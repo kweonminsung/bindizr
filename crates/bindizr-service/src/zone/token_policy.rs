@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use chrono::Utc;
 
 use crate::{
+    authorization::Caller,
     error::ServiceError,
     model::{api_token::ApiToken, zone_token_policy::ZoneTokenPolicy},
     policy_pattern::{normalize_pattern, normalize_types},
@@ -28,12 +29,15 @@ impl ZoneTokenPolicyService {
     /// restricted to a record name pattern and/or record types. Global tokens
     /// are rejected: they already cover every zone and never carry policies.
     pub async fn add(
+        caller: &Caller,
         zone_name: &str,
         token_name: &str,
         record_name_pattern: Option<&str>,
         record_types: Option<&str>,
     ) -> Result<ZoneTokenPolicyWithToken, ServiceError> {
-        let zone = ZoneService::get_by_name(zone_name).await?;
+        caller.require_global("manage token policies")?;
+
+        let zone = ZoneService::lookup_by_name(zone_name).await?;
         let token = find_token(token_name).await?;
 
         if token.is_global {
@@ -63,8 +67,13 @@ impl ZoneTokenPolicyService {
     }
 
     /// List all token policies of a zone with their token names.
-    pub async fn list(zone_name: &str) -> Result<Vec<ZoneTokenPolicyWithToken>, ServiceError> {
-        let zone = ZoneService::get_by_name(zone_name).await?;
+    pub async fn list(
+        caller: &Caller,
+        zone_name: &str,
+    ) -> Result<Vec<ZoneTokenPolicyWithToken>, ServiceError> {
+        caller.require_global("manage token policies")?;
+
+        let zone = ZoneService::lookup_by_name(zone_name).await?;
         let policies = RepositoryService::get_zone_token_policies_by_zone_id(zone.id).await?;
 
         let token_names: HashMap<i32, String> = RepositoryService::get_all_api_tokens()
@@ -86,8 +95,14 @@ impl ZoneTokenPolicyService {
     }
 
     /// Remove one policy of a zone by policy id.
-    pub async fn remove(zone_name: &str, policy_id: i32) -> Result<(), ServiceError> {
-        let zone = ZoneService::get_by_name(zone_name).await?;
+    pub async fn remove(
+        caller: &Caller,
+        zone_name: &str,
+        policy_id: i32,
+    ) -> Result<(), ServiceError> {
+        caller.require_global("manage token policies")?;
+
+        let zone = ZoneService::lookup_by_name(zone_name).await?;
 
         let policy = RepositoryService::get_zone_token_policy_by_id(policy_id)
             .await?

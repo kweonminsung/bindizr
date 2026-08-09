@@ -12,7 +12,7 @@ pub(super) async fn handle_notify_zone(
     let request: NotifyZoneRequest = parse_params(data)?;
 
     // The daemon socket is root-local, so commands run as the global caller.
-    ZoneService::notify_for(&Caller::Global, request.zone_name.as_deref(), request.force).await?;
+    ZoneService::notify(&Caller::Global, request.zone_name.as_deref(), request.force).await?;
 
     Ok(DaemonResponse {
         message: match request.zone_name {

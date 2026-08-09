@@ -3,6 +3,7 @@ use chrono::Utc;
 
 use super::ZoneService;
 use crate::{
+    authorization::Caller,
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::zone::Zone,
@@ -17,7 +18,12 @@ use crate::{
 
 impl ZoneService {
     /// Create a new zone with an apex NS record and NOTIFY the catalog zone.
-    pub async fn create(create_zone_request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
+    pub async fn create(
+        caller: &Caller,
+        create_zone_request: &CreateZoneRequest,
+    ) -> Result<Zone, ServiceError> {
+        caller.require_global("create zones")?;
+
         let validated = validate_create_zone_request(create_zone_request)?;
         let timers = resolve_soa_timers(
             create_zone_request,

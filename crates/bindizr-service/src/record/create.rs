@@ -17,16 +17,10 @@ use crate::{
 };
 
 impl RecordService {
-    /// Create a record, bumping the zone serial and recording an ADD change for IXFR.
+    /// Create a record, bumping the zone serial and recording an ADD change
+    /// for IXFR. `caller` is authorized inside the create transaction, so its
+    /// grants are decided against the zone this tx locked.
     pub async fn create(
-        create_record_request: &CreateRecordRequest,
-    ) -> Result<RecordWithZone, ServiceError> {
-        Self::create_for(&Caller::Global, create_record_request).await
-    }
-
-    /// Like [`Self::create`], authorizing `caller` inside the create
-    /// transaction so its grants are decided against the zone this tx locked.
-    pub async fn create_for(
         caller: &Caller,
         create_record_request: &CreateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {

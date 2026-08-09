@@ -78,9 +78,7 @@ pub(crate) struct ZoneTsigPolicyParam {
 pub(crate) async fn get_tsig_keys(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
-    caller.require_global("manage TSIG keys and policies")?;
-
-    let keys = TsigKeyService::list().await?;
+    let keys = TsigKeyService::list(&caller).await?;
     let keys: Vec<GetTsigKeyResponse> = keys.iter().map(GetTsigKeyResponse::from_key).collect();
     let json_body = json!({ "tsig_keys": keys });
     Ok((StatusCode::OK, Json(json_body)).into_response())
@@ -108,9 +106,8 @@ pub(crate) async fn create_tsig_key(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("manage TSIG keys and policies")?;
-
     let key = TsigKeyService::create(
+        &caller,
         &body.name,
         body.algorithm.as_deref(),
         body.secret.as_deref(),
@@ -144,9 +141,7 @@ pub(crate) async fn get_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("manage TSIG keys and policies")?;
-
-    let key = TsigKeyService::get(&params.name).await?;
+    let key = TsigKeyService::get(&caller, &params.name).await?;
     let key = GetTsigKeyResponse::from_key(&key);
     let json_body = json!({ "tsig_key": key });
     Ok((StatusCode::OK, Json(json_body)).into_response())
@@ -175,9 +170,7 @@ pub(crate) async fn delete_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("manage TSIG keys and policies")?;
-
-    TsigKeyService::delete(&params.name).await?;
+    TsigKeyService::delete(&caller, &params.name).await?;
     let json_body = json!({ "message": "TSIG key deleted successfully" });
     Ok((StatusCode::OK, Json(json_body)).into_response())
 }
@@ -204,9 +197,7 @@ pub(crate) async fn get_zone_tsig_policies(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("manage TSIG keys and policies")?;
-
-    let policies = ZoneTsigPolicyService::list(&params.name).await?;
+    let policies = ZoneTsigPolicyService::list(&caller, &params.name).await?;
     let policies: Vec<GetZoneTsigPolicyResponse> = policies
         .iter()
         .map(GetZoneTsigPolicyResponse::from_policy)
@@ -241,9 +232,8 @@ pub(crate) async fn create_zone_tsig_policy(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneTsigPolicyRequest>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("manage TSIG keys and policies")?;
-
     let policy = ZoneTsigPolicyService::add(
+        &caller,
         &params.name,
         &body.tsig_key,
         body.record_name_pattern.as_deref(),
@@ -277,9 +267,7 @@ pub(crate) async fn delete_zone_tsig_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneTsigPolicyParam>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("manage TSIG keys and policies")?;
-
-    ZoneTsigPolicyService::remove(&params.name, params.id).await?;
+    ZoneTsigPolicyService::remove(&caller, &params.name, params.id).await?;
     let json_body = json!({ "message": "TSIG policy deleted successfully" });
     Ok((StatusCode::OK, Json(json_body)).into_response())
 }

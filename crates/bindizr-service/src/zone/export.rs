@@ -16,14 +16,10 @@ use crate::{
 impl ZoneService {
     /// Render a zone and its records as a BIND master file (RFC 1035). The
     /// output round-trips through `zone import`, which manages the SOA itself
-    /// and so ignores the SOA line on the way back in.
-    pub async fn export_zone_file(zone_name: &str) -> Result<String, ServiceError> {
-        Self::export_zone_file_for(&Caller::Global, zone_name).await
-    }
-
-    /// Like [`Self::export_zone_file`], checking visibility on the row this
-    /// tx locked so a same-name recreation cannot swap the zone in.
-    pub async fn export_zone_file_for(
+    /// and so ignores the SOA line on the way back in. Visibility is checked
+    /// on the row this tx locked, so a same-name recreation cannot swap the
+    /// zone in.
+    pub async fn export_zone_file(
         caller: &Caller,
         zone_name: &str,
     ) -> Result<String, ServiceError> {

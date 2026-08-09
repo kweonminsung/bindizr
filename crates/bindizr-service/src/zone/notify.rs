@@ -8,7 +8,7 @@ use crate::{authorization::Caller, error::ServiceError, log_info};
 impl ZoneService {
     /// Send a manual NOTIFY for one zone or all zones, optionally forcing a
     /// serial bump first.
-    pub async fn notify_for(
+    pub async fn notify(
         caller: &Caller,
         zone_name: Option<&str>,
         force: bool,
@@ -18,24 +18,25 @@ impl ZoneService {
             caller.require_global("force a NOTIFY")?;
         }
         match zone_name {
-            Some(zone_name) => Self::ensure_visible(caller, zone_name).await?,
-            None => caller.require_global("send NOTIFY for all zones")?,
-        }
-
-        match zone_name {
             // The virtual catalog zone has no row: nothing to bump or look up.
             Some(name) if is_catalog_zone(name) => {
                 if force {
                     log_info!("Skipping forced serial increment for virtual catalog zone");
                 }
             }
-            _ if force => {
-                Self::force_increment_serial(zone_name).await?;
-            }
+            // Resolving the zone for `caller` is also the visibility check.
             Some(name) => {
-                Self::get_by_name(name).await?;
+                Self::get_by_name(caller, name).await?;
+                if force {
+                    Self::force_increment_serial(zone_name).await?;
+                }
             }
-            None => {}
+            None => {
+                caller.require_global("send NOTIFY for all zones")?;
+                if force {
+                    Self::force_increment_serial(zone_name).await?;
+                }
+            }
         }
 
         crate::notify::send_notify(zone_name)

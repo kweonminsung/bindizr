@@ -233,13 +233,6 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to update record: {}", e)))
     }
 
-    pub(super) async fn get_all_records() -> Result<Vec<Record>, ServiceError> {
-        get_record_repository()
-            .get_all()
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
-    }
-
     pub(super) async fn get_records_by_filter_with_zone(
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, ServiceError> {

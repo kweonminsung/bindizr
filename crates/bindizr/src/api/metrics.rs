@@ -6,6 +6,7 @@ use axum::{
 };
 use bindizr_core::metrics::{TEXT_CONTENT_TYPE, metrics};
 use bindizr_service::{
+    authorization::Caller,
     error::ServiceError,
     record::RecordService,
     types::{GetRecordsFilter, GetZonesFilter},
@@ -40,18 +41,24 @@ pub(crate) async fn get_metrics() -> Response {
 
 // Read pagination totals off limit-1 probes so large tables stay cheap.
 async fn fetch_db_totals() -> Result<(u64, u64), ServiceError> {
-    let zones = ZoneService::list_by_filter(GetZonesFilter {
-        limit: Some(1),
-        ..GetZonesFilter::default()
-    })
+    let zones = ZoneService::list_by_filter(
+        &Caller::Global,
+        GetZonesFilter {
+            limit: Some(1),
+            ..GetZonesFilter::default()
+        },
+    )
     .await?
     .pagination
     .total;
 
-    let records = RecordService::list_with_zone_by_filter(GetRecordsFilter {
-        limit: Some(1),
-        ..GetRecordsFilter::default()
-    })
+    let records = RecordService::list_with_zone_by_filter(
+        &Caller::Global,
+        GetRecordsFilter {
+            limit: Some(1),
+            ..GetRecordsFilter::default()
+        },
+    )
     .await?
     .pagination
     .total;

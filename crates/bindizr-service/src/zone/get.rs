@@ -50,26 +50,18 @@ impl ZoneService {
         })
     }
 
-    /// List zones matching `filter`, returning a paginated response.
+    /// List the zones matching `filter` that the caller may see, restricted in
+    /// SQL so pagination stays database-side.
     pub async fn list_by_filter(
-        filter: GetZonesFilter,
-    ) -> Result<PaginatedResponse<Zone>, ServiceError> {
-        Self::list_filtered(filter, None).await
-    }
-
-    /// [`Self::list_by_filter`] restricted to the caller's visible zones,
-    /// pushed into SQL so pagination stays database-side.
-    pub async fn list_by_filter_for(
         caller: &Caller,
         filter: GetZonesFilter,
     ) -> Result<PaginatedResponse<Zone>, ServiceError> {
-        let Some(visible) = caller.visible_zone_ids() else {
-            return Self::list_by_filter(filter).await;
-        };
-
-        let mut ids: Vec<i32> = visible.into_iter().collect();
-        ids.sort_unstable();
-        Self::list_filtered(filter, Some(ids)).await
+        let ids = caller.visible_zone_ids().map(|visible| {
+            let mut ids: Vec<i32> = visible.into_iter().collect();
+            ids.sort_unstable();
+            ids
+        });
+        Self::list_filtered(filter, ids).await
     }
 
     async fn list_filtered(
@@ -99,24 +91,18 @@ impl ZoneService {
         Ok(paginated_response(zones, limit, offset, total))
     }
 
-    /// 404 for zones a scoped caller cannot see, so grants cannot be probed.
-    pub async fn ensure_visible(caller: &Caller, zone_name: &str) -> Result<(), ServiceError> {
-        if caller.is_global() {
-            return Ok(());
-        }
-        let zone = Self::get_by_name(zone_name).await?;
-        caller.ensure_zone_visible(&zone)
-    }
-
-    /// [`Self::get_by_name`] with scoped-caller visibility applied.
-    pub async fn get_by_name_for(caller: &Caller, zone_name: &str) -> Result<Zone, ServiceError> {
-        let zone = Self::get_by_name(zone_name).await?;
+    /// Fetch a zone by name for `caller`; a zone it cannot see reads as
+    /// `NotFound`, so grants cannot be probed.
+    pub async fn get_by_name(caller: &Caller, zone_name: &str) -> Result<Zone, ServiceError> {
+        let zone = Self::lookup_by_name(zone_name).await?;
         caller.ensure_zone_visible(&zone)?;
         Ok(zone)
     }
 
-    /// Fetch a zone by name, returning `NotFound` if it does not exist.
-    pub async fn get_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
+    /// Fetch a zone by name, returning `NotFound` if it does not exist. This is
+    /// the unchecked lookup for service-internal use; anything reachable from a
+    /// front end goes through [`Self::get_by_name`].
+    pub(crate) async fn lookup_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
 
         match RepositoryService::get_zone_by_name(&lookup_name).await {

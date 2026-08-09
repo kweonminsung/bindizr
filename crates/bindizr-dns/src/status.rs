@@ -16,7 +16,7 @@ pub async fn zone_status(
     caller: &Caller,
     zone_name: &str,
 ) -> Result<ZoneStatusResponse, ServiceError> {
-    let zone = ZoneService::get_by_name_for(caller, zone_name).await?;
+    let zone = ZoneService::get_by_name(caller, zone_name).await?;
 
     let probes = probe::probe_secondaries(&zone.name)
         .await

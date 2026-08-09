@@ -1,4 +1,5 @@
 use bindizr_service::{
+    authorization::Caller,
     error::ServiceError,
     record::RecordService,
     types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
@@ -14,7 +15,7 @@ use crate::socket::{
 pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: RecordIdParams = parse_params(data)?;
 
-    match RecordService::get_by_id_with_zone(params.id).await {
+    match RecordService::get_by_id_with_zone(&Caller::Global, params.id).await {
         Ok(record) => {
             let response = GetRecordResponse::from_record_with_zone(&record);
             Ok(DaemonResponse {
@@ -34,7 +35,7 @@ pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
         parse_params(data)?
     };
 
-    match RecordService::list_with_zone_by_filter(filter).await {
+    match RecordService::list_with_zone_by_filter(&Caller::Global, filter).await {
         Ok(records) => {
             let response = records
                 .items
@@ -60,7 +61,7 @@ pub(super) async fn create_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateRecordRequest = parse_params(data)?;
 
-    match RecordService::create(&request).await {
+    match RecordService::create(&Caller::Global, &request).await {
         Ok(record) => {
             let response = GetRecordResponse::from_record_with_zone(&record);
 
@@ -79,7 +80,7 @@ pub(super) async fn update_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordParams = parse_params(data)?;
 
-    match RecordService::patch_by_id(params.id, &params.patch).await {
+    match RecordService::patch_by_id(&Caller::Global, params.id, &params.patch).await {
         Ok(record) => Ok(DaemonResponse {
             message: "Record updated successfully".to_string(),
             data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
@@ -95,7 +96,14 @@ pub(super) async fn bulk_create_records(
 ) -> Result<DaemonResponse, ServiceError> {
     let BulkCreateRecordsParams { zone_name, request } = parse_params(data)?;
 
-    match RecordService::create_bulk(&zone_name, &request.records, request.dry_run).await {
+    match RecordService::create_bulk(
+        &Caller::Global,
+        &zone_name,
+        &request.records,
+        request.dry_run,
+    )
+    .await
+    {
         Ok(response) => {
             let message = if response.dry_run {
                 format!(
@@ -121,7 +129,7 @@ pub(super) async fn delete_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RecordIdParams = parse_params(data)?;
 
-    match RecordService::delete_by_id(params.id).await {
+    match RecordService::delete_by_id(&Caller::Global, params.id).await {
         Ok(_) => Ok(DaemonResponse {
             message: format!("Record '{}' deleted successfully", params.id),
             data: json!(null),

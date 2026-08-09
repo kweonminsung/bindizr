@@ -74,7 +74,7 @@ pub(crate) async fn get_records(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<GetRecordsFilter>,
 ) -> Result<Response, ApiError> {
-    let raw_records = RecordService::list_with_zone_by_filter_for(&caller, query).await?;
+    let raw_records = RecordService::list_with_zone_by_filter(&caller, query).await?;
 
     let records = raw_records
         .items
@@ -106,7 +106,7 @@ pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::get_by_id_with_zone_for(&caller, params.record_id).await?;
+    let raw_record = RecordService::get_by_id_with_zone(&caller, params.record_id).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
@@ -134,7 +134,7 @@ pub(crate) async fn create_record(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::create_for(&caller, &body).await?;
+    let raw_record = RecordService::create(&caller, &body).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
@@ -167,7 +167,7 @@ pub(crate) async fn update_record(
     Path(params): Path<RecordIdParam>,
     JsonBody(body): JsonBody<RecordItem>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::update_by_id_for(&caller, params.record_id, &body).await?;
+    let raw_record = RecordService::update_by_id(&caller, params.record_id, &body).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
@@ -196,7 +196,7 @@ pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
 ) -> Result<Response, ApiError> {
-    RecordService::delete_by_id_for(&caller, params.record_id).await?;
+    RecordService::delete_by_id(&caller, params.record_id).await?;
 
     let json_body = json!({ "message": "Record deleted successfully" });
     Ok((StatusCode::OK, Json(json_body)).into_response())
@@ -230,8 +230,7 @@ pub(crate) async fn create_records_bulk(
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
 ) -> Result<Response, ApiError> {
     let response =
-        RecordService::create_bulk_for(&caller, &params.zone_name, &body.records, body.dry_run)
-            .await?;
+        RecordService::create_bulk(&caller, &params.zone_name, &body.records, body.dry_run).await?;
 
     let status = if body.dry_run {
         StatusCode::OK

@@ -2,6 +2,7 @@ use bindizr_core::dns::{CATALOG_ZONE_NAME, name::OwnerName};
 
 use super::{ZoneService, apex_ns_rrset_ttl};
 use crate::{
+    authorization::Caller,
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::{zone::Zone, zone_change::ZoneChange},
@@ -51,9 +52,11 @@ pub(super) fn soa_replacement_changes(
 impl ZoneService {
     /// Full replacement (HTTP PUT): the request supplies every field.
     pub async fn update(
+        caller: &Caller,
         zone_name: &str,
         request: &CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
+        caller.require_global("update zones")?;
         reject_serial(request.serial)?;
         Self::update_locked(zone_name, |_existing| CreateZoneRequest {
             name: request.name.clone(),
@@ -71,7 +74,12 @@ impl ZoneService {
 
     /// Partial update (CLI): omitted fields keep the stored zone's value. The
     /// merge runs inside the transaction, against the locked row.
-    pub async fn patch(zone_name: &str, patch: &UpdateZonePatch) -> Result<Zone, ServiceError> {
+    pub async fn patch(
+        caller: &Caller,
+        zone_name: &str,
+        patch: &UpdateZonePatch,
+    ) -> Result<Zone, ServiceError> {
+        caller.require_global("update zones")?;
         reject_serial(patch.serial)?;
         Self::update_locked(zone_name, |existing| CreateZoneRequest {
             name: patch

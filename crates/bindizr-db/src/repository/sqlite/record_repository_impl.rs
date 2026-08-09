@@ -262,17 +262,6 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(out)
     }
 
-    async fn get_all(&self) -> Result<Vec<Record>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let records = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records ORDER BY name")
-            .fetch_all(&mut *conn)
-            .await
-            ?;
-
-        Ok(records)
-    }
-
     async fn get_by_filter_with_zone(
         &self,
         filter: RecordFilter,

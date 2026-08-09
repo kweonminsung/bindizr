@@ -16,6 +16,7 @@ use super::{
     zonefile::parse_zone_file,
 };
 use crate::{
+    authorization::Caller,
     error::ServiceError,
     log_debug, log_error, log_info, log_warn,
     model::{
@@ -94,9 +95,12 @@ impl RecordService {
     /// apply the zone serial is incremented once and a single NOTIFY is sent. If
     /// any record fails validation nothing is applied and the errors are returned.
     pub async fn import_zone_file(
+        caller: &Caller,
         zone_name: &str,
         request: &ImportZoneFileRequest,
     ) -> Result<ImportZoneFileResponse, ServiceError> {
+        caller.require_global("import zone files")?;
+
         let mode = request.mode;
         let dry_run = request.dry_run;
 

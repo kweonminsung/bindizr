@@ -4,7 +4,7 @@ use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 use super::{error::ServiceError, repository::RepositoryService};
-use crate::model::api_token::ApiToken;
+use crate::{authorization::Caller, model::api_token::ApiToken};
 
 const MAX_TOKEN_NAME_LEN: usize = 255;
 
@@ -21,11 +21,14 @@ impl TokenService {
     /// Create a new API token; the returned token carries the raw secret to
     /// show once.
     pub async fn create_token(
+        caller: &Caller,
         name: &str,
         description: Option<&str>,
         expires_in_days: Option<i64>,
         is_global: bool,
     ) -> Result<ApiToken, ServiceError> {
+        caller.require_global("manage API tokens")?;
+
         let name = validate_token_name(name)?;
         validate_expires_in_days(expires_in_days)?;
 
@@ -63,7 +66,9 @@ impl TokenService {
     }
 
     /// List all API tokens with their secret hashes cleared.
-    pub async fn list_tokens() -> Result<Vec<ApiToken>, ServiceError> {
+    pub async fn list_tokens(caller: &Caller) -> Result<Vec<ApiToken>, ServiceError> {
+        caller.require_global("manage API tokens")?;
+
         let mut tokens = RepositoryService::get_all_api_tokens().await?;
         for token in &mut tokens {
             token.token.clear();
@@ -73,7 +78,9 @@ impl TokenService {
 
     /// Delete the API token with the given name, returning `NotFound` if it
     /// is absent.
-    pub async fn delete_token(name: &str) -> Result<(), ServiceError> {
+    pub async fn delete_token(caller: &Caller, name: &str) -> Result<(), ServiceError> {
+        caller.require_global("manage API tokens")?;
+
         let token = RepositoryService::get_api_token_by_name(name.trim())
             .await?
             .ok_or_else(|| ServiceError::token_not_found(name))?;

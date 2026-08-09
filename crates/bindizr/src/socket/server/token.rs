@@ -1,7 +1,7 @@
 use bindizr_core::log_error;
 use bindizr_service::{
-    error::ServiceError, token::TokenService, types::GetZoneTokenPolicyResponse,
-    zone::token_policy::ZoneTokenPolicyService,
+    authorization::Caller, error::ServiceError, token::TokenService,
+    types::GetZoneTokenPolicyResponse, zone::token_policy::ZoneTokenPolicyService,
 };
 
 use crate::socket::{
@@ -17,6 +17,7 @@ pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
     let params: CreateTokenParams = parse_params(data)?;
 
     let created_token = TokenService::create_token(
+        &Caller::Global,
         &params.name,
         params.description.as_deref(),
         params.expires_in_days,
@@ -33,7 +34,7 @@ pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 
 /// Handle the `TokenList` command by returning all API tokens.
 pub(super) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
-    let tokens = match TokenService::list_tokens().await {
+    let tokens = match TokenService::list_tokens(&Caller::Global).await {
         Ok(tokens) => tokens,
         Err(e) => {
             log_error!("Failed to list tokens: {}", e);
@@ -52,7 +53,7 @@ pub(super) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
 pub(super) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: TokenNameParams = parse_params(data)?;
 
-    TokenService::delete_token(&params.name).await?;
+    TokenService::delete_token(&Caller::Global, &params.name).await?;
 
     let response = DaemonResponse {
         message: "Token deleted successfully".to_string(),
@@ -68,6 +69,7 @@ pub(super) async fn add_zone_token_policy(
     let params: AddZoneTokenPolicyParams = parse_params(data)?;
 
     let policy = ZoneTokenPolicyService::add(
+        &Caller::Global,
         &params.zone_name,
         &params.request.api_token,
         params.request.record_name_pattern.as_deref(),
@@ -87,7 +89,7 @@ pub(super) async fn list_zone_token_policies(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZonePolicyListParams = parse_params(data)?;
 
-    let policies = ZoneTokenPolicyService::list(&params.zone_name).await?;
+    let policies = ZoneTokenPolicyService::list(&Caller::Global, &params.zone_name).await?;
     let policies: Vec<GetZoneTokenPolicyResponse> = policies
         .iter()
         .map(GetZoneTokenPolicyResponse::from_policy)
@@ -105,7 +107,7 @@ pub(super) async fn remove_zone_token_policy(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RemoveZonePolicyParams = parse_params(data)?;
 
-    ZoneTokenPolicyService::remove(&params.zone_name, params.id).await?;
+    ZoneTokenPolicyService::remove(&Caller::Global, &params.zone_name, params.id).await?;
 
     Ok(DaemonResponse {
         message: "Token policy deleted successfully".to_string(),

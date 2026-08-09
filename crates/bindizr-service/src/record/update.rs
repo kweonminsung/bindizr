@@ -36,7 +36,7 @@ struct ResolvedRecordUpdate {
 impl RecordService {
     /// Full replacement (HTTP PUT): every field comes from the request. The
     /// caller is authorized inside the update transaction.
-    pub async fn update_by_id_for(
+    pub async fn update_by_id(
         caller: &Caller,
         record_id: i32,
         request: &RecordItem,
@@ -68,10 +68,11 @@ impl RecordService {
     /// Partial update (CLI): omitted fields keep the stored record's value. The
     /// merge runs inside the transaction, against the row loaded there.
     pub async fn patch_by_id(
+        caller: &Caller,
         record_id: i32,
         patch: &UpdateRecordPatch,
     ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(&Caller::Global, record_id, |_zone, existing| {
+        Self::update_locked(caller, record_id, |_zone, existing| {
             let record_type = match &patch.record_type {
                 Some(record_type) => parse_record_type(record_type)?,
                 None => existing.record_type.clone(),

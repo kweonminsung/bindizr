@@ -337,7 +337,6 @@ pub trait RecordRepository: Send + Sync {
         zone_id: i32,
         names: &[String],
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<Record>, DatabaseError>;
     async fn get_by_filter_with_zone(
         &self,
         filter: RecordFilter,

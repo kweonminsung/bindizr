@@ -6,6 +6,7 @@ use chrono::Utc;
 use super::ZoneService;
 use crate::{
     RepositoryTx,
+    authorization::Caller,
     error::ServiceError,
     model::{record::RecordType, zone_tsig_policy::ZoneTsigPolicy},
     policy_pattern::{normalize_pattern, normalize_types, pattern_matches_name, types_match},
@@ -28,13 +29,16 @@ impl ZoneTsigPolicyService {
     /// to a record name pattern and/or record types. Global keys are rejected:
     /// they already cover every zone and never carry policies.
     pub async fn add(
+        caller: &Caller,
         zone_name: &str,
         key_name: &str,
         record_name_pattern: Option<&str>,
         record_types: Option<&str>,
     ) -> Result<ZoneTsigPolicyWithKey, ServiceError> {
-        let zone = ZoneService::get_by_name(zone_name).await?;
-        let key = TsigKeyService::get(key_name).await?;
+        caller.require_global("manage TSIG keys and policies")?;
+
+        let zone = ZoneService::lookup_by_name(zone_name).await?;
+        let key = TsigKeyService::lookup_by_name(key_name).await?;
 
         if key.is_global {
             return Err(ServiceError::invalid_input(format!(
@@ -63,8 +67,13 @@ impl ZoneTsigPolicyService {
     }
 
     /// List all TSIG policies of a zone with their key names.
-    pub async fn list(zone_name: &str) -> Result<Vec<ZoneTsigPolicyWithKey>, ServiceError> {
-        let zone = ZoneService::get_by_name(zone_name).await?;
+    pub async fn list(
+        caller: &Caller,
+        zone_name: &str,
+    ) -> Result<Vec<ZoneTsigPolicyWithKey>, ServiceError> {
+        caller.require_global("manage TSIG keys and policies")?;
+
+        let zone = ZoneService::lookup_by_name(zone_name).await?;
         let policies = RepositoryService::get_zone_tsig_policies_by_zone_id(zone.id).await?;
 
         let key_names: HashMap<i32, String> = RepositoryService::get_all_tsig_keys()
@@ -86,8 +95,14 @@ impl ZoneTsigPolicyService {
     }
 
     /// Remove one policy of a zone by policy id.
-    pub async fn remove(zone_name: &str, policy_id: i32) -> Result<(), ServiceError> {
-        let zone = ZoneService::get_by_name(zone_name).await?;
+    pub async fn remove(
+        caller: &Caller,
+        zone_name: &str,
+        policy_id: i32,
+    ) -> Result<(), ServiceError> {
+        caller.require_global("manage TSIG keys and policies")?;
+
+        let zone = ZoneService::lookup_by_name(zone_name).await?;
 
         let policy = RepositoryService::get_zone_tsig_policy_by_id(policy_id)
             .await?

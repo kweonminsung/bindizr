@@ -20,14 +20,10 @@ struct DeletedRecord {
 }
 
 impl RecordService {
-    /// Delete a record by id, bumping the zone serial and recording a DEL change for IXFR.
-    pub async fn delete_by_id(record_id: i32) -> Result<(), ServiceError> {
-        Self::delete_by_id_for(&Caller::Global, record_id).await
-    }
-
-    /// Like [`Self::delete_by_id`], authorizing `caller` inside the delete
-    /// transaction so a concurrent rename cannot outrun the check.
-    pub async fn delete_by_id_for(caller: &Caller, record_id: i32) -> Result<(), ServiceError> {
+    /// Delete a record by id, bumping the zone serial and recording a DEL
+    /// change for IXFR. `caller` is authorized inside the delete transaction,
+    /// so a concurrent rename cannot outrun the check.
+    pub async fn delete_by_id(caller: &Caller, record_id: i32) -> Result<(), ServiceError> {
         // Resolve zone_id with a non-locking read so the tx locks zone before
         // record (the create/bulk/import order); the reverse can deadlock.
         let zone_id = match RepositoryService::get_record_by_id(record_id).await {

@@ -5,6 +5,7 @@ use rand::RngExt;
 
 use crate::{
     RepositoryTx,
+    authorization::Caller,
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
     repository::RepositoryService,
@@ -23,11 +24,14 @@ impl TsigKeyService {
     /// `is_global` is fixed at creation: a global key may update every zone
     /// without any policy.
     pub async fn create(
+        caller: &Caller,
         name: &str,
         algorithm: Option<&str>,
         secret: Option<&str>,
         is_global: bool,
     ) -> Result<TsigKey, ServiceError> {
+        caller.require_global("manage TSIG keys and policies")?;
+
         let name = normalize_key_name(name)?;
         let algorithm = parse_algorithm(algorithm)?;
         let secret = match secret {
@@ -54,7 +58,9 @@ impl TsigKeyService {
     }
 
     /// List all TSIG keys with their secrets cleared.
-    pub async fn list() -> Result<Vec<TsigKey>, ServiceError> {
+    pub async fn list(caller: &Caller) -> Result<Vec<TsigKey>, ServiceError> {
+        caller.require_global("manage TSIG keys and policies")?;
+
         let mut keys = RepositoryService::get_all_tsig_keys().await?;
         for key in &mut keys {
             key.secret.clear();
@@ -63,7 +69,15 @@ impl TsigKeyService {
     }
 
     /// Fetch one TSIG key by name, including its secret.
-    pub async fn get(name: &str) -> Result<TsigKey, ServiceError> {
+    pub async fn get(caller: &Caller, name: &str) -> Result<TsigKey, ServiceError> {
+        caller.require_global("manage TSIG keys and policies")?;
+
+        Self::lookup_by_name(name).await
+    }
+
+    /// Fetch one TSIG key by name. This is the unchecked lookup for
+    /// service-internal use; front ends go through [`Self::get`].
+    pub(crate) async fn lookup_by_name(name: &str) -> Result<TsigKey, ServiceError> {
         let name = normalize_key_name(name)?;
         RepositoryService::get_tsig_key_by_name(&name)
             .await?
@@ -81,8 +95,10 @@ impl TsigKeyService {
     }
 
     /// Delete a TSIG key by name; refused while any zone TSIG policy uses it.
-    pub async fn delete(name: &str) -> Result<(), ServiceError> {
-        let key = Self::get(name).await?;
+    pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
+        caller.require_global("manage TSIG keys and policies")?;
+
+        let key = Self::lookup_by_name(name).await?;
 
         let policy_count = RepositoryService::count_zone_tsig_policies_by_key_id(key.id).await?;
         if policy_count > 0 {

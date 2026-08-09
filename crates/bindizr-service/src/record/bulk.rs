@@ -138,18 +138,9 @@ impl RecordService {
     /// after commit. Either every record is inserted or none is. On `dry_run`
     /// the same validation runs but nothing is written and no NOTIFY is sent;
     /// the returned records are the validated would-be records (placeholder
-    /// IDs).
+    /// IDs). `caller` is authorized inside the bulk transaction, so its grants
+    /// are decided against the zone this tx locked.
     pub async fn create_bulk(
-        zone_name: &str,
-        items: &[RecordItem],
-        dry_run: bool,
-    ) -> Result<BulkRecordsResponse, ServiceError> {
-        Self::create_bulk_for(&Caller::Global, zone_name, items, dry_run).await
-    }
-
-    /// Like [`Self::create_bulk`], authorizing `caller` inside the bulk
-    /// transaction so its grants are decided against the zone this tx locked.
-    pub async fn create_bulk_for(
         caller: &Caller,
         zone_name: &str,
         items: &[RecordItem],

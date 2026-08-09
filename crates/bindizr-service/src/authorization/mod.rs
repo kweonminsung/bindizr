@@ -1,7 +1,13 @@
-//! Caller identity and zone-scope authorization for the HTTP API. Scoped
-//! tokens are the HTTP twin of non-global TSIG keys: record-plane only,
-//! within `zone_token_policies` grants matched by the nsupdate pattern/type
-//! rules. Invisible zones read as 404, denied writes as 403.
+//! Caller identity and zone-scope authorization. Scoped tokens are the HTTP
+//! twin of non-global TSIG keys: record-plane only, within
+//! `zone_token_policies` grants matched by the nsupdate pattern/type rules.
+//! Invisible zones read as 404, denied writes as 403.
+//!
+//! Every service operation a front end can reach takes a [`Caller`] and
+//! decides its own authorization; a transport never gates on its own. The
+//! daemon socket is reachable only by the local daemon owner, so it passes
+//! [`Caller::Global`]. Operations serving the DNS protocol plane (transfers,
+//! NOTIFY, nsupdate) take no caller — that plane authorizes by ACL and TSIG.
 
 use std::{collections::HashSet, sync::Arc};
 

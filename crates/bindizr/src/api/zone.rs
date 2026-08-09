@@ -103,7 +103,7 @@ pub(crate) async fn export_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    let zone_file = ZoneService::export_zone_file_for(&caller, &params.name).await?;
+    let zone_file = ZoneService::export_zone_file(&caller, &params.name).await?;
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],
@@ -137,7 +137,7 @@ pub(crate) async fn list_zone_snapshots(
     Query(query): Query<SnapshotListQuery>,
 ) -> Result<Response, ApiError> {
     let response =
-        ZoneService::list_snapshots_for(&caller, &params.name, query.limit, query.offset).await?;
+        ZoneService::list_snapshots(&caller, &params.name, query.limit, query.offset).await?;
     let mut items = Vec::with_capacity(response.items.len());
     for snapshot in &response.items {
         items.push(ZoneSnapshotResponse::from_snapshot(snapshot)?);
@@ -169,7 +169,7 @@ pub(crate) async fn get_zone_snapshot(
     Path(params): Path<ZoneSnapshotParam>,
 ) -> Result<Response, ApiError> {
     let (snapshot, records) =
-        ZoneService::get_snapshot_for(&caller, &params.name, params.serial).await?;
+        ZoneService::get_snapshot(&caller, &params.name, params.serial).await?;
     let snapshot = ZoneSnapshotResponse::from_snapshot(&snapshot)?;
     let records = records
         .into_iter()
@@ -205,9 +205,7 @@ pub(crate) async fn rollback_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<RollbackZoneRequest>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("roll back zones")?;
-
-    let response = ZoneService::rollback(&params.name, body.serial, body.dry_run).await?;
+    let response = ZoneService::rollback(&caller, &params.name, body.serial, body.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -256,7 +254,7 @@ pub(crate) async fn diff_zone_snapshots(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<SnapshotDiffQuery>,
 ) -> Result<Response, ApiError> {
-    let diff = ZoneService::diff_snapshots_for(&caller, &params.name, query.from, query.to).await?;
+    let diff = ZoneService::diff_snapshots(&caller, &params.name, query.from, query.to).await?;
     Ok((StatusCode::OK, Json(diff)).into_response())
 }
 
@@ -290,7 +288,7 @@ pub(crate) async fn get_zones(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<GetZonesFilter>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::list_by_filter_for(&caller, query).await?;
+    let response = ZoneService::list_by_filter(&caller, query).await?;
     let zones = response
         .items
         .iter()
@@ -322,10 +320,10 @@ pub(crate) async fn get_zone(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<GetZoneQuery>,
 ) -> Result<Response, ApiError> {
-    let raw_zone = ZoneService::get_by_name_for(&caller, &params.name).await?;
+    let raw_zone = ZoneService::get_by_name(&caller, &params.name).await?;
 
     let raw_records = match query.records {
-        Some(true) => RecordService::list(Some(raw_zone.name.clone())).await?,
+        Some(true) => RecordService::list_in_zone(&caller, &raw_zone.name).await?,
         _ => vec![],
     };
     let records = raw_records
@@ -358,9 +356,7 @@ pub(crate) async fn create_zone(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("create zones")?;
-
-    let zone = ZoneService::create(&body).await?;
+    let zone = ZoneService::create(&caller, &body).await?;
     let zone = GetZoneResponse::from_zone(&zone);
     let json_body = json!({ "zone": zone });
     Ok((StatusCode::CREATED, Json(json_body)).into_response())
@@ -391,9 +387,7 @@ pub(crate) async fn update_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("update zones")?;
-
-    let zone = ZoneService::update(&params.name, &body).await?;
+    let zone = ZoneService::update(&caller, &params.name, &body).await?;
     let zone = GetZoneResponse::from_zone(&zone);
     let json_body = json!({ "zone": zone });
     Ok((StatusCode::OK, Json(json_body)).into_response())
@@ -420,9 +414,7 @@ pub(crate) async fn delete_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("delete zones")?;
-
-    ZoneService::delete(&params.name).await?;
+    ZoneService::delete(&caller, &params.name).await?;
     let json_body = json!({ "message": "Zone deleted successfully" });
     Ok((StatusCode::OK, Json(json_body)).into_response())
 }
@@ -453,9 +445,7 @@ pub(crate) async fn import_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<ImportZoneFileRequest>,
 ) -> Result<Response, ApiError> {
-    caller.require_global("import zone files")?;
-
-    let response = RecordService::import_zone_file(&params.name, &body).await?;
+    let response = RecordService::import_zone_file(&caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

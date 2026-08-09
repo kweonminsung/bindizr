@@ -369,27 +369,15 @@ fn soa_metadata_changed(zone: &Zone, restored: &Zone) -> bool {
 
 impl ZoneService {
     /// List a zone's snapshots (serial history), newest serial first.
+    /// Visibility is checked on the row whose id the queries use, so a
+    /// same-name recreation cannot swap the zone in.
     pub async fn list_snapshots(
-        zone_name: &str,
-        limit: Option<u32>,
-        offset: Option<u64>,
-    ) -> Result<PaginatedResponse<ZoneSnapshot>, ServiceError> {
-        Self::list_snapshots_for(&Caller::Global, zone_name, limit, offset).await
-    }
-
-    /// Like [`Self::list_snapshots`], checking visibility on the row whose id
-    /// the queries use, so a same-name recreation cannot swap the zone in.
-    pub async fn list_snapshots_for(
         caller: &Caller,
         zone_name: &str,
         limit: Option<u32>,
         offset: Option<u64>,
     ) -> Result<PaginatedResponse<ZoneSnapshot>, ServiceError> {
-        let zone = Self::get_by_name(zone_name).await?;
-        // Invisible zones read as 404 so scoped tokens cannot probe them.
-        if !caller.zone_visible(zone.id) {
-            return Err(ServiceError::zone_not_found(zone_name));
-        }
+        let zone = Self::get_by_name(caller, zone_name).await?;
 
         let total = RepositoryService::count_zone_snapshots(zone.id).await?;
         let effective_limit = limit.unwrap_or(50);
@@ -406,17 +394,9 @@ impl ZoneService {
     }
 
     /// Fetch the snapshot at `serial` together with the reconstructed record
-    /// set at that serial.
+    /// set at that serial. Visibility is checked on the row this tx locked, so
+    /// a same-name recreation cannot swap the zone in.
     pub async fn get_snapshot(
-        zone_name: &str,
-        serial: i32,
-    ) -> Result<(ZoneSnapshot, Vec<ReconstructedRecord>), ServiceError> {
-        Self::get_snapshot_for(&Caller::Global, zone_name, serial).await
-    }
-
-    /// Like [`Self::get_snapshot`], checking visibility on the row this tx
-    /// locked so a same-name recreation cannot swap the zone in.
-    pub async fn get_snapshot_for(
         caller: &Caller,
         zone_name: &str,
         serial: i32,
@@ -445,18 +425,10 @@ impl ZoneService {
 
     /// Compute the record-level difference between two of a zone's serials.
     /// `to_serial` defaults to the zone's current serial when `None`. Each
-    /// serial must be the current one or an existing snapshot.
+    /// serial must be the current one or an existing snapshot. Visibility is
+    /// checked on the row this tx locked, so a same-name recreation cannot
+    /// swap the zone in.
     pub async fn diff_snapshots(
-        zone_name: &str,
-        from_serial: i32,
-        to_serial: Option<i32>,
-    ) -> Result<SnapshotDiffResponse, ServiceError> {
-        Self::diff_snapshots_for(&Caller::Global, zone_name, from_serial, to_serial).await
-    }
-
-    /// Like [`Self::diff_snapshots`], checking visibility on the row this tx
-    /// locked so a same-name recreation cannot swap the zone in.
-    pub async fn diff_snapshots_for(
         caller: &Caller,
         zone_name: &str,
         from_serial: i32,
@@ -495,10 +467,13 @@ impl ZoneService {
     /// serial advances to a new value (serials never go backward). The zone
     /// name is not part of a snapshot and is never restored.
     pub async fn rollback(
+        caller: &Caller,
         zone_name: &str,
         target_serial: i32,
         dry_run: bool,
     ) -> Result<RollbackZoneResponse, ServiceError> {
+        caller.require_global("roll back zones")?;
+
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to roll back zone").await?;
 
