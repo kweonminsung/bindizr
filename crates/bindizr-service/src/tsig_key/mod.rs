@@ -1,4 +1,5 @@
 use base64::Engine;
+use bindizr_core::dns::name::to_lookup_name;
 use chrono::Utc;
 use rand::RngExt;
 
@@ -7,7 +8,6 @@ use crate::{
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
     repository::RepositoryService,
-    validation::{has_whitespace_or_control, validate_wire_labels},
 };
 
 /// Byte length of generated secrets; matches `tsig-keygen`'s default for
@@ -93,26 +93,10 @@ impl TsigKeyService {
     }
 }
 
-/// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so it
-/// must be a valid domain name. Stored lowercase without the trailing dot.
+/// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so
+/// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
-    let trimmed = value.trim().trim_end_matches('.');
-
-    if trimmed.is_empty() {
-        return Err(ServiceError::invalid_input(
-            "TSIG key name must not be empty",
-        ));
-    }
-
-    if has_whitespace_or_control(trimmed) {
-        return Err(ServiceError::invalid_input(
-            "TSIG key name must not contain whitespace or control characters",
-        ));
-    }
-
-    validate_wire_labels(trimmed, "TSIG key name")?;
-
-    Ok(trimmed.to_ascii_lowercase())
+    to_lookup_name(value).map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))
 }
 
 fn parse_algorithm(value: Option<&str>) -> Result<TsigAlgorithm, ServiceError> {

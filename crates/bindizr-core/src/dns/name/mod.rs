@@ -164,6 +164,23 @@ pub fn classify_wire_labels(name: &str) -> Result<(), ParseNameError> {
     Ok(())
 }
 
+/// Normalize a name to lookup form: trimmed, no trailing dot, lowercase, after
+/// checking it is usable on the wire. Unlike [`ZoneName::parse`] the LDH charset
+/// rule is left out, so `_`-prefixed labels pass.
+pub fn to_lookup_name(value: &str) -> Result<String, ParseNameError> {
+    let trimmed = value.trim().trim_end_matches('.');
+
+    if trimmed.is_empty() {
+        return Err(ParseNameError::Empty);
+    }
+    if has_whitespace_or_control(trimmed) {
+        return Err(ParseNameError::Whitespace);
+    }
+    classify_wire_labels(trimmed)?;
+
+    Ok(trimmed.to_ascii_lowercase())
+}
+
 /// Return `value` as a lowercase, trailing-dot FQDN.
 pub fn to_fqdn_lowercase(value: &str) -> String {
     format!(

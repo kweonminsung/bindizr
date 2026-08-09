@@ -1,3 +1,4 @@
+use bindizr_core::dns::name::{is_same_or_subdomain_fqdn, to_fqdn_lowercase};
 use bindizr_db::repository::RecordFilter;
 
 use super::RecordService;
@@ -168,14 +169,10 @@ fn normalize_filter_record_name(name: Option<String>, zone_name: Option<&str>) -
             return trimmed.to_string();
         };
 
-        let zone_fqdn = format!("{}.", zone_name);
-        let candidate = if trimmed.ends_with('.') {
-            trimmed.to_ascii_lowercase()
-        } else {
-            format!("{}.", trimmed.to_ascii_lowercase())
-        };
-
-        if candidate == zone_fqdn || candidate.ends_with(&format!(".{}", zone_fqdn)) {
+        // An in-zone name is matched in its absolute form; anything else is
+        // passed through so the filter can still match it literally.
+        let candidate = to_fqdn_lowercase(trimmed);
+        if is_same_or_subdomain_fqdn(&candidate, &to_fqdn_lowercase(zone_name)) {
             candidate
         } else {
             trimmed.to_string()

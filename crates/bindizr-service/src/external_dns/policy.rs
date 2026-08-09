@@ -1,29 +1,13 @@
 //! Authoritative zone matching for the ExternalDNS API.
 
-use crate::{
-    error::ServiceError,
-    model::zone::Zone,
-    validation::{has_whitespace_or_control, validate_wire_labels},
-};
+use bindizr_core::dns::name::to_lookup_name;
 
-/// Normalize a request DNS name into zone-lookup form: trimmed, lowercase, no
-/// trailing dot.
+use crate::{error::ServiceError, model::zone::Zone};
+
+/// Normalize a request DNS name into zone-lookup form.
 pub(super) fn normalize_lookup_name(name: &str) -> Result<String, ServiceError> {
-    let trimmed = name.trim().trim_end_matches('.');
-
-    if trimmed.is_empty() {
-        return Err(ServiceError::invalid_record_name(
-            "record name must not be empty".to_string(),
-        ));
-    }
-    if has_whitespace_or_control(trimmed) {
-        return Err(ServiceError::invalid_record_name(
-            "record name must not contain whitespace or control characters".to_string(),
-        ));
-    }
-    validate_wire_labels(trimmed, "record name")?;
-
-    Ok(trimmed.to_ascii_lowercase())
+    to_lookup_name(name)
+        .map_err(|e| ServiceError::invalid_record_name(format!("record name {}", e)))
 }
 
 /// Most-specific existing zone authoritative for `name` (lookup form),
