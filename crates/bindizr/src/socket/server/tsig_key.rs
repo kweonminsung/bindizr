@@ -1,41 +1,17 @@
 use bindizr_service::{
     error::ServiceError, tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService,
 };
-use serde::Deserialize;
 
 use crate::{
-    api::types::{
-        CreateTsigKeyRequest, CreateZoneTsigPolicyRequest, GetTsigKeyResponse,
-        GetZoneTsigPolicyResponse,
-    },
+    api::types::{CreateTsigKeyRequest, GetTsigKeyResponse, GetZoneTsigPolicyResponse},
     socket::{
         server::{parse_params, to_response_data},
-        types::DaemonResponse,
+        types::{
+            AddZoneTsigPolicyParams, DaemonResponse, RemoveZonePolicyParams, TsigKeyNameParams,
+            ZonePolicyListParams,
+        },
     },
 };
-
-#[derive(Deserialize)]
-struct TsigKeyNameParams {
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct ZoneNameParams {
-    zone_name: String,
-}
-
-#[derive(Deserialize)]
-struct AddZoneTsigPolicyParams {
-    zone_name: String,
-    #[serde(flatten)]
-    request: CreateZoneTsigPolicyRequest,
-}
-
-#[derive(Deserialize)]
-struct RemoveZoneTsigPolicyParams {
-    zone_name: String,
-    id: i32,
-}
 
 /// Handle the `TsigKeyCreate` command by creating (or importing) a TSIG key.
 pub(super) async fn create_tsig_key(
@@ -118,7 +94,7 @@ pub(super) async fn add_zone_tsig_policy(
 pub(super) async fn list_zone_tsig_policies(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: ZonePolicyListParams = parse_params(data)?;
 
     let policies = ZoneTsigPolicyService::list(&params.zone_name).await?;
     let policies: Vec<GetZoneTsigPolicyResponse> = policies
@@ -136,7 +112,7 @@ pub(super) async fn list_zone_tsig_policies(
 pub(super) async fn remove_zone_tsig_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: RemoveZoneTsigPolicyParams = parse_params(data)?;
+    let params: RemoveZonePolicyParams = parse_params(data)?;
 
     ZoneTsigPolicyService::remove(&params.zone_name, params.id).await?;
 

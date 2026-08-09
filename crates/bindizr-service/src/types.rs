@@ -306,7 +306,7 @@ impl RecordValueRequest {
 }
 
 /// Request body for creating or updating a zone.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreateZoneRequest {
     #[schema(example = "example.com")]
     pub name: String,
@@ -330,7 +330,7 @@ pub struct CreateZoneRequest {
 }
 
 /// Request body for creating a record in a named zone.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreateRecordRequest {
     #[schema(example = "sub")]
     pub name: String,
@@ -350,7 +350,7 @@ pub struct CreateRecordRequest {
 /// A record's data fields, used both as a bulk-insertion entry and as the
 /// record update request body. The zone is taken from the request path, so
 /// unlike [`CreateRecordRequest`] it carries no `zone_name`.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordItem {
     #[schema(example = "sub")]
     pub name: String,
@@ -366,7 +366,7 @@ pub struct RecordItem {
 }
 
 /// Request body for bulk-inserting records into a zone.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreateBulkRecordsRequest {
     pub records: Vec<RecordItem>,
     /// When true, parse and validate without applying any change.
@@ -391,7 +391,7 @@ pub struct BulkRecordsResponse {
 }
 
 /// How parsed records are reconciled with the records already in the zone.
-#[derive(Clone, Copy, Debug, Default, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportMode {
     /// Add parsed records; records already present are left untouched.
@@ -405,7 +405,7 @@ pub enum ImportMode {
 }
 
 /// Request body for importing a BIND zone file into a zone.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ImportZoneFileRequest {
     /// Raw BIND zone file text.
     #[schema(example = "www IN A 192.0.2.1\nmail IN A 192.0.2.2\n")]
@@ -512,7 +512,7 @@ pub struct GetRecordsFilter {
 
 /// A partial record update; an omitted field keeps the current value. Merged
 /// inside the update transaction so a concurrent write is not lost.
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct UpdateRecordPatch {
     pub name: Option<String>,
     pub record_type: Option<String>,
@@ -523,7 +523,7 @@ pub struct UpdateRecordPatch {
 
 /// A partial zone update; an omitted field keeps the current value, merged
 /// inside the update transaction. `serial` is carried only to be rejected.
-#[derive(Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct UpdateZonePatch {
     pub new_name: Option<String>,
     pub primary_ns: Option<String>,
@@ -537,7 +537,7 @@ pub struct UpdateZonePatch {
 }
 
 /// Request body for triggering a NOTIFY, optionally scoped to one zone.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct NotifyZoneRequest {
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
@@ -809,7 +809,7 @@ pub struct SnapshotDiffResponse {
 }
 
 /// Request body for rolling a zone back to a snapshot serial.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RollbackZoneRequest {
     #[schema(example = 7)]
     pub serial: i32,

@@ -1,11 +1,13 @@
 use bindizr_core::log_debug;
 use clap::Subcommand;
-use serde_json::json;
 
 use crate::{
-    api::types::GetTsigKeyResponse,
+    api::types::{CreateTsigKeyRequest, GetTsigKeyResponse},
     cli::error::CliError,
-    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+    socket::{
+        client::DaemonSocketClient,
+        types::{DaemonCommandKind, TsigKeyNameParams},
+    },
 };
 
 /// Subcommands for managing TSIG keys used for nsupdate authentication.
@@ -70,12 +72,12 @@ async fn create_tsig_key(
     let res = client
         .send_command(
             DaemonCommandKind::TsigKeyCreate,
-            Some(json!({
-                "name": name,
-                "algorithm": algorithm,
-                "secret": secret,
-                "global": global,
-            })),
+            CreateTsigKeyRequest {
+                name,
+                algorithm,
+                secret,
+                global,
+            },
         )
         .await?;
 
@@ -95,7 +97,7 @@ async fn create_tsig_key(
 
 async fn list_tsig_keys(client: &DaemonSocketClient) -> Result<(), CliError> {
     let res = client
-        .send_command(DaemonCommandKind::TsigKeyList, None)
+        .send_command(DaemonCommandKind::TsigKeyList, ())
         .await?;
 
     log_debug!("TSIG key list result: {:?}", res);
@@ -131,7 +133,7 @@ async fn list_tsig_keys(client: &DaemonSocketClient) -> Result<(), CliError> {
 
 async fn get_tsig_key(client: &DaemonSocketClient, name: String) -> Result<(), CliError> {
     let res = client
-        .send_command(DaemonCommandKind::TsigKeyGet, Some(json!({ "name": name })))
+        .send_command(DaemonCommandKind::TsigKeyGet, TsigKeyNameParams { name })
         .await?;
 
     log_debug!("TSIG key get result: {:?}", res);
@@ -146,10 +148,7 @@ async fn get_tsig_key(client: &DaemonSocketClient, name: String) -> Result<(), C
 
 async fn delete_tsig_key(client: &DaemonSocketClient, name: String) -> Result<(), CliError> {
     let res = client
-        .send_command(
-            DaemonCommandKind::TsigKeyDelete,
-            Some(json!({ "name": name })),
-        )
+        .send_command(DaemonCommandKind::TsigKeyDelete, TsigKeyNameParams { name })
         .await?;
 
     log_debug!("TSIG key deletion result: {:?}", res);

@@ -42,6 +42,51 @@ fn parse_params_rejects_a_wrongly_typed_rollback_dry_run() {
     }
 }
 
+#[test]
+fn command_payloads_round_trip_between_client_and_server() {
+    use crate::{
+        api::types::{RollbackZoneRequest, UpdateZonePatch},
+        socket::types::{RollbackZoneParams, UpdateZoneParams, ZoneNameParams},
+    };
+
+    // The CLI serializes these and the daemon parses them back, so a flattened
+    // request body must survive the round trip alongside its target field.
+    let sent = serde_json::to_value(UpdateZoneParams {
+        name: "example.com".to_string(),
+        patch: UpdateZonePatch {
+            new_name: Some("new.example.com".to_string()),
+            ttl: Some(300),
+            ..UpdateZonePatch::default()
+        },
+    })
+    .unwrap();
+    let parsed: UpdateZoneParams = parse_params(&sent).unwrap();
+    assert_eq!(parsed.name, "example.com");
+    assert_eq!(parsed.patch.new_name.as_deref(), Some("new.example.com"));
+    assert_eq!(parsed.patch.ttl, Some(300));
+
+    let sent = serde_json::to_value(RollbackZoneParams {
+        name: "example.com".to_string(),
+        request: RollbackZoneRequest {
+            serial: 7,
+            dry_run: true,
+        },
+    })
+    .unwrap();
+    let parsed: RollbackZoneParams = parse_params(&sent).unwrap();
+    assert_eq!(parsed.request.serial, 7);
+    assert!(parsed.request.dry_run);
+
+    let sent = serde_json::to_value(ZoneNameParams {
+        name: "example.com".to_string(),
+    })
+    .unwrap();
+    assert_eq!(
+        parse_params::<ZoneNameParams>(&sent).unwrap().name,
+        "example.com"
+    );
+}
+
 #[tokio::test]
 async fn prepare_socket_path_creates_parent_directory() {
     let dir = tempfile::tempdir().unwrap();

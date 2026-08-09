@@ -2,29 +2,17 @@ use bindizr_core::log_error;
 use bindizr_service::{
     error::ServiceError, token::TokenService, zone::token_policy::ZoneTokenPolicyService,
 };
-use serde::Deserialize;
 
 use crate::{
-    api::types::{CreateZoneTokenPolicyRequest, GetZoneTokenPolicyResponse},
+    api::types::GetZoneTokenPolicyResponse,
     socket::{
         server::{parse_params, to_response_data},
-        types::DaemonResponse,
+        types::{
+            AddZoneTokenPolicyParams, CreateTokenParams, DaemonResponse, RemoveZonePolicyParams,
+            TokenNameParams, ZonePolicyListParams,
+        },
     },
 };
-
-#[derive(Deserialize)]
-struct CreateTokenParams {
-    name: String,
-    description: Option<String>,
-    expires_in_days: Option<i64>,
-    #[serde(default)]
-    global: bool,
-}
-
-#[derive(Deserialize)]
-struct DeleteTokenParams {
-    name: String,
-}
 
 /// Handle the `TokenCreate` command by creating a new API token.
 pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
@@ -64,7 +52,7 @@ pub(super) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
 
 /// Handle the `TokenDelete` command by deleting an API token by name.
 pub(super) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: DeleteTokenParams = parse_params(data)?;
+    let params: TokenNameParams = parse_params(data)?;
 
     TokenService::delete_token(&params.name).await?;
 
@@ -73,24 +61,6 @@ pub(super) async fn delete_token(data: &serde_json::Value) -> Result<DaemonRespo
         data: serde_json::Value::Null,
     };
     Ok(response)
-}
-
-#[derive(Deserialize)]
-struct AddZoneTokenPolicyParams {
-    zone_name: String,
-    #[serde(flatten)]
-    request: CreateZoneTokenPolicyRequest,
-}
-
-#[derive(Deserialize)]
-struct ZoneTokenPolicyZoneParams {
-    zone_name: String,
-}
-
-#[derive(Deserialize)]
-struct RemoveZoneTokenPolicyParams {
-    zone_name: String,
-    id: i32,
 }
 
 /// Handle the `ZoneTokenPolicyAdd` command by granting a token rights in a zone.
@@ -117,7 +87,7 @@ pub(super) async fn add_zone_token_policy(
 pub(super) async fn list_zone_token_policies(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneTokenPolicyZoneParams = parse_params(data)?;
+    let params: ZonePolicyListParams = parse_params(data)?;
 
     let policies = ZoneTokenPolicyService::list(&params.zone_name).await?;
     let policies: Vec<GetZoneTokenPolicyResponse> = policies
@@ -135,7 +105,7 @@ pub(super) async fn list_zone_token_policies(
 pub(super) async fn remove_zone_token_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: RemoveZoneTokenPolicyParams = parse_params(data)?;
+    let params: RemoveZonePolicyParams = parse_params(data)?;
 
     ZoneTokenPolicyService::remove(&params.zone_name, params.id).await?;
 

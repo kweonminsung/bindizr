@@ -1,10 +1,12 @@
 use bindizr_core::{log_debug, model::api_token::ApiToken};
 use clap::Subcommand;
-use serde_json::json;
 
 use crate::{
     cli::error::CliError,
-    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+    socket::{
+        client::DaemonSocketClient,
+        types::{CreateTokenParams, DaemonCommandKind, TokenNameParams},
+    },
 };
 
 /// Subcommands for managing API tokens.
@@ -62,12 +64,12 @@ async fn create_token(
     let res = client
         .send_command(
             DaemonCommandKind::TokenCreate,
-            Some(json!({
-                "name": name,
-                "description": description,
-                "expires_in_days": expires_in_days,
-                "global": global,
-            })),
+            CreateTokenParams {
+                name,
+                description,
+                expires_in_days,
+                global,
+            },
         )
         .await?;
 
@@ -98,7 +100,7 @@ async fn create_token(
 
 async fn list_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
     let res = client
-        .send_command(DaemonCommandKind::TokenList, None)
+        .send_command(DaemonCommandKind::TokenList, ())
         .await?;
 
     log_debug!("Token list result: {:?}", res);
@@ -139,10 +141,7 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
 
 async fn delete_token(client: &DaemonSocketClient, name: String) -> Result<(), CliError> {
     let res = client
-        .send_command(
-            DaemonCommandKind::TokenDelete,
-            Some(json!({ "name": name })),
-        )
+        .send_command(DaemonCommandKind::TokenDelete, TokenNameParams { name })
         .await?;
 
     log_debug!("Token deletion result: {:?}", res);

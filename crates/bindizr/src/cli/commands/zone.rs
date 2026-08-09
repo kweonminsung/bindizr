@@ -1,7 +1,12 @@
+use bindizr_service::types::ImportMode as ServiceImportMode;
 use clap::{Args, Subcommand, ValueEnum};
-use serde_json::json;
 
 use crate::{
+    api::types::{
+        CreateZoneRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
+        GetZonesFilter, ImportZoneFileRequest, NotifyZoneRequest, RollbackZoneRequest,
+        UpdateZonePatch,
+    },
     cli::{
         error::CliError,
         output::{
@@ -10,7 +15,15 @@ use crate::{
             render_change_preview, render_diff_lines,
         },
     },
-    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+    socket::{
+        client::DaemonSocketClient,
+        types::{
+            AddZoneTokenPolicyParams, AddZoneTsigPolicyParams, DaemonCommandKind,
+            DiffZoneSnapshotsParams, ImportZoneFileParams, ListZoneSnapshotsParams,
+            RemoveZonePolicyParams, RollbackZoneParams, UpdateZoneParams, ZoneNameParams,
+            ZonePolicyListParams, ZoneSnapshotParams,
+        },
+    },
 };
 
 /// Subcommands for managing zones.
@@ -76,7 +89,7 @@ pub(crate) enum ZoneCommand {
         name: Option<String>,
         /// Filter by zone ID
         #[arg(long)]
-        id: Option<i64>,
+        id: Option<i32>,
         /// Filter by primary name server
         #[arg(long)]
         primary_ns: Option<String>,
@@ -85,16 +98,16 @@ pub(crate) enum ZoneCommand {
         admin_email: Option<String>,
         /// Filter by TTL
         #[arg(long)]
-        ttl: Option<i64>,
+        ttl: Option<i32>,
         /// Filter by minimum TTL
         #[arg(long)]
-        min_ttl: Option<i64>,
+        min_ttl: Option<i32>,
         /// Filter by maximum TTL
         #[arg(long)]
-        max_ttl: Option<i64>,
+        max_ttl: Option<i32>,
         /// Filter by serial
         #[arg(long)]
-        serial: Option<i64>,
+        serial: Option<i32>,
         /// Search zones by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
@@ -325,12 +338,12 @@ pub(crate) enum ImportMode {
     Replace,
 }
 
-impl ImportMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            ImportMode::Append => "append",
-            ImportMode::Upsert => "upsert",
-            ImportMode::Replace => "replace",
+impl From<ImportMode> for ServiceImportMode {
+    fn from(mode: ImportMode) -> Self {
+        match mode {
+            ImportMode::Append => ServiceImportMode::Append,
+            ImportMode::Upsert => ServiceImportMode::Upsert,
+            ImportMode::Replace => ServiceImportMode::Replace,
         }
     }
 }
@@ -358,15 +371,21 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             ttl,
             serial,
         } => {
-            let data = json!({
-                "name": name,
-                "primary_ns": primary_ns,
-                "admin_email": admin_email,
-                "ttl": ttl,
-                "serial": serial,
-            });
             let response = client
-                .send_command(DaemonCommandKind::CreateZone, Some(data))
+                .send_command(
+                    DaemonCommandKind::CreateZone,
+                    CreateZoneRequest {
+                        name,
+                        primary_ns,
+                        admin_email,
+                        ttl,
+                        serial,
+                        refresh: None,
+                        retry: None,
+                        expire: None,
+                        minimum_ttl: None,
+                    },
+                )
                 .await?;
             println!("{}", response.message);
         }
@@ -395,20 +414,18 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 || search.is_some()
                 || limit.is_some()
                 || offset.is_some();
-            let filter_payload = || {
-                json!({
-                    "name": name,
-                    "id": id,
-                    "primary_ns": primary_ns,
-                    "admin_email": admin_email,
-                    "ttl": ttl,
-                    "min_ttl": min_ttl,
-                    "max_ttl": max_ttl,
-                    "serial": serial,
-                    "search": search,
-                    "limit": limit,
-                    "offset": offset,
-                })
+            let filter_payload = || GetZonesFilter {
+                name,
+                id,
+                primary_ns,
+                admin_email,
+                ttl,
+                min_ttl,
+                max_ttl,
+                serial,
+                search,
+                limit,
+                offset,
             };
             let data = client
                 .send_command(
@@ -422,7 +439,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         }
         ZoneCommand::Get { name, output } => {
             let data = client
-                .send_command(DaemonCommandKind::GetZone, Some(json!({ "name": name })))
+                .send_command(DaemonCommandKind::GetZone, ZoneNameParams { name })
                 .await?
                 .data;
 
@@ -443,18 +460,21 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let data = client
                 .send_command(
                     DaemonCommandKind::UpdateZone,
-                    Some(json!({
-                        // `name` looks up the zone; `new_name` renames it.
-                        "name": name,
-                        "new_name": new_name,
-                        "primary_ns": primary_ns,
-                        "admin_email": admin_email,
-                        "ttl": ttl,
-                        "refresh": refresh,
-                        "retry": retry,
-                        "expire": expire,
-                        "minimum_ttl": minimum_ttl,
-                    })),
+                    // `name` looks up the zone; `new_name` renames it.
+                    UpdateZoneParams {
+                        name,
+                        patch: UpdateZonePatch {
+                            new_name,
+                            primary_ns,
+                            admin_email,
+                            ttl,
+                            refresh,
+                            retry,
+                            expire,
+                            minimum_ttl,
+                            serial: None,
+                        },
+                    },
                 )
                 .await?
                 .data;
@@ -463,16 +483,13 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         }
         ZoneCommand::Delete { name } => {
             let response = client
-                .send_command(DaemonCommandKind::DeleteZone, Some(json!({ "name": name })))
+                .send_command(DaemonCommandKind::DeleteZone, ZoneNameParams { name })
                 .await?;
             println!("{}", response.message);
         }
         ZoneCommand::Export { name } => {
             let data = client
-                .send_command(
-                    DaemonCommandKind::ExportZoneFile,
-                    Some(json!({ "name": name })),
-                )
+                .send_command(DaemonCommandKind::ExportZoneFile, ZoneNameParams { name })
                 .await?
                 .data;
             let zone_file = data
@@ -493,13 +510,15 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client
                 .send_command(
                     DaemonCommandKind::ImportZoneFile,
-                    Some(json!({
-                        "zone_name": name,
-                        "content": content,
-                        "mode": mode.as_str(),
-                        // Preview never applies; it is a dry run rendered as a diff.
-                        "dry_run": dry_run || preview,
-                    })),
+                    ImportZoneFileParams {
+                        zone_name: name,
+                        request: ImportZoneFileRequest {
+                            content,
+                            mode: mode.into(),
+                            // Preview never applies; it is a dry run rendered as a diff.
+                            dry_run: dry_run || preview,
+                        },
+                    },
                 )
                 .await?;
 
@@ -548,7 +567,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let data = client
                     .send_command(
                         DaemonCommandKind::ListZoneSnapshots,
-                        Some(json!({ "name": name, "limit": limit, "offset": offset })),
+                        ListZoneSnapshotsParams {
+                            name,
+                            limit,
+                            offset,
+                        },
                     )
                     .await?
                     .data;
@@ -572,7 +595,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let data = client
                     .send_command(
                         DaemonCommandKind::GetZoneSnapshot,
-                        Some(json!({ "name": name, "serial": serial })),
+                        ZoneSnapshotParams { name, serial },
                     )
                     .await?
                     .data;
@@ -607,11 +630,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let data = client
                     .send_command(
                         DaemonCommandKind::DiffZoneSnapshots,
-                        Some(json!({
-                            "name": name,
-                            "from_serial": from_serial,
-                            "to_serial": to_serial,
-                        })),
+                        DiffZoneSnapshotsParams {
+                            name,
+                            from_serial,
+                            to_serial,
+                        },
                     )
                     .await?
                     .data;
@@ -632,7 +655,10 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let response = client
                     .send_command(
                         DaemonCommandKind::RollbackZone,
-                        Some(json!({ "name": name, "serial": serial, "dry_run": dry_run })),
+                        RollbackZoneParams {
+                            name,
+                            request: RollbackZoneRequest { serial, dry_run },
+                        },
                     )
                     .await?;
 
@@ -646,7 +672,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         },
         ZoneCommand::Status { name, output } => {
             let response = client
-                .send_command(DaemonCommandKind::ZoneStatus, Some(json!({ "name": name })))
+                .send_command(DaemonCommandKind::ZoneStatus, ZoneNameParams { name })
                 .await?;
 
             if output == OutputFormat::Table {
@@ -673,10 +699,10 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client
                 .send_command(
                     DaemonCommandKind::NotifyZone,
-                    Some(json!({
-                        "zone_name": args.name,
-                        "force": args.force
-                    })),
+                    NotifyZoneRequest {
+                        zone_name: args.name,
+                        force: args.force,
+                    },
                 )
                 .await?;
             println!("{}", response.message);
@@ -691,12 +717,14 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneTokenPolicyAdd,
-                        Some(json!({
-                            "zone_name": name,
-                            "api_token": token,
-                            "record_name_pattern": pattern,
-                            "record_types": types,
-                        })),
+                        AddZoneTokenPolicyParams {
+                            zone_name: name,
+                            request: CreateZoneTokenPolicyRequest {
+                                api_token: token,
+                                record_name_pattern: pattern,
+                                record_types: types,
+                            },
+                        },
                     )
                     .await?;
                 println!("{}", response.message);
@@ -705,7 +733,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneTokenPolicyList,
-                        Some(json!({ "zone_name": name })),
+                        ZonePolicyListParams { zone_name: name },
                     )
                     .await?;
                 print_token_policies(&response.data)?;
@@ -714,7 +742,10 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneTokenPolicyRemove,
-                        Some(json!({ "zone_name": name, "id": id })),
+                        RemoveZonePolicyParams {
+                            zone_name: name,
+                            id,
+                        },
                     )
                     .await?;
                 println!("{}", response.message);
@@ -730,12 +761,14 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneTsigPolicyAdd,
-                        Some(json!({
-                            "zone_name": name,
-                            "tsig_key": key,
-                            "record_name_pattern": pattern,
-                            "record_types": types,
-                        })),
+                        AddZoneTsigPolicyParams {
+                            zone_name: name,
+                            request: CreateZoneTsigPolicyRequest {
+                                tsig_key: key,
+                                record_name_pattern: pattern,
+                                record_types: types,
+                            },
+                        },
                     )
                     .await?;
                 println!("{}", response.message);
@@ -744,7 +777,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneTsigPolicyList,
-                        Some(json!({ "zone_name": name })),
+                        ZonePolicyListParams { zone_name: name },
                     )
                     .await?;
                 print_tsig_policies(&response.data)?;
@@ -753,7 +786,10 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneTsigPolicyRemove,
-                        Some(json!({ "zone_name": name, "id": id })),
+                        RemoveZonePolicyParams {
+                            zone_name: name,
+                            id,
+                        },
                     )
                     .await?;
                 println!("{}", response.message);
