@@ -2,7 +2,7 @@
 //! detection, and owner-name normalization.
 
 use bindizr_core::dns::{
-    name::{is_apex_name, is_same_or_subdomain_fqdn, to_encoded_owner_name, to_fqdn},
+    name::{is_same_or_subdomain_fqdn, to_encoded_owner_name, to_fqdn},
     record::MxRecordValue,
 };
 
@@ -232,10 +232,7 @@ pub fn validate_delete_constraints(
     }
 
     for record in deleting_records {
-        if record.record_type == RecordType::NS
-            && is_apex_name(&record.name, &zone.name)
-            && to_fqdn(&record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns))
-        {
+        if zone.is_primary_ns(&record.record_type, &record.name, &record.value) {
             return Err(ServiceError::invalid_input(
                 "Cannot delete NS record referenced by zone primary_ns".to_string(),
             ));
@@ -271,13 +268,16 @@ pub(super) fn validate_record_update_constraints_normalized(
         Some(existing_record.id),
     )?;
 
-    if existing_record.record_type == RecordType::NS
-        && is_apex_name(&existing_record.name, &zone.name)
-        && to_fqdn(&existing_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns))
-    {
-        let still_primary = updated_record.record_type == RecordType::NS
-            && is_apex_name(&updated_record.name, &zone.name)
-            && to_fqdn(&updated_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns));
+    if zone.is_primary_ns(
+        &existing_record.record_type,
+        &existing_record.name,
+        &existing_record.value,
+    ) {
+        let still_primary = zone.is_primary_ns(
+            &updated_record.record_type,
+            &updated_record.name,
+            &updated_record.value,
+        );
 
         if !still_primary {
             return Err(ServiceError::invalid_input(

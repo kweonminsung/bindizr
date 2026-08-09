@@ -1,7 +1,13 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use crate::dns::record::SoaMailbox;
+use crate::{
+    dns::{
+        name::{is_apex_name, to_fqdn},
+        record::SoaMailbox,
+    },
+    model::record::{Record, RecordType},
+};
 
 /// Zone metadata used to generate the SOA and NS records.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
@@ -25,6 +31,32 @@ impl Zone {
         SoaMailbox::from_email(&self.admin_email)
     }
 
+    /// Whether the record is an apex NS row, whatever it points at.
+    pub fn is_apex_ns(&self, record_type: &RecordType, name: &str) -> bool {
+        *record_type == RecordType::NS && is_apex_name(name, &self.name)
+    }
+
+    /// Whether the record is the apex NS this zone's `primary_ns` names. One
+    /// such row must exist for the zone to stay self-consistent.
+    pub fn is_primary_ns(&self, record_type: &RecordType, name: &str, value: &str) -> bool {
+        self.is_apex_ns(record_type, name)
+            && to_fqdn(value).eq_ignore_ascii_case(&to_fqdn(&self.primary_ns))
+    }
+
+    /// The apex NS row that satisfies [`Self::is_primary_ns`].
+    pub fn primary_ns_record(&self, ttl: i32) -> Record {
+        Record {
+            id: 0,
+            name: "@".to_string(),
+            record_type: RecordType::NS,
+            value: self.primary_ns.clone(),
+            ttl,
+            priority: None,
+            zone_id: self.id,
+            created_at: Utc::now(),
+        }
+    }
+
     /// SOA record RDATA: `<mname> <rname> <serial> <refresh> <retry> <expire> <minimum>`.
     pub fn soa_rdata(&self) -> Result<String, String> {
         Ok(format!(
@@ -39,3 +71,6 @@ impl Zone {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests;

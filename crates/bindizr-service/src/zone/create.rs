@@ -5,10 +5,7 @@ use super::ZoneService;
 use crate::{
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
+    model::zone::Zone,
     repository::RepositoryService,
     serial::{generate_serial, validate_initial_serial},
     types::CreateZoneRequest,
@@ -85,24 +82,17 @@ impl ZoneService {
                 }
             })?;
 
-            // Keep zones.primary_ns aligned with at least one apex NS record in records table.
-            let primary_ns_apex_record = Record {
-                id: 0,
-                name: "@".to_string(),
-                record_type: RecordType::NS,
-                value: validated.primary_ns.clone(),
-                ttl: validated.ttl,
-                priority: None,
-                zone_id: created_zone.id,
-                created_at: Utc::now(),
-            };
-
-            RepositoryService::create_record_tx(&mut tx, primary_ns_apex_record)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to create primary NS record: {}", e);
-                    ServiceError::internal("Failed to create primary NS record".to_string())
-                })?;
+            // A new zone has no IXFR history to log against, so the apex NS row
+            // goes in directly.
+            RepositoryService::create_record_tx(
+                &mut tx,
+                created_zone.primary_ns_record(created_zone.ttl),
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create primary NS record: {}", e);
+                ServiceError::internal("Failed to create primary NS record".to_string())
+            })?;
 
             ZoneService::save_snapshot_tx(&mut tx, &created_zone, created_zone.serial).await?;
 

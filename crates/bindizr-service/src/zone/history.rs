@@ -3,13 +3,13 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use bindizr_core::dns::{
-    name::{to_display_owner_fqdn, to_fqdn},
-    record::SoaMailbox,
-};
+use bindizr_core::dns::{name::to_display_owner_fqdn, record::SoaMailbox};
 use chrono::Utc;
 
-use super::{ZoneService, update::soa_replacement_changes, validation::normalize_zone_name};
+use super::{
+    ZoneService, apex_ns_rrset_ttl, update::soa_replacement_changes,
+    validation::normalize_zone_name,
+};
 use crate::{
     RepositoryTx,
     authorization::Caller,
@@ -583,47 +583,33 @@ impl ZoneService {
             }
             to_add.extend(target_by_key.into_values().flatten());
 
-            // Defensive apex-NS guarantee (mirrors zone update): the restored
-            // primary_ns must keep a matching apex NS record.
-            let restored_ns_fqdn = to_fqdn(&restored_zone.primary_ns).to_ascii_lowercase();
-            let is_restored_apex_ns = |record_type: &RecordType, name: &str, value: &str| {
-                *record_type == RecordType::NS
-                    && name == "@"
-                    && to_fqdn(value).to_ascii_lowercase() == restored_ns_fqdn
-            };
+            // The restored primary_ns must keep a matching apex NS record.
             let deleted_ids: HashSet<i32> = dels.iter().map(|del| del.id).collect();
+            let surviving = |record: &&Record| !deleted_ids.contains(&record.id);
             let has_primary_ns = current_records
                 .iter()
-                .filter(|record| !deleted_ids.contains(&record.id))
-                .any(|record| {
-                    is_restored_apex_ns(&record.record_type, &record.name, &record.value)
-                })
-                || to_add.iter().any(|record| {
-                    is_restored_apex_ns(&record.record_type, &record.name, &record.value)
-                });
-            if !has_primary_ns {
-                // Join the apex NS RRset's TTL; a mixed-TTL RRset is rejected.
-                let is_apex_ns = |record_type: &RecordType, name: &str| {
-                    *record_type == RecordType::NS && name == "@"
-                };
-                let ns_rrset_ttl = to_add
+                .filter(surviving)
+                .any(|r| restored_zone.is_primary_ns(&r.record_type, &r.name, &r.value))
+                || to_add
                     .iter()
-                    .find(|record| is_apex_ns(&record.record_type, &record.name))
-                    .map(|record| record.ttl)
-                    .or_else(|| {
+                    .any(|r| restored_zone.is_primary_ns(&r.record_type, &r.name, &r.value));
+            if !has_primary_ns {
+                // Prefer a restored TTL: the restore is what this serial expresses.
+                let candidates = to_add
+                    .iter()
+                    .map(|r| (&r.record_type, r.name.as_str(), r.ttl))
+                    .chain(
                         current_records
                             .iter()
-                            .filter(|record| !deleted_ids.contains(&record.id))
-                            .find(|record| is_apex_ns(&record.record_type, &record.name))
-                            .map(|record| record.ttl)
-                    })
-                    .unwrap_or(restored_zone.ttl);
+                            .filter(surviving)
+                            .map(|r| (&r.record_type, r.name.as_str(), r.ttl)),
+                    );
 
                 to_add.push(ReconstructedRecord {
                     name: "@".to_string(),
                     record_type: RecordType::NS,
                     value: restored_zone.primary_ns.clone(),
-                    ttl: ns_rrset_ttl,
+                    ttl: apex_ns_rrset_ttl(&restored_zone, candidates),
                     priority: None,
                 });
             }

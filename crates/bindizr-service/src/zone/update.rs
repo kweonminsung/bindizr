@@ -1,15 +1,11 @@
-use bindizr_core::dns::{CATALOG_ZONE_NAME, name::to_fqdn};
-use chrono::Utc;
+use bindizr_core::dns::CATALOG_ZONE_NAME;
 
-use super::ZoneService;
+use super::{ZoneService, apex_ns_rrset_ttl};
 use crate::{
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-        zone_change::ZoneChange,
-    },
+    model::{zone::Zone, zone_change::ZoneChange},
+    record::RecordService,
     repository::RepositoryService,
     serial::generate_serial,
     types::{CreateZoneRequest, UpdateZonePatch},
@@ -189,59 +185,32 @@ impl ZoneService {
                         log_error!("Failed to fetch apex records: {}", e);
                         ServiceError::internal("Failed to update zone".to_string())
                     })?;
-            let has_primary_ns = apex_records.iter().any(|r| {
-                r.record_type == RecordType::NS
-                    && to_fqdn(&r.value).eq_ignore_ascii_case(&to_fqdn(&updated_zone.primary_ns))
-            });
-
-            // Collect the IXFR changes and write them in one batch: the new apex
-            // NS (when missing), then the SOA replacement (DEL old, ADD new).
-            let mut changes: Vec<ZoneChange> = Vec::new();
+            let has_primary_ns = apex_records
+                .iter()
+                .any(|r| updated_zone.is_primary_ns(&r.record_type, &r.name, &r.value));
 
             if !has_primary_ns {
-                // Join the apex NS RRset's TTL (RFC 2181, Section 5.2), which this
-                // direct insert would otherwise split.
-                let ns_rrset_ttl = apex_records
-                    .iter()
-                    .find(|r| r.record_type == RecordType::NS)
-                    .map_or(updated_zone.ttl, |r| r.ttl);
+                let primary_ns_record = updated_zone.primary_ns_record(apex_ns_rrset_ttl(
+                    &updated_zone,
+                    apex_records
+                        .iter()
+                        .map(|r| (&r.record_type, r.name.as_str(), r.ttl)),
+                ));
 
-                let primary_ns_record = Record {
-                    id: 0,
-                    name: "@".to_string(),
-                    record_type: RecordType::NS,
-                    value: updated_zone.primary_ns.clone(),
-                    ttl: ns_rrset_ttl,
-                    priority: None,
+                RecordService::insert_records_with_changes_tx(
+                    &mut tx,
                     zone_id,
-                    created_at: Utc::now(),
-                };
-
-                RepositoryService::create_record_tx(&mut tx, primary_ns_record)
-                    .await
-                    .map_err(|e| {
-                        log_error!("Failed to create primary NS record during update: {}", e);
-                        ServiceError::internal("Failed to keep primary NS consistency".to_string())
-                    })?;
-
-                changes.push(ZoneChange {
-                    id: 0,
-                    zone_id,
-                    serial: new_serial,
-                    operation: ZoneChange::OP_ADD.to_string(),
-                    record_name: "@".to_string(),
-                    record_type: "NS".to_string(),
-                    record_value: updated_zone.primary_ns.clone(),
-                    record_ttl: ns_rrset_ttl,
-                    record_priority: None,
-                });
+                    new_serial,
+                    &[primary_ns_record],
+                )
+                .await
+                .map_err(|e| {
+                    log_error!("Failed to create primary NS record during update: {}", e);
+                    ServiceError::internal("Failed to keep primary NS consistency".to_string())
+                })?;
             }
 
-            changes.extend(soa_replacement_changes(
-                &existing_zone,
-                &updated_zone,
-                new_serial,
-            )?);
+            let changes = soa_replacement_changes(&existing_zone, &updated_zone, new_serial)?;
 
             RepositoryService::create_zone_changes_tx(&mut tx, &changes)
                 .await
