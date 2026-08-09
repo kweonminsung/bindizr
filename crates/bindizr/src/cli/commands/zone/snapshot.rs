@@ -1,14 +1,17 @@
 //! The `zone snapshot` subcommands: list, show, diff, and rollback.
 
-use bindizr_service::types::RollbackZoneRequest;
+use bindizr_service::types::{
+    PaginatedResponse, RollbackZoneRequest, RollbackZoneResponse, SnapshotDetailResponse,
+    SnapshotDiffResponse, ZoneSnapshotResponse,
+};
 use clap::Subcommand;
 
 use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, RollbackSummaryRow, SnapshotRecordRow, SnapshotRow,
-            print_output_with_table, render_diff_lines,
+            OutputFormat, RollbackSummaryRow, SnapshotRecordRow, SnapshotRow, parse_response,
+            print_response, print_table, render_diff_lines,
         },
     },
     socket::{
@@ -98,16 +101,13 @@ pub(super) async fn handle_command(
                 .await?
                 .data;
 
-            print_output_with_table(&data, output, |data| {
-                data.get("items")
-                    .and_then(|value| value.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| SnapshotRow::from_json(v).ok())
-                            .collect()
-                    })
-                    .ok_or_else(|| "Missing snapshot items in response".to_string())
-            })?;
+            print_response(
+                &data,
+                output,
+                |page: &PaginatedResponse<ZoneSnapshotResponse>| {
+                    page.items.iter().map(SnapshotRow::from).collect()
+                },
+            )?;
         }
         ZoneSnapshotCommand::Get {
             name,
@@ -124,22 +124,13 @@ pub(super) async fn handle_command(
 
             // Table output shows two tables (snapshot, then its records);
             // json/yaml print the whole payload once.
-            print_output_with_table(&data, output, |data| {
-                data.get("snapshot")
-                    .ok_or("Missing snapshot in response".to_string())
-                    .and_then(SnapshotRow::from_json)
-                    .map(|row| vec![row])
-            })?;
             if output == OutputFormat::Table {
-                print_output_with_table(&data, output, |data| {
-                    data.get("records")
-                        .and_then(|value| value.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|v| SnapshotRecordRow::from_json(v).ok())
-                                .collect()
-                        })
-                        .ok_or_else(|| "Missing records in response".to_string())
+                let detail: SnapshotDetailResponse = parse_response(&data)?;
+                print_table(vec![SnapshotRow::from(&detail.snapshot)]);
+                print_table(detail.records.iter().map(SnapshotRecordRow::from).collect());
+            } else {
+                print_response(&data, output, |detail: &SnapshotDetailResponse| {
+                    vec![SnapshotRow::from(&detail.snapshot)]
                 })?;
             }
         }
@@ -162,9 +153,11 @@ pub(super) async fn handle_command(
                 .data;
 
             match output {
-                OutputFormat::Table => print!("{}", render_snapshot_diff(&data)),
-                _ => print_output_with_table(&data, output, |_| {
-                    Ok::<Vec<SnapshotRow>, String>(Vec::new())
+                OutputFormat::Table => {
+                    print!("{}", render_snapshot_diff(&parse_response(&data)?))
+                }
+                _ => print_response(&data, output, |_: &SnapshotDiffResponse| {
+                    Vec::<SnapshotRow>::new()
                 })?,
             }
         }
@@ -187,8 +180,8 @@ pub(super) async fn handle_command(
             if output == OutputFormat::Table {
                 println!("{}", response.message);
             }
-            print_output_with_table(&response.data, output, |data| {
-                RollbackSummaryRow::from_json(data).map(|row| vec![row])
+            print_response(&response.data, output, |rollback: &RollbackZoneResponse| {
+                vec![RollbackSummaryRow::from(rollback)]
             })?;
         }
     }
@@ -197,34 +190,18 @@ pub(super) async fn handle_command(
 }
 
 /// Render a snapshot diff: the `+`/`-`/`~` lines plus SOA-serial and count footers.
-fn render_snapshot_diff(data: &serde_json::Value) -> String {
-    let empty = vec![];
-    let entries = data
-        .get("diff")
-        .and_then(|d| d.get("entries"))
-        .and_then(|v| v.as_array())
-        .unwrap_or(&empty);
-    let mut out = render_diff_lines(entries);
+fn render_snapshot_diff(response: &SnapshotDiffResponse) -> String {
+    let mut out = render_diff_lines(&response.diff.entries);
+    let summary = &response.diff.summary;
 
-    let serial = |field: &str| data.get(field).and_then(|v| v.as_i64()).unwrap_or(0);
-    let count = |field: &str| {
-        data.get("diff")
-            .and_then(|d| d.get("summary"))
-            .and_then(|s| s.get(field))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0)
-    };
     out.push('\n');
     out.push_str(&format!(
         "SOA serial: {} -> {}\n",
-        serial("from_serial"),
-        serial("to_serial")
+        response.from_serial, response.to_serial
     ));
     out.push_str(&format!(
         "Records: +{} -{} ~{}\n",
-        count("added"),
-        count("removed"),
-        count("changed")
+        summary.added, summary.removed, summary.changed
     ));
     out
 }

@@ -12,7 +12,7 @@ use super::snapshot::RecordDiff;
 use crate::model::record::{Record, RecordType, RecordWithZone};
 
 /// API representation of a record, optionally carrying its zone name.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetRecordResponse {
     #[schema(example = 1)]
     pub id: i32,
@@ -28,7 +28,7 @@ pub struct GetRecordResponse {
     pub priority: Option<i32>,
     #[schema(example = 1)]
     pub zone_id: i32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
 }
@@ -156,7 +156,7 @@ pub struct CreateBulkRecordsRequest {
 /// Response for a bulk insert: the count inserted and the created records. On a
 /// dry run `records` holds the validated would-be records (with placeholder
 /// IDs) and nothing is inserted.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct BulkRecordsResponse {
     #[schema(example = true)]
     pub applied: bool,

@@ -6,8 +6,9 @@ mod token_policy;
 mod tsig_policy;
 
 use bindizr_service::types::{
-    CreateZoneRequest, GetZonesFilter, ImportMode as ServiceImportMode, ImportZoneFileRequest,
-    NotifyZoneRequest, UpdateZonePatch,
+    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
+    ImportMode as ServiceImportMode, ImportZoneFileRequest, ImportZoneFileResponse,
+    NotifyZoneRequest, UpdateZonePatch, ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use snapshot::ZoneSnapshotCommand;
@@ -18,8 +19,8 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ImportSummaryRow, OutputFormat, SecondaryStatusRow, ZoneRow, print_output_with_table,
-            render_change_preview,
+            ImportSummaryRow, ItemOrPage, OutputFormat, SecondaryStatusRow, ZoneRow,
+            parse_response, print_response, print_table, render_change_preview,
         },
     },
     socket::{
@@ -372,11 +373,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .send_command(DaemonCommandKind::ExportZoneFile, ZoneNameParams { name })
                 .await?
                 .data;
-            let zone_file = data
-                .get("zone_file")
-                .and_then(|v| v.as_str())
-                .ok_or("Missing zone_file in response")?;
-            print!("{}", zone_file);
+            let export: ExportZoneFileResponse = parse_response(&data)?;
+            print!("{}", export.zone_file);
         }
         ZoneCommand::Import {
             name,
@@ -403,39 +401,25 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .await?;
 
             if output == OutputFormat::Table {
-                let errors: Vec<&str> = response
-                    .data
-                    .get("errors")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|e| e.as_str()).collect())
-                    .unwrap_or_default();
-                if errors.is_empty() {
+                let import: ImportZoneFileResponse = parse_response(&response.data)?;
+                if import.errors.is_empty() {
                     println!("{}", response.message);
                 } else {
                     eprintln!("{}", response.message);
-                    for error in errors {
+                    for error in &import.errors {
                         eprintln!("  - {}", error);
                     }
                 }
+
+                if preview {
+                    print!("{}", render_change_preview(&import.diff.entries));
+                    return Ok(());
+                }
             }
 
-            if preview && output == OutputFormat::Table {
-                let entries = response
-                    .data
-                    .get("diff")
-                    .and_then(|d| d.get("entries"))
-                    .and_then(|v| v.as_array())
-                    .cloned()
-                    .unwrap_or_default();
-                print!("{}", render_change_preview(&entries));
-            } else {
-                print_output_with_table(&response.data, output, |data| {
-                    data.get("summary")
-                        .ok_or("Missing import summary in response".to_string())
-                        .and_then(ImportSummaryRow::from_json)
-                        .map(|row| vec![row])
-                })?;
-            }
+            print_response(&response.data, output, |import: &ImportZoneFileResponse| {
+                vec![ImportSummaryRow::from(&import.summary)]
+            })?;
         }
         ZoneCommand::Snapshot { subcommand } => {
             snapshot::handle_command(&client, subcommand).await?
@@ -446,23 +430,17 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .await?;
 
             if output == OutputFormat::Table {
-                let zone = response.data.get("zone").and_then(|v| v.as_str());
-                let serial = response.data.get("serial").and_then(|v| v.as_i64());
-                if let (Some(zone), Some(serial)) = (zone, serial) {
-                    println!("Zone {} (serial {})", zone, serial);
-                }
-                let has_secondaries = response
-                    .data
-                    .get("secondaries")
-                    .and_then(|v| v.as_array())
-                    .is_some_and(|arr| !arr.is_empty());
-                if !has_secondaries {
+                let status: ZoneStatusResponse = parse_response(&response.data)?;
+                println!("Zone {} (serial {})", status.zone, status.serial);
+                if status.secondaries.is_empty() {
                     println!("No secondaries configured.");
                     return Ok(());
                 }
+                print_table(SecondaryStatusRow::rows_from_status(&status));
+                return Ok(());
             }
-            print_output_with_table(&response.data, output, |data| {
-                SecondaryStatusRow::rows_from_status(data)
+            print_response(&response.data, output, |status: &ZoneStatusResponse| {
+                SecondaryStatusRow::rows_from_status(status)
             })?;
         }
         ZoneCommand::Notify(args) => {
@@ -489,16 +467,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
 }
 
 fn print_zones(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
-    print_output_with_table(data, output, |data| {
-        if let Some(arr) = data.get("items").and_then(|value| value.as_array()) {
-            Ok(arr
-                .iter()
-                .filter_map(|v| ZoneRow::from_json(v).ok())
-                .collect())
-        } else {
-            ZoneRow::from_json(data)
-                .map(|row| vec![row])
-                .map_err(|e| format!("Failed to parse zone: {}", e))
-        }
+    print_response(data, output, |zones: &ItemOrPage<GetZoneResponse>| {
+        zones.items().iter().map(ZoneRow::from).collect()
     })
 }

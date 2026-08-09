@@ -7,7 +7,7 @@ use super::record::GetRecordResponse;
 use crate::model::zone::Zone;
 
 /// API representation of a zone.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetZoneResponse {
     #[schema(example = 1)]
     pub id: i32,
@@ -138,24 +138,31 @@ pub struct ZoneResponse {
     pub zone: GetZoneResponse,
 }
 
+/// A zone rendered as BIND master-file text. Only the daemon socket wraps the
+/// export this way; the HTTP endpoint serves the text as its body.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ExportZoneFileResponse {
+    pub zone_file: String,
+}
+
 /// Sync state of one configured secondary for a zone.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct SecondaryStatusResponse {
     #[schema(example = "10.0.1.10:53")]
     pub address: String,
     /// `in_sync` | `lagging` | `ahead` | `unreachable`
     #[schema(example = "in_sync")]
     pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 42)]
     pub visible_serial: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
 /// A zone's serial and the sync state of every configured secondary, probed
 /// live via SOA queries.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneStatusResponse {
     #[schema(example = "example.com")]
     pub zone: String,

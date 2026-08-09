@@ -33,7 +33,7 @@ pub struct ImportZoneFileRequest {
 }
 
 /// Result of a zone-file import, including a summary and any validation errors.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ImportZoneFileResponse {
     #[schema(example = true)]
     pub applied: bool,
@@ -49,7 +49,7 @@ pub struct ImportZoneFileResponse {
 /// Counts of records parsed, added, deleted, updated, unchanged, and skipped
 /// during import. `updated` is a TTL-only reconcile and is never also counted
 /// as `unchanged`.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ImportSummary {
     #[schema(example = 12)]
     pub parsed: usize,

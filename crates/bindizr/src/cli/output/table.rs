@@ -1,4 +1,10 @@
-use serde::Deserialize;
+//! Table rows for CLI output, each built from the typed daemon response so
+//! the column set is all this module decides.
+
+use bindizr_service::types::{
+    GetRecordResponse, GetZoneResponse, ImportSummary, RecordValueRequest, RollbackZoneResponse,
+    SecondaryStatusResponse, SnapshotRecordResponse, ZoneSnapshotResponse, ZoneStatusResponse,
+};
 use tabled::Tabled;
 
 // Display Option<i32> in tables, using "-" for None.
@@ -9,28 +15,17 @@ fn display_option_i32(opt: &Option<i32>) -> String {
     }
 }
 
-// Deserialize a record value, which may be a string or an array of strings.
-fn deserialize_record_value<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    Ok(match value {
-        serde_json::Value::String(value) => value,
-        serde_json::Value::Array(values) => values
-            .into_iter()
-            .map(|value| match value {
-                serde_json::Value::String(value) => value,
-                other => other.to_string(),
-            })
-            .collect::<Vec<_>>()
-            .join(""),
-        other => other.to_string(),
-    })
+/// A record value as one table cell; TXT segments concatenate into the string
+/// they encode.
+fn value_text(value: &RecordValueRequest) -> String {
+    match value {
+        RecordValueRequest::String(value) => value.clone(),
+        RecordValueRequest::Segments(segments) => segments.concat(),
+    }
 }
 
 /// Table row for zone display.
-#[derive(Debug, Deserialize, Tabled)]
+#[derive(Debug, Tabled)]
 pub(crate) struct ZoneRow {
     #[tabled(rename = "ID")]
     pub id: i32,
@@ -42,13 +37,25 @@ pub(crate) struct ZoneRow {
     pub admin_email: String,
     #[tabled(rename = "TTL")]
     pub ttl: i32,
-    #[tabled(rename = "SERIAL", display = "display_option_i32")]
-    #[serde(default)]
-    pub serial: Option<i32>,
+    #[tabled(rename = "SERIAL")]
+    pub serial: i32,
+}
+
+impl From<&GetZoneResponse> for ZoneRow {
+    fn from(zone: &GetZoneResponse) -> Self {
+        ZoneRow {
+            id: zone.id,
+            name: zone.name.clone(),
+            primary_ns: zone.primary_ns.clone(),
+            admin_email: zone.admin_email.clone(),
+            ttl: zone.ttl,
+            serial: zone.serial,
+        }
+    }
 }
 
 /// Table row for record display.
-#[derive(Debug, Deserialize, Tabled)]
+#[derive(Debug, Tabled)]
 pub(crate) struct RecordRow {
     #[tabled(rename = "ID")]
     pub id: i32,
@@ -57,19 +64,31 @@ pub(crate) struct RecordRow {
     #[tabled(rename = "TYPE")]
     pub record_type: String,
     #[tabled(rename = "VALUE")]
-    #[serde(deserialize_with = "deserialize_record_value")]
     pub value: String,
     #[tabled(rename = "TTL")]
     pub ttl: i32,
     #[tabled(rename = "PRIORITY", display = "display_option_i32")]
-    #[serde(default)]
     pub priority: Option<i32>,
     #[tabled(rename = "ZONE")]
     pub zone_name: String,
 }
 
+impl From<&GetRecordResponse> for RecordRow {
+    fn from(record: &GetRecordResponse) -> Self {
+        RecordRow {
+            id: record.id,
+            name: record.name.clone(),
+            record_type: record.record_type.clone(),
+            value: value_text(&record.value),
+            ttl: record.ttl,
+            priority: record.priority,
+            zone_name: record.zone_name.clone().unwrap_or_default(),
+        }
+    }
+}
+
 /// Table row for zone snapshot display.
-#[derive(Debug, Deserialize, Tabled)]
+#[derive(Debug, Tabled)]
 pub(crate) struct SnapshotRow {
     #[tabled(rename = "SERIAL")]
     pub serial: i32,
@@ -83,40 +102,47 @@ pub(crate) struct SnapshotRow {
     pub created_at: String,
 }
 
-impl SnapshotRow {
-    /// Build a [`SnapshotRow`] from a JSON value.
-    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
-        serde_json::from_value(value.clone())
-            .map_err(|e| format!("Failed to parse snapshot: {}", e))
+impl From<&ZoneSnapshotResponse> for SnapshotRow {
+    fn from(snapshot: &ZoneSnapshotResponse) -> Self {
+        SnapshotRow {
+            serial: snapshot.serial,
+            primary_ns: snapshot.primary_ns.clone(),
+            admin_email: snapshot.admin_email.clone(),
+            ttl: snapshot.ttl,
+            created_at: snapshot.created_at.to_rfc3339(),
+        }
     }
 }
 
 /// Table row for records reconstructed at a snapshot serial (no database id).
-#[derive(Debug, Deserialize, Tabled)]
+#[derive(Debug, Tabled)]
 pub(crate) struct SnapshotRecordRow {
     #[tabled(rename = "NAME")]
     pub name: String,
     #[tabled(rename = "TYPE")]
     pub record_type: String,
     #[tabled(rename = "VALUE")]
-    #[serde(deserialize_with = "deserialize_record_value")]
     pub value: String,
     #[tabled(rename = "TTL")]
     pub ttl: i32,
     #[tabled(rename = "PRIORITY", display = "display_option_i32")]
-    #[serde(default)]
     pub priority: Option<i32>,
 }
 
-impl SnapshotRecordRow {
-    /// Build a [`SnapshotRecordRow`] from a JSON value.
-    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
-        serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse record: {}", e))
+impl From<&SnapshotRecordResponse> for SnapshotRecordRow {
+    fn from(record: &SnapshotRecordResponse) -> Self {
+        SnapshotRecordRow {
+            name: record.name.clone(),
+            record_type: record.record_type.clone(),
+            value: value_text(&record.value),
+            ttl: record.ttl,
+            priority: record.priority,
+        }
     }
 }
 
 /// Table row for rollback result summaries.
-#[derive(Debug, Deserialize, Tabled)]
+#[derive(Debug, Tabled)]
 pub(crate) struct RollbackSummaryRow {
     #[tabled(rename = "TARGET-SERIAL")]
     pub target_serial: i32,
@@ -134,20 +160,17 @@ pub(crate) struct RollbackSummaryRow {
     pub soa_changed: bool,
 }
 
-impl RollbackSummaryRow {
-    /// Build a [`RollbackSummaryRow`] from a JSON value, flattening the summary.
-    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
-        let mut flattened = value.clone();
-        if let (Some(object), Some(summary)) = (
-            flattened.as_object_mut(),
-            value.get("summary").and_then(|v| v.as_object()).cloned(),
-        ) {
-            for (key, entry) in summary {
-                object.insert(key, entry);
-            }
+impl From<&RollbackZoneResponse> for RollbackSummaryRow {
+    fn from(response: &RollbackZoneResponse) -> Self {
+        RollbackSummaryRow {
+            target_serial: response.target_serial,
+            new_serial: response.new_serial,
+            applied: response.applied,
+            records_added: response.summary.records_added,
+            records_deleted: response.summary.records_deleted,
+            records_unchanged: response.summary.records_unchanged,
+            soa_changed: response.summary.soa_changed,
         }
-        serde_json::from_value(flattened)
-            .map_err(|e| format!("Failed to parse rollback result: {}", e))
     }
 }
 
@@ -165,47 +188,37 @@ pub(crate) struct SecondaryStatusRow {
 }
 
 impl SecondaryStatusRow {
-    /// Build rows from a `ZoneStatusResponse` JSON payload, deriving each
-    /// secondary's lag from the zone serial.
-    pub(crate) fn rows_from_status(data: &serde_json::Value) -> Result<Vec<Self>, String> {
-        let serial = data
-            .get("serial")
-            .and_then(|v| v.as_i64())
-            .ok_or("Missing serial in response")?;
-        let secondaries = data
-            .get("secondaries")
-            .and_then(|v| v.as_array())
-            .ok_or("Missing secondaries in response")?;
-
-        Ok(secondaries
+    /// One row per secondary, with the lag behind the zone serial that its
+    /// `status` was classified against.
+    pub(crate) fn rows_from_status(status: &ZoneStatusResponse) -> Vec<Self> {
+        status
+            .secondaries
             .iter()
-            .map(|entry| {
-                let visible = entry.get("visible_serial").and_then(|v| v.as_i64());
-                let status = entry
-                    .get("status")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                let detail = match (status, entry.get("error").and_then(|v| v.as_str())) {
-                    ("unreachable", Some(error)) => format!("unreachable ({})", error),
-                    _ => status.to_string(),
-                };
-                SecondaryStatusRow {
-                    address: entry
-                        .get("address")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("-")
-                        .to_string(),
-                    status: detail,
-                    visible_serial: visible.map_or_else(|| "-".to_string(), |v| v.to_string()),
-                    lag: visible.map_or_else(|| "-".to_string(), |v| (serial - v).to_string()),
-                }
-            })
-            .collect())
+            .map(|secondary| Self::from_secondary(secondary, status.serial))
+            .collect()
+    }
+
+    fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: i32) -> Self {
+        let detail = match (secondary.status.as_str(), secondary.error.as_deref()) {
+            ("unreachable", Some(error)) => format!("unreachable ({})", error),
+            _ => secondary.status.clone(),
+        };
+        SecondaryStatusRow {
+            address: secondary.address.clone(),
+            status: detail,
+            visible_serial: secondary
+                .visible_serial
+                .map_or_else(|| "-".to_string(), |serial| serial.to_string()),
+            lag: secondary.visible_serial.map_or_else(
+                || "-".to_string(),
+                |serial| (i64::from(zone_serial) - serial).to_string(),
+            ),
+        }
     }
 }
 
 /// Table row for zone-file import summaries.
-#[derive(Debug, Deserialize, Tabled)]
+#[derive(Debug, Tabled)]
 pub(crate) struct ImportSummaryRow {
     #[tabled(rename = "PARSED")]
     pub parsed: usize,
@@ -221,24 +234,15 @@ pub(crate) struct ImportSummaryRow {
     pub skipped: usize,
 }
 
-impl ImportSummaryRow {
-    /// Build an [`ImportSummaryRow`] from a JSON value.
-    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
-        serde_json::from_value(value.clone())
-            .map_err(|e| format!("Failed to parse import summary: {}", e))
-    }
-}
-
-impl ZoneRow {
-    /// Build a [`ZoneRow`] from a JSON value.
-    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
-        serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse zone: {}", e))
-    }
-}
-
-impl RecordRow {
-    /// Build a [`RecordRow`] from a JSON value.
-    pub(crate) fn from_json(value: &serde_json::Value) -> Result<Self, String> {
-        serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse record: {}", e))
+impl From<&ImportSummary> for ImportSummaryRow {
+    fn from(summary: &ImportSummary) -> Self {
+        ImportSummaryRow {
+            parsed: summary.parsed,
+            added: summary.added,
+            deleted: summary.deleted,
+            updated: summary.updated,
+            unchanged: summary.unchanged,
+            skipped: summary.skipped,
+        }
     }
 }

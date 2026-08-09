@@ -1,6 +1,7 @@
 use std::fmt;
 
-use serde::Serialize;
+use bindizr_service::types::PaginatedResponse;
+use serde::{Deserialize, de::DeserializeOwned};
 use tabled::{Table, Tabled, settings::Style};
 
 /// Output format for CLI results.
@@ -37,14 +38,39 @@ impl std::str::FromStr for OutputFormat {
     }
 }
 
-/// Print serialized output as JSON, YAML, or a formatted table.
-pub(crate) fn print_output_with_table<T, U>(
-    data: &T,
+/// Read a daemon response payload as the type the command expects.
+pub(crate) fn parse_response<T: DeserializeOwned>(data: &serde_json::Value) -> Result<T, String> {
+    serde_json::from_value(data.clone()).map_err(|e| format!("Unexpected daemon response: {}", e))
+}
+
+/// A listing answers with a page; `get` and `update` answer with the item
+/// alone. Both feed the same table.
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(crate) enum ItemOrPage<T> {
+    Page(PaginatedResponse<T>),
+    One(T),
+}
+
+impl<T> ItemOrPage<T> {
+    pub(crate) fn items(&self) -> &[T] {
+        match self {
+            ItemOrPage::Page(page) => &page.items,
+            ItemOrPage::One(item) => std::slice::from_ref(item),
+        }
+    }
+}
+
+/// Print a daemon response: the payload verbatim for JSON and YAML, or a table
+/// built from its typed form. Only the table path deserializes, so
+/// `--output json` stays what the daemon sent.
+pub(crate) fn print_response<T, U>(
+    data: &serde_json::Value,
     format: OutputFormat,
-    to_table_rows: impl Fn(&T) -> Result<Vec<U>, String>,
+    to_table_rows: impl Fn(&T) -> Vec<U>,
 ) -> Result<(), String>
 where
-    T: Serialize,
+    T: DeserializeOwned,
     U: Tabled,
 {
     match format {
@@ -58,15 +84,16 @@ where
                 .map_err(|e| format!("Failed to serialize to YAML: {}", e))?;
             println!("{}", yaml);
         }
-        OutputFormat::Table => {
-            let rows = to_table_rows(data)?;
-            if rows.is_empty() {
-                println!("No resources found.");
-            } else {
-                let table = Table::new(rows).with(Style::blank()).to_string();
-                println!("{}", table);
-            }
-        }
+        OutputFormat::Table => print_table(to_table_rows(&parse_response(data)?)),
     }
     Ok(())
+}
+
+/// Print table rows, or a placeholder when there are none.
+pub(crate) fn print_table<U: Tabled>(rows: Vec<U>) {
+    if rows.is_empty() {
+        println!("No resources found.");
+    } else {
+        println!("{}", Table::new(rows).with(Style::blank()));
+    }
 }

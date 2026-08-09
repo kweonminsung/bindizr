@@ -3,8 +3,8 @@ use bindizr_service::{
     error::ServiceError,
     record::RecordService,
     types::{
-        CreateZoneRequest, GetZoneResponse, GetZonesFilter, SnapshotDetailResponse,
-        SnapshotRecordResponse, ZoneSnapshotResponse,
+        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
+        SnapshotDetailResponse, SnapshotRecordResponse, ZoneSnapshotResponse,
     },
     zone::ZoneService,
 };
@@ -118,7 +118,7 @@ pub(super) async fn export_zone(data: &serde_json::Value) -> Result<DaemonRespon
     let zone_file = ZoneService::export_zone_file(&params.name).await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
-        data: json!({ "zone_file": zone_file }),
+        data: to_response_data(ExportZoneFileResponse { zone_file })?,
     })
 }
 

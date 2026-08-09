@@ -12,7 +12,7 @@ use crate::{
 
 /// One entry of a zone's serial history, with SOA metadata in API form
 /// (`admin_email` converted back from SOA mailbox form).
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneSnapshotResponse {
     #[schema(example = 7)]
     pub serial: i32,
@@ -56,7 +56,7 @@ impl ZoneSnapshotResponse {
 
 /// A record reconstructed from the zone's change history; unlike stored
 /// records it has no database id.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct SnapshotRecordResponse {
     #[schema(example = "www")]
     pub name: String,
@@ -83,7 +83,7 @@ impl From<ReconstructedRecord> for SnapshotRecordResponse {
 }
 
 /// One snapshot plus the reconstructed record set at that serial.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct SnapshotDetailResponse {
     pub snapshot: ZoneSnapshotResponse,
     pub records: Vec<SnapshotRecordResponse>,
@@ -91,7 +91,7 @@ pub struct SnapshotDetailResponse {
 
 /// One record on one side of a diff. Rendering (zone-file rdata, priority
 /// placement) is left to the client; the value is in display form.
-#[derive(Clone, Serialize, Debug, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiffValue {
     pub value: RecordValueRequest,
     #[schema(example = 300)]
@@ -102,7 +102,7 @@ pub struct RecordDiffValue {
 
 /// One RRset (owner name + type) whose records differ, with the records present
 /// on each side. `from` is empty for `added`, `to` for `removed`.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiffEntry {
     /// `added`, `removed`, or `changed`.
     #[schema(example = "changed")]
@@ -116,7 +116,7 @@ pub struct RecordDiffEntry {
 }
 
 /// How many RRsets were added, removed, and changed.
-#[derive(Default, Serialize, Debug, ToSchema)]
+#[derive(Default, Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiffSummary {
     #[schema(example = 1)]
     pub added: usize,
@@ -128,14 +128,14 @@ pub struct RecordDiffSummary {
 
 /// A record-level difference between two record sets, RRset by RRset. Empty on
 /// a real apply, which does not need it; populated only for a dry-run preview.
-#[derive(Default, Serialize, Debug, ToSchema)]
+#[derive(Default, Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiff {
     pub entries: Vec<RecordDiffEntry>,
     pub summary: RecordDiffSummary,
 }
 
 /// The difference between two of a zone's serials.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct SnapshotDiffResponse {
     #[schema(example = 41)]
     pub from_serial: i32,
@@ -156,7 +156,7 @@ pub struct RollbackZoneRequest {
 
 /// Counts of what a rollback changes. TTL-only differences count as one
 /// delete plus one add.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RollbackSummary {
     #[schema(example = 2)]
     pub records_added: usize,
@@ -170,7 +170,7 @@ pub struct RollbackSummary {
 
 /// Result of a zone rollback. The zone's state returns to `target_serial`
 /// while its serial advances to `new_serial` (serials never go backward).
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RollbackZoneResponse {
     #[schema(example = true)]
     pub applied: bool,

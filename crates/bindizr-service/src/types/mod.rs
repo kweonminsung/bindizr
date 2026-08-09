@@ -1,5 +1,9 @@
 //! Service-layer request and response payloads, grouped by the entity they
 //! belong to. Re-exported flat so callers keep naming them `types::X`.
+//!
+//! These are the wire contract of every front end, not just HTTP: the daemon
+//! socket carries the same shapes, so a response type the CLI reads back
+//! derives `Deserialize` too.
 
 mod common;
 mod external_dns;
@@ -38,6 +42,6 @@ pub use tsig::{
     ZoneTsigPolicyResponse,
 };
 pub use zone::{
-    CreateZoneRequest, GetZoneResponse, GetZonesFilter, NotifyZoneRequest, SecondaryStatusResponse,
-    UpdateZonePatch, ZoneDetailResponse, ZoneResponse, ZoneStatusResponse,
+    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter, NotifyZoneRequest,
+    SecondaryStatusResponse, UpdateZonePatch, ZoneDetailResponse, ZoneResponse, ZoneStatusResponse,
 };

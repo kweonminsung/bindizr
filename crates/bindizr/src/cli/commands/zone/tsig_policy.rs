@@ -1,10 +1,10 @@
 //! The `zone tsig-policy` subcommands.
 
-use bindizr_service::types::CreateZoneTsigPolicyRequest;
+use bindizr_service::types::{CreateZoneTsigPolicyRequest, GetZoneTsigPolicyResponse};
 use clap::Subcommand;
 
 use crate::{
-    cli::error::CliError,
+    cli::{error::CliError, output::parse_response},
     socket::{
         client::DaemonSocketClient,
         types::{
@@ -102,9 +102,7 @@ pub(super) async fn handle_command(
 }
 
 fn print_tsig_policies(data: &serde_json::Value) -> Result<(), String> {
-    let policies: Vec<bindizr_service::types::GetZoneTsigPolicyResponse> =
-        serde_json::from_value(data.clone())
-            .map_err(|e| format!("Failed to parse TSIG policy list response: {}", e))?;
+    let policies: Vec<GetZoneTsigPolicyResponse> = parse_response(data)?;
 
     if policies.is_empty() {
         println!("No TSIG policies found");

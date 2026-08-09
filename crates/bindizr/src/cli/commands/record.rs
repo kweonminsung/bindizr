@@ -1,13 +1,16 @@
 use bindizr_service::types::{
-    CreateBulkRecordsRequest, CreateRecordRequest, GetRecordsFilter, RecordItem,
-    RecordValueRequest, UpdateRecordPatch,
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
+    GetRecordsFilter, RecordItem, RecordValueRequest, UpdateRecordPatch,
 };
 use clap::Subcommand;
 
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, RecordRow, print_output_with_table, render_change_preview},
+        output::{
+            ItemOrPage, OutputFormat, RecordRow, parse_response, print_response,
+            render_change_preview,
+        },
     },
     socket::{
         client::DaemonSocketClient,
@@ -283,29 +286,16 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?;
 
             if preview && output == OutputFormat::Table {
-                let entries = response
-                    .data
-                    .get("diff")
-                    .and_then(|d| d.get("entries"))
-                    .and_then(|v| v.as_array())
-                    .cloned()
-                    .unwrap_or_default();
-                print!("{}", render_change_preview(&entries));
+                let bulk: BulkRecordsResponse = parse_response(&response.data)?;
+                print!("{}", render_change_preview(&bulk.diff.entries));
                 return Ok(());
             }
 
             if output == OutputFormat::Table {
                 println!("{}", response.message);
             }
-            print_output_with_table(&response.data, output, |data| {
-                data.get("records")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| RecordRow::from_json(v).ok())
-                            .collect()
-                    })
-                    .ok_or_else(|| "Missing created records in response".to_string())
+            print_response(&response.data, output, |bulk: &BulkRecordsResponse| {
+                bulk.records.iter().map(RecordRow::from).collect()
             })?;
         }
         RecordCommand::Get { id, output } => {
@@ -359,16 +349,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 }
 
 fn print_records(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
-    print_output_with_table(data, output, |data| {
-        if let Some(arr) = data.get("items").and_then(|value| value.as_array()) {
-            Ok(arr
-                .iter()
-                .filter_map(|v| RecordRow::from_json(v).ok())
-                .collect())
-        } else {
-            RecordRow::from_json(data)
-                .map(|row| vec![row])
-                .map_err(|e| format!("Failed to parse record: {}", e))
-        }
+    print_response(data, output, |records: &ItemOrPage<GetRecordResponse>| {
+        records.items().iter().map(RecordRow::from).collect()
     })
 }
