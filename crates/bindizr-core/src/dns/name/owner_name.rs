@@ -1,8 +1,6 @@
 //! A record's owner name, held as decoded labels.
 
-use super::{
-    MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control,
-};
+use super::{MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control};
 
 /// A record's owner name as its decoded labels, relative to its zone; the apex
 /// is the empty label list. A `.` inside a label is data, so no spelling can
@@ -32,7 +30,7 @@ impl OwnerName {
     /// only, since owner names carry the `_` labels a zone name may not.
     pub fn parse_in_zone(input: &str, zone: &ZoneName) -> Result<Self, ParseNameError> {
         let trimmed = input.trim();
-        if trimmed.is_empty() {
+        if trimmed.trim_end_matches('.').is_empty() {
             return Err(ParseNameError::Empty);
         }
         if has_whitespace_or_control(trimmed) {
@@ -43,19 +41,15 @@ impl OwnerName {
         }
 
         let absolute = trimmed.ends_with('.');
-        let labels = decode_labels(trimmed.trim_end_matches('.'))?;
-        if labels.is_empty() {
-            return Err(ParseNameError::RootZone);
-        }
-        classify_labels(&labels)?;
+        let labels = super::decode_name_labels(trimmed)?;
+        let zone_labels = zone.labels();
 
         // A relative name that happens to end in the zone was already absolute.
-        let zone_labels = zone.labels();
         match strip_zone_suffix(&labels, &zone_labels) {
             Some(owner) => Ok(Self(owner)),
             None if absolute => Err(ParseNameError::OutsideZone),
-            // Relative input is qualified by appending the zone, so it is
-            // in-zone by construction; only its own length can fail.
+            // Relative input grows by the zone it is qualified with, which is
+            // what can push it past the length `decode_name_labels` checked.
             None => {
                 classify_total_len(&labels, &zone_labels)?;
                 Ok(Self(labels))
@@ -188,18 +182,6 @@ pub(super) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
         escaped.push(c);
     }
     std::borrow::Cow::Owned(escaped)
-}
-
-fn classify_labels(labels: &[String]) -> Result<(), ParseNameError> {
-    for label in labels {
-        if label.is_empty() {
-            return Err(ParseNameError::EmptyLabel);
-        }
-        if label.len() > MAX_DNS_LABEL_LEN {
-            return Err(ParseNameError::LabelTooLong);
-        }
-    }
-    Ok(())
 }
 
 /// The 253-byte limit, measured on the decoded octets the wire carries.

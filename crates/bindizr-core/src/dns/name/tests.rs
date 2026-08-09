@@ -162,6 +162,23 @@ fn owner_name_keeps_an_escaped_dot_as_label_data() {
 }
 
 #[test]
+fn owner_name_parse_enforces_the_length_limit_on_both_paths() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    let long = vec!["a".repeat(60); 5].join(".");
+
+    // The qualified name is what has to fit, so relative and absolute input
+    // must reach the same verdict.
+    assert_eq!(
+        OwnerName::parse_in_zone(&long, &zone).unwrap_err(),
+        ParseNameError::TooLong
+    );
+    assert_eq!(
+        OwnerName::parse_in_zone(&format!("{long}.example.com."), &zone).unwrap_err(),
+        ParseNameError::TooLong
+    );
+}
+
+#[test]
 fn owner_name_parse_rejects_names_outside_the_zone() {
     let zone = zone();
 

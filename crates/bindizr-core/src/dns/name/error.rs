@@ -6,7 +6,6 @@ use super::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseNameError {
     Empty,
-    RootZone,
     Whitespace,
     TooLong,
     EmptyLabel,
@@ -30,7 +29,6 @@ impl std::fmt::Display for ParseNameError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Empty => write!(f, "must not be empty"),
-            Self::RootZone => write!(f, "must not be the root zone"),
             Self::Whitespace => write!(f, "must not contain whitespace or control characters"),
             Self::TooLong => write!(f, "must be {} bytes or fewer", MAX_DOMAIN_LEN),
             Self::EmptyLabel => write!(f, "must not contain empty labels"),
