@@ -27,6 +27,16 @@ impl<'a> SrvRecordValue<'a> {
         }
     }
 
+    /// The wire fields of a stored value: priority (from the column, default
+    /// 10), weight, port, and target.
+    pub(crate) fn wire_fields(
+        value: &'a str,
+        fallback_priority: Option<i32>,
+    ) -> Result<(u16, u16, u16, &'a str), String> {
+        let parsed = Self::parse(value, fallback_priority)?;
+        Ok((parsed.priority, parsed.weight, parsed.port, parsed.target))
+    }
+
     pub(crate) fn validate(&self) -> Result<(), String> {
         if self.target.trim() == "." {
             return Ok(());

@@ -23,7 +23,10 @@ use domain::{
 use crate::{
     error::XfrError,
     log_info,
-    model::{record::Record, zone::Zone},
+    model::{
+        record::{Record, RecordType},
+        zone::Zone,
+    },
 };
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix).
@@ -271,13 +274,16 @@ impl DnsMessageBuilder {
             }
             "CNAME" => self.add_cname_record(&owner_name, ttl, value),
             "MX" => {
-                let (mx_priority, target) = parse_mx_record_value(value, priority)?;
+                let (mx_priority, target) =
+                    RecordType::mx_wire_fields(value, priority).map_err(XfrError::ProtocolError)?;
                 self.add_mx_record(&owner_name, ttl, mx_priority, target)
             }
             "NS" => self.add_ns_record(&owner_name, ttl, value),
             "PTR" => self.add_ptr_record(&owner_name, ttl, value),
             "SRV" => {
-                let (srv_priority, weight, port, target) = parse_srv_record_value(value, priority)?;
+                let (srv_priority, weight, port, target) =
+                    RecordType::srv_wire_fields(value, priority)
+                        .map_err(XfrError::ProtocolError)?;
                 self.add_srv_record(&owner_name, ttl, srv_priority, weight, port, target)
             }
             "TXT" => self.add_txt_record(&owner_name, ttl, value),
@@ -365,60 +371,6 @@ impl DnsMessageBuilder {
         self.build_message_into(&mut message);
         message
     }
-}
-
-fn parse_mx_record_value(
-    value: &str,
-    fallback_priority: Option<i32>,
-) -> Result<(u16, &str), XfrError> {
-    let fields = value.split_whitespace().collect::<Vec<_>>();
-    match fields.as_slice() {
-        [target] => Ok((
-            parse_optional_priority(fallback_priority, "MX priority")?,
-            target,
-        )),
-        _ => Err(XfrError::ProtocolError(format!(
-            "Invalid MX record value: {value}"
-        ))),
-    }
-}
-
-fn parse_srv_record_value(
-    value: &str,
-    fallback_priority: Option<i32>,
-) -> Result<(u16, u16, u16, &str), XfrError> {
-    let fields = value.split_whitespace().collect::<Vec<_>>();
-    let (priority, weight, port, target) = match fields.as_slice() {
-        [weight, port, target] => (
-            parse_optional_priority(fallback_priority, "SRV priority")?,
-            *weight,
-            *port,
-            *target,
-        ),
-        _ => {
-            return Err(XfrError::ProtocolError(format!(
-                "Invalid SRV record value: {value}"
-            )));
-        }
-    };
-
-    Ok((
-        priority,
-        parse_u16_field(weight, "SRV weight")?,
-        parse_u16_field(port, "SRV port")?,
-        target,
-    ))
-}
-
-fn parse_optional_priority(priority: Option<i32>, field: &str) -> Result<u16, XfrError> {
-    u16::try_from(priority.unwrap_or(10))
-        .map_err(|_| XfrError::ProtocolError(format!("Invalid {field}")))
-}
-
-fn parse_u16_field(value: &str, field: &str) -> Result<u16, XfrError> {
-    value
-        .parse()
-        .map_err(|_| XfrError::ProtocolError(format!("Invalid {field}: {value}")))
 }
 
 pub(crate) async fn add_answer_and_flush_if_needed<W, F>(

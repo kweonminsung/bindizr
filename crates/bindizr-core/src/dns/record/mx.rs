@@ -29,6 +29,16 @@ impl<'a> MxRecordValue<'a> {
         }
     }
 
+    /// The wire fields of a stored value: the preference from the priority
+    /// column (default 10) and the exchange host.
+    pub(crate) fn wire_fields(
+        value: &'a str,
+        fallback_priority: Option<i32>,
+    ) -> Result<(u16, &'a str), String> {
+        let parsed = Self::parse(value, fallback_priority)?;
+        Ok((parsed.priority, parsed.target))
+    }
+
     pub(crate) fn validate(&self) -> Result<(), String> {
         if self.target.trim() == "." {
             if self.priority != 0 {

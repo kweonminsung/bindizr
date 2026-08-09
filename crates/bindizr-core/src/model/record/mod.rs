@@ -236,6 +236,20 @@ impl RecordType {
         }
     }
 
+    /// The MX wire fields of a stored value, so encoders do not re-derive the
+    /// stored grammar.
+    pub fn mx_wire_fields(value: &str, priority: Option<i32>) -> Result<(u16, &str), String> {
+        MxRecordValue::wire_fields(value, priority)
+    }
+
+    /// The SRV wire fields of a stored value.
+    pub fn srv_wire_fields(
+        value: &str,
+        priority: Option<i32>,
+    ) -> Result<(u16, u16, u16, &str), String> {
+        SrvRecordValue::wire_fields(value, priority)
+    }
+
     /// Format a stored value of this record type for display.
     pub fn display_value(&self, value: &str) -> String {
         if *self == RecordType::TXT {
