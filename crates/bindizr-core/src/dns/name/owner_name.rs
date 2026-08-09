@@ -4,13 +4,10 @@ use super::{
     MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control,
 };
 
-/// A record's owner name as its decoded labels, relative to its zone. The
-/// apex is the empty label list.
-///
-/// Presentation form is a rendering, not the representation: a `.` inside a
-/// label is stored as data, so no spelling of a name can make one label read
-/// as two. Labels are lowercased on construction, so the derived `Eq`/`Hash`
-/// fold case (RFC 4343).
+/// A record's owner name as its decoded labels, relative to its zone; the apex
+/// is the empty label list. A `.` inside a label is data, so no spelling can
+/// make one label read as two. Labels are lowercased on construction, so the
+/// derived `Eq`/`Hash` fold case (RFC 4343).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OwnerName(Vec<String>);
 
@@ -52,16 +49,15 @@ impl OwnerName {
         }
         classify_labels(&labels)?;
 
-        let zone_labels = zone.labels();
-        let zone_labels = zone_labels.as_slice();
         // A relative name that happens to end in the zone was already absolute.
-        match strip_zone_suffix(&labels, zone_labels) {
+        let zone_labels = zone.labels();
+        match strip_zone_suffix(&labels, &zone_labels) {
             Some(owner) => Ok(Self(owner)),
             None if absolute => Err(ParseNameError::OutsideZone),
             // Relative input is qualified by appending the zone, so it is
             // in-zone by construction; only its own length can fail.
             None => {
-                classify_total_len(&labels, zone_labels)?;
+                classify_total_len(&labels, &zone_labels)?;
                 Ok(Self(labels))
             }
         }

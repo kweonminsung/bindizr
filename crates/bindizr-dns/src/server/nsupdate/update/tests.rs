@@ -164,8 +164,8 @@ fn rr_to_record_value_rejects_name_rdata_with_trailing_bytes() {
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
-// TXT RDATA is one or more character-strings (RFC 1035, Section 3.3.14); an empty
-// value previously slipped through and stored an undecodable record.
+// TXT RDATA is one or more character-strings (RFC 1035, Section 3.3.14), so an
+// empty value would store an undecodable record.
 #[test]
 fn rr_to_record_value_rejects_empty_txt_rdata() {
     let update = update_record(Rtype::TXT, Class::IN, 300, Vec::new());

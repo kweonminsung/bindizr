@@ -175,29 +175,26 @@ One locking model covers the service layer; keep new code on it:
 
 ### Names are labels, not strings
 
-Presentation form is a rendering of a DNS name, not its representation. A
-name is decoded into labels at the parse boundary — `OwnerName::parse_in_zone`
+A name is decoded into labels at the parse boundary — `OwnerName::parse_in_zone`
 / `parse_absolute_in_zone`, `ZoneName::parse`, `dns::name::decode_name_labels`
 — resolving the `\.`, `\\`, and `\DDD` escapes of RFC 1035, Section 5.1. Every
-comparison then runs on labels, so a dot inside a label is data and can never
-read as a boundary.
+comparison runs on labels, so a dot inside a label is data, never a boundary.
 
 Do not answer a question about names with string operations. `ends_with`,
 `split('.')`, or `strip_suffix` on a name is a bug even when it looks right:
-it is how `evil\.example.com` came to be read as inside `example.com`. Use
-`OwnerName`'s methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or
-`labels_in_zone`.
+it reads `evil\.example.com` as inside `example.com`. Use `OwnerName`'s
+methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or `labels_in_zone`.
 
 Names are canonical by construction: labels are lowercased (RFC 4343) and
 rendered back with only `.` and `\` escaped, so one name has one spelling.
 That is what lets the record-filter SQL compare owner names as text and
-concatenate them into FQDNs — every write path stores the canonical form.
-Rows hold that presentation string; `OwnerName::from_row` decodes it.
+concatenate them into FQDNs. Rows hold that presentation string;
+`OwnerName::from_row` decodes it.
 
 `OwnerName::parse_in_zone` qualifies a relative name by appending the zone;
 `parse_absolute_in_zone` never does, and is what input carrying no trailing
-dot (lookup form, wire owners) must use, or an out-of-zone name is silently
-qualified instead of rejected.
+dot (lookup form, wire owners) must use — otherwise an out-of-zone name is
+silently qualified instead of rejected.
 
 Two escapes are unrelated to names and own their own encoding: the SOA RNAME
 (`SoaMailbox`, from the admin email) and TXT rdata (`TxtRdata`).

@@ -77,7 +77,7 @@ fn validate_mx_value_accepts_a_target_with_a_field_priority() {
 fn validate_mx_value_rejects_invalid_forms() {
     for (value, priority) in [
         ("", None),
-        // Inline priority is no longer accepted; it belongs in the field.
+        // Priority belongs in the priority field, never inline in the value.
         ("10 mail.example.com", None),
         ("10 mail.example.com", Some(10)),
         ("mail.example.com extra", None),
@@ -108,7 +108,7 @@ fn validate_srv_value_rejects_invalid_forms() {
     for (value, priority) in [
         ("", None),
         ("5060 sip.example.com", None),
-        // Inline priority is no longer accepted; it belongs in the field.
+        // Priority belongs in the priority field, never inline in the value.
         ("10 5 5060 sip.example.com", None),
         ("10 5 5060 sip.example.com", Some(10)),
         ("5 5060 sip.example.com extra", None),

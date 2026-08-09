@@ -130,7 +130,7 @@ fn owner_name_parse_reduces_input_to_the_stored_form() {
 fn owner_name_parse_strips_the_zone_suffix_once() {
     let zone = ZoneName::parse("example.com").unwrap();
 
-    // Repeated stripping collapsed a repeated-zone owner to an empty name.
+    // Stripping the suffix more than once would leave this owner empty.
     assert_eq!(
         OwnerName::parse_in_zone("example.com.example.com.", &zone)
             .unwrap()

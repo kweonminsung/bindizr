@@ -1,10 +1,9 @@
 //! Domain-name handling: label and length limits, FQDN normalization, and the
 //! whitespace/control hygiene check shared by name-like inputs.
 //!
-//! Presentation form is a rendering here, not the representation. A name is
-//! decoded into labels at the parse boundary ([`OwnerName`], [`ZoneName`]), so
-//! an escaped dot is label data and cannot read as a boundary in a later
-//! comparison. Text output re-escapes canonically (RFC 1035, Section 5.1).
+//! Names decode into labels at the parse boundary ([`OwnerName`], [`ZoneName`]),
+//! so an escaped dot is label data and never a boundary. Text is a rendering,
+//! re-escaped canonically (RFC 1035, Section 5.1).
 
 mod error;
 mod owner_name;
