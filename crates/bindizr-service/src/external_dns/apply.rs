@@ -267,21 +267,19 @@ pub(super) fn compute_zone_change_set(
     for (index, create) in creates.iter().enumerate() {
         let mut same_name: Vec<Record> = existing
             .iter()
-            .filter(|row| {
-                deletes.iter().all(|d| d.id != row.id) && row.name.clone() == create.name.clone()
-            })
+            .filter(|row| deletes.iter().all(|d| d.id != row.id) && row.name == create.name)
             .cloned()
             .collect();
         same_name.extend(
             creates[..index]
                 .iter()
-                .filter(|row| row.name.clone() == create.name.clone())
+                .filter(|row| row.name == create.name)
                 .cloned(),
         );
 
         validate_record_add_constraints_normalized(
             &same_name,
-            &create.name.clone(),
+            &create.name,
             &create.record_type,
             &create.value,
             create.ttl,

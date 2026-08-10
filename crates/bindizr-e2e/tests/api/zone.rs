@@ -517,6 +517,83 @@ async fn zone_import_zone_file_replace_mode() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_import_zone_file_upsert_mode_replaces_only_named_rrsets() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // `www` holds a two-record A RRset, plus a TXT RRset on the same owner and
+    // an A RRset on another owner — the three ways upsert must differ from
+    // replace, which would drop all of them.
+    seed_records(
+        &app,
+        zone_name,
+        json!([
+            { "name": "www", "record_type": "A", "value": "192.0.2.1" },
+            { "name": "www", "record_type": "A", "value": "192.0.2.2" },
+            { "name": "www", "record_type": "TXT", "value": "keep me" },
+            { "name": "other", "record_type": "A", "value": "192.0.2.9" }
+        ]),
+    )
+    .await;
+
+    // Only the `www` A RRset appears in the file, so only it is replaced.
+    let content = "www IN A 192.0.2.3\n";
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content, "mode": "upsert" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["summary"]["added"], 1);
+    assert_eq!(body["summary"]["deleted"], 2);
+
+    let values = |body: &serde_json::Value| -> Vec<String> {
+        let mut v: Vec<String> = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["value"].as_str().unwrap().to_string())
+            .collect();
+        v.sort();
+        v
+    };
+
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=www&record_type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(values(&body), vec!["192.0.2.3"]);
+
+    // Same owner, different type: untouched.
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=www&record_type=TXT"),
+            None,
+        )
+        .await;
+    assert_eq!(values(&body), vec!["keep me"]);
+
+    // Different owner entirely: untouched.
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=other"),
+            None,
+        )
+        .await;
+    assert_eq!(values(&body), vec!["192.0.2.9"]);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_reconciles_ttl() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;

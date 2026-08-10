@@ -122,7 +122,7 @@ impl std::str::FromStr for RecordType {
 
 impl RecordType {
     /// Return the record type's presentation-format mnemonic (e.g. `"A"`).
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             RecordType::A => "A",
             RecordType::AAAA => "AAAA",

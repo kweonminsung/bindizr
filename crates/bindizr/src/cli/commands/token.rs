@@ -87,10 +87,10 @@ async fn create_token(
     }
     println!(
         "Created at: {}",
-        &token.created_at.format("%Y-%m-%d %H:%M:%S")
+        token.created_at.format("%Y-%m-%d %H:%M:%S")
     );
     if let Some(expires) = token.expires_at {
-        println!("Expires at: {}", &expires.format("%Y-%m-%d %H:%M:%S"));
+        println!("Expires at: {}", expires.format("%Y-%m-%d %H:%M:%S"));
     } else {
         println!("Expires at: Never");
     }

@@ -89,9 +89,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
 
     let existing_records_with_name: Vec<_> = zone_records
         .iter()
-        .filter(|r| {
-            r.name.clone() == *stored_name && except_record_id.map(|id| id != r.id).unwrap_or(true)
-        })
+        .filter(|r| r.name == *stored_name && except_record_id.map(|id| id != r.id).unwrap_or(true))
         .collect();
 
     if has_matching_rdata(

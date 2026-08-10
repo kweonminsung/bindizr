@@ -193,8 +193,7 @@ fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
 // (plain ASCII labels, each <= 63 bytes), so only the derived SOA RNAME, whose
 // label boundaries can shift during the email-to-mailbox escaping, needs rechecking.
 fn validate_soa_wire_safety(admin_email: &str) -> Result<(), ServiceError> {
-    let soa_mailbox = SoaMailbox::from_email(admin_email)
-        .map_err(|e| ServiceError::invalid_zone(e.to_string()))?;
+    let soa_mailbox = SoaMailbox::from_email(admin_email).map_err(ServiceError::invalid_zone)?;
     soa_mailbox
         .classify_wire_labels()
         .map_err(|e| ServiceError::invalid_zone(format!("admin email SOA RNAME {}", e)))

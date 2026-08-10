@@ -1,5 +1,7 @@
 //! Render a zone as BIND master-file text, the inverse of `zone import`.
 
+use std::fmt::Write as _;
+
 use bindizr_core::dns::name::to_fqdn;
 
 use super::{ZoneService, validation::normalize_zone_name};
@@ -64,18 +66,14 @@ impl ZoneService {
             zone.minimum_ttl,
         ));
 
-        // Deterministic order: owner name, then type, then rdata.
-        records.sort_by(|a, b| {
+        // Deterministic order: owner name, then type, then rdata. Keyed up front
+        // because a comparator would re-render the rdata on every comparison.
+        records.sort_by_cached_key(|r| {
             (
-                &a.name,
-                a.record_type.to_string(),
-                a.record_type.presentation_rdata(&a.value, a.priority),
+                r.name.clone(),
+                r.record_type.as_str(),
+                r.record_type.presentation_rdata(&r.value, r.priority),
             )
-                .cmp(&(
-                    &b.name,
-                    b.record_type.to_string(),
-                    b.record_type.presentation_rdata(&b.value, b.priority),
-                ))
         });
 
         for record in &records {
@@ -84,16 +82,19 @@ impl ZoneService {
             if record.record_type == RecordType::SOA {
                 continue;
             }
-            out.push_str(&format!(
-                "{}\t{}\tIN\t{}\t{}\n",
-                &record.name,
+            // Written straight into `out`: a zone can hold millions of records,
+            // and `push_str(&format!(..))` would allocate a line at a time.
+            let _ = writeln!(
+                out,
+                "{}\t{}\tIN\t{}\t{}",
+                record.name,
                 // Match the XFR encoder's served TTL so the export round-trips.
                 record.ttl,
                 record.record_type,
                 record
                     .record_type
                     .presentation_rdata(&record.value, record.priority),
-            ));
+            );
         }
 
         Ok(out)

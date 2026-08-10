@@ -236,8 +236,9 @@ fn group_rrsets(
     groups
 }
 
-fn group_identities(group: &[GroupedRecord]) -> Vec<(String, i32)> {
-    let mut ids: Vec<_> = group.iter().map(|r| r.identity.clone()).collect();
+/// Borrowed so the two sides can be compared without copying every identity.
+fn group_identities(group: &[GroupedRecord]) -> Vec<&(String, i32)> {
+    let mut ids: Vec<_> = group.iter().map(|r| &r.identity).collect();
     ids.sort();
     ids
 }
@@ -253,7 +254,7 @@ pub(crate) fn build_record_diff(
     before: &[ReconstructedRecord],
     after: &[ReconstructedRecord],
 ) -> RecordDiff {
-    let before_groups = group_rrsets(zone, before);
+    let mut before_groups = group_rrsets(zone, before);
     let mut after_groups = group_rrsets(zone, after);
 
     let mut keys: Vec<(String, String)> = before_groups.keys().cloned().collect();
@@ -269,9 +270,10 @@ pub(crate) fn build_record_diff(
     let (mut added, mut removed, mut changed) = (0usize, 0usize, 0usize);
 
     for key in keys {
-        let (name, record_type) = key.clone();
-        let before = before_groups.get(&key);
+        // Both maps are drained here, so each group can be moved into its entry.
+        let before = before_groups.remove(&key);
         let after = after_groups.remove(&key);
+        let (name, record_type) = key;
         match (before, after) {
             (None, Some(after)) => {
                 added += 1;
@@ -289,18 +291,18 @@ pub(crate) fn build_record_diff(
                     change: "removed".to_string(),
                     name,
                     record_type,
-                    from: group_values(before.clone()),
+                    from: group_values(before),
                     to: Vec::new(),
                 });
             }
             (Some(before), Some(after)) => {
-                if group_identities(before) != group_identities(&after) {
+                if group_identities(&before) != group_identities(&after) {
                     changed += 1;
                     entries.push(RecordDiffEntry {
                         change: "changed".to_string(),
                         name,
                         record_type,
-                        from: group_values(before.clone()),
+                        from: group_values(before),
                         to: group_values(after),
                     });
                 }
@@ -322,9 +324,9 @@ pub(crate) fn build_record_diff(
 /// Deterministic output order (hash-map iteration order is not).
 fn sort_records(records: &mut [ReconstructedRecord]) {
     records.sort_by(|a, b| {
-        (&a.name, a.record_type.to_string(), &a.value).cmp(&(
+        (&a.name, a.record_type.as_str(), &a.value).cmp(&(
             &b.name,
-            b.record_type.to_string(),
+            b.record_type.as_str(),
             &b.value,
         ))
     });

@@ -38,9 +38,7 @@ pub(super) fn soa_replacement_changes(
             operation: operation.to_string(),
             record_name: OwnerName::apex(),
             record_type: "SOA".to_string(),
-            record_value: zone
-                .soa_rdata()
-                .map_err(|e| ServiceError::invalid_zone(e.to_string()))?,
+            record_value: zone.soa_rdata().map_err(ServiceError::invalid_zone)?,
             record_ttl: zone.ttl,
             record_priority: None,
         })

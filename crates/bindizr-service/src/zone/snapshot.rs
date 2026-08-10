@@ -43,7 +43,7 @@ impl ZoneService {
                 primary_ns: zone.primary_ns.clone(),
                 admin_email: zone
                     .soa_mailbox()
-                    .map_err(|e| ServiceError::invalid_zone(e.to_string()))?
+                    .map_err(ServiceError::invalid_zone)?
                     .into_encoded(),
                 ttl: zone.ttl,
                 refresh: zone.refresh,

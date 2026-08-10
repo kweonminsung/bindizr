@@ -48,7 +48,7 @@ fn record_matches(
     value: &str,
     priority: Option<i32>,
 ) -> bool {
-    existing.name.clone() == *stored_name
+    existing.name == *stored_name
         && existing.record_type == *record_type
         && record_type.values_equal(&existing.value, existing.priority, value, priority)
 }
@@ -220,31 +220,27 @@ impl RecordService {
             })?;
             timings.load_existing_ms = elapsed_ms(t);
 
-            // Parse each existing owner name once; the passes below reuse it.
-            let t = Instant::now();
-            let existing_names: Vec<OwnerName> =
-                existing_records.iter().map(|e| e.name.clone()).collect();
-
             // Index existing records by owner name so each existing/desired
             // record is reconciled against only same-name rows.
+            let t = Instant::now();
             let mut existing_by_name: HashMap<OwnerName, Vec<&Record>> =
                 HashMap::with_capacity(existing_records.len());
-            for (i, record) in existing_records.iter().enumerate() {
+            for record in existing_records.iter() {
                 existing_by_name
-                    .entry(existing_names[i].clone())
+                    .entry(record.name.clone())
                     .or_default()
                     .push(record);
             }
             timings.build_index_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let desired_matches_existing = |e: &Record, e_name: &OwnerName| {
+            let desired_matches_existing = |e: &Record| {
                 desired_by_name
-                    .get(e_name)
+                    .get(&e.name)
                     .is_some_and(|idxs| idxs.iter().any(|&i| desired_matches(e, &desired[i])))
             };
-            let desired_key_matches_existing = |e: &Record, e_name: &OwnerName| {
-                desired_by_name.get(e_name).is_some_and(|idxs| {
+            let desired_key_matches_existing = |e: &Record| {
+                desired_by_name.get(&e.name).is_some_and(|idxs| {
                     idxs.iter()
                         .any(|&i| desired[i].prepared.record_type == e.record_type)
                 })
@@ -255,21 +251,17 @@ impl RecordService {
                 ImportMode::Append => Vec::new(),
                 ImportMode::Replace => existing_records
                     .iter()
-                    .enumerate()
-                    .filter(|(i, e)| {
-                        !is_protected(&zone, e) && !desired_matches_existing(e, &existing_names[*i])
-                    })
-                    .map(|(_, e)| e.clone())
+                    .filter(|e| !is_protected(&zone, e) && !desired_matches_existing(e))
+                    .cloned()
                     .collect(),
                 ImportMode::Upsert => existing_records
                     .iter()
-                    .enumerate()
-                    .filter(|(i, e)| {
-                        desired_key_matches_existing(e, &existing_names[*i])
+                    .filter(|e| {
+                        desired_key_matches_existing(e)
                             && !is_protected(&zone, e)
-                            && !desired_matches_existing(e, &existing_names[*i])
+                            && !desired_matches_existing(e)
                     })
-                    .map(|(_, e)| e.clone())
+                    .cloned()
                     .collect(),
             };
 
@@ -315,10 +307,10 @@ impl RecordService {
             let del_ids: HashSet<i32> = dels.iter().chain(&ttl_dels).map(|d| d.id).collect();
             let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
                 HashMap::with_capacity(existing_records.len());
-            for (i, e) in existing_records.iter().enumerate() {
+            for e in existing_records.iter() {
                 if !del_ids.contains(&e.id) {
                     simulated_by_name
-                        .entry(existing_names[i].clone())
+                        .entry(e.name.clone())
                         .or_default()
                         .push(e.clone());
                 }

@@ -53,8 +53,8 @@ impl DnsMessageBuilder {
     }
 
     pub(crate) fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
-        let admin_email = SoaMailbox::from_email(&zone.admin_email)
-            .map_err(|e| XfrError::ProtocolError(e.to_string()))?;
+        let admin_email =
+            SoaMailbox::from_email(&zone.admin_email).map_err(XfrError::ProtocolError)?;
         let soa = Soa::new(
             parse_name(&zone.primary_ns)?,
             parse_name(admin_email.as_str())?,
