@@ -522,9 +522,8 @@ async fn zone_import_zone_file_upsert_mode_replaces_only_named_rrsets() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // `www` holds a two-record A RRset, plus a TXT RRset on the same owner and
-    // an A RRset on another owner — the three ways upsert must differ from
-    // replace, which would drop all of them.
+    // The three ways upsert must differ from replace, which would drop all of
+    // these: a multi-record RRset, another type on that owner, another owner.
     seed_records(
         &app,
         zone_name,

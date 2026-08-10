@@ -246,6 +246,47 @@ fn change_set_skips_creates_that_already_exist() {
     assert!(change_set.creates.is_empty());
 }
 
+// The duplicate check behind the change set ignores TTL, so a create that got
+// past this one would conflict on every retry.
+#[test]
+fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
+    let zone = test_zone(1, "example.com");
+    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
+    let request = ExternalDnsChangesRequest {
+        creates: vec![rrset("app.example.com", "A", None, &["192.0.2.1"])],
+        updates: vec![],
+        deletes: vec![],
+    };
+
+    // No TTL on the rrset, so it resolves to the zone's 3600 — not the row's 300.
+    let change_set = compute_zone_change_set(&zone, &existing, &zone_ops(&request, &zone)).unwrap();
+
+    assert!(change_set.deletes.is_empty());
+    assert!(change_set.creates.is_empty());
+}
+
+// The counterpart: a TTL-only update is a real change, not a self-cancelling one.
+#[test]
+fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
+    let zone = test_zone(1, "example.com");
+    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
+    let request = ExternalDnsChangesRequest {
+        creates: vec![],
+        updates: vec![ExternalDnsRrsetUpdate {
+            old: rrset("app.example.com", "A", Some(300), &["192.0.2.1"]),
+            new: rrset("app.example.com", "A", Some(900), &["192.0.2.1"]),
+        }],
+        deletes: vec![],
+    };
+
+    let change_set = compute_zone_change_set(&zone, &existing, &zone_ops(&request, &zone)).unwrap();
+
+    assert_eq!(change_set.deletes.len(), 1);
+    assert_eq!(change_set.deletes[0].id, 10);
+    assert_eq!(change_set.creates.len(), 1);
+    assert_eq!(change_set.creates[0].ttl, 900);
+}
+
 #[test]
 fn change_set_skips_deletes_of_absent_records() {
     let zone = test_zone(1, "example.com");

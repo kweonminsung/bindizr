@@ -11,6 +11,7 @@ use crate::{
     model::{api_token::ApiToken, zone_token_policy::ZoneTokenPolicy},
     policy_pattern::{normalize_pattern, normalize_types},
     repository::RepositoryService,
+    token::normalize_token_name,
     zone::ZoneService,
 };
 
@@ -114,7 +115,7 @@ impl ZoneTokenPolicyService {
 }
 
 async fn find_token(token_name: &str) -> Result<ApiToken, ServiceError> {
-    RepositoryService::get_api_token_by_name(token_name.trim())
+    RepositoryService::get_api_token_by_name(&normalize_token_name(token_name)?)
         .await?
         .ok_or_else(|| ServiceError::token_not_found(token_name))
 }

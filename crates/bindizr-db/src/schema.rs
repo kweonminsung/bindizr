@@ -1,4 +1,7 @@
 //! Table-creation DDL for each backend, run at startup to bring the schema up.
+//!
+//! Name columns are `VARCHAR(512)`, not 255: rows hold the escaped presentation
+//! form, whose `\` escapes can nearly double the 253-byte wire limit.
 
 pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
     vec![
@@ -20,7 +23,7 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(255) NOT NULL,
+            name VARCHAR(512) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             value TEXT NOT NULL,
             display_value TEXT NOT NULL,
@@ -38,7 +41,7 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
             zone_id INT NOT NULL,
             serial INT NOT NULL,
             operation VARCHAR(10) NOT NULL,
-            record_name VARCHAR(255) NOT NULL,
+            record_name VARCHAR(512) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             record_value TEXT NOT NULL,
             record_ttl INT NOT NULL,
@@ -100,7 +103,7 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,
             tsig_key_id INT NOT NULL,
-            record_name_pattern VARCHAR(255) NOT NULL,
+            record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
@@ -114,7 +117,7 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,
             api_token_id INT NOT NULL,
-            record_name_pattern VARCHAR(255) NOT NULL,
+            record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
@@ -146,7 +149,7 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
+            name VARCHAR(512) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             value TEXT NOT NULL,
             display_value TEXT NOT NULL,
@@ -166,7 +169,7 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
             zone_id INTEGER NOT NULL,
             serial INTEGER NOT NULL,
             operation VARCHAR(10) NOT NULL,
-            record_name VARCHAR(255) NOT NULL,
+            record_name VARCHAR(512) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             record_value TEXT NOT NULL,
             record_ttl INTEGER NOT NULL,
@@ -230,7 +233,7 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
             id SERIAL PRIMARY KEY,
             zone_id INTEGER NOT NULL,
             tsig_key_id INTEGER NOT NULL,
-            record_name_pattern VARCHAR(255) NOT NULL,
+            record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
@@ -248,7 +251,7 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
             id SERIAL PRIMARY KEY,
             zone_id INTEGER NOT NULL,
             api_token_id INTEGER NOT NULL,
-            record_name_pattern VARCHAR(255) NOT NULL,
+            record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,

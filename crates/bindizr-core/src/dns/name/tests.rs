@@ -412,3 +412,41 @@ fn owner_name_escapes_master_file_metacharacters() {
         assert_eq!(owner.to_string(), rendered, "{input:?}");
     }
 }
+
+// The wire limit applies to decoded labels but rows hold the escaped form, so
+// the column must fit the escaped worst case. Keep in step with the DB schema.
+#[test]
+fn worst_case_stored_form_fits_the_schema_column_width() {
+    const SCHEMA_COLUMN_WIDTH: usize = 512;
+    let zone = ZoneName::parse("e.co").unwrap();
+
+    // Every `$` escapes, doubling each label; four is the split that maximizes
+    // the rendering under the 63-byte label cap and the wire budget.
+    let labels = [
+        "$".repeat(63),
+        "$".repeat(63),
+        "$".repeat(63),
+        "$".repeat(56),
+    ];
+    let decoded: usize = labels.iter().map(String::len).sum();
+
+    let owner = OwnerName::parse_in_zone(&labels.join("."), &zone)
+        .expect("the largest name the wire limit admits inside this zone");
+    let stored = owner.to_stored();
+
+    assert_eq!(stored.len(), decoded * 2 + labels.len() - 1);
+    assert!(
+        stored.len() <= SCHEMA_COLUMN_WIDTH,
+        "stored form is {} bytes, column holds {}",
+        stored.len(),
+        SCHEMA_COLUMN_WIDTH
+    );
+
+    // One more byte of name is refused, so nothing longer can reach a row.
+    let mut longer = labels.to_vec();
+    longer[3].push('$');
+    assert_eq!(
+        OwnerName::parse_in_zone(&longer.join("."), &zone),
+        Err(ParseNameError::TooLong)
+    );
+}

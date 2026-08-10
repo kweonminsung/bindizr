@@ -29,7 +29,7 @@ impl TokenService {
     ) -> Result<ApiToken, ServiceError> {
         caller.require_global("manage API tokens")?;
 
-        let name = validate_token_name(name)?;
+        let name = normalize_token_name(name)?;
         validate_expires_in_days(expires_in_days)?;
 
         if RepositoryService::get_api_token_by_name(&name)
@@ -81,7 +81,7 @@ impl TokenService {
     pub async fn delete_token(caller: &Caller, name: &str) -> Result<(), ServiceError> {
         caller.require_global("manage API tokens")?;
 
-        let token = RepositoryService::get_api_token_by_name(name.trim())
+        let token = RepositoryService::get_api_token_by_name(&normalize_token_name(name)?)
             .await?
             .ok_or_else(|| ServiceError::token_not_found(name))?;
 
@@ -89,24 +89,26 @@ impl TokenService {
     }
 }
 
-fn validate_token_name(name: &str) -> Result<String, ServiceError> {
-    let trimmed = name.trim();
+/// Lowercased so one name means one token on every backend: MySQL compares the
+/// column case-insensitively, the others exactly.
+pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
+    let name = name.trim().to_lowercase();
 
-    if trimmed.is_empty() {
+    if name.is_empty() {
         return Err(ServiceError::invalid_input("token name must not be empty"));
     }
-    if has_whitespace_or_control(trimmed) {
+    if has_whitespace_or_control(&name) {
         return Err(ServiceError::invalid_input(
             "token name must not contain whitespace or control characters",
         ));
     }
-    if trimmed.len() > MAX_TOKEN_NAME_LEN {
+    if name.len() > MAX_TOKEN_NAME_LEN {
         return Err(ServiceError::invalid_input(
             "token name must be 255 bytes or fewer",
         ));
     }
 
-    Ok(trimmed.to_string())
+    Ok(name)
 }
 
 fn validate_expires_in_days(expires_in_days: Option<i64>) -> Result<(), ServiceError> {

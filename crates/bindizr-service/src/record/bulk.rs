@@ -180,8 +180,7 @@ impl RecordService {
             timings.load_zone_ms = elapsed_ms(t);
 
             // Before any row is read, so an ungranted caller gets 403 rather than
-            // a constraint error naming what the zone holds; dry runs included, so
-            // a preview never claims a batch the caller could not apply.
+            // a constraint error naming what the zone holds; dry runs included.
             // Unnormalizable names are left out — the validation loop reports them.
             let writes: Vec<RecordWrite<'_>> = prepared
                 .iter()

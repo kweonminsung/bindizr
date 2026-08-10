@@ -224,23 +224,25 @@ pub(super) fn compute_zone_change_set(
     for add in &ops.adds {
         let ttl = add.ttl.unwrap_or(zone.ttl);
         for value in &add.values {
-            let matches = |row: &Record| {
+            let same_rdata = |row: &Record| {
                 row.name == add.name
                     && row.record_type == add.record_type
-                    && row.ttl == ttl
                     && add.record_type.values_equal(&row.value, None, value, None)
             };
+            let matches = |row: &Record| same_rdata(row) && row.ttl == ttl;
 
-            // An unchanged update cancels its own delete instead of
-            // rewriting the row.
+            // An unchanged update cancels its own delete instead of rewriting
+            // the row. TTL-sensitive, so a TTL-only update is still a change.
             if let Some(pos) = deletes.iter().position(&matches) {
                 deletes.remove(pos);
                 continue;
             }
-            // Idempotent create: an identical surviving row already exists.
+            // Idempotent create: a surviving row already holds this rdata. TTL
+            // is excluded to match the duplicate check behind this one, which
+            // would otherwise reject the create as a conflict.
             if existing
                 .iter()
-                .any(|row| deletes.iter().all(|d| d.id != row.id) && matches(row))
+                .any(|row| deletes.iter().all(|d| d.id != row.id) && same_rdata(row))
             {
                 continue;
             }
