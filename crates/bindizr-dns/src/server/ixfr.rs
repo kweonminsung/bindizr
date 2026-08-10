@@ -1,5 +1,6 @@
 use std::{collections::HashMap, net::IpAddr};
 
+use bindizr_core::dns::name::ZoneName;
 use domain::base::iana::Rtype;
 use tokio::net::TcpStream;
 
@@ -332,7 +333,7 @@ async fn stream_ixfr_body(
 fn add_change(
     builder: &mut wire::DnsMessageBuilder,
     change: &delta::ZoneChange,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<(), XfrError> {
     builder.add_record_parts(
         zone_name,

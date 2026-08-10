@@ -3,7 +3,7 @@ use std::{
     time::Instant,
 };
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
@@ -71,7 +71,7 @@ fn is_protected(zone: &Zone, record: &Record) -> bool {
 /// Outcome of the transactional part of a zone-file import.
 struct AppliedImport {
     response: ImportZoneFileResponse,
-    zone_name: String,
+    zone_name: ZoneName,
     changed: bool,
 }
 
@@ -116,7 +116,7 @@ impl RecordService {
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let parsed = parse_zone_file(&request.content, &zone.name, zone.ttl);
+            let parsed = parse_zone_file(&request.content, zone.name.as_str(), zone.ttl);
             timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
@@ -446,7 +446,9 @@ impl RecordService {
         );
 
         let t = Instant::now();
-        if changed && let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
+        if changed
+            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
+        {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
         let notify_ms = elapsed_ms(t);

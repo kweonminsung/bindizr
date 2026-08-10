@@ -54,6 +54,13 @@ impl ZoneName {
     }
 }
 
+/// Decodes the stored form, so a row column can hold a zone name directly.
+impl From<String> for ZoneName {
+    fn from(value: String) -> Self {
+        Self::from_row(&value)
+    }
+}
+
 impl std::fmt::Display for ZoneName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)

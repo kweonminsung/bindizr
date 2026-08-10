@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 
 use super::{
     RecordService,
@@ -253,7 +253,7 @@ impl RecordService {
 
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            Ok::<(Record, String), ServiceError>((updated_record, zone_name))
+            Ok::<(Record, ZoneName), ServiceError>((updated_record, zone_name))
         }
         .await;
 
@@ -272,7 +272,7 @@ impl RecordService {
             updated_record.id
         );
 
-        if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
+        if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 

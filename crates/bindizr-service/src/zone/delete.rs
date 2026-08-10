@@ -1,4 +1,4 @@
-use bindizr_core::dns::CATALOG_ZONE_NAME;
+use bindizr_core::dns::{CATALOG_ZONE_NAME, name::ZoneName};
 
 use super::ZoneService;
 use crate::{
@@ -23,7 +23,7 @@ impl ZoneService {
                     log_error!("Failed to delete zone: {}", e);
                     ServiceError::internal("Failed to delete zone".to_string())
                 })?;
-            Ok::<(i32, String), ServiceError>((zone.id, zone.name))
+            Ok::<(i32, ZoneName), ServiceError>((zone.id, zone.name))
         }
         .await;
 

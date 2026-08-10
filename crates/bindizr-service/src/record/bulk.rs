@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
@@ -322,7 +322,7 @@ impl RecordService {
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
             timings.serial_ms = elapsed_ms(t);
 
-            Ok::<(Vec<Record>, String, RecordDiff), ServiceError>((
+            Ok::<(Vec<Record>, ZoneName, RecordDiff), ServiceError>((
                 created_records,
                 zone.name,
                 RecordDiff::default(),
@@ -341,7 +341,8 @@ impl RecordService {
         );
 
         let t = Instant::now();
-        if !dry_run && let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await
+        if !dry_run
+            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }

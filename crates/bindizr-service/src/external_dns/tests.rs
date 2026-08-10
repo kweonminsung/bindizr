@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
@@ -17,7 +17,7 @@ use crate::{
 fn test_zone(id: i32, name: &str) -> Zone {
     Zone {
         id,
-        name: name.to_string(),
+        name: ZoneName::from_row(name),
         primary_ns: format!("ns1.{}", name),
         admin_email: format!("hostmaster@{}", name),
         ttl: 3600,
@@ -186,9 +186,9 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
 
     let grouped = group_ops_by_zone(&zones, ops).unwrap();
     assert_eq!(grouped.len(), 1);
-    assert!(grouped.contains_key("internal.example.com"));
+    assert!(grouped.contains_key(&ZoneName::from_row("internal.example.com")));
     assert_eq!(
-        grouped["internal.example.com"].adds[0].name,
+        grouped[&ZoneName::from_row("internal.example.com")].adds[0].name,
         OwnerName::from_row("api")
     );
 }

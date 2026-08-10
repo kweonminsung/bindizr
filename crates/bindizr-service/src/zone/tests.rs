@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::apex_ns_rrset_ttl;
@@ -7,7 +7,7 @@ use crate::model::{record::RecordType, zone::Zone};
 fn test_zone() -> Zone {
     Zone {
         id: 1,
-        name: "example.com".to_string(),
+        name: ZoneName::from_row("example.com"),
         primary_ns: "ns1.example.com".to_string(),
         admin_email: "hostmaster@example.com".to_string(),
         ttl: 3600,

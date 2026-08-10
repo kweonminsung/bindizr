@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 
 use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
 
 /// Identity of the deleted record, carried out of the transaction for logging.
 struct DeletedRecord {
-    zone_name: String,
+    zone_name: ZoneName,
     record_name: OwnerName,
     record_type: String,
     record_value: String,
@@ -122,7 +122,7 @@ impl RecordService {
             record_id
         );
 
-        if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
+        if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 

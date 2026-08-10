@@ -98,7 +98,7 @@ impl Caller {
         if self.zone_visible(zone.id) {
             Ok(())
         } else {
-            Err(ServiceError::zone_not_found(&zone.name))
+            Err(ServiceError::zone_not_found(zone.name.as_str()))
         }
     }
 

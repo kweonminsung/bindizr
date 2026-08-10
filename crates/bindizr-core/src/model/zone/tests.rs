@@ -1,12 +1,15 @@
 use chrono::Utc;
 
 use super::Zone;
-use crate::{dns::name::OwnerName, model::record::RecordType};
+use crate::{
+    dns::name::{OwnerName, ZoneName},
+    model::record::RecordType,
+};
 
 fn test_zone() -> Zone {
     Zone {
         id: 1,
-        name: "example.com".to_string(),
+        name: ZoneName::from_row("example.com"),
         primary_ns: "ns1.example.com".to_string(),
         admin_email: "hostmaster@example.com".to_string(),
         ttl: 3600,

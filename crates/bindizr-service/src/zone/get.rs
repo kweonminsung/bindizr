@@ -16,7 +16,7 @@ impl ZoneService {
     /// Look up a zone by name, returning `None` if it does not exist.
     pub async fn find_by_name(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        RepositoryService::get_zone_by_name(&lookup_name).await
+        RepositoryService::get_zone_by_name(lookup_name.as_str()).await
     }
 
     /// Look up a zone by name within the caller's transaction.
@@ -25,7 +25,7 @@ impl ZoneService {
         zone_name: &str,
     ) -> Result<Option<Zone>, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        RepositoryService::get_zone_by_name_tx(tx, &lookup_name).await
+        RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str()).await
     }
 
     /// Get the recorded zone changes between two serials, for building an IXFR.
@@ -105,7 +105,7 @@ impl ZoneService {
     pub(crate) async fn lookup_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
 
-        match RepositoryService::get_zone_by_name(&lookup_name).await {
+        match RepositoryService::get_zone_by_name(lookup_name.as_str()).await {
             Ok(Some(zone)) => Ok(zone),
             Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
             Err(e) => {
@@ -122,7 +122,7 @@ impl ZoneService {
         zone_name: &str,
     ) -> Result<Zone, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        match RepositoryService::get_zone_by_name_tx(tx, &lookup_name).await {
+        match RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str()).await {
             Ok(Some(zone)) => Ok(zone),
             Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
             Err(e) => {

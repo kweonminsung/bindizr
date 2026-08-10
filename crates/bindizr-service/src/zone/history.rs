@@ -3,10 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use bindizr_core::dns::{
-    name::{OwnerName, ZoneName},
-    record::SoaMailbox,
-};
+use bindizr_core::dns::{name::OwnerName, record::SoaMailbox};
 use chrono::Utc;
 
 use super::{
@@ -197,7 +194,7 @@ async fn require_serial(
     }
     RepositoryService::get_zone_snapshot_by_serial_tx(tx, zone.id, serial)
         .await?
-        .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, serial))?;
+        .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), serial))?;
     Ok(())
 }
 
@@ -218,7 +215,7 @@ fn group_rrsets(
     let mut groups: BTreeMap<(String, String), Vec<GroupedRecord>> = BTreeMap::new();
     for record in records {
         let key = (
-            record.name.to_fqdn(&ZoneName::from_row(&zone.name)),
+            record.name.to_fqdn(&zone.name),
             record.record_type.to_string(),
         );
         groups.entry(key).or_default().push(GroupedRecord {
@@ -410,14 +407,14 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to load snapshot").await?;
 
         let result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, &lookup_name).await?;
+            let zone = ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str()).await?;
             if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
             let snapshot =
                 RepositoryService::get_zone_snapshot_by_serial_tx(&mut tx, zone.id, serial)
                     .await?
-                    .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, serial))?;
+                    .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), serial))?;
 
             let records = records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
 
@@ -443,7 +440,7 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to diff snapshots").await?;
 
         let result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, &lookup_name).await?;
+            let zone = ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str()).await?;
             if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
@@ -483,7 +480,7 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to roll back zone").await?;
 
         let apply_result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, &lookup_name).await?;
+            let zone = ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str()).await?;
 
             if target_serial < 1 || target_serial >= zone.serial {
                 return Err(ServiceError::invalid_input(format!(
@@ -494,7 +491,9 @@ impl ZoneService {
             let snapshot =
                 RepositoryService::get_zone_snapshot_by_serial_tx(&mut tx, zone.id, target_serial)
                     .await?
-                    .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, target_serial))?;
+                    .ok_or_else(|| {
+                        ServiceError::snapshot_not_found(zone.name.as_str(), target_serial)
+                    })?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let restored_zone = restored_zone_from_snapshot(&zone, &snapshot, new_serial)?;
@@ -681,7 +680,8 @@ impl ZoneService {
                 response.summary.records_added,
                 response.summary.records_deleted
             );
-            if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
+            if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
+            {
                 log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
             }
         }

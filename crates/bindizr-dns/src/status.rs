@@ -18,7 +18,7 @@ pub async fn zone_status(
 ) -> Result<ZoneStatusResponse, ServiceError> {
     let zone = ZoneService::get_by_name(caller, zone_name).await?;
 
-    let probes = probe::probe_secondaries(&zone.name)
+    let probes = probe::probe_secondaries(zone.name.as_str())
         .await
         .map_err(|e| ServiceError::internal(e.to_string()))?;
 

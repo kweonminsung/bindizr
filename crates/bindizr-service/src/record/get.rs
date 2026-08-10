@@ -72,16 +72,16 @@ impl RecordService {
 
         // Scoped callers read unknown and invisible zones alike as empty
         // pages, so skip the 404 probe.
-        if let Some(name) = zone_name.as_deref()
+        if let Some(name) = zone_name.as_ref()
             && zone_ids.is_none()
         {
-            ZoneService::lookup_by_name(name).await?;
+            ZoneService::lookup_by_name(name.as_str()).await?;
         }
 
-        let name = normalize_filter_record_name(filter.name, zone_name.as_deref());
+        let name = normalize_filter_record_name(filter.name, zone_name.as_ref());
 
         let record_filter = RecordFilter {
-            zone_name,
+            zone_name: zone_name.map(|name| name.to_string()),
             name,
             record_type: filter.record_type,
             value: filter.value,
@@ -124,18 +124,20 @@ impl RecordService {
     }
 }
 
-fn normalize_filter_record_name(name: Option<String>, zone_name: Option<&str>) -> Option<String> {
+fn normalize_filter_record_name(
+    name: Option<String>,
+    zone_name: Option<&ZoneName>,
+) -> Option<String> {
     name.map(|name| {
         let trimmed = name.trim();
-        let Some(zone_name) = zone_name else {
+        let Some(zone) = zone_name else {
             return trimmed.to_string();
         };
 
         // An in-zone name is matched in its absolute form; anything else is
         // passed through so the filter can still match it literally.
-        let zone = ZoneName::from_row(zone_name);
-        match OwnerName::parse_absolute_in_zone(trimmed, &zone) {
-            Ok(owner) => owner.to_fqdn(&zone),
+        match OwnerName::parse_absolute_in_zone(trimmed, zone) {
+            Ok(owner) => owner.to_fqdn(zone),
             Err(_) => trimmed.to_string(),
         }
     })

@@ -169,8 +169,8 @@ pub(super) fn convert_request(
 pub(super) fn group_ops_by_zone(
     zones: &[Zone],
     ops: Vec<PendingOp>,
-) -> Result<BTreeMap<String, ZoneOps>, ServiceError> {
-    let mut grouped: BTreeMap<String, ZoneOps> = BTreeMap::new();
+) -> Result<BTreeMap<ZoneName, ZoneOps>, ServiceError> {
+    let mut grouped: BTreeMap<ZoneName, ZoneOps> = BTreeMap::new();
 
     for pending in ops {
         let zone = find_authoritative_zone(zones, &pending.op.name).ok_or_else(|| {
@@ -181,11 +181,8 @@ pub(super) fn group_ops_by_zone(
         })?;
 
         let op = ZoneRrsetOp {
-            name: OwnerName::parse_absolute_in_zone(
-                &pending.op.name,
-                &ZoneName::from_row(&zone.name),
-            )
-            .expect("find_authoritative_zone matched the name inside this zone"),
+            name: OwnerName::parse_absolute_in_zone(&pending.op.name, &zone.name)
+                .expect("find_authoritative_zone matched the name inside this zone"),
             record_type: pending.op.record_type,
             ttl: pending.op.ttl,
             values: pending.op.values,
@@ -333,9 +330,9 @@ impl ExternalDnsService {
             // BTreeMap iteration locks zones in name order, so concurrent
             // multi-zone requests cannot deadlock on row locks.
             for (zone_name, ops) in &zone_ops {
-                let zone = RepositoryService::get_zone_by_name_tx(&mut tx, zone_name)
+                let zone = RepositoryService::get_zone_by_name_tx(&mut tx, zone_name.as_str())
                     .await?
-                    .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
+                    .ok_or_else(|| ServiceError::zone_not_found(zone_name.as_str()))?;
 
                 let writes: Vec<RecordWrite<'_>> = ops
                     .adds
@@ -389,7 +386,7 @@ impl ExternalDnsService {
 
                 records_deleted += change_set.deletes.len() as u32;
                 records_added += change_set.creates.len() as u32;
-                changed_zones.push(zone.name.clone());
+                changed_zones.push(zone.name.to_string());
             }
 
             Ok::<_, ServiceError>((changed_zones, records_added, records_deleted))

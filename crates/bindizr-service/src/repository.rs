@@ -317,7 +317,7 @@ impl RepositoryService {
         get_zone_repository()
             .create_tx(tx, zone)
             .await
-            .map_err(|e| zone_name_race_error(&name, "create", e))
+            .map_err(|e| zone_name_race_error(name.as_str(), "create", e))
     }
 
     pub(super) async fn update_zone_tx(
@@ -328,7 +328,7 @@ impl RepositoryService {
         get_zone_repository()
             .update_tx(tx, zone)
             .await
-            .map_err(|e| zone_name_race_error(&name, "update", e))
+            .map_err(|e| zone_name_race_error(name.as_str(), "update", e))
     }
 
     /// Bump only the zone serial, leaving its other columns untouched.

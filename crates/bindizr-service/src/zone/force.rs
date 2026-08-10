@@ -22,7 +22,7 @@ impl ZoneService {
                     // Bump each zone in its own transaction so the new serial
                     // derives from the current row and a concurrent edit to other
                     // fields is not clobbered.
-                    bumped_zones.push(Self::force_increment_zone_serial(&zone.name).await?);
+                    bumped_zones.push(Self::force_increment_zone_serial(zone.name.as_str()).await?);
                 }
 
                 Ok(bumped_zones)

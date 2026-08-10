@@ -11,7 +11,7 @@ const MIN_TTL: i32 = 60;
 const MAX_TTL: i32 = 604_800;
 
 pub(super) struct ValidatedCreateZoneRequest {
-    pub name: String,
+    pub name: ZoneName,
     pub primary_ns: String,
     pub admin_email: String,
     pub ttl: i32,
@@ -115,7 +115,7 @@ fn normalize_email(value: &str) -> Result<String, ServiceError> {
     Ok(normalized)
 }
 
-pub(crate) fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
+pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed == "." {
@@ -134,15 +134,13 @@ pub(crate) fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
 }
 
 fn normalize_primary_ns(value: &str) -> Result<String, ServiceError> {
-    normalize_domain_name(value, "primary NS")
+    Ok(normalize_domain_name(value, "primary NS")?.to_string())
 }
 
 /// Parse a domain name, phrasing any rejection against `field`. The rules
 /// live on [`ZoneName`]; this only maps the failure to a zone error.
-fn normalize_domain_name(value: &str, field: &str) -> Result<String, ServiceError> {
-    ZoneName::parse(value)
-        .map(|name| name.as_str().to_string())
-        .map_err(|e| ServiceError::invalid_zone(format!("{} {}", field, e)))
+fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceError> {
+    ZoneName::parse(value).map_err(|e| ServiceError::invalid_zone(format!("{} {}", field, e)))
 }
 
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {

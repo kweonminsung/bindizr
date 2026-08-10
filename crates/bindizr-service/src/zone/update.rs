@@ -1,4 +1,7 @@
-use bindizr_core::dns::{CATALOG_ZONE_NAME, name::OwnerName};
+use bindizr_core::dns::{
+    CATALOG_ZONE_NAME,
+    name::{OwnerName, ZoneName},
+};
 
 use super::{ZoneService, apex_ns_rrset_ttl};
 use crate::{
@@ -16,7 +19,7 @@ use crate::{
 /// Outcome of the transactional part of a zone update.
 struct AppliedZoneUpdate {
     zone: Zone,
-    previous_name: String,
+    previous_name: ZoneName,
     new_serial: i32,
 }
 
@@ -85,7 +88,7 @@ impl ZoneService {
             name: patch
                 .new_name
                 .clone()
-                .unwrap_or_else(|| existing.name.clone()),
+                .unwrap_or_else(|| existing.name.to_string()),
             primary_ns: patch
                 .primary_ns
                 .clone()
@@ -138,7 +141,7 @@ impl ZoneService {
             // deadlocks); renames that race past it hit the UNIQUE(name)
             // backstop, which maps to the same conflict error.
             if validated.name != existing_zone.name {
-                match RepositoryService::get_zone_by_name(&validated.name).await {
+                match RepositoryService::get_zone_by_name(validated.name.as_str()).await {
                     Ok(Some(zone)) if zone.id != zone_id => {
                         log_error!("Zone with name {} already exists", validated.name);
                         return Err(ServiceError::zone_conflict(format!(
@@ -254,7 +257,9 @@ impl ZoneService {
             updated_zone.id
         );
 
-        if let Err(e) = crate::notify::send_notify_after_update(Some(&updated_zone.name)).await {
+        if let Err(e) =
+            crate::notify::send_notify_after_update(Some(updated_zone.name.as_str())).await
+        {
             log_warn!(
                 "Failed to send NOTIFY for zone {}: {}",
                 updated_zone.name,

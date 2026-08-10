@@ -34,7 +34,7 @@ impl ZoneRepository for SqliteZoneRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
-        .bind(&zone.name)
+        .bind(zone.name.as_str())
         .bind(&zone.primary_ns)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
@@ -265,7 +265,7 @@ impl ZoneRepository for SqliteZoneRepository {
             WHERE id = ?
             "#,
         )
-        .bind(&zone.name)
+        .bind(zone.name.as_str())
         .bind(&zone.primary_ns)
         .bind(&zone.admin_email)
         .bind(zone.ttl)

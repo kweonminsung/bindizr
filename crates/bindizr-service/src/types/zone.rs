@@ -35,7 +35,7 @@ impl GetZoneResponse {
     pub fn from_zone(zone: &Zone) -> Self {
         GetZoneResponse {
             id: zone.id,
-            name: zone.name.clone(),
+            name: zone.name.to_string(),
             primary_ns: zone.primary_ns.clone(),
             admin_email: zone.admin_email.clone(),
             ttl: zone.ttl,
@@ -205,7 +205,7 @@ impl ZoneStatusResponse {
             .collect();
 
         ZoneStatusResponse {
-            zone: zone.name.clone(),
+            zone: zone.name.to_string(),
             serial: zone.serial,
             secondaries,
         }

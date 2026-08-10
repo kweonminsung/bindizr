@@ -38,7 +38,7 @@ async fn send_notify_for_all_zones() -> Result<(), XfrError> {
 
     for zone in zones {
         log_info!("Processing NOTIFY for zone: {}", zone.name);
-        if let Err(e) = send_notify_for_zone(&zone.name).await {
+        if let Err(e) = send_notify_for_zone(zone.name.as_str()).await {
             log_error!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
             failures.push(format!("{}: {}", zone.name, e));
         }

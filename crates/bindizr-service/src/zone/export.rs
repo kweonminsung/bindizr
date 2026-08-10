@@ -28,7 +28,7 @@ impl ZoneService {
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to export zone").await?;
         let load_result = async {
-            let zone = RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_name)
+            let zone = RepositoryService::get_zone_by_name_tx(&mut tx, lookup_name.as_str())
                 .await?
                 .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
             // Invisible zones read as 404 so scoped tokens cannot probe them.
@@ -42,7 +42,7 @@ impl ZoneService {
         let (zone, mut records) =
             RepositoryService::finish_tx(tx, load_result, "Failed to export zone").await?;
 
-        let origin = to_fqdn(&zone.name);
+        let origin = zone.name.to_fqdn();
         let mut out = String::new();
         out.push_str(&format!("$ORIGIN {origin}\n"));
         out.push_str(&format!("$TTL {}\n", zone.ttl));

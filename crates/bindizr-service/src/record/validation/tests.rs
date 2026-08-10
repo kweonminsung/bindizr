@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
@@ -20,14 +20,14 @@ const RRSET_TTL: i32 = 3600;
 #[test]
 fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
     // Core owns the parsing; this layer owns the code and the message.
-    let zone = "test.example.com";
+    let zone = ZoneName::from_row("test.example.com");
 
-    let outside = normalize_record_owner_name("a1.other.com.", zone).unwrap_err();
+    let outside = normalize_record_owner_name("a1.other.com.", &zone).unwrap_err();
     assert_eq!(outside.code, ErrorCode::InvalidRecordName);
     assert!(outside.message.contains("a1.other.com."));
-    assert!(outside.message.contains(zone));
+    assert!(outside.message.contains(zone.as_str()));
 
-    let empty = normalize_record_owner_name("  ", zone).unwrap_err();
+    let empty = normalize_record_owner_name("  ", &zone).unwrap_err();
     assert_eq!(empty.code, ErrorCode::InvalidRecordName);
     assert!(empty.message.starts_with("record name "));
 }
@@ -379,7 +379,7 @@ fn validate_delete_constraints_protects_soa_and_primary_ns() {
 fn test_zone() -> Zone {
     Zone {
         id: 1,
-        name: "example.com".to_string(),
+        name: ZoneName::from_row("example.com"),
         primary_ns: "ns1.example.com".to_string(),
         admin_email: "hostmaster@example.com".to_string(),
         ttl: 3600,

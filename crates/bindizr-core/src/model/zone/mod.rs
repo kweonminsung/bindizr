@@ -3,7 +3,7 @@ use sqlx::FromRow;
 
 use crate::{
     dns::{
-        name::{OwnerName, to_fqdn},
+        name::{OwnerName, ZoneName, to_fqdn},
         record::SoaMailbox,
     },
     model::record::{Record, RecordType},
@@ -13,7 +13,8 @@ use crate::{
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Zone {
     pub id: i32,
-    pub name: String,
+    #[sqlx(try_from = "String")]
+    pub name: ZoneName,
     pub primary_ns: String,
     pub admin_email: String,
     pub ttl: i32,         // Default TTL in seconds

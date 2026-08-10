@@ -64,7 +64,7 @@ impl DnsMessageBuilder {
             Ttl::from_secs(zone.expire as u32),
             Ttl::from_secs(zone.minimum_ttl as u32),
         );
-        self.add_answer(parse_name(&zone.name)?, zone.ttl as u32, soa);
+        self.add_answer(parse_name(zone.name.as_str())?, zone.ttl as u32, soa);
         Ok(())
     }
 
@@ -79,7 +79,7 @@ impl DnsMessageBuilder {
             Ttl::from_secs(zone.expire as u32),
             Ttl::from_secs(zone.minimum_ttl as u32),
         );
-        self.add_answer(parse_name(&zone.name)?, zone.ttl as u32, soa);
+        self.add_answer(parse_name(zone.name.as_str())?, zone.ttl as u32, soa);
         Ok(())
     }
 
@@ -207,14 +207,14 @@ impl DnsMessageBuilder {
 
     /// Adds the catalog-zone NS record, which is the placeholder "invalid".
     pub(crate) fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), XfrError> {
-        let owner_name = to_fqdn(&zone.name);
+        let owner_name = zone.name.to_fqdn();
         self.add_ns_record(&owner_name, zone.ttl as u32, "invalid")?;
         Ok(())
     }
 
     /// Adds the catalog-zone version TXT record.
     pub(crate) fn add_catalog_version(&mut self, zone: &Zone) -> Result<(), XfrError> {
-        let version_name = format!("version.{}.", zone.name.trim_end_matches('.'));
+        let version_name = format!("version.{}.", zone.name);
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_txt_record(&version_name, zone.ttl as u32, "2")?;
         Ok(())
@@ -227,14 +227,18 @@ impl DnsMessageBuilder {
         member_zone: &str,
     ) -> Result<(), XfrError> {
         let member_id = crate::server::catalog::zone_name_to_member_id(member_zone);
-        let ptr_name = format!("{}.zones.{}.", member_id, zone.name.trim_end_matches('.'));
+        let ptr_name = format!("{}.zones.{}.", member_id, zone.name);
         let ptr_target = to_fqdn(member_zone);
         self.add_ptr_record(&ptr_name, zone.ttl as u32, &ptr_target)?;
         Ok(())
     }
 
     /// Adds an answer from a database Record model.
-    pub(crate) fn add_record(&mut self, record: &Record, zone_name: &str) -> Result<(), XfrError> {
+    pub(crate) fn add_record(
+        &mut self,
+        record: &Record,
+        zone_name: &ZoneName,
+    ) -> Result<(), XfrError> {
         self.add_record_parts(
             zone_name,
             &record.name,
@@ -249,7 +253,7 @@ impl DnsMessageBuilder {
     /// changes share this shape). Unsupported types are skipped.
     pub(crate) fn add_record_parts(
         &mut self,
-        zone_name: &str,
+        zone_name: &ZoneName,
         name: &OwnerName,
         record_type: &str,
         value: &str,
@@ -257,7 +261,7 @@ impl DnsMessageBuilder {
         priority: Option<i32>,
     ) -> Result<(), XfrError> {
         let ttl = ttl as u32;
-        let owner_name = name.to_fqdn(&ZoneName::from_row(zone_name));
+        let owner_name = name.to_fqdn(zone_name);
 
         match record_type {
             "A" => {

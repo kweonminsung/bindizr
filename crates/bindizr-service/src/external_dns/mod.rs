@@ -10,8 +10,6 @@ mod tests;
 
 use std::collections::HashMap;
 
-use bindizr_core::dns::name::ZoneName;
-
 use crate::{
     authorization::Caller, error::ServiceError, model::zone::Zone, repository::RepositoryService,
     types::ExternalDnsRecordItem,
@@ -28,7 +26,7 @@ impl ExternalDnsService {
         Ok(zones
             .into_iter()
             .filter(|zone| visible.as_ref().is_none_or(|ids| ids.contains(&zone.id)))
-            .map(|zone| zone.name)
+            .map(|zone| zone.name.to_string())
             .collect())
     }
 
@@ -60,7 +58,7 @@ impl ExternalDnsService {
                 name: record
                     .name
                     .clone()
-                    .to_fqdn(&ZoneName::from_row(&zone.name))
+                    .to_fqdn(&zone.name)
                     .trim_end_matches('.')
                     .to_string(),
                 record_type: record.record_type.to_string(),

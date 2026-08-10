@@ -188,7 +188,8 @@ impl DynamicUpdateService {
 
             // Queue through the service like every other mutation path, so
             // `dns.apply_mode` governs RFC 2136 writes too.
-            if let Err(e) = crate::notify::send_notify_after_update(Some(&zone.name)).await {
+            if let Err(e) = crate::notify::send_notify_after_update(Some(zone.name.as_str())).await
+            {
                 log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
             }
         }
@@ -401,18 +402,18 @@ async fn delete_matching(
 
 /// The owner of an update RR. The wire carries owners absolutely, so a name
 /// outside the zone is NOTZONE rather than something to qualify.
-fn owner_in_zone(name: &str, zone_name: &str) -> Result<OwnerName, DynamicUpdateError> {
+fn owner_in_zone(name: &str, zone_name: &ZoneName) -> Result<OwnerName, DynamicUpdateError> {
     if name.trim_end_matches('.').is_empty() {
         return Err(DynamicUpdateError::NotZone(
             "root owner is not supported".to_string(),
         ));
     }
 
-    OwnerName::parse_absolute_in_zone(name, &ZoneName::from_row(zone_name)).map_err(|e| match e {
+    OwnerName::parse_absolute_in_zone(name, zone_name).map_err(|e| match e {
         ParseNameError::OutsideZone => DynamicUpdateError::NotZone(format!(
             "owner '{}' is outside zone '{}'",
             to_fqdn(name),
-            to_fqdn(zone_name)
+            zone_name.to_fqdn()
         )),
         other => DynamicUpdateError::Refused(format!("owner '{}' {}", to_fqdn(name), other)),
     })

@@ -42,13 +42,12 @@ pub(crate) struct NormalizedOwnerName {
 
 pub(crate) fn normalize_record_owner_name(
     input_name: &str,
-    zone_name: &str,
+    zone: &ZoneName,
 ) -> Result<NormalizedOwnerName, ServiceError> {
-    let zone = ZoneName::from_row(zone_name);
-    let owner = OwnerName::parse_in_zone(input_name, &zone).map_err(|e| match e {
+    let owner = OwnerName::parse_in_zone(input_name, zone).map_err(|e| match e {
         ParseNameError::OutsideZone => ServiceError::invalid_record_name(format!(
             "record name '{}' is outside zone '{}'",
-            input_name, zone_name
+            input_name, zone
         )),
         other => ServiceError::invalid_record_name(format!("record name {}", other)),
     })?;

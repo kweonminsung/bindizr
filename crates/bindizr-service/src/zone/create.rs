@@ -37,7 +37,7 @@ impl ZoneService {
 
         // Parent/child zones are allowed; only the same normalized zone name is rejected.
         // Names are stored normalized, so an exact lookup is enough to detect a collision.
-        match RepositoryService::get_zone_by_name(&validated.name).await {
+        match RepositoryService::get_zone_by_name(validated.name.as_str()).await {
             Ok(Some(_)) => {
                 log_error!("Zone with name {} already exists", validated.name);
                 return Err(ServiceError::zone_conflict(format!(

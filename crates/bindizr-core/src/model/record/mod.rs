@@ -5,7 +5,7 @@ use serde::Serialize;
 use sqlx::FromRow;
 
 use crate::dns::{
-    name::{OwnerName, to_fqdn_lowercase},
+    name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
         ARecordValue, AaaaRecordValue, CnameRecordValue, MxRecordValue, NsRecordValue,
         PtrRecordValue, SoaRecordValue, SrvRecordValue, TxtContent, TxtRdata, TxtRecordValue,
@@ -40,12 +40,13 @@ pub struct RecordWithZone {
     pub priority: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub zone_id: i32,
-    pub zone_name: String,
+    #[sqlx(try_from = "String")]
+    pub zone_name: ZoneName,
 }
 
 impl RecordWithZone {
     /// Create a [`RecordWithZone`] from a [`Record`] and its zone name.
-    pub fn new(record: Record, zone_name: String) -> Self {
+    pub fn new(record: Record, zone_name: ZoneName) -> Self {
         Self {
             id: record.id,
             name: record.name,

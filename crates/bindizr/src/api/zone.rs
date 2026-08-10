@@ -323,7 +323,7 @@ pub(crate) async fn get_zone(
     let raw_zone = ZoneService::get_by_name(&caller, &params.name).await?;
 
     let raw_records = match query.records {
-        Some(true) => RecordService::list_in_zone(&caller, &raw_zone.name).await?,
+        Some(true) => RecordService::list_in_zone(&caller, raw_zone.name.as_str()).await?,
         _ => vec![],
     };
     let records = raw_records
