@@ -193,13 +193,14 @@ impl RecordRepository for MySqlRecordRepository {
     ) -> Result<Vec<Record>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        // Owner names are stored lowercase, so match against a lowercased bind
-        // and keep the column function-free so idx_records_zone_name is used.
+        // Callers pass the canonical stored form, so bind it as-is: re-folding
+        // it here would miss its own row. The column stays function-free so
+        // idx_records_zone_name is used.
         let records = sqlx::query_as::<_, Record>(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name FOR UPDATE",
         )
         .bind(zone_id)
-        .bind(name.to_lowercase())
+        .bind(name)
         .fetch_all(&mut **mysql_tx)
         .await?;
 
@@ -246,8 +247,9 @@ impl RecordRepository for MySqlRecordRepository {
 
         let mysql_tx = tx.as_mysql()?;
 
-        // Only same-name rows can conflict, so match names lowercased (keeping the
-        // column function-free so idx_records_zone_name is used) and lock just those.
+        // Only same-name rows can conflict, so match the canonical stored names
+        // as-is (column function-free, so idx_records_zone_name is used) and lock
+        // just those.
         // One round-trip per chunk; keep it large (chunk size dominated bulk-import
         // time). 5000 is well under the 65535 placeholder limit.
         const CHUNK: usize = 5000;
@@ -263,7 +265,7 @@ impl RecordRepository for MySqlRecordRepository {
 
             let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
             for name in chunk {
-                query = query.bind(name.to_lowercase());
+                query = query.bind(name);
             }
             let mut rows = query.fetch_all(&mut **mysql_tx).await?;
             out.append(&mut rows);

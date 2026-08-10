@@ -985,3 +985,48 @@ fn encode(value: &str) -> String {
         })
         .collect()
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn empty_name_filter_is_no_filter_not_the_apex() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for (name, value) in [("www", "192.0.2.1"), ("mail", "192.0.2.2")] {
+        let (status, _) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name, "record_type": "A",
+                    "value": value, "zone_name": zone_name
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    let count = |body: &serde_json::Value| body["items"].as_array().unwrap().len();
+
+    let (_, unfiltered) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}"),
+            None,
+        )
+        .await;
+
+    // Rows hold the apex as the empty string, so an empty filter left to fall
+    // through would select exactly the apex rows instead of every row.
+    let (status, empty) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name="),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(count(&empty), count(&unfiltered), "{empty}");
+    assert!(count(&empty) > 1, "expected apex plus the two A records");
+}

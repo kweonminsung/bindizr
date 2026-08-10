@@ -193,13 +193,14 @@ impl RecordRepository for PostgresRecordRepository {
     ) -> Result<Vec<Record>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        // Owner names are stored lowercase, so match against a lowercased bind
-        // and keep the column function-free so idx_records_zone_name is used.
+        // Callers pass the canonical stored form, so bind it as-is: re-folding
+        // it here would miss its own row. The column stays function-free so
+        // idx_records_zone_name is used.
         let records = sqlx::query_as::<_, Record>(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name FOR UPDATE",
         )
         .bind(zone_id)
-        .bind(name.to_lowercase())
+        .bind(name)
         .fetch_all(&mut **postgres_tx)
         .await?;
 
@@ -249,8 +250,9 @@ impl RecordRepository for PostgresRecordRepository {
 
         let postgres_tx = tx.as_postgres()?;
 
-        // Only same-name rows can conflict, so match names lowercased (keeping the
-        // column function-free so idx_records_zone_name is used) and lock just those.
+        // Only same-name rows can conflict, so match the canonical stored names
+        // as-is (column function-free, so idx_records_zone_name is used) and lock
+        // just those.
         // One round-trip per chunk; keep it large (dominated bulk-import time on
         // networked backends). 5000 is well under the 65535 placeholder limit.
         const CHUNK: usize = 5000;
@@ -269,7 +271,7 @@ impl RecordRepository for PostgresRecordRepository {
 
             let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
             for name in chunk {
-                query = query.bind(name.to_lowercase());
+                query = query.bind(name);
             }
             let mut rows = query.fetch_all(&mut **postgres_tx).await?;
             out.append(&mut rows);

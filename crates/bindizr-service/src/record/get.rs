@@ -128,21 +128,26 @@ fn normalize_filter_record_name(
     name: Option<String>,
     zone_name: Option<&ZoneName>,
 ) -> Option<String> {
-    name.map(|name| {
+    name.and_then(|name| {
         let trimmed = name.trim();
+        // An empty value is no filter. Left to fall through it would spell the
+        // apex, which rows hold as the empty string, and match every apex row.
+        if trimmed.is_empty() {
+            return None;
+        }
         let Some(zone) = zone_name else {
-            return trimmed.to_string();
+            return Some(trimmed.to_string());
         };
 
         // The query compares the filter against both the stored owner and the
         // FQDN it builds from it, so spell it the way rows do. Anything that is
         // not a name passes through to match literally.
         if let Ok(owner) = OwnerName::parse_absolute_in_zone(trimmed, zone) {
-            return owner.to_fqdn(zone);
+            return Some(owner.to_fqdn(zone));
         }
-        match OwnerName::parse_in_zone(trimmed, zone) {
+        Some(match OwnerName::parse_in_zone(trimmed, zone) {
             Ok(owner) => owner.to_stored(),
             Err(_) => trimmed.to_string(),
-        }
+        })
     })
 }

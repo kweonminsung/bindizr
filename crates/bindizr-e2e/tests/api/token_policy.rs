@@ -277,6 +277,50 @@ async fn scoped_token_without_policies_sees_nothing() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
+    let mut app = TestApp::start_with_options(authed_options()).await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "app", "A", "192.0.2.1")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (_, scoped_token) = app.create_scoped_api_token().await;
+    app.set_auth_token(scoped_token);
+
+    // Bulk must authorize before validating, or the constraint error answers
+    // first and tells an ungranted caller what the zone already holds.
+    for dry_run in [false, true] {
+        let (status, body) = app
+            .request(
+                Method::POST,
+                &format!("/zones/{zone_name}/records/bulk"),
+                Some(json!({
+                    "records": [
+                        { "name": "app", "record_type": "A", "value": "192.0.2.1" }
+                    ],
+                    "dry_run": dry_run,
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "dry_run={dry_run}: {body}");
+        assert!(
+            !body.to_string().contains("already exists"),
+            "dry_run={dry_run} leaked the existing record: {body}"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn global_token_policy_management_over_http() {
     let mut app = TestApp::start_with_options(authed_options()).await;
     let (global_name, global_token) = app.create_api_token().await;

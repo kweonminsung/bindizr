@@ -179,15 +179,31 @@ impl RecordService {
             let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
             timings.load_zone_ms = elapsed_ms(t);
 
-            // Only records whose owner name appears in the batch can conflict, so
-            // load just those instead of the whole zone. Normalization errors are
-            // ignored here; the validation loop below reports them authoritatively.
-            let t = Instant::now();
-            let mut batch_names: Vec<String> = prepared
+            // Authorized before any row is read, so a caller without a grant gets
+            // 403 instead of a constraint error naming records in the zone. Dry
+            // runs authorize too, so a preview never claims a batch the caller
+            // could not apply. Normalization errors are ignored here; the
+            // validation loop below reports them authoritatively.
+            let writes: Vec<RecordWrite<'_>> = prepared
                 .iter()
-                .filter_map(|p| normalize_record_owner_name(&p.owner_name, &zone.name).ok())
-                .map(|n| n.to_stored())
+                .filter_map(|p| {
+                    normalize_record_owner_name(&p.owner_name, &zone.name)
+                        .ok()
+                        .map(|name| RecordWrite {
+                            relative_name: name,
+                            record_type: Some(&p.record_type),
+                        })
+                })
                 .collect();
+            caller
+                .authorize_record_writes_tx(&mut tx, &zone, &writes)
+                .await?;
+
+            // Only records whose owner name appears in the batch can conflict, so
+            // load just those instead of the whole zone.
+            let t = Instant::now();
+            let mut batch_names: Vec<String> =
+                writes.iter().map(|w| w.relative_name.to_stored()).collect();
             batch_names.sort();
             batch_names.dedup();
 
@@ -281,19 +297,6 @@ impl RecordService {
             }
             timings.normalize_ms = duration_ms(normalize_dur);
             timings.validate_ms = duration_ms(validate_dur);
-
-            // Dry runs authorize too, so a preview never claims a batch the
-            // caller could not apply.
-            let writes: Vec<RecordWrite<'_>> = to_insert
-                .iter()
-                .map(|record| RecordWrite {
-                    relative_name: record.name.clone(),
-                    record_type: Some(&record.record_type),
-                })
-                .collect();
-            caller
-                .authorize_record_writes_tx(&mut tx, &zone, &writes)
-                .await?;
 
             if dry_run {
                 // `after` = existing plus the inserts, so an insert into an
