@@ -131,9 +131,9 @@ impl ZoneRepository for PostgresZoneRepository {
               AND ($15::INT4 IS NULL OR serial = $16)
               AND (
                     $17::TEXT IS NULL
-                    OR LOWER(name) LIKE LOWER($18)
-                    OR LOWER(primary_ns) LIKE LOWER($19)
-                    OR LOWER(admin_email) LIKE LOWER($20)
+                    OR LOWER(name) LIKE LOWER($18) ESCAPE '\'
+                    OR LOWER(primary_ns) LIKE LOWER($19) ESCAPE '\'
+                    OR LOWER(admin_email) LIKE LOWER($20) ESCAPE '\'
               )
               AND ($23::INT4[] IS NULL OR id = ANY($23))
             ORDER BY name
@@ -200,9 +200,9 @@ impl ZoneRepository for PostgresZoneRepository {
               AND ($15::INT4 IS NULL OR serial = $16)
               AND (
                     $17::TEXT IS NULL
-                    OR LOWER(name) LIKE LOWER($18)
-                    OR LOWER(primary_ns) LIKE LOWER($19)
-                    OR LOWER(admin_email) LIKE LOWER($20)
+                    OR LOWER(name) LIKE LOWER($18) ESCAPE '\'
+                    OR LOWER(primary_ns) LIKE LOWER($19) ESCAPE '\'
+                    OR LOWER(admin_email) LIKE LOWER($20) ESCAPE '\'
               )
               AND ($21::INT4[] IS NULL OR id = ANY($21))
             "#,
@@ -292,9 +292,17 @@ impl ZoneRepository for PostgresZoneRepository {
     }
 }
 
+/// Wrap the term for a contains-match. The LIKE wildcards are escaped: `%` and
+/// `_` are ordinary characters in rdata and in `_dmarc`-style names.
 fn like_pattern(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| format!("%{}%", value))
+        .map(|value| {
+            let escaped = value
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            format!("%{}%", escaped)
+        })
 }

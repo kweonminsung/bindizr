@@ -137,9 +137,9 @@ impl ZoneRepository for MySqlZoneRepository {
               AND (? IS NULL OR serial = ?)
               AND (
                     ? IS NULL
-                    OR LOWER(name) LIKE LOWER(?)
-                    OR LOWER(primary_ns) LIKE LOWER(?)
-                    OR LOWER(admin_email) LIKE LOWER(?)
+                    OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(primary_ns) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(admin_email) LIKE LOWER(?) ESCAPE '\\'
               )
             {ids_clause}
             ORDER BY name
@@ -216,9 +216,9 @@ impl ZoneRepository for MySqlZoneRepository {
               AND (? IS NULL OR serial = ?)
               AND (
                     ? IS NULL
-                    OR LOWER(name) LIKE LOWER(?)
-                    OR LOWER(primary_ns) LIKE LOWER(?)
-                    OR LOWER(admin_email) LIKE LOWER(?)
+                    OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(primary_ns) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(admin_email) LIKE LOWER(?) ESCAPE '\\'
               )
             {ids_clause}
             "#
@@ -310,9 +310,17 @@ impl ZoneRepository for MySqlZoneRepository {
     }
 }
 
+/// Wrap the term for a contains-match. The LIKE wildcards are escaped: `%` and
+/// `_` are ordinary characters in rdata and in `_dmarc`-style names.
 fn like_pattern(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| format!("%{}%", value))
+        .map(|value| {
+            let escaped = value
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            format!("%{}%", escaped)
+        })
 }

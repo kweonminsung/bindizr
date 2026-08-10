@@ -302,14 +302,16 @@ impl RecordRepository for SqliteRecordRepository {
               AND (? IS NULL OR r.priority <= ?)
               AND (
                     ? IS NULL
-                    OR LOWER(z.name) LIKE LOWER(?)
-                    OR LOWER(r.name) LIKE LOWER(?)
-                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
-                    OR LOWER(r.record_type) LIKE LOWER(?)
-                    OR LOWER(r.display_value) LIKE LOWER(?)
+                    OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(r.name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(r.record_type) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(r.display_value) LIKE LOWER(?) ESCAPE '\'
             )
             {zone_ids_clause}
-            ORDER BY r.name
+            -- r.name ties across an RRset, so without r.id a plan change
+            -- between two pages could drop or repeat a row.
+            ORDER BY r.name, r.id
             LIMIT ? OFFSET ?
             "#
         )))
@@ -397,11 +399,11 @@ impl RecordRepository for SqliteRecordRepository {
               AND (? IS NULL OR r.priority <= ?)
               AND (
                     ? IS NULL
-                    OR LOWER(z.name) LIKE LOWER(?)
-                    OR LOWER(r.name) LIKE LOWER(?)
-                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?)
-                    OR LOWER(r.record_type) LIKE LOWER(?)
-                    OR LOWER(r.display_value) LIKE LOWER(?)
+                    OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(r.name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(r.record_type) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(r.display_value) LIKE LOWER(?) ESCAPE '\'
             )
             {zone_ids_clause}
             "#
@@ -506,9 +508,18 @@ fn normalize_partial_value(value: &str) -> String {
     value.trim().trim_end_matches('.').to_string()
 }
 
+/// Wrap the term for a contains-match. The LIKE wildcards are escaped: `%` and
+/// `_` are ordinary characters in rdata and in `_dmarc`-style names.
 fn like_pattern(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| format!("%{}%", value.trim_end_matches('.')))
+        .map(|value| {
+            let escaped = value
+                .trim_end_matches('.')
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            format!("%{}%", escaped)
+        })
 }

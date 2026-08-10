@@ -312,14 +312,16 @@ impl RecordRepository for PostgresRecordRepository {
               AND ($20::INT4 IS NULL OR r.priority <= $21)
               AND (
                     $22::TEXT IS NULL
-                    OR LOWER(z.name) LIKE LOWER($23)
-                    OR LOWER(r.name) LIKE LOWER($24)
-                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
-                    OR LOWER(r.record_type) LIKE LOWER($26)
-                    OR LOWER(r.display_value) LIKE LOWER($27)
+                    OR LOWER(z.name) LIKE LOWER($23) ESCAPE '\'
+                    OR LOWER(r.name) LIKE LOWER($24) ESCAPE '\'
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25) ESCAPE '\'
+                    OR LOWER(r.record_type) LIKE LOWER($26) ESCAPE '\'
+                    OR LOWER(r.display_value) LIKE LOWER($27) ESCAPE '\'
             )
             AND ($30::INT4[] IS NULL OR r.zone_id = ANY($30))
-            ORDER BY r.name
+            -- r.name ties across an RRset, so without r.id a plan change
+            -- between two pages could drop or repeat a row.
+            ORDER BY r.name, r.id
             LIMIT $28 OFFSET $29
             "#
         )))
@@ -397,11 +399,11 @@ impl RecordRepository for PostgresRecordRepository {
               AND ($20::INT4 IS NULL OR r.priority <= $21)
               AND (
                     $22::TEXT IS NULL
-                    OR LOWER(z.name) LIKE LOWER($23)
-                    OR LOWER(r.name) LIKE LOWER($24)
-                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
-                    OR LOWER(r.record_type) LIKE LOWER($26)
-                    OR LOWER(r.display_value) LIKE LOWER($27)
+                    OR LOWER(z.name) LIKE LOWER($23) ESCAPE '\'
+                    OR LOWER(r.name) LIKE LOWER($24) ESCAPE '\'
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25) ESCAPE '\'
+                    OR LOWER(r.record_type) LIKE LOWER($26) ESCAPE '\'
+                    OR LOWER(r.display_value) LIKE LOWER($27) ESCAPE '\'
             )
             AND ($28::INT4[] IS NULL OR r.zone_id = ANY($28))
             "#
@@ -492,9 +494,18 @@ fn normalize_partial_value(value: &str) -> String {
     value.trim().trim_end_matches('.').to_string()
 }
 
+/// Wrap the term for a contains-match. The LIKE wildcards are escaped: `%` and
+/// `_` are ordinary characters in rdata and in `_dmarc`-style names.
 fn like_pattern(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| format!("%{}%", value.trim_end_matches('.')))
+        .map(|value| {
+            let escaped = value
+                .trim_end_matches('.')
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            format!("%{}%", escaped)
+        })
 }

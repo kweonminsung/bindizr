@@ -1030,3 +1030,65 @@ async fn empty_name_filter_is_no_filter_not_the_apex() {
     assert_eq!(count(&empty), count(&unfiltered), "{empty}");
     assert!(count(&empty) > 1, "expected apex plus the two A records");
 }
+
+// Unescaped, these matched anything — and both are ordinary characters in the
+// rdata and names users search for.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn search_treats_like_wildcards_as_literal_text() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for (name, value) in [
+        ("pct", "100%off"),
+        ("pctdecoy", "100XXoff"),
+        ("under", "a_b"),
+        ("underdecoy", "axb"),
+    ] {
+        let (status, _) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name, "record_type": "TXT",
+                    "value": value, "zone_name": zone_name
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    async fn search(app: &TestApp, zone_name: &str, term: &str) -> Vec<String> {
+        let q = term.replace('%', "%25").replace('_', "%5F");
+        let (_, body) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&search={q}"),
+                None,
+            )
+            .await;
+        let mut names: Vec<String> = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| {
+                r["name"]
+                    .as_str()
+                    .unwrap()
+                    .split('.')
+                    .next()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    assert_eq!(search(&app, zone_name, "100%off").await, ["pct"]);
+    assert_eq!(search(&app, zone_name, "a_b").await, ["under"]);
+    // A term that is nothing but wildcards matches the records holding them.
+    assert_eq!(search(&app, zone_name, "%").await, ["pct"]);
+    assert_eq!(search(&app, zone_name, "_").await, ["under"]);
+}
