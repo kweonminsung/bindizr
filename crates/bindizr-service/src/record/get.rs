@@ -136,6 +136,11 @@ fn normalize_filter_record_name(
             return None;
         }
         let Some(zone) = zone_name else {
+            // No zone to build an FQDN against, so the apex can only be matched
+            // by the sentinel rows hold it as.
+            if trimmed == OwnerName::APEX {
+                return Some(OwnerName::apex().to_stored());
+            }
             return Some(trimmed.to_string());
         };
 

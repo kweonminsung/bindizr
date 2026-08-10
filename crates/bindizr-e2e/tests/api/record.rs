@@ -986,6 +986,43 @@ fn encode(value: &str) -> String {
         .collect()
 }
 
+// Rows hold the apex as the empty string, so `@` only reaches it once it is
+// mapped to that sentinel — there is no zone here to build an FQDN against.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn apex_filter_finds_apex_records_without_a_zone_filter() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, scoped) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=@"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let scoped_count = scoped["items"].as_array().unwrap().len();
+    assert!(
+        scoped_count > 0,
+        "zone has no apex record to find: {scoped}"
+    );
+
+    let (status, unscoped) = app.request(Method::GET, "/records?name=@", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = unscoped["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&format!("{zone_name}.").as_str()),
+        "apex of {zone_name} missing from {names:?}"
+    );
+}
+
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn empty_name_filter_is_no_filter_not_the_apex() {
