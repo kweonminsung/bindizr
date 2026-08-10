@@ -925,3 +925,63 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 2);
 }
+
+// Rows hold one canonical spelling, so the filter has to reach it however the
+// request spells the name.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_filter_matches_every_spelling_of_an_owner_name() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for name in ["www", "foo;bar"] {
+        let (status, _) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name,
+                    "record_type": "A",
+                    "value": "192.0.2.1",
+                    "zone_name": zone_name,
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{name}");
+    }
+
+    // The apex is the empty name in a row, and `;` is escaped there.
+    for spelling in [
+        "@",
+        "www",
+        &format!("www.{zone_name}."),
+        "foo;bar",
+        r"foo\;bar",
+    ] {
+        let (status, body) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&name={}", encode(spelling)),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["items"].as_array().map(Vec::len),
+            Some(1),
+            "no record matched {spelling:?}"
+        );
+    }
+}
+
+/// Percent-encode a query value; `;` and `\` would otherwise be taken apart.
+fn encode(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' | '_' | '~' => c.to_string(),
+            other => format!("%{:02X}", other as u32),
+        })
+        .collect()
+}

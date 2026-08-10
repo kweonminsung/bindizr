@@ -186,7 +186,7 @@ impl RecordService {
             let mut batch_names: Vec<String> = prepared
                 .iter()
                 .filter_map(|p| normalize_record_owner_name(&p.owner_name, &zone.name).ok())
-                .map(|n| n.stored_name.to_stored())
+                .map(|n| n.to_stored())
                 .collect();
             batch_names.sort();
             batch_names.dedup();
@@ -241,15 +241,13 @@ impl RecordService {
             let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
                 let t = timing_enabled.then(Instant::now);
-                let normalized_owner =
+                let owner_name =
                     normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
                 if let Some(t) = t {
                     normalize_dur += t.elapsed();
                 }
 
-                let same_name = records_by_name
-                    .entry(normalized_owner.stored_name.clone())
-                    .or_default();
+                let same_name = records_by_name.entry(owner_name.clone()).or_default();
 
                 // Fixed at write time: a later zone TTL change will not move it.
                 let ttl = prepared_record.ttl.unwrap_or(zone.ttl);
@@ -257,7 +255,7 @@ impl RecordService {
                 let t = timing_enabled.then(Instant::now);
                 validate_record_add_constraints_normalized(
                     same_name,
-                    &normalized_owner.stored_name,
+                    &owner_name,
                     &prepared_record.record_type,
                     &prepared_record.value,
                     ttl,
@@ -270,7 +268,7 @@ impl RecordService {
 
                 let record = Record {
                     id: 0,
-                    name: normalized_owner.stored_name.clone(),
+                    name: owner_name.clone(),
                     record_type: prepared_record.record_type.clone(),
                     value: prepared_record.value.clone(),
                     ttl,

@@ -56,7 +56,7 @@ impl RecordService {
                 request.priority,
             )?;
             Ok(ResolvedRecordUpdate {
-                owner_name: normalize_record_owner_name(&owner_name, &zone.name)?.stored_name,
+                owner_name: normalize_record_owner_name(&owner_name, &zone.name)?,
                 record_type,
                 encoded_value,
                 ttl: request.ttl.unwrap_or(zone.ttl),
@@ -99,7 +99,7 @@ impl RecordService {
             };
             // An omitted name keeps the stored owner, which needs no reparse.
             let owner_name = match &patch.name {
-                Some(name) => normalize_record_owner_name(name, &_zone.name)?.stored_name,
+                Some(name) => normalize_record_owner_name(name, &_zone.name)?,
                 None => existing.name.clone(),
             };
             Ok(ResolvedRecordUpdate {

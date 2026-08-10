@@ -134,10 +134,14 @@ fn normalize_filter_record_name(
             return trimmed.to_string();
         };
 
-        // An in-zone name is matched in its absolute form; anything else is
-        // passed through so the filter can still match it literally.
-        match OwnerName::parse_absolute_in_zone(trimmed, zone) {
-            Ok(owner) => owner.to_fqdn(zone),
+        // The query compares the filter against both the stored owner and the
+        // FQDN it builds from it, so spell it the way rows do. Anything that is
+        // not a name passes through to match literally.
+        if let Ok(owner) = OwnerName::parse_absolute_in_zone(trimmed, zone) {
+            return owner.to_fqdn(zone);
+        }
+        match OwnerName::parse_in_zone(trimmed, zone) {
+            Ok(owner) => owner.to_stored(),
             Err(_) => trimmed.to_string(),
         }
     })

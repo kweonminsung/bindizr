@@ -189,18 +189,17 @@ fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
 /// What a label escapes to survive its own presentation form: the separator
 /// and escape themselves, the `@` that RFC 1035, Section 5.1 fixes as the
 /// origin, and the master-file metacharacters that would end the owner field.
-const ESCAPED_IN_LABEL: [char; 7] = ['.', '\\', '@', ';', '(', ')', '"'];
+const ESCAPED_IN_LABEL: [char; 8] = ['.', '\\', '@', ';', '(', ')', '"', '$'];
 
 /// Inverse of [`decode_labels`] for one label.
 pub(super) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
-    if !label.contains(ESCAPED_IN_LABEL) && !label.starts_with('$') {
+    if !label.contains(ESCAPED_IN_LABEL) {
         return std::borrow::Cow::Borrowed(label);
     }
 
     let mut escaped = String::with_capacity(label.len() + 1);
-    for (index, c) in label.char_indices() {
-        // `$` only leads a directive, so escaping it at the start is enough.
-        if ESCAPED_IN_LABEL.contains(&c) || (index == 0 && c == '$') {
+    for c in label.chars() {
+        if ESCAPED_IN_LABEL.contains(&c) {
             escaped.push('\\');
         }
         escaped.push(c);

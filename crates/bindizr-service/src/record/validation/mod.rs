@@ -34,16 +34,10 @@ pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError>
         .map_err(|_| ServiceError::invalid_input(format!("invalid record type: {}", value)))
 }
 
-#[derive(Debug)]
-pub(crate) struct NormalizedOwnerName {
-    /// Name stored in the database according to the current relative-name policy.
-    pub stored_name: OwnerName,
-}
-
 pub(crate) fn normalize_record_owner_name(
     input_name: &str,
     zone: &ZoneName,
-) -> Result<NormalizedOwnerName, ServiceError> {
+) -> Result<OwnerName, ServiceError> {
     let owner = OwnerName::parse_in_zone(input_name, zone).map_err(|e| match e {
         ParseNameError::OutsideZone => ServiceError::invalid_record_name(format!(
             "record name '{}' is outside zone '{}'",
@@ -52,7 +46,7 @@ pub(crate) fn normalize_record_owner_name(
         other => ServiceError::invalid_record_name(format!("record name {}", other)),
     })?;
 
-    Ok(NormalizedOwnerName { stored_name: owner })
+    Ok(owner)
 }
 
 /// Whether any record already holds the candidate's rdata. Canonical

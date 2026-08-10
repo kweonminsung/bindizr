@@ -45,15 +45,14 @@ impl RecordService {
 
             // Only records sharing the owner name can conflict, so load just
             // those instead of the whole zone.
-            let normalized_owner =
-                normalize_record_owner_name(&create_record_request.name, &zone.name)?;
+            let owner_name = normalize_record_owner_name(&create_record_request.name, &zone.name)?;
 
             caller
                 .authorize_record_writes_tx(
                     &mut tx,
                     &zone,
                     &[RecordWrite {
-                        relative_name: normalized_owner.stored_name.clone(),
+                        relative_name: owner_name.clone(),
                         record_type: Some(&record_type),
                     }],
                 )
@@ -63,7 +62,7 @@ impl RecordService {
                 match RepositoryService::get_records_by_zone_id_and_name_tx(
                     &mut tx,
                     zone.id,
-                    &normalized_owner.stored_name.to_stored(),
+                    &owner_name.to_stored(),
                 )
                 .await
                 {
@@ -81,7 +80,7 @@ impl RecordService {
 
             validate_record_add_constraints_normalized(
                 &existing_records_with_name,
-                &normalized_owner.stored_name,
+                &owner_name,
                 &record_type,
                 &record_value,
                 ttl,
@@ -97,7 +96,7 @@ impl RecordService {
                 new_serial,
                 &[Record {
                     id: 0,
-                    name: normalized_owner.stored_name.clone(),
+                    name: owner_name.clone(),
                     record_type,
                     value: record_value,
                     ttl,

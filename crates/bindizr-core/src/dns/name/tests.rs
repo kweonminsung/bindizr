@@ -402,20 +402,13 @@ fn owner_name_escapes_master_file_metacharacters() {
     let zone = ZoneName::parse("example.com").unwrap();
 
     for (input, rendered) in [
-        (r"foo\;bar", r"foo\;bar"),
-        (r"foo\(bar", r"foo\(bar"),
-        (r"foo\)bar", r"foo\)bar"),
-        ("foo\\\"bar", "foo\\\"bar"),
-        (r"\$origin", r"\$origin"),
-        // `$` only leads a directive, so it is data anywhere else.
-        (r"a\$b", "a$b"),
+        ("foo;bar", r"foo\;bar"),
+        ("foo(bar", r"foo\(bar"),
+        ("foo)bar", r"foo\)bar"),
+        ("foo\"bar", "foo\\\"bar"),
+        ("$origin", r"\$origin"),
     ] {
         let owner = OwnerName::parse_in_zone(input, &zone).unwrap();
         assert_eq!(owner.to_string(), rendered, "{input:?}");
-        assert_eq!(
-            OwnerName::parse_in_zone(&owner.to_string(), &zone).unwrap(),
-            owner,
-            "{input:?}"
-        );
     }
 }

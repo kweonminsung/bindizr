@@ -140,7 +140,7 @@ impl RecordService {
                 };
                 let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name)
                 {
-                    Ok(normalized) => normalized.stored_name,
+                    Ok(stored_name) => stored_name,
                     // Collect any client-input error (4xx) per record; only
                     // internal failures abort the whole import.
                     Err(e) if e.code.http_status() < 500 => {
