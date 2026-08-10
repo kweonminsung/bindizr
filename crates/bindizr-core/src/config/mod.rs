@@ -35,6 +35,10 @@ pub struct ApiConfig {
     /// caller may manage is decided by its API token's zone policies.
     #[serde(default)]
     pub external_dns_enabled: bool,
+    /// Serve the OpenAPI document at GET /openapi.json and /openapi.yaml
+    /// (unauthenticated). Off by default: it describes the whole API surface.
+    #[serde(default)]
+    pub openapi_enabled: bool,
 }
 
 fn default_metrics_enabled() -> bool {
@@ -326,6 +330,9 @@ fn apply_env_overrides_from(
     if let Some(value) = get_env("BINDIZR_API_EXTERNAL_DNS_ENABLED") {
         config.api.external_dns_enabled =
             parse_env_value("BINDIZR_API_EXTERNAL_DNS_ENABLED", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_API_OPENAPI_ENABLED") {
+        config.api.openapi_enabled = parse_env_value("BINDIZR_API_OPENAPI_ENABLED", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
         config.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;

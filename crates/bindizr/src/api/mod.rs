@@ -6,7 +6,6 @@ pub(crate) mod health;
 pub(crate) mod metrics;
 pub(crate) mod middleware;
 pub(crate) mod notify;
-#[cfg(debug_assertions)]
 pub(crate) mod openapi;
 pub(crate) mod record;
 pub(crate) mod router;

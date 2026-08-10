@@ -51,6 +51,7 @@ pub(crate) struct TestAppOptions {
     pub require_authentication: bool,
     pub external_dns_enabled: bool,
     pub nsupdate_allow_unsigned: bool,
+    pub openapi_enabled: bool,
 }
 
 enum TestRuntime {
@@ -639,6 +640,7 @@ listen_addr = "127.0.0.1"
 listen_port = {api_port}
 require_authentication = {require_authentication}
 external_dns_enabled = {external_dns_enabled}
+openapi_enabled = {openapi_enabled}
 
 [database]
 type = "sqlite"
@@ -669,6 +671,7 @@ log_level = "error"
         require_authentication = options.require_authentication,
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_allow_unsigned = options.nsupdate_allow_unsigned,
+        openapi_enabled = options.openapi_enabled,
     );
 
     fs::write(config_path, config).expect("failed to write bindizr config");

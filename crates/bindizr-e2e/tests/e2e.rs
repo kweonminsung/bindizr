@@ -5,6 +5,7 @@ mod api {
     mod health;
     mod metrics;
     mod notify;
+    mod openapi;
     mod record;
     mod token_policy;
     mod tsig_key;

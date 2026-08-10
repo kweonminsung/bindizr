@@ -1,17 +1,17 @@
-#[cfg(debug_assertions)]
-use axum::http::header::CONTENT_TYPE;
-use axum::{Extension, Json, Router, http::StatusCode, response::IntoResponse, routing};
+use axum::{
+    Extension, Json, Router,
+    http::{StatusCode, header::CONTENT_TYPE},
+    response::IntoResponse,
+    routing,
+};
 use bindizr_core::config;
 use bindizr_service::authorization::Caller;
 use serde_json::json;
 use tower_http::cors::CorsLayer;
-#[cfg(debug_assertions)]
 use utoipa::OpenApi;
 
-#[cfg(debug_assertions)]
-use super::openapi::ApiDoc;
 use super::{
-    external_dns::ExternalDnsApi, notify::NotifyApi, record::RecordApi,
+    external_dns::ExternalDnsApi, notify::NotifyApi, openapi::ApiDoc, record::RecordApi,
     token_policy::TokenPolicyApi, tsig_key::TsigKeyApi, zone::ZoneApi,
 };
 
@@ -19,7 +19,7 @@ use super::{
 pub(crate) struct ApiRouter;
 
 impl ApiRouter {
-    /// Build the full axum router with auth, CORS, and (in debug) OpenAPI routes.
+    /// Build the full axum router with auth, CORS, and the optional route groups.
     pub(crate) async fn routes() -> Router {
         let api_config = &config::get_bindizr_config().api;
 
@@ -56,8 +56,8 @@ impl ApiRouter {
             router = router.route("/metrics", routing::get(super::metrics::get_metrics));
         }
 
-        #[cfg(debug_assertions)]
-        {
+        // Also outside auth: the document is the API's own description.
+        if api_config.openapi_enabled {
             router = router
                 .route("/openapi.json", routing::get(ApiRouter::openapi_json))
                 .route("/openapi.yaml", routing::get(ApiRouter::openapi_yaml));
@@ -84,12 +84,10 @@ impl ApiRouter {
         )
     }
 
-    #[cfg(debug_assertions)]
     async fn openapi_json() -> impl IntoResponse {
         (StatusCode::OK, Json(ApiDoc::openapi()))
     }
 
-    #[cfg(debug_assertions)]
     async fn openapi_yaml() -> axum::response::Response {
         match ApiDoc::openapi().to_yaml() {
             Ok(openapi_yaml) => (
