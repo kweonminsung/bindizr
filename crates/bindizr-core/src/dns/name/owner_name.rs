@@ -109,6 +109,10 @@ impl OwnerName {
     }
 
     fn render_labels(&self) -> String {
+        // Most owners are one label, which needs no join buffer.
+        if let [label] = self.0.as_slice() {
+            return escape_label(label).into_owned();
+        }
         self.0
             .iter()
             .map(|label| escape_label(label))
@@ -182,7 +186,10 @@ pub(super) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
 
 fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
     String::from_utf8(label)
-        .map(|label| label.to_ascii_lowercase())
+        .map(|mut label| {
+            label.make_ascii_lowercase();
+            label
+        })
         .map_err(|_| ParseNameError::NonUtf8Label)
 }
 
