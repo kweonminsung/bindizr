@@ -77,7 +77,7 @@ fn evaluate_against_records(
             } => {
                 let owner = owner_in_zone(name, &zone.name)?;
                 let exists = zone_records.iter().any(|record| {
-                    OwnerName::from_row(&record.name) == owner
+                    record.name.clone() == owner
                         && record.record_type == *record_type
                         && record
                             .record_type
@@ -100,14 +100,11 @@ fn evaluate_against_records(
 
 /// The apex always exists: the zone itself owns its SOA and NS records.
 fn owner_exists(owner: &OwnerName, records: &[Record]) -> bool {
-    owner.is_apex()
-        || records
-            .iter()
-            .any(|record| OwnerName::from_row(&record.name) == *owner)
+    owner.is_apex() || records.iter().any(|record| record.name.clone() == *owner)
 }
 
 fn rrset_exists(owner: &OwnerName, record_type: &RecordType, records: &[Record]) -> bool {
-    records.iter().any(|record| {
-        OwnerName::from_row(&record.name) == *owner && record.record_type == *record_type
-    })
+    records
+        .iter()
+        .any(|record| record.name.clone() == *owner && record.record_type == *record_type)
 }

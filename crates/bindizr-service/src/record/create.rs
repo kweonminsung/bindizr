@@ -96,7 +96,7 @@ impl RecordService {
                 new_serial,
                 &[Record {
                     id: 0,
-                    name: normalized_owner.stored_name.to_stored(),
+                    name: normalized_owner.stored_name.clone(),
                     record_type,
                     value: record_value,
                     ttl,

@@ -1,3 +1,4 @@
+use bindizr_core::dns::name::OwnerName;
 use chrono::Utc;
 
 use super::apex_ns_rrset_ttl;
@@ -29,10 +30,10 @@ fn apex_ns_rrset_ttl_joins_the_existing_apex_ns_rrset() {
         apex_ns_rrset_ttl(
             &zone,
             [
-                (&RecordType::A, "", 60),
-                (&RecordType::NS, "sub", 120),
-                (&RecordType::NS, "", 900),
-                (&RecordType::NS, "", 1800),
+                (&RecordType::A, &OwnerName::apex(), 60),
+                (&RecordType::NS, &OwnerName::from_row("sub"), 120),
+                (&RecordType::NS, &OwnerName::apex(), 900),
+                (&RecordType::NS, &OwnerName::apex(), 1800),
             ]
         ),
         900
@@ -48,7 +49,10 @@ fn apex_ns_rrset_ttl_falls_back_to_the_zone_ttl() {
     assert_eq!(
         apex_ns_rrset_ttl(
             &zone,
-            [(&RecordType::A, "", 60), (&RecordType::NS, "sub", 120)]
+            [
+                (&RecordType::A, &OwnerName::apex(), 60),
+                (&RecordType::NS, &OwnerName::from_row("sub"), 120)
+            ]
         ),
         zone.ttl
     );

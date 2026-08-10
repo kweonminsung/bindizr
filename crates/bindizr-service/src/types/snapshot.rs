@@ -72,7 +72,7 @@ pub struct SnapshotRecordResponse {
 impl From<ReconstructedRecord> for SnapshotRecordResponse {
     fn from(record: ReconstructedRecord) -> Self {
         SnapshotRecordResponse {
-            name: record.name,
+            name: record.name.to_string(),
             record_type: record.record_type.to_string(),
             // Decode TXT out of its stored form, as the record endpoints do.
             value: display_record_value_request(&record.value, &record.record_type),

@@ -2,7 +2,7 @@
 //! string-or-segments TXT value form.
 
 use bindizr_core::dns::{
-    name::{OwnerName, ZoneName, to_fqdn_lowercase},
+    name::{ZoneName, to_fqdn_lowercase},
     record::{TxtContent, TxtRdata},
 };
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,7 @@ impl GetRecordResponse {
     pub fn from_record_and_zone_name(record: &Record, zone_name: &str) -> Self {
         GetRecordResponse {
             id: record.id,
-            name: OwnerName::from_row(&record.name).to_fqdn(&ZoneName::from_row(zone_name)),
+            name: record.name.to_fqdn(&ZoneName::from_row(zone_name)),
             record_type: record.record_type.to_string(),
             value: display_record_value_request(&record.value, &record.record_type),
             ttl: record.ttl,

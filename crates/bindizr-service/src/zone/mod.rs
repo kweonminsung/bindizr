@@ -1,3 +1,5 @@
+use bindizr_core::dns::name::OwnerName;
+
 use crate::model::{record::RecordType, zone::Zone};
 
 mod catalog_zone_state;
@@ -28,7 +30,7 @@ pub(crate) const DEFAULT_MINIMUM_TTL: i32 = 86_400;
 /// falling back to the zone TTL.
 pub(super) fn apex_ns_rrset_ttl<'a>(
     zone: &Zone,
-    candidates: impl IntoIterator<Item = (&'a RecordType, &'a str, i32)>,
+    candidates: impl IntoIterator<Item = (&'a RecordType, &'a OwnerName, i32)>,
 ) -> i32 {
     candidates
         .into_iter()

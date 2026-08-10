@@ -1,3 +1,4 @@
+use bindizr_core::dns::name::OwnerName;
 use chrono::Utc;
 
 use super::{
@@ -32,7 +33,7 @@ fn test_zone(id: i32, name: &str) -> Zone {
 fn test_record(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     Record {
         id,
-        name: name.to_string(),
+        name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),
         ttl,
@@ -186,7 +187,10 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
     let grouped = group_ops_by_zone(&zones, ops).unwrap();
     assert_eq!(grouped.len(), 1);
     assert!(grouped.contains_key("internal.example.com"));
-    assert_eq!(grouped["internal.example.com"].adds[0].name, "api");
+    assert_eq!(
+        grouped["internal.example.com"].adds[0].name,
+        OwnerName::from_row("api")
+    );
 }
 
 #[test]
@@ -222,7 +226,7 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
 
     assert!(change_set.deletes.is_empty());
     assert_eq!(change_set.creates.len(), 1);
-    assert_eq!(change_set.creates[0].name, "app");
+    assert_eq!(change_set.creates[0].name, OwnerName::from_row("app"));
     assert_eq!(change_set.creates[0].ttl, zone.ttl);
 }
 

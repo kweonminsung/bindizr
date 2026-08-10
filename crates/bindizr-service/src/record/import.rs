@@ -48,7 +48,7 @@ fn record_matches(
     value: &str,
     priority: Option<i32>,
 ) -> bool {
-    OwnerName::from_row(&existing.name) == *stored_name
+    existing.name.clone() == *stored_name
         && existing.record_type == *record_type
         && record_type.values_equal(&existing.value, existing.priority, value, priority)
 }
@@ -222,10 +222,8 @@ impl RecordService {
 
             // Parse each existing owner name once; the passes below reuse it.
             let t = Instant::now();
-            let existing_names: Vec<OwnerName> = existing_records
-                .iter()
-                .map(|e| OwnerName::from_row(&e.name))
-                .collect();
+            let existing_names: Vec<OwnerName> =
+                existing_records.iter().map(|e| e.name.clone()).collect();
 
             // Index existing records by owner name so each existing/desired
             // record is reconciled against only same-name rows.
@@ -391,7 +389,7 @@ impl RecordService {
                     .iter()
                     .map(|add| Record {
                         id: 0,
-                        name: add.stored_name.to_stored(),
+                        name: add.stored_name.clone(),
                         record_type: add.prepared.record_type.clone(),
                         value: add.prepared.value.clone(),
                         ttl: effective_ttl(add.prepared.ttl),
@@ -504,7 +502,7 @@ fn import_diff(
         .map(ReconstructedRecord::from)
         .collect();
     after.extend(adds.iter().map(|add| ReconstructedRecord {
-        name: add.stored_name.to_stored(),
+        name: add.stored_name.clone(),
         record_type: add.prepared.record_type.clone(),
         value: add.prepared.value.clone(),
         ttl: add.prepared.ttl.unwrap_or(zone.ttl),
@@ -525,7 +523,7 @@ fn synthetic_record(
 ) -> Record {
     Record {
         id: -1,
-        name: stored_name.to_stored(),
+        name: stored_name.clone(),
         record_type: record_type.clone(),
         value: value.to_string(),
         ttl,

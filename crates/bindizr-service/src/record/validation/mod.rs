@@ -97,8 +97,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
     let existing_records_with_name: Vec<_> = zone_records
         .iter()
         .filter(|r| {
-            OwnerName::from_row(&r.name) == *stored_name
-                && except_record_id.map(|id| id != r.id).unwrap_or(true)
+            r.name.clone() == *stored_name && except_record_id.map(|id| id != r.id).unwrap_or(true)
         })
         .collect();
 
@@ -200,7 +199,6 @@ pub(super) fn validate_record_update_constraints_normalized(
     zone_records: &[Record],
     existing_record: &Record,
     updated_record: &Record,
-    stored_name: &OwnerName,
 ) -> Result<(), ServiceError> {
     // SOA is managed via the zone's own fields and cannot be set on a record.
     if updated_record.record_type == RecordType::SOA {
@@ -212,7 +210,7 @@ pub(super) fn validate_record_update_constraints_normalized(
 
     validate_record_add_constraints_normalized(
         zone_records,
-        stored_name,
+        &updated_record.name,
         &updated_record.record_type,
         &updated_record.value,
         updated_record.ttl,
@@ -257,7 +255,7 @@ impl RecordService {
     pub(crate) async fn validate_add_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
-        owner_name: &str,
+        owner_name: &OwnerName,
         record_type: &RecordType,
         value: &str,
         ttl: i32,
@@ -265,11 +263,10 @@ impl RecordService {
     ) -> Result<AddOutcome, ServiceError> {
         // Only records sharing the owner name can conflict, so load just those
         // instead of the whole zone.
-        let lookup_owner = normalize_record_owner_name(owner_name, &zone.name)?;
         let zone_records = RepositoryService::get_records_by_zone_id_and_name_tx(
             tx,
             zone.id,
-            &lookup_owner.stored_name.to_stored(),
+            &owner_name.to_stored(),
         )
         .await
         .map_err(|e| {
@@ -283,7 +280,7 @@ impl RecordService {
 
         validate_record_add_constraints_normalized(
             &zone_records,
-            &lookup_owner.stored_name,
+            owner_name,
             record_type,
             value,
             ttl,

@@ -50,7 +50,7 @@ impl OwnerName {
             // Relative input grows by the zone it is qualified with, which is
             // what can push it past the length `decode_name_labels` checked.
             None => {
-                classify_total_len(&labels, &zone_labels)?;
+                classify_wire_len(&labels, &zone_labels)?;
                 Ok(Self(labels))
             }
         }
@@ -122,6 +122,13 @@ impl OwnerName {
     }
 }
 
+/// Decodes the stored form, so a row column can hold an owner name directly.
+impl From<String> for OwnerName {
+    fn from(value: String) -> Self {
+        Self::from_row(&value)
+    }
+}
+
 /// Presentation form, as input spells it: `@` at the apex; rows take
 /// [`OwnerName::to_stored`].
 impl std::fmt::Display for OwnerName {
@@ -179,18 +186,21 @@ fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
         .map_err(|_| ParseNameError::NonUtf8Label)
 }
 
-/// Inverse of [`decode_labels`] for one label: escape `.` and `\` so the label
-/// survives a round trip as a single label, and `@` so it is never read as the
-/// apex: rows hold the apex out of band, but presentation form cannot, since
-/// RFC 1035, Section 5.1 fixes `@` as the origin.
+/// What a label escapes to survive its own presentation form: the separator
+/// and escape themselves, the `@` that RFC 1035, Section 5.1 fixes as the
+/// origin, and the master-file metacharacters that would end the owner field.
+const ESCAPED_IN_LABEL: [char; 7] = ['.', '\\', '@', ';', '(', ')', '"'];
+
+/// Inverse of [`decode_labels`] for one label.
 pub(super) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
-    if !label.contains(['.', '\\', '@']) {
+    if !label.contains(ESCAPED_IN_LABEL) && !label.starts_with('$') {
         return std::borrow::Cow::Borrowed(label);
     }
 
     let mut escaped = String::with_capacity(label.len() + 1);
-    for c in label.chars() {
-        if c == '.' || c == '\\' || c == '@' {
+    for (index, c) in label.char_indices() {
+        // `$` only leads a directive, so escaping it at the start is enough.
+        if ESCAPED_IN_LABEL.contains(&c) || (index == 0 && c == '$') {
             escaped.push('\\');
         }
         escaped.push(c);
@@ -210,14 +220,10 @@ pub(super) fn decode_checked(name: &str) -> Result<(Vec<String>, bool), ParseNam
         labels.pop();
     }
 
-    let mut total = 0;
     for label in &labels {
         classify_owner_label(label)?;
-        total += label.len() + 1;
     }
-    if total > MAX_DOMAIN_LEN {
-        return Err(ParseNameError::TooLong);
-    }
+    classify_wire_len(&labels, &[])?;
 
     Ok((labels, absolute))
 }
@@ -238,10 +244,16 @@ fn classify_owner_label(label: &str) -> Result<(), ParseNameError> {
     Ok(())
 }
 
-/// The 253-byte limit, measured on the decoded octets the wire carries.
-fn classify_total_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameError> {
-    let len: usize = owner.iter().chain(zone).map(|label| label.len() + 1).sum();
-    if len > MAX_DOMAIN_LEN {
+/// The RFC 1035, Section 2.3.4 limit, measured on the wire form: one length
+/// octet per label plus the root's terminating zero.
+fn classify_wire_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameError> {
+    let wire_len: usize = owner
+        .iter()
+        .chain(zone)
+        .map(|label| label.len() + 1)
+        .sum::<usize>()
+        + 1;
+    if wire_len > MAX_DOMAIN_LEN + 2 {
         return Err(ParseNameError::TooLong);
     }
     Ok(())

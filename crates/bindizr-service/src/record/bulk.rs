@@ -226,7 +226,7 @@ impl RecordService {
                 HashMap::with_capacity(existing_records.len());
             for record in existing_records {
                 records_by_name
-                    .entry(OwnerName::from_row(&record.name))
+                    .entry(record.name.clone())
                     .or_default()
                     .push(record);
             }
@@ -270,7 +270,7 @@ impl RecordService {
 
                 let record = Record {
                     id: 0,
-                    name: normalized_owner.stored_name.to_stored(),
+                    name: normalized_owner.stored_name.clone(),
                     record_type: prepared_record.record_type.clone(),
                     value: prepared_record.value.clone(),
                     ttl,
@@ -289,7 +289,7 @@ impl RecordService {
             let writes: Vec<RecordWrite<'_>> = to_insert
                 .iter()
                 .map(|record| RecordWrite {
-                    relative_name: OwnerName::from_row(&record.name),
+                    relative_name: record.name.clone(),
                     record_type: Some(&record.record_type),
                 })
                 .collect();

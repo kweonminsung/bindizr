@@ -298,7 +298,6 @@ async fn add_record(
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
     let owner = owner_in_zone(name, &zone.name)?;
-    let relative_name = owner.to_stored();
 
     // Row-encode so nsupdate stores the same spelling as the other write
     // paths; TXT arrives already encoded from the wire rdata.
@@ -310,16 +309,9 @@ async fn add_record(
         })?
     };
 
-    let outcome = RecordService::validate_add_tx(
-        tx,
-        zone,
-        &relative_name,
-        record_type,
-        &value,
-        ttl,
-        priority,
-    )
-    .await?;
+    let outcome =
+        RecordService::validate_add_tx(tx, zone, &owner, record_type, &value, ttl, priority)
+            .await?;
 
     // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
     // TTL-replace clause is not implemented; RRset TTLs change via the API.
@@ -333,7 +325,7 @@ async fn add_record(
         new_serial,
         &[Record {
             id: 0,
-            name: relative_name,
+            name: owner,
             record_type: record_type.clone(),
             value,
             ttl,
@@ -363,7 +355,7 @@ async fn delete_matching(
 
     let mut matched: Vec<Record> = Vec::new();
     for record in &zone_records {
-        if OwnerName::from_row(&record.name) != owner {
+        if record.name != owner {
             continue;
         }
 

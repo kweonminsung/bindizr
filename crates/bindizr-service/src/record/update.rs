@@ -24,9 +24,10 @@ use crate::{
 };
 
 /// The record's fields after a full request or a patch has been resolved
-/// against the currently stored record. `encoded_value` is already in row form.
+/// against the currently stored record. The owner is already normalized and
+/// `encoded_value` already in row form.
 struct ResolvedRecordUpdate {
-    owner_name: String,
+    owner_name: OwnerName,
     record_type: RecordType,
     encoded_value: String,
     ttl: i32,
@@ -55,7 +56,7 @@ impl RecordService {
                 request.priority,
             )?;
             Ok(ResolvedRecordUpdate {
-                owner_name,
+                owner_name: normalize_record_owner_name(&owner_name, &zone.name)?.stored_name,
                 record_type,
                 encoded_value,
                 ttl: request.ttl.unwrap_or(zone.ttl),
@@ -96,8 +97,13 @@ impl RecordService {
                     .map_err(ServiceError::invalid_record_value)?,
                 None => existing.value.clone(),
             };
+            // An omitted name keeps the stored owner, which needs no reparse.
+            let owner_name = match &patch.name {
+                Some(name) => normalize_record_owner_name(name, &_zone.name)?.stored_name,
+                None => existing.name.clone(),
+            };
             Ok(ResolvedRecordUpdate {
-                owner_name: patch.name.clone().unwrap_or_else(|| existing.name.clone()),
+                owner_name,
                 record_type,
                 encoded_value,
                 ttl: patch.ttl.unwrap_or(existing.ttl),
@@ -161,10 +167,6 @@ impl RecordService {
 
             let resolved = resolve(&zone, &existing_record)?;
 
-            // Only records sharing the new owner name can conflict, so load just
-            // those instead of the whole zone.
-            let lookup_owner = normalize_record_owner_name(&resolved.owner_name, &zone.name)?;
-
             // An update is a delete plus an add, so both the stored identity
             // and the requested one must be granted.
             caller
@@ -173,20 +175,22 @@ impl RecordService {
                     &zone,
                     &[
                         RecordWrite {
-                            relative_name: OwnerName::from_row(&existing_record.name),
+                            relative_name: existing_record.name.clone(),
                             record_type: Some(&existing_record.record_type),
                         },
                         RecordWrite {
-                            relative_name: lookup_owner.stored_name.clone(),
+                            relative_name: resolved.owner_name.clone(),
                             record_type: Some(&resolved.record_type),
                         },
                     ],
                 )
                 .await?;
+            // Only records sharing the new owner name can conflict, so load just
+            // those instead of the whole zone.
             let zone_records = match RepositoryService::get_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone.id,
-                &lookup_owner.stored_name.to_stored(),
+                &resolved.owner_name.to_stored(),
             )
             .await
             {
@@ -199,7 +203,7 @@ impl RecordService {
                 }
             };
 
-            let mut candidate_updated = Record {
+            let candidate_updated = Record {
                 id: existing_record.id,
                 name: resolved.owner_name.clone(),
                 record_type: resolved.record_type.clone(),
@@ -215,9 +219,7 @@ impl RecordService {
                 &zone_records,
                 &existing_record,
                 &candidate_updated,
-                &lookup_owner.stored_name,
             )?;
-            candidate_updated.name = lookup_owner.stored_name.to_stored();
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();

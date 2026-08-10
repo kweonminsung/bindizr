@@ -372,3 +372,50 @@ fn owner_name_constructors_admit_the_same_labels() {
         assert_eq!(absolute, Err(ParseNameError::Whitespace), "{label:?}");
     }
 }
+
+// RFC 1035, Section 2.3.4 bounds the wire form at 255 octets, not the 253 the
+// presentation form is measured by.
+#[test]
+fn owner_name_admits_a_maximum_length_name() {
+    let zone = ZoneName::parse("example.com").unwrap();
+    let longest = format!(
+        "{}.{}.{}.{}.example.com.",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(49)
+    );
+    assert_eq!(longest.trim_end_matches('.').len(), 253);
+
+    assert!(OwnerName::parse_absolute_in_zone(&longest, &zone).is_ok());
+    let over = longest.replace(&"d".repeat(49), &"d".repeat(50));
+    assert_eq!(
+        OwnerName::parse_absolute_in_zone(&over, &zone),
+        Err(ParseNameError::TooLong)
+    );
+}
+
+// A master file ends the owner field at any of these, so an unescaped one
+// would truncate the record or comment out the rest of the line.
+#[test]
+fn owner_name_escapes_master_file_metacharacters() {
+    let zone = ZoneName::parse("example.com").unwrap();
+
+    for (input, rendered) in [
+        (r"foo\;bar", r"foo\;bar"),
+        (r"foo\(bar", r"foo\(bar"),
+        (r"foo\)bar", r"foo\)bar"),
+        ("foo\\\"bar", "foo\\\"bar"),
+        (r"\$origin", r"\$origin"),
+        // `$` only leads a directive, so it is data anywhere else.
+        (r"a\$b", "a$b"),
+    ] {
+        let owner = OwnerName::parse_in_zone(input, &zone).unwrap();
+        assert_eq!(owner.to_string(), rendered, "{input:?}");
+        assert_eq!(
+            OwnerName::parse_in_zone(&owner.to_string(), &zone).unwrap(),
+            owner,
+            "{input:?}"
+        );
+    }
+}

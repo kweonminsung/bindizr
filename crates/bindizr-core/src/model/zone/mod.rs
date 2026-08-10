@@ -32,13 +32,13 @@ impl Zone {
     }
 
     /// Whether the record is an apex NS row, whatever it points at.
-    pub fn is_apex_ns(&self, record_type: &RecordType, name: &str) -> bool {
-        *record_type == RecordType::NS && OwnerName::from_row(name).is_apex()
+    pub fn is_apex_ns(&self, record_type: &RecordType, name: &OwnerName) -> bool {
+        *record_type == RecordType::NS && name.is_apex()
     }
 
     /// Whether the record is the apex NS this zone's `primary_ns` names. One
     /// such row must exist for the zone to stay self-consistent.
-    pub fn is_primary_ns(&self, record_type: &RecordType, name: &str, value: &str) -> bool {
+    pub fn is_primary_ns(&self, record_type: &RecordType, name: &OwnerName, value: &str) -> bool {
         self.is_apex_ns(record_type, name)
             && to_fqdn(value).eq_ignore_ascii_case(&to_fqdn(&self.primary_ns))
     }
@@ -47,7 +47,7 @@ impl Zone {
     pub fn primary_ns_record(&self, ttl: i32) -> Record {
         Record {
             id: 0,
-            name: OwnerName::apex().to_stored(),
+            name: OwnerName::apex(),
             record_type: RecordType::NS,
             value: self.primary_ns.clone(),
             ttl,

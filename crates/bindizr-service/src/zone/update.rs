@@ -33,7 +33,7 @@ pub(super) fn soa_replacement_changes(
             zone_id: old_zone.id,
             serial: new_serial,
             operation: operation.to_string(),
-            record_name: OwnerName::apex().to_stored(),
+            record_name: OwnerName::apex(),
             record_type: "SOA".to_string(),
             record_value: zone
                 .soa_rdata()
@@ -205,7 +205,7 @@ impl ZoneService {
                     &updated_zone,
                     apex_records
                         .iter()
-                        .map(|r| (&r.record_type, r.name.as_str(), r.ttl)),
+                        .map(|r| (&r.record_type, &r.name, r.ttl)),
                 ));
 
                 RecordService::insert_records_with_changes_tx(

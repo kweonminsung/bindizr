@@ -317,3 +317,36 @@ async fn signed_nsupdate_needs_a_policy_for_the_zone() {
         "granted update was not applied"
     );
 }
+
+// The apex is the empty owner in a row but `@` to the input parser, so an
+// apex update used to be refused when the two forms met.
+#[tokio::test]
+#[serial]
+async fn nsupdate_adds_at_the_zone_apex() {
+    let app = unsigned_nsupdate_app().await;
+    let zone_name = app.zone_name("nsupdate-apex.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    let rcode = send_update(
+        app.dns_port(),
+        &zone_name,
+        &[],
+        &[UpdateRr::AddA {
+            name: format!("{zone_name}."),
+            ttl: 300,
+            addr: "192.0.2.60".to_string(),
+        }],
+    )
+    .expect("apex add");
+    assert_eq!(rcode, Rcode::NOERROR);
+
+    assert!(
+        app.list_records(&zone_name)
+            .await
+            .iter()
+            .any(|record| record["name"] == format!("{zone_name}.")
+                && record["record_type"] == "A"
+                && record["value"] == "192.0.2.60"),
+        "apex record was not added"
+    );
+}

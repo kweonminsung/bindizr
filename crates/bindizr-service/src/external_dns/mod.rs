@@ -10,7 +10,7 @@ mod tests;
 
 use std::collections::HashMap;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::name::ZoneName;
 
 use crate::{
     authorization::Caller, error::ServiceError, model::zone::Zone, repository::RepositoryService,
@@ -57,7 +57,9 @@ impl ExternalDnsService {
                 continue;
             };
             items.push(ExternalDnsRecordItem {
-                name: OwnerName::from_row(&record.name)
+                name: record
+                    .name
+                    .clone()
                     .to_fqdn(&ZoneName::from_row(&zone.name))
                     .trim_end_matches('.')
                     .to_string(),

@@ -36,7 +36,7 @@ impl RecordRepository for MySqlRecordRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
-        .bind(&record.name)
+        .bind(record.name.to_stored())
         .bind(record.record_type.to_string())
         .bind(&record.value)
         .bind(record.record_type.display_value(&record.value))
@@ -83,7 +83,7 @@ impl RecordRepository for MySqlRecordRepository {
             let mut query = sqlx::query(AssertSqlSafe(sql));
             for r in chunk {
                 query = query
-                    .bind(r.name.clone())
+                    .bind(r.name.to_stored())
                     .bind(r.record_type.to_string())
                     .bind(r.value.clone())
                     .bind(r.record_type.display_value(&r.value))
@@ -468,7 +468,7 @@ impl RecordRepository for MySqlRecordRepository {
             WHERE id = ?
             "#,
         )
-        .bind(&record.name)
+        .bind(record.name.to_stored())
         .bind(record.record_type.to_string())
         .bind(&record.value)
         .bind(record.record_type.display_value(&record.value))

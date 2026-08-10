@@ -39,7 +39,7 @@ use crate::{
 /// carries no database id.
 #[derive(Debug, Clone)]
 pub struct ReconstructedRecord {
-    pub name: String,
+    pub name: OwnerName,
     pub record_type: RecordType,
     pub value: String,
     pub ttl: i32,
@@ -62,9 +62,14 @@ impl From<Record> for ReconstructedRecord {
 /// type, and the canonical comparison form of the value(+priority).
 type MatchKey = (String, String, String);
 
-fn match_key(name: &str, record_type: &RecordType, value: &str, priority: Option<i32>) -> MatchKey {
+fn match_key(
+    name: &OwnerName,
+    record_type: &RecordType,
+    value: &str,
+    priority: Option<i32>,
+) -> MatchKey {
     (
-        name.to_ascii_lowercase(),
+        name.to_stored(),
         record_type.to_string(),
         record_type.canonical_value(value, priority).into_owned(),
     )
@@ -213,7 +218,7 @@ fn group_rrsets(
     let mut groups: BTreeMap<(String, String), Vec<GroupedRecord>> = BTreeMap::new();
     for record in records {
         let key = (
-            OwnerName::from_row(&record.name).to_fqdn(&ZoneName::from_row(&zone.name)),
+            record.name.to_fqdn(&ZoneName::from_row(&zone.name)),
             record.record_type.to_string(),
         );
         groups.entry(key).or_default().push(GroupedRecord {
@@ -561,16 +566,16 @@ impl ZoneService {
                 // Prefer a restored TTL: the restore is what this serial expresses.
                 let candidates = to_add
                     .iter()
-                    .map(|r| (&r.record_type, r.name.as_str(), r.ttl))
+                    .map(|r| (&r.record_type, &r.name, r.ttl))
                     .chain(
                         current_records
                             .iter()
                             .filter(surviving)
-                            .map(|r| (&r.record_type, r.name.as_str(), r.ttl)),
+                            .map(|r| (&r.record_type, &r.name, r.ttl)),
                     );
 
                 to_add.push(ReconstructedRecord {
-                    name: OwnerName::apex().to_stored(),
+                    name: OwnerName::apex(),
                     record_type: RecordType::NS,
                     value: restored_zone.primary_ns.clone(),
                     ttl: apex_ns_rrset_ttl(&restored_zone, candidates),
@@ -586,18 +591,16 @@ impl ZoneService {
                     continue;
                 }
                 records_by_name
-                    .entry(OwnerName::from_row(&record.name))
+                    .entry(record.name.clone())
                     .or_default()
                     .push(record.clone());
             }
             let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());
             for target in &to_add {
-                let same_name = records_by_name
-                    .entry(OwnerName::from_row(&target.name))
-                    .or_default();
+                let same_name = records_by_name.entry(target.name.clone()).or_default();
                 validate_record_add_constraints_normalized(
                     same_name,
-                    &OwnerName::from_row(&target.name),
+                    &target.name.clone(),
                     &target.record_type,
                     &target.value,
                     target.ttl,

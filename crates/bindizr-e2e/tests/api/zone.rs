@@ -1179,3 +1179,50 @@ async fn zone_status_reports_secondaries() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }
+
+// Both read the apex row's owner: the snapshot returned it blank, and the
+// update check compared the client spelling against the row form.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn apex_rows_render_and_update_through_their_presentation_name() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, detail) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/snapshots/{}", zone["serial"]),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = detail["records"]
+        .as_array()
+        .expect("snapshot records")
+        .iter()
+        .map(|record| record["name"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(names, ["@"], "apex row did not render as the apex");
+
+    let records = app.list_records(zone_name).await;
+    let ns = records
+        .iter()
+        .find(|record| record["record_type"] == "NS")
+        .expect("apex NS row");
+    for spelling in ["@", zone_name] {
+        let (status, body) = app
+            .request(
+                Method::PUT,
+                &format!("/records/{}", ns["id"].as_i64().unwrap()),
+                Some(json!({
+                    "name": spelling,
+                    "record_type": "NS",
+                    "value": ns["value"],
+                    "ttl": 1200,
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{spelling}: {body}");
+    }
+}

@@ -13,7 +13,7 @@ use crate::{
 /// Identity of the deleted record, carried out of the transaction for logging.
 struct DeletedRecord {
     zone_name: String,
-    record_name: String,
+    record_name: OwnerName,
     record_type: String,
     record_value: String,
     record_id: i32,
@@ -75,7 +75,7 @@ impl RecordService {
                     &mut tx,
                     &zone,
                     &[RecordWrite {
-                        relative_name: OwnerName::from_row(&existing_record.name),
+                        relative_name: existing_record.name.clone(),
                         record_type: Some(&existing_record.record_type),
                     }],
                 )

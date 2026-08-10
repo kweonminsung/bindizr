@@ -250,14 +250,14 @@ impl DnsMessageBuilder {
     pub(crate) fn add_record_parts(
         &mut self,
         zone_name: &str,
-        name: &str,
+        name: &OwnerName,
         record_type: &str,
         value: &str,
         ttl: i32,
         priority: Option<i32>,
     ) -> Result<(), XfrError> {
         let ttl = ttl as u32;
-        let owner_name = OwnerName::from_row(name).to_fqdn(&ZoneName::from_row(zone_name));
+        let owner_name = name.to_fqdn(&ZoneName::from_row(zone_name));
 
         match record_type {
             "A" => {

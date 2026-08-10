@@ -30,8 +30,9 @@ pub(super) fn is_supported_record_type(record_type: &RecordType) -> bool {
     EXTERNAL_DNS_RECORD_TYPES.contains(record_type)
 }
 
-/// One desired RRset operation; values are row-encoded and the name stays in
-/// lookup form until zone grouping rewrites it to the encoded owner name.
+/// One desired RRset operation as the request spells it: values are
+/// row-encoded, but the owner is still an absolute lookup name with no zone
+/// resolved yet.
 #[derive(Debug)]
 pub(super) struct RrsetOp {
     pub name: String,
@@ -46,11 +47,21 @@ pub(super) struct PendingOp {
     pub is_delete: bool,
 }
 
+/// The same operation once grouping has decided which zone owns it, so the
+/// owner is relative to that zone.
+#[derive(Debug)]
+pub(super) struct ZoneRrsetOp {
+    pub name: OwnerName,
+    pub record_type: RecordType,
+    pub ttl: Option<i32>,
+    pub values: Vec<String>,
+}
+
 /// Adds and deletes of one request that resolved to the same zone.
 #[derive(Debug, Default)]
 pub(super) struct ZoneOps {
-    pub adds: Vec<RrsetOp>,
-    pub dels: Vec<RrsetOp>,
+    pub adds: Vec<ZoneRrsetOp>,
+    pub dels: Vec<ZoneRrsetOp>,
 }
 
 /// The record rows one zone's operations resolve to.
@@ -169,10 +180,16 @@ pub(super) fn group_ops_by_zone(
             )
         })?;
 
-        let mut op = pending.op;
-        op.name = OwnerName::parse_absolute_in_zone(&op.name, &ZoneName::from_row(&zone.name))
-            .expect("find_authoritative_zone matched the name inside this zone")
-            .to_stored();
+        let op = ZoneRrsetOp {
+            name: OwnerName::parse_absolute_in_zone(
+                &pending.op.name,
+                &ZoneName::from_row(&zone.name),
+            )
+            .expect("find_authoritative_zone matched the name inside this zone"),
+            record_type: pending.op.record_type,
+            ttl: pending.op.ttl,
+            values: pending.op.values,
+        };
         let entry = grouped.entry(zone.name.clone()).or_default();
         if pending.is_delete {
             entry.dels.push(op);
@@ -195,7 +212,7 @@ pub(super) fn compute_zone_change_set(
     for del in &ops.dels {
         for value in &del.values {
             for row in existing {
-                if OwnerName::from_row(&row.name) == OwnerName::from_row(&del.name)
+                if row.name == del.name
                     && row.record_type == del.record_type
                     && del.record_type.values_equal(&row.value, None, value, None)
                     && !deletes.iter().any(|d| d.id == row.id)
@@ -211,7 +228,7 @@ pub(super) fn compute_zone_change_set(
         let ttl = add.ttl.unwrap_or(zone.ttl);
         for value in &add.values {
             let matches = |row: &Record| {
-                OwnerName::from_row(&row.name) == OwnerName::from_row(&add.name)
+                row.name == add.name
                     && row.record_type == add.record_type
                     && row.ttl == ttl
                     && add.record_type.values_equal(&row.value, None, value, None)
@@ -254,21 +271,20 @@ pub(super) fn compute_zone_change_set(
         let mut same_name: Vec<Record> = existing
             .iter()
             .filter(|row| {
-                deletes.iter().all(|d| d.id != row.id)
-                    && OwnerName::from_row(&row.name) == OwnerName::from_row(&create.name)
+                deletes.iter().all(|d| d.id != row.id) && row.name.clone() == create.name.clone()
             })
             .cloned()
             .collect();
         same_name.extend(
             creates[..index]
                 .iter()
-                .filter(|row| OwnerName::from_row(&row.name) == OwnerName::from_row(&create.name))
+                .filter(|row| row.name.clone() == create.name.clone())
                 .cloned(),
         );
 
         validate_record_add_constraints_normalized(
             &same_name,
-            &OwnerName::from_row(&create.name),
+            &create.name.clone(),
             &create.record_type,
             &create.value,
             create.ttl,
@@ -326,7 +342,7 @@ impl ExternalDnsService {
                     .iter()
                     .chain(ops.dels.iter())
                     .map(|op| RecordWrite {
-                        relative_name: OwnerName::from_row(&op.name),
+                        relative_name: op.name.clone(),
                         record_type: Some(&op.record_type),
                     })
                     .collect();
@@ -340,7 +356,7 @@ impl ExternalDnsService {
                     .adds
                     .iter()
                     .chain(ops.dels.iter())
-                    .map(|op| op.name.clone())
+                    .map(|op| op.name.to_stored())
                     .collect();
                 names.sort();
                 names.dedup();

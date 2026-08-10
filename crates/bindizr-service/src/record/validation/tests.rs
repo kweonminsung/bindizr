@@ -401,7 +401,7 @@ fn test_record(
 ) -> Record {
     Record {
         id,
-        name: name.to_string(),
+        name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),
         ttl: RRSET_TTL,
