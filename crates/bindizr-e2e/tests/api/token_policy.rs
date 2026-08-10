@@ -319,6 +319,38 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
     }
 }
 
+// A batch whose names all fail to parse lists no write, so the per-write check
+// has nothing to reject; the caller must still be turned away on the zone.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
+    let mut app = TestApp::start_with_options(authed_options()).await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+
+    let (_, scoped_token) = app.create_scoped_api_token().await;
+    app.set_auth_token(scoped_token);
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(json!({
+                "records": [
+                    { "name": "bad name", "record_type": "A", "value": "192.0.2.1" }
+                ]
+            })),
+        )
+        .await;
+
+    // 400 here would confirm the zone exists and that its validation ran.
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["code"], "FORBIDDEN", "{body}");
+}
+
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn global_token_policy_management_over_http() {

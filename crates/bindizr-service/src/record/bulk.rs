@@ -181,7 +181,8 @@ impl RecordService {
 
             // Before any row is read, so an ungranted caller gets 403 rather than
             // a constraint error naming what the zone holds; dry runs included.
-            // Unnormalizable names are left out — the validation loop reports them.
+            // Unnormalizable names list no write, and the validation loop reports
+            // them — but only once the caller holds some grant in this zone.
             let writes: Vec<RecordWrite<'_>> = prepared
                 .iter()
                 .filter_map(|p| {

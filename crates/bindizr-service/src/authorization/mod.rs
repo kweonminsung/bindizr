@@ -118,6 +118,15 @@ impl Caller {
                     tx, zone.id, *id,
                 )
                 .await?;
+                // Decided before the per-write loop, which a caller could
+                // otherwise pass vacuously by submitting a batch that resolved
+                // to no writes at all.
+                if policies.is_empty() {
+                    return Err(ServiceError::forbidden(format!(
+                        "API token is not allowed to manage records in zone '{}'",
+                        zone.name
+                    )));
+                }
                 let policies: Vec<&ZoneTokenPolicy> = policies.iter().collect();
                 authorize_with_policies(&policies, zone, writes)
             }
