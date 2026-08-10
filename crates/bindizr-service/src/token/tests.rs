@@ -9,8 +9,6 @@ fn normalize_token_name_trims_and_accepts_plain_names() {
     );
 }
 
-// MySQL compares the column case-insensitively and the other backends exactly,
-// so folding here is what keeps one name meaning one token everywhere.
 #[test]
 fn normalize_token_name_folds_case() {
     assert_eq!(normalize_token_name("Deploy").unwrap(), "deploy");

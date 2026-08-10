@@ -246,8 +246,7 @@ fn change_set_skips_creates_that_already_exist() {
     assert!(change_set.creates.is_empty());
 }
 
-// The duplicate check behind the change set ignores TTL, so a create that got
-// past this one would conflict on every retry.
+// A create that got past this one would conflict on every retry.
 #[test]
 fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
     let zone = test_zone(1, "example.com");

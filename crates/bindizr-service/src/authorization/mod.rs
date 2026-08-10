@@ -118,9 +118,8 @@ impl Caller {
                     tx, zone.id, *id,
                 )
                 .await?;
-                // Decided before the per-write loop, which a caller could
-                // otherwise pass vacuously by submitting a batch that resolved
-                // to no writes at all.
+                // Ahead of the per-write loop, which a batch resolving to no
+                // writes would otherwise pass vacuously.
                 if policies.is_empty() {
                     return Err(ServiceError::forbidden(format!(
                         "API token is not allowed to manage records in zone '{}'",
