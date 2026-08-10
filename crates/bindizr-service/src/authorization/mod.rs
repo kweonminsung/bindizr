@@ -40,13 +40,13 @@ pub enum Caller {
 
 /// One record-plane write to authorize: the owner name relative to the zone
 /// (stored form) and its type. `None` types only match unrestricted policies.
-pub struct RecordWrite<'a> {
+pub(crate) struct RecordWrite<'a> {
     pub relative_name: OwnerName,
     pub record_type: Option<&'a RecordType>,
 }
 
 impl Caller {
-    pub fn is_global(&self) -> bool {
+    fn is_global(&self) -> bool {
         matches!(self, Caller::Global)
     }
 

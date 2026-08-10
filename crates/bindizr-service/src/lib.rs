@@ -10,7 +10,7 @@ mod pagination;
 pub(crate) mod policy_pattern;
 pub mod record;
 mod repository;
-pub mod serial;
+pub(crate) mod serial;
 pub(crate) mod timing;
 pub mod token;
 pub mod tsig_key;

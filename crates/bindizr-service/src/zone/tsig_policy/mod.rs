@@ -126,7 +126,7 @@ impl ZoneTsigPolicyService {
 /// Whether any policy authorizes an update of `record_type` at the relative
 /// owner name. `record_type` is `None` for whole-name deletes (wire TYPE ANY),
 /// which only a policy with unrestricted types may authorize.
-pub fn authorize_update(
+pub(crate) fn authorize_update(
     policies: &[ZoneTsigPolicy],
     relative_name: &OwnerName,
     record_type: Option<&RecordType>,

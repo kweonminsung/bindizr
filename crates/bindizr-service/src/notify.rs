@@ -28,7 +28,7 @@ pub fn set_notify_sender(sender: Arc<dyn NotifySender>) -> Result<(), &'static s
 }
 
 /// Send a DNS NOTIFY for `zone_name` (or all zones) via the registered sender.
-pub async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
+pub(crate) async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
     match NOTIFY_SENDER.get() {
         Some(sender) => sender.send_notify(zone_name).await,
         None => Err("notify sender is not registered".to_string()),
@@ -134,7 +134,7 @@ fn enqueue_apply(zone_name: Option<&str>) -> bool {
 
 /// Send a NOTIFY after a zone update, unless disabled by `notify_after_update`.
 /// In async mode it is queued and this returns at once; otherwise sent inline.
-pub async fn send_notify_after_update(zone_name: Option<&str>) -> Result<(), String> {
+pub(crate) async fn send_notify_after_update(zone_name: Option<&str>) -> Result<(), String> {
     let dns = &config::get_bindizr_config().dns;
     if !dns.notify_after_update {
         return Ok(());

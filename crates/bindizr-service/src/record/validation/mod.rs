@@ -170,7 +170,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
 }
 
 /// Reject deletions of the SOA record or the NS record referenced by `primary_ns`.
-pub fn validate_delete_constraints(
+pub(crate) fn validate_delete_constraints(
     zone: &Zone,
     deleting_records: &[Record],
 ) -> Result<(), ServiceError> {
@@ -242,7 +242,7 @@ pub(super) fn validate_record_update_constraints_normalized(
 }
 
 /// What an add resolves to against the records already in the zone.
-pub enum AddOutcome {
+pub(crate) enum AddOutcome {
     /// Nothing holds this rdata and every constraint passed.
     New,
     Duplicate,

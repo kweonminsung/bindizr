@@ -102,18 +102,6 @@ impl RecordService {
         Ok(paginated_response(records, limit, offset, total))
     }
 
-    /// Fetch a record by id, returning `NotFound` if it does not exist.
-    pub async fn get_by_id(record_id: i32) -> Result<Record, ServiceError> {
-        match RepositoryService::get_record_by_id(record_id).await {
-            Ok(Some(record)) => Ok(record),
-            Ok(None) => Err(ServiceError::record_not_found(record_id)),
-            Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
-                Err(ServiceError::internal("Failed to fetch record".to_string()))
-            }
-        }
-    }
-
     /// Fetch a record with its zone name by id. A record in a zone the caller
     /// cannot see reads as `NotFound`, so ids cannot be probed.
     pub async fn get_by_id_with_zone(
