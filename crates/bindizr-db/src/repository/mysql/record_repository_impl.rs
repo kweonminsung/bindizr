@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bindizr_core::dns::name::OwnerName;
 use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::{
@@ -35,7 +36,7 @@ impl RecordRepository for MySqlRecordRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
-        .bind(record.name.to_stored())
+        .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
         .bind(record.record_type.display_value(&record.value))
@@ -82,7 +83,7 @@ impl RecordRepository for MySqlRecordRepository {
             let mut query = sqlx::query(AssertSqlSafe(sql));
             for r in chunk {
                 query = query
-                    .bind(r.name.to_stored())
+                    .bind(&r.name)
                     .bind(r.record_type.to_string())
                     .bind(r.value.clone())
                     .bind(r.record_type.display_value(&r.value))
@@ -188,7 +189,7 @@ impl RecordRepository for MySqlRecordRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        name: &str,
+        name: &OwnerName,
     ) -> Result<Vec<Record>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
@@ -237,7 +238,7 @@ impl RecordRepository for MySqlRecordRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        names: &[String],
+        names: &[OwnerName],
     ) -> Result<Vec<Record>, DatabaseError> {
         if names.is_empty() {
             return Ok(Vec::new());
@@ -468,7 +469,7 @@ impl RecordRepository for MySqlRecordRepository {
             WHERE id = ?
             "#,
         )
-        .bind(record.name.to_stored())
+        .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
         .bind(record.record_type.display_value(&record.value))

@@ -57,7 +57,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
                     .bind(c.zone_id)
                     .bind(c.serial)
                     .bind(c.operation.clone())
-                    .bind(c.record_name.to_stored())
+                    .bind(&c.record_name)
                     .bind(c.record_type.clone())
                     .bind(c.record_value.clone())
                     .bind(c.record_ttl)

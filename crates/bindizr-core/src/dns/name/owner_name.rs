@@ -133,6 +133,34 @@ impl From<String> for OwnerName {
     }
 }
 
+/// The write half of that: binding an owner name renders [`OwnerName::to_stored`],
+/// so a query cannot reach a column through [`std::fmt::Display`], whose apex is
+/// `@` rather than the empty string rows hold.
+impl<DB: sqlx::Database> sqlx::Type<DB> for OwnerName
+where
+    String: sqlx::Type<DB>,
+{
+    fn type_info() -> DB::TypeInfo {
+        <String as sqlx::Type<DB>>::type_info()
+    }
+
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <String as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for OwnerName
+where
+    String: sqlx::Encode<'q, DB>,
+{
+    fn encode_by_ref(
+        &self,
+        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        self.to_stored().encode_by_ref(buf)
+    }
+}
+
 /// Presentation form, as input spells it: `@` at the apex; rows take
 /// [`OwnerName::to_stored`].
 impl std::fmt::Display for OwnerName {

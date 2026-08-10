@@ -221,8 +221,14 @@ methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or `labels_in_zone`.
 Names are canonical by construction: labels are lowercased (RFC 4343) and
 rendered back with only `.` and `\` escaped, so one name has one spelling.
 That is what lets the record-filter SQL compare owner names as text and
-concatenate them into FQDNs. Rows hold that presentation string;
-`OwnerName::from_row` decodes it.
+concatenate them into FQDNs.
+
+The row form is the type's, not a caller's: `OwnerName::from_row` decodes it
+and its `sqlx::Encode` renders it, so bind and compare an `OwnerName` itself
+(`.bind(&record.name)`) rather than a string you produced. The apex is the
+empty string in a row but `@` in presentation, and `Display` gives you the
+latter — passing it to a query is the mistake the typed signatures now
+reject.
 
 `OwnerName::parse_in_zone` qualifies a relative name by appending the zone;
 `parse_absolute_in_zone` never does, and is what input carrying no trailing

@@ -200,8 +200,8 @@ impl RecordService {
             // Only records whose owner name appears in the batch can conflict, so
             // load just those instead of the whole zone.
             let t = Instant::now();
-            let mut batch_names: Vec<String> =
-                writes.iter().map(|w| w.relative_name.to_stored()).collect();
+            let mut batch_names: Vec<OwnerName> =
+                writes.iter().map(|w| w.relative_name.clone()).collect();
             batch_names.sort();
             batch_names.dedup();
 

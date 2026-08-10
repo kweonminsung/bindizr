@@ -1,3 +1,5 @@
+use bindizr_core::dns::name::OwnerName;
+
 use super::error::{ErrorCode, ServiceError};
 pub use crate::database::repository::RepositoryTx;
 use crate::{
@@ -177,7 +179,7 @@ impl RepositoryService {
     pub(super) async fn get_records_by_zone_id_and_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        name: &str,
+        name: &OwnerName,
     ) -> Result<Vec<Record>, ServiceError> {
         get_record_repository()
             .get_by_zone_id_and_name_tx(tx, zone_id, name)
@@ -188,7 +190,7 @@ impl RepositoryService {
     pub(super) async fn get_records_by_zone_id_and_names_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        names: &[String],
+        names: &[OwnerName],
     ) -> Result<Vec<Record>, ServiceError> {
         get_record_repository()
             .get_by_zone_id_and_names_tx(tx, zone_id, names)

@@ -203,8 +203,8 @@ impl RecordService {
             let t = Instant::now();
             let existing_records = match mode {
                 ImportMode::Append => {
-                    let mut names: Vec<String> =
-                        desired.iter().map(|d| d.stored_name.to_stored()).collect();
+                    let mut names: Vec<OwnerName> =
+                        desired.iter().map(|d| d.stored_name.clone()).collect();
                     names.sort();
                     names.dedup();
                     RepositoryService::get_records_by_zone_id_and_names_tx(&mut tx, zone.id, &names)

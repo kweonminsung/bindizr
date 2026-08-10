@@ -62,7 +62,7 @@ impl RecordService {
                 match RepositoryService::get_records_by_zone_id_and_name_tx(
                     &mut tx,
                     zone.id,
-                    &owner_name.to_stored(),
+                    &owner_name,
                 )
                 .await
                 {

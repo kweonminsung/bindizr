@@ -190,7 +190,7 @@ impl ZoneService {
             let apex_records = RepositoryService::get_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone_id,
-                &OwnerName::apex().to_stored(),
+                &OwnerName::apex(),
             )
             .await
             .map_err(|e| {

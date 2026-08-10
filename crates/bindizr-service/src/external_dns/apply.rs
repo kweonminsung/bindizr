@@ -349,11 +349,11 @@ impl ExternalDnsService {
 
                 // Only records sharing an owner name with the request can be
                 // touched or conflict, so load just those.
-                let mut names: Vec<String> = ops
+                let mut names: Vec<OwnerName> = ops
                     .adds
                     .iter()
                     .chain(ops.dels.iter())
-                    .map(|op| op.name.to_stored())
+                    .map(|op| op.name.clone())
                     .collect();
                 names.sort();
                 names.dedup();

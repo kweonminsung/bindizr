@@ -322,7 +322,7 @@ pub trait RecordRepository: Send + Sync {
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        name: &str,
+        name: &OwnerName,
     ) -> Result<Vec<Record>, DatabaseError>;
     /// Load records whose owner name is any of `names` (lowercased match). Used
     /// by bulk insert to fetch only the rows that could conflict with the batch.
@@ -330,7 +330,7 @@ pub trait RecordRepository: Send + Sync {
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        names: &[String],
+        names: &[OwnerName],
     ) -> Result<Vec<Record>, DatabaseError>;
     async fn get_by_filter_with_zone(
         &self,
