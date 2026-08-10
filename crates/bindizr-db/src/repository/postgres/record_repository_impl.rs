@@ -15,7 +15,6 @@ pub struct PostgresRecordRepository {
 }
 
 impl PostgresRecordRepository {
-    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Postgres>) -> Self {
         PostgresRecordRepository { pool }
     }
@@ -193,9 +192,8 @@ impl RecordRepository for PostgresRecordRepository {
     ) -> Result<Vec<Record>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        // Callers pass the canonical stored form, so bind it as-is: re-folding
-        // it here would miss its own row. The column stays function-free so
-        // idx_records_zone_name is used.
+        // Bind the canonical stored form as given: re-folding it here would miss
+        // its own row, and the bare column lets idx_records_zone_name apply.
         let records = sqlx::query_as::<_, Record>(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name FOR UPDATE",
         )
@@ -250,9 +248,8 @@ impl RecordRepository for PostgresRecordRepository {
 
         let postgres_tx = tx.as_postgres()?;
 
-        // Only same-name rows can conflict, so match the canonical stored names
-        // as-is (column function-free, so idx_records_zone_name is used) and lock
-        // just those.
+        // Only same-name rows can conflict, so lock just those, matching the
+        // stored names as given so idx_records_zone_name applies.
         // One round-trip per chunk; keep it large (dominated bulk-import time on
         // networked backends). 5000 is well under the 65535 placeholder limit.
         const CHUNK: usize = 5000;

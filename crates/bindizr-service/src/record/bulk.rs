@@ -179,11 +179,10 @@ impl RecordService {
             let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
             timings.load_zone_ms = elapsed_ms(t);
 
-            // Authorized before any row is read, so a caller without a grant gets
-            // 403 instead of a constraint error naming records in the zone. Dry
-            // runs authorize too, so a preview never claims a batch the caller
-            // could not apply. Normalization errors are ignored here; the
-            // validation loop below reports them authoritatively.
+            // Before any row is read, so an ungranted caller gets 403 rather than
+            // a constraint error naming what the zone holds; dry runs included, so
+            // a preview never claims a batch the caller could not apply.
+            // Unnormalizable names are left out — the validation loop reports them.
             let writes: Vec<RecordWrite<'_>> = prepared
                 .iter()
                 .filter_map(|p| {

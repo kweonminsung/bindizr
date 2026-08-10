@@ -733,9 +733,8 @@ async fn zone_import_preview_shows_empty_diff_on_validation_error() {
     assert_eq!(body["diff"]["summary"]["added"], 0);
 }
 
-// --- append fast-path adversarial tests -------------------------------------
-// Append imports load only rows sharing an owner name with the file; these
-// verify that constraint checks against records existing only in the DB still hold.
+// Append imports load only rows sharing an owner name with the file, so these
+// check constraints against records that exist only in the DB.
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

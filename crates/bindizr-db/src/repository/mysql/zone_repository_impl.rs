@@ -13,7 +13,6 @@ pub struct MySqlZoneRepository {
 }
 
 impl MySqlZoneRepository {
-    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }

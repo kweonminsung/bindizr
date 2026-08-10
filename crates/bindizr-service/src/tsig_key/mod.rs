@@ -20,8 +20,6 @@ pub struct TsigKeyService;
 impl TsigKeyService {
     /// Create a TSIG key. When `secret` is omitted a random one is generated;
     /// when provided it must be valid, non-empty base64 (an imported key).
-    /// `is_global` is fixed at creation: a global key may update every zone
-    /// without any policy.
     pub async fn create(
         caller: &Caller,
         name: &str,

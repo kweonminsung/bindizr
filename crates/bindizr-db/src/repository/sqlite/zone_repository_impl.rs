@@ -13,7 +13,6 @@ pub struct SqliteZoneRepository {
 }
 
 impl SqliteZoneRepository {
-    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }

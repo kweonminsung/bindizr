@@ -15,7 +15,6 @@ pub struct SqliteRecordRepository {
 }
 
 impl SqliteRecordRepository {
-    /// Create a new repository backed by the given connection pool.
     pub fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -185,9 +184,8 @@ impl RecordRepository for SqliteRecordRepository {
     ) -> Result<Vec<Record>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // Callers pass the canonical stored form, so bind it as-is: re-folding
-        // it here would miss its own row. The column stays function-free so
-        // idx_records_zone_name is used.
+        // Bind the canonical stored form as given: re-folding it here would miss
+        // its own row, and the bare column lets idx_records_zone_name apply.
         let records = sqlx::query_as::<_, Record>(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name",
         )
@@ -239,9 +237,9 @@ impl RecordRepository for SqliteRecordRepository {
 
         let sqlite_tx = tx.as_sqlite()?;
 
-        // Only same-name rows can conflict, so match the canonical stored names
-        // as-is (column function-free, so idx_records_zone_name is used); chunk
-        // the IN list to stay under SQLite's bind-variable limit.
+        // Only same-name rows can conflict, so load just those, matching the
+        // stored names as given so idx_records_zone_name applies. Chunk the IN
+        // list to stay under SQLite's bind-variable limit.
         const CHUNK: usize = 400;
         let mut out = Vec::new();
         for chunk in names.chunks(CHUNK) {

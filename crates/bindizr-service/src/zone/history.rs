@@ -528,10 +528,9 @@ impl ZoneService {
                 let key = record_match_key(record);
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
-                        // TTL-only difference: replace the row (DEL + ADD).
-                        // The pair preserves the record's identity, so the
-                        // primary_ns delete protection cannot be violated; SOA
-                        // lives in the zone's own fields.
+                        // The DEL + ADD pair preserves the record's identity, so
+                        // the primary_ns delete protection cannot be violated;
+                        // SOA lives in the zone's own fields.
                         if record.ttl != target.ttl && record.record_type != RecordType::SOA {
                             dels.push(record.clone());
                             to_add.push(target);

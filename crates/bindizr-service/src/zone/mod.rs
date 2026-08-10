@@ -16,9 +16,8 @@ pub mod tsig_policy;
 mod update;
 pub(crate) mod validation;
 
-// Default SOA timing fields (seconds) applied when a request omits them.
-// Bindizr drives propagation with NOTIFY, so keep refresh/retry short: they
-// only bound how long a secondary stays stale if a (UDP) NOTIFY is ever lost,
+// Seconds. Bindizr drives propagation with NOTIFY, so refresh/retry stay short:
+// they only bound how long a secondary stays stale if a (UDP) NOTIFY is lost,
 // not the happy-path latency.
 pub(crate) const DEFAULT_REFRESH: i32 = 300;
 pub(crate) const DEFAULT_RETRY: i32 = 60;
