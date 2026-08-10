@@ -50,3 +50,40 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::validate_domain_record_value;
+
+    // RFC 1035, Section 5.1 lets presentation form quote any character, but a
+    // name bindizr stores never carries an escape (see CLAUDE.md, "Names are
+    // unescaped"): rejecting `\` outright is what lets every other name path
+    // split on `.` without a label being able to hide a boundary. The rejection
+    // is structural — an escape always leaves a `\` inside some label, which the
+    // LDH check refuses — so it holds without decoding the value first.
+    #[test]
+    fn rejects_escaped_name_values() {
+        for value in [
+            r"host\-name.example.com.", // decodes to a valid name, still refused
+            r"evil\.example.com",       // the impersonation the rule exists for
+            r"a\\b.example.com",
+            r"host\065.example.com",
+        ] {
+            assert!(
+                validate_domain_record_value("CNAME record value", value).is_err(),
+                "{value} was accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_plain_names_with_or_without_a_trailing_dot() {
+        for value in [
+            "host-name.example.com.",
+            "host-name.example.com",
+            "_dmarc.example.com.",
+        ] {
+            validate_domain_record_value("CNAME record value", value).unwrap();
+        }
+    }
+}
