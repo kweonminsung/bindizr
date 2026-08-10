@@ -64,8 +64,8 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
     })
 }
 
-/// Check a pattern's name part against the pattern grammar, then decode it as
-/// a DNS name. Any DNS-level rejection is phrased as a pattern error.
+/// Decode a pattern's name part and hold it to the pattern grammar. Any
+/// DNS-level rejection is phrased as a pattern error.
 fn parse_relative_name(name: &str) -> Result<Vec<String>, ServiceError> {
     if name.is_empty() {
         return Err(ServiceError::invalid_input(
@@ -73,7 +73,7 @@ fn parse_relative_name(name: &str) -> Result<Vec<String>, ServiceError> {
         ));
     }
 
-    if has_whitespace_or_control(name) || name.contains('*') {
+    if has_whitespace_or_control(name) {
         return Err(ServiceError::invalid_input(format!(
             "invalid record name pattern '{}': use '*', '@', '*.<name>' or an exact relative name",
             name
@@ -88,8 +88,19 @@ fn parse_relative_name(name: &str) -> Result<Vec<String>, ServiceError> {
         ));
     }
 
-    decode_name_labels(name)
-        .map_err(|e| ServiceError::invalid_input(format!("record name pattern {}", e)))
+    let labels = decode_name_labels(name)
+        .map_err(|e| ServiceError::invalid_input(format!("record name pattern {}", e)))?;
+
+    // On the decoded labels: `*` is this language's metacharacter and, unlike
+    // `@`, is not escaped on the way out, so `\042` would render as a grant.
+    if labels.iter().any(|label| label.contains('*')) {
+        return Err(ServiceError::invalid_input(format!(
+            "invalid record name pattern '{}': use '*', '@', '*.<name>' or an exact relative name",
+            name
+        )));
+    }
+
+    Ok(labels)
 }
 
 /// Normalize and validate a record type list; `None` grants all types.

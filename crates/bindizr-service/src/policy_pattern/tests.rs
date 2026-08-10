@@ -89,3 +89,25 @@ fn a_subtree_grant_does_not_reach_a_label_that_merely_spells_it() {
         &OwnerName::from_row(r"a\.b.sub")
     ));
 }
+
+// Canonicalizing `\042` to `*` would widen a policy meant for the wildcard
+// owner into the match-all or subtree grant.
+#[test]
+fn rejects_a_wildcard_label_however_it_is_spelled() {
+    for pattern in [r"\042", r"\042.sub", r"\042x", r"a\042b", "a*b", "*x"] {
+        let err = normalize_pattern(Some(pattern)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput, "{pattern} was accepted");
+    }
+
+    // The two spellings the language does define keep working.
+    assert_eq!(normalize_pattern(Some("*")).unwrap(), "*");
+    assert_eq!(normalize_pattern(Some("*.sub")).unwrap(), "*.sub");
+}
+
+// `@` is safe where `*` was not, because it round-trips escaped.
+#[test]
+fn an_escaped_at_stays_a_literal_owner() {
+    let pattern = normalize_pattern(Some(r"\064")).unwrap();
+    assert_eq!(pattern, r"\@");
+    assert!(!pattern_matches_name(&pattern, &OwnerName::apex()));
+}
