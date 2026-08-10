@@ -3,14 +3,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 /// Grants one TSIG key nsupdate rights over part of one zone, in the spirit of
-/// BIND's `update-policy`. A zone may hold any number of policies (multiple
-/// keys) and a key may appear in policies of any number of zones. Global keys
-/// (`TsigKey::is_global`) bypass policies entirely and hold no rows here.
+/// BIND's `update-policy`. Global keys bypass policies and hold no rows here.
 ///
-/// `record_name_pattern` is matched against the record's owner name relative to
-/// the zone: `*` (any name), `*.sub` (sub and everything under it), an exact
-/// relative name, or `@` (zone apex). `record_types` is `*` or a comma-separated
-/// list of record type mnemonics (e.g. `A,AAAA,TXT`).
+/// `record_name_pattern` matches the owner name relative to the zone — `*`,
+/// `@`, `*.sub`, or an exact relative name — and `record_types` is `*` or a
+/// comma-separated list of type mnemonics.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, FromRow)]
 pub struct ZoneTsigPolicy {
     pub id: i32,

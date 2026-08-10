@@ -61,9 +61,8 @@ impl TryFrom<String> for TsigAlgorithm {
 }
 
 /// A TSIG key used to authenticate nsupdate requests. Keys are standalone
-/// credentials granted to any number of zones through
-/// [`super::zone_tsig_policy::ZoneTsigPolicy`] rows; `name` is the key name as
-/// it appears on the wire and `secret` is base64.
+/// credentials granted to zones through
+/// [`super::zone_tsig_policy::ZoneTsigPolicy`] rows; `name` is the wire name.
 ///
 /// `is_global` is fixed at creation: a global key may update every zone
 /// (all names, all types) without any policy.

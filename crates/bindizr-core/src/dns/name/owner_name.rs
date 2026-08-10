@@ -133,9 +133,8 @@ impl From<String> for OwnerName {
     }
 }
 
-/// The write half of that: binding an owner name renders [`OwnerName::to_stored`],
-/// so a query cannot reach a column through [`std::fmt::Display`], whose apex is
-/// `@` rather than the empty string rows hold.
+/// The write half: binding renders [`OwnerName::to_stored`], so a query cannot
+/// reach a column through [`std::fmt::Display`], whose apex is `@`.
 impl<DB: sqlx::Database> sqlx::Type<DB> for OwnerName
 where
     String: sqlx::Type<DB>,
