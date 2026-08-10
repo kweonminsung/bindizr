@@ -25,7 +25,6 @@ pub struct BindizrConfig {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
-    #[serde(alias = "port")]
     pub listen_port: u16,
     pub require_authentication: bool,
     /// Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
@@ -54,7 +53,7 @@ pub struct DatabaseConfig {
     pub mysql: MysqlConfig,
     #[serde(default)]
     pub sqlite: SqliteConfig,
-    #[serde(alias = "postgres", default)]
+    #[serde(default)]
     pub postgresql: PostgresqlConfig,
 }
 
