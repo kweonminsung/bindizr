@@ -248,8 +248,7 @@ impl RecordRepository for PostgresRecordRepository {
 
         let postgres_tx = tx.as_postgres()?;
 
-        // Only same-name rows can conflict, so lock just those, matching the
-        // stored names as given so idx_records_zone_name applies.
+        // Only same-name rows can conflict, so lock just those.
         // One round-trip per chunk; keep it large (dominated bulk-import time on
         // networked backends). 5000 is well under the 65535 placeholder limit.
         const CHUNK: usize = 5000;

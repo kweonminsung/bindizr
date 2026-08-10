@@ -55,12 +55,8 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
 mod tests {
     use super::validate_domain_record_value;
 
-    // RFC 1035, Section 5.1 lets presentation form quote any character, but a
-    // name bindizr stores never carries an escape (see CLAUDE.md, "Names are
-    // unescaped"): rejecting `\` outright is what lets every other name path
-    // split on `.` without a label being able to hide a boundary. The rejection
-    // is structural — an escape always leaves a `\` inside some label, which the
-    // LDH check refuses — so it holds without decoding the value first.
+    // RFC 1035, Section 5.1 lets presentation form quote any character; bindizr
+    // refuses it so that no label can hide a `.` that reads as a boundary.
     #[test]
     fn rejects_escaped_name_values() {
         for value in [
