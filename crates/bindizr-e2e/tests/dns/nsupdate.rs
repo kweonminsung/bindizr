@@ -3,7 +3,7 @@ use serial_test::serial;
 
 use crate::common::{
     TestApp, TestAppOptions,
-    nsupdate::{PrereqRr, UpdateRr, send_update},
+    nsupdate::{PrereqRr, SigningKey, UpdateRr, send_signed_update, send_update},
 };
 
 /// These drive bindizr's own DNS listener over UDP with unsigned updates, so
@@ -244,4 +244,76 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
     .expect("no-op update");
     assert_eq!(rcode, Rcode::NOERROR);
     assert_eq!(app.zone_serial(&zone_name).await, before + 1);
+}
+
+/// A signed update carries a key, so the zone's TSIG policies decide what it
+/// may touch — the leg the unsigned tests above skip entirely.
+async fn signed_nsupdate_app() -> TestApp {
+    TestApp::start_with_options(TestAppOptions::default()).await
+}
+
+async fn create_key(app: &TestApp, name: &str) -> SigningKey {
+    app.run_cli_success(&["tsig-key", "create", "--name", name])
+        .await;
+    let fetched = app.run_cli_success(&["tsig-key", "get", name]).await;
+    let secret = fetched
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("Secret: "))
+        .expect("tsig-key get prints the secret")
+        .trim()
+        .to_string();
+    SigningKey {
+        name: name.to_string(),
+        secret,
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn signed_nsupdate_needs_a_policy_for_the_zone() {
+    let app = signed_nsupdate_app().await;
+    let zone_name = app.zone_name("nsupdate-policy.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    let port = app.dns_port();
+    let key = create_key(&app, "nsupdate-policy-key").await;
+
+    let add = |owner: String| UpdateRr::AddA {
+        name: owner,
+        ttl: 300,
+        addr: "192.0.2.60".to_string(),
+    };
+
+    // No policy grants this key anything in the zone.
+    let rcode = send_signed_update(port, &zone_name, &[add(format!("a.{zone_name}."))], &key)
+        .expect("send");
+    assert_eq!(rcode, Rcode::REFUSED);
+
+    // Granting only `a` leaves every other owner name refused.
+    app.run_cli_success(&[
+        "zone",
+        "tsig-policy",
+        "add",
+        &zone_name,
+        "--key",
+        &key.name,
+        "--pattern",
+        "a",
+    ])
+    .await;
+
+    let rcode = send_signed_update(port, &zone_name, &[add(format!("b.{zone_name}."))], &key)
+        .expect("send");
+    assert_eq!(rcode, Rcode::REFUSED);
+
+    let rcode = send_signed_update(port, &zone_name, &[add(format!("a.{zone_name}."))], &key)
+        .expect("send");
+    assert_eq!(rcode, Rcode::NOERROR);
+
+    assert!(
+        app.list_records(&zone_name)
+            .await
+            .iter()
+            .any(|record| record["name"] == format!("a.{zone_name}.")),
+        "granted update was not applied"
+    );
 }

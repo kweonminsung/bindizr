@@ -3,13 +3,22 @@
 
 use std::{net::UdpSocket, str::FromStr, time::Duration};
 
+use base64::Engine;
 use domain::{
     base::{
         Message, MessageBuilder, Name, Record, Rtype, Ttl, UnknownRecordData,
         iana::{Class, Opcode, Rcode},
+        message_builder::AdditionalBuilder,
     },
-    rdata::A,
+    rdata::{A, tsig::Time48},
+    tsig::{Algorithm, ClientTransaction, Key, KeyName},
 };
+
+/// The key an update is signed with, as `tsig-key get` reports it.
+pub(crate) struct SigningKey {
+    pub name: String,
+    pub secret: String,
+}
 
 /// One RR of an update section, in the class that gives it its meaning
 /// (RFC 2136, Section 2.5).
@@ -34,17 +43,41 @@ pub(crate) enum PrereqRr {
     NameNotInUse { name: String },
 }
 
-/// Send an UPDATE for `zone` and return the response RCODE.
+/// Send an unsigned UPDATE for `zone` and return the response RCODE.
 pub(crate) fn send_update(
     port: u16,
     zone: &str,
     prerequisites: &[PrereqRr],
     updates: &[UpdateRr],
 ) -> Result<Rcode, String> {
+    send(port, zone, prerequisites, updates, None)
+}
+
+/// Send an UPDATE signed with `key`, as a real nsupdate client would.
+pub(crate) fn send_signed_update(
+    port: u16,
+    zone: &str,
+    updates: &[UpdateRr],
+    key: &SigningKey,
+) -> Result<Rcode, String> {
+    send(port, zone, &[], updates, Some(key))
+}
+
+fn send(
+    port: u16,
+    zone: &str,
+    prerequisites: &[PrereqRr],
+    updates: &[UpdateRr],
+    key: Option<&SigningKey>,
+) -> Result<Rcode, String> {
     let query_id = (std::process::id() as u16)
         .wrapping_add(port)
         .wrapping_add(1);
-    let message = build_update(query_id, zone, prerequisites, updates)?;
+    let mut builder = build_update(query_id, zone, prerequisites, updates)?;
+    if let Some(key) = key {
+        sign(&mut builder, key)?;
+    }
+    let message = builder.finish();
 
     let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
     socket
@@ -72,7 +105,7 @@ fn build_update(
     zone: &str,
     prerequisites: &[PrereqRr],
     updates: &[UpdateRr],
-) -> Result<Vec<u8>, String> {
+) -> Result<AdditionalBuilder<Vec<u8>>, String> {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
     builder.header_mut().set_opcode(Opcode::UPDATE);
@@ -123,7 +156,8 @@ fn build_update(
         }
     }
 
-    Ok(authority.finish())
+    // The TSIG, when there is one, goes in the additional section.
+    Ok(authority.additional())
 }
 
 /// An RR carrying no rdata, built from an rtype the builder need not know.
@@ -134,6 +168,19 @@ type EmptyRecord = Record<Name<Vec<u8>>, UnknownRecordData<Vec<u8>>>;
 fn empty_record(owner: &str, rtype: Rtype, class: Class) -> Result<EmptyRecord, String> {
     let data = UnknownRecordData::from_octets(rtype, Vec::new()).map_err(|e| e.to_string())?;
     Ok(Record::new(name(owner)?, class, Ttl::ZERO, data))
+}
+
+/// Append the request TSIG, the way `domain`'s client transaction does it.
+fn sign(builder: &mut AdditionalBuilder<Vec<u8>>, key: &SigningKey) -> Result<(), String> {
+    let secret = base64::engine::general_purpose::STANDARD
+        .decode(&key.secret)
+        .map_err(|e| format!("TSIG secret is not base64: {e}"))?;
+    let key_name = KeyName::from_str(&key.name).map_err(|e| e.to_string())?;
+    let signing_key =
+        Key::new(Algorithm::Sha256, &secret, key_name, None, None).map_err(|e| e.to_string())?;
+
+    ClientTransaction::request(signing_key, builder, Time48::now()).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn name(value: &str) -> Result<Name<Vec<u8>>, String> {
