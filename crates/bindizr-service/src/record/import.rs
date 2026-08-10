@@ -204,7 +204,7 @@ impl RecordService {
             let existing_records = match mode {
                 ImportMode::Append => {
                     let mut names: Vec<String> =
-                        desired.iter().map(|d| d.stored_name.to_string()).collect();
+                        desired.iter().map(|d| d.stored_name.to_stored()).collect();
                     names.sort();
                     names.dedup();
                     RepositoryService::get_records_by_zone_id_and_names_tx(&mut tx, zone.id, &names)
@@ -391,7 +391,7 @@ impl RecordService {
                     .iter()
                     .map(|add| Record {
                         id: 0,
-                        name: add.stored_name.to_string(),
+                        name: add.stored_name.to_stored(),
                         record_type: add.prepared.record_type.clone(),
                         value: add.prepared.value.clone(),
                         ttl: effective_ttl(add.prepared.ttl),
@@ -504,7 +504,7 @@ fn import_diff(
         .map(ReconstructedRecord::from)
         .collect();
     after.extend(adds.iter().map(|add| ReconstructedRecord {
-        name: add.stored_name.to_string(),
+        name: add.stored_name.to_stored(),
         record_type: add.prepared.record_type.clone(),
         value: add.prepared.value.clone(),
         ttl: add.prepared.ttl.unwrap_or(zone.ttl),
@@ -525,7 +525,7 @@ fn synthetic_record(
 ) -> Record {
     Record {
         id: -1,
-        name: stored_name.to_string(),
+        name: stored_name.to_stored(),
         record_type: record_type.clone(),
         value: value.to_string(),
         ttl,

@@ -23,9 +23,9 @@ use super::model::{
 use crate::{DatabasePool, error::DatabaseError, get_pool};
 
 /// The owner name the apex is stored under, as an SQL literal. Rendered from
-/// the core constant so the filter queries cannot drift from it.
+/// the core type so the filter queries cannot drift from it.
 pub(crate) fn apex_owner_sql() -> String {
-    format!("'{}'", OwnerName::APEX)
+    format!("'{}'", OwnerName::apex().to_stored())
 }
 
 /// The record types that compare case-insensitively, as an SQL `IN` list.
@@ -46,7 +46,7 @@ mod tests {
     fn apex_owner_renders_as_a_quoted_sql_literal() {
         // Interpolated straight into `r.name = ...`, so the quoting is part of
         // the query's syntax.
-        assert_eq!(apex_owner_sql(), "'@'");
+        assert_eq!(apex_owner_sql(), "''");
     }
 
     #[test]

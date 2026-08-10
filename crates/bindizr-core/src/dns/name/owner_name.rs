@@ -12,7 +12,8 @@ use super::{
 pub struct OwnerName(Vec<String>);
 
 impl OwnerName {
-    /// How the apex is spelled in presentation form and in rows.
+    /// How the apex is spelled in input and in presentation. Rows hold it out
+    /// of band, as the empty string.
     pub const APEX: &'static str = "@";
 
     pub fn apex() -> Self {
@@ -34,9 +35,6 @@ impl OwnerName {
         let trimmed = input.trim();
         if trimmed.trim_end_matches('.').is_empty() {
             return Err(ParseNameError::Empty);
-        }
-        if has_whitespace_or_control(trimmed) {
-            return Err(ParseNameError::Whitespace);
         }
         if trimmed == Self::APEX {
             return Ok(Self::apex());
@@ -75,7 +73,7 @@ impl OwnerName {
 
     /// Wrap a name already in stored form, as read from a row.
     pub fn from_row(value: &str) -> Self {
-        if value == Self::APEX {
+        if value.is_empty() {
             return Self::apex();
         }
 
@@ -91,18 +89,14 @@ impl OwnerName {
         }
     }
 
-    /// The presentation form rows store: `@` at the apex, otherwise the labels
-    /// joined with `.` and each label's own `.` and `\` escaped.
+    /// The form rows store: empty at the apex, so no label can collide with it,
+    /// otherwise the escaped labels joined with `.`.
     pub fn to_stored(&self) -> String {
         if self.is_apex() {
-            return Self::APEX.to_string();
+            return String::new();
         }
 
-        self.0
-            .iter()
-            .map(|label| escape_label(label))
-            .collect::<Vec<_>>()
-            .join(".")
+        self.render_labels()
     }
 
     /// The absolute form within `zone`.
@@ -111,7 +105,15 @@ impl OwnerName {
             return zone.to_fqdn();
         }
 
-        format!("{}.{}", self.to_stored(), zone.to_fqdn())
+        format!("{}.{}", self.render_labels(), zone.to_fqdn())
+    }
+
+    fn render_labels(&self) -> String {
+        self.0
+            .iter()
+            .map(|label| escape_label(label))
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     /// Whether this owner is `other` or sits under it, compared label by label.
@@ -120,9 +122,14 @@ impl OwnerName {
     }
 }
 
+/// Presentation form, as input spells it: `@` at the apex; rows take
+/// [`OwnerName::to_stored`].
 impl std::fmt::Display for OwnerName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.to_stored())
+        if self.is_apex() {
+            return f.write_str(Self::APEX);
+        }
+        f.write_str(&self.render_labels())
     }
 }
 
@@ -173,15 +180,17 @@ fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
 }
 
 /// Inverse of [`decode_labels`] for one label: escape `.` and `\` so the label
-/// survives a round trip as a single label.
+/// survives a round trip as a single label, and `@` so it is never read as the
+/// apex: rows hold the apex out of band, but presentation form cannot, since
+/// RFC 1035, Section 5.1 fixes `@` as the origin.
 pub(super) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
-    if !label.contains(['.', '\\']) {
+    if !label.contains(['.', '\\', '@']) {
         return std::borrow::Cow::Borrowed(label);
     }
 
     let mut escaped = String::with_capacity(label.len() + 1);
     for c in label.chars() {
-        if c == '.' || c == '\\' {
+        if c == '.' || c == '\\' || c == '@' {
             escaped.push('\\');
         }
         escaped.push(c);
@@ -203,12 +212,7 @@ pub(super) fn decode_checked(name: &str) -> Result<(Vec<String>, bool), ParseNam
 
     let mut total = 0;
     for label in &labels {
-        if label.is_empty() {
-            return Err(ParseNameError::EmptyLabel);
-        }
-        if label.len() > MAX_DNS_LABEL_LEN {
-            return Err(ParseNameError::LabelTooLong);
-        }
+        classify_owner_label(label)?;
         total += label.len() + 1;
     }
     if total > MAX_DOMAIN_LEN {
@@ -216,6 +220,22 @@ pub(super) fn decode_checked(name: &str) -> Result<(Vec<String>, bool), ParseNam
     }
 
     Ok((labels, absolute))
+}
+
+/// What every owner label must satisfy, whichever constructor produced it.
+/// Not LDH — owner names carry `_` and `*` — so it rejects only what input
+/// cannot spell back: whitespace and control octets, literal or via `\DDD`.
+fn classify_owner_label(label: &str) -> Result<(), ParseNameError> {
+    if label.is_empty() {
+        return Err(ParseNameError::EmptyLabel);
+    }
+    if label.len() > MAX_DNS_LABEL_LEN {
+        return Err(ParseNameError::LabelTooLong);
+    }
+    if has_whitespace_or_control(label) {
+        return Err(ParseNameError::Whitespace);
+    }
+    Ok(())
 }
 
 /// The 253-byte limit, measured on the decoded octets the wire carries.

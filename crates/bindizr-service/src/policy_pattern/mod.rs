@@ -17,6 +17,10 @@ pub(crate) fn pattern_matches_name(pattern: &str, name: &OwnerName) -> bool {
     if pattern == MATCH_ANY {
         return true;
     }
+    // Patterns are stored in presentation form, where the apex is `@`.
+    if pattern == OwnerName::APEX {
+        return name.is_apex();
+    }
 
     // Compared label by label so `xsub` does not read as inside `sub`.
     if let Some(suffix) = pattern.strip_prefix("*.") {

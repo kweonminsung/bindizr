@@ -1,6 +1,6 @@
 //! Render a zone as BIND master-file text, the inverse of `zone import`.
 
-use bindizr_core::dns::name::to_fqdn;
+use bindizr_core::dns::name::{OwnerName, to_fqdn};
 
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
@@ -86,7 +86,7 @@ impl ZoneService {
             }
             out.push_str(&format!(
                 "{}\t{}\tIN\t{}\t{}\n",
-                record.name,
+                OwnerName::from_row(&record.name),
                 // Match the XFR encoder's served TTL so the export round-trips.
                 record.ttl,
                 record.record_type,

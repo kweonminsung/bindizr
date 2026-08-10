@@ -193,7 +193,7 @@ fn validate_add(
 fn add_rejects_cname_at_apex_and_ns_below_apex() {
     let cname_at_apex = validate_add(
         &[],
-        "@",
+        "",
         &RecordType::CNAME,
         "target.example.com",
         RRSET_TTL,
@@ -232,10 +232,10 @@ fn add_rejects_cname_at_apex_and_ns_below_apex() {
 #[test]
 fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     // Case and trailing-dot differences canonicalize equal, so the add is a duplicate.
-    let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
+    let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com", Some(10));
     let duplicate_mx = validate_add(
         &[existing_mx],
-        "@",
+        "",
         &RecordType::MX,
         "Mail.Example.Com.",
         RRSET_TTL,
@@ -265,10 +265,10 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
 fn add_treats_an_omitted_mx_priority_as_the_default() {
     // A stored MX with no priority and an add carrying the default 10 are the
     // same rdata, so nsupdate can no-op the add instead of refusing it.
-    let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com.", None);
+    let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com.", None);
     let duplicate_mx = validate_add(
         &[existing_mx],
-        "@",
+        "",
         &RecordType::MX,
         "mail.example.com.",
         RRSET_TTL,
@@ -279,24 +279,18 @@ fn add_treats_an_omitted_mx_priority_as_the_default() {
 
 #[test]
 fn add_rejects_null_mx_alongside_other_mx_records() {
-    let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
-    let null_mx_with_existing_mx = validate_add(
-        &[existing_mx],
-        "@",
-        &RecordType::MX,
-        ".",
-        RRSET_TTL,
-        Some(0),
-    );
+    let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com", Some(10));
+    let null_mx_with_existing_mx =
+        validate_add(&[existing_mx], "", &RecordType::MX, ".", RRSET_TTL, Some(0));
     assert_eq!(
         null_mx_with_existing_mx.unwrap_err().code,
         ErrorCode::RecordConflict
     );
 
-    let existing_null_mx = test_record(2, "@", RecordType::MX, ".", Some(0));
+    let existing_null_mx = test_record(2, "", RecordType::MX, ".", Some(0));
     let mx_with_existing_null_mx = validate_add(
         &[existing_null_mx],
-        "@",
+        "",
         &RecordType::MX,
         "mail.example.com",
         RRSET_TTL,
@@ -368,17 +362,17 @@ fn validate_delete_constraints_protects_soa_and_primary_ns() {
 
     let soa = test_record(
         1,
-        "@",
+        "",
         RecordType::SOA,
         "ns1.example.com hostmaster.example.com",
         None,
     );
     assert!(validate_delete_constraints(&zone, &[soa]).is_err());
 
-    let primary_ns = test_record(2, "@", RecordType::NS, "ns1.example.com.", None);
+    let primary_ns = test_record(2, "", RecordType::NS, "ns1.example.com.", None);
     assert!(validate_delete_constraints(&zone, &[primary_ns]).is_err());
 
-    let secondary_ns = test_record(3, "@", RecordType::NS, "ns2.example.com.", None);
+    let secondary_ns = test_record(3, "", RecordType::NS, "ns2.example.com.", None);
     assert!(validate_delete_constraints(&zone, &[secondary_ns]).is_ok());
 }
 

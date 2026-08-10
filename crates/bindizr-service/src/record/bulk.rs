@@ -186,7 +186,7 @@ impl RecordService {
             let mut batch_names: Vec<String> = prepared
                 .iter()
                 .filter_map(|p| normalize_record_owner_name(&p.owner_name, &zone.name).ok())
-                .map(|n| n.stored_name.to_string())
+                .map(|n| n.stored_name.to_stored())
                 .collect();
             batch_names.sort();
             batch_names.dedup();
@@ -270,7 +270,7 @@ impl RecordService {
 
                 let record = Record {
                     id: 0,
-                    name: normalized_owner.stored_name.to_string(),
+                    name: normalized_owner.stored_name.to_stored(),
                     record_type: prepared_record.record_type.clone(),
                     value: prepared_record.value.clone(),
                     ttl,

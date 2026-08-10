@@ -24,11 +24,11 @@ fn authorize_update_requires_name_and_type_match() {
     ));
     assert!(authorize_update(
         &policies,
-        &OwnerName::from_row("@"),
+        &OwnerName::apex(),
         Some(&RecordType::TXT)
     ));
     // Whole-name delete (TYPE ANY) is only covered by unrestricted types.
-    assert!(authorize_update(&policies, &OwnerName::from_row("@"), None));
+    assert!(authorize_update(&policies, &OwnerName::apex(), None));
     assert!(!authorize_update(
         &policies,
         &OwnerName::from_row("host.dyn"),
@@ -45,9 +45,11 @@ fn authorize_update_requires_name_and_type_match() {
         &OwnerName::from_row("www"),
         Some(&RecordType::A)
     ));
+    // A row holding a literal `@` label is a name under the zone, not the
+    // apex, so the apex policy must not reach it.
     assert!(!authorize_update(
         &policies,
-        &OwnerName::from_row(""),
+        &OwnerName::from_row("@"),
         Some(&RecordType::A)
     ));
 }

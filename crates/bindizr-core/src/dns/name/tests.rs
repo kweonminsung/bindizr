@@ -110,9 +110,10 @@ fn containment_compares_whole_labels() {
 fn owner_name_parse_reduces_input_to_the_stored_form() {
     let zone = zone();
 
+    // Rows hold the apex out of band, so no label can spell it.
     assert_eq!(
         OwnerName::parse_in_zone("@", &zone).unwrap().to_stored(),
-        "@"
+        ""
     );
     assert_eq!(
         OwnerName::parse_in_zone("a1", &zone).unwrap().to_stored(),
@@ -238,7 +239,7 @@ fn owner_name_equality_and_hashing_fold_case() {
     use std::collections::HashSet;
 
     assert_eq!(OwnerName::from_row("WWW"), OwnerName::from_row("www"));
-    assert!(OwnerName::from_row("@").is_apex());
+    assert!(OwnerName::from_row("").is_apex());
 
     let mut seen = HashSet::new();
     seen.insert(OwnerName::from_row("WWW"));
@@ -316,5 +317,58 @@ fn zone_name_parse_rejects_malformed_names() {
         ("-bad.example.com", ParseNameError::LabelHyphen),
     ] {
         assert_eq!(ZoneName::parse(value).unwrap_err(), expected, "{value:?}");
+    }
+}
+
+// The invariant the type rests on: whatever a constructor accepts comes back
+// unchanged through storage and through the wire. `@` broke the first and a
+// `\DDD` whitespace escape the second.
+#[test]
+fn every_accepted_owner_name_survives_storage_and_the_wire() {
+    let zone = zone();
+
+    for input in [
+        "@",
+        "a1",
+        "_acme-challenge",
+        "*",
+        "*.sub",
+        "sub.deep",
+        r"host\.name",
+        r"a\\b",
+        r"\064",
+        r"\@",
+        r"host\032name",
+        "A1.Test.Example.Com.",
+    ] {
+        let Ok(owner) = OwnerName::parse_in_zone(input, &zone) else {
+            continue;
+        };
+
+        assert_eq!(
+            OwnerName::from_row(&owner.to_stored()),
+            owner,
+            "storage round trip for {input:?}"
+        );
+        assert_eq!(
+            OwnerName::parse_absolute_in_zone(&owner.to_fqdn(&zone), &zone).as_ref(),
+            Ok(&owner),
+            "wire round trip for {input:?}"
+        );
+    }
+}
+
+// Both owner constructors admit the same names; only how they treat a name
+// outside the zone differs.
+#[test]
+fn owner_name_constructors_admit_the_same_labels() {
+    let zone = zone();
+
+    for label in ["host name", r"host\032name", "host\u{7}bell"] {
+        let relative = OwnerName::parse_in_zone(label, &zone);
+        let absolute =
+            OwnerName::parse_absolute_in_zone(&format!("{label}.test.example.com."), &zone);
+        assert_eq!(relative, Err(ParseNameError::Whitespace), "{label:?}");
+        assert_eq!(absolute, Err(ParseNameError::Whitespace), "{label:?}");
     }
 }

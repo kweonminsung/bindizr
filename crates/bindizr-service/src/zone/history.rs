@@ -570,7 +570,7 @@ impl ZoneService {
                     );
 
                 to_add.push(ReconstructedRecord {
-                    name: OwnerName::APEX.to_string(),
+                    name: OwnerName::apex().to_stored(),
                     record_type: RecordType::NS,
                     value: restored_zone.primary_ns.clone(),
                     ttl: apex_ns_rrset_ttl(&restored_zone, candidates),

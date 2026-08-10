@@ -217,7 +217,7 @@ impl RecordService {
                 &candidate_updated,
                 &lookup_owner.stored_name,
             )?;
-            candidate_updated.name = lookup_owner.stored_name.to_string();
+            candidate_updated.name = lookup_owner.stored_name.to_stored();
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();

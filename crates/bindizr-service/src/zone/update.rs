@@ -33,7 +33,7 @@ pub(super) fn soa_replacement_changes(
             zone_id: old_zone.id,
             serial: new_serial,
             operation: operation.to_string(),
-            record_name: OwnerName::APEX.to_string(),
+            record_name: OwnerName::apex().to_stored(),
             record_type: "SOA".to_string(),
             record_value: zone
                 .soa_rdata()
@@ -189,7 +189,7 @@ impl ZoneService {
             let apex_records = RepositoryService::get_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone_id,
-                OwnerName::APEX,
+                &OwnerName::apex().to_stored(),
             )
             .await
             .map_err(|e| {

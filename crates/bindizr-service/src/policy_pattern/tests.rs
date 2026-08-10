@@ -35,13 +35,13 @@ fn normalize_types_parses_and_dedupes() {
 
 #[test]
 fn pattern_matching_covers_all_forms() {
-    assert!(pattern_matches_name("*", &OwnerName::from_row("@")));
+    assert!(pattern_matches_name("*", &OwnerName::apex()));
     assert!(pattern_matches_name(
         "*",
         &OwnerName::from_row("anything.at.all")
     ));
 
-    assert!(pattern_matches_name("@", &OwnerName::from_row("@")));
+    assert!(pattern_matches_name("@", &OwnerName::apex()));
     assert!(!pattern_matches_name("@", &OwnerName::from_row("www")));
 
     assert!(pattern_matches_name("www", &OwnerName::from_row("www")));
