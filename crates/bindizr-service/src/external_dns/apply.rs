@@ -35,40 +35,40 @@ pub(super) fn is_supported_record_type(record_type: &RecordType) -> bool {
 /// resolved yet.
 #[derive(Debug)]
 pub(super) struct RrsetOp {
-    pub name: String,
-    pub record_type: RecordType,
+    pub(crate) name: String,
+    pub(crate) record_type: RecordType,
     /// Adds only; `None` resolves to the zone TTL at apply time.
-    pub ttl: Option<i32>,
-    pub values: Vec<String>,
+    pub(crate) ttl: Option<i32>,
+    pub(crate) values: Vec<String>,
 }
 
 pub(super) struct PendingOp {
-    pub op: RrsetOp,
-    pub is_delete: bool,
+    pub(crate) op: RrsetOp,
+    pub(crate) is_delete: bool,
 }
 
 /// The same operation once grouping has decided which zone owns it, so the
 /// owner is relative to that zone.
 #[derive(Debug)]
 pub(super) struct ZoneRrsetOp {
-    pub name: OwnerName,
-    pub record_type: RecordType,
-    pub ttl: Option<i32>,
-    pub values: Vec<String>,
+    pub(crate) name: OwnerName,
+    pub(crate) record_type: RecordType,
+    pub(crate) ttl: Option<i32>,
+    pub(crate) values: Vec<String>,
 }
 
 /// Adds and deletes of one request that resolved to the same zone.
 #[derive(Debug, Default)]
 pub(super) struct ZoneOps {
-    pub adds: Vec<ZoneRrsetOp>,
-    pub dels: Vec<ZoneRrsetOp>,
+    pub(crate) adds: Vec<ZoneRrsetOp>,
+    pub(crate) dels: Vec<ZoneRrsetOp>,
 }
 
 /// The record rows one zone's operations resolve to.
 #[derive(Debug, Default)]
 pub(super) struct ZoneChangeSet {
-    pub deletes: Vec<Record>,
-    pub creates: Vec<Record>,
+    pub(crate) deletes: Vec<Record>,
+    pub(crate) creates: Vec<Record>,
 }
 
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {

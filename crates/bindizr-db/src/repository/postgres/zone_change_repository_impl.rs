@@ -8,12 +8,12 @@ use crate::{
 };
 
 /// PostgreSQL-backed implementation of `ZoneChangeRepository`.
-pub struct PostgresZoneChangeRepository {
+pub(crate) struct PostgresZoneChangeRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresZoneChangeRepository {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
 }

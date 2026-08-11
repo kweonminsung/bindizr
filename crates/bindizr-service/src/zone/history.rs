@@ -36,11 +36,11 @@ use crate::{
 /// carries no database id.
 #[derive(Debug, Clone)]
 pub struct ReconstructedRecord {
-    pub name: OwnerName,
-    pub record_type: RecordType,
-    pub value: String,
-    pub ttl: i32,
-    pub priority: Option<i32>,
+    pub(crate) name: OwnerName,
+    pub(crate) record_type: RecordType,
+    pub(crate) value: String,
+    pub(crate) ttl: i32,
+    pub(crate) priority: Option<i32>,
 }
 
 impl From<Record> for ReconstructedRecord {

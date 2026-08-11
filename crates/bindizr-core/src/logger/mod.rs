@@ -49,7 +49,7 @@ macro_rules! log_debug_enabled {
 }
 
 /// Simple `log` implementation that writes to stderr.
-pub struct Logger {
+pub(crate) struct Logger {
     log_level: Level,
 }
 

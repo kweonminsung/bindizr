@@ -8,12 +8,12 @@ use crate::{
 };
 
 /// PostgreSQL-backed implementation of `ZoneSnapshotRepository`.
-pub struct PostgresZoneSnapshotRepository {
+pub(crate) struct PostgresZoneSnapshotRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresZoneSnapshotRepository {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
 }

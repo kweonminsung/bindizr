@@ -11,12 +11,12 @@ use crate::{
 };
 
 /// MySQL-backed implementation of `RecordRepository`.
-pub struct MySqlRecordRepository {
+pub(crate) struct MySqlRecordRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlRecordRepository {
-    pub fn new(pool: Pool<MySql>) -> Self {
+    pub(crate) fn new(pool: Pool<MySql>) -> Self {
         MySqlRecordRepository { pool }
     }
 }

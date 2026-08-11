@@ -117,7 +117,7 @@ impl ZoneService {
 
     /// Fetch (and lock) a zone by name within the caller's transaction,
     /// returning `NotFound` if it does not exist.
-    pub(crate) async fn get_by_name_tx(
+    pub async fn get_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
     ) -> Result<Zone, ServiceError> {

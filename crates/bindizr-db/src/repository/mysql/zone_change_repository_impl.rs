@@ -8,12 +8,12 @@ use crate::{
 };
 
 /// MySQL-backed implementation of `ZoneChangeRepository`.
-pub struct MySqlZoneChangeRepository {
+pub(crate) struct MySqlZoneChangeRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlZoneChangeRepository {
-    pub fn new(pool: Pool<MySql>) -> Self {
+    pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }

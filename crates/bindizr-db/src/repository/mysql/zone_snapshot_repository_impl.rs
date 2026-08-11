@@ -8,12 +8,12 @@ use crate::{
 };
 
 /// MySQL-backed implementation of `ZoneSnapshotRepository`.
-pub struct MySqlZoneSnapshotRepository {
+pub(crate) struct MySqlZoneSnapshotRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlZoneSnapshotRepository {
-    pub fn new(pool: Pool<MySql>) -> Self {
+    pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }

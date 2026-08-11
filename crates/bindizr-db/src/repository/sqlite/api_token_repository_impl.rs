@@ -4,12 +4,12 @@ use sqlx::{Pool, Sqlite};
 use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
 
 /// SQLite-backed implementation of `ApiTokenRepository`.
-pub struct SqliteApiTokenRepository {
+pub(crate) struct SqliteApiTokenRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteApiTokenRepository {
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
 }

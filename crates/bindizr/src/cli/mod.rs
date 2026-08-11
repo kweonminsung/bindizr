@@ -18,7 +18,7 @@ use crate::cli::commands::{
 #[command(name = "bindizr", version, about)]
 pub(crate) struct Args {
     #[command(subcommand)]
-    pub command: Command,
+    pub(crate) command: Command,
 }
 
 /// Top-level CLI subcommands.

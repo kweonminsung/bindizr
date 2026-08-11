@@ -15,7 +15,7 @@ use crate::api::middleware::body_parser::MAX_UPLOAD_BODY_BYTES;
 /// Newtype over [`ServiceError`] so the service error can be converted into an
 /// HTTP response (orphan rules forbid implementing `IntoResponse` directly).
 #[derive(Debug)]
-pub(crate) struct ApiError(pub ServiceError);
+pub(crate) struct ApiError(pub(crate) ServiceError);
 
 impl From<ServiceError> for ApiError {
     fn from(value: ServiceError) -> Self {

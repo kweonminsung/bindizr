@@ -17,8 +17,8 @@ use crate::{
 /// A zone TSIG policy joined with the name of the key it grants.
 #[derive(Debug, Clone)]
 pub struct ZoneTsigPolicyWithKey {
-    pub policy: ZoneTsigPolicy,
-    pub tsig_key_name: String,
+    pub(crate) policy: ZoneTsigPolicy,
+    pub(crate) tsig_key_name: String,
 }
 
 /// Grants and revokes per-zone nsupdate rights for TSIG keys.
@@ -114,7 +114,7 @@ impl ZoneTsigPolicyService {
 
     /// Policies granting `tsig_key_id` rights in `zone_id`, within the caller's
     /// transaction. Used by the nsupdate path.
-    pub(crate) async fn get_by_zone_and_key_tx(
+    pub async fn get_by_zone_and_key_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         tsig_key_id: i32,

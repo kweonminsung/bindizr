@@ -11,12 +11,12 @@ use crate::{
 };
 
 /// PostgreSQL-backed implementation of `RecordRepository`.
-pub struct PostgresRecordRepository {
+pub(crate) struct PostgresRecordRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresRecordRepository {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         PostgresRecordRepository { pool }
     }
 }

@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 /// Default path to the bindizr configuration file.
-pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
+pub(crate) const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
 

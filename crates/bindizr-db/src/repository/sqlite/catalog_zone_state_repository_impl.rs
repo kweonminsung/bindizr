@@ -8,7 +8,7 @@ use crate::{
 
 /// Sqlite-backed implementation of `CatalogZoneStateRepository`.
 /// Every method runs on the caller's transaction, so no pool is held.
-pub struct SqliteCatalogZoneStateRepository;
+pub(crate) struct SqliteCatalogZoneStateRepository;
 
 #[async_trait]
 impl CatalogZoneStateRepository for SqliteCatalogZoneStateRepository {

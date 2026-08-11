@@ -1,9 +1,9 @@
 //! Backend-agnostic repository traits, the cross-backend transaction type, and
 //! the factory that builds per-backend implementations.
 
-pub mod mysql;
-pub mod postgres;
-pub mod sqlite;
+pub(crate) mod mysql;
+pub(crate) mod postgres;
+pub(crate) mod sqlite;
 
 use async_trait::async_trait;
 use bindizr_core::dns::name::OwnerName;
@@ -438,11 +438,11 @@ pub trait CatalogZoneStateRepository: Send + Sync {
 }
 
 /// Builds backend-specific repository implementations for a given pool.
-pub struct RepositoryFactory;
+pub(crate) struct RepositoryFactory;
 
 impl RepositoryFactory {
     /// Create a zone repository for the given pool's backend.
-    pub fn create_zone_repository(pool: &DatabasePool) -> Box<dyn ZoneRepository> {
+    pub(crate) fn create_zone_repository(pool: &DatabasePool) -> Box<dyn ZoneRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneRepository::new(mysql_pool.clone()))
@@ -457,7 +457,7 @@ impl RepositoryFactory {
     }
 
     /// Create a record repository for the given pool's backend.
-    pub fn create_record_repository(pool: &DatabasePool) -> Box<dyn RecordRepository> {
+    pub(crate) fn create_record_repository(pool: &DatabasePool) -> Box<dyn RecordRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlRecordRepository::new(mysql_pool.clone()))
@@ -472,7 +472,7 @@ impl RepositoryFactory {
     }
 
     /// Create a TSIG key repository for the given pool's backend.
-    pub fn create_tsig_key_repository(pool: &DatabasePool) -> Box<dyn TsigKeyRepository> {
+    pub(crate) fn create_tsig_key_repository(pool: &DatabasePool) -> Box<dyn TsigKeyRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlTsigKeyRepository::new(mysql_pool.clone()))
@@ -487,7 +487,7 @@ impl RepositoryFactory {
     }
 
     /// Create a zone TSIG policy repository for the given pool's backend.
-    pub fn create_zone_tsig_policy_repository(
+    pub(crate) fn create_zone_tsig_policy_repository(
         pool: &DatabasePool,
     ) -> Box<dyn ZoneTsigPolicyRepository> {
         match pool {
@@ -503,7 +503,7 @@ impl RepositoryFactory {
         }
     }
 
-    pub fn create_zone_token_policy_repository(
+    pub(crate) fn create_zone_token_policy_repository(
         pool: &DatabasePool,
     ) -> Box<dyn ZoneTokenPolicyRepository> {
         match pool {
@@ -520,7 +520,7 @@ impl RepositoryFactory {
     }
 
     /// Create an API token repository for the given pool's backend.
-    pub fn create_api_token_repository(pool: &DatabasePool) -> Box<dyn ApiTokenRepository> {
+    pub(crate) fn create_api_token_repository(pool: &DatabasePool) -> Box<dyn ApiTokenRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlApiTokenRepository::new(mysql_pool.clone()))
@@ -535,7 +535,9 @@ impl RepositoryFactory {
     }
 
     /// Create a zone change repository for the given pool's backend.
-    pub fn create_zone_change_repository(pool: &DatabasePool) -> Box<dyn ZoneChangeRepository> {
+    pub(crate) fn create_zone_change_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn ZoneChangeRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneChangeRepository::new(mysql_pool.clone()))
@@ -550,7 +552,9 @@ impl RepositoryFactory {
     }
 
     /// Create a zone snapshot repository for the given pool's backend.
-    pub fn create_zone_snapshot_repository(pool: &DatabasePool) -> Box<dyn ZoneSnapshotRepository> {
+    pub(crate) fn create_zone_snapshot_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn ZoneSnapshotRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneSnapshotRepository::new(mysql_pool.clone()))
@@ -565,7 +569,7 @@ impl RepositoryFactory {
     }
 
     /// Create a catalog zone state repository for the given pool's backend.
-    pub fn create_catalog_zone_state_repository(
+    pub(crate) fn create_catalog_zone_state_repository(
         pool: &DatabasePool,
     ) -> Box<dyn CatalogZoneStateRepository> {
         match pool {

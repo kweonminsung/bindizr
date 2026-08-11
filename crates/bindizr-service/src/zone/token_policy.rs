@@ -18,8 +18,8 @@ use crate::{
 /// A zone token policy joined with the name of the token it grants.
 #[derive(Debug, Clone)]
 pub struct ZoneTokenPolicyWithToken {
-    pub policy: ZoneTokenPolicy,
-    pub api_token_name: String,
+    pub(crate) policy: ZoneTokenPolicy,
+    pub(crate) api_token_name: String,
 }
 
 /// Grants and revokes per-zone record rights for API tokens.

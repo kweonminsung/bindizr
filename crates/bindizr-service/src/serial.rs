@@ -15,12 +15,12 @@ const RESERVED_SERIAL_HEADROOM: i32 = 10_000_000;
 
 /// Largest serial accepted as a zone's starting point, leaving
 /// `RESERVED_SERIAL_HEADROOM` mutations before the counter reaches the ceiling.
-pub const MAX_INITIAL_SERIAL: i32 = i32::MAX - RESERVED_SERIAL_HEADROOM;
+pub(crate) const MAX_INITIAL_SERIAL: i32 = i32::MAX - RESERVED_SERIAL_HEADROOM;
 
 /// Generate the next SOA serial: `None` (new zone) yields 1; `Some(s)` yields
 /// `s + 1`. `i32::MAX` is an error rather than a saturating no-op, which would
 /// repeat a serial silently — `zone_soa_history` upserts on `(zone_id, serial)`.
-pub fn generate_serial(current_serial: Option<i32>) -> Result<i32, ServiceError> {
+pub(crate) fn generate_serial(current_serial: Option<i32>) -> Result<i32, ServiceError> {
     match current_serial {
         Some(serial) if serial == i32::MAX => Err(ServiceError::zone_conflict(format!(
             "zone serial reached its maximum of {}, so the zone can no longer accept changes",
@@ -32,7 +32,7 @@ pub fn generate_serial(current_serial: Option<i32>) -> Result<i32, ServiceError>
 }
 
 /// Validate a client-supplied starting serial, returning it unchanged.
-pub fn validate_initial_serial(serial: i32) -> Result<i32, ServiceError> {
+pub(crate) fn validate_initial_serial(serial: i32) -> Result<i32, ServiceError> {
     if serial < 1 {
         return Err(ServiceError::invalid_zone(format!(
             "serial {} must be a positive integer",

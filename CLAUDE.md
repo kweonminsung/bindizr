@@ -95,6 +95,20 @@ exists when that isn't derivable — the regression or protocol rule it guards
 (cite the RFC section for wire-format cases), format assumptions the test
 relies on, and phase markers in long multi-step e2e flows.
 
+### Visibility records usage
+
+Items and struct fields carry the narrowest visibility that compiles: `pub`
+means another crate touches it today, `pub(crate)` that only its own crate
+does. A struct mixing the two is a measurement, not a design statement —
+widen a field when the compiler asks, and no sooner. This keeps rustc's
+dead-code analysis covering fields (`pub` fields are exempt from it) and
+keeps cross-crate struct literals impossible, so a type with any
+`pub(crate)` field is only built through its constructors.
+
+Deliberate exceptions: `bindizr_service::types` payloads are fully `pub` —
+their fields are the wire contract — and invariant-bearing types
+(`OwnerName`) keep fields private behind constructors.
+
 ### Test helpers — extraction and visibility
 
 Test code optimizes for standalone readability, not DRY. Extract a helper only

@@ -16,10 +16,10 @@ const DNS_HEADER_LEN: usize = 12;
 
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRequest {
-    pub zone_name: String,
-    pub prerequisites: Vec<UpdateRecord>,
-    pub updates: Vec<UpdateRecord>,
-    pub tsig: Option<TsigRecord>,
+    pub(crate) zone_name: String,
+    pub(crate) prerequisites: Vec<UpdateRecord>,
+    pub(crate) updates: Vec<UpdateRecord>,
+    pub(crate) tsig: Option<TsigRecord>,
 }
 
 /// One RR from the prerequisite or update section. `rdata_start` locates the
@@ -27,12 +27,12 @@ pub(super) struct UpdateRequest {
 /// lazily by the update flow.
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRecord {
-    pub name: String,
-    pub rr_type: Rtype,
-    pub class: Class,
-    pub ttl: u32,
-    pub rdata: Vec<u8>,
-    pub rdata_start: usize,
+    pub(crate) name: String,
+    pub(crate) rr_type: Rtype,
+    pub(crate) class: Class,
+    pub(crate) ttl: u32,
+    pub(crate) rdata: Vec<u8>,
+    pub(crate) rdata_start: usize,
 }
 
 /// The request's TSIG record, reduced to what the update flow needs: the key
@@ -42,8 +42,8 @@ pub(super) struct UpdateRecord {
 /// that happens.
 #[derive(Debug, Clone)]
 pub(super) struct TsigRecord {
-    pub name: String,
-    pub fudge: u16,
+    pub(crate) name: String,
+    pub(crate) fudge: u16,
 }
 
 #[derive(Debug)]

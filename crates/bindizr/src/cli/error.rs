@@ -4,8 +4,8 @@ use bindizr_service::error::ErrorCode;
 /// sent a machine-readable code, an actionable hint derived from it.
 #[derive(Debug)]
 pub(crate) struct CliError {
-    pub code: Option<ErrorCode>,
-    pub message: String,
+    pub(crate) code: Option<ErrorCode>,
+    pub(crate) message: String,
 }
 
 impl From<String> for CliError {

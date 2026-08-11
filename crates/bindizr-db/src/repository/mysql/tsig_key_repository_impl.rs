@@ -4,12 +4,12 @@ use sqlx::{MySql, Pool};
 use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
 
 /// MySQL-backed implementation of `TsigKeyRepository`.
-pub struct MySqlTsigKeyRepository {
+pub(crate) struct MySqlTsigKeyRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlTsigKeyRepository {
-    pub fn new(pool: Pool<MySql>) -> Self {
+    pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }

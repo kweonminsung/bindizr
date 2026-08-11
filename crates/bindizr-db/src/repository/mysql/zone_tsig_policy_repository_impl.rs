@@ -8,12 +8,12 @@ use crate::{
 };
 
 /// MySQL-backed implementation of `ZoneTsigPolicyRepository`.
-pub struct MySqlZoneTsigPolicyRepository {
+pub(crate) struct MySqlZoneTsigPolicyRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlZoneTsigPolicyRepository {
-    pub fn new(pool: Pool<MySql>) -> Self {
+    pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }

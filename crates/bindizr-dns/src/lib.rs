@@ -3,7 +3,7 @@
 
 pub(crate) mod address;
 pub mod client;
-pub mod error;
+pub(crate) mod error;
 pub(crate) mod server;
 pub mod status;
 pub(crate) mod wire;

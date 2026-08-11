@@ -23,7 +23,7 @@ impl TsigAlgorithm {
     }
 
     /// All supported algorithm names, for error messages and CLI help.
-    pub fn supported_names() -> &'static [&'static str] {
+    pub(crate) fn supported_names() -> &'static [&'static str] {
         &["hmac-sha256", "hmac-sha384", "hmac-sha512"]
     }
 }

@@ -4,12 +4,12 @@ use sqlx::{Pool, Postgres, Row};
 use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
 
 /// PostgreSQL-backed implementation of `ApiTokenRepository`.
-pub struct PostgresApiTokenRepository {
+pub(crate) struct PostgresApiTokenRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresApiTokenRepository {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
 }

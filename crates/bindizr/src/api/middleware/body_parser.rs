@@ -16,7 +16,7 @@ pub(crate) const MAX_UPLOAD_BODY_BYTES: usize = 32 * 1024 * 1024;
 /// JSON body extractor that maps rejections to a JSON [`ApiError`] response and
 /// records deserialization time at debug level (`event=json_decode`), so the
 /// JSON transport cost can be compared against the zone-file text path.
-pub(crate) struct JsonBody<T>(pub T);
+pub(crate) struct JsonBody<T>(pub(crate) T);
 
 impl<T, S> FromRequest<S> for JsonBody<T>
 where

@@ -47,18 +47,18 @@ impl TsigKeyApi {
 
 #[derive(Deserialize)]
 pub(crate) struct TsigKeyNameParam {
-    pub name: String,
+    pub(crate) name: String,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct ZoneNameParam {
-    pub name: String,
+    pub(crate) name: String,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct ZoneTsigPolicyParam {
-    pub name: String,
-    pub id: i32,
+    pub(crate) name: String,
+    pub(crate) id: i32,
 }
 
 #[utoipa::path(

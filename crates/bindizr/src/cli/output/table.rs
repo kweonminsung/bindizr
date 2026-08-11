@@ -28,17 +28,17 @@ fn value_text(value: &RecordValueRequest) -> String {
 #[derive(Debug, Tabled)]
 pub(crate) struct ZoneRow {
     #[tabled(rename = "ID")]
-    pub id: i32,
+    pub(crate) id: i32,
     #[tabled(rename = "NAME")]
-    pub name: String,
+    pub(crate) name: String,
     #[tabled(rename = "PRIMARY-NS")]
-    pub primary_ns: String,
+    pub(crate) primary_ns: String,
     #[tabled(rename = "ADMIN-EMAIL")]
-    pub admin_email: String,
+    pub(crate) admin_email: String,
     #[tabled(rename = "TTL")]
-    pub ttl: i32,
+    pub(crate) ttl: i32,
     #[tabled(rename = "SERIAL")]
-    pub serial: i32,
+    pub(crate) serial: i32,
 }
 
 impl From<&GetZoneResponse> for ZoneRow {
@@ -58,19 +58,19 @@ impl From<&GetZoneResponse> for ZoneRow {
 #[derive(Debug, Tabled)]
 pub(crate) struct RecordRow {
     #[tabled(rename = "ID")]
-    pub id: i32,
+    pub(crate) id: i32,
     #[tabled(rename = "NAME")]
-    pub name: String,
+    pub(crate) name: String,
     #[tabled(rename = "TYPE")]
-    pub record_type: String,
+    pub(crate) record_type: String,
     #[tabled(rename = "VALUE")]
-    pub value: String,
+    pub(crate) value: String,
     #[tabled(rename = "TTL")]
-    pub ttl: i32,
+    pub(crate) ttl: i32,
     #[tabled(rename = "PRIORITY", display = "display_option_i32")]
-    pub priority: Option<i32>,
+    pub(crate) priority: Option<i32>,
     #[tabled(rename = "ZONE")]
-    pub zone_name: String,
+    pub(crate) zone_name: String,
 }
 
 impl From<&GetRecordResponse> for RecordRow {
@@ -91,15 +91,15 @@ impl From<&GetRecordResponse> for RecordRow {
 #[derive(Debug, Tabled)]
 pub(crate) struct SnapshotRow {
     #[tabled(rename = "SERIAL")]
-    pub serial: i32,
+    pub(crate) serial: i32,
     #[tabled(rename = "PRIMARY-NS")]
-    pub primary_ns: String,
+    pub(crate) primary_ns: String,
     #[tabled(rename = "ADMIN-EMAIL")]
-    pub admin_email: String,
+    pub(crate) admin_email: String,
     #[tabled(rename = "TTL")]
-    pub ttl: i32,
+    pub(crate) ttl: i32,
     #[tabled(rename = "CREATED-AT")]
-    pub created_at: String,
+    pub(crate) created_at: String,
 }
 
 impl From<&ZoneSnapshotResponse> for SnapshotRow {
@@ -118,15 +118,15 @@ impl From<&ZoneSnapshotResponse> for SnapshotRow {
 #[derive(Debug, Tabled)]
 pub(crate) struct SnapshotRecordRow {
     #[tabled(rename = "NAME")]
-    pub name: String,
+    pub(crate) name: String,
     #[tabled(rename = "TYPE")]
-    pub record_type: String,
+    pub(crate) record_type: String,
     #[tabled(rename = "VALUE")]
-    pub value: String,
+    pub(crate) value: String,
     #[tabled(rename = "TTL")]
-    pub ttl: i32,
+    pub(crate) ttl: i32,
     #[tabled(rename = "PRIORITY", display = "display_option_i32")]
-    pub priority: Option<i32>,
+    pub(crate) priority: Option<i32>,
 }
 
 impl From<&SnapshotRecordResponse> for SnapshotRecordRow {
@@ -145,19 +145,19 @@ impl From<&SnapshotRecordResponse> for SnapshotRecordRow {
 #[derive(Debug, Tabled)]
 pub(crate) struct RollbackSummaryRow {
     #[tabled(rename = "TARGET-SERIAL")]
-    pub target_serial: i32,
+    pub(crate) target_serial: i32,
     #[tabled(rename = "NEW-SERIAL")]
-    pub new_serial: i32,
+    pub(crate) new_serial: i32,
     #[tabled(rename = "APPLIED")]
-    pub applied: bool,
+    pub(crate) applied: bool,
     #[tabled(rename = "ADDED")]
-    pub records_added: usize,
+    pub(crate) records_added: usize,
     #[tabled(rename = "DELETED")]
-    pub records_deleted: usize,
+    pub(crate) records_deleted: usize,
     #[tabled(rename = "UNCHANGED")]
-    pub records_unchanged: usize,
+    pub(crate) records_unchanged: usize,
     #[tabled(rename = "SOA-CHANGED")]
-    pub soa_changed: bool,
+    pub(crate) soa_changed: bool,
 }
 
 impl From<&RollbackZoneResponse> for RollbackSummaryRow {
@@ -178,13 +178,13 @@ impl From<&RollbackZoneResponse> for RollbackSummaryRow {
 #[derive(Debug, Tabled)]
 pub(crate) struct SecondaryStatusRow {
     #[tabled(rename = "ADDRESS")]
-    pub address: String,
+    pub(crate) address: String,
     #[tabled(rename = "STATUS")]
-    pub status: String,
+    pub(crate) status: String,
     #[tabled(rename = "VISIBLE-SERIAL")]
-    pub visible_serial: String,
+    pub(crate) visible_serial: String,
     #[tabled(rename = "LAG")]
-    pub lag: String,
+    pub(crate) lag: String,
 }
 
 impl SecondaryStatusRow {
@@ -221,17 +221,17 @@ impl SecondaryStatusRow {
 #[derive(Debug, Tabled)]
 pub(crate) struct ImportSummaryRow {
     #[tabled(rename = "PARSED")]
-    pub parsed: usize,
+    pub(crate) parsed: usize,
     #[tabled(rename = "ADDED")]
-    pub added: usize,
+    pub(crate) added: usize,
     #[tabled(rename = "DELETED")]
-    pub deleted: usize,
+    pub(crate) deleted: usize,
     #[tabled(rename = "UPDATED")]
-    pub updated: usize,
+    pub(crate) updated: usize,
     #[tabled(rename = "UNCHANGED")]
-    pub unchanged: usize,
+    pub(crate) unchanged: usize,
     #[tabled(rename = "SKIPPED")]
-    pub skipped: usize,
+    pub(crate) skipped: usize,
 }
 
 impl From<&ImportSummary> for ImportSummaryRow {

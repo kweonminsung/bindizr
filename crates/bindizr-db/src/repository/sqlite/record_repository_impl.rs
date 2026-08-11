@@ -11,12 +11,12 @@ use crate::{
 };
 
 /// SQLite-backed implementation of `RecordRepository`.
-pub struct SqliteRecordRepository {
+pub(crate) struct SqliteRecordRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteRecordRepository {
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
 }

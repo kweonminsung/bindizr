@@ -30,15 +30,15 @@ pub struct Record {
 /// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {
-    pub id: i32,
+    pub(crate) id: i32,
     #[sqlx(try_from = "String")]
-    pub name: OwnerName,
+    pub(crate) name: OwnerName,
     #[sqlx(try_from = "String")]
-    pub record_type: RecordType,
-    pub value: String,
-    pub ttl: i32,
-    pub priority: Option<i32>,
-    pub created_at: DateTime<Utc>,
+    pub(crate) record_type: RecordType,
+    pub(crate) value: String,
+    pub(crate) ttl: i32,
+    pub(crate) priority: Option<i32>,
+    pub(crate) created_at: DateTime<Utc>,
     pub zone_id: i32,
     #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
@@ -271,7 +271,7 @@ impl RecordType {
     }
 
     /// Whether this type's display form is a domain name.
-    pub fn is_name_like(&self) -> bool {
+    pub(crate) fn is_name_like(&self) -> bool {
         NAME_LIKE_RECORD_TYPES.contains(self)
     }
 

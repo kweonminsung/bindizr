@@ -8,7 +8,7 @@ mod delete;
 mod export;
 mod force;
 mod get;
-pub mod history;
+pub(crate) mod history;
 mod notify;
 mod snapshot;
 pub mod token_policy;

@@ -1,7 +1,7 @@
 use bindizr_core::dns::name::OwnerName;
 
 use super::error::{ErrorCode, ServiceError};
-pub use crate::database::repository::RepositoryTx;
+pub(crate) use crate::database::repository::RepositoryTx;
 use crate::{
     database::{
         error::DatabaseError,

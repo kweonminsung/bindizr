@@ -87,7 +87,7 @@ pub enum RecordValueRequest {
 impl RecordValueRequest {
     /// Encode the request value into its record-row form. A TXT string is raw
     /// content (never presentation form), so quotes carry no special meaning.
-    pub fn to_encoded_value(
+    pub(crate) fn to_encoded_value(
         &self,
         record_type: &RecordType,
         priority: Option<i32>,

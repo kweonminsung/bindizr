@@ -8,7 +8,7 @@ use crate::{
 
 /// Postgres-backed implementation of `CatalogZoneStateRepository`.
 /// Every method runs on the caller's transaction, so no pool is held.
-pub struct PostgresCatalogZoneStateRepository;
+pub(crate) struct PostgresCatalogZoneStateRepository;
 
 #[async_trait]
 impl CatalogZoneStateRepository for PostgresCatalogZoneStateRepository {

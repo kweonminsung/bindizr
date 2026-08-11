@@ -8,12 +8,12 @@ use crate::{
 };
 
 /// SQLite-backed implementation of `ZoneChangeRepository`.
-pub struct SqliteZoneChangeRepository {
+pub(crate) struct SqliteZoneChangeRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteZoneChangeRepository {
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
 }

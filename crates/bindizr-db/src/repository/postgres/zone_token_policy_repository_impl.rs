@@ -8,12 +8,12 @@ use crate::{
 };
 
 /// PostgreSQL-backed implementation of `ZoneTokenPolicyRepository`.
-pub struct PostgresZoneTokenPolicyRepository {
+pub(crate) struct PostgresZoneTokenPolicyRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresZoneTokenPolicyRepository {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
 }

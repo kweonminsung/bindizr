@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub(crate) struct AppState {
-    pub upstream: UpstreamClient,
+    pub(crate) upstream: UpstreamClient,
 }
 
 /// Whole-plan and whole-desired-set POSTs outgrow axum's 2 MiB default on

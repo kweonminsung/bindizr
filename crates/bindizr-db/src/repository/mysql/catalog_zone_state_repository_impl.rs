@@ -8,7 +8,7 @@ use crate::{
 
 /// Mysql-backed implementation of `CatalogZoneStateRepository`.
 /// Every method runs on the caller's transaction, so no pool is held.
-pub struct MySqlCatalogZoneStateRepository;
+pub(crate) struct MySqlCatalogZoneStateRepository;
 
 #[async_trait]
 impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {

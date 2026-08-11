@@ -4,12 +4,12 @@ use sqlx::{Pool, Postgres, Row};
 use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
 
 /// PostgreSQL-backed implementation of `TsigKeyRepository`.
-pub struct PostgresTsigKeyRepository {
+pub(crate) struct PostgresTsigKeyRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresTsigKeyRepository {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
 }

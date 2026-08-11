@@ -4,12 +4,12 @@ use sqlx::{MySql, Pool};
 use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
 
 /// MySQL-backed implementation of `ApiTokenRepository`.
-pub struct MySqlApiTokenRepository {
+pub(crate) struct MySqlApiTokenRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlApiTokenRepository {
-    pub fn new(pool: Pool<MySql>) -> Self {
+    pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }

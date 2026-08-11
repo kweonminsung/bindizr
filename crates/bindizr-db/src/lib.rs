@@ -22,7 +22,7 @@ static INITIALIZE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new((
 
 /// A connection pool for one of the supported database backends.
 #[derive(Debug)]
-pub enum DatabasePool {
+pub(crate) enum DatabasePool {
     MySQL(Pool<MySql>),
     PostgreSQL(Pool<Postgres>),
     SQLite(Pool<Sqlite>),
@@ -30,7 +30,7 @@ pub enum DatabasePool {
 
 /// Supported database backend types.
 #[derive(Debug, Clone)]
-pub enum DatabaseType {
+pub(crate) enum DatabaseType {
     MySQL,
     PostgreSQL,
     SQLite,
@@ -83,7 +83,7 @@ fn is_initialized() -> bool {
 }
 
 /// Return the global database pool, panicking if not yet initialized.
-pub fn get_pool() -> &'static DatabasePool {
+pub(crate) fn get_pool() -> &'static DatabasePool {
     DATABASE_POOL.get().expect("Database pool not initialized")
 }
 
@@ -98,7 +98,7 @@ fn networked_pool_max_connections() -> u32 {
 
 impl DatabasePool {
     /// Connect to MySQL, create tables, and return the pool.
-    pub async fn new_mysql(url: &str) -> Result<Self, DatabaseError> {
+    pub(crate) async fn new_mysql(url: &str) -> Result<Self, DatabaseError> {
         let pool = MySqlPoolOptions::new()
             .max_connections(networked_pool_max_connections())
             .after_connect(|conn, _| {
@@ -127,7 +127,7 @@ impl DatabasePool {
     }
 
     /// Connect to PostgreSQL, create tables, and return the pool.
-    pub async fn new_postgres(url: &str) -> Result<Self, DatabaseError> {
+    pub(crate) async fn new_postgres(url: &str) -> Result<Self, DatabaseError> {
         let pool = PgPoolOptions::new()
             .max_connections(networked_pool_max_connections())
             .after_connect(|conn, _| {
@@ -159,7 +159,7 @@ impl DatabasePool {
         Ok(database_pool)
     }
     /// Connect to SQLite, create tables, and return the pool.
-    pub async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
+    pub(crate) async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
         let pool = SqlitePoolOptions::new()
             .after_connect(|conn, _| {
                 Box::pin(async move {

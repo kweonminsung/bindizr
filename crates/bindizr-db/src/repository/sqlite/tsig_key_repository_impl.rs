@@ -4,12 +4,12 @@ use sqlx::{Pool, Sqlite};
 use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
 
 /// SQLite-backed implementation of `TsigKeyRepository`.
-pub struct SqliteTsigKeyRepository {
+pub(crate) struct SqliteTsigKeyRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteTsigKeyRepository {
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
 }

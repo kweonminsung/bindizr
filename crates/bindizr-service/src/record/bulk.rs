@@ -43,11 +43,11 @@ struct BulkTimings {
 /// A record whose type and value are parsed and ready to insert. The owner name
 /// is kept raw so the constraint validator can normalize it against the zone.
 pub(super) struct PreparedRecord {
-    pub owner_name: String,
-    pub record_type: RecordType,
-    pub value: String,
-    pub ttl: Option<i32>,
-    pub priority: Option<i32>,
+    pub(crate) owner_name: String,
+    pub(crate) record_type: RecordType,
+    pub(crate) value: String,
+    pub(crate) ttl: Option<i32>,
+    pub(crate) priority: Option<i32>,
 }
 
 /// Parse the record type and encode the value into its record-row form.

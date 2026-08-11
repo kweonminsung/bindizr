@@ -41,8 +41,8 @@ pub enum Caller {
 /// One record-plane write to authorize: the owner name relative to the zone
 /// (stored form) and its type. `None` types only match unrestricted policies.
 pub(crate) struct RecordWrite<'a> {
-    pub relative_name: OwnerName,
-    pub record_type: Option<&'a RecordType>,
+    pub(crate) relative_name: OwnerName,
+    pub(crate) record_type: Option<&'a RecordType>,
 }
 
 impl Caller {
@@ -66,7 +66,7 @@ impl Caller {
     }
 
     /// Reject non-global callers for zone-plane and management operations.
-    pub fn require_global(&self, action: &str) -> Result<(), ServiceError> {
+    pub(crate) fn require_global(&self, action: &str) -> Result<(), ServiceError> {
         if self.is_global() {
             return Ok(());
         }
@@ -77,7 +77,7 @@ impl Caller {
     }
 
     /// Zone ids the caller may see; `None` means unrestricted.
-    pub fn visible_zone_ids(&self) -> Option<HashSet<i32>> {
+    pub(crate) fn visible_zone_ids(&self) -> Option<HashSet<i32>> {
         match self {
             Caller::Global => None,
             Caller::Token { grants, .. } => Some(grants.iter().map(|p| p.zone_id).collect()),
@@ -85,7 +85,7 @@ impl Caller {
     }
 
     /// Whether the caller may see `zone_id`.
-    pub fn zone_visible(&self, zone_id: i32) -> bool {
+    pub(crate) fn zone_visible(&self, zone_id: i32) -> bool {
         match self {
             Caller::Global => true,
             Caller::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
@@ -94,7 +94,7 @@ impl Caller {
 
     /// 404 for zones the caller cannot see, so scoped tokens cannot probe zone
     /// existence.
-    pub fn ensure_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
+    pub(crate) fn ensure_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
         if self.zone_visible(zone.id) {
             Ok(())
         } else {

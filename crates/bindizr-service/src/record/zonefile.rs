@@ -11,17 +11,17 @@ use crate::{model::record::RecordType, types::RecordValueRequest};
 /// input shape the record API accepts.
 pub(super) struct ParsedRecord {
     /// Absolute owner name (e.g. `www.example.com.`).
-    pub owner_fqdn: String,
-    pub record_type: RecordType,
-    pub value: RecordValueRequest,
-    pub ttl: i32,
-    pub priority: Option<i32>,
+    pub(crate) owner_fqdn: String,
+    pub(crate) record_type: RecordType,
+    pub(crate) value: RecordValueRequest,
+    pub(crate) ttl: i32,
+    pub(crate) priority: Option<i32>,
 }
 
 pub(super) struct ParsedZoneFile {
-    pub records: Vec<ParsedRecord>,
+    pub(crate) records: Vec<ParsedRecord>,
     /// Human-readable problems (unsupported type, non-IN class, parse failure).
-    pub errors: Vec<String>,
+    pub(crate) errors: Vec<String>,
 }
 
 /// Parse BIND zone file text relative to `zone_name`. Relative names resolve

@@ -19,7 +19,7 @@ use tokio::net::TcpStream;
 use crate::{error::XfrError, log_info, log_warn, metrics::metrics, wire};
 
 /// Initializes XFR support by ensuring the catalog zone exists.
-pub async fn initialize() {
+pub(crate) async fn initialize() {
     ensure_catalog_zone().await;
 }
 
@@ -39,7 +39,7 @@ async fn ensure_catalog_zone() {
 }
 
 /// Returns `true` if `qtype` is a zone-transfer query (AXFR or IXFR).
-pub fn is_xfr_query_type(qtype: Rtype) -> bool {
+pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
     matches!(qtype, Rtype::AXFR | Rtype::IXFR)
 }
 

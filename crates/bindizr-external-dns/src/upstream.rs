@@ -30,7 +30,11 @@ pub(crate) struct UpstreamClient {
 }
 
 impl UpstreamClient {
-    pub fn new(base_url: String, token: Option<String>, timeout_secs: u64) -> Result<Self, String> {
+    pub(crate) fn new(
+        base_url: String,
+        token: Option<String>,
+        timeout_secs: u64,
+    ) -> Result<Self, String> {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(timeout_secs))
             .build()
@@ -42,7 +46,7 @@ impl UpstreamClient {
         })
     }
 
-    pub async fn get_zones(&self) -> Result<Vec<String>, UpstreamError> {
+    pub(crate) async fn get_zones(&self) -> Result<Vec<String>, UpstreamError> {
         #[derive(Deserialize)]
         struct ZonesBody {
             zones: Vec<String>,
@@ -51,7 +55,7 @@ impl UpstreamClient {
         Ok(body.zones)
     }
 
-    pub async fn get_records(&self) -> Result<Vec<BindizrRecordItem>, UpstreamError> {
+    pub(crate) async fn get_records(&self) -> Result<Vec<BindizrRecordItem>, UpstreamError> {
         #[derive(Deserialize)]
         struct RecordsBody {
             records: Vec<BindizrRecordItem>,
@@ -60,7 +64,10 @@ impl UpstreamClient {
         Ok(body.records)
     }
 
-    pub async fn apply_changes(&self, changes: &BindizrChanges) -> Result<(), UpstreamError> {
+    pub(crate) async fn apply_changes(
+        &self,
+        changes: &BindizrChanges,
+    ) -> Result<(), UpstreamError> {
         let request = self
             .request(reqwest::Method::POST, "/external-dns/changes")
             .json(changes);
@@ -69,7 +76,7 @@ impl UpstreamClient {
     }
 
     /// Unauthenticated liveness probe of the bindizr server.
-    pub async fn probe_health(&self) -> Result<(), UpstreamError> {
+    pub(crate) async fn probe_health(&self) -> Result<(), UpstreamError> {
         let request = self.http.get(format!("{}/health", self.base_url));
         self.send(request).await?;
         Ok(())
