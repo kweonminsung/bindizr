@@ -54,7 +54,7 @@ pub(crate) struct Cli {
 }
 
 /// Resolved adapter configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct AdapterConfig {
     /// Normalized base URL without a trailing slash.
     pub(crate) bindizr_url: String,

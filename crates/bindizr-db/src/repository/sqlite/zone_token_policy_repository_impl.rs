@@ -53,7 +53,7 @@ impl ZoneTokenPolicyRepository for SqliteZoneTokenPolicyRepository {
         Ok(policy)
     }
 
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError> {
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let policies = sqlx::query_as::<_, ZoneTokenPolicy>(
@@ -66,7 +66,7 @@ impl ZoneTokenPolicyRepository for SqliteZoneTokenPolicyRepository {
         Ok(policies)
     }
 
-    async fn get_by_zone_and_token_tx(
+    async fn list_by_zone_and_token_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -85,7 +85,7 @@ impl ZoneTokenPolicyRepository for SqliteZoneTokenPolicyRepository {
         Ok(policies)
     }
 
-    async fn get_by_token_id(
+    async fn list_by_token_id(
         &self,
         api_token_id: i32,
     ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError> {

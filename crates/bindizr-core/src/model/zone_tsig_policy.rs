@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 /// Grants one TSIG key nsupdate rights over part of one zone, in the spirit of
@@ -8,7 +7,7 @@ use sqlx::FromRow;
 /// `record_name_pattern` matches the owner name relative to the zone — `*`,
 /// `@`, `*.sub`, or an exact relative name — and `record_types` is `*` or a
 /// comma-separated list of type mnemonics.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct ZoneTsigPolicy {
     pub id: i32,
     pub zone_id: i32,

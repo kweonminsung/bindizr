@@ -84,8 +84,7 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS catalog_zone_state (
             name VARCHAR(255) PRIMARY KEY,
             signature VARCHAR(64) NOT NULL,
-            serial INT NOT NULL,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            serial INT NOT NULL
         );
         "#,
         r#"
@@ -214,8 +213,7 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS catalog_zone_state (
             name VARCHAR(255) PRIMARY KEY,
             signature VARCHAR(64) NOT NULL,
-            serial INTEGER NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            serial INTEGER NOT NULL
         );
         "#,
         r#"
@@ -352,8 +350,7 @@ pub(super) fn sqlite_table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS catalog_zone_state (
             name TEXT PRIMARY KEY,
             signature TEXT NOT NULL,
-            serial INTEGER NOT NULL,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            serial INTEGER NOT NULL
         );
         "#,
         r#"

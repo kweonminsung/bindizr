@@ -76,7 +76,7 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn get_by_zone_id_in_serial_range(
+    async fn list_by_zone_id_in_serial_range(
         &self,
         zone_id: i32,
         from_serial: i32,

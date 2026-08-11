@@ -470,7 +470,6 @@ async fn zone_import_zone_file_replace_mode() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Seed two A records.
     seed_records(
         &app,
         zone_name,
@@ -598,7 +597,6 @@ async fn zone_import_zone_file_reconciles_ttl() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Seed a record with an explicit TTL of 300.
     seed_records(
         &app,
         zone_name,
@@ -786,7 +784,6 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Seed a CNAME directly in the DB.
     seed_records(
         &app,
         zone_name,

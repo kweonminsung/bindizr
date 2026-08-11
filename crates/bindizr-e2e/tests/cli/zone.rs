@@ -9,10 +9,6 @@ async fn zone_create_read_delete() {
     let zone_name = app.zone_name("cli-zone.example");
     let primary_ns = format!("ns1.{zone_name}");
 
-    let status = app.run_cli_success(&["status"]).await;
-    assert!(status.contains("BINDIZR STATUS"));
-    assert!(status.contains("Running"));
-
     let created = app.create_zone_cli(&zone_name, "3600").await;
     assert!(created.contains("Zone created successfully"));
 

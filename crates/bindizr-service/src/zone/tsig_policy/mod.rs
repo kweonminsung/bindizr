@@ -74,9 +74,9 @@ impl ZoneTsigPolicyService {
         caller.require_global("manage TSIG keys and policies")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
-        let policies = RepositoryService::get_zone_tsig_policies_by_zone_id(zone.id).await?;
+        let policies = RepositoryService::list_zone_tsig_policies_by_zone_id(zone.id).await?;
 
-        let key_names: HashMap<i32, String> = RepositoryService::get_all_tsig_keys()
+        let key_names: HashMap<i32, String> = RepositoryService::list_tsig_keys()
             .await?
             .into_iter()
             .map(|key| (key.id, key.name))
@@ -114,12 +114,13 @@ impl ZoneTsigPolicyService {
 
     /// Policies granting `tsig_key_id` rights in `zone_id`, within the caller's
     /// transaction. Used by the nsupdate path.
-    pub async fn get_by_zone_and_key_tx(
+    pub async fn list_by_zone_and_key_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         tsig_key_id: i32,
     ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
-        RepositoryService::get_zone_tsig_policies_by_zone_and_key_tx(tx, zone_id, tsig_key_id).await
+        RepositoryService::list_zone_tsig_policies_by_zone_and_key_tx(tx, zone_id, tsig_key_id)
+            .await
     }
 }
 

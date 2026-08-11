@@ -1,7 +1,9 @@
-use bindizr_core::log_error;
 use bindizr_service::{
-    authorization::Caller, error::ServiceError, token::TokenService,
-    types::GetZoneTokenPolicyResponse, zone::token_policy::ZoneTokenPolicyService,
+    authorization::Caller,
+    error::ServiceError,
+    token::TokenService,
+    types::{GetTokenResponse, GetZoneTokenPolicyResponse},
+    zone::token_policy::ZoneTokenPolicyService,
 };
 
 use crate::socket::{
@@ -16,7 +18,7 @@ use crate::socket::{
 pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: CreateTokenParams = parse_params(data)?;
 
-    let created_token = TokenService::create_token(
+    let created_token = TokenService::create(
         &Caller::Global,
         &params.name,
         params.description.as_deref(),
@@ -27,20 +29,15 @@ pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 
     let response = DaemonResponse {
         message: "Token created successfully".to_string(),
-        data: to_response_data(created_token)?,
+        data: to_response_data(GetTokenResponse::from_token(&created_token))?,
     };
     Ok(response)
 }
 
 /// Handle the `TokenList` command by returning all API tokens.
 pub(super) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
-    let tokens = match TokenService::list_tokens(&Caller::Global).await {
-        Ok(tokens) => tokens,
-        Err(e) => {
-            log_error!("Failed to list tokens: {}", e);
-            return Err(ServiceError::internal("Failed to list tokens"));
-        }
-    };
+    let tokens = TokenService::list(&Caller::Global).await?;
+    let tokens: Vec<GetTokenResponse> = tokens.iter().map(GetTokenResponse::from_token).collect();
 
     let response = DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
@@ -53,7 +50,7 @@ pub(super) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
 pub(super) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: TokenNameParams = parse_params(data)?;
 
-    TokenService::delete_token(&Caller::Global, &params.name).await?;
+    TokenService::delete(&Caller::Global, &params.name).await?;
 
     let response = DaemonResponse {
         message: "Token deleted successfully".to_string(),

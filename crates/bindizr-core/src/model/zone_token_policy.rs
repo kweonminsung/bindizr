@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 /// Grants one API token record-plane rights over part of one zone, the HTTP
@@ -8,7 +7,7 @@ use sqlx::FromRow;
 ///
 /// `record_name_pattern` and `record_types` take the same syntax as a TSIG
 /// policy's.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct ZoneTokenPolicy {
     pub id: i32,
     pub zone_id: i32,

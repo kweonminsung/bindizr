@@ -1,4 +1,5 @@
-use bindizr_core::{log_debug, model::api_token::ApiToken};
+use bindizr_core::log_debug;
+use bindizr_service::types::GetTokenResponse;
 use clap::Subcommand;
 
 use crate::{
@@ -75,13 +76,15 @@ async fn create_token(
 
     log_debug!("Token creation result: {:?}", res);
 
-    let token: ApiToken = serde_json::from_value(res.data)
+    let token: GetTokenResponse = serde_json::from_value(res.data)
         .map_err(|e| format!("Failed to parse token creation response: {}", e))?;
 
     println!("API token created successfully:");
     println!("Name: {}", token.name);
-    println!("Token: {}", token.token);
-    println!("Global: {}", if token.is_global { "yes" } else { "no" });
+    if let Some(secret) = &token.token {
+        println!("Token: {}", secret);
+    }
+    println!("Global: {}", if token.global { "yes" } else { "no" });
     if let Some(desc) = token.description {
         println!("Description: {}", desc);
     }
@@ -105,7 +108,7 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
 
     log_debug!("Token list result: {:?}", res);
 
-    let tokens: Vec<ApiToken> = serde_json::from_value(res.data)
+    let tokens: Vec<GetTokenResponse> = serde_json::from_value(res.data)
         .map_err(|e| format!("Failed to parse token list response: {}", e))?;
 
     if tokens.is_empty() {
@@ -130,7 +133,7 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
         println!(
             "{:<25} {:<8} {:<20} {:<20}",
             token.name,
-            if token.is_global { "yes" } else { "no" },
+            if token.global { "yes" } else { "no" },
             desc,
             expires
         );

@@ -11,7 +11,7 @@ impl ZoneService {
     ) -> Result<Vec<Zone>, ServiceError> {
         match zone_name {
             Some(name) => {
-                let zone = Self::force_increment_zone_serial(name).await?;
+                let zone = Self::force_increment_serial_by_name(name).await?;
                 Ok(vec![zone])
             }
             None => {
@@ -22,7 +22,8 @@ impl ZoneService {
                     // Bump each zone in its own transaction so the new serial
                     // derives from the current row and a concurrent edit to other
                     // fields is not clobbered.
-                    bumped_zones.push(Self::force_increment_zone_serial(zone.name.as_str()).await?);
+                    bumped_zones
+                        .push(Self::force_increment_serial_by_name(zone.name.as_str()).await?);
                 }
 
                 Ok(bumped_zones)
@@ -30,7 +31,7 @@ impl ZoneService {
         }
     }
 
-    async fn force_increment_zone_serial(zone_name: &str) -> Result<Zone, ServiceError> {
+    async fn force_increment_serial_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
         let mut tx = RepositoryService::begin_tx("Failed to force increment zone serial").await?;
 
         let apply_result = async {

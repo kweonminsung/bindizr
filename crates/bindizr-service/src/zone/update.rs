@@ -32,7 +32,6 @@ pub(super) fn soa_replacement_changes(
 ) -> Result<Vec<ZoneChange>, ServiceError> {
     let change = |operation: &str, zone: &Zone| -> Result<ZoneChange, ServiceError> {
         Ok(ZoneChange {
-            id: 0,
             zone_id: old_zone.id,
             serial: new_serial,
             operation: operation.to_string(),
@@ -187,7 +186,7 @@ impl ZoneService {
 
             // A rename / primary_ns change must keep an apex NS matching the new
             // primary_ns; only apex rows can satisfy that, so load just those.
-            let apex_records = RepositoryService::get_records_by_zone_id_and_name_tx(
+            let apex_records = RepositoryService::list_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone_id,
                 &OwnerName::apex(),

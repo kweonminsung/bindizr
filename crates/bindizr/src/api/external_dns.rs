@@ -106,6 +106,6 @@ pub(crate) async fn apply_external_dns_changes(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<ExternalDnsChangesRequest>,
 ) -> Result<Response, ApiError> {
-    let response = ExternalDnsService::apply_changes(&body, &caller).await?;
+    let response = ExternalDnsService::apply_changes(&caller, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

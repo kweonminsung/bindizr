@@ -59,7 +59,7 @@ impl RecordService {
                 .await?;
 
             let existing_records_with_name =
-                match RepositoryService::get_records_by_zone_id_and_name_tx(
+                match RepositoryService::list_records_by_zone_id_and_name_tx(
                     &mut tx,
                     zone.id,
                     &owner_name,

@@ -81,7 +81,6 @@ pub(super) fn zone_changes_for(
     records
         .iter()
         .map(|record| ZoneChange {
-            id: 0,
             zone_id,
             serial: new_serial,
             operation: operation.to_string(),
@@ -205,7 +204,7 @@ impl RecordService {
             batch_names.sort();
             batch_names.dedup();
 
-            let existing_records = match RepositoryService::get_records_by_zone_id_and_names_tx(
+            let existing_records = match RepositoryService::list_records_by_zone_id_and_names_tx(
                 &mut tx,
                 zone.id,
                 &batch_names,

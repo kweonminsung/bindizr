@@ -1,14 +1,13 @@
 use std::borrow::Cow;
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
 use sqlx::FromRow;
 
 use crate::dns::{
     name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
         ARecordValue, AaaaRecordValue, CnameRecordValue, MxRecordValue, NsRecordValue,
-        PtrRecordValue, SoaRecordValue, SrvRecordValue, TxtContent, TxtRdata, TxtRecordValue,
+        PtrRecordValue, SoaRecordValue, SrvRecordValue, TxtContent, TxtRecordValue,
     },
 };
 
@@ -77,7 +76,7 @@ impl RecordWithZone {
 
 /// Supported DNS resource record types.
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RecordType {
     A,
     AAAA,
@@ -149,10 +148,8 @@ impl RecordType {
             RecordType::AAAA => AaaaRecordValue::parse(value).map(|_| ()),
             RecordType::CNAME => CnameRecordValue::parse(value).map(|_| ()),
             RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
-            RecordType::TXT => {
-                let _ = TxtRecordValue::parse(value);
-                Ok(())
-            }
+            // Stored TXT bytes are unconstrained; encoded_value guards entry.
+            RecordType::TXT => Ok(()),
             RecordType::NS => NsRecordValue::parse(value).map(|_| ()),
             RecordType::SOA => SoaRecordValue::parse(value)?.validate(),
             RecordType::SRV => SrvRecordValue::parse(value, priority)?.validate(),
@@ -191,7 +188,7 @@ impl RecordType {
             RecordType::MX => MxRecordValue::parse(value, fallback_priority)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::TXT => TxtRecordValue::parse(value).canonical(),
+            RecordType::TXT => Cow::Borrowed(value),
             RecordType::NS => NsRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
@@ -209,12 +206,12 @@ impl RecordType {
 
     /// Counterpart of [`Self::canonical_value`] for writes: the one spelling
     /// record rows encode, so every entry path stores equal bytes. TXT takes
-    /// presentation form; other TXT grammars go through [`TxtRdata`] directly.
+    /// presentation form; other TXT grammars go through [`TxtRecordValue`] directly.
     pub fn encoded_value(&self, value: &str, priority: Option<i32>) -> Result<String, String> {
         // TXT keeps raw bytes; every other type tolerates surrounding whitespace.
         let trimmed = value.trim();
         match self {
-            RecordType::TXT => TxtRdata::from_presentation(value).map(TxtRdata::into_encoded),
+            RecordType::TXT => TxtRecordValue::parse(value).map(TxtRecordValue::into_encoded),
             RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::AAAA => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::CNAME => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
@@ -255,7 +252,7 @@ impl RecordType {
     /// Format a stored value of this record type for display.
     pub fn display_value(&self, value: &str) -> String {
         if *self == RecordType::TXT {
-            return match TxtRdata::from_encoded(value).and_then(|rdata| rdata.to_content()) {
+            return match TxtRecordValue::from_encoded(value).and_then(|rdata| rdata.to_content()) {
                 Some(TxtContent::Single(value)) => value,
                 Some(TxtContent::Segments(segments)) => segments.join(""),
                 None => value.to_string(),
@@ -280,10 +277,10 @@ impl RecordType {
     /// character-string, and other types use their display form.
     pub fn presentation_rdata(&self, value: &str, priority: Option<i32>) -> String {
         match self {
-            RecordType::TXT => match TxtRdata::from_encoded(value) {
+            RecordType::TXT => match TxtRecordValue::from_encoded(value) {
                 Some(rdata) => rdata.to_presentation(),
                 // Not an encoded TXT value; quote it as a single character-string.
-                None => TxtRdata::quote_charstr(value.as_bytes()),
+                None => TxtRecordValue::to_quoted_charstr(value.as_bytes()),
             },
             RecordType::MX | RecordType::SRV => {
                 format!("{} {}", priority.unwrap_or(10), self.display_value(value))

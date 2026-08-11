@@ -65,7 +65,7 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
         Ok(api_token)
     }
 
-    async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError> {
+    async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let tokens = sqlx::query_as::<_, ApiToken>(

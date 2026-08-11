@@ -298,8 +298,8 @@ impl ExternalDnsService {
     /// together or none do. Only zones with a remaining delta advance their
     /// serial (once per request) and record IXFR history.
     pub async fn apply_changes(
-        request: &ExternalDnsChangesRequest,
         caller: &Caller,
+        request: &ExternalDnsChangesRequest,
     ) -> Result<ExternalDnsChangesResponse, ServiceError> {
         let started = std::time::Instant::now();
 
@@ -320,7 +320,7 @@ impl ExternalDnsService {
         let apply_result = async {
             // Resolve authoritative zones from committed state inside the tx;
             // the residual race with concurrent zone creation is accepted.
-            let zones = RepositoryService::get_all_zones_tx(&mut tx).await?;
+            let zones = RepositoryService::list_zones_tx(&mut tx).await?;
             let zone_ops = group_ops_by_zone(&zones, ops)?;
 
             let mut changed_zones = Vec::new();
@@ -357,7 +357,7 @@ impl ExternalDnsService {
                     .collect();
                 names.sort();
                 names.dedup();
-                let existing = RepositoryService::get_records_by_zone_id_and_names_tx(
+                let existing = RepositoryService::list_records_by_zone_id_and_names_tx(
                     &mut tx, zone.id, &names,
                 )
                 .await?;

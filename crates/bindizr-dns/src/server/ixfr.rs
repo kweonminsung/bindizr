@@ -132,11 +132,6 @@ pub(crate) async fn handle_ixfr(
         }
     }
 
-    if !snapshots_by_serial.contains_key(&current_serial) {
-        log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
-    }
-
     log_info!(
         "IXFR: Sending {} changes across {} serial steps from {} to {}",
         changes.len(),

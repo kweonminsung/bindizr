@@ -76,9 +76,9 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
         Ok(())
     } else {
         Err(XfrError::NotifyFailed(format!(
-            "zone {}{}",
+            "zone {} ({})",
             zone_name,
-            format_failures(&failures)
+            failures.join("; ")
         )))
     }
 }
@@ -147,14 +147,6 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>,
     }
 
     Ok(reports)
-}
-
-fn format_failures(failures: &[String]) -> String {
-    if failures.is_empty() {
-        String::new()
-    } else {
-        format!(" ({})", failures.join("; "))
-    }
 }
 
 /// Sends a NOTIFY to one server, retrying up to the configured limit.

@@ -40,7 +40,7 @@ fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> s
 async fn scoped_token_sees_and_writes_only_granted_zones() {
     let mut app = TestApp::start_with_options(authed_options()).await;
     let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token.clone());
+    app.set_auth_token(global_token);
 
     let granted_zone = app.zone_name("granted.com");
     let other_zone = app.zone_name("other.com");
@@ -361,12 +361,6 @@ async fn global_token_policy_management_over_http() {
     let zone_name = app.zone_name("example.com");
     create_zone(&app, &zone_name).await;
     let (scoped_name, _) = app.create_scoped_api_token().await;
-
-    // Token names are unique.
-    let output = app
-        .run_cli(&["token", "create", "--name", &scoped_name])
-        .await;
-    assert!(!output.status.success());
 
     let (status, body) = app
         .request(

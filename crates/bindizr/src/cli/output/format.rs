@@ -1,5 +1,3 @@
-use std::fmt;
-
 use bindizr_service::types::PaginatedResponse;
 use serde::{Deserialize, de::DeserializeOwned};
 use tabled::{Table, Tabled, settings::Style};
@@ -10,16 +8,6 @@ pub(crate) enum OutputFormat {
     Json,
     Yaml,
     Table,
-}
-
-impl fmt::Display for OutputFormat {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            OutputFormat::Json => write!(f, "json"),
-            OutputFormat::Yaml => write!(f, "yaml"),
-            OutputFormat::Table => write!(f, "table"),
-        }
-    }
 }
 
 impl std::str::FromStr for OutputFormat {

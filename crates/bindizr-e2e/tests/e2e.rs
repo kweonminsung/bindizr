@@ -21,6 +21,7 @@ mod cli {
     mod daemon;
     mod doctor;
     mod record;
+    mod token;
     mod tsig_key;
     mod zone;
 }

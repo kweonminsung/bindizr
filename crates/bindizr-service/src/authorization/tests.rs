@@ -40,8 +40,7 @@ fn authorize(
     policies: &[ZoneTokenPolicy],
     writes: &[RecordWrite<'_>],
 ) -> Result<(), crate::error::ServiceError> {
-    let policies: Vec<&ZoneTokenPolicy> = policies.iter().collect();
-    authorize_with_policies(&policies, &test_zone(), writes)
+    authorize_with_policies(policies, &test_zone(), writes)
 }
 
 fn write<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordWrite<'a> {

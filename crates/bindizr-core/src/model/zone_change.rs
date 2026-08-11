@@ -5,7 +5,6 @@ use crate::dns::name::OwnerName;
 /// A single record add/delete change within a zone, used for IXFR.
 #[derive(Debug, Clone, FromRow)]
 pub struct ZoneChange {
-    pub id: i32,
     pub zone_id: i32,
     pub serial: i32,
     pub operation: String, // OP_ADD or OP_DEL

@@ -58,7 +58,7 @@ impl Caller {
         if token.is_global {
             return Ok(Caller::Global);
         }
-        let grants = RepositoryService::get_zone_token_policies_by_token_id(token.id).await?;
+        let grants = RepositoryService::list_zone_token_policies_by_token_id(token.id).await?;
         Ok(Caller::Token {
             id: token.id,
             grants: grants.into(),
@@ -114,7 +114,7 @@ impl Caller {
         match self {
             Caller::Global => Ok(()),
             Caller::Token { id, .. } => {
-                let policies = RepositoryService::get_zone_token_policies_by_zone_and_token_tx(
+                let policies = RepositoryService::list_zone_token_policies_by_zone_and_token_tx(
                     tx, zone.id, *id,
                 )
                 .await?;
@@ -126,7 +126,6 @@ impl Caller {
                         zone.name
                     )));
                 }
-                let policies: Vec<&ZoneTokenPolicy> = policies.iter().collect();
                 authorize_with_policies(&policies, zone, writes)
             }
         }
@@ -134,7 +133,7 @@ impl Caller {
 }
 
 fn authorize_with_policies(
-    policies: &[&ZoneTokenPolicy],
+    policies: &[ZoneTokenPolicy],
     zone: &Zone,
     writes: &[RecordWrite<'_>],
 ) -> Result<(), ServiceError> {

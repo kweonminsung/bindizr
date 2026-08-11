@@ -11,7 +11,7 @@ pub(crate) async fn list_zone_changes(
     from_serial: u32,
     to_serial: u32,
 ) -> Result<Vec<ZoneChange>, XfrError> {
-    ZoneService::get_changes_between_serials(zone_id, from_serial as i32, to_serial as i32)
+    ZoneService::list_changes_between_serials(zone_id, from_serial as i32, to_serial as i32)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))
 }

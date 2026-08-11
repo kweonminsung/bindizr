@@ -310,11 +310,7 @@ impl TestApp {
     }
 
     /// Run the CLI, optionally piping `input` to its stdin (for `-` file args).
-    pub(crate) async fn run_cli_with_input(
-        &self,
-        args: &[&str],
-        input: Option<&str>,
-    ) -> std::process::Output {
+    async fn run_cli_with_input(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
         let previous_dns_key = match args {
             ["record", "delete", record_id, ..] => {
                 self.previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
@@ -707,7 +703,7 @@ pub(crate) struct ExternalDnsAdapter {
 impl ExternalDnsAdapter {
     /// Spawn the adapter binary against `bindizr_url` on ephemeral localhost
     /// ports and wait until its webhook listener answers.
-    pub(crate) async fn spawn(bindizr_url: &str, token: Option<&str>) -> Self {
+    pub(crate) async fn spawn(bindizr_url: &str, token: &str) -> Self {
         let webhook_port = reserve_tcp_port();
         let health_port = reserve_tcp_port();
 
@@ -720,10 +716,9 @@ impl ExternalDnsAdapter {
             .arg("--health-listen-addr")
             .arg(format!("127.0.0.1:{health_port}"))
             .arg("--log-level")
-            .arg("error");
-        if let Some(token) = token {
-            command.arg("--token").arg(token);
-        }
+            .arg("error")
+            .arg("--token")
+            .arg(token);
 
         let mut child = command
             .stdin(Stdio::null())

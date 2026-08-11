@@ -100,25 +100,27 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load zone: {}", e)))
     }
 
-    pub(super) async fn get_all_zones() -> Result<Vec<Zone>, ServiceError> {
+    pub(super) async fn list_zones() -> Result<Vec<Zone>, ServiceError> {
         get_zone_repository()
-            .get_all()
+            .list_all()
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zones: {}", e)))
     }
 
-    pub(super) async fn get_all_zones_tx(
+    pub(super) async fn list_zones_tx(
         tx: &mut RepositoryTx<'_>,
     ) -> Result<Vec<Zone>, ServiceError> {
         get_zone_repository()
-            .get_all_tx(tx)
+            .list_all_tx(tx)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zones: {}", e)))
     }
 
-    pub(super) async fn get_zones_by_filter(filter: ZoneFilter) -> Result<Vec<Zone>, ServiceError> {
+    pub(super) async fn list_zones_by_filter(
+        filter: ZoneFilter,
+    ) -> Result<Vec<Zone>, ServiceError> {
         get_zone_repository()
-            .get_by_filter(filter)
+            .list_by_filter(filter)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zones: {}", e)))
     }
@@ -146,54 +148,53 @@ impl RepositoryService {
         get_catalog_zone_state_repository()
             .update_serial_for_signature_tx(tx, name, signature, base_serial)
             .await
-            .map(|state| state.serial)
             .map_err(|e| ServiceError::internal(format!("failed to update catalog state: {}", e)))
     }
 
-    pub(super) async fn get_records_by_zone_id(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
+    pub(super) async fn list_records_by_zone_id(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
         get_record_repository()
-            .get_by_zone_id(zone_id)
+            .list_by_zone_id(zone_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
-    pub(super) async fn get_records_by_zone_ids(
+    pub(super) async fn list_records_by_zone_ids(
         zone_ids: &[i32],
     ) -> Result<Vec<Record>, ServiceError> {
         get_record_repository()
-            .get_by_zone_ids(zone_ids)
+            .list_by_zone_ids(zone_ids)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
-    pub(super) async fn get_records_by_zone_id_tx(
+    pub(super) async fn list_records_by_zone_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, ServiceError> {
         get_record_repository()
-            .get_by_zone_id_tx(tx, zone_id)
+            .list_by_zone_id_tx(tx, zone_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
-    pub(super) async fn get_records_by_zone_id_and_name_tx(
+    pub(super) async fn list_records_by_zone_id_and_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         name: &OwnerName,
     ) -> Result<Vec<Record>, ServiceError> {
         get_record_repository()
-            .get_by_zone_id_and_name_tx(tx, zone_id, name)
+            .list_by_zone_id_and_name_tx(tx, zone_id, name)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
-    pub(super) async fn get_records_by_zone_id_and_names_tx(
+    pub(super) async fn list_records_by_zone_id_and_names_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         names: &[OwnerName],
     ) -> Result<Vec<Record>, ServiceError> {
         get_record_repository()
-            .get_by_zone_id_and_names_tx(tx, zone_id, names)
+            .list_by_zone_id_and_names_tx(tx, zone_id, names)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
@@ -238,11 +239,11 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to update record: {}", e)))
     }
 
-    pub(super) async fn get_records_by_filter_with_zone(
+    pub(super) async fn list_records_by_filter_with_zone(
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, ServiceError> {
         get_record_repository()
-            .get_by_filter_with_zone(filter)
+            .list_by_filter_with_zone(filter)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
@@ -290,13 +291,13 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to create zone changes: {}", e)))
     }
 
-    pub(super) async fn get_zone_changes_between_serials(
+    pub(super) async fn list_zone_changes_between_serials(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, ServiceError> {
         get_zone_change_repository()
-            .get_changes_between_serials(zone_id, from_serial, to_serial)
+            .list_changes_between_serials(zone_id, from_serial, to_serial)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
     }
@@ -365,13 +366,13 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load snapshot: {}", e)))
     }
 
-    pub(super) async fn get_zone_snapshots_in_range(
+    pub(super) async fn list_zone_snapshots_in_range(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneSnapshot>, ServiceError> {
         get_zone_snapshot_repository()
-            .get_by_zone_id_in_serial_range(zone_id, from_serial, to_serial)
+            .list_by_zone_id_in_serial_range(zone_id, from_serial, to_serial)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load snapshots: {}", e)))
     }
@@ -405,14 +406,14 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load snapshot: {}", e)))
     }
 
-    pub(super) async fn get_zone_changes_between_serials_tx(
+    pub(super) async fn list_zone_changes_between_serials_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, ServiceError> {
         get_zone_change_repository()
-            .get_changes_between_serials_tx(tx, zone_id, from_serial, to_serial)
+            .list_changes_between_serials_tx(tx, zone_id, from_serial, to_serial)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
     }
@@ -437,9 +438,9 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
     }
 
-    pub(super) async fn get_all_tsig_keys() -> Result<Vec<TsigKey>, ServiceError> {
+    pub(super) async fn list_tsig_keys() -> Result<Vec<TsigKey>, ServiceError> {
         get_tsig_key_repository()
-            .get_all()
+            .list_all()
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load TSIG keys: {}", e)))
     }
@@ -485,22 +486,22 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load TSIG policy: {}", e)))
     }
 
-    pub(super) async fn get_zone_tsig_policies_by_zone_id(
+    pub(super) async fn list_zone_tsig_policies_by_zone_id(
         zone_id: i32,
     ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
         get_zone_tsig_policy_repository()
-            .get_by_zone_id(zone_id)
+            .list_by_zone_id(zone_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
     }
 
-    pub(super) async fn get_zone_tsig_policies_by_zone_and_key_tx(
+    pub(super) async fn list_zone_tsig_policies_by_zone_and_key_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         tsig_key_id: i32,
     ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
         get_zone_tsig_policy_repository()
-            .get_by_zone_and_key_tx(tx, zone_id, tsig_key_id)
+            .list_by_zone_and_key_tx(tx, zone_id, tsig_key_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
     }
@@ -547,31 +548,31 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load token policy: {}", e)))
     }
 
-    pub(super) async fn get_zone_token_policies_by_zone_id(
+    pub(super) async fn list_zone_token_policies_by_zone_id(
         zone_id: i32,
     ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
         get_zone_token_policy_repository()
-            .get_by_zone_id(zone_id)
+            .list_by_zone_id(zone_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
     }
 
-    pub(super) async fn get_zone_token_policies_by_token_id(
+    pub(super) async fn list_zone_token_policies_by_token_id(
         api_token_id: i32,
     ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
         get_zone_token_policy_repository()
-            .get_by_token_id(api_token_id)
+            .list_by_token_id(api_token_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
     }
 
-    pub(super) async fn get_zone_token_policies_by_zone_and_token_tx(
+    pub(super) async fn list_zone_token_policies_by_zone_and_token_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         api_token_id: i32,
     ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
         get_zone_token_policy_repository()
-            .get_by_zone_and_token_tx(tx, zone_id, api_token_id)
+            .list_by_zone_and_token_tx(tx, zone_id, api_token_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
     }
@@ -605,9 +606,9 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load token: {}", e)))
     }
 
-    pub(super) async fn get_all_api_tokens() -> Result<Vec<ApiToken>, ServiceError> {
+    pub(super) async fn list_api_tokens() -> Result<Vec<ApiToken>, ServiceError> {
         get_api_token_repository()
-            .get_all()
+            .list_all()
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load tokens: {}", e)))
     }

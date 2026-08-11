@@ -2,7 +2,7 @@
 //! TSIG verification, the wire shapes RFC 2136 fixes for each section, and
 //! rdata parsing. Everything that touches zone data lives in the service.
 
-use bindizr_core::{config, dns::record::TxtRdata};
+use bindizr_core::{config, dns::record::TxtRecordValue};
 use domain::{
     base::{
         iana::{Class, Rtype},
@@ -58,16 +58,13 @@ impl From<DynamicUpdateError> for UpdateError {
     }
 }
 
-pub(super) enum UpdateResult {
-    Applied { changed: bool },
-}
-
-/// Apply an UPDATE request. The returned signer is `Some` once the request's
-/// TSIG was validated, so the response — success or failure — can be signed.
+/// Apply an UPDATE request, returning whether zone data actually changed. The
+/// returned signer is `Some` once the request's TSIG was validated, so the
+/// response — success or failure — can be signed.
 pub(super) async fn apply_update(
     request: UpdateRequest,
     query_data: &[u8],
-) -> (Result<UpdateResult, UpdateError>, Option<ResponseSigner>) {
+) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
     let result = apply_update_inner(request, query_data, &mut signer).await;
     (result, signer)
@@ -77,7 +74,7 @@ async fn apply_update_inner(
     request: UpdateRequest,
     query_data: &[u8],
     signer: &mut Option<ResponseSigner>,
-) -> Result<UpdateResult, UpdateError> {
+) -> Result<bool, UpdateError> {
     let zone_name = request.zone_name.trim_end_matches('.');
     if zone_name.is_empty() {
         return Err(UpdateError::NotZone(
@@ -97,7 +94,7 @@ async fn apply_update_inner(
     };
 
     let changed = DynamicUpdateService::apply(update).await?;
-    Ok(UpdateResult::Applied { changed })
+    Ok(changed)
 }
 
 /// Verify the request's TSIG signature and record the response-signing
@@ -309,7 +306,7 @@ fn parse_rdata<'a, T>(
     Ok(value)
 }
 
-pub(super) fn rr_to_record_value(
+fn rr_to_record_value(
     update: &UpdateRecord,
     message: &[u8],
 ) -> Result<(RecordType, String, Option<i32>), UpdateError> {
@@ -343,7 +340,7 @@ pub(super) fn rr_to_record_value(
             }
             Ok((
                 RecordType::TXT,
-                TxtRdata::from_rdata(&update.rdata).into_encoded(),
+                TxtRecordValue::from_rdata(&update.rdata).into_encoded(),
                 None,
             ))
         }
@@ -373,7 +370,7 @@ pub(super) fn rr_to_record_value(
 
 /// Record types updatable via nsupdate. SOA is excluded because it is managed
 /// through the zone's own fields.
-pub(super) fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, UpdateError> {
+fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, UpdateError> {
     match rr_type {
         Rtype::A => Ok(RecordType::A),
         Rtype::NS => Ok(RecordType::NS),

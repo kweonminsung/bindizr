@@ -58,7 +58,7 @@ impl TsigKeyService {
     pub async fn list(caller: &Caller) -> Result<Vec<TsigKey>, ServiceError> {
         caller.require_global("manage TSIG keys and policies")?;
 
-        let mut keys = RepositoryService::get_all_tsig_keys().await?;
+        let mut keys = RepositoryService::list_tsig_keys().await?;
         for key in &mut keys {
             key.secret.clear();
         }

@@ -187,7 +187,7 @@ impl RecordService {
                 .await?;
             // Only records sharing the new owner name can conflict, so load just
             // those instead of the whole zone.
-            let zone_records = match RepositoryService::get_records_by_zone_id_and_name_tx(
+            let zone_records = match RepositoryService::list_records_by_zone_id_and_name_tx(
                 &mut tx,
                 zone.id,
                 &resolved.owner_name,

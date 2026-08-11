@@ -8,7 +8,7 @@ use std::{
 
 use bindizr_core::dns::{
     name::{OwnerName, ZoneName, to_fqdn},
-    record::{SoaMailbox, TxtRdata},
+    record::{SoaMailbox, TxtRecordValue},
 };
 use domain::{
     base::{
@@ -182,7 +182,7 @@ impl DnsMessageBuilder {
         let owner = parse_name(name)?;
 
         // Operator-supplied raw rdata is passed through unchanged.
-        if let Some(rdata) = TxtRdata::from_encoded(text).map(TxtRdata::into_rdata) {
+        if let Some(rdata) = TxtRecordValue::from_encoded(text).map(TxtRecordValue::into_rdata) {
             let data = UnknownRecordData::from_octets(Rtype::TXT, rdata)
                 .map_err(|e| XfrError::ProtocolError(format!("Invalid TXT rdata: {}", e)))?;
             self.add_answer(owner, ttl, data);

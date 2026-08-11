@@ -18,7 +18,7 @@ use utoipa::{
     openapi::security::{Http, HttpAuthScheme, SecurityScheme},
 };
 
-/// OpenAPI document for the HTTP API (debug builds only).
+/// OpenAPI document for the HTTP API, served when `api.openapi_enabled` is on.
 #[derive(OpenApi)]
 #[openapi(
     paths(

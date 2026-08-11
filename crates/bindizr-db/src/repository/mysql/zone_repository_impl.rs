@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{RepositoryTx, ZoneFilter, ZoneRepository},
+    repository::{RepositoryTx, ZoneFilter, ZoneRepository, like_pattern},
 };
 
 /// MySQL-backed implementation of `ZoneRepository`.
@@ -93,7 +93,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
-    async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
@@ -104,7 +104,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zones)
     }
 
-    async fn get_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
         let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
@@ -114,7 +114,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zones)
     }
 
-    async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
         let ids_clause = match filter.ids.as_deref() {
@@ -308,19 +308,4 @@ impl ZoneRepository for MySqlZoneRepository {
             .await?;
         Ok(())
     }
-}
-
-/// Wrap the term for a contains-match. The LIKE wildcards are escaped: `%` and
-/// `_` are ordinary characters in rdata and in `_dmarc`-style names.
-fn like_pattern(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| {
-            let escaped = value
-                .replace('\\', "\\\\")
-                .replace('%', "\\%")
-                .replace('_', "\\_");
-            format!("%{}%", escaped)
-        })
 }

@@ -112,6 +112,7 @@ pub(crate) async fn handle_tcp_query(
     Ok(())
 }
 
+/// Rejects an XFR query received over UDP; the caller checked the qtype.
 pub(crate) async fn handle_udp_query(
     client_addr: SocketAddr,
     secondary_acl: &acl::SecondaryAcl,
@@ -121,23 +122,16 @@ pub(crate) async fn handle_udp_query(
 
     validate_secondary_acl(client_ip, secondary_acl).await?;
 
-    if is_xfr_query_type(query.qtype) {
-        log_warn!(
-            "XFR-like UDP query is not supported (zone={:?}, qtype={:?}, from={})",
-            query.zone_name,
-            query.qtype,
-            client_ip
-        );
+    log_warn!(
+        "XFR-like UDP query is not supported (zone={:?}, qtype={:?}, from={})",
+        query.zone_name,
+        query.qtype,
+        client_ip
+    );
 
-        return Err(XfrError::InvalidQuery(
-            "XFR over UDP is not supported".to_string(),
-        ));
-    }
-
-    Err(XfrError::InvalidQuery(format!(
-        "Unsupported query type: {:?}",
-        query.qtype
-    )))
+    Err(XfrError::InvalidQuery(
+        "XFR over UDP is not supported".to_string(),
+    ))
 }
 
 async fn validate_secondary_acl(

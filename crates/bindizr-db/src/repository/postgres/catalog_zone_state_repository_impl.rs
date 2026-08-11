@@ -2,7 +2,6 @@ use async_trait::async_trait;
 
 use crate::{
     error::DatabaseError,
-    model::catalog_zone_state::CatalogZoneState,
     repository::{CatalogZoneStateRepository, RepositoryTx},
 };
 
@@ -18,12 +17,12 @@ impl CatalogZoneStateRepository for PostgresCatalogZoneStateRepository {
         name: &str,
         signature: &str,
         base_serial: i32,
-    ) -> Result<CatalogZoneState, DatabaseError> {
+    ) -> Result<i32, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
         // Advance the catalog serial only when the signature changes, kept
         // monotonic, so secondaries re-transfer the catalog zone only on real changes.
-        sqlx::query_as::<_, CatalogZoneState>(
+        sqlx::query_scalar::<_, i32>(
             r#"
             INSERT INTO catalog_zone_state (name, signature, serial)
             VALUES ($1, $2, $3)
@@ -33,9 +32,8 @@ impl CatalogZoneStateRepository for PostgresCatalogZoneStateRepository {
                     WHEN catalog_zone_state.signature = EXCLUDED.signature THEN catalog_zone_state.serial
                     ELSE GREATEST(catalog_zone_state.serial + 1, EXCLUDED.serial)
                 END,
-                signature = EXCLUDED.signature,
-                updated_at = CURRENT_TIMESTAMP
-            RETURNING name, signature, serial, updated_at
+                signature = EXCLUDED.signature
+            RETURNING serial
             "#,
         )
         .bind(name)

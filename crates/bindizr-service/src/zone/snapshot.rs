@@ -81,6 +81,6 @@ impl ZoneService {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneSnapshot>, ServiceError> {
-        RepositoryService::get_zone_snapshots_in_range(zone_id, from_serial, to_serial).await
+        RepositoryService::list_zone_snapshots_in_range(zone_id, from_serial, to_serial).await
     }
 }

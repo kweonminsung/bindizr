@@ -213,7 +213,7 @@ async fn authorize_key(
         Some(key) => key,
     };
 
-    let policies = ZoneTsigPolicyService::get_by_zone_and_key_tx(tx, zone.id, key.id).await?;
+    let policies = ZoneTsigPolicyService::list_by_zone_and_key_tx(tx, zone.id, key.id).await?;
 
     if policies.is_empty() {
         return Err(DynamicUpdateError::Refused(format!(

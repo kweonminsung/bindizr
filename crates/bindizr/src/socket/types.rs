@@ -6,7 +6,7 @@ use bindizr_service::types::{
 use serde::{Deserialize, Serialize};
 
 /// Command kinds accepted by the daemon over the Unix socket.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DaemonCommandKind {
     Status,

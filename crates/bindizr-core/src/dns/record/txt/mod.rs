@@ -12,9 +12,25 @@ pub enum TxtContent {
 /// A TXT value as raw RDATA (length-prefixed character-strings); stored as a
 /// prefixed base64 string.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TxtRdata(Vec<u8>);
+pub struct TxtRecordValue(Vec<u8>);
 
-impl TxtRdata {
+impl TxtRecordValue {
+    /// Parse a presentation-form value: a leading `"` reads space-separated
+    /// quoted strings (max 255 bytes each, `\"`/`\\`/`\DDD` escapes per
+    /// RFC 1035, Section 5.1); any other value is one raw string kept
+    /// byte-for-byte, split at 255 bytes on UTF-8 boundaries.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        if !value.trim().starts_with('"') {
+            if value.is_empty() {
+                return Err("TXT value must not be empty".to_string());
+            }
+            return Ok(Self::from_string(value));
+        }
+
+        let segments = parse_quoted_segments(value.trim())?;
+        Self::from_segments(segments.iter().map(String::as_str))
+    }
+
     /// Wrap raw RDATA bytes as-is.
     pub fn from_rdata(rdata: &[u8]) -> Self {
         Self(rdata.to_vec())
@@ -66,22 +82,6 @@ impl TxtRdata {
         Self(rdata)
     }
 
-    /// Parse a presentation-form value: a leading `"` reads space-separated
-    /// quoted strings (max 255 bytes each, `\"`/`\\`/`\DDD` escapes per
-    /// RFC 1035, Section 5.1); any other value is one raw string kept
-    /// byte-for-byte, split at 255 bytes on UTF-8 boundaries.
-    pub fn from_presentation(value: &str) -> Result<Self, String> {
-        if !value.trim().starts_with('"') {
-            if value.is_empty() {
-                return Err("TXT value must not be empty".to_string());
-            }
-            return Ok(Self::from_string(value));
-        }
-
-        let segments = parse_quoted_segments(value.trim())?;
-        Self::from_segments(segments.iter().map(String::as_str))
-    }
-
     /// Decode a prefixed-base64 encoded value; `None` if it is not valid.
     pub fn from_encoded(stored: &str) -> Option<Self> {
         let encoded = stored.strip_prefix(RAW_TXT_RDATA_PREFIX)?;
@@ -125,7 +125,7 @@ impl TxtRdata {
         while pos < self.0.len() {
             let len = self.0[pos] as usize;
             pos += 1;
-            segments.push(Self::quote_charstr(&self.0[pos..pos + len]));
+            segments.push(Self::to_quoted_charstr(&self.0[pos..pos + len]));
             pos += len;
         }
         if segments.is_empty() {
@@ -136,7 +136,7 @@ impl TxtRdata {
 
     /// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any
     /// non-printable byte as a `\DDD` decimal escape (RFC 1035, Section 5.1).
-    pub fn quote_charstr(bytes: &[u8]) -> String {
+    pub fn to_quoted_charstr(bytes: &[u8]) -> String {
         let mut out = String::from("\"");
         for &byte in bytes {
             match byte {
@@ -240,21 +240,6 @@ fn is_valid_txt_rdata(rdata: &[u8]) -> bool {
         pos += chunk_len;
     }
     true
-}
-
-pub(crate) struct TxtRecordValue<'a> {
-    value: &'a str,
-}
-
-impl<'a> TxtRecordValue<'a> {
-    pub(crate) fn parse(value: &'a str) -> Self {
-        Self { value }
-    }
-
-    /// TXT values are stored already canonical.
-    pub(crate) fn canonical(&self) -> std::borrow::Cow<'a, str> {
-        std::borrow::Cow::Borrowed(self.value)
-    }
 }
 
 #[cfg(test)]

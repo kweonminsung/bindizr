@@ -17,7 +17,7 @@ use crate::{
 impl RecordService {
     /// List all records in a zone by zone id.
     pub async fn list_by_zone_id(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
-        RepositoryService::get_records_by_zone_id(zone_id).await
+        RepositoryService::list_records_by_zone_id(zone_id).await
     }
 
     /// List all records in a zone by zone id, within the caller's transaction.
@@ -25,7 +25,7 @@ impl RecordService {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, ServiceError> {
-        RepositoryService::get_records_by_zone_id_tx(tx, zone_id).await
+        RepositoryService::list_records_by_zone_id_tx(tx, zone_id).await
     }
 
     /// List a zone's records for `caller`; a zone it cannot see reads as
@@ -35,7 +35,7 @@ impl RecordService {
         zone_name: &str,
     ) -> Result<Vec<Record>, ServiceError> {
         let zone = ZoneService::get_by_name(caller, zone_name).await?;
-        RepositoryService::get_records_by_zone_id(zone.id)
+        RepositoryService::list_records_by_zone_id(zone.id)
             .await
             .map_err(|e| {
                 log_error!("Failed to fetch records for zone {}: {}", zone_name, e);
@@ -98,7 +98,7 @@ impl RecordService {
         };
 
         let total = RepositoryService::count_records_by_filter(record_filter.clone()).await?;
-        let records = RepositoryService::get_records_by_filter_with_zone(record_filter).await?;
+        let records = RepositoryService::list_records_by_filter_with_zone(record_filter).await?;
         Ok(paginated_response(records, limit, offset, total))
     }
 

@@ -15,16 +15,11 @@ use crate::socket::{
 pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: RecordIdParams = parse_params(data)?;
 
-    match RecordService::get_by_id_with_zone(&Caller::Global, params.id).await {
-        Ok(record) => {
-            let response = GetRecordResponse::from_record_with_zone(&record);
-            Ok(DaemonResponse {
-                message: "Record retrieved successfully".to_string(),
-                data: to_response_data(response)?,
-            })
-        }
-        Err(e) => Err(e),
-    }
+    let record = RecordService::get_by_id_with_zone(&Caller::Global, params.id).await?;
+    Ok(DaemonResponse {
+        message: "Record retrieved successfully".to_string(),
+        data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+    })
 }
 
 /// Handle the `ListRecords` command by returning records matching the filter.
@@ -35,24 +30,20 @@ pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
         parse_params(data)?
     };
 
-    match RecordService::list_with_zone_by_filter(&Caller::Global, filter).await {
-        Ok(records) => {
-            let response = records
-                .items
-                .iter()
-                .map(GetRecordResponse::from_record_with_zone)
-                .collect::<Vec<_>>();
+    let records = RecordService::list_with_zone_by_filter(&Caller::Global, filter).await?;
+    let response = records
+        .items
+        .iter()
+        .map(GetRecordResponse::from_record_with_zone)
+        .collect::<Vec<_>>();
 
-            Ok(DaemonResponse {
-                message: format!("Found {} record(s)", response.len()),
-                data: json!({
-                    "items": response,
-                    "pagination": records.pagination,
-                }),
-            })
-        }
-        Err(e) => Err(e),
-    }
+    Ok(DaemonResponse {
+        message: format!("Found {} record(s)", response.len()),
+        data: json!({
+            "items": response,
+            "pagination": records.pagination,
+        }),
+    })
 }
 
 /// Handle the `CreateRecord` command by creating a new record.
@@ -61,17 +52,11 @@ pub(super) async fn create_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateRecordRequest = parse_params(data)?;
 
-    match RecordService::create(&Caller::Global, &request).await {
-        Ok(record) => {
-            let response = GetRecordResponse::from_record_with_zone(&record);
-
-            Ok(DaemonResponse {
-                message: "Record created successfully".to_string(),
-                data: to_response_data(response)?,
-            })
-        }
-        Err(e) => Err(e),
-    }
+    let record = RecordService::create(&Caller::Global, &request).await?;
+    Ok(DaemonResponse {
+        message: "Record created successfully".to_string(),
+        data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+    })
 }
 
 /// Handle the `UpdateRecord` command by applying a partial-update patch.
@@ -80,13 +65,11 @@ pub(super) async fn update_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordParams = parse_params(data)?;
 
-    match RecordService::patch_by_id(&Caller::Global, params.id, &params.patch).await {
-        Ok(record) => Ok(DaemonResponse {
-            message: "Record updated successfully".to_string(),
-            data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
-        }),
-        Err(e) => Err(e),
-    }
+    let record = RecordService::patch_by_id(&Caller::Global, params.id, &params.patch).await?;
+    Ok(DaemonResponse {
+        message: "Record updated successfully".to_string(),
+        data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+    })
 }
 
 /// Handle the `BulkCreateRecords` command by inserting records into a zone in
@@ -96,31 +79,26 @@ pub(super) async fn bulk_create_records(
 ) -> Result<DaemonResponse, ServiceError> {
     let BulkCreateRecordsParams { zone_name, request } = parse_params(data)?;
 
-    match RecordService::create_bulk(
+    let response = RecordService::create_bulk(
         &Caller::Global,
         &zone_name,
         &request.records,
         request.dry_run,
     )
-    .await
-    {
-        Ok(response) => {
-            let message = if response.dry_run {
-                format!(
-                    "Dry run: {} record(s) validated; nothing applied",
-                    response.records.len()
-                )
-            } else {
-                format!("Inserted {} record(s)", response.inserted)
-            };
+    .await?;
+    let message = if response.dry_run {
+        format!(
+            "Dry run: {} record(s) validated; nothing applied",
+            response.records.len()
+        )
+    } else {
+        format!("Inserted {} record(s)", response.inserted)
+    };
 
-            Ok(DaemonResponse {
-                message,
-                data: to_response_data(response)?,
-            })
-        }
-        Err(e) => Err(e),
-    }
+    Ok(DaemonResponse {
+        message,
+        data: to_response_data(response)?,
+    })
 }
 
 /// Handle the `DeleteRecord` command by deleting a record by ID.
@@ -129,11 +107,9 @@ pub(super) async fn delete_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RecordIdParams = parse_params(data)?;
 
-    match RecordService::delete_by_id(&Caller::Global, params.id).await {
-        Ok(_) => Ok(DaemonResponse {
-            message: format!("Record '{}' deleted successfully", params.id),
-            data: json!(null),
-        }),
-        Err(e) => Err(e),
-    }
+    RecordService::delete_by_id(&Caller::Global, params.id).await?;
+    Ok(DaemonResponse {
+        message: format!("Record '{}' deleted successfully", params.id),
+        data: json!(null),
+    })
 }

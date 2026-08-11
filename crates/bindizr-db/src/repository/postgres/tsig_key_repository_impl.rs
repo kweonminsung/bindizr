@@ -51,7 +51,7 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         Ok(key)
     }
 
-    async fn get_all(&self) -> Result<Vec<TsigKey>, DatabaseError> {
+    async fn list_all(&self) -> Result<Vec<TsigKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let keys = sqlx::query_as::<_, TsigKey>(

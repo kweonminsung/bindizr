@@ -91,14 +91,14 @@ async fn reconstruct_records_at_serial(
     current_serial: i32,
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
-    for record in RepositoryService::get_records_by_zone_id_tx(tx, zone_id).await? {
+    for record in RepositoryService::list_records_by_zone_id_tx(tx, zone_id).await? {
         state
             .entry(record_match_key(&record))
             .or_default()
             .push(record.into());
     }
 
-    let changes = RepositoryService::get_zone_changes_between_serials_tx(
+    let changes = RepositoryService::list_zone_changes_between_serials_tx(
         tx,
         zone_id,
         target_serial,
@@ -171,7 +171,7 @@ async fn records_at_serial(
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     if serial == current_serial {
         let mut records: Vec<ReconstructedRecord> =
-            RepositoryService::get_records_by_zone_id_tx(tx, zone_id)
+            RepositoryService::list_records_by_zone_id_tx(tx, zone_id)
                 .await?
                 .into_iter()
                 .map(ReconstructedRecord::from)
@@ -502,7 +502,7 @@ impl ZoneService {
             let soa_changed = soa_metadata_changed(&zone, &restored_zone);
 
             let current_records =
-                RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await?;
+                RepositoryService::list_records_by_zone_id_tx(&mut tx, zone.id).await?;
             let target_records =
                 reconstruct_records_at_serial(&mut tx, zone.id, target_serial, zone.serial).await?;
 

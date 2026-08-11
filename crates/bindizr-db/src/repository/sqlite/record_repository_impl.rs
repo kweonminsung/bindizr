@@ -6,7 +6,8 @@ use crate::{
     error::DatabaseError,
     model::record::{Record, RecordWithZone},
     repository::{
-        RecordFilter, RecordRepository, RepositoryTx, apex_owner_sql, name_like_types_sql,
+        RecordFilter, RecordRepository, RepositoryTx, apex_owner_sql, like_pattern,
+        name_like_types_sql, normalize_partial_value,
     },
 };
 
@@ -57,8 +58,8 @@ impl RecordRepository for SqliteRecordRepository {
     ) -> Result<Vec<Record>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // 6 columns per row; keep bind count under SQLite's conservative limit.
-        const CHUNK: usize = 150;
+        // 7 binds per row; stays under SQLite's conservative 999-bind limit.
+        const CHUNK: usize = 142;
         let mut out = Vec::with_capacity(records.len());
         for chunk in records.chunks(CHUNK) {
             let mut sql = String::from(
@@ -147,7 +148,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let records =
@@ -160,7 +161,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
-    async fn get_by_zone_id_tx(
+    async fn list_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -177,7 +178,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
-    async fn get_by_zone_id_and_name_tx(
+    async fn list_by_zone_id_and_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -198,7 +199,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
-    async fn get_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError> {
+    async fn list_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError> {
         if zone_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -226,7 +227,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(out)
     }
 
-    async fn get_by_zone_id_and_names_tx(
+    async fn list_by_zone_id_and_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -262,7 +263,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(out)
     }
 
-    async fn get_by_filter_with_zone(
+    async fn list_by_filter_with_zone(
         &self,
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError> {
@@ -503,24 +504,4 @@ impl RecordRepository for SqliteRecordRepository {
         }
         Ok(())
     }
-}
-
-fn normalize_partial_value(value: &str) -> String {
-    value.trim().trim_end_matches('.').to_string()
-}
-
-/// Wrap the term for a contains-match. The LIKE wildcards are escaped: `%` and
-/// `_` are ordinary characters in rdata and in `_dmarc`-style names.
-fn like_pattern(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| {
-            let escaped = value
-                .trim_end_matches('.')
-                .replace('\\', "\\\\")
-                .replace('%', "\\%")
-                .replace('_', "\\_");
-            format!("%{}%", escaped)
-        })
 }

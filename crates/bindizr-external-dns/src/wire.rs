@@ -253,7 +253,7 @@ pub(crate) fn adjust_endpoints(endpoints: Vec<Endpoint>) -> Result<Vec<Endpoint>
                         .targets
                         .iter()
                         .map(|target| {
-                            bindizr_core::dns::record::TxtRdata::from_presentation(target)
+                            bindizr_core::dns::record::TxtRecordValue::parse(target)
                                 .map(|rdata| rdata.to_presentation())
                         })
                         .collect::<Result<Vec<_>, _>>()?;

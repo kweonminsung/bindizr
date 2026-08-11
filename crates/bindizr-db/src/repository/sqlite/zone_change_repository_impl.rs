@@ -61,7 +61,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         Ok(())
     }
 
-    async fn get_changes_between_serials(
+    async fn list_changes_between_serials(
         &self,
         zone_id: i32,
         from_serial: i32,
@@ -69,7 +69,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
         sqlx::query_as::<_, ZoneChange>(
             r#"
-            SELECT id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
+            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
             FROM zone_changes
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id
@@ -83,7 +83,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn get_changes_between_serials_tx(
+    async fn list_changes_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -94,7 +94,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
 
         sqlx::query_as::<_, ZoneChange>(
             r#"
-            SELECT id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
+            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
             FROM zone_changes
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id

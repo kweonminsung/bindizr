@@ -75,9 +75,9 @@ impl ZoneTokenPolicyService {
         caller.require_global("manage token policies")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
-        let policies = RepositoryService::get_zone_token_policies_by_zone_id(zone.id).await?;
+        let policies = RepositoryService::list_zone_token_policies_by_zone_id(zone.id).await?;
 
-        let token_names: HashMap<i32, String> = RepositoryService::get_all_api_tokens()
+        let token_names: HashMap<i32, String> = RepositoryService::list_api_tokens()
             .await?
             .into_iter()
             .map(|token| (token.id, token.name))

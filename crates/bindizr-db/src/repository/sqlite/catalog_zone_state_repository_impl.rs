@@ -2,7 +2,6 @@ use async_trait::async_trait;
 
 use crate::{
     error::DatabaseError,
-    model::catalog_zone_state::CatalogZoneState,
     repository::{CatalogZoneStateRepository, RepositoryTx},
 };
 
@@ -18,7 +17,7 @@ impl CatalogZoneStateRepository for SqliteCatalogZoneStateRepository {
         name: &str,
         signature: &str,
         base_serial: i32,
-    ) -> Result<CatalogZoneState, DatabaseError> {
+    ) -> Result<i32, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
         // Advance the catalog serial only when the signature changes, kept
@@ -33,8 +32,7 @@ impl CatalogZoneStateRepository for SqliteCatalogZoneStateRepository {
                     WHEN signature = excluded.signature THEN serial
                     ELSE max(serial + 1, excluded.serial)
                 END,
-                signature = excluded.signature,
-                updated_at = CURRENT_TIMESTAMP
+                signature = excluded.signature
             "#,
         )
         .bind(name)
@@ -44,9 +42,9 @@ impl CatalogZoneStateRepository for SqliteCatalogZoneStateRepository {
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-        sqlx::query_as::<_, CatalogZoneState>(
+        sqlx::query_scalar::<_, i32>(
             r#"
-            SELECT name, signature, serial, updated_at
+            SELECT serial
             FROM catalog_zone_state
             WHERE name = ?
             "#,

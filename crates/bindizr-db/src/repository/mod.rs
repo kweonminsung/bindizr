@@ -11,7 +11,6 @@ use sqlx::{MySql, Postgres, Sqlite};
 
 use super::model::{
     api_token::ApiToken,
-    catalog_zone_state::CatalogZoneState,
     record::{NAME_LIKE_RECORD_TYPES, Record, RecordWithZone},
     tsig_key::TsigKey,
     zone::Zone,
@@ -36,6 +35,28 @@ pub(crate) fn name_like_types_sql() -> String {
         .map(|record_type| format!("'{}'", record_type.as_str()))
         .collect::<Vec<_>>()
         .join(",")
+}
+
+/// Normalize a partial-match term; stored names carry no trailing root dot.
+pub(crate) fn normalize_partial_value(value: &str) -> String {
+    value.trim().trim_end_matches('.').to_string()
+}
+
+/// Wrap the term for a contains-match, normalized like
+/// [`normalize_partial_value`]. The LIKE wildcards are escaped: `%` and `_`
+/// are ordinary characters in rdata and `_dmarc`-style names.
+pub(crate) fn like_pattern(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            let escaped = value
+                .trim_end_matches('.')
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            format!("%{}%", escaped)
+        })
 }
 
 #[cfg(test)]
@@ -218,9 +239,9 @@ pub trait ZoneRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         name: &str,
     ) -> Result<Option<Zone>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError>;
-    async fn get_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError>;
-    async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
+    async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError>;
+    async fn list_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError>;
+    async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError>;
     /// Limit-1 probe of the zones table; health checks must stay cheap on
     /// large tables.
@@ -242,7 +263,7 @@ pub trait ZoneRepository: Send + Sync {
 pub trait TsigKeyRepository: Send + Sync {
     async fn create(&self, key: TsigKey) -> Result<TsigKey, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<TsigKey>, DatabaseError>;
+    async fn list_all(&self) -> Result<Vec<TsigKey>, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
@@ -251,10 +272,10 @@ pub trait TsigKeyRepository: Send + Sync {
 pub trait ZoneTsigPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTsigPolicy) -> Result<ZoneTsigPolicy, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
     /// Policies granting `tsig_key_id` rights in `zone_id`, for nsupdate
     /// authorization inside the update transaction.
-    async fn get_by_zone_and_key_tx(
+    async fn list_by_zone_and_key_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -270,10 +291,10 @@ pub trait ZoneTsigPolicyRepository: Send + Sync {
 pub trait ZoneTokenPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTokenPolicy) -> Result<ZoneTokenPolicy, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTokenPolicy>, DatabaseError>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
     /// Policies granting `api_token_id` rights in `zone_id`, for write
     /// authorization inside the caller's transaction.
-    async fn get_by_zone_and_token_tx(
+    async fn list_by_zone_and_token_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -281,7 +302,7 @@ pub trait ZoneTokenPolicyRepository: Send + Sync {
     ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
     /// Every policy granted to `api_token_id`; drives what a scoped token can
     /// see and NOTIFY.
-    async fn get_by_token_id(
+    async fn list_by_token_id(
         &self,
         api_token_id: i32,
     ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
@@ -310,15 +331,15 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         id: i32,
     ) -> Result<Option<Record>, DatabaseError>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     /// Records of every listed zone in one round trip.
-    async fn get_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_by_zone_id_tx(
+    async fn list_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
+    async fn list_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_by_zone_id_and_name_tx(
+    async fn list_by_zone_id_and_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -326,13 +347,13 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<Vec<Record>, DatabaseError>;
     /// Load records whose owner name is any of `names` (lowercased match). Used
     /// by bulk insert to fetch only the rows that could conflict with the batch.
-    async fn get_by_zone_id_and_names_tx(
+    async fn list_by_zone_id_and_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         names: &[OwnerName],
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_by_filter_with_zone(
+    async fn list_by_filter_with_zone(
         &self,
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError>;
@@ -359,15 +380,15 @@ pub trait ZoneChangeRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         changes: &[ZoneChange],
     ) -> Result<(), DatabaseError>;
-    async fn get_changes_between_serials(
+    async fn list_changes_between_serials(
         &self,
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
-    /// Tx variant of [`Self::get_changes_between_serials`], for reads that must
+    /// Tx variant of [`Self::list_changes_between_serials`], for reads that must
     /// be consistent with a mutation in the same transaction.
-    async fn get_changes_between_serials_tx(
+    async fn list_changes_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -390,7 +411,7 @@ pub trait ZoneSnapshotRepository: Send + Sync {
         serial: i32,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
     /// Fetch every snapshot for a zone whose serial is in `[from_serial, to_serial]`.
-    async fn get_by_zone_id_in_serial_range(
+    async fn list_by_zone_id_in_serial_range(
         &self,
         zone_id: i32,
         from_serial: i32,
@@ -420,7 +441,7 @@ pub trait ApiTokenRepository: Send + Sync {
     async fn create(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
+    async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
@@ -428,13 +449,14 @@ pub trait ApiTokenRepository: Send + Sync {
 /// Persistence operations for catalog zone state.
 #[async_trait]
 pub trait CatalogZoneStateRepository: Send + Sync {
+    /// Returns the catalog serial in effect after the update.
     async fn update_serial_for_signature_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
         signature: &str,
         base_serial: i32,
-    ) -> Result<CatalogZoneState, DatabaseError>;
+    ) -> Result<i32, DatabaseError>;
 }
 
 /// Builds backend-specific repository implementations for a given pool.

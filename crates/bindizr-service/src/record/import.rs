@@ -207,11 +207,13 @@ impl RecordService {
                         desired.iter().map(|d| d.stored_name.clone()).collect();
                     names.sort();
                     names.dedup();
-                    RepositoryService::get_records_by_zone_id_and_names_tx(&mut tx, zone.id, &names)
-                        .await
+                    RepositoryService::list_records_by_zone_id_and_names_tx(
+                        &mut tx, zone.id, &names,
+                    )
+                    .await
                 }
                 ImportMode::Replace | ImportMode::Upsert => {
-                    RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await
+                    RepositoryService::list_records_by_zone_id_tx(&mut tx, zone.id).await
                 }
             }
             .map_err(|e| {

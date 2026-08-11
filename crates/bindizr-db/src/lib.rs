@@ -69,9 +69,10 @@ pub async fn initialize() -> Result<(), DatabaseError> {
         DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await?,
     };
 
-    if DATABASE_POOL.set(pool).is_err() {
-        return Ok(());
-    }
+    // Cannot fail: the pool is set only here, under INITIALIZE_LOCK.
+    DATABASE_POOL
+        .set(pool)
+        .expect("database pool initialized twice");
 
     drop(initialize_guard);
     log_info!("Database pool initialized");
@@ -188,11 +189,11 @@ impl DatabasePool {
     async fn create_tables(&self) -> Result<(), String> {
         match self {
             DatabasePool::MySQL(pool) => {
+                let mut conn = pool.acquire().await.map_err(|e| {
+                    log_error!("Failed to acquire MySQL connection: {}", e);
+                    e.to_string()
+                })?;
                 for query in schema::mysql_table_creation_queries() {
-                    let mut conn = pool.acquire().await.map_err(|e| {
-                        log_error!("Failed to acquire MySQL connection: {}", e);
-                        e.to_string()
-                    })?;
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log_error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
@@ -200,11 +201,11 @@ impl DatabasePool {
                 }
             }
             DatabasePool::PostgreSQL(pool) => {
+                let mut conn = pool.acquire().await.map_err(|e| {
+                    log_error!("Failed to acquire PostgreSQL connection: {}", e);
+                    e.to_string()
+                })?;
                 for query in schema::postgres_table_creation_queries() {
-                    let mut conn = pool.acquire().await.map_err(|e| {
-                        log_error!("Failed to acquire PostgreSQL connection: {}", e);
-                        e.to_string()
-                    })?;
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log_error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
@@ -212,11 +213,11 @@ impl DatabasePool {
                 }
             }
             DatabasePool::SQLite(pool) => {
+                let mut conn = pool.acquire().await.map_err(|e| {
+                    log_error!("Failed to acquire SQLite connection: {}", e);
+                    e.to_string()
+                })?;
                 for query in schema::sqlite_table_creation_queries() {
-                    let mut conn = pool.acquire().await.map_err(|e| {
-                        log_error!("Failed to acquire SQLite connection: {}", e);
-                        e.to_string()
-                    })?;
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log_error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()

@@ -3,7 +3,7 @@
 
 use bindizr_core::dns::{
     name::ZoneName,
-    record::{TxtContent, TxtRdata},
+    record::{TxtContent, TxtRecordValue},
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -54,7 +54,7 @@ impl GetRecordResponse {
 }
 
 fn decode_txt_value_request(value: &str) -> RecordValueRequest {
-    match TxtRdata::from_encoded(value).and_then(|rdata| rdata.to_content()) {
+    match TxtRecordValue::from_encoded(value).and_then(|rdata| rdata.to_content()) {
         Some(TxtContent::Single(value)) => RecordValueRequest::String(value),
         Some(TxtContent::Segments(segments)) => RecordValueRequest::Segments(segments),
         None => RecordValueRequest::String(value.to_string()),
@@ -94,11 +94,11 @@ impl RecordValueRequest {
     ) -> Result<String, String> {
         match (record_type, self) {
             (RecordType::TXT, RecordValueRequest::String(value)) => {
-                Ok(TxtRdata::from_string(value).into_encoded())
+                Ok(TxtRecordValue::from_string(value).into_encoded())
             }
             (RecordType::TXT, RecordValueRequest::Segments(segments)) => {
-                TxtRdata::from_segments(segments.iter().map(String::as_str))
-                    .map(TxtRdata::into_encoded)
+                TxtRecordValue::from_segments(segments.iter().map(String::as_str))
+                    .map(TxtRecordValue::into_encoded)
             }
             (_, RecordValueRequest::String(value)) => record_type.encoded_value(value, priority),
             (_, RecordValueRequest::Segments(_)) => {

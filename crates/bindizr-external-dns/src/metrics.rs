@@ -4,9 +4,6 @@ use std::sync::OnceLock;
 
 use prometheus::{Encoder, HistogramVec, IntCounterVec, Registry, TextEncoder};
 
-/// Prometheus text exposition content type.
-pub(crate) const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
-
 pub(crate) struct AdapterMetrics {
     registry: Registry,
     pub(crate) requests_total: IntCounterVec,

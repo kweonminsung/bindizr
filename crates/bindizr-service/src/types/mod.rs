@@ -11,6 +11,7 @@ mod import;
 mod pagination;
 mod record;
 mod snapshot;
+mod token;
 mod token_policy;
 mod tsig;
 mod zone;
@@ -32,6 +33,7 @@ pub use snapshot::{
     RollbackZoneRequest, RollbackZoneResponse, SnapshotDetailResponse, SnapshotDiffResponse,
     SnapshotRecordResponse, ZoneSnapshotResponse,
 };
+pub use token::GetTokenResponse;
 pub use token_policy::{
     CreateZoneTokenPolicyRequest, GetZoneTokenPolicyResponse, ZoneTokenPolicyListResponse,
     ZoneTokenPolicyResponse,

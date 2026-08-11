@@ -22,16 +22,11 @@ use crate::socket::{
 pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    match ZoneService::get_by_name(&Caller::Global, &params.name).await {
-        Ok(zone) => {
-            let response = GetZoneResponse::from_zone(&zone);
-            Ok(DaemonResponse {
-                message: "Zone retrieved successfully".to_string(),
-                data: to_response_data(response)?,
-            })
-        }
-        Err(e) => Err(e),
-    }
+    let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
+    Ok(DaemonResponse {
+        message: "Zone retrieved successfully".to_string(),
+        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+    })
 }
 
 /// Handle the `ListZones` command by returning zones matching the filter.
@@ -42,36 +37,27 @@ pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
         parse_params(data)?
     };
 
-    match ZoneService::list_by_filter(&Caller::Global, filter).await {
-        Ok(zones) => {
-            let response: Vec<GetZoneResponse> =
-                zones.items.iter().map(GetZoneResponse::from_zone).collect();
-            Ok(DaemonResponse {
-                message: format!("Found {} zone(s)", response.len()),
-                data: json!({
-                    "items": response,
-                    "pagination": zones.pagination,
-                }),
-            })
-        }
-        Err(e) => Err(e),
-    }
+    let zones = ZoneService::list_by_filter(&Caller::Global, filter).await?;
+    let response: Vec<GetZoneResponse> =
+        zones.items.iter().map(GetZoneResponse::from_zone).collect();
+    Ok(DaemonResponse {
+        message: format!("Found {} zone(s)", response.len()),
+        data: json!({
+            "items": response,
+            "pagination": zones.pagination,
+        }),
+    })
 }
 
 /// Handle the `CreateZone` command by creating a new zone.
 pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let request: CreateZoneRequest = parse_params(data)?;
 
-    match ZoneService::create(&Caller::Global, &request).await {
-        Ok(zone) => {
-            let response = GetZoneResponse::from_zone(&zone);
-            Ok(DaemonResponse {
-                message: "Zone created successfully".to_string(),
-                data: to_response_data(response)?,
-            })
-        }
-        Err(e) => Err(e),
-    }
+    let zone = ZoneService::create(&Caller::Global, &request).await?;
+    Ok(DaemonResponse {
+        message: "Zone created successfully".to_string(),
+        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+    })
 }
 
 /// Handle the `UpdateZone` command by applying a partial-update patch.
@@ -90,27 +76,24 @@ pub(super) async fn update_zone(data: &serde_json::Value) -> Result<DaemonRespon
 pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ImportZoneFileParams = parse_params(data)?;
 
-    match RecordService::import_zone_file(&Caller::Global, &params.zone_name, &params.request).await
-    {
-        Ok(response) => {
-            let message = if !response.errors.is_empty() {
-                format!(
-                    "Import validation failed with {} error(s); nothing applied",
-                    response.errors.len()
-                )
-            } else if response.dry_run {
-                "Dry run completed; no changes applied".to_string()
-            } else {
-                "Zone file imported successfully".to_string()
-            };
+    let response =
+        RecordService::import_zone_file(&Caller::Global, &params.zone_name, &params.request)
+            .await?;
+    let message = if !response.errors.is_empty() {
+        format!(
+            "Import validation failed with {} error(s); nothing applied",
+            response.errors.len()
+        )
+    } else if response.dry_run {
+        "Dry run completed; no changes applied".to_string()
+    } else {
+        "Zone file imported successfully".to_string()
+    };
 
-            Ok(DaemonResponse {
-                message,
-                data: to_response_data(response)?,
-            })
-        }
-        Err(e) => Err(e),
-    }
+    Ok(DaemonResponse {
+        message,
+        data: to_response_data(response)?,
+    })
 }
 
 /// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
@@ -263,11 +246,9 @@ pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonRespon
 pub(super) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    match ZoneService::delete(&Caller::Global, &params.name).await {
-        Ok(_) => Ok(DaemonResponse {
-            message: format!("Zone '{}' deleted successfully", params.name),
-            data: json!(null),
-        }),
-        Err(e) => Err(e),
-    }
+    ZoneService::delete(&Caller::Global, &params.name).await?;
+    Ok(DaemonResponse {
+        message: format!("Zone '{}' deleted successfully", params.name),
+        data: json!(null),
+    })
 }

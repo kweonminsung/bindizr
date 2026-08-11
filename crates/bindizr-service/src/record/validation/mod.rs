@@ -255,7 +255,7 @@ impl RecordService {
         // Only records sharing the owner name can conflict, so load just those
         // instead of the whole zone.
         let zone_records =
-            RepositoryService::get_records_by_zone_id_and_name_tx(tx, zone.id, owner_name)
+            RepositoryService::list_records_by_zone_id_and_name_tx(tx, zone.id, owner_name)
                 .await
                 .map_err(|e| {
                     log_error!("Failed to load zone records: {}", e);

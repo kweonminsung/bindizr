@@ -22,7 +22,7 @@ impl ExternalDnsService {
     /// Names of the zones the caller may manage.
     pub async fn list_zones(caller: &Caller) -> Result<Vec<String>, ServiceError> {
         let visible = caller.visible_zone_ids();
-        let zones = RepositoryService::get_all_zones().await?;
+        let zones = RepositoryService::list_zones().await?;
         Ok(zones
             .into_iter()
             .filter(|zone| visible.as_ref().is_none_or(|ids| ids.contains(&zone.id)))
@@ -35,7 +35,7 @@ impl ExternalDnsService {
     /// presentation-form values.
     pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecordItem>, ServiceError> {
         let visible = caller.visible_zone_ids();
-        let zones = RepositoryService::get_all_zones().await?;
+        let zones = RepositoryService::list_zones().await?;
         let zones_by_id: HashMap<i32, &Zone> = zones
             .iter()
             .filter(|zone| visible.as_ref().is_none_or(|ids| ids.contains(&zone.id)))
@@ -44,7 +44,7 @@ impl ExternalDnsService {
 
         // One batched query; a round trip per zone stalls large deployments.
         let zone_ids: Vec<i32> = zones_by_id.keys().copied().collect();
-        let records = RepositoryService::get_records_by_zone_ids(&zone_ids).await?;
+        let records = RepositoryService::list_records_by_zone_ids(&zone_ids).await?;
 
         let mut items = Vec::new();
         for record in records {

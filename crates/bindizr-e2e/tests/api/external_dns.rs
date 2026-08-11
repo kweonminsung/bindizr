@@ -48,14 +48,6 @@ async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
     .await;
 }
 
-async fn zone_serial(app: &TestApp, zone_name: &str) -> i64 {
-    let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    body["zone"]["serial"].as_i64().expect("zone serial")
-}
-
 fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
     body["records"]
         .as_array()
@@ -85,7 +77,7 @@ async fn external_dns_routes_are_not_registered_when_disabled() {
 async fn external_dns_zone_listing_reflects_token_grants() {
     let mut app = TestApp::start_with_options(authed_enabled_options()).await;
     let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token.clone());
+    app.set_auth_token(global_token);
 
     let granted_zone = app.zone_name("granted.com");
     let other_zone = app.zone_name("other.com");
@@ -115,7 +107,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     let app = TestApp::start_with_options(enabled_options()).await;
     let zone_name = app.zone_name("example.com");
     create_zone(&app, &zone_name).await;
-    let base_serial = zone_serial(&app, &zone_name).await;
+    let base_serial = app.zone_serial(&zone_name).await;
 
     let create = json!({
         "creates": [
@@ -132,7 +124,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["changed_zones"], json!([zone_name]));
     assert_eq!(body["records_added"], json!(3));
-    assert_eq!(zone_serial(&app, &zone_name).await, base_serial + 1);
+    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 1);
 
     // Same create again: no-op, no serial bump.
     let (status, body) = app
@@ -140,7 +132,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["changed_zones"], json!([]));
-    assert_eq!(zone_serial(&app, &zone_name).await, base_serial + 1);
+    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 1);
 
     let (status, body) = app
         .request(Method::GET, "/external-dns/records", None)
@@ -175,7 +167,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["records_added"], json!(1));
     assert_eq!(body["records_deleted"], json!(1));
-    assert_eq!(zone_serial(&app, &zone_name).await, base_serial + 2);
+    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 2);
 
     // Delete, then delete again as a no-op.
     let delete = json!({
@@ -187,14 +179,14 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["records_deleted"], json!(2));
-    assert_eq!(zone_serial(&app, &zone_name).await, base_serial + 3);
+    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 3);
 
     let (status, body) = app
         .request(Method::POST, "/external-dns/changes", Some(delete))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["changed_zones"], json!([]));
-    assert_eq!(zone_serial(&app, &zone_name).await, base_serial + 3);
+    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 3);
 }
 
 #[tokio::test]
@@ -208,7 +200,7 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
     let ungranted_zone = app.zone_name("blocked.com");
     create_zone(&app, &granted_zone).await;
     create_zone(&app, &ungranted_zone).await;
-    let base_serial = zone_serial(&app, &granted_zone).await;
+    let base_serial = app.zone_serial(&granted_zone).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     grant_zone(&app, &granted_zone, &scoped_name).await;
@@ -231,7 +223,7 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
 
     // Nothing was applied for the granted zone either.
     app.set_auth_token(global_token);
-    assert_eq!(zone_serial(&app, &granted_zone).await, base_serial);
+    assert_eq!(app.zone_serial(&granted_zone).await, base_serial);
     let (_, body) = app
         .request(Method::GET, "/external-dns/records", None)
         .await;
@@ -357,7 +349,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .unwrap();
     assert_eq!(unauthenticated.status().as_u16(), 401);
 
-    let adapter = ExternalDnsAdapter::spawn(app.base_url(), Some(&scoped_token)).await;
+    let adapter = ExternalDnsAdapter::spawn(app.base_url(), &scoped_token).await;
     let client = reqwest::Client::new();
 
     // Negotiation: exact media type and the granted zones as DomainFilter.
@@ -413,7 +405,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
     assert_eq!(endpoint["recordTTL"], json!(300));
 
     // A wrong token surfaces as a permanent 401 through the adapter.
-    let bad_adapter = ExternalDnsAdapter::spawn(app.base_url(), Some("not-a-real-token")).await;
+    let bad_adapter = ExternalDnsAdapter::spawn(app.base_url(), "not-a-real-token").await;
     let response = client
         .get(format!("{}/records", bad_adapter.base_url))
         .header(header::ACCEPT, MEDIA_TYPE)

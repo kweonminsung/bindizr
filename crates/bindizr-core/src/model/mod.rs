@@ -1,5 +1,4 @@
 pub mod api_token;
-pub mod catalog_zone_state;
 pub mod record;
 pub mod tsig_key;
 pub mod zone;
