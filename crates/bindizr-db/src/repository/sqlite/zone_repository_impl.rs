@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{RepositoryTx, ZoneFilter, ZoneRepository, like_pattern},
+    repository::{RepositoryTx, ZoneFilter, ZoneRepository, sql::like_pattern},
 };
 
 /// SQLite-backed implementation of `ZoneRepository`.

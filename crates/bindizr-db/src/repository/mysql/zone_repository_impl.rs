@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{RepositoryTx, ZoneFilter, ZoneRepository, like_pattern},
+    repository::{RepositoryTx, ZoneFilter, ZoneRepository, sql::like_pattern},
 };
 
 /// MySQL-backed implementation of `ZoneRepository`.

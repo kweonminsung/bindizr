@@ -6,8 +6,8 @@ use crate::{
     error::DatabaseError,
     model::record::{Record, RecordWithZone},
     repository::{
-        RecordFilter, RecordRepository, RepositoryTx, apex_owner_sql, like_pattern,
-        name_like_types_sql, normalize_partial_value,
+        RecordFilter, RecordRepository, RepositoryTx,
+        sql::{apex_owner_sql, like_pattern, name_like_types_sql, normalize_partial_value},
     },
 };
 

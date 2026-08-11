@@ -3,6 +3,7 @@
 
 pub(crate) mod mysql;
 pub(crate) mod postgres;
+pub(crate) mod sql;
 pub(crate) mod sqlite;
 
 use async_trait::async_trait;
@@ -11,7 +12,7 @@ use sqlx::{MySql, Postgres, Sqlite};
 
 use super::model::{
     api_token::ApiToken,
-    record::{NAME_LIKE_RECORD_TYPES, Record, RecordWithZone},
+    record::{Record, RecordWithZone},
     tsig_key::TsigKey,
     zone::Zone,
     zone_change::ZoneChange,
@@ -20,63 +21,6 @@ use super::model::{
     zone_tsig_policy::ZoneTsigPolicy,
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
-
-/// The owner name the apex is stored under, as an SQL literal. Rendered from
-/// the core type so the filter queries cannot drift from it.
-pub(crate) fn apex_owner_sql() -> String {
-    format!("'{}'", OwnerName::apex().to_stored())
-}
-
-/// The record types that compare case-insensitively, as an SQL `IN` list.
-/// Rendered from the core set so no backend's filter query can drift from it.
-pub(crate) fn name_like_types_sql() -> String {
-    NAME_LIKE_RECORD_TYPES
-        .iter()
-        .map(|record_type| format!("'{}'", record_type.as_str()))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-/// Normalize a partial-match term; stored names carry no trailing root dot.
-pub(crate) fn normalize_partial_value(value: &str) -> String {
-    value.trim().trim_end_matches('.').to_string()
-}
-
-/// Wrap the term for a contains-match, normalized like
-/// [`normalize_partial_value`]. The LIKE wildcards are escaped: `%` and `_`
-/// are ordinary characters in rdata and `_dmarc`-style names.
-pub(crate) fn like_pattern(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| {
-            let escaped = value
-                .trim_end_matches('.')
-                .replace('\\', "\\\\")
-                .replace('%', "\\%")
-                .replace('_', "\\_");
-            format!("%{}%", escaped)
-        })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{apex_owner_sql, name_like_types_sql};
-
-    #[test]
-    fn apex_owner_renders_as_a_quoted_sql_literal() {
-        // Interpolated straight into `r.name = ...`, so the quoting is part of
-        // the query's syntax.
-        assert_eq!(apex_owner_sql(), "''");
-    }
-
-    #[test]
-    fn name_like_types_render_as_a_quoted_sql_list() {
-        // Interpolated straight into `IN (...)`, so the quoting and separator
-        // are part of the query's syntax.
-        assert_eq!(name_like_types_sql(), "'CNAME','NS','PTR','MX','SRV'");
-    }
-}
 
 /// Optional criteria for querying zones.
 #[derive(Clone, Debug, Default)]
