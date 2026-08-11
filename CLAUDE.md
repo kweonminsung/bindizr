@@ -248,7 +248,8 @@ dot (lookup form, wire owners) must use — otherwise an out-of-zone name is
 silently qualified instead of rejected.
 
 Two escapes are unrelated to names and own their own encoding: the SOA RNAME
-(`SoaMailbox`, from the admin email) and TXT rdata (`TxtRdata`).
+(`SoaMailbox`, from the admin email) and the TXT value (`TxtRecordValue`,
+raw rdata).
 
 ### Free-function helper naming
 
@@ -257,7 +258,7 @@ access and mean the same thing in every crate, not just the service — a free
 helper that computes a value never takes `get_`. Other helper verbs:
 
 - `to_<form>` — convert a name/value into a named form (`to_fqdn_lowercase`,
-  `to_encoded_owner_name`).
+  `to_lookup_name`).
 - `parse_<thing>` — text or wire bytes into a typed value.
 - `classify_<thing>` — check returning core's typed `ParseNameError`, with no
   field context; `validate_<thing>` is the same check phrased against a named
