@@ -6,7 +6,13 @@ use std::net::{IpAddr, SocketAddr};
 use domain::base::iana::{Rcode, Rtype};
 use tokio::net::{TcpStream, UdpSocket};
 
-use crate::{error::XfrError, log_info, server::catalog, service::zone::ZoneService, wire};
+use crate::{
+    error::XfrError,
+    log_info,
+    server::{catalog, delta},
+    service::zone::ZoneService,
+    wire,
+};
 
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
@@ -59,7 +65,7 @@ async fn build_soa_response(
         let (catalog_zone, _) = catalog::generate_catalog_zone().await?;
 
         let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
-        builder.add_catalog_soa(&catalog_zone, catalog_zone.serial as u32)?;
+        builder.add_catalog_soa(&catalog_zone, delta::serial_to_u32(catalog_zone.serial)?)?;
         return Ok(builder.build());
     }
 
@@ -75,7 +81,7 @@ async fn build_soa_response(
     );
 
     let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
-    builder.add_soa(&zone, zone.serial as u32)?;
+    builder.add_soa(&zone, delta::serial_to_u32(zone.serial)?)?;
 
     Ok(builder.build())
 }
