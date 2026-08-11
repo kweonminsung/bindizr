@@ -171,6 +171,27 @@ impl std::fmt::Display for OwnerName {
     }
 }
 
+/// Decode a name into its labels, applying the wire length limits but not the
+/// LDH charset rule only zone names take. The flag is whether the name ended at
+/// the root — no string test can tell: `a\.` ends with a dot that is data.
+pub fn decode_name_labels(name: &str) -> Result<(Vec<String>, bool), ParseNameError> {
+    let mut labels = decode_labels(name)?;
+
+    // The root's empty label terminates a name rather than being one. Deciding
+    // that here keeps an escaped trailing dot (`a\.`) from reading as the root.
+    let absolute = labels.len() > 1 && labels[labels.len() - 1].is_empty();
+    if absolute {
+        labels.pop();
+    }
+
+    for label in &labels {
+        classify_owner_label(label)?;
+    }
+    classify_wire_len(&labels, &[])?;
+
+    Ok((labels, absolute))
+}
+
 /// Decode a presentation-form name into lowercase labels, resolving the `\X`
 /// and `\DDD` escapes (RFC 1035, Section 5.1).
 pub(super) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
@@ -220,48 +241,6 @@ fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
         .map_err(|_| ParseNameError::NonUtf8Label)
 }
 
-/// What a label escapes to survive its own presentation form: the separator
-/// and escape themselves, the `@` that RFC 1035, Section 5.1 fixes as the
-/// origin, and the master-file metacharacters that would end the owner field.
-const ESCAPED_IN_LABEL: [char; 8] = ['.', '\\', '@', ';', '(', ')', '"', '$'];
-
-/// Inverse of [`decode_labels`] for one label.
-pub(super) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
-    if !label.contains(ESCAPED_IN_LABEL) {
-        return std::borrow::Cow::Borrowed(label);
-    }
-
-    let mut escaped = String::with_capacity(label.len() + 1);
-    for c in label.chars() {
-        if ESCAPED_IN_LABEL.contains(&c) {
-            escaped.push('\\');
-        }
-        escaped.push(c);
-    }
-    std::borrow::Cow::Owned(escaped)
-}
-
-/// Decode a name into its labels, applying the wire length limits but not the
-/// LDH charset rule only zone names take. The flag is whether the name ended at
-/// the root — no string test can tell: `a\.` ends with a dot that is data.
-pub fn decode_name_labels(name: &str) -> Result<(Vec<String>, bool), ParseNameError> {
-    let mut labels = decode_labels(name)?;
-
-    // The root's empty label terminates a name rather than being one. Deciding
-    // that here keeps an escaped trailing dot (`a\.`) from reading as the root.
-    let absolute = labels.len() > 1 && labels[labels.len() - 1].is_empty();
-    if absolute {
-        labels.pop();
-    }
-
-    for label in &labels {
-        classify_owner_label(label)?;
-    }
-    classify_wire_len(&labels, &[])?;
-
-    Ok((labels, absolute))
-}
-
 /// What every owner label must satisfy, whichever constructor produced it.
 /// Not LDH — owner names carry `_` and `*` — so it rejects only what input
 /// cannot spell back: whitespace and control octets, literal or via `\DDD`.
@@ -293,13 +272,34 @@ fn classify_wire_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameE
     Ok(())
 }
 
-/// The labels left after removing `zone` from the end of `name`, or `None`
-/// when `name` does not sit inside `zone`.
-fn strip_zone_suffix(name: &[String], zone: &[String]) -> Option<Vec<String>> {
-    is_label_suffix(name, zone).then(|| name[..name.len() - zone.len()].to_vec())
+/// What a label escapes to survive its own presentation form: the separator
+/// and escape themselves, the `@` that RFC 1035, Section 5.1 fixes as the
+/// origin, and the master-file metacharacters that would end the owner field.
+const ESCAPED_IN_LABEL: [char; 8] = ['.', '\\', '@', ';', '(', ')', '"', '$'];
+
+/// Inverse of [`decode_labels`] for one label.
+pub(super) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
+    if !label.contains(ESCAPED_IN_LABEL) {
+        return std::borrow::Cow::Borrowed(label);
+    }
+
+    let mut escaped = String::with_capacity(label.len() + 1);
+    for c in label.chars() {
+        if ESCAPED_IN_LABEL.contains(&c) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    std::borrow::Cow::Owned(escaped)
 }
 
 /// Whether `suffix` is a label-wise suffix of `name` (the same name or under it).
 pub fn is_label_suffix(name: &[String], suffix: &[String]) -> bool {
     name.len() >= suffix.len() && name[name.len() - suffix.len()..] == *suffix
+}
+
+/// The labels left after removing `zone` from the end of `name`, or `None`
+/// when `name` does not sit inside `zone`.
+fn strip_zone_suffix(name: &[String], zone: &[String]) -> Option<Vec<String>> {
+    is_label_suffix(name, zone).then(|| name[..name.len() - zone.len()].to_vec())
 }
