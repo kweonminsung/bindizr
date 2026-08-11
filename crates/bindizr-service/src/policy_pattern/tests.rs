@@ -111,3 +111,32 @@ fn an_escaped_at_stays_a_literal_owner() {
     assert_eq!(pattern, r"\@");
     assert!(!pattern_matches_name(&pattern, &OwnerName::apex()));
 }
+
+// An escaped dot is label data, so the name is relative and its single label is
+// `a.`. A trailing-dot test on the text reads it as the root and refuses it.
+#[test]
+fn an_escaped_dot_is_label_data_not_a_root_marker() {
+    assert_eq!(normalize_pattern(Some(r"a\.")).unwrap(), r"a\.");
+
+    // A real trailing dot still is: a pattern is relative to its zone.
+    assert_eq!(
+        normalize_pattern(Some("sub.")).unwrap_err().code,
+        ErrorCode::InvalidInput
+    );
+}
+
+// Decoding carries these, so the pattern layer no longer re-asks them.
+#[test]
+fn decoding_still_refuses_the_names_it_always_did() {
+    for pattern in ["bad name", "a..b", &"x".repeat(64)] {
+        assert_eq!(
+            normalize_pattern(Some(pattern)).unwrap_err().code,
+            ErrorCode::InvalidInput,
+            "{pattern:?} was accepted"
+        );
+    }
+
+    // An omitted or blank pattern is "any name", not a rejection.
+    assert_eq!(normalize_pattern(Some("   ")).unwrap(), "*");
+    assert_eq!(normalize_pattern(None).unwrap(), "*");
+}

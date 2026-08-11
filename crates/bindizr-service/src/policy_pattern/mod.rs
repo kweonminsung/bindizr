@@ -1,9 +1,7 @@
 //! Record-name-pattern and record-type grant matching, shared by zone TSIG
 //! policies (nsupdate) and zone token policies (HTTP API).
 
-use bindizr_core::dns::name::{
-    OwnerName, decode_name_labels, has_whitespace_or_control, join_labels,
-};
+use bindizr_core::dns::name::{OwnerName, decode_name_labels, join_labels};
 
 use crate::{error::ServiceError, model::record::RecordType};
 
@@ -64,36 +62,15 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
     })
 }
 
-/// Decode a pattern's name part and hold it to the pattern grammar. Any
-/// DNS-level rejection is phrased as a pattern error.
+/// Decode a pattern's name part and hold it to the pattern grammar; the name
+/// rules themselves (empty, length, charset) come with decoding.
 fn parse_relative_name(name: &str) -> Result<Vec<String>, ServiceError> {
-    if name.is_empty() {
-        return Err(ServiceError::invalid_input(
-            "record name pattern must not be empty",
-        ));
-    }
-
-    if has_whitespace_or_control(name) {
-        return Err(ServiceError::invalid_input(format!(
-            "invalid record name pattern '{}': use '*', '@', '*.<name>' or an exact relative name",
-            name
-        )));
-    }
-
-    // A pattern is a relative owner name, so a trailing dot would leave an
-    // empty label that no stored name can match.
-    if name.ends_with('.') {
-        return Err(ServiceError::invalid_input(
-            "record name pattern must not contain empty labels",
-        ));
-    }
-
-    let labels = decode_name_labels(name)
+    let (labels, rooted) = decode_name_labels(name)
         .map_err(|e| ServiceError::invalid_input(format!("record name pattern {}", e)))?;
 
-    // On the decoded labels: `*` is this language's metacharacter and, unlike
-    // `@`, is not escaped on the way out, so `\042` would render as a grant.
-    if labels.iter().any(|label| label.contains('*')) {
+    // A pattern is relative, and `*` is the language's metacharacter: it is
+    // not escaped on render, so a label spelled `\042` would read as a grant.
+    if rooted || labels.iter().any(|label| label.contains('*')) {
         return Err(ServiceError::invalid_input(format!(
             "invalid record name pattern '{}': use '*', '@', '*.<name>' or an exact relative name",
             name

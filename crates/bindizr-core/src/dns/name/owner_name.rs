@@ -40,7 +40,7 @@ impl OwnerName {
             return Ok(Self::apex());
         }
 
-        let (labels, absolute) = decode_checked(trimmed)?;
+        let (labels, absolute) = decode_name_labels(trimmed)?;
         let zone_labels = zone.labels();
 
         // A relative name that happens to end in the zone was already absolute.
@@ -65,7 +65,7 @@ impl OwnerName {
             return Ok(Self::apex());
         }
 
-        let (labels, _) = decode_checked(trimmed)?;
+        let (labels, _) = decode_name_labels(trimmed)?;
         strip_zone_suffix(&labels, zone.labels().as_slice())
             .map(Self)
             .ok_or(ParseNameError::OutsideZone)
@@ -77,7 +77,7 @@ impl OwnerName {
             return Self::apex();
         }
 
-        match decode_checked(value) {
+        match decode_name_labels(value) {
             Ok((labels, _)) => Self(labels),
             // Only parse_in_zone writes these rows, so a decode failure means
             // the row was edited outside bindizr; one literal label matches
@@ -241,9 +241,10 @@ pub(super) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(escaped)
 }
 
-/// Decode a name and apply the wire limits, reporting whether it ended at the
-/// root so a caller can tell an absolute name from a relative one.
-pub(super) fn decode_checked(name: &str) -> Result<(Vec<String>, bool), ParseNameError> {
+/// Decode a name into its labels, applying the wire length limits but not the
+/// LDH charset rule only zone names take. The flag is whether the name ended at
+/// the root — no string test can tell: `a\.` ends with a dot that is data.
+pub fn decode_name_labels(name: &str) -> Result<(Vec<String>, bool), ParseNameError> {
     let mut labels = decode_labels(name)?;
 
     // The root's empty label terminates a name rather than being one. Deciding
@@ -298,6 +299,7 @@ fn strip_zone_suffix(name: &[String], zone: &[String]) -> Option<Vec<String>> {
     is_label_suffix(name, zone).then(|| name[..name.len() - zone.len()].to_vec())
 }
 
-pub(super) fn is_label_suffix(name: &[String], suffix: &[String]) -> bool {
+/// Whether `suffix` is a label-wise suffix of `name` (the same name or under it).
+pub fn is_label_suffix(name: &[String], suffix: &[String]) -> bool {
     name.len() >= suffix.len() && name[name.len() - suffix.len()..] == *suffix
 }

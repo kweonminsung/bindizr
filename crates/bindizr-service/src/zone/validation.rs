@@ -63,7 +63,7 @@ pub(super) fn validate_create_zone_request(
     request: &CreateZoneRequest,
 ) -> Result<ValidatedCreateZoneRequest, ServiceError> {
     let zone_name = normalize_zone_name(&request.name)?;
-    let primary_ns = normalize_primary_ns(&request.primary_ns)?;
+    let primary_ns = normalize_domain_name(&request.primary_ns, "primary NS")?.to_string();
     let admin_email = normalize_email(&request.admin_email)?;
     let ttl = validate_ttl(request.ttl)?;
 
@@ -131,10 +131,6 @@ pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError>
     }
 
     normalize_domain_name(trimmed, "zone name")
-}
-
-fn normalize_primary_ns(value: &str) -> Result<String, ServiceError> {
-    Ok(normalize_domain_name(value, "primary NS")?.to_string())
 }
 
 /// Parse a domain name, phrasing any rejection against `field`. The rules

@@ -1,5 +1,5 @@
 use super::{
-    OwnerName, ParseNameError, ZoneName, decode_name_labels, labels_in_zone, to_lookup_name,
+    OwnerName, ParseNameError, ZoneName, decode_name_labels, is_label_suffix, to_lookup_name,
 };
 
 fn zone() -> ZoneName {
@@ -9,11 +9,11 @@ fn zone() -> ZoneName {
 #[test]
 fn decode_keeps_an_escaped_dot_inside_one_label() {
     assert_eq!(
-        decode_name_labels(r"host\.name.example.com").unwrap(),
+        decode_name_labels(r"host\.name.example.com").unwrap().0,
         vec!["host.name", "example", "com"]
     );
     assert_eq!(
-        decode_name_labels(r"back\\slash.example.com").unwrap(),
+        decode_name_labels(r"back\\slash.example.com").unwrap().0,
         vec![r"back\slash", "example", "com"]
     );
 }
@@ -22,15 +22,21 @@ fn decode_keeps_an_escaped_dot_inside_one_label() {
 fn decode_resolves_decimal_escapes() {
     // BIND writes `\DDD` for octets with no plain spelling, so one name can
     // arrive either way (RFC 1035, Section 5.1).
-    assert_eq!(decode_name_labels(r"a\046b.example.com").unwrap()[0], "a.b");
-    assert_eq!(decode_name_labels(r"a\098c.example.com").unwrap()[0], "abc");
+    assert_eq!(
+        decode_name_labels(r"a\046b.example.com").unwrap().0[0],
+        "a.b"
+    );
+    assert_eq!(
+        decode_name_labels(r"a\098c.example.com").unwrap().0[0],
+        "abc"
+    );
 }
 
 #[test]
 fn an_escaped_trailing_dot_is_label_data_not_the_root() {
     // Trimming the dot off the text first would leave a dangling escape.
-    assert_eq!(decode_name_labels(r"a\.").unwrap(), vec!["a."]);
-    assert_eq!(decode_name_labels("www.example.com.").unwrap().len(), 3);
+    assert_eq!(decode_name_labels(r"a\.").unwrap().0, vec!["a."]);
+    assert_eq!(decode_name_labels("www.example.com.").unwrap().0.len(), 3);
 
     let zone = ZoneName::parse("example.com").unwrap();
     assert_eq!(
@@ -79,28 +85,28 @@ fn lookup_name_canonicalizes_spelling_and_case() {
 
 #[test]
 fn containment_compares_whole_labels() {
-    let labels = |name: &str| decode_name_labels(name).unwrap();
+    let labels = |name: &str| decode_name_labels(name).unwrap().0;
 
-    assert!(labels_in_zone(
+    assert!(is_label_suffix(
         &labels("www.example.com"),
         &labels("example.com")
     ));
-    assert!(labels_in_zone(
+    assert!(is_label_suffix(
         &labels("example.com"),
         &labels("example.com")
     ));
-    assert!(!labels_in_zone(
+    assert!(!is_label_suffix(
         &labels("aexample.com"),
         &labels("example.com")
     ));
-    assert!(!labels_in_zone(
+    assert!(!is_label_suffix(
         &labels("example.com"),
         &labels("www.example.com")
     ));
 
     // [evil.example, com] is one label short of being inside example.com; a
     // text suffix test would say it is.
-    assert!(!labels_in_zone(
+    assert!(!is_label_suffix(
         &labels(r"evil\.example.com"),
         &labels("example.com")
     ));

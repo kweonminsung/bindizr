@@ -216,7 +216,7 @@ comparison runs on labels, so a dot inside a label is data, never a boundary.
 Do not answer a question about names with string operations. `ends_with`,
 `split('.')`, or `strip_suffix` on a name is a bug even when it looks right:
 it reads `evil\.example.com` as inside `example.com`. Use `OwnerName`'s
-methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or `labels_in_zone`.
+methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or `is_label_suffix`.
 
 Names are canonical by construction: labels are lowercased (RFC 4343) and
 rendered back with only `.` and `\` escaped, so one name has one spelling.

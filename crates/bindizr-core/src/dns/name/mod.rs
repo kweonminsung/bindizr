@@ -10,7 +10,7 @@ mod owner_name;
 mod zone_name;
 
 pub use error::ParseNameError;
-pub use owner_name::OwnerName;
+pub use owner_name::{OwnerName, decode_name_labels, is_label_suffix};
 pub use zone_name::ZoneName;
 
 /// Maximum length of a single DNS label, in bytes (RFC 1035).
@@ -61,12 +61,6 @@ pub(crate) fn validate_domain_label(
     classify_domain_label(label, allow_underscore).map_err(|e| format!("{} {}", field, e))
 }
 
-/// Decode a name into its labels, applying the 253-byte and per-label limits
-/// but not the LDH charset rule that only zone names take.
-pub fn decode_name_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
-    owner_name::decode_checked(name).map(|(labels, _)| labels)
-}
-
 /// Normalize a name to lookup form: trimmed, no trailing dot, lowercase, and
 /// re-escaped canonically so two spellings of one name compare equal as text.
 pub fn to_lookup_name(value: &str) -> Result<String, ParseNameError> {
@@ -79,12 +73,7 @@ pub fn to_lookup_name(value: &str) -> Result<String, ParseNameError> {
         return Err(ParseNameError::Whitespace);
     }
 
-    Ok(join_labels(&decode_name_labels(trimmed)?))
-}
-
-/// Whether a decoded name sits at or under `zone`'s labels.
-pub fn labels_in_zone(name: &[String], zone: &[String]) -> bool {
-    owner_name::is_label_suffix(name, zone)
+    Ok(join_labels(&decode_name_labels(trimmed)?.0))
 }
 
 /// Render decoded labels back to presentation form.
