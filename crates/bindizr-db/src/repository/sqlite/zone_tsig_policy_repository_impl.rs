@@ -8,13 +8,12 @@ use crate::{
 };
 
 /// SQLite-backed implementation of `ZoneTsigPolicyRepository`.
-pub struct SqliteZoneTsigPolicyRepository {
+pub(crate) struct SqliteZoneTsigPolicyRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteZoneTsigPolicyRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
 }
@@ -54,7 +53,7 @@ impl ZoneTsigPolicyRepository for SqliteZoneTsigPolicyRepository {
         Ok(policy)
     }
 
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let policies = sqlx::query_as::<_, ZoneTsigPolicy>(
@@ -67,7 +66,7 @@ impl ZoneTsigPolicyRepository for SqliteZoneTsigPolicyRepository {
         Ok(policies)
     }
 
-    async fn get_by_zone_and_key_tx(
+    async fn list_by_zone_and_key_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

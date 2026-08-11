@@ -1,9 +1,10 @@
+use bindizr_core::dns::name::has_whitespace_or_control;
 use chrono::{Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 use super::{error::ServiceError, repository::RepositoryService};
-use crate::{model::api_token::ApiToken, validation::has_whitespace_or_control};
+use crate::{authorization::Caller, model::api_token::ApiToken};
 
 const MAX_TOKEN_NAME_LEN: usize = 255;
 
@@ -19,13 +20,16 @@ pub(crate) fn hash_token(token: &str) -> String {
 impl TokenService {
     /// Create a new API token; the returned token carries the raw secret to
     /// show once.
-    pub async fn create_token(
+    pub async fn create(
+        caller: &Caller,
         name: &str,
         description: Option<&str>,
         expires_in_days: Option<i64>,
         is_global: bool,
     ) -> Result<ApiToken, ServiceError> {
-        let name = validate_token_name(name)?;
+        caller.require_global("manage API tokens")?;
+
+        let name = normalize_token_name(name)?;
         validate_expires_in_days(expires_in_days)?;
 
         if RepositoryService::get_api_token_by_name(&name)
@@ -62,8 +66,10 @@ impl TokenService {
     }
 
     /// List all API tokens with their secret hashes cleared.
-    pub async fn list_tokens() -> Result<Vec<ApiToken>, ServiceError> {
-        let mut tokens = RepositoryService::get_all_api_tokens().await?;
+    pub async fn list(caller: &Caller) -> Result<Vec<ApiToken>, ServiceError> {
+        caller.require_global("manage API tokens")?;
+
+        let mut tokens = RepositoryService::list_api_tokens().await?;
         for token in &mut tokens {
             token.token.clear();
         }
@@ -72,8 +78,10 @@ impl TokenService {
 
     /// Delete the API token with the given name, returning `NotFound` if it
     /// is absent.
-    pub async fn delete_token(name: &str) -> Result<(), ServiceError> {
-        let token = RepositoryService::get_api_token_by_name(name.trim())
+    pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
+        caller.require_global("manage API tokens")?;
+
+        let token = RepositoryService::get_api_token_by_name(&normalize_token_name(name)?)
             .await?
             .ok_or_else(|| ServiceError::token_not_found(name))?;
 
@@ -81,24 +89,26 @@ impl TokenService {
     }
 }
 
-fn validate_token_name(name: &str) -> Result<String, ServiceError> {
-    let trimmed = name.trim();
+/// Lowercased so one name means one token on every backend: MySQL compares the
+/// column case-insensitively, the others exactly.
+pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
+    let name = name.trim().to_lowercase();
 
-    if trimmed.is_empty() {
+    if name.is_empty() {
         return Err(ServiceError::invalid_input("token name must not be empty"));
     }
-    if has_whitespace_or_control(trimmed) {
+    if has_whitespace_or_control(&name) {
         return Err(ServiceError::invalid_input(
             "token name must not contain whitespace or control characters",
         ));
     }
-    if trimmed.len() > MAX_TOKEN_NAME_LEN {
+    if name.len() > MAX_TOKEN_NAME_LEN {
         return Err(ServiceError::invalid_input(
             "token name must be 255 bytes or fewer",
         ));
     }
 
-    Ok(trimmed.to_string())
+    Ok(name)
 }
 
 fn validate_expires_in_days(expires_in_days: Option<i64>) -> Result<(), ServiceError> {

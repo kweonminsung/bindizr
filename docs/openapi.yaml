@@ -301,7 +301,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetRecordResponse'
         '400':
           description: Bad request, invalid pagination
           content:
@@ -424,7 +424,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateRecordRequest'
+              $ref: '#/components/schemas/RecordItem'
         required: true
       responses:
         '200':
@@ -783,7 +783,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetZoneResponse'
         '400':
           description: Bad request, invalid pagination
           content:
@@ -1199,7 +1199,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SnapshotListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_ZoneSnapshotResponse'
         '401':
           description: Unauthorized
           content:
@@ -1742,38 +1742,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
-    BulkRecordItem:
-      type: object
-      description: |-
-        A single record entry for bulk insertion. The zone is taken from the request
-        path, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
-      required:
-      - name
-      - record_type
-      - value
-      properties:
-        name:
-          type: string
-          example: sub
-        priority:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
-          example: 10
-        record_type:
-          type: string
-          example: A
-        ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
-          example: 3600
-        value:
-          $ref: '#/components/schemas/RecordValueRequest'
     BulkRecordsResponse:
       type: object
       description: |-
@@ -1816,7 +1784,7 @@ components:
         records:
           type: array
           items:
-            $ref: '#/components/schemas/BulkRecordItem'
+            $ref: '#/components/schemas/RecordItem'
     CreateRecordRequest:
       type: object
       description: Request body for creating a record in a named zone.
@@ -2204,6 +2172,7 @@ components:
       - primary_ns
       - admin_email
       - ttl
+      - serial
       - refresh
       - retry
       - expire
@@ -2239,9 +2208,7 @@ components:
           format: int32
           example: 3600
         serial:
-          type:
-          - integer
-          - 'null'
+          type: integer
           format: int32
           example: 42
         ttl:
@@ -2418,6 +2385,182 @@ components:
           - string
           - 'null'
           example: example.com
+    PaginatedResponse_GetRecordResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a record, optionally carrying its zone name.
+            required:
+            - id
+            - name
+            - record_type
+            - value
+            - ttl
+            - zone_id
+            properties:
+              id:
+                type: integer
+                format: int32
+                example: 1
+              name:
+                type: string
+                example: sub
+              priority:
+                type:
+                - integer
+                - 'null'
+                format: int32
+                example: 10
+              record_type:
+                type: string
+                example: A
+              ttl:
+                type: integer
+                format: int32
+                example: 3600
+              value:
+                $ref: '#/components/schemas/RecordValueRequest'
+              zone_id:
+                type: integer
+                format: int32
+                example: 1
+              zone_name:
+                type:
+                - string
+                - 'null'
+                example: example.com
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetZoneResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a zone.
+            required:
+            - id
+            - name
+            - primary_ns
+            - admin_email
+            - ttl
+            - serial
+            - refresh
+            - retry
+            - expire
+            - minimum_ttl
+            properties:
+              admin_email:
+                type: string
+                example: admin@example.com
+              expire:
+                type: integer
+                format: int32
+                example: 604800
+              id:
+                type: integer
+                format: int32
+                example: 1
+              minimum_ttl:
+                type: integer
+                format: int32
+                example: 3600
+              name:
+                type: string
+                example: example.com
+              primary_ns:
+                type: string
+                example: ns1.example.com
+              refresh:
+                type: integer
+                format: int32
+                example: 7200
+              retry:
+                type: integer
+                format: int32
+                example: 3600
+              serial:
+                type: integer
+                format: int32
+                example: 42
+              ttl:
+                type: integer
+                format: int32
+                example: 3600
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_ZoneSnapshotResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: |-
+              One entry of a zone's serial history, with SOA metadata in API form
+              (`admin_email` converted back from SOA mailbox form).
+            required:
+            - serial
+            - primary_ns
+            - admin_email
+            - ttl
+            - refresh
+            - retry
+            - expire
+            - minimum_ttl
+            - created_at
+            properties:
+              admin_email:
+                type: string
+                example: admin@example.com
+              created_at:
+                type: string
+                format: date-time
+              expire:
+                type: integer
+                format: int32
+                example: 604800
+              minimum_ttl:
+                type: integer
+                format: int32
+                example: 3600
+              primary_ns:
+                type: string
+                example: ns1.example.com
+              refresh:
+                type: integer
+                format: int32
+                example: 7200
+              retry:
+                type: integer
+                format: int32
+                example: 3600
+              serial:
+                type: integer
+                format: int32
+                example: 7
+              ttl:
+                type: integer
+                format: int32
+                example: 3600
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     Pagination:
       type: object
       description: Pagination window and total count for a list response.
@@ -2527,19 +2670,39 @@ components:
           example: 300
         value:
           $ref: '#/components/schemas/RecordValueRequest'
-    RecordListResponse:
+    RecordItem:
       type: object
-      description: Paginated list of records.
+      description: |-
+        A record's data fields, used both as a bulk-insertion entry and as the
+        record update request body. The zone is taken from the request path, so
+        unlike [`CreateRecordRequest`] it carries no `zone_name`.
       required:
-      - items
-      - pagination
+      - name
+      - record_type
+      - value
       properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetRecordResponse'
-        pagination:
-          $ref: '#/components/schemas/Pagination'
+        name:
+          type: string
+          example: sub
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          example: 10
+        record_type:
+          type: string
+          example: A
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
+          example: 3600
+        value:
+          $ref: '#/components/schemas/RecordValueRequest'
     RecordResponse:
       type: object
       description: A single record wrapped in a response envelope.
@@ -2681,19 +2844,6 @@ components:
           type: integer
           format: int32
           example: 42
-    SnapshotListResponse:
-      type: object
-      description: A page of zone snapshots.
-      required:
-      - items
-      - pagination
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/ZoneSnapshotResponse'
-        pagination:
-          $ref: '#/components/schemas/Pagination'
     SnapshotRecordResponse:
       type: object
       description: |-
@@ -2741,36 +2891,6 @@ components:
       properties:
         tsig_key:
           $ref: '#/components/schemas/GetTsigKeyResponse'
-    UpdateRecordRequest:
-      type: object
-      description: Request body for updating an existing record.
-      required:
-      - name
-      - record_type
-      - value
-      properties:
-        name:
-          type: string
-          example: sub
-        priority:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
-          example: 10
-        record_type:
-          type: string
-          example: A
-        ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
-          example: 3600
-        value:
-          $ref: '#/components/schemas/RecordValueRequest'
     ZoneDetailResponse:
       type: object
       description: A zone together with all of its records.
@@ -2784,19 +2904,6 @@ components:
             $ref: '#/components/schemas/GetRecordResponse'
         zone:
           $ref: '#/components/schemas/GetZoneResponse'
-    ZoneListResponse:
-      type: object
-      description: Paginated list of zones.
-      required:
-      - items
-      - pagination
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetZoneResponse'
-        pagination:
-          $ref: '#/components/schemas/Pagination'
     ZoneResponse:
       type: object
       description: A single zone wrapped in a response envelope.

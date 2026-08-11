@@ -1,42 +1,56 @@
 use std::{collections::HashMap, time::Instant};
 
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
     RecordService,
-    validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
+    validation::{
+        normalize_record_owner_name, parse_record_type, validate_record_add_constraints_normalized,
+    },
 };
 use crate::{
     RepositoryTx,
-    authorization::{self, Caller, RecordWrite},
+    authorization::{Caller, RecordWrite},
     error::ServiceError,
     log_debug, log_debug_enabled, log_error, log_info, log_warn,
     model::{
-        record::{Record, RecordType, RecordWithZone},
-        zone::Zone,
+        record::{Record, RecordType},
         zone_change::ZoneChange,
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{BulkRecordItem, RecordDiff, RecordValueRequest},
+    timing::{duration_ms, elapsed_ms},
+    types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
     zone::{
+        ZoneService,
         history::{ReconstructedRecord, build_record_diff},
-        snapshot::save_zone_snapshot_tx,
-        validation::normalize_zone_name,
     },
 };
+
+/// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
+#[derive(Default)]
+struct BulkTimings {
+    load_zone_ms: f64,
+    load_existing_ms: f64,
+    build_index_ms: f64,
+    normalize_ms: f64,
+    validate_ms: f64,
+    db_write_ms: f64,
+    serial_ms: f64,
+}
 
 /// A record whose type and value are parsed and ready to insert. The owner name
 /// is kept raw so the constraint validator can normalize it against the zone.
 pub(super) struct PreparedRecord {
-    pub owner_name: String,
-    pub record_type: RecordType,
-    pub value: String,
-    pub ttl: Option<i32>,
-    pub priority: Option<i32>,
+    pub(crate) owner_name: String,
+    pub(crate) record_type: RecordType,
+    pub(crate) value: String,
+    pub(crate) ttl: Option<i32>,
+    pub(crate) priority: Option<i32>,
 }
 
-/// Parse the record type and encode the value into storage form.
+/// Parse the record type and encode the value into its record-row form.
 pub(super) fn prepare_record(
     name: &str,
     record_type: &str,
@@ -44,11 +58,9 @@ pub(super) fn prepare_record(
     ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Result<PreparedRecord, ServiceError> {
-    let record_type = record_type.parse::<RecordType>().map_err(|_| {
-        ServiceError::invalid_input(format!("Invalid record type: {}", record_type))
-    })?;
+    let record_type = parse_record_type(record_type)?;
     let value = value
-        .to_storage_value(&record_type)
+        .to_encoded_value(&record_type, priority)
         .map_err(ServiceError::invalid_record_value)?;
 
     Ok(PreparedRecord {
@@ -60,7 +72,7 @@ pub(super) fn prepare_record(
     })
 }
 
-fn zone_changes_for(
+pub(super) fn zone_changes_for(
     zone_id: i32,
     new_serial: i32,
     operation: &str,
@@ -69,7 +81,6 @@ fn zone_changes_for(
     records
         .iter()
         .map(|record| ZoneChange {
-            id: 0,
             zone_id,
             serial: new_serial,
             operation: operation.to_string(),
@@ -82,54 +93,41 @@ fn zone_changes_for(
         .collect()
 }
 
-/// Insert records that the caller has already validated, with their ADD zone changes.
-pub(crate) async fn insert_validated_records_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone_id: i32,
-    new_serial: i32,
-    records: &[Record],
-) -> Result<Vec<Record>, ServiceError> {
-    if records.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let created_records = RepositoryService::create_records_tx(tx, records).await?;
-    let changes = zone_changes_for(zone_id, new_serial, "ADD", &created_records);
-    RepositoryService::create_zone_changes_tx(tx, &changes).await?;
-    Ok(created_records)
-}
-
-/// Delete records, with their DEL zone changes.
-pub(crate) async fn delete_records_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone_id: i32,
-    new_serial: i32,
-    records: &[Record],
-) -> Result<(), ServiceError> {
-    if records.is_empty() {
-        return Ok(());
-    }
-
-    let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
-    RepositoryService::delete_records_tx(tx, &ids).await?;
-    let changes = zone_changes_for(zone_id, new_serial, "DEL", records);
-    RepositoryService::create_zone_changes_tx(tx, &changes).await?;
-    Ok(())
-}
-
-/// Load the target zone inside the transaction, returning `NotFound` if missing.
-pub(crate) async fn load_zone_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone_name: &str,
-) -> Result<Zone, ServiceError> {
-    let lookup_zone_name = normalize_zone_name(zone_name)?;
-    match RepositoryService::get_zone_by_name_tx(tx, &lookup_zone_name).await {
-        Ok(Some(zone)) => Ok(zone),
-        Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
-        Err(e) => {
-            log_error!("Failed to fetch zone: {}", e);
-            Err(ServiceError::internal("Failed to fetch zone".to_string()))
+impl RecordService {
+    /// Insert records with their ADD zone changes for IXFR. The caller has
+    /// already validated the rows.
+    pub(crate) async fn insert_records_with_changes_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        new_serial: i32,
+        records: &[Record],
+    ) -> Result<Vec<Record>, ServiceError> {
+        if records.is_empty() {
+            return Ok(Vec::new());
         }
+
+        let created_records = RepositoryService::create_records_tx(tx, records).await?;
+        let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_ADD, &created_records);
+        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
+        Ok(created_records)
+    }
+
+    /// Delete records with their DEL zone changes for IXFR.
+    pub(crate) async fn delete_records_with_changes_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        new_serial: i32,
+        records: &[Record],
+    ) -> Result<(), ServiceError> {
+        if records.is_empty() {
+            return Ok(());
+        }
+
+        let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
+        RepositoryService::delete_records_tx(tx, &ids).await?;
+        let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_DEL, records);
+        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
+        Ok(())
     }
 }
 
@@ -139,23 +137,14 @@ impl RecordService {
     /// after commit. Either every record is inserted or none is. On `dry_run`
     /// the same validation runs but nothing is written and no NOTIFY is sent;
     /// the returned records are the validated would-be records (placeholder
-    /// IDs).
+    /// IDs). `caller` is authorized inside the bulk transaction, so its grants
+    /// are decided against the zone this tx locked.
     pub async fn create_bulk(
-        zone_name: &str,
-        items: &[BulkRecordItem],
-        dry_run: bool,
-    ) -> Result<(Vec<RecordWithZone>, RecordDiff), ServiceError> {
-        Self::create_bulk_for(&Caller::Global, zone_name, items, dry_run).await
-    }
-
-    /// Like [`Self::create_bulk`], authorizing `caller` inside the bulk
-    /// transaction so its grants are decided against the zone this tx locked.
-    pub async fn create_bulk_for(
         caller: &Caller,
         zone_name: &str,
-        items: &[BulkRecordItem],
+        items: &[RecordItem],
         dry_run: bool,
-    ) -> Result<(Vec<RecordWithZone>, RecordDiff), ServiceError> {
+    ) -> Result<BulkRecordsResponse, ServiceError> {
         if items.is_empty() {
             return Err(ServiceError::invalid_input(
                 "no records provided for bulk insert".to_string(),
@@ -178,38 +167,44 @@ impl RecordService {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let prepare_ms = t.elapsed().as_secs_f64() * 1000.0;
+        let prepare_ms = elapsed_ms(t);
 
-        // Per-stage timings, filled inside the transaction and emitted as a single
-        // debug summary after commit + NOTIFY (see log_debug! below).
-        let mut load_zone_ms = 0.0f64;
-        let mut load_existing_ms = 0.0f64;
-        let mut build_index_ms = 0.0f64;
-        let mut normalize_ms = 0.0f64;
-        let mut validate_ms = 0.0f64;
-        let mut db_write_ms = 0.0f64;
-        let mut serial_ms = 0.0f64;
+        let mut timings = BulkTimings::default();
 
         let mut tx = RepositoryService::begin_tx("Failed to create records").await?;
 
         let apply_result = async {
             let t = Instant::now();
-            let zone = load_zone_tx(&mut tx, zone_name).await?;
-            load_zone_ms = t.elapsed().as_secs_f64() * 1000.0;
+            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
+            timings.load_zone_ms = elapsed_ms(t);
+
+            // Before any row is read, so an ungranted caller gets 403 rather than
+            // a constraint error naming what the zone holds; dry runs included.
+            // A name that will not parse lists no write; validation reports it.
+            let writes: Vec<RecordWrite<'_>> = prepared
+                .iter()
+                .filter_map(|p| {
+                    normalize_record_owner_name(&p.owner_name, &zone.name)
+                        .ok()
+                        .map(|name| RecordWrite {
+                            relative_name: name,
+                            record_type: Some(&p.record_type),
+                        })
+                })
+                .collect();
+            caller
+                .authorize_record_writes_tx(&mut tx, &zone, &writes)
+                .await?;
 
             // Only records whose owner name appears in the batch can conflict, so
-            // load just those instead of the whole zone. Normalization errors are
-            // ignored here; the validation loop below reports them authoritatively.
+            // load just those instead of the whole zone.
             let t = Instant::now();
-            let mut batch_names: Vec<String> = prepared
-                .iter()
-                .filter_map(|p| normalize_record_owner_name(&p.owner_name, &zone.name).ok())
-                .map(|n| n.stored_name.to_ascii_lowercase())
-                .collect();
+            let mut batch_names: Vec<OwnerName> =
+                writes.iter().map(|w| w.relative_name.clone()).collect();
             batch_names.sort();
             batch_names.dedup();
 
-            let existing_records = match RepositoryService::get_records_by_zone_id_and_names_tx(
+            let existing_records = match RepositoryService::list_records_by_zone_id_and_names_tx(
                 &mut tx,
                 zone.id,
                 &batch_names,
@@ -224,7 +219,7 @@ impl RecordService {
                     ));
                 }
             };
-            load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.load_existing_ms = elapsed_ms(t);
 
             let new_serial = generate_serial(Some(zone.serial))?;
 
@@ -240,42 +235,40 @@ impl RecordService {
             // only same-name records; new records join the index as we go so
             // intra-batch conflicts are still detected.
             let t = Instant::now();
-            let mut records_by_name: HashMap<String, Vec<Record>> =
+            let mut records_by_name: HashMap<OwnerName, Vec<Record>> =
                 HashMap::with_capacity(existing_records.len());
             for record in existing_records {
                 records_by_name
-                    .entry(record.name.to_ascii_lowercase())
+                    .entry(record.name.clone())
                     .or_default()
                     .push(record);
             }
-            build_index_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.build_index_ms = elapsed_ms(t);
 
             // Time normalization and validation separately so validate_ms stays
             // comparable with zone import, which normalizes in an earlier pass;
             // debug-gated to keep the clock reads off the hot path.
-            let timing = log_debug_enabled!();
+            let timing_enabled = log_debug_enabled!();
             let mut normalize_dur = std::time::Duration::ZERO;
             let mut validate_dur = std::time::Duration::ZERO;
             let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
-                let t = timing.then(Instant::now);
-                let normalized_owner =
+                let t = timing_enabled.then(Instant::now);
+                let owner_name =
                     normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
                 if let Some(t) = t {
                     normalize_dur += t.elapsed();
                 }
 
-                let same_name = records_by_name
-                    .entry(normalized_owner.stored_name.to_ascii_lowercase())
-                    .or_default();
+                let same_name = records_by_name.entry(owner_name.clone()).or_default();
 
                 // Fixed at write time: a later zone TTL change will not move it.
                 let ttl = prepared_record.ttl.unwrap_or(zone.ttl);
 
-                let t = timing.then(Instant::now);
+                let t = timing_enabled.then(Instant::now);
                 validate_record_add_constraints_normalized(
                     same_name,
-                    &normalized_owner.stored_name,
+                    &owner_name,
                     &prepared_record.record_type,
                     &prepared_record.value,
                     ttl,
@@ -288,7 +281,7 @@ impl RecordService {
 
                 let record = Record {
                     id: 0,
-                    name: normalized_owner.stored_name,
+                    name: owner_name.clone(),
                     record_type: prepared_record.record_type.clone(),
                     value: prepared_record.value.clone(),
                     ttl,
@@ -299,19 +292,8 @@ impl RecordService {
                 same_name.push(record.clone());
                 to_insert.push(record);
             }
-            normalize_ms = normalize_dur.as_secs_f64() * 1000.0;
-            validate_ms = validate_dur.as_secs_f64() * 1000.0;
-
-            // Dry runs authorize too, so a preview never claims a batch the
-            // caller could not apply.
-            let writes: Vec<RecordWrite<'_>> = to_insert
-                .iter()
-                .map(|record| RecordWrite {
-                    relative_name: &record.name,
-                    record_type: Some(&record.record_type),
-                })
-                .collect();
-            authorization::authorize_record_writes_tx(&mut tx, caller, &zone, &writes).await?;
+            timings.normalize_ms = duration_ms(normalize_dur);
+            timings.validate_ms = duration_ms(validate_dur);
 
             if dry_run {
                 // `after` = existing plus the inserts, so an insert into an
@@ -327,23 +309,18 @@ impl RecordService {
             }
 
             let t = Instant::now();
-            let created_records =
-                insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
-            db_write_ms = t.elapsed().as_secs_f64() * 1000.0;
+            let created_records = RecordService::insert_records_with_changes_tx(
+                &mut tx, zone.id, new_serial, &to_insert,
+            )
+            .await?;
+            timings.db_write_ms = elapsed_ms(t);
 
-            // Increment zone serial once so IXFR consumers detect the batch
+            // Advance the serial once so IXFR consumers detect the batch
             let t = Instant::now();
-            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::internal("Failed to update zone serial".to_string())
-                })?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            timings.serial_ms = elapsed_ms(t);
 
-            save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
-            serial_ms = t.elapsed().as_secs_f64() * 1000.0;
-
-            Ok::<(Vec<Record>, String, RecordDiff), ServiceError>((
+            Ok::<(Vec<Record>, ZoneName, RecordDiff), ServiceError>((
                 created_records,
                 zone.name,
                 RecordDiff::default(),
@@ -362,11 +339,12 @@ impl RecordService {
         );
 
         let t = Instant::now();
-        if !dry_run && let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await
+        if !dry_run
+            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
-        let notify_ms = t.elapsed().as_secs_f64() * 1000.0;
+        let notify_ms = elapsed_ms(t);
 
         // Per-stage breakdown for profiling; debug-gated so it stays out of
         // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
@@ -377,21 +355,27 @@ impl RecordService {
             zone_name,
             created_records.len(),
             prepare_ms,
-            load_zone_ms,
-            load_existing_ms,
-            build_index_ms,
-            normalize_ms,
-            validate_ms,
-            db_write_ms,
-            serial_ms,
+            timings.load_zone_ms,
+            timings.load_existing_ms,
+            timings.build_index_ms,
+            timings.normalize_ms,
+            timings.validate_ms,
+            timings.db_write_ms,
+            timings.serial_ms,
             notify_ms,
-            t_total.elapsed().as_secs_f64() * 1000.0,
+            elapsed_ms(t_total),
         );
 
         let records = created_records
-            .into_iter()
-            .map(|record| RecordWithZone::new(record, zone_name.clone()))
+            .iter()
+            .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone_name))
             .collect();
-        Ok((records, diff))
+        Ok(BulkRecordsResponse {
+            applied: !dry_run,
+            dry_run,
+            inserted: if dry_run { 0 } else { created_records.len() },
+            records,
+            diff,
+        })
     }
 }

@@ -3,76 +3,76 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::{
-    name::to_fqdn_lowercase,
-    txt::{encode_txt_segments, parse_txt_presentation},
-};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
     ExternalDnsService,
-    policy::{find_authoritative_zone, normalize_lookup_name, stored_owner_name},
+    policy::{find_authoritative_zone, normalize_lookup_name},
 };
 use crate::{
-    authorization::{Caller, RecordWrite, authorize_record_writes_tx},
+    authorization::{Caller, RecordWrite},
     error::{ErrorCode, ServiceError},
     log_info, log_warn,
     model::{
-        record::{Record, RecordType},
+        record::{EXTERNAL_DNS_RECORD_TYPES, Record, RecordType},
         zone::Zone,
     },
-    record::{
-        canonical_record_value, delete_records_tx, insert_validated_records_tx,
-        validate_record_add_constraints_normalized,
-    },
+    record::{RecordService, parse_record_type, validate_record_add_constraints_normalized},
     repository::RepositoryService,
     serial::generate_serial,
     types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRrset},
-    zone::snapshot::save_zone_snapshot_tx,
+    zone::ZoneService,
 };
 
 /// Record types ExternalDNS may manage through this API.
 pub(super) fn is_supported_record_type(record_type: &RecordType) -> bool {
-    matches!(
-        record_type,
-        RecordType::A | RecordType::AAAA | RecordType::CNAME | RecordType::TXT
-    )
+    EXTERNAL_DNS_RECORD_TYPES.contains(record_type)
 }
 
-/// One desired RRset operation; values are in storage form and the name in
-/// lookup form until zone grouping rewrites it to stored form.
+/// One desired RRset operation as the request spells it: values are
+/// row-encoded, but the owner is still an absolute lookup name with no zone
+/// resolved yet.
 #[derive(Debug)]
 pub(super) struct RrsetOp {
-    pub name: String,
-    pub record_type: RecordType,
+    pub(crate) name: String,
+    pub(crate) record_type: RecordType,
     /// Adds only; `None` resolves to the zone TTL at apply time.
-    pub ttl: Option<i32>,
-    pub values: Vec<String>,
+    pub(crate) ttl: Option<i32>,
+    pub(crate) values: Vec<String>,
 }
 
 pub(super) struct PendingOp {
-    pub op: RrsetOp,
-    pub is_delete: bool,
+    pub(crate) op: RrsetOp,
+    pub(crate) is_delete: bool,
+}
+
+/// The same operation once grouping has decided which zone owns it, so the
+/// owner is relative to that zone.
+#[derive(Debug)]
+pub(super) struct ZoneRrsetOp {
+    pub(crate) name: OwnerName,
+    pub(crate) record_type: RecordType,
+    pub(crate) ttl: Option<i32>,
+    pub(crate) values: Vec<String>,
 }
 
 /// Adds and deletes of one request that resolved to the same zone.
 #[derive(Debug, Default)]
 pub(super) struct ZoneOps {
-    pub adds: Vec<RrsetOp>,
-    pub dels: Vec<RrsetOp>,
+    pub(crate) adds: Vec<ZoneRrsetOp>,
+    pub(crate) dels: Vec<ZoneRrsetOp>,
 }
 
 /// The record rows one zone's operations resolve to.
 #[derive(Debug, Default)]
 pub(super) struct ZoneChangeSet {
-    pub deletes: Vec<Record>,
-    pub creates: Vec<Record>,
+    pub(crate) deletes: Vec<Record>,
+    pub(crate) creates: Vec<Record>,
 }
 
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {
-    let parsed = record_type.parse::<RecordType>().map_err(|_| {
-        ServiceError::invalid_input(format!("Invalid record type: {}", record_type))
-    })?;
+    let parsed = parse_record_type(record_type)?;
     if !is_supported_record_type(&parsed) {
         return Err(ServiceError::invalid_input(format!(
             "record type '{}' is not supported by the ExternalDNS API",
@@ -80,40 +80,6 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
         )));
     }
     Ok(parsed)
-}
-
-/// Encode one wire value into storage form, canonicalizing addresses so
-/// spelling variants compare equal.
-fn storage_value(record_type: &RecordType, value: &str) -> Result<String, ServiceError> {
-    if *record_type == RecordType::TXT {
-        return parse_txt_presentation(value)
-            .and_then(|segments| encode_txt_segments(segments.iter().map(String::as_str)))
-            .map_err(ServiceError::invalid_record_value);
-    }
-
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(ServiceError::invalid_record_value(
-            "record value must not be empty".to_string(),
-        ));
-    }
-
-    match record_type {
-        RecordType::A => trimmed
-            .parse::<std::net::Ipv4Addr>()
-            .map(|addr| addr.to_string())
-            .map_err(|_| {
-                ServiceError::invalid_record_value(format!("Invalid IPv4 address: {}", trimmed))
-            }),
-        RecordType::AAAA => trimmed
-            .parse::<std::net::Ipv6Addr>()
-            .map(|addr| addr.to_string())
-            .map_err(|_| {
-                ServiceError::invalid_record_value(format!("Invalid IPv6 address: {}", trimmed))
-            }),
-        RecordType::CNAME => Ok(to_fqdn_lowercase(trimmed)),
-        _ => unreachable!("parse_supported_record_type limits the type set"),
-    }
 }
 
 /// ExternalDNS sends TTL 0 for "not configured"; both resolve to the zone TTL.
@@ -148,12 +114,14 @@ pub(super) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, Service
     // Deduplicate values that normalize identically (e.g. IPv6 spellings).
     let mut values: Vec<String> = Vec::with_capacity(rrset.values.len());
     for value in &rrset.values {
-        let storage = storage_value(&record_type, value)?;
+        let encoded = record_type
+            .encoded_value(value, None)
+            .map_err(ServiceError::invalid_record_value)?;
         if !values
             .iter()
-            .any(|existing| values_equal(existing, &storage, &record_type))
+            .any(|existing| record_type.values_equal(existing, None, &encoded, None))
         {
-            values.push(storage);
+            values.push(encoded);
         }
     }
 
@@ -201,8 +169,8 @@ pub(super) fn convert_request(
 pub(super) fn group_ops_by_zone(
     zones: &[Zone],
     ops: Vec<PendingOp>,
-) -> Result<BTreeMap<String, ZoneOps>, ServiceError> {
-    let mut grouped: BTreeMap<String, ZoneOps> = BTreeMap::new();
+) -> Result<BTreeMap<ZoneName, ZoneOps>, ServiceError> {
+    let mut grouped: BTreeMap<ZoneName, ZoneOps> = BTreeMap::new();
 
     for pending in ops {
         let zone = find_authoritative_zone(zones, &pending.op.name).ok_or_else(|| {
@@ -212,8 +180,13 @@ pub(super) fn group_ops_by_zone(
             )
         })?;
 
-        let mut op = pending.op;
-        op.name = stored_owner_name(&op.name, zone);
+        let op = ZoneRrsetOp {
+            name: OwnerName::parse_absolute_in_zone(&pending.op.name, &zone.name)
+                .expect("find_authoritative_zone matched the name inside this zone"),
+            record_type: pending.op.record_type,
+            ttl: pending.op.ttl,
+            values: pending.op.values,
+        };
         let entry = grouped.entry(zone.name.clone()).or_default();
         if pending.is_delete {
             entry.dels.push(op);
@@ -223,11 +196,6 @@ pub(super) fn group_ops_by_zone(
     }
 
     Ok(grouped)
-}
-
-fn values_equal(left: &str, right: &str, record_type: &RecordType) -> bool {
-    canonical_record_value(left, None, record_type)
-        == canonical_record_value(right, None, record_type)
 }
 
 /// Resolve one zone's operations against its current records; idempotent
@@ -241,9 +209,9 @@ pub(super) fn compute_zone_change_set(
     for del in &ops.dels {
         for value in &del.values {
             for row in existing {
-                if row.name.eq_ignore_ascii_case(&del.name)
+                if row.name == del.name
                     && row.record_type == del.record_type
-                    && values_equal(&row.value, value, &del.record_type)
+                    && del.record_type.values_equal(&row.value, None, value, None)
                     && !deletes.iter().any(|d| d.id == row.id)
                 {
                     deletes.push(row.clone());
@@ -256,23 +224,25 @@ pub(super) fn compute_zone_change_set(
     for add in &ops.adds {
         let ttl = add.ttl.unwrap_or(zone.ttl);
         for value in &add.values {
-            let matches = |row: &Record| {
-                row.name.eq_ignore_ascii_case(&add.name)
+            let same_rdata = |row: &Record| {
+                row.name == add.name
                     && row.record_type == add.record_type
-                    && row.ttl == ttl
-                    && values_equal(&row.value, value, &add.record_type)
+                    && add.record_type.values_equal(&row.value, None, value, None)
             };
+            let matches = |row: &Record| same_rdata(row) && row.ttl == ttl;
 
-            // An unchanged update cancels its own delete instead of
-            // rewriting the row.
+            // An unchanged update cancels its own delete instead of rewriting
+            // the row. TTL-sensitive, so a TTL-only update is still a change.
             if let Some(pos) = deletes.iter().position(&matches) {
                 deletes.remove(pos);
                 continue;
             }
-            // Idempotent create: an identical surviving row already exists.
+            // Idempotent create: a surviving row already holds this rdata. TTL
+            // is excluded to match the duplicate check behind this one, which
+            // would otherwise reject the create as a conflict.
             if existing
                 .iter()
-                .any(|row| deletes.iter().all(|d| d.id != row.id) && matches(row))
+                .any(|row| deletes.iter().all(|d| d.id != row.id) && same_rdata(row))
             {
                 continue;
             }
@@ -299,16 +269,13 @@ pub(super) fn compute_zone_change_set(
     for (index, create) in creates.iter().enumerate() {
         let mut same_name: Vec<Record> = existing
             .iter()
-            .filter(|row| {
-                deletes.iter().all(|d| d.id != row.id)
-                    && row.name.eq_ignore_ascii_case(&create.name)
-            })
+            .filter(|row| deletes.iter().all(|d| d.id != row.id) && row.name == create.name)
             .cloned()
             .collect();
         same_name.extend(
             creates[..index]
                 .iter()
-                .filter(|row| row.name.eq_ignore_ascii_case(&create.name))
+                .filter(|row| row.name == create.name)
                 .cloned(),
         );
 
@@ -331,8 +298,8 @@ impl ExternalDnsService {
     /// together or none do. Only zones with a remaining delta advance their
     /// serial (once per request) and record IXFR history.
     pub async fn apply_changes(
-        request: &ExternalDnsChangesRequest,
         caller: &Caller,
+        request: &ExternalDnsChangesRequest,
     ) -> Result<ExternalDnsChangesResponse, ServiceError> {
         let started = std::time::Instant::now();
 
@@ -353,7 +320,7 @@ impl ExternalDnsService {
         let apply_result = async {
             // Resolve authoritative zones from committed state inside the tx;
             // the residual race with concurrent zone creation is accepted.
-            let zones = RepositoryService::get_all_zones_tx(&mut tx).await?;
+            let zones = RepositoryService::list_zones_tx(&mut tx).await?;
             let zone_ops = group_ops_by_zone(&zones, ops)?;
 
             let mut changed_zones = Vec::new();
@@ -363,32 +330,34 @@ impl ExternalDnsService {
             // BTreeMap iteration locks zones in name order, so concurrent
             // multi-zone requests cannot deadlock on row locks.
             for (zone_name, ops) in &zone_ops {
-                let zone = RepositoryService::get_zone_by_name_tx(&mut tx, zone_name)
+                let zone = RepositoryService::get_zone_by_name_tx(&mut tx, zone_name.as_str())
                     .await?
-                    .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
+                    .ok_or_else(|| ServiceError::zone_not_found(zone_name.as_str()))?;
 
                 let writes: Vec<RecordWrite<'_>> = ops
                     .adds
                     .iter()
                     .chain(ops.dels.iter())
                     .map(|op| RecordWrite {
-                        relative_name: &op.name,
+                        relative_name: op.name.clone(),
                         record_type: Some(&op.record_type),
                     })
                     .collect();
-                authorize_record_writes_tx(&mut tx, caller, &zone, &writes).await?;
+                caller
+                    .authorize_record_writes_tx(&mut tx, &zone, &writes)
+                    .await?;
 
                 // Only records sharing an owner name with the request can be
                 // touched or conflict, so load just those.
-                let mut names: Vec<String> = ops
+                let mut names: Vec<OwnerName> = ops
                     .adds
                     .iter()
                     .chain(ops.dels.iter())
-                    .map(|op| op.name.to_ascii_lowercase())
+                    .map(|op| op.name.clone())
                     .collect();
                 names.sort();
                 names.dedup();
-                let existing = RepositoryService::get_records_by_zone_id_and_names_tx(
+                let existing = RepositoryService::list_records_by_zone_id_and_names_tx(
                     &mut tx, zone.id, &names,
                 )
                 .await?;
@@ -399,15 +368,25 @@ impl ExternalDnsService {
                 }
 
                 let new_serial = generate_serial(Some(zone.serial))?;
-                delete_records_tx(&mut tx, zone.id, new_serial, &change_set.deletes).await?;
-                insert_validated_records_tx(&mut tx, zone.id, new_serial, &change_set.creates)
-                    .await?;
-                RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial).await?;
-                save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+                RecordService::delete_records_with_changes_tx(
+                    &mut tx,
+                    zone.id,
+                    new_serial,
+                    &change_set.deletes,
+                )
+                .await?;
+                RecordService::insert_records_with_changes_tx(
+                    &mut tx,
+                    zone.id,
+                    new_serial,
+                    &change_set.creates,
+                )
+                .await?;
+                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
                 records_deleted += change_set.deletes.len() as u32;
                 records_added += change_set.creates.len() as u32;
-                changed_zones.push(zone.name.clone());
+                changed_zones.push(zone.name.to_string());
             }
 
             Ok::<_, ServiceError>((changed_zones, records_added, records_deleted))

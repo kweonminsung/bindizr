@@ -1,12 +1,16 @@
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
-    normalize_record_owner_name, record_values_equal, validate_delete_constraints,
-    validate_record_add_constraints, validate_record_value,
+    normalize_record_owner_name, validate_delete_constraints,
+    validate_record_add_constraints_normalized, validate_record_value,
 };
-use crate::model::{
-    record::{Record, RecordType},
-    zone::Zone,
+use crate::{
+    error::{ErrorCode, ServiceError},
+    model::{
+        record::{Record, RecordType},
+        zone::Zone,
+    },
 };
 
 /// TTL of every [`test_record`], so adds under test share their RRset's TTL
@@ -14,86 +18,18 @@ use crate::model::{
 const RRSET_TTL: i32 = 3600;
 
 #[test]
-fn normalize_record_owner_name_accepts_relative_and_in_bailiwick_absolute_names() {
-    let zone = "test.example.com";
+fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
+    // Core owns the parsing; this layer owns the code and the message.
+    let zone = ZoneName::from_row("test.example.com");
 
-    let apex = normalize_record_owner_name("@", zone).unwrap();
-    assert_eq!(apex.stored_name, "@");
+    let outside = normalize_record_owner_name("a1.other.com.", &zone).unwrap_err();
+    assert_eq!(outside.code, ErrorCode::InvalidRecordName);
+    assert!(outside.message.contains("a1.other.com."));
+    assert!(outside.message.contains(zone.as_str()));
 
-    let relative = normalize_record_owner_name("a1", zone).unwrap();
-    assert_eq!(relative.stored_name, "a1");
-
-    let relative_with_zone_suffix =
-        normalize_record_owner_name("A1.Test.Example.Com", zone).unwrap();
-    assert_eq!(relative_with_zone_suffix.stored_name, "a1");
-
-    let absolute = normalize_record_owner_name("A1.Test.Example.Com.", zone).unwrap();
-    assert_eq!(absolute.stored_name, "a1");
-}
-
-#[test]
-fn normalize_record_owner_name_rejects_out_of_bailiwick_absolute_names() {
-    let zone = "test.example.com";
-
-    for name in [
-        "a1.",
-        "example.com.",
-        "a1.example.com.",
-        "other.com.",
-        "a1.other.com.",
-        "badtest.example.com.",
-    ] {
-        assert!(
-            normalize_record_owner_name(name, zone).is_err(),
-            "{name} should be rejected"
-        );
-    }
-}
-
-#[test]
-fn record_values_equal_normalizes_name_like_values() {
-    assert!(record_values_equal(
-        "192.0.2.10",
-        None,
-        "192.0.2.10",
-        None,
-        &RecordType::A
-    ));
-    assert!(record_values_equal(
-        "2001:0db8:0000:0000:0000:0000:0000:0001",
-        None,
-        "2001:db8::1",
-        None,
-        &RecordType::AAAA
-    ));
-    assert!(record_values_equal(
-        "Target.Example.Net",
-        None,
-        "target.example.net.",
-        None,
-        &RecordType::CNAME
-    ));
-    assert!(record_values_equal(
-        "Mail.Example.Com",
-        Some(10),
-        "mail.example.com.",
-        Some(10),
-        &RecordType::MX
-    ));
-    assert!(record_values_equal(
-        "5 5060 Sip.Example.Com",
-        Some(10),
-        "5 5060 sip.example.com.",
-        Some(10),
-        &RecordType::SRV
-    ));
-    assert!(!record_values_equal(
-        "Token=ABC",
-        None,
-        "token=abc",
-        None,
-        &RecordType::TXT
-    ));
+    let empty = normalize_record_owner_name("  ", &zone).unwrap_err();
+    assert_eq!(empty.code, ErrorCode::InvalidRecordName);
+    assert!(empty.message.starts_with("record name "));
 }
 
 #[test]
@@ -130,7 +66,7 @@ fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
 }
 
 #[test]
-fn validate_mx_value_takes_priority_from_the_field_only() {
+fn validate_mx_value_accepts_a_target_with_a_field_priority() {
     assert!(validate_record_value(&RecordType::MX, "mail.example.com", Some(10)).is_ok());
     // An omitted priority defaults to 10.
     assert!(validate_record_value(&RecordType::MX, "mail.example.com", None).is_ok());
@@ -141,7 +77,7 @@ fn validate_mx_value_takes_priority_from_the_field_only() {
 fn validate_mx_value_rejects_invalid_forms() {
     for (value, priority) in [
         ("", None),
-        // Inline priority is no longer accepted; it belongs in the field.
+        // Priority belongs in the priority field, never inline in the value.
         ("10 mail.example.com", None),
         ("10 mail.example.com", Some(10)),
         ("mail.example.com extra", None),
@@ -160,7 +96,7 @@ fn validate_mx_value_rejects_invalid_forms() {
 }
 
 #[test]
-fn validate_srv_value_takes_priority_from_the_field_only() {
+fn validate_srv_value_accepts_weight_port_target_with_a_field_priority() {
     assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", Some(10)).is_ok());
     // An omitted priority defaults to 10.
     assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", None).is_ok());
@@ -172,7 +108,7 @@ fn validate_srv_value_rejects_invalid_forms() {
     for (value, priority) in [
         ("", None),
         ("5060 sip.example.com", None),
-        // Inline priority is no longer accepted; it belongs in the field.
+        // Priority belongs in the priority field, never inline in the value.
         ("10 5 5060 sip.example.com", None),
         ("10 5 5060 sip.example.com", Some(10)),
         ("5 5060 sip.example.com extra", None),
@@ -233,41 +169,42 @@ fn validate_soa_value_rejects_invalid_forms() {
     }
 }
 
-#[test]
-fn record_values_equal_normalizes_soa_records() {
-    assert!(record_values_equal(
-        "NS1.Example.COM hostmaster.example.com 2024010101 7200 3600 1209600 3600",
+/// Validate an add whose owner name is already in stored form.
+fn validate_add(
+    zone_records: &[Record],
+    stored_name: &str,
+    record_type: &RecordType,
+    value: &str,
+    ttl: i32,
+    priority: Option<i32>,
+) -> Result<(), ServiceError> {
+    validate_record_add_constraints_normalized(
+        zone_records,
+        &OwnerName::from_row(stored_name),
+        record_type,
+        value,
+        ttl,
+        priority,
         None,
-        "ns1.example.com. hostmaster.example.com. 2024010101 7200 3600 1209600 3600",
-        None,
-        &RecordType::SOA,
-    ));
-    assert!(!record_values_equal(
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600",
-        None,
-        "ns1.example.com hostmaster.example.com 2024010102 7200 3600 1209600 3600",
-        None,
-        &RecordType::SOA,
-    ));
+    )
 }
 
 #[test]
-fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
-    let zone = test_zone();
-
-    let cname_at_apex = validate_record_add_constraints(
-        &zone,
+fn add_rejects_cname_at_apex_and_ns_below_apex() {
+    let cname_at_apex = validate_add(
         &[],
-        "@",
+        "",
         &RecordType::CNAME,
         "target.example.com",
         RRSET_TTL,
         None,
     );
-    assert!(cname_at_apex.is_err());
+    assert_eq!(
+        cname_at_apex.unwrap_err().code,
+        ErrorCode::InvalidRecordName
+    );
 
-    let ns_below_apex = validate_record_add_constraints(
-        &zone,
+    let ns_below_apex = validate_add(
         &[],
         "child",
         &RecordType::NS,
@@ -275,11 +212,13 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
         RRSET_TTL,
         None,
     );
-    assert!(ns_below_apex.is_err());
+    assert_eq!(
+        ns_below_apex.unwrap_err().code,
+        ErrorCode::InvalidRecordName
+    );
 
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
-    let cname_conflict = validate_record_add_constraints(
-        &zone,
+    let cname_conflict = validate_add(
         &[existing_a],
         "www",
         &RecordType::CNAME,
@@ -287,25 +226,22 @@ fn validate_record_add_constraints_enforces_cname_and_ns_owner_rules() {
         RRSET_TTL,
         None,
     );
-    assert!(cname_conflict.is_err());
+    assert_eq!(cname_conflict.unwrap_err().code, ErrorCode::RecordConflict);
 }
 
 #[test]
-fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates() {
-    let zone = test_zone();
-
+fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     // Case and trailing-dot differences canonicalize equal, so the add is a duplicate.
-    let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
-    let duplicate_mx = validate_record_add_constraints(
-        &zone,
+    let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com", Some(10));
+    let duplicate_mx = validate_add(
         &[existing_mx],
-        "@",
+        "",
         &RecordType::MX,
         "Mail.Example.Com.",
         RRSET_TTL,
         Some(10),
     );
-    assert!(duplicate_mx.is_err());
+    assert_eq!(duplicate_mx.unwrap_err().code, ErrorCode::RecordConflict);
 
     let existing_srv = test_record(
         2,
@@ -314,8 +250,7 @@ fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates
         "5 5060 sip.example.com",
         Some(10),
     );
-    let duplicate_srv = validate_record_add_constraints(
-        &zone,
+    let duplicate_srv = validate_add(
         &[existing_srv],
         "_sip._tcp",
         &RecordType::SRV,
@@ -323,45 +258,55 @@ fn validate_record_add_constraints_rejects_wire_equivalent_mx_and_srv_duplicates
         RRSET_TTL,
         Some(10),
     );
-    assert!(duplicate_srv.is_err());
+    assert_eq!(duplicate_srv.unwrap_err().code, ErrorCode::RecordConflict);
 }
 
 #[test]
-fn validate_record_add_constraints_rejects_null_mx_with_other_mx_records() {
-    let zone = test_zone();
-
-    let existing_mx = test_record(1, "@", RecordType::MX, "mail.example.com", Some(10));
-    let null_mx_with_existing_mx = validate_record_add_constraints(
-        &zone,
+fn add_treats_an_omitted_mx_priority_as_the_default() {
+    // A stored MX with no priority and an add carrying the default 10 are the
+    // same rdata, so nsupdate can no-op the add instead of refusing it.
+    let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com.", None);
+    let duplicate_mx = validate_add(
         &[existing_mx],
-        "@",
+        "",
         &RecordType::MX,
-        ".",
+        "mail.example.com.",
         RRSET_TTL,
-        Some(0),
+        Some(10),
     );
-    assert!(null_mx_with_existing_mx.is_err());
+    assert_eq!(duplicate_mx.unwrap_err().code, ErrorCode::RecordConflict);
+}
 
-    let existing_null_mx = test_record(2, "@", RecordType::MX, ".", Some(0));
-    let mx_with_existing_null_mx = validate_record_add_constraints(
-        &zone,
+#[test]
+fn add_rejects_null_mx_alongside_other_mx_records() {
+    let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com", Some(10));
+    let null_mx_with_existing_mx =
+        validate_add(&[existing_mx], "", &RecordType::MX, ".", RRSET_TTL, Some(0));
+    assert_eq!(
+        null_mx_with_existing_mx.unwrap_err().code,
+        ErrorCode::RecordConflict
+    );
+
+    let existing_null_mx = test_record(2, "", RecordType::MX, ".", Some(0));
+    let mx_with_existing_null_mx = validate_add(
         &[existing_null_mx],
-        "@",
+        "",
         &RecordType::MX,
         "mail.example.com",
         RRSET_TTL,
         Some(10),
     );
-    assert!(mx_with_existing_null_mx.is_err());
+    assert_eq!(
+        mx_with_existing_null_mx.unwrap_err().code,
+        ErrorCode::RecordConflict
+    );
 }
 
 #[test]
-fn validate_record_add_constraints_enforces_one_ttl_per_rrset() {
-    let zone = test_zone();
+fn add_enforces_one_ttl_per_rrset() {
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
 
-    let differing_ttl = validate_record_add_constraints(
-        &zone,
+    let differing_ttl = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
         &RecordType::A,
@@ -369,10 +314,9 @@ fn validate_record_add_constraints_enforces_one_ttl_per_rrset() {
         600,
         None,
     );
-    assert!(differing_ttl.is_err());
+    assert_eq!(differing_ttl.unwrap_err().code, ErrorCode::RecordConflict);
 
-    let matching_ttl = validate_record_add_constraints(
-        &zone,
+    let matching_ttl = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
         &RecordType::A,
@@ -383,8 +327,7 @@ fn validate_record_add_constraints_enforces_one_ttl_per_rrset() {
     assert!(matching_ttl.is_ok());
 
     // A different type at the same owner name is a different RRset.
-    let other_rrset = validate_record_add_constraints(
-        &zone,
+    let other_rrset = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
         &RecordType::TXT,
@@ -411,9 +354,6 @@ fn validate_record_value_rejects_priority_on_types_without_one() {
         );
         assert!(validate_record_value(&record_type, value, None).is_ok());
     }
-
-    assert!(validate_record_value(&RecordType::MX, "mail.example.com", Some(10)).is_ok());
-    assert!(validate_record_value(&RecordType::SRV, "5 5060 sip.example.com", Some(10)).is_ok());
 }
 
 #[test]
@@ -422,24 +362,24 @@ fn validate_delete_constraints_protects_soa_and_primary_ns() {
 
     let soa = test_record(
         1,
-        "@",
+        "",
         RecordType::SOA,
         "ns1.example.com hostmaster.example.com",
         None,
     );
     assert!(validate_delete_constraints(&zone, &[soa]).is_err());
 
-    let primary_ns = test_record(2, "@", RecordType::NS, "ns1.example.com.", None);
+    let primary_ns = test_record(2, "", RecordType::NS, "ns1.example.com.", None);
     assert!(validate_delete_constraints(&zone, &[primary_ns]).is_err());
 
-    let secondary_ns = test_record(3, "@", RecordType::NS, "ns2.example.com.", None);
+    let secondary_ns = test_record(3, "", RecordType::NS, "ns2.example.com.", None);
     assert!(validate_delete_constraints(&zone, &[secondary_ns]).is_ok());
 }
 
 fn test_zone() -> Zone {
     Zone {
         id: 1,
-        name: "example.com".to_string(),
+        name: ZoneName::from_row("example.com"),
         primary_ns: "ns1.example.com".to_string(),
         admin_email: "hostmaster@example.com".to_string(),
         ttl: 3600,
@@ -461,7 +401,7 @@ fn test_record(
 ) -> Record {
     Record {
         id,
-        name: name.to_string(),
+        name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),
         ttl: RRSET_TTL,

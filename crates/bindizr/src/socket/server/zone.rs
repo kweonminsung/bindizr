@@ -1,92 +1,70 @@
-use bindizr_service::{error::ServiceError, record::RecordService, zone::ZoneService};
+use bindizr_service::{
+    authorization::Caller,
+    error::ServiceError,
+    record::RecordService,
+    types::{
+        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
+        SnapshotDetailResponse, SnapshotRecordResponse, ZoneSnapshotResponse,
+    },
+    zone::ZoneService,
+};
 use serde_json::json;
 
-use crate::{
-    api::types::{
-        CreateZoneRequest, GetZoneResponse, GetZonesFilter, ImportZoneFileRequest,
-        SnapshotDetailResponse, SnapshotRecordResponse, UpdateZonePatch, ZoneSnapshotResponse,
+use crate::socket::{
+    server::{parse_params, to_response_data},
+    types::{
+        DaemonResponse, DiffZoneSnapshotsParams, ImportZoneFileParams, ListZoneSnapshotsParams,
+        RollbackZoneParams, UpdateZoneParams, ZoneNameParams, ZoneSnapshotParams,
     },
-    socket::{server::to_response_data, types::DaemonResponse},
 };
-
-fn required_name(data: &serde_json::Value) -> Result<&str, ServiceError> {
-    data.get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'name' field"))
-}
-
-fn required_serial(data: &serde_json::Value) -> Result<i32, ServiceError> {
-    let serial = data
-        .get("serial")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'serial' field"))?;
-    i32::try_from(serial).map_err(|_| ServiceError::invalid_input("Serial is out of range"))
-}
 
 /// Handle the `GetZone` command by returning a zone by name.
 pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let name = required_name(data)?;
+    let params: ZoneNameParams = parse_params(data)?;
 
-    match ZoneService::get_by_name(name).await {
-        Ok(zone) => {
-            let response = GetZoneResponse::from_zone(&zone);
-            Ok(DaemonResponse {
-                message: "Zone retrieved successfully".to_string(),
-                data: to_response_data(response)?,
-            })
-        }
-        Err(e) => Err(e),
-    }
+    let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
+    Ok(DaemonResponse {
+        message: "Zone retrieved successfully".to_string(),
+        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+    })
 }
 
 /// Handle the `ListZones` command by returning zones matching the filter.
 pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let filter = if data.is_null() {
+    let filter: GetZonesFilter = if data.is_null() {
         GetZonesFilter::default()
     } else {
-        serde_json::from_value(data.clone())
-            .map_err(|e| ServiceError::invalid_input(format!("Invalid filter data: {}", e)))?
+        parse_params(data)?
     };
 
-    match ZoneService::list_by_filter(filter).await {
-        Ok(zones) => {
-            let response: Vec<GetZoneResponse> =
-                zones.items.iter().map(GetZoneResponse::from_zone).collect();
-            Ok(DaemonResponse {
-                message: format!("Found {} zone(s)", response.len()),
-                data: json!({
-                    "items": response,
-                    "pagination": zones.pagination,
-                }),
-            })
-        }
-        Err(e) => Err(e),
-    }
+    let zones = ZoneService::list_by_filter(&Caller::Global, filter).await?;
+    let response: Vec<GetZoneResponse> =
+        zones.items.iter().map(GetZoneResponse::from_zone).collect();
+    Ok(DaemonResponse {
+        message: format!("Found {} zone(s)", response.len()),
+        data: json!({
+            "items": response,
+            "pagination": zones.pagination,
+        }),
+    })
 }
 
 /// Handle the `CreateZone` command by creating a new zone.
 pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let request: CreateZoneRequest = serde_json::from_value(data.clone())
-        .map_err(|e| ServiceError::invalid_input(format!("Invalid request data: {}", e)))?;
+    let request: CreateZoneRequest = parse_params(data)?;
 
-    match ZoneService::create(&request).await {
-        Ok(zone) => {
-            let response = GetZoneResponse::from_zone(&zone);
-            Ok(DaemonResponse {
-                message: "Zone created successfully".to_string(),
-                data: to_response_data(response)?,
-            })
-        }
-        Err(e) => Err(e),
-    }
+    let zone = ZoneService::create(&Caller::Global, &request).await?;
+    Ok(DaemonResponse {
+        message: "Zone created successfully".to_string(),
+        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+    })
 }
 
 /// Handle the `UpdateZone` command by applying a partial-update patch.
 pub(super) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let name = required_name(data)?;
-    let patch: UpdateZonePatch = super::parse_params(data)?;
+    let params: UpdateZoneParams = parse_params(data)?;
 
-    let zone = ZoneService::patch(name, &patch).await?;
+    let zone = ZoneService::patch(&Caller::Global, &params.name, &params.patch).await?;
     Ok(DaemonResponse {
         message: "Zone updated successfully".to_string(),
         data: to_response_data(GetZoneResponse::from_zone(&zone))?,
@@ -96,39 +74,35 @@ pub(super) async fn update_zone(data: &serde_json::Value) -> Result<DaemonRespon
 /// Handle the `ImportZoneFile` command by reconciling BIND zone file text with
 /// a zone in a single transaction.
 pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let zone_name = super::required_zone_name(data)?;
-    let request: ImportZoneFileRequest = serde_json::from_value(data.clone())
-        .map_err(|e| ServiceError::invalid_input(format!("Invalid request data: {}", e)))?;
+    let params: ImportZoneFileParams = parse_params(data)?;
 
-    match RecordService::import_zone_file(zone_name, &request).await {
-        Ok(response) => {
-            let message = if !response.errors.is_empty() {
-                format!(
-                    "Import validation failed with {} error(s); nothing applied",
-                    response.errors.len()
-                )
-            } else if response.dry_run {
-                "Dry run completed; no changes applied".to_string()
-            } else {
-                "Zone file imported successfully".to_string()
-            };
+    let response =
+        RecordService::import_zone_file(&Caller::Global, &params.zone_name, &params.request)
+            .await?;
+    let message = if !response.errors.is_empty() {
+        format!(
+            "Import validation failed with {} error(s); nothing applied",
+            response.errors.len()
+        )
+    } else if response.dry_run {
+        "Dry run completed; no changes applied".to_string()
+    } else {
+        "Zone file imported successfully".to_string()
+    };
 
-            Ok(DaemonResponse {
-                message,
-                data: to_response_data(response)?,
-            })
-        }
-        Err(e) => Err(e),
-    }
+    Ok(DaemonResponse {
+        message,
+        data: to_response_data(response)?,
+    })
 }
 
 /// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
 pub(super) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let name = required_name(data)?;
-    let zone_file = ZoneService::export_zone_file(name).await?;
+    let params: ZoneNameParams = parse_params(data)?;
+    let zone_file = ZoneService::export_zone_file(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
-        data: json!({ "zone_file": zone_file }),
+        data: to_response_data(ExportZoneFileResponse { zone_file })?,
     })
 }
 
@@ -136,14 +110,11 @@ pub(super) async fn export_zone(data: &serde_json::Value) -> Result<DaemonRespon
 pub(super) async fn list_zone_snapshots(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let name = required_name(data)?;
-    let limit = data
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|v| v.min(u64::from(u32::MAX)) as u32);
-    let offset = data.get("offset").and_then(|v| v.as_u64());
+    let params: ListZoneSnapshotsParams = parse_params(data)?;
 
-    let response = ZoneService::list_snapshots(name, limit, offset).await?;
+    let response =
+        ZoneService::list_snapshots(&Caller::Global, &params.name, params.limit, params.offset)
+            .await?;
     let items = response
         .items
         .iter()
@@ -164,10 +135,10 @@ pub(super) async fn list_zone_snapshots(
 pub(super) async fn get_zone_snapshot(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let name = required_name(data)?;
-    let serial = required_serial(data)?;
+    let params: ZoneSnapshotParams = parse_params(data)?;
 
-    let (snapshot, records) = ZoneService::get_snapshot(name, serial).await?;
+    let (snapshot, records) =
+        ZoneService::get_snapshot(&Caller::Global, &params.name, params.serial).await?;
     let response = SnapshotDetailResponse {
         snapshot: ZoneSnapshotResponse::from_snapshot(&snapshot)?,
         records: records
@@ -177,7 +148,7 @@ pub(super) async fn get_zone_snapshot(
     };
 
     Ok(DaemonResponse {
-        message: format!("Snapshot '{}' retrieved successfully", serial),
+        message: format!("Snapshot '{}' retrieved successfully", params.serial),
         data: to_response_data(response)?,
     })
 }
@@ -187,20 +158,15 @@ pub(super) async fn get_zone_snapshot(
 pub(super) async fn diff_zone_snapshots(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let name = required_name(data)?;
-    let serial_field = |field: &str| -> Result<Option<i32>, ServiceError> {
-        data.get(field)
-            .and_then(|v| v.as_i64())
-            .map(|v| {
-                i32::try_from(v).map_err(|_| ServiceError::invalid_input("Serial is out of range"))
-            })
-            .transpose()
-    };
-    let from_serial = serial_field("from_serial")?
-        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'from_serial' field"))?;
-    let to_serial = serial_field("to_serial")?;
+    let params: DiffZoneSnapshotsParams = parse_params(data)?;
 
-    let response = ZoneService::diff_snapshots(name, from_serial, to_serial).await?;
+    let response = ZoneService::diff_snapshots(
+        &Caller::Global,
+        &params.name,
+        params.from_serial,
+        params.to_serial,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: format!(
             "Serial {} -> {}: +{} -{} ~{}",
@@ -218,14 +184,15 @@ pub(super) async fn diff_zone_snapshots(
 pub(super) async fn rollback_zone(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let name = required_name(data)?;
-    let serial = required_serial(data)?;
-    let dry_run = data
-        .get("dry_run")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let params: RollbackZoneParams = parse_params(data)?;
 
-    let response = ZoneService::rollback(name, serial, dry_run).await?;
+    let response = ZoneService::rollback(
+        &Caller::Global,
+        &params.name,
+        params.request.serial,
+        params.request.dry_run,
+    )
+    .await?;
     let message = if response.dry_run {
         format!(
             "Dry run: rollback to serial {} would add {} and delete {} record(s); nothing applied",
@@ -249,13 +216,9 @@ pub(super) async fn rollback_zone(
 /// Handle the `ZoneStatus` command by probing every configured secondary for
 /// the SOA serial it serves and comparing it with the zone's serial.
 pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let name = required_name(data)?;
+    let params: ZoneNameParams = parse_params(data)?;
 
-    let zone = ZoneService::get_by_name(name).await?;
-    let probes = bindizr_dns::client::probe::probe_secondaries(&zone.name)
-        .await
-        .map_err(|e| ServiceError::internal(e.to_string()))?;
-    let response = crate::api::zone::build_zone_status(&zone, probes);
+    let response = bindizr_dns::status::zone_status(&Caller::Global, &params.name).await?;
 
     let in_sync = response
         .secondaries
@@ -281,13 +244,11 @@ pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonRespon
 
 /// Handle the `DeleteZone` command by deleting a zone by name.
 pub(super) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let name = required_name(data)?;
+    let params: ZoneNameParams = parse_params(data)?;
 
-    match ZoneService::delete(name).await {
-        Ok(_) => Ok(DaemonResponse {
-            message: format!("Zone '{}' deleted successfully", name),
-            data: json!(null),
-        }),
-        Err(e) => Err(e),
-    }
+    ZoneService::delete(&Caller::Global, &params.name).await?;
+    Ok(DaemonResponse {
+        message: format!("Zone '{}' deleted successfully", params.name),
+        data: json!(null),
+    })
 }

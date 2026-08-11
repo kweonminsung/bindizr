@@ -9,10 +9,10 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::{log_info, log_warn};
+use bindizr_core::{log_info, log_warn, metrics::TEXT_CONTENT_TYPE};
 
 use crate::{
-    metrics::{TEXT_CONTENT_TYPE, metrics},
+    metrics::metrics,
     upstream::{UpstreamClient, UpstreamError},
     wire::{
         Changes, DomainFilter, Endpoint, MEDIA_TYPE, adjust_endpoints,
@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub(crate) struct AppState {
-    pub upstream: UpstreamClient,
+    pub(crate) upstream: UpstreamClient,
 }
 
 /// Whole-plan and whole-desired-set POSTs outgrow axum's 2 MiB default on

@@ -15,16 +15,16 @@ use clap::Parser;
 pub(crate) struct Cli {
     /// Base URL of the bindizr HTTP API, e.g. http://bindizr:8000
     #[arg(long, env = "BINDIZR_URL", value_name = "URL")]
-    pub bindizr_url: String,
+    pub(crate) bindizr_url: String,
 
     /// Bindizr API token; prefer --token-file so the token stays out of the
     /// process list
     #[arg(long, env = "BINDIZR_API_TOKEN", hide_env_values = true)]
-    pub token: Option<String>,
+    pub(crate) token: Option<String>,
 
     /// File containing the bindizr API token (takes precedence over --token)
     #[arg(long, env = "BINDIZR_API_TOKEN_FILE", value_name = "FILE")]
-    pub token_file: Option<String>,
+    pub(crate) token_file: Option<String>,
 
     /// Webhook listener address; keep it on localhost so only the
     /// external-dns container in the same pod can reach it
@@ -33,7 +33,7 @@ pub(crate) struct Cli {
         env = "BINDIZR_EXTERNAL_DNS_LISTEN_ADDR",
         default_value = "127.0.0.1:8888"
     )]
-    pub listen_addr: SocketAddr,
+    pub(crate) listen_addr: SocketAddr,
 
     /// Health and metrics listener address, exposed for Kubernetes probes
     #[arg(
@@ -41,32 +41,32 @@ pub(crate) struct Cli {
         env = "BINDIZR_EXTERNAL_DNS_HEALTH_ADDR",
         default_value = "0.0.0.0:8080"
     )]
-    pub health_listen_addr: SocketAddr,
+    pub(crate) health_listen_addr: SocketAddr,
 
     /// Timeout in seconds for each bindizr API request; keep it under the
     /// external-dns webhook write timeout (10s by default)
     #[arg(long, env = "BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS", default_value_t = 10)]
-    pub timeout_secs: u64,
+    pub(crate) timeout_secs: u64,
 
     /// Log level (error, warn, info, debug, trace)
     #[arg(long, env = "BINDIZR_EXTERNAL_DNS_LOG_LEVEL", default_value = "info")]
-    pub log_level: String,
+    pub(crate) log_level: String,
 }
 
 /// Resolved adapter configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct AdapterConfig {
     /// Normalized base URL without a trailing slash.
-    pub bindizr_url: String,
-    pub token: Option<String>,
-    pub listen_addr: SocketAddr,
-    pub health_listen_addr: SocketAddr,
-    pub timeout_secs: u64,
-    pub log_level: bindizr_core::config::LogLevel,
+    pub(crate) bindizr_url: String,
+    pub(crate) token: Option<String>,
+    pub(crate) listen_addr: SocketAddr,
+    pub(crate) health_listen_addr: SocketAddr,
+    pub(crate) timeout_secs: u64,
+    pub(crate) log_level: bindizr_core::config::LogLevel,
 }
 
 impl AdapterConfig {
-    pub fn from_cli(cli: Cli) -> Result<Self, String> {
+    pub(crate) fn from_cli(cli: Cli) -> Result<Self, String> {
         let bindizr_url = cli.bindizr_url.trim().trim_end_matches('/').to_string();
         if !bindizr_url.starts_with("http://") && !bindizr_url.starts_with("https://") {
             return Err(format!(

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, net::IpAddr};
 
+use bindizr_core::dns::name::ZoneName;
 use domain::base::iana::Rtype;
 use tokio::net::TcpStream;
 
@@ -26,7 +27,7 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    let zone = ZoneService::find(zone_name_str)
+    let zone = ZoneService::find_by_name(zone_name_str)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
@@ -43,7 +44,7 @@ pub(crate) async fn handle_ixfr(
 
     if client_serial == current_serial {
         log_info!("IXFR: Client is up-to-date (serial={})", current_serial);
-        let current_soa = match delta::get_zone_snapshot(zone.id, current_serial).await? {
+        let current_soa = match delta::find_zone_snapshot(zone.id, current_serial).await? {
             Some(snapshot) => snapshot,
             None => {
                 log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
@@ -62,7 +63,7 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    let changes = delta::get_zone_changes(zone.id, client_serial, current_serial).await?;
+    let changes = delta::list_zone_changes(zone.id, client_serial, current_serial).await?;
 
     if changes.is_empty() {
         log_warn!(
@@ -109,7 +110,7 @@ pub(crate) async fn handle_ixfr(
 
     // Fetch the whole serial span in one query; missing snapshots are caught
     // by the chain validation below.
-    for snapshot in delta::get_zone_snapshots(zone.id, client_serial, current_serial).await? {
+    for snapshot in delta::list_zone_snapshots(zone.id, client_serial, current_serial).await? {
         if let Ok(serial) = delta::serial_to_u32(snapshot.serial) {
             snapshots_by_serial.insert(serial, snapshot);
         }
@@ -129,11 +130,6 @@ pub(crate) async fn handle_ixfr(
             log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
             return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
         }
-    }
-
-    if !snapshots_by_serial.contains_key(&current_serial) {
-        log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     log_info!(
@@ -289,7 +285,10 @@ async fn stream_ixfr_body(
         })
         .await?;
 
-        for change in serial_changes.iter().filter(|c| c.operation == "DEL") {
+        for change in serial_changes
+            .iter()
+            .filter(|c| c.operation == delta::ZoneChange::OP_DEL)
+        {
             wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
                 add_change(builder, change, &zone.name)
             })
@@ -305,7 +304,10 @@ async fn stream_ixfr_body(
         })
         .await?;
 
-        for change in serial_changes.iter().filter(|c| c.operation == "ADD") {
+        for change in serial_changes
+            .iter()
+            .filter(|c| c.operation == delta::ZoneChange::OP_ADD)
+        {
             wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
                 add_change(builder, change, &zone.name)
             })
@@ -326,7 +328,7 @@ async fn stream_ixfr_body(
 fn add_change(
     builder: &mut wire::DnsMessageBuilder,
     change: &delta::ZoneChange,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<(), XfrError> {
     builder.add_record_parts(
         zone_name,

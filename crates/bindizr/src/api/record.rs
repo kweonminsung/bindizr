@@ -5,7 +5,14 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_service::record::RecordService;
+use bindizr_service::{
+    record::RecordService,
+    types::{
+        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
+        GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse, RecordItem,
+        RecordResponse,
+    },
+};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -13,11 +20,6 @@ use crate::api::{
     RequestCaller,
     error::ApiError,
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
-    types::{
-        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
-        GetRecordResponse, GetRecordsFilter, MessageResponse, RecordListResponse, RecordResponse,
-        UpdateRecordRequest,
-    },
 };
 
 /// Route group for record endpoints.
@@ -61,7 +63,7 @@ impl RecordApi {
             ("offset" = Option<u64>, Query, description = "Number of records to skip.")
         ),
         responses(
-            (status = 200, description = "A list of DNS records", body = RecordListResponse),
+            (status = 200, description = "A list of DNS records", body = PaginatedResponse<GetRecordResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -72,7 +74,7 @@ pub(crate) async fn get_records(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<GetRecordsFilter>,
 ) -> Result<Response, ApiError> {
-    let raw_records = RecordService::list_with_zone_by_filter_for(&caller, query).await?;
+    let raw_records = RecordService::list_with_zone_by_filter(&caller, query).await?;
 
     let records = raw_records
         .items
@@ -104,7 +106,7 @@ pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::get_by_id_with_zone_for(&caller, params.record_id).await?;
+    let raw_record = RecordService::get_by_id_with_zone(&caller, params.record_id).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
@@ -132,7 +134,7 @@ pub(crate) async fn create_record(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::create_for(&caller, &body).await?;
+    let raw_record = RecordService::create(&caller, &body).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
@@ -148,7 +150,7 @@ pub(crate) async fn create_record(
         params(
             ("record_id" = i32, Path, description = "The ID of the DNS record to update.")
         ),
-        request_body = UpdateRecordRequest,
+        request_body = RecordItem,
         responses(
             (status = 200, description = "DNS record updated successfully", body = RecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
@@ -163,9 +165,9 @@ pub(crate) async fn create_record(
 pub(crate) async fn update_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
-    JsonBody(body): JsonBody<UpdateRecordRequest>,
+    JsonBody(body): JsonBody<RecordItem>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::update_by_id_for(&caller, params.record_id, &body).await?;
+    let raw_record = RecordService::update_by_id(&caller, params.record_id, &body).await?;
 
     let record = GetRecordResponse::from_record_with_zone(&raw_record);
 
@@ -194,7 +196,7 @@ pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
 ) -> Result<Response, ApiError> {
-    RecordService::delete_by_id_for(&caller, params.record_id).await?;
+    RecordService::delete_by_id(&caller, params.record_id).await?;
 
     let json_body = json!({ "message": "Record deleted successfully" });
     Ok((StatusCode::OK, Json(json_body)).into_response())
@@ -227,22 +229,9 @@ pub(crate) async fn create_records_bulk(
     Path(params): Path<ZoneScopedParam>,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
 ) -> Result<Response, ApiError> {
-    let (raw_records, diff) =
-        RecordService::create_bulk_for(&caller, &params.zone_name, &body.records, body.dry_run)
-            .await?;
+    let response =
+        RecordService::create_bulk(&caller, &params.zone_name, &body.records, body.dry_run).await?;
 
-    let records = raw_records
-        .iter()
-        .map(GetRecordResponse::from_record_with_zone)
-        .collect::<Vec<_>>();
-
-    let response = BulkRecordsResponse {
-        applied: !body.dry_run,
-        dry_run: body.dry_run,
-        inserted: if body.dry_run { 0 } else { records.len() },
-        records,
-        diff,
-    };
     let status = if body.dry_run {
         StatusCode::OK
     } else {

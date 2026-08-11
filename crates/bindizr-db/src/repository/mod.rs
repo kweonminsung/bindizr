@@ -1,17 +1,18 @@
 //! Backend-agnostic repository traits, the cross-backend transaction type, and
 //! the factory that builds per-backend implementations.
 
-pub mod mysql;
-pub mod postgres;
-pub mod sqlite;
+pub(crate) mod mysql;
+pub(crate) mod postgres;
+pub(crate) mod sql;
+pub(crate) mod sqlite;
 
 use async_trait::async_trait;
+use bindizr_core::dns::name::OwnerName;
 use sqlx::{MySql, Postgres, Sqlite};
 
 use super::model::{
     api_token::ApiToken,
-    catalog_zone_state::CatalogZoneState,
-    record::{Record, RecordType, RecordWithZone},
+    record::{Record, RecordWithZone},
     tsig_key::TsigKey,
     zone::Zone,
     zone_change::ZoneChange,
@@ -33,6 +34,8 @@ pub struct ZoneFilter {
     pub max_ttl: Option<i32>,
     pub serial: Option<i32>,
     pub search: Option<String>,
+    /// Restrict to these zones (scoped-token visibility); `None` is unrestricted.
+    pub ids: Option<Vec<i32>>,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }
@@ -165,13 +168,10 @@ impl<'a> RepositoryTx<'a> {
 }
 
 /// Persistence operations for zones.
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneRepository: Send + Sync {
-    async fn create(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, DatabaseError>;
     async fn get_by_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -183,14 +183,13 @@ pub trait ZoneRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         name: &str,
     ) -> Result<Option<Zone>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError>;
-    async fn get_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError>;
-    async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
+    async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError>;
+    async fn list_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError>;
+    async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError>;
     /// Limit-1 probe of the zones table; health checks must stay cheap on
     /// large tables.
     async fn ping(&self) -> Result<(), DatabaseError>;
-    async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError>;
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
     /// Bump only the serial, leaving the zone's other columns untouched.
@@ -200,36 +199,27 @@ pub trait ZoneRepository: Send + Sync {
         zone_id: i32,
         serial: i32,
     ) -> Result<(), DatabaseError>;
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
 }
 
 /// Persistence operations for TSIG keys.
-#[allow(dead_code)]
 #[async_trait]
 pub trait TsigKeyRepository: Send + Sync {
     async fn create(&self, key: TsigKey) -> Result<TsigKey, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<TsigKey>, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError>;
-    async fn get_by_name_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        name: &str,
-    ) -> Result<Option<TsigKey>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<TsigKey>, DatabaseError>;
+    async fn list_all(&self) -> Result<Vec<TsigKey>, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 /// Persistence operations for zone TSIG policies.
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneTsigPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTsigPolicy) -> Result<ZoneTsigPolicy, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
     /// Policies granting `tsig_key_id` rights in `zone_id`, for nsupdate
     /// authorization inside the update transaction.
-    async fn get_by_zone_and_key_tx(
+    async fn list_by_zone_and_key_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -241,15 +231,14 @@ pub trait ZoneTsigPolicyRepository: Send + Sync {
 
 /// Persistence operations for zone token policies, the HTTP twin of
 /// [`ZoneTsigPolicyRepository`].
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneTokenPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTokenPolicy) -> Result<ZoneTokenPolicy, DatabaseError>;
     async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTokenPolicy>, DatabaseError>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
     /// Policies granting `api_token_id` rights in `zone_id`, for write
     /// authorization inside the caller's transaction.
-    async fn get_by_zone_and_token_tx(
+    async fn list_by_zone_and_token_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -257,7 +246,7 @@ pub trait ZoneTokenPolicyRepository: Send + Sync {
     ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
     /// Every policy granted to `api_token_id`; drives what a scoped token can
     /// see and NOTIFY.
-    async fn get_by_token_id(
+    async fn list_by_token_id(
         &self,
         api_token_id: i32,
     ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
@@ -265,10 +254,8 @@ pub trait ZoneTokenPolicyRepository: Send + Sync {
 }
 
 /// Persistence operations for records.
-#[allow(dead_code)]
 #[async_trait]
 pub trait RecordRepository: Send + Sync {
-    async fn create(&self, record: Record) -> Result<Record, DatabaseError>;
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -288,66 +275,38 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         id: i32,
     ) -> Result<Option<Record>, DatabaseError>;
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     /// Records of every listed zone in one round trip.
-    async fn get_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_by_zone_id_with_zone(
-        &self,
-        zone_id: i32,
-    ) -> Result<Vec<RecordWithZone>, DatabaseError>;
-    async fn get_by_zone_id_tx(
+    async fn list_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
+    async fn list_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_by_zone_id_and_name_tx(
+    async fn list_by_zone_id_and_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        name: &str,
+        name: &OwnerName,
     ) -> Result<Vec<Record>, DatabaseError>;
     /// Load records whose owner name is any of `names` (lowercased match). Used
     /// by bulk insert to fetch only the rows that could conflict with the batch.
-    async fn get_by_zone_id_and_names_tx(
+    async fn list_by_zone_id_and_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        names: &[String],
+        names: &[OwnerName],
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn get(
-        &self,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, DatabaseError>;
-    async fn get_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_all_with_zone(&self) -> Result<Vec<RecordWithZone>, DatabaseError>;
-    async fn get_by_filter_with_zone(
+    async fn list_by_filter_with_zone(
         &self,
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError>;
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError>;
-    async fn update(&self, record: Record) -> Result<Record, DatabaseError>;
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError>;
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
-    async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
     /// Delete many records in as few statements as the backend's bind limit allows.
     async fn delete_many_tx(
         &self,
@@ -357,30 +316,23 @@ pub trait RecordRepository: Send + Sync {
 }
 
 /// Persistence operations for zone changes.
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneChangeRepository: Send + Sync {
-    async fn create(&self, zone_change: ZoneChange) -> Result<ZoneChange, DatabaseError>;
-    async fn create_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        zone_change: ZoneChange,
-    ) -> Result<ZoneChange, DatabaseError>;
     /// Insert many zone changes in one statement (chunked). Ids are not returned.
     async fn create_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         changes: &[ZoneChange],
     ) -> Result<(), DatabaseError>;
-    async fn get_changes_between_serials(
+    async fn list_changes_between_serials(
         &self,
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
-    /// Tx variant of [`Self::get_changes_between_serials`], for reads that must
+    /// Tx variant of [`Self::list_changes_between_serials`], for reads that must
     /// be consistent with a mutation in the same transaction.
-    async fn get_changes_between_serials_tx(
+    async fn list_changes_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -390,10 +342,8 @@ pub trait ZoneChangeRepository: Send + Sync {
 }
 
 /// Persistence operations for zone snapshots.
-#[allow(dead_code)]
 #[async_trait]
 pub trait ZoneSnapshotRepository: Send + Sync {
-    async fn upsert(&self, snapshot: ZoneSnapshot) -> Result<ZoneSnapshot, DatabaseError>;
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -405,7 +355,7 @@ pub trait ZoneSnapshotRepository: Send + Sync {
         serial: i32,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
     /// Fetch every snapshot for a zone whose serial is in `[from_serial, to_serial]`.
-    async fn get_by_zone_id_in_serial_range(
+    async fn list_by_zone_id_in_serial_range(
         &self,
         zone_id: i32,
         from_serial: i32,
@@ -434,9 +384,8 @@ pub trait ZoneSnapshotRepository: Send + Sync {
 pub trait ApiTokenRepository: Send + Sync {
     async fn create(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError>;
-    async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
+    async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
@@ -444,27 +393,22 @@ pub trait ApiTokenRepository: Send + Sync {
 /// Persistence operations for catalog zone state.
 #[async_trait]
 pub trait CatalogZoneStateRepository: Send + Sync {
-    async fn update_serial_for_signature(
-        &self,
-        name: &str,
-        signature: &str,
-        base_serial: i32,
-    ) -> Result<CatalogZoneState, DatabaseError>;
+    /// Returns the catalog serial in effect after the update.
     async fn update_serial_for_signature_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
         signature: &str,
         base_serial: i32,
-    ) -> Result<CatalogZoneState, DatabaseError>;
+    ) -> Result<i32, DatabaseError>;
 }
 
 /// Builds backend-specific repository implementations for a given pool.
-pub struct RepositoryFactory;
+pub(crate) struct RepositoryFactory;
 
 impl RepositoryFactory {
     /// Create a zone repository for the given pool's backend.
-    pub fn create_zone_repository(pool: &DatabasePool) -> Box<dyn ZoneRepository> {
+    pub(crate) fn create_zone_repository(pool: &DatabasePool) -> Box<dyn ZoneRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneRepository::new(mysql_pool.clone()))
@@ -479,7 +423,7 @@ impl RepositoryFactory {
     }
 
     /// Create a record repository for the given pool's backend.
-    pub fn create_record_repository(pool: &DatabasePool) -> Box<dyn RecordRepository> {
+    pub(crate) fn create_record_repository(pool: &DatabasePool) -> Box<dyn RecordRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlRecordRepository::new(mysql_pool.clone()))
@@ -494,7 +438,7 @@ impl RepositoryFactory {
     }
 
     /// Create a TSIG key repository for the given pool's backend.
-    pub fn create_tsig_key_repository(pool: &DatabasePool) -> Box<dyn TsigKeyRepository> {
+    pub(crate) fn create_tsig_key_repository(pool: &DatabasePool) -> Box<dyn TsigKeyRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlTsigKeyRepository::new(mysql_pool.clone()))
@@ -509,7 +453,7 @@ impl RepositoryFactory {
     }
 
     /// Create a zone TSIG policy repository for the given pool's backend.
-    pub fn create_zone_tsig_policy_repository(
+    pub(crate) fn create_zone_tsig_policy_repository(
         pool: &DatabasePool,
     ) -> Box<dyn ZoneTsigPolicyRepository> {
         match pool {
@@ -525,7 +469,7 @@ impl RepositoryFactory {
         }
     }
 
-    pub fn create_zone_token_policy_repository(
+    pub(crate) fn create_zone_token_policy_repository(
         pool: &DatabasePool,
     ) -> Box<dyn ZoneTokenPolicyRepository> {
         match pool {
@@ -542,7 +486,7 @@ impl RepositoryFactory {
     }
 
     /// Create an API token repository for the given pool's backend.
-    pub fn create_api_token_repository(pool: &DatabasePool) -> Box<dyn ApiTokenRepository> {
+    pub(crate) fn create_api_token_repository(pool: &DatabasePool) -> Box<dyn ApiTokenRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlApiTokenRepository::new(mysql_pool.clone()))
@@ -557,7 +501,9 @@ impl RepositoryFactory {
     }
 
     /// Create a zone change repository for the given pool's backend.
-    pub fn create_zone_change_repository(pool: &DatabasePool) -> Box<dyn ZoneChangeRepository> {
+    pub(crate) fn create_zone_change_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn ZoneChangeRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneChangeRepository::new(mysql_pool.clone()))
@@ -572,7 +518,9 @@ impl RepositoryFactory {
     }
 
     /// Create a zone snapshot repository for the given pool's backend.
-    pub fn create_zone_snapshot_repository(pool: &DatabasePool) -> Box<dyn ZoneSnapshotRepository> {
+    pub(crate) fn create_zone_snapshot_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn ZoneSnapshotRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneSnapshotRepository::new(mysql_pool.clone()))
@@ -587,19 +535,13 @@ impl RepositoryFactory {
     }
 
     /// Create a catalog zone state repository for the given pool's backend.
-    pub fn create_catalog_zone_state_repository(
+    pub(crate) fn create_catalog_zone_state_repository(
         pool: &DatabasePool,
     ) -> Box<dyn CatalogZoneStateRepository> {
         match pool {
-            DatabasePool::MySQL(mysql_pool) => Box::new(
-                mysql::MySqlCatalogZoneStateRepository::new(mysql_pool.clone()),
-            ),
-            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
-                postgres::PostgresCatalogZoneStateRepository::new(postgres_pool.clone()),
-            ),
-            DatabasePool::SQLite(sqlite_pool) => Box::new(
-                sqlite::SqliteCatalogZoneStateRepository::new(sqlite_pool.clone()),
-            ),
+            DatabasePool::MySQL(_) => Box::new(mysql::MySqlCatalogZoneStateRepository),
+            DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresCatalogZoneStateRepository),
+            DatabasePool::SQLite(_) => Box::new(sqlite::SqliteCatalogZoneStateRepository),
         }
     }
 }

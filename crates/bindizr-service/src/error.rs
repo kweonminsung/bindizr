@@ -147,23 +147,23 @@ impl ServiceError {
         Self::new(ErrorCode::InvalidInput, message)
     }
 
-    pub fn invalid_zone(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid_zone(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidZone, message)
     }
 
-    pub fn invalid_record_name(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid_record_name(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidRecordName, message)
     }
 
-    pub fn invalid_record_value(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid_record_value(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidRecordValue, message)
     }
 
-    pub fn zone_conflict(message: impl Into<String>) -> Self {
+    pub(crate) fn zone_conflict(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::ZoneConflict, message)
     }
 
-    pub fn record_conflict(message: impl Into<String>) -> Self {
+    pub(crate) fn record_conflict(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::RecordConflict, message)
     }
 
@@ -171,11 +171,11 @@ impl ServiceError {
         Self::new(ErrorCode::Unauthorized, message)
     }
 
-    pub fn invalid_token(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid_token(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidToken, message)
     }
 
-    pub fn forbidden(message: impl Into<String>) -> Self {
+    pub(crate) fn forbidden(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::Forbidden, message)
     }
 
@@ -183,49 +183,49 @@ impl ServiceError {
         Self::new(ErrorCode::Internal, message)
     }
 
-    pub fn zone_not_found(name: &str) -> Self {
+    pub(crate) fn zone_not_found(name: &str) -> Self {
         Self::new(
             ErrorCode::ZoneNotFound,
             format!("Zone with name '{}' not found", name),
         )
     }
 
-    pub fn record_not_found(id: i32) -> Self {
+    pub(crate) fn record_not_found(id: i32) -> Self {
         Self::new(
             ErrorCode::RecordNotFound,
             format!("Record with id '{}' not found", id),
         )
     }
 
-    pub fn token_not_found(name: &str) -> Self {
+    pub(crate) fn token_not_found(name: &str) -> Self {
         Self::new(
             ErrorCode::TokenNotFound,
             format!("API token with name '{}' not found", name),
         )
     }
 
-    pub fn token_conflict(name: &str) -> Self {
+    pub(crate) fn token_conflict(name: &str) -> Self {
         Self::new(
             ErrorCode::TokenConflict,
             format!("API token with name '{}' already exists", name),
         )
     }
 
-    pub fn tsig_key_not_found(name: &str) -> Self {
+    pub(crate) fn tsig_key_not_found(name: &str) -> Self {
         Self::new(
             ErrorCode::TsigKeyNotFound,
             format!("TSIG key with name '{}' not found", name),
         )
     }
 
-    pub fn tsig_key_conflict(name: &str) -> Self {
+    pub(crate) fn tsig_key_conflict(name: &str) -> Self {
         Self::new(
             ErrorCode::TsigKeyConflict,
             format!("TSIG key with name '{}' already exists", name),
         )
     }
 
-    pub fn tsig_key_in_use(name: &str, policy_count: u64) -> Self {
+    pub(crate) fn tsig_key_in_use(name: &str, policy_count: u64) -> Self {
         Self::new(
             ErrorCode::TsigKeyInUse,
             format!(
@@ -237,21 +237,21 @@ impl ServiceError {
         )
     }
 
-    pub fn tsig_policy_not_found(id: i32) -> Self {
+    pub(crate) fn tsig_policy_not_found(id: i32) -> Self {
         Self::new(
             ErrorCode::TsigPolicyNotFound,
             format!("TSIG policy with id '{}' not found", id),
         )
     }
 
-    pub fn token_policy_not_found(id: i32) -> Self {
+    pub(crate) fn token_policy_not_found(id: i32) -> Self {
         Self::new(
             ErrorCode::TokenPolicyNotFound,
             format!("Token policy with id '{}' not found", id),
         )
     }
 
-    pub fn snapshot_not_found(zone_name: &str, serial: i32) -> Self {
+    pub(crate) fn snapshot_not_found(zone_name: &str, serial: i32) -> Self {
         Self::new(
             ErrorCode::SnapshotNotFound,
             format!(

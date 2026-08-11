@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bindizr_core::dns::name::ZoneName;
 pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
 use chrono::Utc;
 use domain::base::iana::Rtype;
@@ -21,7 +22,8 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     let member_zones: Vec<String> = all_zones
         .iter()
         .map(|z| z.name.clone())
-        .filter(|name| name != CATALOG_ZONE_NAME)
+        .filter(|name| name.as_str() != CATALOG_ZONE_NAME)
+        .map(|name| name.to_string())
         .collect();
 
     log_info!("Catalog zone contains {} member zones", member_zones.len());
@@ -31,7 +33,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
 
     let catalog_zone = Zone {
         id: 0,
-        name: CATALOG_ZONE_NAME.to_string(),
+        name: ZoneName::from_row(CATALOG_ZONE_NAME),
         primary_ns: "invalid".to_string(),
         admin_email: "invalid".to_string(),
         ttl: 3600,
@@ -58,7 +60,7 @@ fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
     // Index serials by lowercased name so the per-member lookup is O(1).
     let serial_by_name: HashMap<String, i32> = zones
         .iter()
-        .map(|z| (z.name.to_ascii_lowercase(), z.serial))
+        .map(|z| (z.name.to_string(), z.serial))
         .collect();
 
     let mut members = member_zones

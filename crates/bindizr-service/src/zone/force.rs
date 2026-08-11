@@ -1,17 +1,17 @@
-use super::{ZoneService, validation::normalize_zone_name};
+use super::ZoneService;
 use crate::{
     error::ServiceError, log_error, log_info, model::zone::Zone, repository::RepositoryService,
-    serial::generate_serial, zone::snapshot::save_zone_snapshot_tx,
+    serial::generate_serial,
 };
 
 impl ZoneService {
     /// Force-increment the serial of one zone by name, or of every zone when `None`.
-    pub async fn force_increment_serial(
+    pub(crate) async fn force_increment_serial(
         zone_name: Option<&str>,
     ) -> Result<Vec<Zone>, ServiceError> {
         match zone_name {
             Some(name) => {
-                let zone = Self::force_increment_zone_serial(name).await?;
+                let zone = Self::force_increment_serial_by_name(name).await?;
                 Ok(vec![zone])
             }
             None => {
@@ -22,7 +22,8 @@ impl ZoneService {
                     // Bump each zone in its own transaction so the new serial
                     // derives from the current row and a concurrent edit to other
                     // fields is not clobbered.
-                    bumped_zones.push(Self::force_increment_zone_serial(&zone.name).await?);
+                    bumped_zones
+                        .push(Self::force_increment_serial_by_name(zone.name.as_str()).await?);
                 }
 
                 Ok(bumped_zones)
@@ -30,23 +31,11 @@ impl ZoneService {
         }
     }
 
-    async fn force_increment_zone_serial(zone_name: &str) -> Result<Zone, ServiceError> {
-        let lookup_name = normalize_zone_name(zone_name)?;
+    async fn force_increment_serial_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
         let mut tx = RepositoryService::begin_tx("Failed to force increment zone serial").await?;
 
         let apply_result = async {
-            let zone = match RepositoryService::get_zone_by_name_tx(&mut tx, &lookup_name).await {
-                Ok(Some(zone)) => zone,
-                Ok(None) => {
-                    return Err(ServiceError::zone_not_found(zone_name));
-                }
-                Err(e) => {
-                    log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::internal(
-                        "Failed to force increment zone serial".to_string(),
-                    ));
-                }
-            };
+            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let updated_zone = RepositoryService::update_zone_tx(
@@ -62,7 +51,7 @@ impl ZoneService {
                 ServiceError::internal("Failed to force increment zone serial".to_string())
             })?;
 
-            save_zone_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
+            ZoneService::save_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
 
             Ok::<Zone, ServiceError>(updated_zone)
         }

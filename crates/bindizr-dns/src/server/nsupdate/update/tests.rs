@@ -1,92 +1,55 @@
 use domain::base::iana::{Class, Rtype};
 
-use super::{
-    UpdateError, absolute_to_relative, normalize_owner_name, record_value_matches,
-    rr_to_record_value, validate_delete_update_shape,
-};
+use super::{UpdateError, rr_to_record_value, validate_delete_shape};
 use crate::{model::record::RecordType, server::nsupdate::parser::UpdateRecord};
-
-#[test]
-fn absolute_to_relative_accepts_apex() {
-    let relative = absolute_to_relative("example.com.", "example.com.").unwrap();
-    assert_eq!(relative, "@");
-}
-
-#[test]
-fn absolute_to_relative_accepts_subdomain_at_label_boundary() {
-    let relative = absolute_to_relative("www.example.com.", "example.com.").unwrap();
-    assert_eq!(relative, "www");
-}
-
-#[test]
-fn absolute_to_relative_rejects_partial_suffix_match() {
-    let err = absolute_to_relative("aexample.com.", "example.com.").unwrap_err();
-    assert!(matches!(err, UpdateError::NotZone(_)));
-}
-
-#[test]
-fn normalize_owner_name_rejects_out_of_zone_suffix_matches() {
-    assert!(normalize_owner_name("www.example.com.", "example.com.").is_ok());
-
-    for owner in ["badexample.com.", "www.badexample.com.", "."] {
-        let err = normalize_owner_name(owner, "example.com.").unwrap_err();
-        assert!(matches!(err, UpdateError::NotZone(_)));
-    }
-}
 
 // Delete-update wire shapes are fixed by RFC 2136: delete-RRset is CLASS ANY +
 // TTL 0 + empty RDATA (Section 2.5.2), delete-specific-RR is CLASS NONE + TTL 0 +
 // RDATA present (Section 2.5.4); every other combination must be refused.
 #[test]
-fn validate_delete_update_shape_accepts_any_class_rrset_delete() {
+fn validate_delete_shape_accepts_any_class_rrset_delete() {
     let update = update_record(Rtype::A, Class::ANY, 0, Vec::new());
 
-    validate_delete_update_shape(&update, true).unwrap();
+    validate_delete_shape(&update, true).unwrap();
 }
 
 #[test]
-fn validate_delete_update_shape_accepts_none_class_exact_delete() {
+fn validate_delete_shape_accepts_none_class_exact_delete() {
     let update = update_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1]);
 
-    validate_delete_update_shape(&update, false).unwrap();
+    validate_delete_shape(&update, false).unwrap();
 }
 
 #[test]
-fn validate_delete_update_shape_rejects_delete_with_nonzero_ttl() {
+fn validate_delete_shape_rejects_delete_with_nonzero_ttl() {
     let update = update_record(Rtype::A, Class::ANY, 60, Vec::new());
-    let err = validate_delete_update_shape(&update, true).unwrap_err();
+    let err = validate_delete_shape(&update, true).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
 #[test]
-fn validate_delete_update_shape_rejects_any_class_delete_with_rdata() {
+fn validate_delete_shape_rejects_any_class_delete_with_rdata() {
     let update = update_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]);
-    let err = validate_delete_update_shape(&update, true).unwrap_err();
+    let err = validate_delete_shape(&update, true).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
 #[test]
-fn validate_delete_update_shape_rejects_none_class_delete_without_rdata() {
+fn validate_delete_shape_rejects_none_class_delete_without_rdata() {
     let update = update_record(Rtype::A, Class::NONE, 0, Vec::new());
-    let err = validate_delete_update_shape(&update, false).unwrap_err();
+    let err = validate_delete_shape(&update, false).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
 #[test]
-fn validate_delete_update_shape_rejects_none_class_delete_with_type_any() {
+fn validate_delete_shape_rejects_none_class_delete_with_type_any() {
     let update = update_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]);
-    let err = validate_delete_update_shape(&update, false).unwrap_err();
+    let err = validate_delete_shape(&update, false).unwrap_err();
 
     assert!(matches!(err, UpdateError::Refused(_)));
-}
-
-#[test]
-fn record_value_matches_preserves_txt_case() {
-    assert!(record_value_matches(&RecordType::TXT, "Hello", "Hello"));
-    assert!(!record_value_matches(&RecordType::TXT, "Hello", "hello"));
 }
 
 #[test]
@@ -112,16 +75,7 @@ fn rr_to_record_value_preserves_txt_character_string_boundaries() {
     let (_, second_value, _) = rr_to_record_value(&second, &second.rdata).unwrap();
 
     assert_ne!(first_value, second_value);
-    assert!(record_value_matches(
-        &RecordType::TXT,
-        &first_value,
-        &first_value
-    ));
-    assert!(!record_value_matches(
-        &RecordType::TXT,
-        &first_value,
-        &second_value
-    ));
+    assert!(!RecordType::TXT.values_equal(&first_value, None, &second_value, None));
 }
 
 #[test]
@@ -173,8 +127,8 @@ fn rr_to_record_value_rejects_name_rdata_with_trailing_bytes() {
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
-// TXT RDATA is one or more character-strings (RFC 1035, Section 3.3.14); an empty
-// value previously slipped through and stored an undecodable record.
+// TXT RDATA is one or more character-strings (RFC 1035, Section 3.3.14), so an
+// empty value would store an undecodable record.
 #[test]
 fn rr_to_record_value_rejects_empty_txt_rdata() {
     let update = update_record(Rtype::TXT, Class::IN, 300, Vec::new());
@@ -187,20 +141,6 @@ fn rr_to_record_value_rejects_non_utf8_txt_character_strings() {
     let update = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
     let err = rr_to_record_value(&update, &update.rdata).unwrap_err();
     assert!(matches!(err, UpdateError::Refused(_)));
-}
-
-#[test]
-fn record_value_matches_ignores_case_for_name_like_values() {
-    assert!(record_value_matches(
-        &RecordType::NS,
-        "Ns1.Example.Com.",
-        "ns1.example.com."
-    ));
-    assert!(record_value_matches(
-        &RecordType::MX,
-        "Mail.Example.Com.",
-        "mail.example.com."
-    ));
 }
 
 #[test]

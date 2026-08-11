@@ -1,37 +1,29 @@
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+
 use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
-    RepositoryTx,
-    authorization::{self, Caller, RecordWrite},
+    authorization::{Caller, RecordWrite},
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     repository::RepositoryService,
     serial::generate_serial,
-    zone::snapshot::save_zone_snapshot_tx,
+    zone::ZoneService,
 };
 
 /// Identity of the deleted record, carried out of the transaction for logging.
 struct DeletedRecord {
-    zone_name: String,
-    record_name: String,
+    zone_name: ZoneName,
+    record_name: OwnerName,
     record_type: String,
     record_value: String,
     record_id: i32,
 }
 
 impl RecordService {
-    /// Delete a record by id within the caller's transaction.
-    pub async fn delete_tx(tx: &mut RepositoryTx<'_>, record_id: i32) -> Result<(), ServiceError> {
-        RepositoryService::delete_record_tx(tx, record_id).await
-    }
-
-    /// Delete a record by id, bumping the zone serial and recording a DEL change for IXFR.
-    pub async fn delete_by_id(record_id: i32) -> Result<(), ServiceError> {
-        Self::delete_by_id_for(&Caller::Global, record_id).await
-    }
-
-    /// Like [`Self::delete_by_id`], authorizing `caller` inside the delete
-    /// transaction so a concurrent rename cannot outrun the check.
-    pub async fn delete_by_id_for(caller: &Caller, record_id: i32) -> Result<(), ServiceError> {
+    /// Delete a record by id, bumping the zone serial and recording a DEL
+    /// change for IXFR. `caller` is authorized inside the delete transaction,
+    /// so a concurrent rename cannot outrun the check.
+    pub async fn delete_by_id(caller: &Caller, record_id: i32) -> Result<(), ServiceError> {
         // Resolve zone_id with a non-locking read so the tx locks zone before
         // record (the create/bulk/import order); the reverse can deadlock.
         let zone_id = match RepositoryService::get_record_by_id(record_id).await {
@@ -75,61 +67,33 @@ impl RecordService {
                 };
 
             // Invisible zones read as 404 so scoped tokens cannot probe ids.
-            if !authorization::zone_visible(caller, zone.id) {
+            if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::record_not_found(record_id));
             }
-            authorization::authorize_record_writes_tx(
-                &mut tx,
-                caller,
-                &zone,
-                &[RecordWrite {
-                    relative_name: &existing_record.name,
-                    record_type: Some(&existing_record.record_type),
-                }],
-            )
-            .await?;
+            caller
+                .authorize_record_writes_tx(
+                    &mut tx,
+                    &zone,
+                    &[RecordWrite {
+                        relative_name: existing_record.name.clone(),
+                        record_type: Some(&existing_record.record_type),
+                    }],
+                )
+                .await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
 
             validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
 
-            RepositoryService::delete_record_tx(&mut tx, record_id)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to delete record: {}", e);
-                    ServiceError::internal("Failed to delete record".to_string())
-                })?;
-
-            // Increment zone serial so IXFR consumers can detect this change
-            RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to update zone serial: {}", e);
-                    ServiceError::internal("Failed to update zone serial".to_string())
-                })?;
-
-            // Record zone change for IXFR
-            RepositoryService::create_zone_change_tx(
+            Self::delete_records_with_changes_tx(
                 &mut tx,
-                crate::model::zone_change::ZoneChange {
-                    id: 0,
-                    zone_id: zone.id,
-                    serial: new_serial,
-                    operation: "DEL".to_string(),
-                    record_name: existing_record.name.clone(),
-                    record_type: existing_record.record_type.to_string(),
-                    record_value: existing_record.value.clone(),
-                    record_ttl: existing_record.ttl,
-                    record_priority: existing_record.priority,
-                },
+                zone.id,
+                new_serial,
+                std::slice::from_ref(&existing_record),
             )
-            .await
-            .map_err(|e| {
-                log_error!("Failed to create zone change: {}", e);
-                ServiceError::internal("Failed to create zone change".to_string())
-            })?;
+            .await?;
 
-            save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok(DeletedRecord {
                 zone_name: zone.name,
@@ -158,7 +122,7 @@ impl RecordService {
             record_id
         );
 
-        if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
+        if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 

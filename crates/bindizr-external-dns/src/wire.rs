@@ -3,40 +3,34 @@
 //! external-dns v0.21.0, plus their conversion to the bindizr
 //! `/external-dns` API shapes.
 
-use std::{
-    collections::BTreeMap,
-    net::{Ipv4Addr, Ipv6Addr},
-};
+use std::collections::BTreeMap;
 
-use bindizr_core::dns::name::to_fqdn_lowercase;
+use bindizr_core::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordType};
 use serde::{Deserialize, Serialize};
 
 /// Exact media type external-dns compares the negotiation `Content-Type`
 /// against (byte-for-byte, no media-type parsing).
 pub(crate) const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
-/// Record types the adapter accepts; everything else is rejected explicitly.
-pub(crate) const SUPPORTED_RECORD_TYPES: [&str; 4] = ["A", "AAAA", "CNAME", "TXT"];
-
 /// JSON shape of external-dns `endpoint.Endpoint` (all fields omitempty).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Endpoint {
     #[serde(default)]
-    pub dns_name: String,
+    pub(crate) dns_name: String,
     #[serde(default)]
-    pub targets: Vec<String>,
+    pub(crate) targets: Vec<String>,
     #[serde(default)]
-    pub record_type: String,
+    pub(crate) record_type: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub set_identifier: String,
+    pub(crate) set_identifier: String,
     // The Go json tag is `recordTTL`, which rename_all would render `recordTtl`.
     #[serde(default, rename = "recordTTL", skip_serializing_if = "ttl_is_unset")]
-    pub record_ttl: i64,
+    pub(crate) record_ttl: i64,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub labels: BTreeMap<String, String>,
+    pub(crate) labels: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub provider_specific: Vec<ProviderSpecificProperty>,
+    pub(crate) provider_specific: Vec<ProviderSpecificProperty>,
 }
 
 fn ttl_is_unset(ttl: &i64) -> bool {
@@ -47,9 +41,9 @@ fn ttl_is_unset(ttl: &i64) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct ProviderSpecificProperty {
     #[serde(default)]
-    pub name: String,
+    pub(crate) name: String,
     #[serde(default)]
-    pub value: String,
+    pub(crate) value: String,
 }
 
 /// JSON shape of external-dns `plan.Changes` (`POST /records` body).
@@ -57,76 +51,88 @@ pub(crate) struct ProviderSpecificProperty {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Changes {
     #[serde(default)]
-    pub create: Vec<Endpoint>,
+    pub(crate) create: Vec<Endpoint>,
     #[serde(default)]
-    pub update_old: Vec<Endpoint>,
+    pub(crate) update_old: Vec<Endpoint>,
     #[serde(default)]
-    pub update_new: Vec<Endpoint>,
+    pub(crate) update_new: Vec<Endpoint>,
     #[serde(default)]
-    pub delete: Vec<Endpoint>,
+    pub(crate) delete: Vec<Endpoint>,
 }
 
 /// JSON shape of external-dns `endpoint.DomainFilter` (negotiation response).
 #[derive(Debug, Default, Serialize)]
 pub(crate) struct DomainFilter {
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub include: Vec<String>,
+    pub(crate) include: Vec<String>,
 }
 
 /// One RRset of the bindizr `/external-dns` API (snake_case, internal shape).
 #[derive(Debug, Serialize)]
 pub(crate) struct BindizrRrset {
-    pub name: String,
-    pub record_type: String,
+    pub(crate) name: String,
+    pub(crate) record_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl: Option<i32>,
-    pub values: Vec<String>,
+    pub(crate) ttl: Option<i32>,
+    pub(crate) values: Vec<String>,
 }
 
 /// `POST /external-dns/changes` request body of the bindizr API.
 #[derive(Debug, Default, Serialize)]
 pub(crate) struct BindizrChanges {
-    pub creates: Vec<BindizrRrset>,
-    pub updates: Vec<BindizrRrsetUpdate>,
-    pub deletes: Vec<BindizrRrset>,
+    pub(crate) creates: Vec<BindizrRrset>,
+    pub(crate) updates: Vec<BindizrRrsetUpdate>,
+    pub(crate) deletes: Vec<BindizrRrset>,
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct BindizrRrsetUpdate {
-    pub old: BindizrRrset,
-    pub new: BindizrRrset,
+    pub(crate) old: BindizrRrset,
+    pub(crate) new: BindizrRrset,
 }
 
 /// One record row of `GET /external-dns/records`.
 #[derive(Debug, Deserialize)]
 pub(crate) struct BindizrRecordItem {
-    pub name: String,
-    pub record_type: String,
-    pub ttl: i32,
-    pub value: String,
+    pub(crate) name: String,
+    pub(crate) record_type: String,
+    pub(crate) ttl: i32,
+    pub(crate) value: String,
+}
+
+/// The endpoint's record type, if bindizr's ExternalDNS API manages it.
+fn supported_record_type(record_type: &str) -> Option<RecordType> {
+    let parsed = record_type.parse::<RecordType>().ok()?;
+    EXTERNAL_DNS_RECORD_TYPES
+        .contains(&parsed)
+        .then_some(parsed)
 }
 
 /// Validate an endpoint against what the adapter supports; the message
-/// becomes a permanent (4xx) error body.
+/// becomes a permanent (4xx) error body. Mirrors the server's own validation
+/// so a bad plan fails without a round trip.
 pub(crate) fn validate_endpoint(endpoint: &Endpoint) -> Result<(), String> {
     if endpoint.dns_name.trim().is_empty() {
         return Err("dnsName must not be empty".to_string());
     }
 
-    let record_type = endpoint.record_type.to_ascii_uppercase();
-    if !SUPPORTED_RECORD_TYPES.contains(&record_type.as_str()) {
+    let Some(record_type) = supported_record_type(&endpoint.record_type) else {
         return Err(format!(
             "record type '{}' is not supported (supported: {})",
             endpoint.record_type,
-            SUPPORTED_RECORD_TYPES.join(", ")
+            EXTERNAL_DNS_RECORD_TYPES
+                .iter()
+                .map(RecordType::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
-    }
+    };
 
     if endpoint.targets.is_empty() {
         return Err(format!("endpoint '{}' has no targets", endpoint.dns_name));
     }
     // Whitespace-only TXT content is valid; for other types it is garbage.
-    let is_txt = record_type == "TXT";
+    let is_txt = record_type == RecordType::TXT;
     if endpoint.targets.iter().any(|t| {
         if is_txt {
             t.is_empty()
@@ -139,7 +145,7 @@ pub(crate) fn validate_endpoint(endpoint: &Endpoint) -> Result<(), String> {
             endpoint.dns_name
         ));
     }
-    if record_type == "CNAME" && endpoint.targets.len() > 1 {
+    if record_type == RecordType::CNAME && endpoint.targets.len() > 1 {
         return Err(format!(
             "CNAME endpoint '{}' must have exactly one target",
             endpoint.dns_name
@@ -241,36 +247,32 @@ pub(crate) fn adjust_endpoints(endpoints: Vec<Endpoint>) -> Result<Vec<Endpoint>
         .map(|mut endpoint| {
             validate_endpoint(&endpoint)?;
             endpoint.provider_specific.clear();
-            match endpoint.record_type.to_ascii_uppercase().as_str() {
-                "TXT" => {
+            match supported_record_type(&endpoint.record_type) {
+                Some(RecordType::TXT) => {
                     endpoint.targets = endpoint
                         .targets
                         .iter()
-                        .map(|target| bindizr_core::dns::txt::canonical_txt_presentation(target))
+                        .map(|target| {
+                            bindizr_core::dns::record::TxtRecordValue::parse(target)
+                                .map(|rdata| rdata.to_presentation())
+                        })
                         .collect::<Result<Vec<_>, _>>()?;
                 }
-                "CNAME" => {
-                    endpoint.targets = endpoint
-                        .targets
-                        .iter()
-                        .map(|target| to_fqdn_lowercase(target))
-                        .collect();
-                }
-                // Unparseable addresses pass through so the apply path
-                // reports its ordinary error instead of a mangled target.
-                "A" => canonicalize_targets::<Ipv4Addr>(&mut endpoint.targets),
-                "AAAA" => canonicalize_targets::<Ipv6Addr>(&mut endpoint.targets),
-                _ => {}
+                Some(record_type) => canonicalize_targets(&record_type, &mut endpoint.targets),
+                // validate_endpoint already rejected everything else.
+                None => {}
             }
             Ok(endpoint)
         })
         .collect()
 }
 
-fn canonicalize_targets<T: std::str::FromStr + std::fmt::Display>(targets: &mut [String]) {
+/// Rewrite targets to the row-encoded spelling the server stores; unparseable
+/// targets pass through so the apply path reports its ordinary error.
+fn canonicalize_targets(record_type: &RecordType, targets: &mut [String]) {
     for target in targets {
-        if let Ok(address) = target.parse::<T>() {
-            *target = address.to_string();
+        if let Ok(encoded) = record_type.encoded_value(target, None) {
+            *target = encoded;
         }
     }
 }

@@ -5,12 +5,18 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::model::zone::Zone;
 use bindizr_dns as dns;
 use bindizr_service::{
-    authorization, error::ServiceError, record::RecordService, zone::ZoneService,
+    record::RecordService,
+    types::{
+        CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
+        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, PaginatedResponse,
+        RollbackZoneRequest, RollbackZoneResponse, SnapshotDetailResponse, SnapshotDiffResponse,
+        SnapshotRecordResponse, ZoneDetailResponse, ZoneResponse, ZoneSnapshotResponse,
+        ZoneStatusResponse,
+    },
+    zone::ZoneService,
 };
-use dns::client::probe::SecondaryProbe;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -18,13 +24,6 @@ use crate::api::{
     RequestCaller,
     error::ApiError,
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
-    types::{
-        CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, RollbackZoneRequest,
-        RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
-        SnapshotDiffResponse, SnapshotListResponse, SnapshotRecordResponse, ZoneDetailResponse,
-        ZoneListResponse, ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
-    },
 };
 
 /// Route group for zone endpoints.
@@ -58,42 +57,6 @@ impl ZoneApi {
     }
 }
 
-/// Assemble the per-secondary sync report by comparing each probe result with
-/// the zone's serial. Shared by the HTTP and daemon-socket handlers.
-pub(crate) fn build_zone_status(zone: &Zone, probes: Vec<SecondaryProbe>) -> ZoneStatusResponse {
-    let secondaries = probes
-        .into_iter()
-        .map(|probe| match probe.result {
-            Ok(visible) => {
-                let visible = i64::from(visible);
-                let status = match visible.cmp(&i64::from(zone.serial)) {
-                    std::cmp::Ordering::Equal => "in_sync",
-                    std::cmp::Ordering::Less => "lagging",
-                    std::cmp::Ordering::Greater => "ahead",
-                };
-                SecondaryStatusResponse {
-                    address: probe.address,
-                    status: status.to_string(),
-                    visible_serial: Some(visible),
-                    error: None,
-                }
-            }
-            Err(error) => SecondaryStatusResponse {
-                address: probe.address,
-                status: "unreachable".to_string(),
-                visible_serial: None,
-                error: Some(error),
-            },
-        })
-        .collect();
-
-    ZoneStatusResponse {
-        zone: zone.name.clone(),
-        serial: zone.serial,
-        secondaries,
-    }
-}
-
 #[utoipa::path(
         get,
         path = "/zones/{name}/status",
@@ -115,12 +78,8 @@ pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    let zone = ZoneService::get_by_name_for(&caller, &params.name).await?;
-
-    let probes = dns::client::probe::probe_secondaries(&zone.name)
-        .await
-        .map_err(|err| ApiError(ServiceError::internal(err.to_string())))?;
-    Ok((StatusCode::OK, Json(build_zone_status(&zone, probes))).into_response())
+    let status = dns::status::zone_status(&caller, &params.name).await?;
+    Ok((StatusCode::OK, Json(status)).into_response())
 }
 
 #[utoipa::path(
@@ -144,7 +103,7 @@ pub(crate) async fn export_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    let zone_file = ZoneService::export_zone_file_for(&caller, &params.name).await?;
+    let zone_file = ZoneService::export_zone_file(&caller, &params.name).await?;
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],
@@ -165,7 +124,7 @@ pub(crate) async fn export_zone(
             ("offset" = Option<u64>, Query, description = "Number of snapshots to skip.")
         ),
         responses(
-            (status = 200, description = "A list of zone snapshots", body = SnapshotListResponse),
+            (status = 200, description = "A list of zone snapshots", body = PaginatedResponse<ZoneSnapshotResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -178,7 +137,7 @@ pub(crate) async fn list_zone_snapshots(
     Query(query): Query<SnapshotListQuery>,
 ) -> Result<Response, ApiError> {
     let response =
-        ZoneService::list_snapshots_for(&caller, &params.name, query.limit, query.offset).await?;
+        ZoneService::list_snapshots(&caller, &params.name, query.limit, query.offset).await?;
     let mut items = Vec::with_capacity(response.items.len());
     for snapshot in &response.items {
         items.push(ZoneSnapshotResponse::from_snapshot(snapshot)?);
@@ -210,7 +169,7 @@ pub(crate) async fn get_zone_snapshot(
     Path(params): Path<ZoneSnapshotParam>,
 ) -> Result<Response, ApiError> {
     let (snapshot, records) =
-        ZoneService::get_snapshot_for(&caller, &params.name, params.serial).await?;
+        ZoneService::get_snapshot(&caller, &params.name, params.serial).await?;
     let snapshot = ZoneSnapshotResponse::from_snapshot(&snapshot)?;
     let records = records
         .into_iter()
@@ -246,9 +205,7 @@ pub(crate) async fn rollback_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<RollbackZoneRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "roll back zones")?;
-
-    let response = ZoneService::rollback(&params.name, body.serial, body.dry_run).await?;
+    let response = ZoneService::rollback(&caller, &params.name, body.serial, body.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -297,7 +254,7 @@ pub(crate) async fn diff_zone_snapshots(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<SnapshotDiffQuery>,
 ) -> Result<Response, ApiError> {
-    let diff = ZoneService::diff_snapshots_for(&caller, &params.name, query.from, query.to).await?;
+    let diff = ZoneService::diff_snapshots(&caller, &params.name, query.from, query.to).await?;
     Ok((StatusCode::OK, Json(diff)).into_response())
 }
 
@@ -320,7 +277,7 @@ pub(crate) async fn diff_zone_snapshots(
             ("offset" = Option<u64>, Query, description = "Number of zones to skip.")
         ),
         responses(
-            (status = 200, description = "A list of DNS zones", body = ZoneListResponse),
+            (status = 200, description = "A list of DNS zones", body = PaginatedResponse<GetZoneResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -331,7 +288,7 @@ pub(crate) async fn get_zones(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<GetZonesFilter>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::list_by_filter_for(&caller, query).await?;
+    let response = ZoneService::list_by_filter(&caller, query).await?;
     let zones = response
         .items
         .iter()
@@ -363,10 +320,10 @@ pub(crate) async fn get_zone(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<GetZoneQuery>,
 ) -> Result<Response, ApiError> {
-    let raw_zone = ZoneService::get_by_name_for(&caller, &params.name).await?;
+    let raw_zone = ZoneService::get_by_name(&caller, &params.name).await?;
 
     let raw_records = match query.records {
-        Some(true) => RecordService::list(Some(raw_zone.name.clone())).await?,
+        Some(true) => RecordService::list_in_zone(&caller, raw_zone.name.as_str()).await?,
         _ => vec![],
     };
     let records = raw_records
@@ -399,9 +356,7 @@ pub(crate) async fn create_zone(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "create zones")?;
-
-    let zone = ZoneService::create(&body).await?;
+    let zone = ZoneService::create(&caller, &body).await?;
     let zone = GetZoneResponse::from_zone(&zone);
     let json_body = json!({ "zone": zone });
     Ok((StatusCode::CREATED, Json(json_body)).into_response())
@@ -432,9 +387,7 @@ pub(crate) async fn update_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "update zones")?;
-
-    let zone = ZoneService::update(&params.name, &body).await?;
+    let zone = ZoneService::update(&caller, &params.name, &body).await?;
     let zone = GetZoneResponse::from_zone(&zone);
     let json_body = json!({ "zone": zone });
     Ok((StatusCode::OK, Json(json_body)).into_response())
@@ -461,9 +414,7 @@ pub(crate) async fn delete_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "delete zones")?;
-
-    ZoneService::delete(&params.name).await?;
+    ZoneService::delete(&caller, &params.name).await?;
     let json_body = json!({ "message": "Zone deleted successfully" });
     Ok((StatusCode::OK, Json(json_body)).into_response())
 }
@@ -494,9 +445,7 @@ pub(crate) async fn import_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<ImportZoneFileRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "import zone files")?;
-
-    let response = RecordService::import_zone_file(&params.name, &body).await?;
+    let response = RecordService::import_zone_file(&caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

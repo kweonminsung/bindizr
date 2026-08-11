@@ -5,6 +5,16 @@ use crate::common::TestApp;
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn status_reports_running_daemon() {
+    let app = TestApp::start().await;
+
+    let status = app.run_cli_success(&["status"]).await;
+    assert!(status.contains("BINDIZR STATUS"));
+    assert!(status.contains("Running"));
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn restart_reexecs_daemon_in_place() {
     let app = TestApp::start().await;
     if app.has_dns_secondaries() {

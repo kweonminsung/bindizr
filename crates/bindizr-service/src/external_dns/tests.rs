@@ -1,8 +1,9 @@
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
     apply::{ZoneOps, compute_zone_change_set, convert_request, convert_rrset, group_ops_by_zone},
-    policy::{find_authoritative_zone, normalize_lookup_name, stored_owner_name},
+    policy::{find_authoritative_zone, normalize_lookup_name},
 };
 use crate::{
     error::ErrorCode,
@@ -16,7 +17,7 @@ use crate::{
 fn test_zone(id: i32, name: &str) -> Zone {
     Zone {
         id,
-        name: name.to_string(),
+        name: ZoneName::from_row(name),
         primary_ns: format!("ns1.{}", name),
         admin_email: format!("hostmaster@{}", name),
         ttl: 3600,
@@ -32,7 +33,7 @@ fn test_zone(id: i32, name: &str) -> Zone {
 fn test_record(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     Record {
         id,
-        name: name.to_string(),
+        name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),
         ttl,
@@ -81,12 +82,14 @@ fn find_authoritative_zone_requires_label_boundary() {
 }
 
 #[test]
-fn stored_owner_name_maps_apex_and_subnames() {
-    let zone = test_zone(1, "example.com");
+fn an_escaped_dot_does_not_put_a_name_inside_the_zone_it_spells() {
+    // `evil\.example.com` is the two labels [evil.example, com], so no zone
+    // named example.com is authoritative for it.
+    let zones = vec![test_zone(1, "example.com")];
+    let name = normalize_lookup_name(r"evil\.example.com").unwrap();
 
-    assert_eq!(stored_owner_name("example.com", &zone), "@");
-    assert_eq!(stored_owner_name("www.example.com", &zone), "www");
-    assert_eq!(stored_owner_name("a.b.example.com", &zone), "a.b");
+    assert_eq!(name, r"evil\.example.com");
+    assert!(find_authoritative_zone(&zones, &name).is_none());
 }
 
 #[test]
@@ -183,8 +186,11 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
 
     let grouped = group_ops_by_zone(&zones, ops).unwrap();
     assert_eq!(grouped.len(), 1);
-    assert!(grouped.contains_key("internal.example.com"));
-    assert_eq!(grouped["internal.example.com"].adds[0].name, "api");
+    assert!(grouped.contains_key(&ZoneName::from_row("internal.example.com")));
+    assert_eq!(
+        grouped[&ZoneName::from_row("internal.example.com")].adds[0].name,
+        OwnerName::from_row("api")
+    );
 }
 
 #[test]
@@ -220,7 +226,7 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
 
     assert!(change_set.deletes.is_empty());
     assert_eq!(change_set.creates.len(), 1);
-    assert_eq!(change_set.creates[0].name, "app");
+    assert_eq!(change_set.creates[0].name, OwnerName::from_row("app"));
     assert_eq!(change_set.creates[0].ttl, zone.ttl);
 }
 
@@ -238,6 +244,46 @@ fn change_set_skips_creates_that_already_exist() {
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
+}
+
+// A create that got past this one would conflict on every retry.
+#[test]
+fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
+    let zone = test_zone(1, "example.com");
+    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
+    let request = ExternalDnsChangesRequest {
+        creates: vec![rrset("app.example.com", "A", None, &["192.0.2.1"])],
+        updates: vec![],
+        deletes: vec![],
+    };
+
+    // No TTL on the rrset, so it resolves to the zone's 3600 — not the row's 300.
+    let change_set = compute_zone_change_set(&zone, &existing, &zone_ops(&request, &zone)).unwrap();
+
+    assert!(change_set.deletes.is_empty());
+    assert!(change_set.creates.is_empty());
+}
+
+// The counterpart: a TTL-only update is a real change, not a self-cancelling one.
+#[test]
+fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
+    let zone = test_zone(1, "example.com");
+    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
+    let request = ExternalDnsChangesRequest {
+        creates: vec![],
+        updates: vec![ExternalDnsRrsetUpdate {
+            old: rrset("app.example.com", "A", Some(300), &["192.0.2.1"]),
+            new: rrset("app.example.com", "A", Some(900), &["192.0.2.1"]),
+        }],
+        deletes: vec![],
+    };
+
+    let change_set = compute_zone_change_set(&zone, &existing, &zone_ops(&request, &zone)).unwrap();
+
+    assert_eq!(change_set.deletes.len(), 1);
+    assert_eq!(change_set.deletes[0].id, 10);
+    assert_eq!(change_set.creates.len(), 1);
+    assert_eq!(change_set.creates[0].ttl, 900);
 }
 
 #[test]

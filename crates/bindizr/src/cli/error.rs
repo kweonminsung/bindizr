@@ -4,8 +4,8 @@ use bindizr_service::error::ErrorCode;
 /// sent a machine-readable code, an actionable hint derived from it.
 #[derive(Debug)]
 pub(crate) struct CliError {
-    pub code: Option<ErrorCode>,
-    pub message: String,
+    pub(crate) code: Option<ErrorCode>,
+    pub(crate) message: String,
 }
 
 impl From<String> for CliError {
@@ -35,7 +35,7 @@ impl CliError {
             }
             ErrorCode::TokenNotFound => Some("Run 'bindizr token list' to see available tokens."),
             ErrorCode::SnapshotNotFound => {
-                Some("Run 'bindizr zone snapshots <NAME>' to see available serials.")
+                Some("Run 'bindizr zone snapshot list <NAME>' to see available serials.")
             }
             ErrorCode::Internal => Some("Check the daemon logs for details."),
             _ => None,

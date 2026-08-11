@@ -2,10 +2,10 @@
 //! (AXFR/IXFR), NOTIFY, SOA queries, RFC 2136 nsupdate, and secondary ACLs.
 
 pub(crate) mod address;
-pub mod error;
-pub use bindizr_core::dns::txt;
 pub mod client;
+pub(crate) mod error;
 pub(crate) mod server;
+pub mod status;
 pub(crate) mod wire;
 
 use std::{io::ErrorKind, net::SocketAddr, time::Duration};

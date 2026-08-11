@@ -10,13 +10,8 @@ mod tests;
 
 use std::collections::HashMap;
 
-use bindizr_core::dns::record::{display_record_owner_name, presentation_rdata};
-
 use crate::{
-    authorization::{Caller, visible_zone_ids},
-    error::ServiceError,
-    model::zone::Zone,
-    repository::RepositoryService,
+    authorization::Caller, error::ServiceError, model::zone::Zone, repository::RepositoryService,
     types::ExternalDnsRecordItem,
 };
 
@@ -26,12 +21,12 @@ pub struct ExternalDnsService;
 impl ExternalDnsService {
     /// Names of the zones the caller may manage.
     pub async fn list_zones(caller: &Caller) -> Result<Vec<String>, ServiceError> {
-        let visible = visible_zone_ids(caller);
-        let zones = RepositoryService::get_all_zones().await?;
+        let visible = caller.visible_zone_ids();
+        let zones = RepositoryService::list_zones().await?;
         Ok(zones
             .into_iter()
             .filter(|zone| visible.as_ref().is_none_or(|ids| ids.contains(&zone.id)))
-            .map(|zone| zone.name)
+            .map(|zone| zone.name.to_string())
             .collect())
     }
 
@@ -39,8 +34,8 @@ impl ExternalDnsService {
     /// ExternalDNS-supported record types, with absolute owner names and
     /// presentation-form values.
     pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecordItem>, ServiceError> {
-        let visible = visible_zone_ids(caller);
-        let zones = RepositoryService::get_all_zones().await?;
+        let visible = caller.visible_zone_ids();
+        let zones = RepositoryService::list_zones().await?;
         let zones_by_id: HashMap<i32, &Zone> = zones
             .iter()
             .filter(|zone| visible.as_ref().is_none_or(|ids| ids.contains(&zone.id)))
@@ -49,7 +44,7 @@ impl ExternalDnsService {
 
         // One batched query; a round trip per zone stalls large deployments.
         let zone_ids: Vec<i32> = zones_by_id.keys().copied().collect();
-        let records = RepositoryService::get_records_by_zone_ids(&zone_ids).await?;
+        let records = RepositoryService::list_records_by_zone_ids(&zone_ids).await?;
 
         let mut items = Vec::new();
         for record in records {
@@ -60,12 +55,17 @@ impl ExternalDnsService {
                 continue;
             };
             items.push(ExternalDnsRecordItem {
-                name: display_record_owner_name(&record.name, &zone.name)
+                name: record
+                    .name
+                    .clone()
+                    .to_fqdn(&zone.name)
                     .trim_end_matches('.')
                     .to_string(),
                 record_type: record.record_type.to_string(),
                 ttl: record.ttl,
-                value: presentation_rdata(&record.value, record.priority, &record.record_type),
+                value: record
+                    .record_type
+                    .presentation_rdata(&record.value, record.priority),
             });
         }
 

@@ -196,7 +196,7 @@ fn adjust_endpoints_canonicalizes_cname_and_address_targets() {
 }
 
 #[test]
-fn validate_keeps_whitespace_only_txt_targets() {
+fn adjust_endpoints_keeps_whitespace_only_txt_targets() {
     let adjusted = adjust_endpoints(vec![endpoint("t.example.com", "TXT", 0, &["   "])]).unwrap();
     assert_eq!(adjusted[0].targets, vec![r#""   ""#]);
 

@@ -1,20 +1,15 @@
 use async_trait::async_trait;
 use sqlx::{Pool, Postgres, Row};
 
-use crate::{
-    error::DatabaseError,
-    model::tsig_key::TsigKey,
-    repository::{RepositoryTx, TsigKeyRepository},
-};
+use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
 
 /// PostgreSQL-backed implementation of `TsigKeyRepository`.
-pub struct PostgresTsigKeyRepository {
+pub(crate) struct PostgresTsigKeyRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresTsigKeyRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
 }
@@ -43,19 +38,6 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         Ok(key)
     }
 
-    async fn get_by_id(&self, id: i32) -> Result<Option<TsigKey>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let key = sqlx::query_as::<_, TsigKey>(
-            "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        Ok(key)
-    }
-
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -69,24 +51,7 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         Ok(key)
     }
 
-    async fn get_by_name_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        name: &str,
-    ) -> Result<Option<TsigKey>, DatabaseError> {
-        let postgres_tx = tx.as_postgres()?;
-
-        let key = sqlx::query_as::<_, TsigKey>(
-            "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE name = $1",
-        )
-        .bind(name)
-        .fetch_optional(&mut **postgres_tx)
-        .await?;
-
-        Ok(key)
-    }
-
-    async fn get_all(&self) -> Result<Vec<TsigKey>, DatabaseError> {
+    async fn list_all(&self) -> Result<Vec<TsigKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let keys = sqlx::query_as::<_, TsigKey>(

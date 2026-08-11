@@ -26,7 +26,7 @@ log_level = "info"
 /// Run `bindizr config check` against the host binary directly: the command is
 /// offline, so no daemon or compose stack is involved.
 fn run_config_check(file: Option<&str>, env: &[(&str, &str)]) -> std::process::Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server"));
     command.args(["config", "check"]);
     if let Some(file) = file {
         command.arg(file);

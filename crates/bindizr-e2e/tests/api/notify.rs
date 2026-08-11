@@ -1,7 +1,7 @@
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::TestApp;
+use crate::common::{TestApp, TestAppOptions};
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -61,6 +61,42 @@ async fn notify_zone_all_and_force() {
         body["error"]
             .as_str()
             .unwrap()
-            .contains(&format!("Zone not found: {missing_zone_name}"))
+            .contains(&format!("Zone with name '{missing_zone_name}' not found"))
     );
+}
+
+// The catalog zone is virtual: it has no row, so no zone grant can name it
+// and a scoped token must not be able to notify it.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn scoped_token_cannot_notify_the_catalog_zone() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..TestAppOptions::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token.clone());
+
+    let (_, scoped_token) = app.create_scoped_api_token().await;
+    app.set_auth_token(scoped_token);
+
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/notify/zones",
+            Some(json!({ "zone_name": "catalog.bind" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    app.set_auth_token(global_token);
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/notify/zones",
+            Some(json!({ "zone_name": "catalog.bind" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
 }

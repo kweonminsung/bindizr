@@ -5,19 +5,17 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_service::{authorization, zone::token_policy::ZoneTokenPolicyService};
-use serde::Deserialize;
-use serde_json::json;
-
-use crate::api::{
-    RequestCaller,
-    error::ApiError,
-    middleware::body_parser::JsonBody,
+use bindizr_service::{
     types::{
         CreateZoneTokenPolicyRequest, ErrorResponse, GetZoneTokenPolicyResponse, MessageResponse,
         ZoneTokenPolicyListResponse, ZoneTokenPolicyResponse,
     },
+    zone::token_policy::ZoneTokenPolicyService,
 };
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
 /// Route group for zone token-policy endpoints.
 pub(crate) struct TokenPolicyApi;
@@ -43,13 +41,13 @@ impl TokenPolicyApi {
 
 #[derive(Deserialize)]
 pub(crate) struct ZoneNameParam {
-    pub name: String,
+    pub(crate) name: String,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct ZoneTokenPolicyParam {
-    pub name: String,
-    pub id: i32,
+    pub(crate) name: String,
+    pub(crate) id: i32,
 }
 
 #[utoipa::path(
@@ -73,9 +71,7 @@ pub(crate) async fn get_zone_token_policies(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage token policies")?;
-
-    let policies = ZoneTokenPolicyService::list(&params.name).await?;
+    let policies = ZoneTokenPolicyService::list(&caller, &params.name).await?;
     let policies: Vec<GetZoneTokenPolicyResponse> = policies
         .iter()
         .map(GetZoneTokenPolicyResponse::from_policy)
@@ -110,9 +106,8 @@ pub(crate) async fn create_zone_token_policy(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneTokenPolicyRequest>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage token policies")?;
-
     let policy = ZoneTokenPolicyService::add(
+        &caller,
         &params.name,
         &body.api_token,
         body.record_name_pattern.as_deref(),
@@ -145,9 +140,7 @@ pub(crate) async fn delete_zone_token_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneTokenPolicyParam>,
 ) -> Result<Response, ApiError> {
-    authorization::require_global(&caller, "manage token policies")?;
-
-    ZoneTokenPolicyService::remove(&params.name, params.id).await?;
+    ZoneTokenPolicyService::remove(&caller, &params.name, params.id).await?;
     let json_body = json!({ "message": "Token policy deleted successfully" });
     Ok((StatusCode::OK, Json(json_body)).into_response())
 }

@@ -55,7 +55,7 @@ impl DaemonSocketClient {
     ) -> Result<DaemonResponse, CliError> {
         const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-        tokio::time::timeout(CONTROL_TIMEOUT, self.send_command(command, None))
+        tokio::time::timeout(CONTROL_TIMEOUT, self.send_command(command, ()))
             .await
             .map_err(|_| {
                 CliError::from(format!(
@@ -65,17 +65,19 @@ impl DaemonSocketClient {
             })?
     }
 
-    /// Send a command to the daemon and return its parsed response.
+    /// Send a command to the daemon and return its parsed response. `data` is
+    /// the command's payload type; `()` for the commands that take none.
     pub(crate) async fn send_command(
         &self,
         command: DaemonCommandKind,
-        data: Option<serde_json::Value>,
+        data: impl serde::Serialize,
     ) -> Result<DaemonResponse, CliError> {
         let mut stream = connect_to_daemon_socket().await?;
 
         let cmd = DaemonCommand {
             command,
-            data: data.unwrap_or(serde_json::Value::Null),
+            data: serde_json::to_value(data)
+                .map_err(|e| format!("Failed to serialize command payload: {}", e))?,
         };
         let json = serde_json::to_string(&cmd)
             .map_err(|e| format!("Failed to serialize command: {}", e))?;

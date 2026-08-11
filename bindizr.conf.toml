@@ -4,6 +4,7 @@ listen_port = 3000            # HTTP API listen port
 require_authentication = true # Enable API authentication (true/false)
 metrics_enabled = true        # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only)
 external_dns_enabled = false  # Register the ExternalDNS provider API at /external-dns
+openapi_enabled = false       # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml (unauthenticated)
 
 [database]
 type = "mysql"                # Database type: mysql, sqlite, postgresql

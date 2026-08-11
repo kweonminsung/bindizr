@@ -4,13 +4,12 @@ use sqlx::{MySql, Pool};
 use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
 
 /// MySQL-backed implementation of `ApiTokenRepository`.
-pub struct MySqlApiTokenRepository {
+pub(crate) struct MySqlApiTokenRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlApiTokenRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<MySql>) -> Self {
+    pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }
@@ -37,20 +36,6 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         token.id = result.last_insert_id() as i32;
 
         Ok(token)
-    }
-
-    async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let row = sqlx::query_as::<_, ApiToken>(
-            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?"
-        )
-        .bind(id)
-        .fetch_optional(&mut *conn)
-        .await
-        ?;
-
-        Ok(row)
     }
 
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError> {
@@ -81,7 +66,7 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         Ok(row)
     }
 
-    async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError> {
+    async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let rows = sqlx::query_as::<_, ApiToken>(

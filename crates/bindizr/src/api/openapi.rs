@@ -1,26 +1,24 @@
+use bindizr_service::types::{
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, CreateTsigKeyRequest,
+    CreateZoneRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest, ErrorResponse,
+    ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRecordItem,
+    ExternalDnsRecordsResponse, ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse,
+    GetRecordResponse, GetTsigKeyResponse, GetZoneResponse, GetZoneTokenPolicyResponse,
+    GetZoneTsigPolicyResponse, HealthResponse, ImportMode, ImportSummary, ImportZoneFileRequest,
+    ImportZoneFileResponse, MessageResponse, NotifyZoneRequest, PaginatedResponse, Pagination,
+    RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RecordItem, RecordResponse,
+    RecordValueRequest, RollbackSummary, RollbackZoneRequest, RollbackZoneResponse,
+    SecondaryStatusResponse, SnapshotDetailResponse, SnapshotDiffResponse, SnapshotRecordResponse,
+    TsigKeyListResponse, TsigKeyResponse, ZoneDetailResponse, ZoneResponse, ZoneSnapshotResponse,
+    ZoneStatusResponse, ZoneTokenPolicyListResponse, ZoneTokenPolicyResponse,
+    ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
+};
 use utoipa::{
     Modify, OpenApi,
     openapi::security::{Http, HttpAuthScheme, SecurityScheme},
 };
 
-use super::types::{
-    BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
-    CreateTsigKeyRequest, CreateZoneRequest, CreateZoneTokenPolicyRequest,
-    CreateZoneTsigPolicyRequest, ErrorResponse, ExternalDnsChangesRequest,
-    ExternalDnsChangesResponse, ExternalDnsRecordItem, ExternalDnsRecordsResponse,
-    ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse, GetRecordResponse,
-    GetTsigKeyResponse, GetZoneResponse, GetZoneTokenPolicyResponse, GetZoneTsigPolicyResponse,
-    HealthResponse, ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
-    MessageResponse, NotifyZoneRequest, Pagination, RecordDiff, RecordDiffEntry, RecordDiffSummary,
-    RecordDiffValue, RecordListResponse, RecordResponse, RecordValueRequest, RollbackSummary,
-    RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
-    SnapshotDiffResponse, SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse,
-    TsigKeyResponse, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
-    ZoneSnapshotResponse, ZoneStatusResponse, ZoneTokenPolicyListResponse, ZoneTokenPolicyResponse,
-    ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
-};
-
-/// OpenAPI document for the HTTP API (debug builds only).
+/// OpenAPI document for the HTTP API, served when `api.openapi_enabled` is on.
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -59,7 +57,6 @@ use super::types::{
         super::external_dns::apply_external_dns_changes
     ),
     components(schemas(
-        BulkRecordItem,
         BulkRecordsResponse,
         CreateBulkRecordsRequest,
         CreateRecordRequest,
@@ -87,12 +84,15 @@ use super::types::{
         ImportZoneFileResponse,
         MessageResponse,
         NotifyZoneRequest,
+        PaginatedResponse<GetRecordResponse>,
+        PaginatedResponse<GetZoneResponse>,
+        PaginatedResponse<ZoneSnapshotResponse>,
         Pagination,
         RecordDiff,
         RecordDiffEntry,
         RecordDiffSummary,
         RecordDiffValue,
-        RecordListResponse,
+        RecordItem,
         RecordResponse,
         RecordValueRequest,
         RollbackSummary,
@@ -101,13 +101,10 @@ use super::types::{
         SecondaryStatusResponse,
         SnapshotDetailResponse,
         SnapshotDiffResponse,
-        SnapshotListResponse,
         SnapshotRecordResponse,
         TsigKeyListResponse,
         TsigKeyResponse,
-        UpdateRecordRequest,
         ZoneDetailResponse,
-        ZoneListResponse,
         ZoneResponse,
         ZoneSnapshotResponse,
         ZoneStatusResponse,

@@ -6,13 +6,11 @@ pub(crate) mod health;
 pub(crate) mod metrics;
 pub(crate) mod middleware;
 pub(crate) mod notify;
-#[cfg(debug_assertions)]
 pub(crate) mod openapi;
 pub(crate) mod record;
 pub(crate) mod router;
 pub(crate) mod token_policy;
 pub(crate) mod tsig_key;
-pub(crate) mod types;
 pub(crate) mod zone;
 
 use std::net::SocketAddr;
@@ -53,10 +51,9 @@ pub(crate) async fn initialize() -> Result<(), String> {
         bindizr_config.api.listen_port,
     ));
 
-    let listener = TcpListener::bind(addr).await.unwrap_or_else(|e| {
-        log_error!("Failed to bind to address {}: {:?}", addr, e);
-        std::process::exit(1);
-    });
+    let listener = TcpListener::bind(addr)
+        .await
+        .map_err(|e| format!("Failed to bind the HTTP API to {}: {}", addr, e))?;
 
     log_info!("HTTP API server listening on http://{}", addr);
 

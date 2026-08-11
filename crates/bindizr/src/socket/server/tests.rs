@@ -11,7 +11,7 @@ fn try_bind_test_socket(socket_path: &str) -> Option<UnixListener> {
 
 #[test]
 fn parse_params_rejects_wrongly_typed_fields() {
-    use crate::api::types::CreateTsigKeyRequest;
+    use bindizr_service::types::CreateTsigKeyRequest;
 
     // Absent/null optional fields deserialize as their defaults...
     let ok: CreateTsigKeyRequest =
@@ -24,6 +24,57 @@ fn parse_params_rejects_wrongly_typed_fields() {
     let err =
         parse_params::<CreateTsigKeyRequest>(&json!({ "name": "k", "secret": 123 })).unwrap_err();
     assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
+}
+
+#[test]
+fn parse_params_rejects_a_wrongly_typed_rollback_dry_run() {
+    use bindizr_service::types::RollbackZoneRequest;
+
+    let ok: RollbackZoneRequest = parse_params(&json!({ "serial": 7 })).unwrap();
+    assert!(!ok.dry_run);
+
+    // A wrongly typed dry_run once defaulted to false, applying a rollback the
+    // caller asked to preview.
+    for dry_run in [json!("true"), json!(1)] {
+        let err = parse_params::<RollbackZoneRequest>(&json!({ "serial": 7, "dry_run": dry_run }))
+            .unwrap_err();
+        assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
+    }
+}
+
+#[test]
+fn command_payloads_round_trip_between_client_and_server() {
+    use bindizr_service::types::{RollbackZoneRequest, UpdateZonePatch};
+
+    use crate::socket::types::{RollbackZoneParams, UpdateZoneParams};
+
+    // The CLI serializes these and the daemon parses them back, so a flattened
+    // request body must survive the round trip alongside its target field.
+    let sent = serde_json::to_value(UpdateZoneParams {
+        name: "example.com".to_string(),
+        patch: UpdateZonePatch {
+            new_name: Some("new.example.com".to_string()),
+            ttl: Some(300),
+            ..UpdateZonePatch::default()
+        },
+    })
+    .unwrap();
+    let parsed: UpdateZoneParams = parse_params(&sent).unwrap();
+    assert_eq!(parsed.name, "example.com");
+    assert_eq!(parsed.patch.new_name.as_deref(), Some("new.example.com"));
+    assert_eq!(parsed.patch.ttl, Some(300));
+
+    let sent = serde_json::to_value(RollbackZoneParams {
+        name: "example.com".to_string(),
+        request: RollbackZoneRequest {
+            serial: 7,
+            dry_run: true,
+        },
+    })
+    .unwrap();
+    let parsed: RollbackZoneParams = parse_params(&sent).unwrap();
+    assert_eq!(parsed.request.serial, 7);
+    assert!(parsed.request.dry_run);
 }
 
 #[tokio::test]

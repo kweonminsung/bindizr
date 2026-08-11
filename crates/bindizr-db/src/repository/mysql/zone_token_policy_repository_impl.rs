@@ -8,13 +8,12 @@ use crate::{
 };
 
 /// MySQL-backed implementation of `ZoneTokenPolicyRepository`.
-pub struct MySqlZoneTokenPolicyRepository {
+pub(crate) struct MySqlZoneTokenPolicyRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlZoneTokenPolicyRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<MySql>) -> Self {
+    pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }
@@ -55,7 +54,7 @@ impl ZoneTokenPolicyRepository for MySqlZoneTokenPolicyRepository {
         Ok(policy)
     }
 
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError> {
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let policies = sqlx::query_as::<_, ZoneTokenPolicy>(
@@ -68,7 +67,7 @@ impl ZoneTokenPolicyRepository for MySqlZoneTokenPolicyRepository {
         Ok(policies)
     }
 
-    async fn get_by_zone_and_token_tx(
+    async fn list_by_zone_and_token_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -87,7 +86,7 @@ impl ZoneTokenPolicyRepository for MySqlZoneTokenPolicyRepository {
         Ok(policies)
     }
 
-    async fn get_by_token_id(
+    async fn list_by_token_id(
         &self,
         api_token_id: i32,
     ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError> {

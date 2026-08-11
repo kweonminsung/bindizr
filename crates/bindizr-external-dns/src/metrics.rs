@@ -4,13 +4,10 @@ use std::sync::OnceLock;
 
 use prometheus::{Encoder, HistogramVec, IntCounterVec, Registry, TextEncoder};
 
-/// Prometheus text exposition content type.
-pub(crate) const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
-
 pub(crate) struct AdapterMetrics {
     registry: Registry,
-    pub requests_total: IntCounterVec,
-    pub request_duration_seconds: HistogramVec,
+    pub(crate) requests_total: IntCounterVec,
+    pub(crate) request_duration_seconds: HistogramVec,
 }
 
 static METRICS: OnceLock<AdapterMetrics> = OnceLock::new();
@@ -70,7 +67,7 @@ pub(crate) fn metrics() -> &'static AdapterMetrics {
 }
 
 impl AdapterMetrics {
-    pub fn encode(&self) -> String {
+    pub(crate) fn encode(&self) -> String {
         let mut buffer = Vec::new();
         let encoder = TextEncoder::new();
         if encoder

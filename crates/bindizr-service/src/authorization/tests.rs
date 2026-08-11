@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
-use super::{Caller, RecordWrite, authorize_with_policies, require_global};
+use super::{Caller, RecordWrite, authorize_with_policies};
 use crate::{
     error::ErrorCode,
     model::{record::RecordType, zone::Zone, zone_token_policy::ZoneTokenPolicy},
@@ -11,7 +12,7 @@ use crate::{
 fn test_zone() -> Zone {
     Zone {
         id: 1,
-        name: "example.com".to_string(),
+        name: ZoneName::from_row("example.com"),
         primary_ns: "ns1.example.com".to_string(),
         admin_email: "hostmaster@example.com".to_string(),
         ttl: 3600,
@@ -39,26 +40,25 @@ fn authorize(
     policies: &[ZoneTokenPolicy],
     writes: &[RecordWrite<'_>],
 ) -> Result<(), crate::error::ServiceError> {
-    let policies: Vec<&ZoneTokenPolicy> = policies.iter().collect();
-    authorize_with_policies(&policies, &test_zone(), writes)
+    authorize_with_policies(policies, &test_zone(), writes)
 }
 
 fn write<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordWrite<'a> {
     RecordWrite {
-        relative_name: name,
+        relative_name: OwnerName::from_row(name),
         record_type,
     }
 }
 
 #[test]
 fn require_global_rejects_scoped_tokens() {
-    assert!(require_global(&Caller::Global, "create zones").is_ok());
+    assert!(Caller::Global.require_global("create zones").is_ok());
 
     let scoped = Caller::Token {
         id: 3,
         grants: Arc::from(vec![]),
     };
-    let err = require_global(&scoped, "create zones").unwrap_err();
+    let err = scoped.require_global("create zones").unwrap_err();
     assert_eq!(err.code, ErrorCode::Forbidden);
     assert!(err.message.contains("create zones"));
 }

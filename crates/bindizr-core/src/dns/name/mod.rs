@@ -1,83 +1,88 @@
+//! Domain-name handling: label and length limits, FQDN normalization, and the
+//! whitespace/control hygiene check shared by name-like inputs.
+//!
+//! Names decode into labels at the parse boundary ([`OwnerName`], [`ZoneName`]),
+//! so an escaped dot is label data and never a boundary. Text is a rendering,
+//! re-escaped canonically (RFC 1035, Section 5.1).
+
+mod error;
+mod owner_name;
+mod zone_name;
+
+pub use error::ParseNameError;
+pub use owner_name::{OwnerName, decode_name_labels, is_label_suffix};
+pub use zone_name::ZoneName;
+
 /// Maximum length of a single DNS label, in bytes (RFC 1035).
-pub const MAX_DNS_LABEL_LEN: usize = 63;
+pub(crate) const MAX_DNS_LABEL_LEN: usize = 63;
 /// Maximum length of a domain name, in bytes (RFC 1035).
-pub const MAX_DOMAIN_LEN: usize = 253;
+pub(crate) const MAX_DOMAIN_LEN: usize = 253;
 
-/// Errors from parsing domain names or email addresses.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NameError {
-    DanglingEscape,
-    InvalidEmail,
+/// Whether the value contains any whitespace or ASCII control character.
+pub fn has_whitespace_or_control(value: &str) -> bool {
+    value
+        .chars()
+        .any(|c| c.is_ascii_control() || c.is_whitespace())
 }
 
-impl std::fmt::Display for NameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NameError::DanglingEscape => write!(f, "domain name contains a dangling escape"),
-            NameError::InvalidEmail => write!(f, "email must contain exactly one @"),
-        }
+/// Classify one label's problem, if any: non-empty, at most 63 bytes, LDH
+/// charset (plus `_` when `allow_underscore`), no leading/trailing hyphen.
+fn classify_domain_label(label: &str, allow_underscore: bool) -> Result<(), ParseNameError> {
+    if label.is_empty() {
+        return Err(ParseNameError::EmptyLabel);
     }
+
+    if label.len() > MAX_DNS_LABEL_LEN {
+        return Err(ParseNameError::LabelTooLong);
+    }
+
+    if !label
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || (allow_underscore && c == '_'))
+    {
+        return Err(ParseNameError::LabelCharset {
+            underscore_allowed: allow_underscore,
+        });
+    }
+
+    if label.starts_with('-') || label.ends_with('-') {
+        return Err(ParseNameError::LabelHyphen);
+    }
+
+    Ok(())
 }
 
-impl std::error::Error for NameError {}
-
-/// Labels of a presentation-format name.
-pub enum PresentationLabels<'a> {
-    Borrowed(std::str::Split<'a, char>),
-    Owned(std::vec::IntoIter<String>),
+/// [`classify_domain_label`] with the problem phrased against `field`.
+pub(crate) fn validate_domain_label(
+    label: &str,
+    field: &str,
+    allow_underscore: bool,
+) -> Result<(), String> {
+    classify_domain_label(label, allow_underscore).map_err(|e| format!("{} {}", field, e))
 }
 
-impl<'a> Iterator for PresentationLabels<'a> {
-    type Item = std::borrow::Cow<'a, str>;
+/// Normalize a name to lookup form: trimmed, no trailing dot, lowercase, and
+/// re-escaped canonically so two spellings of one name compare equal as text.
+pub fn to_lookup_name(value: &str) -> Result<String, ParseNameError> {
+    let trimmed = value.trim();
 
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Borrowed(labels) => labels.next().map(std::borrow::Cow::Borrowed),
-            Self::Owned(labels) => labels.next().map(std::borrow::Cow::Owned),
-        }
+    if trimmed.trim_end_matches('.').is_empty() {
+        return Err(ParseNameError::Empty);
     }
+    if has_whitespace_or_control(trimmed) {
+        return Err(ParseNameError::Whitespace);
+    }
+
+    Ok(join_labels(&decode_name_labels(trimmed)?.0))
 }
 
-/// Iterate a presentation-format name's labels, honoring `\` escapes.
-pub fn presentation_labels(name: &str) -> Result<PresentationLabels<'_>, NameError> {
-    if name.contains('\\') {
-        Ok(PresentationLabels::Owned(
-            split_presentation_labels(name)?.into_iter(),
-        ))
-    } else {
-        Ok(PresentationLabels::Borrowed(name.split('.')))
-    }
-}
-
-/// Split a presentation-format name into labels, honoring `\` escapes.
-fn split_presentation_labels(name: &str) -> Result<Vec<String>, NameError> {
-    let mut labels = Vec::new();
-    let mut label = String::new();
-    let mut escaped = false;
-
-    for c in name.chars() {
-        if escaped {
-            label.push(c);
-            escaped = false;
-            continue;
-        }
-
-        match c {
-            '\\' => escaped = true,
-            '.' => {
-                labels.push(label);
-                label = String::new();
-            }
-            _ => label.push(c),
-        }
-    }
-
-    if escaped {
-        return Err(NameError::DanglingEscape);
-    }
-
-    labels.push(label);
-    Ok(labels)
+/// Render decoded labels back to presentation form.
+pub fn join_labels(labels: &[String]) -> String {
+    labels
+        .iter()
+        .map(|label| owner_name::escape_label(label))
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 /// Return `value` as a lowercase, trailing-dot FQDN.
@@ -91,96 +96,6 @@ pub fn to_fqdn_lowercase(value: &str) -> String {
 /// Return `value` with a single trailing dot, preserving case.
 pub fn to_fqdn(value: &str) -> String {
     format!("{}.", value.trim_end_matches('.'))
-}
-
-/// Resolve an owner name to an absolute FQDN within `zone` (`@` = apex; absolute
-/// or in-zone names pass through; otherwise `zone` is appended).
-pub fn to_owner_fqdn(name: &str, zone: &str) -> String {
-    if name.ends_with('.') {
-        return name.to_string();
-    }
-
-    let zone_trimmed = zone.trim_end_matches('.');
-    if name == "@" {
-        return format!("{}.", zone_trimmed);
-    }
-
-    let owner_trimmed = name.trim_end_matches('.');
-    let zone_lower = zone_trimmed.to_ascii_lowercase();
-    let zone_suffix = format!(".{}", zone_lower);
-    let owner_lower = owner_trimmed.to_ascii_lowercase();
-    if owner_lower == zone_lower || owner_lower.ends_with(&zone_suffix) {
-        return format!("{}.", owner_trimmed);
-    }
-
-    format!("{}.{}.", owner_trimmed, zone_trimmed)
-}
-
-/// Whether `name` equals `zone` or is a subdomain of it (exact string match).
-pub fn is_same_or_subdomain_fqdn(name: &str, zone: &str) -> bool {
-    name == zone || name.ends_with(&format!(".{}", zone))
-}
-
-/// Whether `name` refers to the zone apex (`@` or the zone name itself).
-pub fn is_apex_name(name: &str, zone_name: &str) -> bool {
-    name == "@" || to_fqdn(name).eq_ignore_ascii_case(&to_fqdn(zone_name))
-}
-
-/// Convert an email address into SOA RNAME mailbox form, escaping the
-/// local part's dots.
-pub fn email_to_soa_mailbox(value: &str) -> Result<String, NameError> {
-    if value.matches('@').count() != 1 {
-        return Err(NameError::InvalidEmail);
-    }
-
-    let (local, domain) = value.split_once('@').ok_or(NameError::InvalidEmail)?;
-
-    Ok(format!(
-        "{}.{}.",
-        escape_soa_local_part(local),
-        domain.trim_end_matches('.')
-    ))
-}
-
-fn escape_soa_local_part(local: &str) -> String {
-    let mut escaped = String::with_capacity(local.len());
-
-    for c in local.chars() {
-        if c == '.' || c == '\\' {
-            escaped.push('\\');
-        }
-        escaped.push(c);
-    }
-
-    escaped
-}
-
-/// Inverse of [`email_to_soa_mailbox`]: convert an SOA RNAME mailbox back into
-/// an email address. The first unescaped '.' separates the local part from the
-/// domain; `\.` and `\\` in the local part are unescaped.
-pub fn soa_mailbox_to_email(value: &str) -> Result<String, NameError> {
-    let mailbox = value.trim_end_matches('.');
-    let mut local = String::with_capacity(mailbox.len());
-    let mut chars = mailbox.chars();
-
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' => match chars.next() {
-                Some(escaped) => local.push(escaped),
-                None => return Err(NameError::DanglingEscape),
-            },
-            '.' => {
-                let domain: String = chars.collect();
-                if local.is_empty() || domain.is_empty() {
-                    return Err(NameError::InvalidEmail);
-                }
-                return Ok(format!("{}@{}", local, domain));
-            }
-            c => local.push(c),
-        }
-    }
-
-    Err(NameError::InvalidEmail)
 }
 
 #[cfg(test)]

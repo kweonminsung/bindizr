@@ -8,93 +8,18 @@ use crate::{
 };
 
 /// SQLite-backed implementation of `ZoneChangeRepository`.
-pub struct SqliteZoneChangeRepository {
+pub(crate) struct SqliteZoneChangeRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteZoneChangeRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
 }
 
 #[async_trait]
 impl ZoneChangeRepository for SqliteZoneChangeRepository {
-    async fn create(&self, zone_change: ZoneChange) -> Result<ZoneChange, DatabaseError> {
-        let result = sqlx::query(
-            r#"
-            INSERT INTO zone_changes (zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            "#
-        )
-        .bind(zone_change.zone_id)
-        .bind(zone_change.serial)
-        .bind(&zone_change.operation)
-        .bind(&zone_change.record_name)
-        .bind(&zone_change.record_type)
-        .bind(&zone_change.record_value)
-        .bind(zone_change.record_ttl)
-        .bind(zone_change.record_priority)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-
-        let id = result.last_insert_rowid() as i32;
-
-        sqlx::query_as::<_, ZoneChange>(
-            r#"
-            SELECT id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
-            FROM zone_changes
-            WHERE id = ?
-            "#
-        )
-        .bind(id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
-    }
-
-    async fn create_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        zone_change: ZoneChange,
-    ) -> Result<ZoneChange, DatabaseError> {
-        let sqlite_tx = tx.as_sqlite()?;
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO zone_changes (zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(zone_change.zone_id)
-        .bind(zone_change.serial)
-        .bind(&zone_change.operation)
-        .bind(&zone_change.record_name)
-        .bind(&zone_change.record_type)
-        .bind(&zone_change.record_value)
-        .bind(zone_change.record_ttl)
-        .bind(zone_change.record_priority)
-        .execute(&mut **sqlite_tx)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
-
-        let id = result.last_insert_rowid() as i32;
-
-        sqlx::query_as::<_, ZoneChange>(
-            r#"
-            SELECT id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
-            FROM zone_changes
-            WHERE id = ?
-            "#,
-        )
-        .bind(id)
-        .fetch_one(&mut **sqlite_tx)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
-    }
-
     async fn create_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -122,7 +47,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
                     .bind(c.zone_id)
                     .bind(c.serial)
                     .bind(c.operation.clone())
-                    .bind(c.record_name.clone())
+                    .bind(&c.record_name)
                     .bind(c.record_type.clone())
                     .bind(c.record_value.clone())
                     .bind(c.record_ttl)
@@ -136,7 +61,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         Ok(())
     }
 
-    async fn get_changes_between_serials(
+    async fn list_changes_between_serials(
         &self,
         zone_id: i32,
         from_serial: i32,
@@ -144,7 +69,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
         sqlx::query_as::<_, ZoneChange>(
             r#"
-            SELECT id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
+            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
             FROM zone_changes
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id
@@ -158,7 +83,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn get_changes_between_serials_tx(
+    async fn list_changes_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -169,7 +94,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
 
         sqlx::query_as::<_, ZoneChange>(
             r#"
-            SELECT id, zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
+            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
             FROM zone_changes
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id

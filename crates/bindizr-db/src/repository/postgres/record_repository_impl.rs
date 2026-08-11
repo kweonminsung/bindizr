@@ -1,52 +1,29 @@
 use async_trait::async_trait;
-use bindizr_core::dns::record::display_record_value;
+use bindizr_core::dns::name::OwnerName;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
     error::DatabaseError,
-    model::record::{Record, RecordType, RecordWithZone},
-    repository::{RecordFilter, RecordRepository, RepositoryTx},
+    model::record::{Record, RecordWithZone},
+    repository::{
+        RecordFilter, RecordRepository, RepositoryTx,
+        sql::{apex_owner_sql, like_pattern, name_like_types_sql, normalize_partial_value},
+    },
 };
 
 /// PostgreSQL-backed implementation of `RecordRepository`.
-pub struct PostgresRecordRepository {
+pub(crate) struct PostgresRecordRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresRecordRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         PostgresRecordRepository { pool }
     }
 }
 
 #[async_trait]
 impl RecordRepository for PostgresRecordRepository {
-    async fn create(&self, mut record: Record) -> Result<Record, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id
-            "#,
-        )
-        .bind(&record.name)
-        .bind(record.record_type.to_string())
-        .bind(&record.value)
-        .bind(display_record_value(&record.value, &record.record_type))
-        .bind(record.ttl)
-        .bind(record.priority)
-        .bind(record.zone_id)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        record.id = result.get::<i32, _>(0);
-
-        Ok(record)
-    }
-
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -64,7 +41,7 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
-        .bind(display_record_value(&record.value, &record.record_type))
+        .bind(record.record_type.display_value(&record.value))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -110,10 +87,10 @@ impl RecordRepository for PostgresRecordRepository {
             let mut query = sqlx::query(AssertSqlSafe(sql));
             for r in chunk {
                 query = query
-                    .bind(r.name.clone())
+                    .bind(&r.name)
                     .bind(r.record_type.to_string())
                     .bind(r.value.clone())
-                    .bind(display_record_value(&r.value, &r.record_type))
+                    .bind(r.record_type.display_value(&r.value))
                     .bind(r.ttl)
                     .bind(r.priority)
                     .bind(r.zone_id);
@@ -179,7 +156,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(record)
     }
 
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let records =
@@ -192,30 +169,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(records)
     }
 
-    async fn get_by_zone_id_with_zone(
-        &self,
-        zone_id: i32,
-    ) -> Result<Vec<RecordWithZone>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let records = sqlx::query_as::<_, RecordWithZone>(
-            r#"
-            SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
-                   r.zone_id, z.name AS zone_name
-            FROM records r
-            INNER JOIN zones z ON z.id = r.zone_id
-            WHERE r.zone_id = $1
-            ORDER BY r.name
-            "#,
-        )
-        .bind(zone_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(records)
-    }
-
-    async fn get_by_zone_id_tx(
+    async fn list_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -232,28 +186,28 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(records)
     }
 
-    async fn get_by_zone_id_and_name_tx(
+    async fn list_by_zone_id_and_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        name: &str,
+        name: &OwnerName,
     ) -> Result<Vec<Record>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        // Owner names are stored lowercase, so match against a lowercased bind
-        // and keep the column function-free so idx_records_zone_name is used.
+        // Bind the canonical stored form as given: re-folding it here would miss
+        // its own row, and the bare column lets idx_records_zone_name apply.
         let records = sqlx::query_as::<_, Record>(
             "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name FOR UPDATE",
         )
         .bind(zone_id)
-        .bind(name.to_lowercase())
+        .bind(name)
         .fetch_all(&mut **postgres_tx)
         .await?;
 
         Ok(records)
     }
 
-    async fn get_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError> {
+    async fn list_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError> {
         if zone_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -284,11 +238,11 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(out)
     }
 
-    async fn get_by_zone_id_and_names_tx(
+    async fn list_by_zone_id_and_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        names: &[String],
+        names: &[OwnerName],
     ) -> Result<Vec<Record>, DatabaseError> {
         if names.is_empty() {
             return Ok(Vec::new());
@@ -296,8 +250,7 @@ impl RecordRepository for PostgresRecordRepository {
 
         let postgres_tx = tx.as_postgres()?;
 
-        // Only same-name rows can conflict, so match names lowercased (keeping the
-        // column function-free so idx_records_zone_name is used) and lock just those.
+        // Only same-name rows can conflict, so lock just those.
         // One round-trip per chunk; keep it large (dominated bulk-import time on
         // networked backends). 5000 is well under the 65535 placeholder limit.
         const CHUNK: usize = 5000;
@@ -316,7 +269,7 @@ impl RecordRepository for PostgresRecordRepository {
 
             let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
             for name in chunk {
-                query = query.bind(name.to_lowercase());
+                query = query.bind(name);
             }
             let mut rows = query.fetch_all(&mut **postgres_tx).await?;
             out.append(&mut rows);
@@ -324,126 +277,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(out)
     }
 
-    async fn get(
-        &self,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-        let value_filter = if record_type.is_name_like_value() {
-            "AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))"
-        } else {
-            "AND ($5::TEXT IS NULL OR value = $6)"
-        };
-
-        let query = format!(
-            r#"
-            SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
-            FROM records
-            WHERE ($1::INT4 IS NULL OR zone_id = $2)
-              AND LOWER(name) = LOWER($3)
-              AND record_type = $4
-              {value_filter}
-              AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
-            "#
-        );
-
-        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
-            .bind(zone_id)
-            .bind(zone_id)
-            .bind(name)
-            .bind(record_type.to_string())
-            .bind(value)
-            .bind(value)
-            .bind(if match_priority { 1 } else { 0 })
-            .bind(priority)
-            .bind(priority)
-            .fetch_optional(&mut *conn)
-            .await?;
-
-        Ok(record)
-    }
-
-    async fn get_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        zone_id: Option<i32>,
-        name: &str,
-        record_type: &RecordType,
-        value: Option<&str>,
-        priority: Option<i32>,
-        match_priority: bool,
-    ) -> Result<Option<Record>, DatabaseError> {
-        let postgres_tx = tx.as_postgres()?;
-        let value_filter = if record_type.is_name_like_value() {
-            "AND ($5::TEXT IS NULL OR LOWER(value) = LOWER($6))"
-        } else {
-            "AND ($5::TEXT IS NULL OR value = $6)"
-        };
-
-        let query = format!(
-            r#"
-            SELECT id, name, record_type, value, ttl, priority, created_at, zone_id
-            FROM records
-            WHERE ($1::INT4 IS NULL OR zone_id = $2)
-              AND LOWER(name) = LOWER($3)
-              AND record_type = $4
-              {value_filter}
-              AND ($7 = 0 OR priority = $8 OR (priority IS NULL AND $9::INT4 IS NULL))
-            FOR UPDATE
-            "#
-        );
-
-        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(query))
-            .bind(zone_id)
-            .bind(zone_id)
-            .bind(name)
-            .bind(record_type.to_string())
-            .bind(value)
-            .bind(value)
-            .bind(if match_priority { 1 } else { 0 })
-            .bind(priority)
-            .bind(priority)
-            .fetch_optional(&mut **postgres_tx)
-            .await?;
-
-        Ok(record)
-    }
-
-    async fn get_all(&self) -> Result<Vec<Record>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let records = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records ORDER BY name")
-            .fetch_all(&mut *conn)
-            .await
-            ?;
-
-        Ok(records)
-    }
-
-    async fn get_all_with_zone(&self) -> Result<Vec<RecordWithZone>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let records = sqlx::query_as::<_, RecordWithZone>(
-            r#"
-            SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
-                   r.zone_id, z.name AS zone_name
-            FROM records r
-            INNER JOIN zones z ON z.id = r.zone_id
-            ORDER BY r.name
-            "#,
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(records)
-    }
-
-    async fn get_by_filter_with_zone(
+    async fn list_by_filter_with_zone(
         &self,
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError> {
@@ -451,8 +285,10 @@ impl RecordRepository for PostgresRecordRepository {
         let value = filter.value.as_deref().map(normalize_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
+        let name_like_types = name_like_types_sql();
+        let apex_owner = apex_owner_sql();
 
-        let records = sqlx::query_as::<_, RecordWithZone>(
+        let records = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
             SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
                    r.zone_id, z.name AS zone_name
@@ -462,11 +298,11 @@ impl RecordRepository for PostgresRecordRepository {
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(r.name) = LOWER($4)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
               AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
               AND ($8::TEXT IS NULL OR (CASE
-                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
+                    WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                     ELSE POSITION($31 IN r.display_value) > 0
               END))
               AND ($10::INT4 IS NULL OR r.ttl = $11)
@@ -477,17 +313,19 @@ impl RecordRepository for PostgresRecordRepository {
               AND ($20::INT4 IS NULL OR r.priority <= $21)
               AND (
                     $22::TEXT IS NULL
-                    OR LOWER(z.name) LIKE LOWER($23)
-                    OR LOWER(r.name) LIKE LOWER($24)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
-                    OR LOWER(r.record_type) LIKE LOWER($26)
-                    OR LOWER(r.display_value) LIKE LOWER($27)
+                    OR LOWER(z.name) LIKE LOWER($23) ESCAPE '\'
+                    OR LOWER(r.name) LIKE LOWER($24) ESCAPE '\'
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25) ESCAPE '\'
+                    OR LOWER(r.record_type) LIKE LOWER($26) ESCAPE '\'
+                    OR LOWER(r.display_value) LIKE LOWER($27) ESCAPE '\'
             )
             AND ($30::INT4[] IS NULL OR r.zone_id = ANY($30))
-            ORDER BY r.name
+            -- r.name ties across an RRset, so without r.id a plan change
+            -- between two pages could drop or repeat a row.
+            ORDER BY r.name, r.id
             LIMIT $28 OFFSET $29
-            "#,
-        )
+            "#
+        )))
         .bind(&filter.zone_name)
         .bind(&filter.zone_name)
         .bind(&filter.name)
@@ -535,8 +373,10 @@ impl RecordRepository for PostgresRecordRepository {
         let value = filter.value.as_deref().map(normalize_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
+        let name_like_types = name_like_types_sql();
+        let apex_owner = apex_owner_sql();
 
-        let count = sqlx::query_scalar::<_, i64>(
+        let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
             FROM records r
@@ -545,11 +385,11 @@ impl RecordRepository for PostgresRecordRepository {
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(r.name) = LOWER($4)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
               AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
               AND ($8::TEXT IS NULL OR (CASE
-                    WHEN r.record_type IN ('CNAME','NS','PTR','MX','SRV') THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
+                    WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                     ELSE POSITION($29 IN r.display_value) > 0
               END))
               AND ($10::INT4 IS NULL OR r.ttl = $11)
@@ -560,15 +400,15 @@ impl RecordRepository for PostgresRecordRepository {
               AND ($20::INT4 IS NULL OR r.priority <= $21)
               AND (
                     $22::TEXT IS NULL
-                    OR LOWER(z.name) LIKE LOWER($23)
-                    OR LOWER(r.name) LIKE LOWER($24)
-                    OR LOWER(CASE WHEN r.name = '@' THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25)
-                    OR LOWER(r.record_type) LIKE LOWER($26)
-                    OR LOWER(r.display_value) LIKE LOWER($27)
+                    OR LOWER(z.name) LIKE LOWER($23) ESCAPE '\'
+                    OR LOWER(r.name) LIKE LOWER($24) ESCAPE '\'
+                    OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25) ESCAPE '\'
+                    OR LOWER(r.record_type) LIKE LOWER($26) ESCAPE '\'
+                    OR LOWER(r.display_value) LIKE LOWER($27) ESCAPE '\'
             )
             AND ($28::INT4[] IS NULL OR r.zone_id = ANY($28))
-            "#,
-        )
+            "#
+        )))
         .bind(&filter.zone_name)
         .bind(&filter.zone_name)
         .bind(&filter.name)
@@ -604,30 +444,6 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(count as u64)
     }
 
-    async fn update(&self, record: Record) -> Result<Record, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        sqlx::query(
-            r#"
-            UPDATE records
-            SET name = $1, record_type = $2, value = $3, display_value = $4, ttl = $5, priority = $6, zone_id = $7
-            WHERE id = $8
-        "#,
-        )
-        .bind(&record.name)
-        .bind(record.record_type.to_string())
-        .bind(&record.value)
-        .bind(display_record_value(&record.value, &record.record_type))
-        .bind(record.ttl)
-        .bind(record.priority)
-        .bind(record.zone_id)
-        .bind(record.id)
-        .execute(&mut *conn)
-        .await?;
-
-        Ok(record)
-    }
-
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -645,7 +461,7 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&record.name)
         .bind(record.record_type.to_string())
         .bind(&record.value)
-        .bind(display_record_value(&record.value, &record.record_type))
+        .bind(record.record_type.display_value(&record.value))
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
@@ -654,25 +470,6 @@ impl RecordRepository for PostgresRecordRepository {
         .await?;
 
         Ok(record)
-    }
-
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-        sqlx::query("DELETE FROM records WHERE id = $1")
-            .bind(id)
-            .execute(&mut *conn)
-            .await?;
-        Ok(())
-    }
-
-    async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
-        let postgres_tx = tx.as_postgres()?;
-
-        sqlx::query("DELETE FROM records WHERE id = $1")
-            .bind(id)
-            .execute(&mut **postgres_tx)
-            .await?;
-        Ok(())
     }
 
     async fn delete_many_tx(
@@ -692,15 +489,4 @@ impl RecordRepository for PostgresRecordRepository {
             .await?;
         Ok(())
     }
-}
-
-fn normalize_partial_value(value: &str) -> String {
-    value.trim().trim_end_matches('.').to_string()
-}
-
-fn like_pattern(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| format!("%{}%", value.trim_end_matches('.')))
 }

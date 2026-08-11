@@ -925,3 +925,207 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 2);
 }
+
+// Rows hold one canonical spelling, so the filter has to reach it however the
+// request spells the name.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_filter_matches_every_spelling_of_an_owner_name() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for name in ["www", "foo;bar"] {
+        let (status, _) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name,
+                    "record_type": "A",
+                    "value": "192.0.2.1",
+                    "zone_name": zone_name,
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{name}");
+    }
+
+    // The apex is the empty name in a row, and `;` is escaped there.
+    for spelling in [
+        "@",
+        "www",
+        &format!("www.{zone_name}."),
+        "foo;bar",
+        r"foo\;bar",
+    ] {
+        let (status, body) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&name={}", encode(spelling)),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["items"].as_array().map(Vec::len),
+            Some(1),
+            "no record matched {spelling:?}"
+        );
+    }
+}
+
+/// Percent-encode a query value; `;` and `\` would otherwise be taken apart.
+fn encode(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' | '_' | '~' => c.to_string(),
+            other => format!("%{:02X}", other as u32),
+        })
+        .collect()
+}
+
+// Rows hold the apex as the empty string, so `@` only reaches it once it is
+// mapped to that sentinel — there is no zone here to build an FQDN against.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn apex_filter_finds_apex_records_without_a_zone_filter() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, scoped) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=@"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let scoped_count = scoped["items"].as_array().unwrap().len();
+    assert!(
+        scoped_count > 0,
+        "zone has no apex record to find: {scoped}"
+    );
+
+    let (status, unscoped) = app.request(Method::GET, "/records?name=@", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = unscoped["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&format!("{zone_name}.").as_str()),
+        "apex of {zone_name} missing from {names:?}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn empty_name_filter_is_no_filter_not_the_apex() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for (name, value) in [("www", "192.0.2.1"), ("mail", "192.0.2.2")] {
+        let (status, _) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name, "record_type": "A",
+                    "value": value, "zone_name": zone_name
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    let count = |body: &serde_json::Value| body["items"].as_array().unwrap().len();
+
+    let (_, unfiltered) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}"),
+            None,
+        )
+        .await;
+
+    // Rows hold the apex as the empty string, so an empty filter left to fall
+    // through would select exactly the apex rows instead of every row.
+    let (status, empty) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name="),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(count(&empty), count(&unfiltered), "{empty}");
+    assert!(count(&empty) > 1, "expected apex plus the two A records");
+}
+
+// Unescaped, these matched anything — and both are ordinary characters in the
+// rdata and names users search for.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn search_treats_like_wildcards_as_literal_text() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for (name, value) in [
+        ("pct", "100%off"),
+        ("pctdecoy", "100XXoff"),
+        ("under", "a_b"),
+        ("underdecoy", "axb"),
+    ] {
+        let (status, _) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name, "record_type": "TXT",
+                    "value": value, "zone_name": zone_name
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    async fn search(app: &TestApp, zone_name: &str, term: &str) -> Vec<String> {
+        let q = term.replace('%', "%25").replace('_', "%5F");
+        let (_, body) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&search={q}"),
+                None,
+            )
+            .await;
+        let mut names: Vec<String> = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| {
+                r["name"]
+                    .as_str()
+                    .unwrap()
+                    .split('.')
+                    .next()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    assert_eq!(search(&app, zone_name, "100%off").await, ["pct"]);
+    assert_eq!(search(&app, zone_name, "a_b").await, ["under"]);
+    // A term that is nothing but wildcards matches the records holding them.
+    assert_eq!(search(&app, zone_name, "%").await, ["pct"]);
+    assert_eq!(search(&app, zone_name, "_").await, ["under"]);
+}

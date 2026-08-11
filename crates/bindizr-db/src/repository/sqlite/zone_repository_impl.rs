@@ -1,51 +1,25 @@
 use async_trait::async_trait;
-use sqlx::{Pool, Sqlite};
+use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{RepositoryTx, ZoneFilter, ZoneRepository},
+    repository::{RepositoryTx, ZoneFilter, ZoneRepository, sql::like_pattern},
 };
 
 /// SQLite-backed implementation of `ZoneRepository`.
-pub struct SqliteZoneRepository {
+pub(crate) struct SqliteZoneRepository {
     pool: Pool<Sqlite>,
 }
 
 impl SqliteZoneRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
 }
 
 #[async_trait]
 impl ZoneRepository for SqliteZoneRepository {
-    async fn create(&self, mut zone: Zone) -> Result<Zone, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO zones (name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&zone.name)
-        .bind(&zone.primary_ns)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
-        .bind(zone.serial)
-        .bind(zone.refresh)
-        .bind(zone.retry)
-        .bind(zone.expire)
-        .bind(zone.minimum_ttl)
-        .execute(&mut *conn)
-        .await?;
-
-        zone.id = result.last_insert_rowid() as i32;
-        Ok(zone)
-    }
-
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -59,7 +33,7 @@ impl ZoneRepository for SqliteZoneRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
-        .bind(&zone.name)
+        .bind(zone.name.as_str())
         .bind(&zone.primary_ns)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
@@ -72,17 +46,6 @@ impl ZoneRepository for SqliteZoneRepository {
         .await?;
 
         zone.id = result.last_insert_rowid() as i32;
-        Ok(zone)
-    }
-
-    async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&mut *conn)
-            .await?;
-
         Ok(zone)
     }
 
@@ -127,7 +90,7 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(zone)
     }
 
-    async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
@@ -137,7 +100,7 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(zones)
     }
 
-    async fn get_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
         let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
@@ -147,11 +110,16 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(zones)
     }
 
-    async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
+        let ids_clause = match filter.ids.as_deref() {
+            None => String::new(),
+            Some([]) => "AND 1 = 0".to_string(),
+            Some(ids) => format!("AND id IN ({})", vec!["?"; ids.len()].join(",")),
+        };
 
-        let zones = sqlx::query_as::<_, Zone>(
+        let mut query = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
             r#"
             SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at
             FROM zones
@@ -165,14 +133,15 @@ impl ZoneRepository for SqliteZoneRepository {
               AND (? IS NULL OR serial = ?)
               AND (
                     ? IS NULL
-                    OR LOWER(name) LIKE LOWER(?)
-                    OR LOWER(primary_ns) LIKE LOWER(?)
-                    OR LOWER(admin_email) LIKE LOWER(?)
+                    OR LOWER(name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(primary_ns) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(admin_email) LIKE LOWER(?) ESCAPE '\'
               )
+            {ids_clause}
             ORDER BY name
             LIMIT ? OFFSET ?
-            "#,
-        )
+            "#
+        )))
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(filter.id)
@@ -192,16 +161,22 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&search)
-        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
-        .bind(
-            filter
-                .offset
-                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
-                .unwrap_or(0),
-        )
-        .fetch_all(&mut *conn)
-        .await?;
+        .bind(&search);
+        if let Some(ids) = &filter.ids {
+            for zone_id in ids {
+                query = query.bind(zone_id);
+            }
+        }
+        let zones = query
+            .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+            .bind(
+                filter
+                    .offset
+                    .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+                    .unwrap_or(0),
+            )
+            .fetch_all(&mut *conn)
+            .await?;
 
         Ok(zones)
     }
@@ -217,8 +192,13 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
+        let ids_clause = match filter.ids.as_deref() {
+            None => String::new(),
+            Some([]) => "AND 1 = 0".to_string(),
+            Some(ids) => format!("AND id IN ({})", vec!["?"; ids.len()].join(",")),
+        };
 
-        let count = sqlx::query_scalar::<_, i64>(
+        let mut query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
             FROM zones
@@ -232,12 +212,13 @@ impl ZoneRepository for SqliteZoneRepository {
               AND (? IS NULL OR serial = ?)
               AND (
                     ? IS NULL
-                    OR LOWER(name) LIKE LOWER(?)
-                    OR LOWER(primary_ns) LIKE LOWER(?)
-                    OR LOWER(admin_email) LIKE LOWER(?)
+                    OR LOWER(name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(primary_ns) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(admin_email) LIKE LOWER(?) ESCAPE '\'
               )
-            "#,
-        )
+            {ids_clause}
+            "#
+        )))
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(filter.id)
@@ -257,38 +238,15 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&search)
-        .fetch_one(&mut *conn)
-        .await?;
+        .bind(&search);
+        if let Some(ids) = &filter.ids {
+            for zone_id in ids {
+                query = query.bind(zone_id);
+            }
+        }
+        let count = query.fetch_one(&mut *conn).await?;
 
         Ok(count as u64)
-    }
-
-    async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        sqlx::query(
-            r#"
-            UPDATE zones 
-            SET name = ?, primary_ns = ?, admin_email = ?,
-                ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(&zone.name)
-        .bind(&zone.primary_ns)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
-        .bind(zone.serial)
-        .bind(zone.refresh)
-        .bind(zone.retry)
-        .bind(zone.expire)
-        .bind(zone.minimum_ttl)
-        .bind(zone.id)
-        .execute(&mut *conn)
-        .await?;
-
-        Ok(zone)
     }
 
     async fn update_tx(
@@ -306,7 +264,7 @@ impl ZoneRepository for SqliteZoneRepository {
             WHERE id = ?
             "#,
         )
-        .bind(&zone.name)
+        .bind(zone.name.as_str())
         .bind(&zone.primary_ns)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
@@ -320,17 +278,6 @@ impl ZoneRepository for SqliteZoneRepository {
         .await?;
 
         Ok(zone)
-    }
-
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        sqlx::query("DELETE FROM zones WHERE id = ?")
-            .bind(id)
-            .execute(&mut *conn)
-            .await?;
-
-        Ok(())
     }
 
     async fn update_serial_tx(
@@ -358,11 +305,4 @@ impl ZoneRepository for SqliteZoneRepository {
             .await?;
         Ok(())
     }
-}
-
-fn like_pattern(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| format!("%{}%", value))
 }

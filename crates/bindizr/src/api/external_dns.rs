@@ -5,17 +5,19 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_service::external_dns::ExternalDnsService;
+use bindizr_service::{
+    external_dns::ExternalDnsService,
+    types::{
+        ErrorResponse, ExternalDnsChangesRequest, ExternalDnsChangesResponse,
+        ExternalDnsRecordsResponse, ExternalDnsZonesResponse,
+    },
+};
 use serde_json::json;
 
 use crate::api::{
     RequestCaller,
     error::ApiError,
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
-    types::{
-        ErrorResponse, ExternalDnsChangesRequest, ExternalDnsChangesResponse,
-        ExternalDnsRecordsResponse, ExternalDnsZonesResponse,
-    },
 };
 
 /// Route group for the ExternalDNS provider endpoints, registered only when
@@ -104,6 +106,6 @@ pub(crate) async fn apply_external_dns_changes(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<ExternalDnsChangesRequest>,
 ) -> Result<Response, ApiError> {
-    let response = ExternalDnsService::apply_changes(&body, &caller).await?;
+    let response = ExternalDnsService::apply_changes(&caller, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

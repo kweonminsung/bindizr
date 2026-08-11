@@ -1,11 +1,13 @@
 use bindizr_core::log_debug;
+use bindizr_service::types::{CreateTsigKeyRequest, GetTsigKeyResponse};
 use clap::Subcommand;
-use serde_json::json;
 
 use crate::{
-    api::types::GetTsigKeyResponse,
-    cli::error::CliError,
-    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+    cli::{error::CliError, output::parse_response},
+    socket::{
+        client::DaemonSocketClient,
+        types::{DaemonCommandKind, TsigKeyNameParams},
+    },
 };
 
 /// Subcommands for managing TSIG keys used for nsupdate authentication.
@@ -70,19 +72,18 @@ async fn create_tsig_key(
     let res = client
         .send_command(
             DaemonCommandKind::TsigKeyCreate,
-            Some(json!({
-                "name": name,
-                "algorithm": algorithm,
-                "secret": secret,
-                "global": global,
-            })),
+            CreateTsigKeyRequest {
+                name,
+                algorithm,
+                secret,
+                global,
+            },
         )
         .await?;
 
     log_debug!("TSIG key creation result: {:?}", res);
 
-    let key: GetTsigKeyResponse = serde_json::from_value(res.data)
-        .map_err(|e| format!("Failed to parse TSIG key creation response: {}", e))?;
+    let key: GetTsigKeyResponse = parse_response(&res.data)?;
 
     println!("TSIG key created successfully:");
     print_key(&key);
@@ -95,13 +96,12 @@ async fn create_tsig_key(
 
 async fn list_tsig_keys(client: &DaemonSocketClient) -> Result<(), CliError> {
     let res = client
-        .send_command(DaemonCommandKind::TsigKeyList, None)
+        .send_command(DaemonCommandKind::TsigKeyList, ())
         .await?;
 
     log_debug!("TSIG key list result: {:?}", res);
 
-    let keys: Vec<GetTsigKeyResponse> = serde_json::from_value(res.data)
-        .map_err(|e| format!("Failed to parse TSIG key list response: {}", e))?;
+    let keys: Vec<GetTsigKeyResponse> = parse_response(&res.data)?;
 
     if keys.is_empty() {
         println!("No TSIG keys found");
@@ -131,13 +131,12 @@ async fn list_tsig_keys(client: &DaemonSocketClient) -> Result<(), CliError> {
 
 async fn get_tsig_key(client: &DaemonSocketClient, name: String) -> Result<(), CliError> {
     let res = client
-        .send_command(DaemonCommandKind::TsigKeyGet, Some(json!({ "name": name })))
+        .send_command(DaemonCommandKind::TsigKeyGet, TsigKeyNameParams { name })
         .await?;
 
     log_debug!("TSIG key get result: {:?}", res);
 
-    let key: GetTsigKeyResponse = serde_json::from_value(res.data)
-        .map_err(|e| format!("Failed to parse TSIG key response: {}", e))?;
+    let key: GetTsigKeyResponse = parse_response(&res.data)?;
 
     print_key(&key);
 
@@ -146,10 +145,7 @@ async fn get_tsig_key(client: &DaemonSocketClient, name: String) -> Result<(), C
 
 async fn delete_tsig_key(client: &DaemonSocketClient, name: String) -> Result<(), CliError> {
     let res = client
-        .send_command(
-            DaemonCommandKind::TsigKeyDelete,
-            Some(json!({ "name": name })),
-        )
+        .send_command(DaemonCommandKind::TsigKeyDelete, TsigKeyNameParams { name })
         .await?;
 
     log_debug!("TSIG key deletion result: {:?}", res);

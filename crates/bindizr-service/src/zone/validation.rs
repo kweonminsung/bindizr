@@ -1,12 +1,9 @@
-use bindizr_core::dns::name::email_to_soa_mailbox;
-
-use crate::{
-    error::ServiceError,
-    types::CreateZoneRequest,
-    validation::{
-        MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label, validate_wire_labels,
-    },
+use bindizr_core::dns::{
+    name::{ZoneName, has_whitespace_or_control},
+    record::SoaMailbox,
 };
+
+use crate::{error::ServiceError, types::CreateZoneRequest};
 
 const MAX_EMAIL_LEN: usize = 254;
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
@@ -14,59 +11,17 @@ const MIN_TTL: i32 = 60;
 const MAX_TTL: i32 = 604_800;
 
 pub(super) struct ValidatedCreateZoneRequest {
-    pub name: String,
-    pub primary_ns: String,
-    pub admin_email: String,
-    pub ttl: i32,
-}
-
-/// Resolved SOA timing fields. Used both as the fallback source (zone defaults on
-/// create, the existing zone's values on update) and as the validated output.
-pub(super) struct ResolvedSoaTimers {
-    pub refresh: i32,
-    pub retry: i32,
-    pub expire: i32,
-    pub minimum_ttl: i32,
-}
-
-/// Validate client-supplied SOA timers, using `fallback` for omitted fields
-/// (zone defaults on create, the existing zone's values on update).
-pub(super) fn resolve_soa_timers(
-    request: &CreateZoneRequest,
-    fallback: ResolvedSoaTimers,
-) -> Result<ResolvedSoaTimers, ServiceError> {
-    Ok(ResolvedSoaTimers {
-        refresh: resolve_soa_interval(request.refresh, fallback.refresh, "refresh")?,
-        retry: resolve_soa_interval(request.retry, fallback.retry, "retry")?,
-        expire: resolve_soa_interval(request.expire, fallback.expire, "expire")?,
-        minimum_ttl: resolve_soa_interval(
-            request.minimum_ttl,
-            fallback.minimum_ttl,
-            "minimum_ttl",
-        )?,
-    })
-}
-
-fn resolve_soa_interval(
-    value: Option<i32>,
-    fallback: i32,
-    field: &str,
-) -> Result<i32, ServiceError> {
-    let resolved = value.unwrap_or(fallback);
-    if resolved <= 0 {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must be a positive number of seconds",
-            field
-        )));
-    }
-    Ok(resolved)
+    pub(crate) name: ZoneName,
+    pub(crate) primary_ns: String,
+    pub(crate) admin_email: String,
+    pub(crate) ttl: i32,
 }
 
 pub(super) fn validate_create_zone_request(
     request: &CreateZoneRequest,
 ) -> Result<ValidatedCreateZoneRequest, ServiceError> {
     let zone_name = normalize_zone_name(&request.name)?;
-    let primary_ns = normalize_primary_ns(&request.primary_ns)?;
+    let primary_ns = normalize_domain_name(&request.primary_ns, "primary NS")?.to_string();
     let admin_email = normalize_email(&request.admin_email)?;
     let ttl = validate_ttl(request.ttl)?;
 
@@ -78,6 +33,30 @@ pub(super) fn validate_create_zone_request(
         admin_email,
         ttl,
     })
+}
+
+pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError> {
+    let trimmed = value.trim();
+
+    if trimmed == "." {
+        return Err(ServiceError::invalid_zone(
+            "zone name must not be the root zone".to_string(),
+        ));
+    }
+
+    if trimmed.starts_with("*.") || trimmed == "*" {
+        return Err(ServiceError::invalid_zone(
+            "wildcard zone names are not allowed".to_string(),
+        ));
+    }
+
+    normalize_domain_name(trimmed, "zone name")
+}
+
+/// Parse a domain name, phrasing any rejection against `field`. The rules
+/// live on [`ZoneName`]; this only maps the failure to a zone error.
+fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceError> {
+    ZoneName::parse(value).map_err(|e| ServiceError::invalid_zone(format!("{} {}", field, e)))
 }
 
 fn normalize_email(value: &str) -> Result<String, ServiceError> {
@@ -118,68 +97,6 @@ fn normalize_email(value: &str) -> Result<String, ServiceError> {
     Ok(normalized)
 }
 
-pub(crate) fn normalize_zone_name(value: &str) -> Result<String, ServiceError> {
-    let trimmed = value.trim();
-
-    if trimmed == "." {
-        return Err(ServiceError::invalid_zone(
-            "zone name must not be the root zone".to_string(),
-        ));
-    }
-
-    if trimmed.starts_with("*.") || trimmed == "*" {
-        return Err(ServiceError::invalid_zone(
-            "wildcard zone names are not allowed".to_string(),
-        ));
-    }
-
-    normalize_domain_name(trimmed, "zone name")
-}
-
-fn normalize_primary_ns(value: &str) -> Result<String, ServiceError> {
-    normalize_domain_name(value, "primary NS")
-}
-
-fn normalize_domain_name(value: &str, field: &str) -> Result<String, ServiceError> {
-    let trimmed = value.trim();
-
-    if trimmed.is_empty() {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must not be empty",
-            field
-        )));
-    }
-
-    if has_whitespace_or_control(trimmed) {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must not contain whitespace or control characters",
-            field
-        )));
-    }
-
-    let without_trailing_dot = trimmed.strip_suffix('.').unwrap_or(trimmed);
-
-    if without_trailing_dot.is_empty() {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must not be empty",
-            field
-        )));
-    }
-
-    if without_trailing_dot.len() > MAX_DOMAIN_LEN {
-        return Err(ServiceError::invalid_zone(format!(
-            "{} must be 253 bytes or fewer",
-            field
-        )));
-    }
-
-    for label in without_trailing_dot.split('.') {
-        validate_domain_label(label, field, false, ServiceError::invalid_zone)?;
-    }
-
-    Ok(without_trailing_dot.to_ascii_lowercase())
-}
-
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     if local.is_empty() {
         return Err(ServiceError::invalid_zone(
@@ -208,33 +125,6 @@ fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     Ok(())
 }
 
-fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
-    if ttl < MIN_TTL {
-        return Err(ServiceError::invalid_zone(format!(
-            "ttl must be at least {} seconds",
-            MIN_TTL
-        )));
-    }
-
-    if ttl > MAX_TTL {
-        return Err(ServiceError::invalid_zone(format!(
-            "ttl must be at most {} seconds",
-            MAX_TTL
-        )));
-    }
-
-    Ok(ttl)
-}
-
-// `zone_name` and `primary_ns` are already wire-safe after `normalize_domain_name`
-// (plain ASCII labels, each <= 63 bytes), so only the derived SOA RNAME, whose
-// label boundaries can shift during the email-to-mailbox escaping, needs rechecking.
-fn validate_soa_wire_safety(admin_email: &str) -> Result<(), ServiceError> {
-    let soa_mailbox =
-        email_to_soa_mailbox(admin_email).map_err(|e| ServiceError::invalid_zone(e.to_string()))?;
-    validate_wire_labels(&soa_mailbox, "admin email SOA RNAME")
-}
-
 fn is_valid_email_local_char(c: char) -> bool {
     c.is_ascii_alphanumeric()
         || matches!(
@@ -259,4 +149,74 @@ fn is_valid_email_local_char(c: char) -> bool {
                 | '~'
                 | '.'
         )
+}
+
+fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
+    if ttl < MIN_TTL {
+        return Err(ServiceError::invalid_zone(format!(
+            "ttl must be at least {} seconds",
+            MIN_TTL
+        )));
+    }
+
+    if ttl > MAX_TTL {
+        return Err(ServiceError::invalid_zone(format!(
+            "ttl must be at most {} seconds",
+            MAX_TTL
+        )));
+    }
+
+    Ok(ttl)
+}
+
+/// Resolved SOA timing fields. Used both as the fallback source (zone defaults on
+/// create, the existing zone's values on update) and as the validated output.
+pub(super) struct ResolvedSoaTimers {
+    pub(crate) refresh: i32,
+    pub(crate) retry: i32,
+    pub(crate) expire: i32,
+    pub(crate) minimum_ttl: i32,
+}
+
+/// Validate client-supplied SOA timers, using `fallback` for omitted fields
+/// (zone defaults on create, the existing zone's values on update).
+pub(super) fn resolve_soa_timers(
+    request: &CreateZoneRequest,
+    fallback: ResolvedSoaTimers,
+) -> Result<ResolvedSoaTimers, ServiceError> {
+    Ok(ResolvedSoaTimers {
+        refresh: resolve_soa_interval(request.refresh, fallback.refresh, "refresh")?,
+        retry: resolve_soa_interval(request.retry, fallback.retry, "retry")?,
+        expire: resolve_soa_interval(request.expire, fallback.expire, "expire")?,
+        minimum_ttl: resolve_soa_interval(
+            request.minimum_ttl,
+            fallback.minimum_ttl,
+            "minimum_ttl",
+        )?,
+    })
+}
+
+fn resolve_soa_interval(
+    value: Option<i32>,
+    fallback: i32,
+    field: &str,
+) -> Result<i32, ServiceError> {
+    let resolved = value.unwrap_or(fallback);
+    if resolved <= 0 {
+        return Err(ServiceError::invalid_zone(format!(
+            "{} must be a positive number of seconds",
+            field
+        )));
+    }
+    Ok(resolved)
+}
+
+// `zone_name` and `primary_ns` are already wire-safe after `normalize_domain_name`
+// (plain ASCII labels, each <= 63 bytes), so only the derived SOA RNAME, whose
+// label boundaries can shift during the email-to-mailbox escaping, needs rechecking.
+fn validate_soa_wire_safety(admin_email: &str) -> Result<(), ServiceError> {
+    let soa_mailbox = SoaMailbox::from_email(admin_email).map_err(ServiceError::invalid_zone)?;
+    soa_mailbox
+        .classify_wire_labels()
+        .map_err(|e| ServiceError::invalid_zone(format!("admin email SOA RNAME {}", e)))
 }

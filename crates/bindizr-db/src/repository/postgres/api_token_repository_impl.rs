@@ -4,13 +4,12 @@ use sqlx::{Pool, Postgres, Row};
 use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
 
 /// PostgreSQL-backed implementation of `ApiTokenRepository`.
-pub struct PostgresApiTokenRepository {
+pub(crate) struct PostgresApiTokenRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresApiTokenRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
 }
@@ -38,20 +37,6 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         token.id = result.get::<i32, _>(0);
 
         Ok(token)
-    }
-
-    async fn get_by_id(&self, id: i32) -> Result<Option<ApiToken>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let row = sqlx::query_as::<_, ApiToken>(
-            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE id = $1"
-        )
-        .bind(id)
-        .fetch_optional(&mut *conn)
-        .await
-        ?;
-
-        Ok(row)
     }
 
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError> {
@@ -82,7 +67,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         Ok(row)
     }
 
-    async fn get_all(&self) -> Result<Vec<ApiToken>, DatabaseError> {
+    async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let rows = sqlx::query_as::<_, ApiToken>(
