@@ -26,7 +26,7 @@ DNS Synchronization Service for BIND9
 
 &nbsp;<img src="docs/assets/concepts.png" width="462px" alt="Bindizr control plane and XFR server feeding BIND9 secondaries, which answer client queries">
 
-Bindizr owns the zone data and the transfer path; standard BIND9 secondaries discover zones through the catalog zone (RFC 9432) and answer client queries. Adding it in front of BIND9 costs nothing on the query path — `Bindizr + BIND9` serves **62,448 QPS against native BIND9's 61,629**.
+Bindizr owns the zone data and the transfer path; standard BIND9 secondaries discover zones through the catalog zone (RFC 9432) and answer client queries. Adding it in front of BIND9 costs nothing on the query path — `Bindizr + BIND9` serves **57,466 QPS against native BIND9's 57,674**.
 
 ## Features
 
