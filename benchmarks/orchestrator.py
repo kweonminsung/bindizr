@@ -106,8 +106,10 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
         sampler = None
         rows = result if isinstance(result, list) else [result]
         for row in rows:
-            row.setdefault("peak_mem_mb", res.get("peak_mem_mb", 0))
-            row.setdefault("avg_cpu_pct", res.get("avg_cpu_pct", 0))
+            # Attach only metrics this wrapper actually sampled.
+            if res.get("samples"):
+                row.setdefault("peak_mem_mb", res["peak_mem_mb"])
+                row.setdefault("avg_cpu_pct", res["avg_cpu_pct"])
             report.save_result(bench, row)
         print(f"  OK: {rows}", flush=True)
         return rows
