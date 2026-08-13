@@ -78,7 +78,7 @@ services:
 
 configs:
   bind9_named_template:
-    file: ./docker/bind9/named.swarm.conf.template
+    file: ./bind9/named.swarm.conf.template
 
 networks:
   bindizr-net:

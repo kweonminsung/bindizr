@@ -60,7 +60,7 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 Brings up Bindizr, PostgreSQL, and BIND9 on an overlay network.
 
 ```bash
-$ docker stack deploy -c docker-compose.yml bindizr
+$ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ```
 
 ### Package install

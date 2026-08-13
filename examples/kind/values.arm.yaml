@@ -1,4 +1,4 @@
-# arm64 override on top of kind-values.yaml — the Docker Hub bindizr and ISC
+# arm64 override on top of values.yaml — the Docker Hub bindizr and ISC
 # bind9 images are amd64-only. bind9 swaps to the classic multi-arch
 # ubuntu/bind9 image; the newer chiselled rock tags (e.g. 9.20-26.04) ship no
 # /bin/sh, which the chart's container command needs. bindizr runs a locally
@@ -7,7 +7,7 @@
 # Usage:
 #   docker build -t bindizr:local .
 #   kind load docker-image bindizr:local --name bindizr-test
-#   helm install bindizr charts -f kind-values.yaml -f kind-values.arm.yaml
+#   helm install bindizr charts -f examples/kind/values.yaml -f examples/kind/values.arm.yaml
 
 bindizr:
   image:

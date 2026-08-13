@@ -1,17 +1,16 @@
 # Local 3-node test cluster for the Helm chart (charts/).
 #
-# Usage: kind create cluster --config kind-cluster.yaml
-#        helm install bindizr charts -f kind-values.yaml
-# On arm64 hosts (Apple Silicon) also apply kind-values.arm.yaml — see its
-# header.
+# Usage: kind create cluster --config examples/kind/cluster.yaml
+#        helm install bindizr charts -f examples/kind/values.yaml
+# On arm64 hosts (Apple Silicon) also apply values.arm.yaml — see its header.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: bindizr-test
 nodes:
   - role: control-plane
   # NodePorts listen on every node, so mapping one worker suffices. 30053 is
-  # the bind9 nodePort pinned by the patch in kind-values.yaml's header; bound
-  # to localhost to avoid clashing with any DNS server on the host.
+  # the bind9 nodePort pinned by the patch in values.yaml's header; bound to
+  # localhost to avoid clashing with any DNS server on the host.
   - role: worker
     extraPortMappings:
       - containerPort: 30053
