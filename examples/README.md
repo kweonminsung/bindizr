@@ -47,7 +47,7 @@ works from the host.
 
 ```sh
 kind create cluster --config examples/kind/cluster.yaml
-helm install bindizr charts -f examples/kind/values.yaml
+helm install bindizr charts -n bindizr --create-namespace -f examples/kind/values.yaml
 ```
 
 On arm64 hosts the Docker Hub bindizr image is unusable (amd64-only): build
@@ -56,19 +56,21 @@ it locally, load it into the cluster, and add the arm values overlay:
 ```sh
 docker build -t bindizr:local .
 kind load docker-image bindizr:local --name bindizr-test
-helm install bindizr charts -f examples/kind/values.yaml -f examples/kind/values.arm.yaml
+helm install bindizr charts -n bindizr --create-namespace \
+  -f examples/kind/values.yaml -f examples/kind/values.arm.yaml
 ```
 
 Once the pods are Running, pin the bind9 NodePort to the mapped port (the
 chart does not expose `nodePort` in values) and query from the host:
 
 ```sh
-kubectl patch svc bindizr-bind9 --type merge -p '{"spec":{"ports":[{"name":"dns-tcp","port":53,"targetPort":"dns-tcp","protocol":"TCP","nodePort":30053},{"name":"dns-udp","port":53,"targetPort":"dns-udp","protocol":"UDP","nodePort":30053}]}}'
+kubectl -n bindizr patch svc bindizr-bind9 --type merge -p '{"spec":{"ports":[{"name":"dns-tcp","port":53,"targetPort":"dns-tcp","protocol":"TCP","nodePort":30053},{"name":"dns-udp","port":53,"targetPort":"dns-udp","protocol":"UDP","nodePort":30053}]}}'
 dig -p 5300 @127.0.0.1 <zone> SOA
 ```
 
 The HTTP API is reachable through a port-forward
-(`kubectl port-forward svc/bindizr-api 8000:8000` → `http://127.0.0.1:8000`).
+(`kubectl -n bindizr port-forward svc/bindizr-api 8000:8000` →
+`http://127.0.0.1:8000`).
 Tear everything down with `kind delete cluster --name bindizr-test`.
 
 ### ExternalDNS
@@ -80,19 +82,19 @@ records in a bindizr-managed zone. Full reference:
 
 ```sh
 # 1. Enable the provider API (config file change, so restart bindizr).
-helm upgrade bindizr charts -f examples/kind/values.yaml \
+helm upgrade bindizr charts -n bindizr -f examples/kind/values.yaml \
   -f examples/kind/values.external-dns.yaml   # plus values.arm.yaml on arm64
-kubectl rollout restart deploy/bindizr
+kubectl -n bindizr rollout restart deploy/bindizr
 
 # 2. Create the zone ExternalDNS will manage, and a token granted to it.
-kubectl exec deploy/bindizr -- bindizr zone create --name example.com \
+kubectl -n bindizr exec deploy/bindizr -- bindizr zone create --name example.com \
   --primary-ns ns.example.com --admin-email admin@example.com --ttl 3600
-kubectl exec deploy/bindizr -- bindizr token create --name external-dns
-kubectl exec deploy/bindizr -- bindizr zone token-policy add example.com --token external-dns
-kubectl create secret generic bindizr-external-dns --from-literal=api-token=<token>
+kubectl -n bindizr exec deploy/bindizr -- bindizr token create --name external-dns
+kubectl -n bindizr exec deploy/bindizr -- bindizr zone token-policy add example.com --token external-dns
+kubectl -n bindizr create secret generic bindizr-external-dns --from-literal=api-token=<token>
 
 # 3. Deploy ExternalDNS + adapter sidecar and the annotated demo Service.
-kubectl apply -f examples/kind/external-dns.yaml
+kubectl -n bindizr apply -f examples/kind/external-dns.yaml
 
 # 4. Within a sync interval the record exists and BIND9 serves it.
 dig -p 5300 @127.0.0.1 app.example.com A

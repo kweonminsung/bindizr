@@ -2,9 +2,9 @@
 # external-dns.yaml. Apply on top of values.yaml (plus values.arm.yaml on
 # arm64), then restart bindizr so the config file change is picked up:
 #
-#   helm upgrade bindizr charts -f examples/kind/values.yaml \
+#   helm upgrade bindizr charts -n bindizr -f examples/kind/values.yaml \
 #     -f examples/kind/values.external-dns.yaml
-#   kubectl rollout restart deploy/bindizr
+#   kubectl -n bindizr rollout restart deploy/bindizr
 
 bindizr:
   api:

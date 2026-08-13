@@ -7,7 +7,8 @@
 # Usage:
 #   docker build -t bindizr:local .
 #   kind load docker-image bindizr:local --name bindizr-test
-#   helm install bindizr charts -f examples/kind/values.yaml -f examples/kind/values.arm.yaml
+#   helm install bindizr charts -n bindizr --create-namespace \
+#     -f examples/kind/values.yaml -f examples/kind/values.arm.yaml
 
 bindizr:
   image:

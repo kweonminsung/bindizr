@@ -4,10 +4,10 @@
 #
 # Usage:
 #   kind create cluster --config examples/kind/cluster.yaml
-#   helm install bindizr charts -f examples/kind/values.yaml
+#   helm install bindizr charts -n bindizr --create-namespace -f examples/kind/values.yaml
 #   # Pin the bind9 NodePort to the port cluster.yaml maps to the host
 #   # (the chart does not expose nodePort in values):
-#   kubectl patch svc bindizr-bind9 --type merge -p '{"spec":{"ports":[{"name":"dns-tcp","port":53,"targetPort":"dns-tcp","protocol":"TCP","nodePort":30053},{"name":"dns-udp","port":53,"targetPort":"dns-udp","protocol":"UDP","nodePort":30053}]}}'
+#   kubectl -n bindizr patch svc bindizr-bind9 --type merge -p '{"spec":{"ports":[{"name":"dns-tcp","port":53,"targetPort":"dns-tcp","protocol":"TCP","nodePort":30053},{"name":"dns-udp","port":53,"targetPort":"dns-udp","protocol":"UDP","nodePort":30053}]}}'
 #   dig -p 5300 @127.0.0.1 <zone> SOA
 
 fullnameOverride: bindizr

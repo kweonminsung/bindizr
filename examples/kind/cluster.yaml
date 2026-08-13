@@ -1,7 +1,7 @@
 # Local 3-node test cluster for the Helm chart (charts/).
 #
 # Usage: kind create cluster --config examples/kind/cluster.yaml
-#        helm install bindizr charts -f examples/kind/values.yaml
+#        helm install bindizr charts -n bindizr --create-namespace -f examples/kind/values.yaml
 # On arm64 hosts (Apple Silicon) also apply values.arm.yaml — see its header.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
