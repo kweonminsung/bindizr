@@ -36,6 +36,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{- /* NOTIFY must reach every replica individually, so enumerate stable
+per-pod headless names instead of the load-balanced service. */ -}}
+{{- define "bindizr-chart.secondaryAddrs" -}}
+{{- $fullname := include "bindizr-chart.fullname" . -}}
+{{- $headless := printf "%s-bind9-headless" $fullname -}}
+{{- range $i, $_ := until (.Values.bind9.replicas | int) -}}
+{{- if $i }},{{ end -}}
+{{- printf "%s-bind9-%d.%s:53" $fullname $i $headless -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "bindizr-chart.databaseSecretName" -}}
 {{- default (printf "%s-db" (include "bindizr-chart.fullname" .)) .Values.bindizr.database.existingSecret -}}
 {{- end -}}
