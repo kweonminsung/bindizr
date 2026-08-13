@@ -20,7 +20,7 @@ services:
       - "127.0.0.1:53:53/tcp"
       - "127.0.0.1:53:53/udp"
     volumes:
-      - ../../docker/dnsdist/dnsdist.conf:/etc/dnsdist/dnsdist.conf:ro
+      - ./dnsdist/dnsdist.conf:/etc/dnsdist/dnsdist.conf:ro
     networks:
       bindizr-net:
         ipv4_address: 172.28.0.2
@@ -67,7 +67,7 @@ services:
       - "1053:53/tcp"
       - "1053:53/udp"
     volumes:
-      - ../../docker/bind9/named.conf:/etc/bind/named.conf:ro
+      - ./bind9/named.conf:/etc/bind/named.conf:ro
       - bind9-1-cache:/var/cache/bind
       - bind9-1-data:/var/lib/bind
     networks:
@@ -85,7 +85,7 @@ services:
       - "1054:53/tcp"
       - "1054:53/udp"
     volumes:
-      - ../../docker/bind9/named.conf:/etc/bind/named.conf:ro
+      - ./bind9/named.conf:/etc/bind/named.conf:ro
       - bind9-2-cache:/var/cache/bind
       - bind9-2-data:/var/lib/bind
     networks:
