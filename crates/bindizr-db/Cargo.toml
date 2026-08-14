@@ -13,7 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.6" }
+bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.7" }
 async-trait.workspace = true
 log.workspace = true
 sqlx.workspace = true

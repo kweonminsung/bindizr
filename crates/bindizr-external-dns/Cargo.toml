@@ -20,7 +20,7 @@ name = "bindizr-external-dns"
 path = "src/main.rs"
 
 [dependencies]
-bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.6" }
+bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.7" }
 axum.workspace = true
 clap = { workspace = true, features = ["env"] }
 log.workspace = true
