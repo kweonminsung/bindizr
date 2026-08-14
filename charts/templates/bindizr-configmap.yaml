@@ -25,7 +25,7 @@ data:
     [dns]
     listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"
     listen_port = {{ .Values.bindizr.dns.port }}
-    secondary_addrs = ""
+    secondary_addrs = "{{ include "bindizr-chart.secondaryAddrs" . }}"
     notify_after_update = {{ .Values.bindizr.dns.notifyAfterUpdate }}
     notify_on_startup = {{ .Values.bindizr.dns.notifyOnStartup }}
     notify_retries = {{ .Values.bindizr.dns.notifyRetries }}

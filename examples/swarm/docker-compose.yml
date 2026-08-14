@@ -1,6 +1,6 @@
 services:
   bindizr:
-    image: kweonminsung/bindizr:0.1.0-beta.6
+    image: kweonminsung/bindizr:0.1.0-beta.7
     environment:
       BINDIZR_DATABASE_TYPE: postgresql
       BINDIZR_DATABASE_URL: postgresql://bindizr:bindizr@postgres:5432/bindizr
@@ -78,7 +78,7 @@ services:
 
 configs:
   bind9_named_template:
-    file: ./docker/bind9/named.swarm.conf.template
+    file: ./bind9/named.swarm.conf.template
 
 networks:
   bindizr-net:

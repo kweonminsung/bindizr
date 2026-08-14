@@ -2,8 +2,8 @@ apiVersion: v2
 name: bindizr-chart
 description: Bindizr DNS control plane with BIND9 authoritative DNS pods.
 type: application
-version: 0.1.0-beta.6
-appVersion: "0.1.0-beta.6"
+version: 0.1.0-beta.7
+appVersion: "0.1.0-beta.7"
 home: https://github.com/kweonminsung/bindizr
 sources:
   - https://github.com/kweonminsung/bindizr

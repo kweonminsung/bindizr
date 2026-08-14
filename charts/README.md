@@ -29,7 +29,7 @@ Install the released OCI chart from Docker Hub:
 
 ```sh
 helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-beta.6 \
+  --version 0.1.0-beta.7 \
   --set bindizr.database.existingSecret=bindizr-db-secret
 ```
 

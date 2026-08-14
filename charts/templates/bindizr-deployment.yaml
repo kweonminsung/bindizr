@@ -64,7 +64,7 @@ spec:
             - name: BINDIZR_DNS_LISTEN_ADDR
               value: {{ .Values.bindizr.dns.listenAddr | quote }}
             - name: BINDIZR_SECONDARY_ADDRS
-              value: "{{- $fullname := include "bindizr-chart.fullname" . -}}{{- $headless := printf "%s-bind9-headless" $fullname -}}{{- range $i, $_ := until (.Values.bind9.replicas | int) -}}{{- if $i }},{{ end -}}{{ printf "%s-bind9-%d.%s:53" $fullname $i $headless }}{{- end }}"
+              value: {{ include "bindizr-chart.secondaryAddrs" . | quote }}
             - name: BINDIZR_NOTIFY_RETRIES
               value: {{ .Values.bindizr.dns.notifyRetries | quote }}
             - name: BINDIZR_NOTIFY_TIMEOUT_SECS

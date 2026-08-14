@@ -3,7 +3,7 @@
 # but already runs `named -g` with /etc/bind/named.conf, hence `command: []`.
 # Switching between the two images requires `down -v` (different named users).
 #
-# Usage: docker compose -f docker-compose.test.yml -f docker-compose.test.arm.yml up -d --build
+# Usage: docker compose -f examples/compose/docker-compose.yml -f examples/compose/docker-compose.arm.yml up -d --build
 
 services:
   bind9-1:
