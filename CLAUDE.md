@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-Guidance for working in this repository.
-
 ## Overview
 
 Bindizr is a Rust DNS control plane for BIND9. It manages zones/records via an
@@ -34,15 +32,15 @@ cargo +nightly fmt                                         # format (needs night
   `repository/{mysql,postgres,sqlite}/`. **The three backends are intentionally
   duplicated** (per-backend SQL + error text); do not try to deduplicate them.
 - `bindizr-dns` — XFR server (AXFR/IXFR/catalog/NOTIFY), wire encoding, and the
-  nsupdate front end: TSIG plus decoding an UPDATE message into the operations
-  the service applies.
+  nsupdate front end (TSIG + decoding an UPDATE message into the operations the
+  service applies).
 - `bindizr-service` — business logic for zones/records (create/update/delete,
   bulk, zone-file import, tokens, serial bumping, RFC 2136 apply).
 - `bindizr` — the binary: the daemon runtime (`daemon.rs`), HTTP API (axum),
   CLI (clap), Unix-socket daemon IPC.
 - `bindizr-external-dns` — a second binary: the ExternalDNS webhook provider
-  adapter. It speaks the webhook protocol and forwards to bindizr's
-  `/external-dns` API over HTTP; no DNS logic or state of its own.
+  adapter, forwarding to bindizr's `/external-dns` API over HTTP. No DNS logic
+  or state of its own.
 - `bindizr-e2e` — end-to-end API/CLI/DNS tests. Its `[[bin]]` targets exist
   only so `env!("CARGO_BIN_EXE_…")` resolves inside the test package.
 
@@ -50,18 +48,22 @@ cargo +nightly fmt                                         # format (needs night
 
 ### Comments
 
-Keep comments that explain **why**, document non-obvious behavior/invariants,
-protocol/wire-format details, or public-API contracts (`///`) — but keep them
-**terse**: state the reason in one or two lines, without spelling out
-consequences the reader can derive, restating an already-made point, or
-enumerating what the code shows.
+Keep comments that explain **why**: non-obvious behavior or invariants,
+protocol/wire-format details, public-API contracts (`///`). State the reason in
+one or two lines, without spelling out consequences the reader can derive,
+restating an already-made point, or enumerating what the code shows.
 
-This explicitly includes short **in-function** comments that give the business
-or protocol reason for a step — e.g. `// Increment zone serial so IXFR
-consumers can detect this change` above the serial bump. Keep these mid-body
-comments even when the statement itself is obvious: they carry the *why* (which
-downstream system or invariant depends on this step), not the *what*. When
-trimming verbose comments, do not strip them.
+This includes short **in-function** comments giving the business or protocol
+reason for a step — e.g. `// Increment zone serial so IXFR consumers can detect
+this change`. Keep them even when the statement is obvious: they carry which
+downstream system or invariant depends on the step. Do not strip them when
+trimming.
+
+The same applies in tests: the test **name** states *what* is verified (never
+restate it in a comment); comments are for *why* the case exists when that
+isn't derivable — the regression or protocol rule it guards (cite the RFC
+section for wire-format cases), format assumptions the test relies on, and
+phase markers in long multi-step e2e flows.
 
 Specifically avoid:
 
@@ -71,43 +73,45 @@ Specifically avoid:
   queries vary by database backend` above the `match self { ... }` that plainly
   does exactly that).
 - Change-history / changelog notes (`// previously used a date-based serial`,
-  `// changed in v2`, `// no longer needed`) — why a value changed belongs in the
-  commit history, not the source.
+  `// changed in v2`, `// no longer needed`) — that belongs in commit history.
 
-When citing an RFC section, write it out as `RFC 2181, Section 5.2` (and
-`Sections 5.2–5.3` for a range) — never the `§` glyph.
+Cite RFC sections as `RFC 2181, Section 5.2` (`Sections 5.2–5.3` for a range),
+never the `§` glyph.
 
 ### No dead code, no `#[allow(dead_code)]`
 
 The workspace builds warning-free with no `#[allow(dead_code)]` anywhere; keep
 it that way. Repository traits and the `RepositoryService` facade carry only
-methods with a live caller — do **not** add a method "for symmetry" with an
-existing `_tx`/non-`_tx` pair or to round out a trait's surface.
+methods with a live caller — do **not** add one "for symmetry" with an existing
+`_tx`/non-`_tx` pair or to round out a trait's surface.
 
-Because the traits are `pub` and consumed across crates, rustc cannot see when
-a facade method's removal orphans the trait method beneath it. After deleting
-anything from the facade, re-check the layer below: a dead facade method,
-its trait declaration, and its three backend impls all go together.
+The traits are `pub` and consumed across crates, so rustc cannot see when
+removing a facade method orphans the trait method beneath it. After deleting
+anything from the facade, re-check the layer below: a dead facade method, its
+trait declaration, and its three backend impls all go together.
 
-The same rule applies in tests: the test **name** states *what* behavior is
-verified (never restate it in a comment); comments are for *why* the case
-exists when that isn't derivable — the regression or protocol rule it guards
-(cite the RFC section for wire-format cases), format assumptions the test
-relies on, and phase markers in long multi-step e2e flows.
+### Module file layout — `mod.rs`, never the sibling form
+
+A module with submodules is a directory containing `mod.rs`
+(`bindizr-dns/src/wire/mod.rs`), not the 2018-edition sibling form (`wire.rs`
+next to `wire/`). The community leans the other way, so the uniformity is
+deliberate — do not "modernize" it.
+
+Unit tests usually drive this: small ones stay inline as `#[cfg(test)] mod
+tests { … }`, larger ones move to `<module>/tests.rs` declared from `mod.rs`.
 
 ### Visibility records usage
 
 Items and struct fields carry the narrowest visibility that compiles: `pub`
 means another crate touches it today, `pub(crate)` that only its own crate
-does. A struct mixing the two is a measurement, not a design statement —
-widen a field when the compiler asks, and no sooner. This keeps rustc's
-dead-code analysis covering fields (`pub` fields are exempt from it) and
-keeps cross-crate struct literals impossible, so a type with any
-`pub(crate)` field is only built through its constructors.
+does. A struct mixing the two is a measurement, not a design statement — widen
+a field when the compiler asks, and no sooner. This keeps rustc's dead-code
+analysis covering fields (`pub` fields are exempt) and keeps cross-crate struct
+literals impossible.
 
-Deliberate exceptions: `bindizr_service::types` payloads are fully `pub` —
-their fields are the wire contract — and invariant-bearing types
-(`OwnerName`) keep fields private behind constructors.
+Deliberate exceptions: `bindizr_service::types` payloads are fully `pub` (their
+fields are the wire contract), and invariant-bearing types (`OwnerName`) keep
+fields private behind constructors.
 
 ### Test helpers — extraction and visibility
 
@@ -119,8 +123,8 @@ change in lockstep. Small struct-literal fixtures (`test_record()`-style) stay
 local to each test file even when several files have near-identical copies; do
 **not** collect them into shared fixture modules.
 
-Import/export rules for helpers that are shared (narrowest visibility that
-compiles, never bare `pub`):
+Import/export rules for shared helpers (narrowest visibility that compiles,
+never bare `pub`):
 
 1. **Default**: a private `fn` inside the test file that uses it.
 2. **Same crate, across modules**: export from the owning module's
@@ -142,12 +146,11 @@ upgrading an existing deployment. **Do not add migration code, schema
 formats** — and remove any that appear. Breaking schema/API/config changes are
 fine; change the definition in place.
 
-Schema setup runs `CREATE TABLE/INDEX IF NOT EXISTS` at startup purely for
-idempotency (surviving restarts), **not** to migrate existing databases. This
-is why MySQL may define indexes inline in `CREATE TABLE` while Postgres/SQLite
-use separate `CREATE INDEX` statements — a per-backend syntax requirement, not
-a migration step. A reviewer flagging "the inline index won't reach existing
-databases" is a non-issue under this policy.
+Schema setup runs `CREATE TABLE/INDEX IF NOT EXISTS` at startup for idempotency
+across restarts, **not** to migrate existing databases. This is why MySQL may
+define indexes inline in `CREATE TABLE` while Postgres/SQLite use separate
+`CREATE INDEX` statements — a per-backend syntax requirement, not a migration
+step. "The inline index won't reach existing databases" is a non-issue here.
 
 ### Who decides what
 
@@ -216,9 +219,9 @@ One locking model covers the service layer; keep new code on it:
 
 `std::process::exit` belongs in the `execute()` of a binary crate — that
 function is the body of `main`, so deciding to stop is its call. Everywhere
-else, including `bindizr-core` and `bindizr-db`, report the failure and let
-it propagate; a library that exits takes that decision away from whoever
-embedded it, and the e2e suite runs both binaries in-process.
+else, including `bindizr-core` and `bindizr-db`, report the failure and let it
+propagate: a library that exits takes that decision away from whoever embedded
+it, and the e2e suite runs both binaries in-process.
 
 ### Names are labels, not strings
 
@@ -292,9 +295,9 @@ Pages CI rebuilds the hosted API docs when `docs/openapi.yaml` changes on
 `docs/` is the MkDocs Material source for
 <https://kweonminsung.github.io/bindizr/>, configured by `mkdocs.yml` and
 deployed by `.github/workflows/update-github-pages.yml` on pushes to `main`.
-No rendered HTML is committed any more — the workflow uploads `site/` straight
-to Pages (Pages source must stay on **GitHub Actions**, not "deploy from a
-branch"). `docs/openapi.yaml` is still a committed generated artifact, per the
+The workflow uploads `site/` straight to Pages — no rendered HTML is committed,
+and the Pages source must stay on **GitHub Actions**, not "deploy from a
+branch". `docs/openapi.yaml` is the one committed generated artifact, per the
 section above.
 
 - Build locally with
@@ -310,16 +313,6 @@ section above.
 - README.md is a landing page (pitch, quickstart, links into the site), not a
   manual. New prose belongs in `docs/`.
 
-### Benchmark results folders
-
-Every benchmark run writes to its own timestamped directory,
-**`results_<YYYYmmdd_HHMMSS>/`** (e.g. `results_20260710_233856/`), created in
-[`benchmarks/lib/settings.py`](benchmarks/lib/settings.py). This is the single
-canonical naming convention — never refer to a bare `results/` directory in
-code, docs, or messages. Set `BENCH_RESULTS_DIR` to reuse an existing directory
-when re-running a subset of benchmarks (`-b ...`) so the report is rebuilt from
-the full raw set.
-
 ## Git
 
 - Do **not** add Claude (or any AI assistant) as a `Co-Authored-By` trailer or
@@ -333,5 +326,12 @@ the full raw set.
 `benchmarks/` is a self-contained Python + Docker suite (not part of the Cargo
 build). `./benchmarks/benchmark.sh` is the entrypoint; benchmark keys are
 `b01_crud_tps` … `b09_resource_usage` (query performance is `b08_query_perf`).
-Results (`performance.{md,csv,json}` + `graphs/`) and the `results_*/` dirs are
-git-ignored.
+
+Every run writes to its own timestamped directory
+**`results_<YYYYmmdd_HHMMSS>/`** (e.g. `results_20260710_233856/`), created in
+[`benchmarks/lib/settings.py`](benchmarks/lib/settings.py). This is the single
+canonical naming convention — never refer to a bare `results/` directory in
+code, docs, or messages. Set `BENCH_RESULTS_DIR` to reuse an existing directory
+when re-running a subset (`-b ...`) so the report is rebuilt from the full raw
+set. Results (`performance.{md,csv,json}` + `graphs/`) and the `results_*/`
+dirs are git-ignored.
