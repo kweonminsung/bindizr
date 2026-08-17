@@ -189,9 +189,11 @@ def _render_b07(rows: list[dict]) -> str:
             ["Backend", "Create TPS", "Read TPS", "Create p95 (ms)",
              "Read p95 (ms)", "Error Rate", "Peak mem (MB)",
              "Bindizr mem (MB)", "DB mem (MB)", "Runs"], crud_rows))
-        out.append("\n> Peak mem is the stack total (Bindizr + BIND9 + DB "
-                   "server, per `docker stats`); the split columns attribute "
-                   "it. sqlite runs in-process, so its DB share is 0.\n")
+        out.append("\n> Peak mem is the highest per-tick stack total (Bindizr "
+                   "+ BIND9 + DB server, per `docker stats`). The split "
+                   "columns are each container's own peak, taken at possibly "
+                   "different ticks and excluding BIND9, so they need not sum "
+                   "to it. sqlite runs in-process, so its DB share is 0.\n")
 
     if bulk:
         out.append("\n### 7b — Bulk import by backend\n")
