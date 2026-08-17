@@ -106,7 +106,7 @@ metadata:
 | `--token-file` | `BINDIZR_API_TOKEN_FILE` | none (takes precedence over `--token`) |
 | `--listen-addr` | `BINDIZR_EXTERNAL_DNS_LISTEN_ADDR` | `127.0.0.1:8888` |
 | `--health-listen-addr` | `BINDIZR_EXTERNAL_DNS_HEALTH_ADDR` | `0.0.0.0:8080` |
-| `--timeout-secs` | `BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS` | `10` |
+| `--timeout-secs` | `BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS` | `8` (keep under external-dns's 10s webhook write timeout) |
 | `--log-level` | `BINDIZR_EXTERNAL_DNS_LOG_LEVEL` | `info` |
 
 The health listener serves `GET /healthz` (also checks bindizr reachability)

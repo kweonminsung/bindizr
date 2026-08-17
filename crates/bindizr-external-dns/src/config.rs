@@ -44,8 +44,9 @@ pub(crate) struct Cli {
     pub(crate) health_listen_addr: SocketAddr,
 
     /// Timeout in seconds for each bindizr API request; keep it under the
-    /// external-dns webhook write timeout (10s by default)
-    #[arg(long, env = "BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS", default_value_t = 10)]
+    /// external-dns webhook write timeout (10s by default) so the mapped
+    /// 502 still reaches the caller when bindizr stalls
+    #[arg(long, env = "BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS", default_value_t = 8)]
     pub(crate) timeout_secs: u64,
 
     /// Log level (error, warn, info, debug, trace)
@@ -71,6 +72,16 @@ impl AdapterConfig {
         if !bindizr_url.starts_with("http://") && !bindizr_url.starts_with("https://") {
             return Err(format!(
                 "--bindizr-url must start with http:// or https://, got '{}'",
+                bindizr_url
+            ));
+        }
+        // Endpoint paths are appended to this string, so it must parse as a
+        // URL and carry no query/fragment for the joined URLs to stay valid.
+        let parsed = reqwest::Url::parse(&bindizr_url)
+            .map_err(|e| format!("--bindizr-url '{}' is not a valid URL: {}", bindizr_url, e))?;
+        if parsed.query().is_some() || parsed.fragment().is_some() {
+            return Err(format!(
+                "--bindizr-url must not carry a query or fragment, got '{}'",
                 bindizr_url
             ));
         }
@@ -118,7 +129,9 @@ mod tests {
         let cli = parse(&["--bindizr-url", "http://bindizr:8000"]);
         assert_eq!(cli.listen_addr.to_string(), "127.0.0.1:8888");
         assert_eq!(cli.health_listen_addr.to_string(), "0.0.0.0:8080");
-        assert_eq!(cli.timeout_secs, 10);
+        // Below external-dns's 10s webhook write deadline, so a stalled
+        // upstream still maps to a 502 the caller can receive.
+        assert_eq!(cli.timeout_secs, 8);
     }
 
     #[test]
@@ -129,6 +142,26 @@ mod tests {
         assert!(config.token.is_none());
 
         assert!(AdapterConfig::from_cli(parse(&["--bindizr-url", "bindizr:8000"])).is_err());
+    }
+
+    #[test]
+    fn config_rejects_urls_no_endpoint_path_can_be_appended_to() {
+        for url in [
+            "https://bad host",
+            "http://",
+            "http://bindizr:8000?tls=off",
+            "http://bindizr:8000#api",
+        ] {
+            assert!(
+                AdapterConfig::from_cli(parse(&["--bindizr-url", url])).is_err(),
+                "accepted '{}'",
+                url
+            );
+        }
+
+        let config =
+            AdapterConfig::from_cli(parse(&["--bindizr-url", "http://bindizr:8000/api"])).unwrap();
+        assert_eq!(config.bindizr_url, "http://bindizr:8000/api");
     }
 
     #[test]
