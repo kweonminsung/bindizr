@@ -51,13 +51,7 @@ impl RecordService {
         caller: &Caller,
         filter: GetRecordsFilter,
     ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
-        Self::list_filtered(filter, caller.scope_token_id()).await
-    }
-
-    async fn list_filtered(
-        filter: GetRecordsFilter,
-        scope_token_id: Option<i32>,
-    ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
+        let scope_token_id = caller.scope_token_id();
         let zone_name = filter
             .zone_name
             .as_deref()

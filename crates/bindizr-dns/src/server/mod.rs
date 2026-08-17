@@ -20,10 +20,6 @@ use crate::{error::XfrError, log_info, log_warn, metrics::metrics, wire};
 
 /// Initializes XFR support by ensuring the catalog zone exists.
 pub(crate) async fn initialize() {
-    ensure_catalog_zone().await;
-}
-
-async fn ensure_catalog_zone() {
     match generate_catalog_zone().await {
         Ok((catalog, _)) => {
             log_info!(

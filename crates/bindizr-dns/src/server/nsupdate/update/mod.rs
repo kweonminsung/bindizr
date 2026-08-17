@@ -152,14 +152,14 @@ fn decode_prerequisite(rr: &UpdateRecord, query_data: &[u8]) -> Result<Prerequis
     let name = rr.name.clone();
     match rr.class {
         Class::ANY | Class::NONE => {
+            let is_any_class = rr.class == Class::ANY;
             if !rr.rdata.is_empty() {
                 return Err(UpdateError::Refused(format!(
                     "{}-class prerequisite must have empty rdata",
-                    class_label(rr.class)
+                    if is_any_class { "ANY" } else { "NONE" }
                 )));
             }
 
-            let is_any_class = rr.class == Class::ANY;
             Ok(match (is_any_class, rr.rr_type) {
                 (true, Rtype::ANY) => Prerequisite::NameInUse { name },
                 (false, Rtype::ANY) => Prerequisite::NameNotInUse { name },
@@ -249,10 +249,6 @@ fn decode_update(rr: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, Updat
             class
         ))),
     }
-}
-
-fn class_label(class: Class) -> &'static str {
-    if class == Class::ANY { "ANY" } else { "NONE" }
 }
 
 fn validate_delete_shape(update: &UpdateRecord, is_rrset_delete: bool) -> Result<(), UpdateError> {

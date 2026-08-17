@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::ZoneService;
 use crate::{
-    RepositoryTx,
     authorization::Caller,
     error::ServiceError,
     model::{record::RecordType, zone_tsig_policy::ZoneTsigPolicy},
@@ -111,24 +109,6 @@ impl ZoneTsigPolicyService {
             .ok_or_else(|| ServiceError::tsig_policy_not_found(policy_id))?;
 
         RepositoryService::delete_zone_tsig_policy(policy.id).await
-    }
-
-    /// Policies granting `tsig_key_id` rights in `zone_id`, within the caller's
-    /// transaction. Used by the nsupdate path.
-    pub async fn list_by_zone_and_key_tx(
-        tx: &mut RepositoryTx<'_>,
-        zone_id: i32,
-        tsig_key_id: i32,
-    ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
-        // Share-lock the grants so a concurrent revocation waits for this
-        // transaction instead of racing it.
-        RepositoryService::list_zone_tsig_policies_by_zone_and_key_tx(
-            tx,
-            zone_id,
-            tsig_key_id,
-            LockLevel::Shared,
-        )
-        .await
     }
 }
 

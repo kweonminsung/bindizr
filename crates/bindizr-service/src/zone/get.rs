@@ -57,13 +57,7 @@ impl ZoneService {
         caller: &Caller,
         filter: GetZonesFilter,
     ) -> Result<PaginatedResponse<Zone>, ServiceError> {
-        Self::list_filtered(filter, caller.scope_token_id()).await
-    }
-
-    async fn list_filtered(
-        filter: GetZonesFilter,
-        scope_token_id: Option<i32>,
-    ) -> Result<PaginatedResponse<Zone>, ServiceError> {
+        let scope_token_id = caller.scope_token_id();
         let limit = filter.limit;
         let offset = filter.offset;
 

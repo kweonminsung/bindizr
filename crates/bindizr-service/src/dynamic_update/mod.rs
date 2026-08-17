@@ -24,10 +24,7 @@ use crate::{
     record::{AddOutcome, RecordService, validate_delete_constraints},
     repository::RepositoryService,
     serial::generate_serial,
-    zone::{
-        ZoneService,
-        tsig_policy::{self, ZoneTsigPolicyService},
-    },
+    zone::{ZoneService, tsig_policy},
 };
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
@@ -219,7 +216,15 @@ async fn authorize_key(
         Some(key) => key,
     };
 
-    let policies = ZoneTsigPolicyService::list_by_zone_and_key_tx(tx, zone.id, key.id).await?;
+    // Share-lock the grants so a concurrent revocation waits for this
+    // transaction instead of racing it.
+    let policies = RepositoryService::list_zone_tsig_policies_by_zone_and_key_tx(
+        tx,
+        zone.id,
+        key.id,
+        LockLevel::Shared,
+    )
+    .await?;
 
     if policies.is_empty() {
         return Err(DynamicUpdateError::Refused(format!(

@@ -46,15 +46,11 @@ pub(crate) fn health_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-/// external-dns fails hard on a mismatched negotiation Content-Type, so every
-/// webhook response carries the exact media-type string.
-fn webhook_response(status: StatusCode, body: String) -> Response {
-    (status, [(header::CONTENT_TYPE, MEDIA_TYPE)], body).into_response()
-}
-
 fn json_response<T: serde::Serialize>(value: &T) -> Response {
     match serde_json::to_string(value) {
-        Ok(body) => webhook_response(StatusCode::OK, body),
+        // external-dns compares the negotiation Content-Type byte-for-byte,
+        // so success responses carry the exact media-type string.
+        Ok(body) => (StatusCode::OK, [(header::CONTENT_TYPE, MEDIA_TYPE)], body).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("failed to encode response: {}", e),
