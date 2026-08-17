@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn config_rejects_urls_no_endpoint_path_can_be_appended_to() {
+    fn config_rejects_unusable_base_urls() {
         for url in [
             "https://bad host",
             "http://",

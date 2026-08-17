@@ -1,9 +1,8 @@
 use serde_json::json;
 
 use super::{
-    BindizrRecordItem, BindizrRrset, Changes, DomainFilter, Endpoint, ProviderSpecificProperty,
-    group_records_into_endpoints, merge_adjusted_endpoints, to_bindizr_changes, to_bindizr_rrsets,
-    validate_endpoint,
+    BindizrRecordItem, Changes, DomainFilter, Endpoint, group_records_into_endpoints,
+    to_bindizr_changes, validate_endpoint,
 };
 
 fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> Endpoint {
@@ -181,57 +180,4 @@ fn group_records_builds_one_endpoint_per_rrset() {
         endpoints[1].targets,
         vec!["\"heritage=external-dns,external-dns/owner=default\""]
     );
-}
-
-#[test]
-fn to_bindizr_rrsets_validates_and_converts_for_adjust() {
-    let rrsets = to_bindizr_rrsets(&[
-        endpoint("a.example.com", "a", 300, &["192.0.2.1"]),
-        endpoint("t.example.com", "TXT", 0, &["v=spf1 -all"]),
-    ])
-    .unwrap();
-
-    assert_eq!(rrsets[0].record_type, "A");
-    assert_eq!(rrsets[0].ttl, Some(300));
-    assert_eq!(rrsets[1].ttl, None);
-    assert_eq!(rrsets[1].values, vec!["v=spf1 -all"]);
-
-    // One invalid endpoint rejects the whole set before any round trip.
-    assert!(
-        to_bindizr_rrsets(&[
-            endpoint("a.example.com", "A", 300, &["192.0.2.1"]),
-            endpoint("b.example.com", "SRV", 0, &["x"]),
-        ])
-        .is_err()
-    );
-}
-
-#[test]
-fn merge_adjusted_endpoints_keeps_identity_and_takes_canonical_fields() {
-    let mut desired = endpoint("a.example.com", "aaaa", 300, &["2001:0DB8::1"]);
-    desired.labels.insert("owner".into(), "default".into());
-    desired.provider_specific = vec![ProviderSpecificProperty {
-        name: "webhook/flag".to_string(),
-        value: "on".to_string(),
-    }];
-
-    let merged = merge_adjusted_endpoints(
-        vec![desired],
-        vec![BindizrRrset {
-            name: "a.example.com".to_string(),
-            record_type: "AAAA".to_string(),
-            ttl: Some(300),
-            values: vec!["2001:db8::1".to_string()],
-        }],
-    );
-
-    assert_eq!(merged[0].dns_name, "a.example.com");
-    assert_eq!(
-        merged[0].labels.get("owner").map(String::as_str),
-        Some("default")
-    );
-    assert!(merged[0].provider_specific.is_empty());
-    assert_eq!(merged[0].record_type, "AAAA");
-    assert_eq!(merged[0].record_ttl, 300);
-    assert_eq!(merged[0].targets, vec!["2001:db8::1"]);
 }

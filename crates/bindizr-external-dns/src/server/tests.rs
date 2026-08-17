@@ -350,7 +350,7 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
 }
 
 #[tokio::test]
-async fn adjustendpoints_forwards_rrsets_and_maps_the_servers_answer_back() {
+async fn adjustendpoints_forwards_rrsets_and_returns_merged_endpoints() {
     let (zones, records, changes) = ok_mock_bodies();
     let mock = spawn_mock_with_adjust(
         zones,
@@ -370,14 +370,16 @@ async fn adjustendpoints_forwards_rrsets_and_maps_the_servers_answer_back() {
     let (status, body) = post(
         &format!("{}/adjustendpoints", base),
         json!([
-            {"dnsName": "a.example.com", "targets": ["2001:0DB8::1"], "recordType": "aaaa", "recordTTL": 300, "labels": {"owner": "default"}},
+            {"dnsName": "a.example.com", "targets": ["2001:0DB8::1"], "recordType": "aaaa", "recordTTL": 300, "labels": {"owner": "default"},
+             "providerSpecific": [{"name": "webhook/flag", "value": "on"}]},
             {"dnsName": "b.example.com", "targets": ["v=spf1 -all"], "recordType": "TXT"}
         ]),
     )
     .await;
 
     assert_eq!(status, StatusCode::OK);
-    // Identity fields stay the caller's; type/TTL/targets are the server's.
+    // Identity (dnsName, labels) stays the caller's, type/TTL/targets are
+    // the server's, and provider-specific properties are dropped.
     assert_eq!(
         serde_json::from_str::<Value>(&body).unwrap(),
         json!([
@@ -399,7 +401,7 @@ async fn adjustendpoints_forwards_rrsets_and_maps_the_servers_answer_back() {
 }
 
 #[tokio::test]
-async fn adjustendpoints_rejects_invalid_endpoints_before_the_round_trip() {
+async fn adjustendpoints_rejects_invalid_endpoints_without_calling_bindizr() {
     let (zones, records, changes) = ok_mock_bodies();
     let mock = spawn_mock(zones, records, changes).await;
     let base = spawn_adapter(mock.addr, None).await;
