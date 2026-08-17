@@ -15,10 +15,6 @@ external-dns ──127.0.0.1:8888──▶ bindizr-external-dns ──Bearer tok
 
 Validated against external-dns **v0.21.0**.
 
-The adapter ships in the container image only, not in the Debian/RPM
-packages: every layout below runs it inside the cluster, so that the
-external-dns→adapter hop stays on the pod loopback or a `ClusterIP`.
-
 ## Setup
 
 **1. Enable the provider API** on the bindizr server:

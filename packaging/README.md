@@ -49,17 +49,6 @@ You'll also need the Rust compiler, Cargo, and `musl-tools` for static linking.
     sudo dnf install -y rust cargo musl-tools
     ```
 
-## Package Contents
-
-The packages carry the `bindizr` daemon only: the binary, its systemd unit,
-and `/etc/bindizr/bindizr.conf.toml`.
-
-The `bindizr-external-dns` adapter is deliberately left out. ExternalDNS is a
-Kubernetes controller and every deployment layout bindizr documents runs the
-adapter inside the cluster, keeping the unauthenticated external-dns→adapter
-hop on the pod loopback or a `ClusterIP`. Running it on a systemd host would
-push that hop across the network. It ships in the container image instead.
-
 ## Building Packages
 
 A helper script is provided to build both `.deb` and `.rpm` packages.
