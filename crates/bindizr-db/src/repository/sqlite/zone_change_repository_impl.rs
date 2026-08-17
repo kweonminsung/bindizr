@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::zone_change::ZoneChange,
-    repository::{RepositoryTx, ZoneChangeRepository},
+    repository::{LockLevel, RepositoryTx, ZoneChangeRepository},
 };
 
 /// SQLite-backed implementation of `ZoneChangeRepository`.
@@ -89,6 +89,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
+        _lock_level: LockLevel,
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 

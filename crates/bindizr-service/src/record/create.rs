@@ -1,4 +1,5 @@
 use bindizr_core::dns::name::ZoneName;
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::{
@@ -40,8 +41,12 @@ impl RecordService {
         let mut tx = RepositoryService::begin_tx("Failed to create record").await?;
 
         let apply_result = async {
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, &create_record_request.zone_name).await?;
+            let zone = ZoneService::get_by_name_tx(
+                &mut tx,
+                &create_record_request.zone_name,
+                LockLevel::Exclusive,
+            )
+            .await?;
 
             // Only records sharing the owner name can conflict, so load just
             // those instead of the whole zone.
@@ -63,6 +68,7 @@ impl RecordService {
                     &mut tx,
                     zone.id,
                     &owner_name,
+                    LockLevel::Exclusive,
                 )
                 .await
                 {

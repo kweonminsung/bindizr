@@ -2,6 +2,7 @@
 //! before any update is applied.
 
 use bindizr_core::dns::name::OwnerName;
+use bindizr_db::repository::LockLevel;
 
 use super::{DynamicUpdateError, Prerequisite, owner_in_zone};
 use crate::{
@@ -22,7 +23,7 @@ pub(super) async fn evaluate_prerequisites_tx(
         return Ok(());
     }
 
-    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id).await?;
+    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id, LockLevel::Exclusive).await?;
     evaluate_against_records(zone, prerequisites, &zone_records)
 }
 

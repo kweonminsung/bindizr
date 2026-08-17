@@ -5,6 +5,7 @@ use bindizr_core::dns::{
     name::{OwnerName, ParseNameError, ZoneName},
     record::MxRecordValue,
 };
+use bindizr_db::repository::LockLevel;
 
 use super::RecordService;
 use crate::{
@@ -254,13 +255,17 @@ impl RecordService {
     ) -> Result<AddOutcome, ServiceError> {
         // Only records sharing the owner name can conflict, so load just those
         // instead of the whole zone.
-        let zone_records =
-            RepositoryService::list_records_by_zone_id_and_name_tx(tx, zone.id, owner_name)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to load zone records: {}", e);
-                    ServiceError::internal("Failed to load zone records".to_string())
-                })?;
+        let zone_records = RepositoryService::list_records_by_zone_id_and_name_tx(
+            tx,
+            zone.id,
+            owner_name,
+            LockLevel::Exclusive,
+        )
+        .await
+        .map_err(|e| {
+            log_error!("Failed to load zone records: {}", e);
+            ServiceError::internal("Failed to load zone records".to_string())
+        })?;
 
         if has_matching_rdata(zone_records.iter(), record_type, value, priority) {
             return Ok(AddOutcome::Duplicate);

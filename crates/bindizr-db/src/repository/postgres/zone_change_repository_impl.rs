@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres};
 use crate::{
     error::DatabaseError,
     model::zone_change::ZoneChange,
-    repository::{RepositoryTx, ZoneChangeRepository},
+    repository::{LockLevel, RepositoryTx, ZoneChangeRepository, sql::lock_clause},
 };
 
 /// PostgreSQL-backed implementation of `ZoneChangeRepository`.
@@ -98,16 +98,17 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
         let pg_tx = tx.as_postgres()?;
 
         sqlx::query_as::<_, ZoneChange>(
-            r#"
+            AssertSqlSafe(format!("{}{}", r#"
             SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
             FROM zone_changes
             WHERE zone_id = $1 AND serial > $2 AND serial <= $3
             ORDER BY serial, id
-            "#
+            "#, lock_clause(lock_level)))
         )
         .bind(zone_id)
         .bind(from_serial)

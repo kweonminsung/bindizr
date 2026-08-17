@@ -1,10 +1,10 @@
 use async_trait::async_trait;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
     error::DatabaseError,
     model::zone_token_policy::ZoneTokenPolicy,
-    repository::{RepositoryTx, ZoneTokenPolicyRepository},
+    repository::{LockLevel, RepositoryTx, ZoneTokenPolicyRepository, sql::lock_clause},
 };
 
 /// PostgreSQL-backed implementation of `ZoneTokenPolicyRepository`.
@@ -73,12 +73,14 @@ impl ZoneTokenPolicyRepository for PostgresZoneTokenPolicyRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         api_token_id: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let policies = sqlx::query_as::<_, ZoneTokenPolicy>(
-            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM zone_token_policies WHERE zone_id = $1 AND api_token_id = $2 ORDER BY id",
-        )
+        let policies = sqlx::query_as::<_, ZoneTokenPolicy>(AssertSqlSafe(
+            format!("SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM zone_token_policies WHERE zone_id = $1 AND api_token_id = $2 ORDER BY id{}",
+            lock_clause(lock_level),
+        )))
         .bind(zone_id)
         .bind(api_token_id)
         .fetch_all(&mut **postgres_tx)

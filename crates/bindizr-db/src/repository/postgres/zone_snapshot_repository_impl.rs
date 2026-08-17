@@ -1,10 +1,10 @@
 use async_trait::async_trait;
-use sqlx::{Pool, Postgres};
+use sqlx::{AssertSqlSafe, Pool, Postgres};
 
 use crate::{
     error::DatabaseError,
     model::zone_snapshot::ZoneSnapshot,
-    repository::{RepositoryTx, ZoneSnapshotRepository},
+    repository::{LockLevel, RepositoryTx, ZoneSnapshotRepository, sql::lock_clause},
 };
 
 /// PostgreSQL-backed implementation of `ZoneSnapshotRepository`.
@@ -134,15 +134,16 @@ impl ZoneSnapshotRepository for PostgresZoneSnapshotRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         serial: i32,
+        lock_level: LockLevel,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
         let pg_tx = tx.as_postgres()?;
 
         sqlx::query_as::<_, ZoneSnapshot>(
-            r#"
+            AssertSqlSafe(format!("{}{}", r#"
             SELECT id, zone_id, serial, primary_ns, admin_email, ttl, refresh, retry, expire, minimum_ttl, created_at
             FROM zone_soa_history
             WHERE zone_id = $1 AND serial = $2
-            "#,
+            "#, lock_clause(lock_level))),
         )
         .bind(zone_id)
         .bind(serial)

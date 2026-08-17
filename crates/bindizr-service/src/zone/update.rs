@@ -2,6 +2,7 @@ use bindizr_core::dns::{
     CATALOG_ZONE_NAME,
     name::{OwnerName, ZoneName},
 };
+use bindizr_db::repository::LockLevel;
 
 use super::{ZoneService, apex_ns_rrset_ttl};
 use crate::{
@@ -116,7 +117,8 @@ impl ZoneService {
         let apply_result: Result<AppliedZoneUpdate, ServiceError> = async {
             // Lock the zone row so the serial computed below stays ahead of
             // concurrent record mutations and nsupdate on the same zone.
-            let existing_zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
+            let existing_zone =
+                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             let zone_id = existing_zone.id;
 
             // Merge against the locked row, then validate.
@@ -190,6 +192,7 @@ impl ZoneService {
                 &mut tx,
                 zone_id,
                 &OwnerName::apex(),
+                LockLevel::Exclusive,
             )
             .await
             .map_err(|e| {

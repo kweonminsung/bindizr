@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bindizr_core::dns::{name::OwnerName, record::SoaMailbox};
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::{
@@ -91,7 +92,9 @@ async fn reconstruct_records_at_serial(
     current_serial: i32,
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
-    for record in RepositoryService::list_records_by_zone_id_tx(tx, zone_id).await? {
+    for record in
+        RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::Exclusive).await?
+    {
         state
             .entry(record_match_key(&record))
             .or_default()
@@ -103,6 +106,7 @@ async fn reconstruct_records_at_serial(
         zone_id,
         target_serial,
         current_serial,
+        LockLevel::None,
     )
     .await?;
 
@@ -171,7 +175,7 @@ async fn records_at_serial(
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     if serial == current_serial {
         let mut records: Vec<ReconstructedRecord> =
-            RepositoryService::list_records_by_zone_id_tx(tx, zone_id)
+            RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::Exclusive)
                 .await?
                 .into_iter()
                 .map(ReconstructedRecord::from)
@@ -192,7 +196,7 @@ async fn require_serial(
     if serial == zone.serial {
         return Ok(());
     }
-    RepositoryService::get_zone_snapshot_by_serial_tx(tx, zone.id, serial)
+    RepositoryService::get_zone_snapshot_by_serial_tx(tx, zone.id, serial, LockLevel::None)
         .await?
         .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), serial))?;
     Ok(())
@@ -409,14 +413,20 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to load snapshot").await?;
 
         let result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str()).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive)
+                    .await?;
             if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
-            let snapshot =
-                RepositoryService::get_zone_snapshot_by_serial_tx(&mut tx, zone.id, serial)
-                    .await?
-                    .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), serial))?;
+            let snapshot = RepositoryService::get_zone_snapshot_by_serial_tx(
+                &mut tx,
+                zone.id,
+                serial,
+                LockLevel::None,
+            )
+            .await?
+            .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), serial))?;
 
             let records = records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
 
@@ -442,7 +452,9 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to diff snapshots").await?;
 
         let result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str()).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive)
+                    .await?;
             if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
@@ -482,7 +494,9 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to roll back zone").await?;
 
         let apply_result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str()).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive)
+                    .await?;
 
             if target_serial < 1 || target_serial >= zone.serial {
                 return Err(ServiceError::invalid_input(format!(
@@ -490,19 +504,25 @@ impl ZoneService {
                     target_serial, zone.serial
                 )));
             }
-            let snapshot =
-                RepositoryService::get_zone_snapshot_by_serial_tx(&mut tx, zone.id, target_serial)
-                    .await?
-                    .ok_or_else(|| {
-                        ServiceError::snapshot_not_found(zone.name.as_str(), target_serial)
-                    })?;
+            let snapshot = RepositoryService::get_zone_snapshot_by_serial_tx(
+                &mut tx,
+                zone.id,
+                target_serial,
+                LockLevel::None,
+            )
+            .await?
+            .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), target_serial))?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let restored_zone = restored_zone_from_snapshot(&zone, &snapshot, new_serial)?;
             let soa_changed = soa_metadata_changed(&zone, &restored_zone);
 
-            let current_records =
-                RepositoryService::list_records_by_zone_id_tx(&mut tx, zone.id).await?;
+            let current_records = RepositoryService::list_records_by_zone_id_tx(
+                &mut tx,
+                zone.id,
+                LockLevel::Exclusive,
+            )
+            .await?;
             let target_records =
                 reconstruct_records_at_serial(&mut tx, zone.id, target_serial, zone.serial).await?;
 

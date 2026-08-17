@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use bindizr_core::dns::name::OwnerName;
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::ZoneService;
@@ -119,8 +120,13 @@ impl ZoneTsigPolicyService {
         zone_id: i32,
         tsig_key_id: i32,
     ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
-        RepositoryService::list_zone_tsig_policies_by_zone_and_key_tx(tx, zone_id, tsig_key_id)
-            .await
+        RepositoryService::list_zone_tsig_policies_by_zone_and_key_tx(
+            tx,
+            zone_id,
+            tsig_key_id,
+            LockLevel::None,
+        )
+        .await
     }
 }
 

@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::zone_change::ZoneChange,
-    repository::{RepositoryTx, ZoneChangeRepository},
+    repository::{LockLevel, RepositoryTx, ZoneChangeRepository, sql::lock_clause},
 };
 
 /// MySQL-backed implementation of `ZoneChangeRepository`.
@@ -87,16 +87,17 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
         sqlx::query_as::<_, ZoneChange>(
-            r#"
+            AssertSqlSafe(format!("{}{}", r#"
             SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
             FROM zone_changes
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id
-            "#
+            "#, lock_clause(lock_level)))
         )
         .bind(zone_id)
         .bind(from_serial)

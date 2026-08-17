@@ -22,6 +22,22 @@ use super::model::{
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
 
+/// How strongly a transactional read locks the rows it returns. Every `_tx`
+/// read names one, so the locking model reads off the call site. Granularity
+/// is the backend's: MySQL and PostgreSQL lock rows, SQLite's whole-database
+/// write lock already covers every level.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LockLevel {
+    /// The caller mutates these rows in this transaction.
+    Exclusive,
+    /// The caller only derives output from these rows, but they must not
+    /// change before it commits.
+    Shared,
+    /// None needed: a lock the caller already holds — in practice the zone row,
+    /// which every zone-data mutation takes first — covers these rows.
+    None,
+}
+
 /// Optional criteria for querying zones.
 #[derive(Clone, Debug, Default)]
 pub struct ZoneFilter {
@@ -176,15 +192,21 @@ pub trait ZoneRepository: Send + Sync {
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
+        lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError>;
     async fn get_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
+        lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError>;
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError>;
-    async fn list_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError>;
+    async fn list_all_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        lock_level: LockLevel,
+    ) -> Result<Vec<Zone>, DatabaseError>;
     async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError>;
     /// Limit-1 probe of the zones table; health checks must stay cheap on
@@ -224,6 +246,7 @@ pub trait ZoneTsigPolicyRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         tsig_key_id: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
     async fn count_by_key_id(&self, tsig_key_id: i32) -> Result<u64, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
@@ -243,6 +266,7 @@ pub trait ZoneTokenPolicyRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         api_token_id: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
     /// Every policy granted to `api_token_id`; drives what a scoped token can
     /// see and NOTIFY.
@@ -274,6 +298,7 @@ pub trait RecordRepository: Send + Sync {
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
+        lock_level: LockLevel,
     ) -> Result<Option<Record>, DatabaseError>;
     async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     /// Records of every listed zone in one round trip.
@@ -282,12 +307,14 @@ pub trait RecordRepository: Send + Sync {
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
     async fn list_by_zone_id_and_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         name: &OwnerName,
+        lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
     /// Load records whose owner name is any of `names` (lowercased match). Used
     /// by bulk insert to fetch only the rows that could conflict with the batch.
@@ -296,6 +323,7 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         names: &[OwnerName],
+        lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
     async fn list_by_filter_with_zone(
         &self,
@@ -338,6 +366,7 @@ pub trait ZoneChangeRepository: Send + Sync {
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
 }
 
@@ -376,6 +405,7 @@ pub trait ZoneSnapshotRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         serial: i32,
+        lock_level: LockLevel,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
 }
 

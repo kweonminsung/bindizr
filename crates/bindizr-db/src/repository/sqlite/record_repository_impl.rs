@@ -6,7 +6,7 @@ use crate::{
     error::DatabaseError,
     model::record::{Record, RecordWithZone},
     repository::{
-        RecordFilter, RecordRepository, RepositoryTx,
+        LockLevel, RecordFilter, RecordRepository, RepositoryTx,
         sql::{apex_owner_sql, like_pattern, name_like_types_sql, normalize_partial_value},
     },
 };
@@ -137,6 +137,7 @@ impl RecordRepository for SqliteRecordRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
+        _lock_level: LockLevel,
     ) -> Result<Option<Record>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
@@ -165,6 +166,7 @@ impl RecordRepository for SqliteRecordRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
+        _lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
@@ -183,6 +185,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         name: &OwnerName,
+        _lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
@@ -232,6 +235,7 @@ impl RecordRepository for SqliteRecordRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         names: &[OwnerName],
+        _lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError> {
         if names.is_empty() {
             return Ok(Vec::new());

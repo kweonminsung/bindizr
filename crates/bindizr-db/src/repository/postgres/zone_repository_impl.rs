@@ -1,10 +1,13 @@
 use async_trait::async_trait;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{RepositoryTx, ZoneFilter, ZoneRepository, sql::like_pattern},
+    repository::{
+        LockLevel, RepositoryTx, ZoneFilter, ZoneRepository,
+        sql::{like_pattern, lock_clause},
+    },
 };
 
 /// PostgreSQL-backed implementation of `ZoneRepository`.
@@ -54,10 +57,11 @@ impl ZoneRepository for PostgresZoneRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
+        lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1 FOR UPDATE")
+        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1{}",lock_clause(lock_level))))
             .bind(id)
             .fetch_optional(&mut **postgres_tx)
             .await?;
@@ -80,12 +84,14 @@ impl ZoneRepository for PostgresZoneRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
+        lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zone = sqlx::query_as::<_, Zone>(
-            "SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1 FOR UPDATE",
-        )
+        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(
+            format!("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1{}",
+            lock_clause(lock_level),
+        )))
         .bind(name)
         .fetch_optional(&mut **postgres_tx)
         .await?;
@@ -103,10 +109,14 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zones)
     }
 
-    async fn list_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_all_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        lock_level: LockLevel,
+    ) -> Result<Vec<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
             .fetch_all(&mut **postgres_tx)
             .await?;
 

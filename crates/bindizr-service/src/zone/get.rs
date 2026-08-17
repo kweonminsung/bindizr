@@ -1,4 +1,4 @@
-use bindizr_db::repository::ZoneFilter;
+use bindizr_db::repository::{LockLevel, ZoneFilter};
 
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
@@ -23,9 +23,10 @@ impl ZoneService {
     pub(crate) async fn find_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
+        lock_level: LockLevel,
     ) -> Result<Option<Zone>, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str()).await
+        RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str(), lock_level).await
     }
 
     /// List the recorded zone changes between two serials, for building an IXFR.
@@ -108,13 +109,14 @@ impl ZoneService {
             .ok_or_else(|| ServiceError::zone_not_found(zone_name))
     }
 
-    /// Fetch (and lock) a zone by name within the caller's transaction,
+    /// Fetch a zone by name within the caller's transaction at `lock_level`,
     /// returning `NotFound` if it does not exist.
     pub(crate) async fn get_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
+        lock_level: LockLevel,
     ) -> Result<Zone, ServiceError> {
-        Self::find_by_name_tx(tx, zone_name)
+        Self::find_by_name_tx(tx, zone_name, lock_level)
             .await?
             .ok_or_else(|| ServiceError::zone_not_found(zone_name))
     }

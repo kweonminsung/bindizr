@@ -1,4 +1,5 @@
 use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_db::repository::LockLevel;
 
 use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
@@ -40,31 +41,39 @@ impl RecordService {
         let mut tx = RepositoryService::begin_tx("Failed to delete record").await?;
 
         let apply_result: Result<DeletedRecord, ServiceError> = async {
-            let zone = match RepositoryService::get_zone_by_id_tx(&mut tx, zone_id).await {
-                Ok(Some(zone)) => zone,
-                Ok(None) => {
-                    return Err(ServiceError::new(
-                        ErrorCode::ZoneNotFound,
-                        format!("Zone with id '{}' not found", zone_id),
-                    ));
-                }
-                Err(e) => {
-                    log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::internal("Failed to fetch zone".to_string()));
-                }
-            };
-
-            let existing_record =
-                match RepositoryService::get_record_by_id_tx(&mut tx, record_id).await {
-                    Ok(Some(record)) if record.zone_id == zone.id => record,
-                    Ok(Some(_)) | Ok(None) => {
-                        return Err(ServiceError::record_not_found(record_id));
+            let zone =
+                match RepositoryService::get_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
+                    .await
+                {
+                    Ok(Some(zone)) => zone,
+                    Ok(None) => {
+                        return Err(ServiceError::new(
+                            ErrorCode::ZoneNotFound,
+                            format!("Zone with id '{}' not found", zone_id),
+                        ));
                     }
                     Err(e) => {
-                        log_error!("Failed to fetch record: {}", e);
-                        return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                        log_error!("Failed to fetch zone: {}", e);
+                        return Err(ServiceError::internal("Failed to fetch zone".to_string()));
                     }
                 };
+
+            let existing_record = match RepositoryService::get_record_by_id_tx(
+                &mut tx,
+                record_id,
+                LockLevel::Exclusive,
+            )
+            .await
+            {
+                Ok(Some(record)) if record.zone_id == zone.id => record,
+                Ok(Some(_)) | Ok(None) => {
+                    return Err(ServiceError::record_not_found(record_id));
+                }
+                Err(e) => {
+                    log_error!("Failed to fetch record: {}", e);
+                    return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                }
+            };
 
             // Invisible zones read as 404 so scoped tokens cannot probe ids.
             if !caller.zone_visible(zone.id) {

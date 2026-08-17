@@ -12,6 +12,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use bindizr_core::dns::name::OwnerName;
+use bindizr_db::repository::LockLevel;
 use chrono::{Duration, Utc};
 
 use crate::{
@@ -115,7 +116,10 @@ impl Caller {
             Caller::Global => Ok(()),
             Caller::Token { id, .. } => {
                 let policies = RepositoryService::list_zone_token_policies_by_zone_and_token_tx(
-                    tx, zone.id, *id,
+                    tx,
+                    zone.id,
+                    *id,
+                    LockLevel::None,
                 )
                 .await?;
                 // Ahead of the per-write loop, which a batch resolving to no

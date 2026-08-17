@@ -3,7 +3,17 @@
 
 use bindizr_core::dns::name::OwnerName;
 
-use super::super::model::record::NAME_LIKE_RECORD_TYPES;
+use super::{super::model::record::NAME_LIKE_RECORD_TYPES, LockLevel};
+
+/// The locking clause for `lock_level`, as a suffix appended after any
+/// `ORDER BY`. SQLite locks the whole database instead, so it never calls this.
+pub(crate) fn lock_clause(lock_level: LockLevel) -> &'static str {
+    match lock_level {
+        LockLevel::Exclusive => " FOR UPDATE",
+        LockLevel::Shared => " FOR SHARE",
+        LockLevel::None => "",
+    }
+}
 
 /// The owner name the apex is stored under, as an SQL literal.
 pub(crate) fn apex_owner_sql() -> String {

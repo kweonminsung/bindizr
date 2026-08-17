@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::{
@@ -320,7 +321,7 @@ impl ExternalDnsService {
         let apply_result = async {
             // Resolve authoritative zones from committed state inside the tx;
             // the residual race with concurrent zone creation is accepted.
-            let zones = RepositoryService::list_zones_tx(&mut tx).await?;
+            let zones = RepositoryService::list_zones_tx(&mut tx, LockLevel::None).await?;
             let zone_ops = group_ops_by_zone(&zones, ops)?;
 
             let mut changed_zones = Vec::new();
@@ -330,9 +331,13 @@ impl ExternalDnsService {
             // BTreeMap iteration locks zones in name order, so concurrent
             // multi-zone requests cannot deadlock on row locks.
             for (zone_name, ops) in &zone_ops {
-                let zone = RepositoryService::get_zone_by_name_tx(&mut tx, zone_name.as_str())
-                    .await?
-                    .ok_or_else(|| ServiceError::zone_not_found(zone_name.as_str()))?;
+                let zone = RepositoryService::get_zone_by_name_tx(
+                    &mut tx,
+                    zone_name.as_str(),
+                    LockLevel::Exclusive,
+                )
+                .await?
+                .ok_or_else(|| ServiceError::zone_not_found(zone_name.as_str()))?;
 
                 let writes: Vec<RecordWrite<'_>> = ops
                     .adds
@@ -358,7 +363,10 @@ impl ExternalDnsService {
                 names.sort();
                 names.dedup();
                 let existing = RepositoryService::list_records_by_zone_id_and_names_tx(
-                    &mut tx, zone.id, &names,
+                    &mut tx,
+                    zone.id,
+                    &names,
+                    LockLevel::Exclusive,
                 )
                 .await?;
 

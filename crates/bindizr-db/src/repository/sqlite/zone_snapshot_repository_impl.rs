@@ -4,7 +4,7 @@ use sqlx::{Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::zone_snapshot::ZoneSnapshot,
-    repository::{RepositoryTx, ZoneSnapshotRepository},
+    repository::{LockLevel, RepositoryTx, ZoneSnapshotRepository},
 };
 
 /// SQLite-backed implementation of `ZoneSnapshotRepository`.
@@ -147,6 +147,7 @@ impl ZoneSnapshotRepository for SqliteZoneSnapshotRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         serial: i32,
+        _lock_level: LockLevel,
     ) -> Result<Option<ZoneSnapshot>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 

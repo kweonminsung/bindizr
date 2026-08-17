@@ -3,6 +3,7 @@
 use std::fmt::Write as _;
 
 use bindizr_core::dns::name::to_fqdn;
+use bindizr_db::repository::LockLevel;
 
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
@@ -30,14 +31,23 @@ impl ZoneService {
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to export zone").await?;
         let load_result = async {
-            let zone = RepositoryService::get_zone_by_name_tx(&mut tx, lookup_name.as_str())
-                .await?
-                .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
+            let zone = RepositoryService::get_zone_by_name_tx(
+                &mut tx,
+                lookup_name.as_str(),
+                LockLevel::Exclusive,
+            )
+            .await?
+            .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
             // Invisible zones read as 404 so scoped tokens cannot probe them.
             if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
-            let records = RepositoryService::list_records_by_zone_id_tx(&mut tx, zone.id).await?;
+            let records = RepositoryService::list_records_by_zone_id_tx(
+                &mut tx,
+                zone.id,
+                LockLevel::Exclusive,
+            )
+            .await?;
             Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
         }
         .await;

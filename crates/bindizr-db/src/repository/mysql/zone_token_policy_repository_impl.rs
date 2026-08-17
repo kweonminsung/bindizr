@@ -1,10 +1,10 @@
 use async_trait::async_trait;
-use sqlx::{MySql, Pool};
+use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::{
     error::DatabaseError,
     model::zone_token_policy::ZoneTokenPolicy,
-    repository::{RepositoryTx, ZoneTokenPolicyRepository},
+    repository::{LockLevel, RepositoryTx, ZoneTokenPolicyRepository, sql::lock_clause},
 };
 
 /// MySQL-backed implementation of `ZoneTokenPolicyRepository`.
@@ -72,12 +72,14 @@ impl ZoneTokenPolicyRepository for MySqlZoneTokenPolicyRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         api_token_id: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        let policies = sqlx::query_as::<_, ZoneTokenPolicy>(
-            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM zone_token_policies WHERE zone_id = ? AND api_token_id = ? ORDER BY id",
-        )
+        let policies = sqlx::query_as::<_, ZoneTokenPolicy>(AssertSqlSafe(
+            format!("SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM zone_token_policies WHERE zone_id = ? AND api_token_id = ? ORDER BY id{}",
+            lock_clause(lock_level),
+        )))
         .bind(zone_id)
         .bind(api_token_id)
         .fetch_all(&mut **mysql_tx)

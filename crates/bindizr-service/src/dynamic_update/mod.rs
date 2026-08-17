@@ -2,6 +2,8 @@
 //! Prerequisite evaluation, per-key authorization, and the transactional apply
 //! live here; the DNS front end owns the message format, TSIG, and rdata.
 
+use bindizr_db::repository::LockLevel;
+
 mod prerequisite;
 #[cfg(test)]
 mod tests;
@@ -147,11 +149,15 @@ impl DynamicUpdateService {
         let mut tx = RepositoryService::begin_tx("failed to begin NSUPDATE transaction").await?;
 
         let apply_result: Result<(bool, Zone, i32), DynamicUpdateError> = async {
-            let zone = ZoneService::find_by_name_tx(&mut tx, &update.zone_name)
-                .await?
-                .ok_or_else(|| {
-                    DynamicUpdateError::NotZone(format!("zone '{}' not found", update.zone_name))
-                })?;
+            let zone =
+                ZoneService::find_by_name_tx(&mut tx, &update.zone_name, LockLevel::Exclusive)
+                    .await?
+                    .ok_or_else(|| {
+                        DynamicUpdateError::NotZone(format!(
+                            "zone '{}' not found",
+                            update.zone_name
+                        ))
+                    })?;
 
             authorize_key(&mut tx, &zone, update.key.as_ref(), &update.updates).await?;
             evaluate_prerequisites_tx(&mut tx, &zone, &update.prerequisites).await?;
@@ -352,7 +358,7 @@ async fn delete_matching(
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
     let owner = owner_in_zone(name, &zone.name)?;
-    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id).await?;
+    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
     let mut matched: Vec<Record> = Vec::new();
     for record in &zone_records {

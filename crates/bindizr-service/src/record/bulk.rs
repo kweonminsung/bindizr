@@ -1,6 +1,7 @@
 use std::{collections::HashMap, time::Instant};
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::{
@@ -175,7 +176,8 @@ impl RecordService {
 
         let apply_result = async {
             let t = Instant::now();
-            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             timings.load_zone_ms = elapsed_ms(t);
 
             // Before any row is read, so an ungranted caller gets 403 rather than
@@ -208,6 +210,7 @@ impl RecordService {
                 &mut tx,
                 zone.id,
                 &batch_names,
+                LockLevel::Exclusive,
             )
             .await
             {

@@ -4,6 +4,7 @@ use std::{
 };
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::{
@@ -112,7 +113,8 @@ impl RecordService {
 
         let apply_result: Result<AppliedImport, ServiceError> = async {
             let t = Instant::now();
-            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
@@ -208,12 +210,20 @@ impl RecordService {
                     names.sort();
                     names.dedup();
                     RepositoryService::list_records_by_zone_id_and_names_tx(
-                        &mut tx, zone.id, &names,
+                        &mut tx,
+                        zone.id,
+                        &names,
+                        LockLevel::Exclusive,
                     )
                     .await
                 }
                 ImportMode::Replace | ImportMode::Upsert => {
-                    RepositoryService::list_records_by_zone_id_tx(&mut tx, zone.id).await
+                    RepositoryService::list_records_by_zone_id_tx(
+                        &mut tx,
+                        zone.id,
+                        LockLevel::Exclusive,
+                    )
+                    .await
                 }
             }
             .map_err(|e| {

@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{RepositoryTx, ZoneFilter, ZoneRepository, sql::like_pattern},
+    repository::{LockLevel, RepositoryTx, ZoneFilter, ZoneRepository, sql::like_pattern},
 };
 
 /// SQLite-backed implementation of `ZoneRepository`.
@@ -53,6 +53,7 @@ impl ZoneRepository for SqliteZoneRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
+        _lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
@@ -79,6 +80,7 @@ impl ZoneRepository for SqliteZoneRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
+        _lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
@@ -100,7 +102,11 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(zones)
     }
 
-    async fn list_all_tx(&self, tx: &mut RepositoryTx<'_>) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_all_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        _lock_level: LockLevel,
+    ) -> Result<Vec<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
         let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")

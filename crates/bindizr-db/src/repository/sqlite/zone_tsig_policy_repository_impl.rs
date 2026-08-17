@@ -4,7 +4,7 @@ use sqlx::{Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::zone_tsig_policy::ZoneTsigPolicy,
-    repository::{RepositoryTx, ZoneTsigPolicyRepository},
+    repository::{LockLevel, RepositoryTx, ZoneTsigPolicyRepository},
 };
 
 /// SQLite-backed implementation of `ZoneTsigPolicyRepository`.
@@ -71,6 +71,7 @@ impl ZoneTsigPolicyRepository for SqliteZoneTsigPolicyRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         tsig_key_id: i32,
+        _lock_level: LockLevel,
     ) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 

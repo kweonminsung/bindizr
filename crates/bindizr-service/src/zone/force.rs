@@ -1,3 +1,5 @@
+use bindizr_db::repository::LockLevel;
+
 use super::ZoneService;
 use crate::{
     error::ServiceError, log_error, log_info, model::zone::Zone, repository::RepositoryService,
@@ -35,7 +37,8 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to force increment zone serial").await?;
 
         let apply_result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let updated_zone = RepositoryService::update_zone_tx(

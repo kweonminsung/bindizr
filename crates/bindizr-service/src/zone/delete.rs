@@ -1,4 +1,5 @@
 use bindizr_core::dns::{CATALOG_ZONE_NAME, name::ZoneName};
+use bindizr_db::repository::LockLevel;
 
 use super::ZoneService;
 use crate::{
@@ -15,7 +16,8 @@ impl ZoneService {
 
         let apply_result = async {
             // Locked lookup so a raced double-delete reports 404, not success.
-            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
             RepositoryService::delete_zone_tx(&mut tx, zone.id)
                 .await

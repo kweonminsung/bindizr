@@ -1,5 +1,5 @@
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_db::repository::RecordFilter;
+use bindizr_db::repository::{LockLevel, RecordFilter};
 
 use super::RecordService;
 use crate::{
@@ -24,8 +24,9 @@ impl RecordService {
     pub(crate) async fn list_by_zone_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<Record>, ServiceError> {
-        RepositoryService::list_records_by_zone_id_tx(tx, zone_id).await
+        RepositoryService::list_records_by_zone_id_tx(tx, zone_id, lock_level).await
     }
 
     /// List a zone's records for `caller`; a zone it cannot see reads as

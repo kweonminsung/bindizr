@@ -6,8 +6,10 @@ use crate::{
     error::DatabaseError,
     model::record::{Record, RecordWithZone},
     repository::{
-        RecordFilter, RecordRepository, RepositoryTx,
-        sql::{apex_owner_sql, like_pattern, name_like_types_sql, normalize_partial_value},
+        LockLevel, RecordFilter, RecordRepository, RepositoryTx,
+        sql::{
+            apex_owner_sql, like_pattern, lock_clause, name_like_types_sql, normalize_partial_value,
+        },
     },
 };
 
@@ -145,10 +147,11 @@ impl RecordRepository for PostgresRecordRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
+        lock_level: LockLevel,
     ) -> Result<Option<Record>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1 FOR UPDATE")
+        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1{}",lock_clause(lock_level))))
             .bind(id)
             .fetch_optional(&mut **postgres_tx)
             .await?;
@@ -173,12 +176,14 @@ impl RecordRepository for PostgresRecordRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name FOR UPDATE",
-        )
+        let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
+            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name{}",
+            lock_clause(lock_level),
+        )))
         .bind(zone_id)
         .fetch_all(&mut **postgres_tx)
         .await?;
@@ -191,14 +196,16 @@ impl RecordRepository for PostgresRecordRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         name: &OwnerName,
+        lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
         // Bind the canonical stored form as given: re-folding it here would miss
         // its own row, and the bare column lets idx_records_zone_name apply.
-        let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name FOR UPDATE",
-        )
+        let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
+            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name{}",
+            lock_clause(lock_level),
+        )))
         .bind(zone_id)
         .bind(name)
         .fetch_all(&mut **postgres_tx)
@@ -243,6 +250,7 @@ impl RecordRepository for PostgresRecordRepository {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         names: &[OwnerName],
+        lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError> {
         if names.is_empty() {
             return Ok(Vec::new());
@@ -265,7 +273,8 @@ impl RecordRepository for PostgresRecordRepository {
                 }
                 sql.push_str(&format!("${}", i + 2));
             }
-            sql.push_str(") FOR UPDATE");
+            sql.push(')');
+            sql.push_str(lock_clause(lock_level));
 
             let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
             for name in chunk {
