@@ -103,9 +103,9 @@ impl Caller {
         }
     }
 
-    /// Authorize record-plane writes in `zone`, re-reading the caller's
-    /// policies inside the transaction so the decision is atomic with the
-    /// mutation.
+    /// Authorize record-plane writes in `zone`, share-locking the caller's
+    /// policies inside the transaction so a concurrent revocation waits for
+    /// this mutation instead of racing it.
     pub(crate) async fn authorize_record_writes_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -119,7 +119,7 @@ impl Caller {
                     tx,
                     zone.id,
                     *id,
-                    LockLevel::None,
+                    LockLevel::Shared,
                 )
                 .await?;
                 // Ahead of the per-write loop, which a batch resolving to no

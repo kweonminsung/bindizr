@@ -93,7 +93,7 @@ async fn reconstruct_records_at_serial(
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
     for record in
-        RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::Exclusive).await?
+        RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::None).await?
     {
         state
             .entry(record_match_key(&record))
@@ -175,7 +175,7 @@ async fn records_at_serial(
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     if serial == current_serial {
         let mut records: Vec<ReconstructedRecord> =
-            RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::Exclusive)
+            RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::None)
                 .await?
                 .into_iter()
                 .map(ReconstructedRecord::from)
@@ -414,7 +414,7 @@ impl ZoneService {
 
         let result = async {
             let zone =
-                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive)
+                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Shared)
                     .await?;
             if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
@@ -453,7 +453,7 @@ impl ZoneService {
 
         let result = async {
             let zone =
-                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive)
+                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Shared)
                     .await?;
             if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));

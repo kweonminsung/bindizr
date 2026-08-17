@@ -120,11 +120,13 @@ impl ZoneTsigPolicyService {
         zone_id: i32,
         tsig_key_id: i32,
     ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
+        // Share-lock the grants so a concurrent revocation waits for this
+        // transaction instead of racing it.
         RepositoryService::list_zone_tsig_policies_by_zone_and_key_tx(
             tx,
             zone_id,
             tsig_key_id,
-            LockLevel::None,
+            LockLevel::Shared,
         )
         .await
     }

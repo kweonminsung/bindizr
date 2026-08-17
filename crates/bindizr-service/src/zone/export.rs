@@ -34,7 +34,7 @@ impl ZoneService {
             let zone = RepositoryService::get_zone_by_name_tx(
                 &mut tx,
                 lookup_name.as_str(),
-                LockLevel::Exclusive,
+                LockLevel::Shared,
             )
             .await?
             .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
@@ -42,12 +42,9 @@ impl ZoneService {
             if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
-            let records = RepositoryService::list_records_by_zone_id_tx(
-                &mut tx,
-                zone.id,
-                LockLevel::Exclusive,
-            )
-            .await?;
+            let records =
+                RepositoryService::list_records_by_zone_id_tx(&mut tx, zone.id, LockLevel::None)
+                    .await?;
             Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
         }
         .await;
