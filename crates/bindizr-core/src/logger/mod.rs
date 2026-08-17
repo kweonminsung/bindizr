@@ -32,13 +32,6 @@ macro_rules! log_debug {
     };
 }
 
-#[macro_export]
-macro_rules! log_trace {
-    ($($arg:tt)*) => {
-        log::trace!($($arg)*)
-    };
-}
-
 /// Whether debug logging is enabled. Lets hot paths skip building debug-only
 /// data (e.g. per-record timing) when it would only be discarded.
 #[macro_export]
@@ -49,7 +42,7 @@ macro_rules! log_debug_enabled {
 }
 
 /// Simple `log` implementation that writes to stderr.
-pub struct Logger {
+struct Logger {
     log_level: Level,
 }
 
@@ -83,7 +76,13 @@ impl log::Log for Logger {
 
 /// Install the global logger using the configured log level.
 pub fn initialize() {
-    let log_level = match config::get_bindizr_config().logging.log_level {
+    initialize_with_level(config::get_bindizr_config().logging.log_level);
+}
+
+/// Install the global logger at an explicit level, for binaries that do not
+/// load the bindizr configuration file (e.g. the ExternalDNS adapter).
+pub fn initialize_with_level(level: config::LogLevel) {
+    let log_level = match level {
         config::LogLevel::Error => Level::Error,
         config::LogLevel::Warn => Level::Warn,
         config::LogLevel::Debug => Level::Debug,

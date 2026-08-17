@@ -119,6 +119,8 @@ class ResourceSampler:
             "cpu_by_container": {name: round(sum(v) / len(v), 2)
                                  for name, v in self._by_container("cpu_pct").items()},
             "peak_mem_mb": round(max(mem_totals) / 1024**2, 2),
+            "mem_by_container": {name: round(max(v) / 1024**2, 2)
+                                 for name, v in self._by_container("mem_bytes").items()},
             "avg_mem_mb": round(sum(mem_totals) / len(mem_totals) / 1024**2, 2),
             "net_tx_mb": round(net_tx / 1024**2, 2),
             "samples": len(self.samples),

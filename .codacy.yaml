@@ -4,12 +4,12 @@
 # containers and generating reproducible datasets, so security and complexity
 # analysis there produces only false positives.
 exclude_paths:
-  - 'benchmarks/**'
+  - "benchmarks/**"
 
 engines:
   duplication:
     exclude_paths:
-      - 'benchmarks/**'
+      - "benchmarks/**"
   metrics:
     exclude_paths:
-      - 'benchmarks/**'
+      - "benchmarks/**"

@@ -2,7 +2,9 @@ use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{config, dns::CATALOG_ZONE_NAME};
 use bindizr_dns::client::{notify, probe};
-use bindizr_service::{error::ServiceError, types::GetZonesFilter, zone::ZoneService};
+use bindizr_service::{
+    authorization::Caller, error::ServiceError, types::GetZonesFilter, zone::ZoneService,
+};
 
 use crate::{
     net::loopback_if_unspecified,
@@ -12,20 +14,22 @@ use crate::{
     },
 };
 
-/// Handle the `Doctor` command: the daemon-side installation checks. The
-/// catalog zone is probed because it exists on every installation, so serial
-/// comparison works before any user zone is created.
 /// A hung database must become a failed check, not a hung doctor.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// The daemon-side installation checks. The catalog zone is the one probed
+/// because it exists before any user zone, so serial comparison always works.
 pub(super) async fn doctor() -> Result<DaemonResponse, ServiceError> {
     let config = config::get_bindizr_config();
 
     // Count zones without materializing them; large tables must fit the deadline.
-    let zones_probe = ZoneService::list_by_filter(GetZonesFilter {
-        limit: Some(1),
-        ..GetZonesFilter::default()
-    });
+    let zones_probe = ZoneService::list_by_filter(
+        &Caller::Global,
+        GetZonesFilter {
+            limit: Some(1),
+            ..GetZonesFilter::default()
+        },
+    );
     let database = match tokio::time::timeout(DB_CHECK_TIMEOUT, zones_probe).await {
         Ok(Ok(page)) => DoctorCheckResult {
             ok: true,

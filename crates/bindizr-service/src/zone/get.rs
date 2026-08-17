@@ -1,8 +1,9 @@
-use bindizr_db::repository::ZoneFilter;
+use bindizr_db::repository::{LockLevel, ZoneFilter};
 
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
+    authorization::Caller,
     error::ServiceError,
     log_error,
     model::{zone::Zone, zone_change::ZoneChange},
@@ -13,32 +14,28 @@ use crate::{
 
 impl ZoneService {
     /// Look up a zone by name, returning `None` if it does not exist.
-    pub async fn find(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
+    pub async fn find_by_name(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        RepositoryService::get_zone_by_name(&lookup_name).await
+        RepositoryService::get_zone_by_name(lookup_name.as_str()).await
     }
 
     /// Look up a zone by name within the caller's transaction.
-    pub async fn find_tx(
+    pub(crate) async fn find_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
+        lock_level: LockLevel,
     ) -> Result<Option<Zone>, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        RepositoryService::get_zone_by_name_tx(tx, &lookup_name).await
+        RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str(), lock_level).await
     }
 
-    /// Look up a zone by id, returning `None` if it does not exist.
-    pub async fn find_by_id(zone_id: i32) -> Result<Option<Zone>, ServiceError> {
-        RepositoryService::get_zone_by_id(zone_id).await
-    }
-
-    /// Get the recorded zone changes between two serials, for building an IXFR.
-    pub async fn get_changes_between_serials(
+    /// List the recorded zone changes between two serials, for building an IXFR.
+    pub async fn list_changes_between_serials(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, ServiceError> {
-        RepositoryService::get_zone_changes_between_serials(zone_id, from_serial, to_serial).await
+        RepositoryService::list_zone_changes_between_serials(zone_id, from_serial, to_serial).await
     }
 
     /// Cheap database round-trip (limit-1 zones probe), for health checks.
@@ -48,16 +45,19 @@ impl ZoneService {
 
     /// List all zones.
     pub async fn list() -> Result<Vec<Zone>, ServiceError> {
-        RepositoryService::get_all_zones().await.map_err(|e| {
+        RepositoryService::list_zones().await.map_err(|e| {
             log_error!("Failed to fetch zones: {}", e);
             ServiceError::internal("Failed to fetch zones".to_string())
         })
     }
 
-    /// List zones matching `filter`, returning a paginated response.
+    /// List the zones matching `filter` that the caller may see, restricted in
+    /// SQL so pagination stays database-side.
     pub async fn list_by_filter(
+        caller: &Caller,
         filter: GetZonesFilter,
     ) -> Result<PaginatedResponse<Zone>, ServiceError> {
+        let scope_token_id = caller.scope_token_id();
         let limit = filter.limit;
         let offset = filter.offset;
 
@@ -71,26 +71,42 @@ impl ZoneService {
             max_ttl: filter.max_ttl,
             serial: filter.serial,
             search: filter.search,
+            scope_token_id,
             limit,
             offset,
         };
 
         let total = RepositoryService::count_zones_by_filter(zone_filter.clone()).await?;
-        let zones = RepositoryService::get_zones_by_filter(zone_filter).await?;
+        let zones = RepositoryService::list_zones_by_filter(zone_filter).await?;
         Ok(paginated_response(zones, limit, offset, total))
     }
 
-    /// Fetch a zone by name, returning `NotFound` if it does not exist.
-    pub async fn get_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
-        let lookup_name = normalize_zone_name(zone_name)?;
+    /// Fetch a zone by name for `caller`; a zone it cannot see reads as
+    /// `NotFound`, so grants cannot be probed.
+    pub async fn get_by_name(caller: &Caller, zone_name: &str) -> Result<Zone, ServiceError> {
+        let zone = Self::lookup_by_name(zone_name).await?;
+        caller.ensure_zone_visible(&zone)?;
+        Ok(zone)
+    }
 
-        match RepositoryService::get_zone_by_name(&lookup_name).await {
-            Ok(Some(zone)) => Ok(zone),
-            Ok(None) => Err(ServiceError::zone_not_found(zone_name)),
-            Err(e) => {
-                log_error!("Failed to fetch zone: {}", e);
-                Err(ServiceError::internal("Failed to fetch zone".to_string()))
-            }
-        }
+    /// Fetch a zone by name, returning `NotFound` if it does not exist. This is
+    /// the unchecked lookup for service-internal use; anything reachable from a
+    /// front end goes through [`Self::get_by_name`].
+    pub(crate) async fn lookup_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
+        Self::find_by_name(zone_name)
+            .await?
+            .ok_or_else(|| ServiceError::zone_not_found(zone_name))
+    }
+
+    /// Fetch a zone by name within the caller's transaction at `lock_level`,
+    /// returning `NotFound` if it does not exist.
+    pub(crate) async fn get_by_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_name: &str,
+        lock_level: LockLevel,
+    ) -> Result<Zone, ServiceError> {
+        Self::find_by_name_tx(tx, zone_name, lock_level)
+            .await?
+            .ok_or_else(|| ServiceError::zone_not_found(zone_name))
     }
 }

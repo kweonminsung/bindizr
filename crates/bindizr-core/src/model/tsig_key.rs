@@ -1,10 +1,8 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 /// TSIG HMAC algorithms supported for nsupdate authentication (RFC 8945).
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TsigAlgorithm {
     HmacSha256,
     HmacSha384,
@@ -23,7 +21,7 @@ impl TsigAlgorithm {
     }
 
     /// All supported algorithm names, for error messages and CLI help.
-    pub fn supported_names() -> &'static [&'static str] {
+    pub(crate) fn supported_names() -> &'static [&'static str] {
         &["hmac-sha256", "hmac-sha384", "hmac-sha512"]
     }
 }
@@ -61,14 +59,12 @@ impl TryFrom<String> for TsigAlgorithm {
 }
 
 /// A TSIG key used to authenticate nsupdate requests. Keys are standalone
-/// credentials that can be granted to any number of zones through
-/// [`super::zone_tsig_policy::ZoneTsigPolicy`] rows; `name` is the key name
-/// that appears on the wire in the TSIG record and `secret` is the
-/// base64-encoded HMAC secret.
+/// credentials granted to zones through
+/// [`super::zone_tsig_policy::ZoneTsigPolicy`] rows; `name` is the wire name.
 ///
 /// `is_global` is fixed at creation: a global key may update every zone
 /// (all names, all types) without any policy.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TsigKey {
     pub id: i32,
     pub name: String,

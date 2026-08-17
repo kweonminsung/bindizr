@@ -1,20 +1,19 @@
 use async_trait::async_trait;
-use sqlx::{MySql, Pool};
+use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::{
     error::DatabaseError,
     model::zone_tsig_policy::ZoneTsigPolicy,
-    repository::{RepositoryTx, ZoneTsigPolicyRepository},
+    repository::{LockLevel, RepositoryTx, ZoneTsigPolicyRepository, sql::lock_clause},
 };
 
 /// MySQL-backed implementation of `ZoneTsigPolicyRepository`.
-pub struct MySqlZoneTsigPolicyRepository {
+pub(crate) struct MySqlZoneTsigPolicyRepository {
     pool: Pool<MySql>,
 }
 
 impl MySqlZoneTsigPolicyRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<MySql>) -> Self {
+    pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
 }
@@ -55,7 +54,7 @@ impl ZoneTsigPolicyRepository for MySqlZoneTsigPolicyRepository {
         Ok(policy)
     }
 
-    async fn get_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let policies = sqlx::query_as::<_, ZoneTsigPolicy>(
@@ -68,17 +67,19 @@ impl ZoneTsigPolicyRepository for MySqlZoneTsigPolicyRepository {
         Ok(policies)
     }
 
-    async fn get_by_zone_and_key_tx(
+    async fn list_by_zone_and_key_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         tsig_key_id: i32,
+        lock_level: LockLevel,
     ) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        let policies = sqlx::query_as::<_, ZoneTsigPolicy>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM zone_tsig_policies WHERE zone_id = ? AND tsig_key_id = ? ORDER BY id",
-        )
+        let policies = sqlx::query_as::<_, ZoneTsigPolicy>(AssertSqlSafe(
+            format!("SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM zone_tsig_policies WHERE zone_id = ? AND tsig_key_id = ? ORDER BY id{}",
+            lock_clause(lock_level),
+        )))
         .bind(zone_id)
         .bind(tsig_key_id)
         .fetch_all(&mut **mysql_tx)

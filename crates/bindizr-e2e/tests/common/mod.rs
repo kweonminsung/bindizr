@@ -18,6 +18,7 @@ use tempfile::TempDir;
 
 mod assertions;
 mod dns;
+pub(crate) mod nsupdate;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 use dns::{dns_expected_value, dns_key_from_record, dns_record_type, wait_for_dns_records};
@@ -38,8 +39,19 @@ pub(crate) struct TestApp {
     runtime: Option<TestRuntime>,
     client: Client,
     base_url: String,
+    dns_port: Option<u16>,
     dns_secondary_ports: Vec<u16>,
     namespace: String,
+    auth_token: Option<String>,
+}
+
+/// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
+#[derive(Default)]
+pub(crate) struct TestAppOptions {
+    pub require_authentication: bool,
+    pub external_dns_enabled: bool,
+    pub nsupdate_allow_unsigned: bool,
+    pub openapi_enabled: bool,
 }
 
 enum TestRuntime {
@@ -52,11 +64,17 @@ impl TestApp {
         if dns_verification_enabled() {
             Self::start_compose().await
         } else {
-            Self::start_local().await
+            Self::start_local(TestAppOptions::default()).await
         }
     }
 
-    async fn start_local() -> Self {
+    /// Start with non-default config; always the local runtime, because the
+    /// compose stack's config is fixed.
+    pub(crate) async fn start_with_options(options: TestAppOptions) -> Self {
+        Self::start_local(options).await
+    }
+
+    async fn start_local(options: TestAppOptions) -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let api_port = reserve_tcp_port();
         let dns_port = reserve_dns_port();
@@ -64,9 +82,9 @@ impl TestApp {
         fs::File::create(&db_path).expect("failed to create sqlite file");
 
         let config_path = temp_dir.path().join("bindizr.conf.toml");
-        write_config(&config_path, api_port, dns_port, &db_path);
+        write_config(&config_path, api_port, dns_port, &db_path, &options);
 
-        let mut child = Command::new(env!("CARGO_BIN_EXE_bindizr"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server"))
             .arg("start")
             .arg("-c")
             .arg(&config_path)
@@ -84,8 +102,10 @@ impl TestApp {
             runtime: Some(TestRuntime::Local { temp_dir, child }),
             client,
             base_url,
+            dns_port: Some(dns_port),
             dns_secondary_ports: Vec::new(),
             namespace: test_namespace(),
+            auth_token: None,
         }
     }
 
@@ -98,9 +118,55 @@ impl TestApp {
             runtime: Some(TestRuntime::Compose(compose_stack)),
             client,
             base_url: COMPOSE_API_BASE_URL.to_string(),
+            dns_port: None,
             dns_secondary_ports: SECONDARY_PORTS.to_vec(),
             namespace: test_namespace(),
+            auth_token: None,
         }
+    }
+
+    pub(crate) fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Port bindizr's own DNS listener is bound to; only the local runtime
+    /// picks one, the compose stack fixes it.
+    pub(crate) fn dns_port(&self) -> u16 {
+        self.dns_port.expect("local runtime binds a DNS port")
+    }
+
+    /// Bearer token attached to every subsequent HTTP request.
+    pub(crate) fn set_auth_token(&mut self, token: String) {
+        self.auth_token = Some(token);
+    }
+
+    /// Create a global API token over the daemon socket (which needs no HTTP
+    /// auth) and return its `(name, plaintext token)`.
+    pub(crate) async fn create_api_token(&self) -> (String, String) {
+        let name = format!("{}-global", self.namespace);
+        self.create_token_with(&["token", "create", "--name", &name, "--global"])
+            .await
+    }
+
+    /// Create a scoped API token and return its `(name, plaintext token)`;
+    /// grant zones with `zone token-policy add`.
+    pub(crate) async fn create_scoped_api_token(&self) -> (String, String) {
+        let name = format!("{}-scoped", self.namespace);
+        self.create_token_with(&["token", "create", "--name", &name])
+            .await
+    }
+
+    async fn create_token_with(&self, args: &[&str]) -> (String, String) {
+        let stdout = self.run_cli_success(args).await;
+        let field = |prefix: &str| {
+            stdout
+                .lines()
+                .find_map(|line| line.strip_prefix(prefix))
+                .unwrap_or_else(|| panic!("token create output did not contain '{prefix}'"))
+                .trim()
+                .to_string()
+        };
+        (field("Name: "), field("Token: "))
     }
 
     pub(crate) fn zone_name(&self, base: &str) -> String {
@@ -150,6 +216,9 @@ impl TestApp {
     ) -> (StatusCode, Value) {
         let url = format!("{}{}", self.base_url, path);
         let mut request = self.client.request(method, url);
+        if let Some(token) = &self.auth_token {
+            request = request.bearer_auth(token);
+        }
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -169,6 +238,33 @@ impl TestApp {
         };
 
         (status, body)
+    }
+
+    /// A zone's records as the API reports them.
+    pub(crate) async fn list_records(&self, zone_name: &str) -> Vec<Value> {
+        let (status, body) = self
+            .request(
+                Method::GET,
+                &format!("/zones/{zone_name}?records=true"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        body["records"]
+            .as_array()
+            .expect("zone detail carries a records array")
+            .clone()
+    }
+
+    /// A zone's current SOA serial.
+    pub(crate) async fn zone_serial(&self, zone_name: &str) -> i64 {
+        let (status, body) = self
+            .request(Method::GET, &format!("/zones/{zone_name}"), None)
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        body["zone"]["serial"]
+            .as_i64()
+            .expect("zone carries a serial")
     }
 
     pub(crate) async fn create_test_zone(&self) -> Value {
@@ -214,11 +310,7 @@ impl TestApp {
     }
 
     /// Run the CLI, optionally piping `input` to its stdin (for `-` file args).
-    pub(crate) async fn run_cli_with_input(
-        &self,
-        args: &[&str],
-        input: Option<&str>,
-    ) -> std::process::Output {
+    async fn run_cli_with_input(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
         let previous_dns_key = match args {
             ["record", "delete", record_id, ..] => {
                 self.previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
@@ -228,7 +320,7 @@ impl TestApp {
             _ => None,
         };
         let mut command = match self.runtime.as_ref().expect("test runtime is missing") {
-            TestRuntime::Local { .. } => Command::new(env!("CARGO_BIN_EXE_bindizr")),
+            TestRuntime::Local { .. } => Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server")),
             TestRuntime::Compose(stack) => stack.cli_command(),
         };
         command.args(args);
@@ -530,13 +622,21 @@ fn reserve_dns_port() -> u16 {
     panic!("failed to reserve a DNS port available for both TCP and UDP");
 }
 
-fn write_config(config_path: &Path, api_port: u16, dns_port: u16, db_path: &Path) {
+fn write_config(
+    config_path: &Path,
+    api_port: u16,
+    dns_port: u16,
+    db_path: &Path,
+    options: &TestAppOptions,
+) {
     let config = format!(
         r#"
 [api]
 listen_addr = "127.0.0.1"
 listen_port = {api_port}
-require_authentication = false
+require_authentication = {require_authentication}
+external_dns_enabled = {external_dns_enabled}
+openapi_enabled = {openapi_enabled}
 
 [database]
 type = "sqlite"
@@ -558,24 +658,31 @@ notify_after_update = false
 notify_on_startup = false
 notify_retries = 0
 notify_timeout_secs = 1
-nsupdate_allow_unsigned = false
+nsupdate_allow_unsigned = {nsupdate_allow_unsigned}
 
 [logging]
 log_level = "error"
 "#,
-        db_path.display()
+        db_path.display(),
+        require_authentication = options.require_authentication,
+        external_dns_enabled = options.external_dns_enabled,
+        nsupdate_allow_unsigned = options.nsupdate_allow_unsigned,
+        openapi_enabled = options.openapi_enabled,
     );
 
     fs::write(config_path, config).expect("failed to write bindizr config");
 }
 
 async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) {
+    // /health sits outside the auth layer, so readiness ignores
+    // require_authentication.
+    let health_url = format!("{base_url}/health");
     for _ in 0..100 {
         if let Some(status) = child.try_wait().expect("failed to check child status") {
             panic!("bindizr exited before API was ready: {status}");
         }
 
-        if let Ok(response) = client.get(base_url).send().await
+        if let Ok(response) = client.get(&health_url).send().await
             && response.status() == StatusCode::OK
         {
             return;
@@ -585,6 +692,63 @@ async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) {
     }
 
     panic!("bindizr API did not become ready");
+}
+
+/// A spawned bindizr-external-dns adapter process, killed on drop.
+pub(crate) struct ExternalDnsAdapter {
+    child: Child,
+    pub(crate) base_url: String,
+}
+
+impl ExternalDnsAdapter {
+    /// Spawn the adapter binary against `bindizr_url` on ephemeral localhost
+    /// ports and wait until its webhook listener answers.
+    pub(crate) async fn spawn(bindizr_url: &str, token: &str) -> Self {
+        let webhook_port = reserve_tcp_port();
+        let health_port = reserve_tcp_port();
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-external-dns"));
+        command
+            .arg("--bindizr-url")
+            .arg(bindizr_url)
+            .arg("--listen-addr")
+            .arg(format!("127.0.0.1:{webhook_port}"))
+            .arg("--health-listen-addr")
+            .arg(format!("127.0.0.1:{health_port}"))
+            .arg("--log-level")
+            .arg("error")
+            .arg("--token")
+            .arg(token);
+
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to start bindizr-external-dns binary");
+
+        let base_url = format!("http://127.0.0.1:{webhook_port}");
+        let client = Client::new();
+        for _ in 0..100 {
+            if let Some(status) = child.try_wait().expect("failed to check adapter status") {
+                panic!("bindizr-external-dns exited before it was ready: {status}");
+            }
+            // Any HTTP response means the webhook listener is up.
+            if client.get(&base_url).send().await.is_ok() {
+                return Self { child, base_url };
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        panic!("bindizr-external-dns did not become ready");
+    }
+}
+
+impl Drop for ExternalDnsAdapter {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 async fn wait_for_compose_api(client: &Client) {

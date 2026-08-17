@@ -1,10 +1,13 @@
-use bindizr_core::{log_debug, model::api_token::ApiToken};
+use bindizr_core::log_debug;
+use bindizr_service::types::GetTokenResponse;
 use clap::Subcommand;
-use serde_json::json;
 
 use crate::{
     cli::error::CliError,
-    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+    socket::{
+        client::DaemonSocketClient,
+        types::{CreateTokenParams, DaemonCommandKind, TokenNameParams},
+    },
 };
 
 /// Subcommands for managing API tokens.
@@ -12,19 +15,27 @@ use crate::{
 pub(crate) enum TokenCommand {
     /// Create a new API token
     Create {
+        /// Unique token name (e.g. "external-dns"); used to reference the
+        /// token in other commands
+        #[arg(long)]
+        name: String,
         /// Description of the token
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
         /// Number of days until the token expires (default: never expires)
         #[arg(long, value_name = "N")]
         expires_in_days: Option<i64>,
+        /// Make the token global: it may manage every zone and the zone
+        /// plane without policies. Fixed at creation.
+        #[arg(long)]
+        global: bool,
     },
     /// List all API tokens
     List,
-    /// Delete an API token by ID
+    /// Delete an API token by name
     Delete {
-        /// ID of the token to delete
-        token_id: i32,
+        /// Name of the token to delete
+        name: String,
     },
 }
 
@@ -34,46 +45,55 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
 
     match subcommand {
         TokenCommand::Create {
+            name,
             description,
             expires_in_days,
-        } => create_token(&client, description, expires_in_days).await,
+            global,
+        } => create_token(&client, name, description, expires_in_days, global).await,
         TokenCommand::List => list_tokens(&client).await,
-        TokenCommand::Delete { token_id } => delete_token(&client, token_id).await,
+        TokenCommand::Delete { name } => delete_token(&client, name).await,
     }
 }
 
 async fn create_token(
     client: &DaemonSocketClient,
+    name: String,
     description: Option<String>,
     expires_in_days: Option<i64>,
+    global: bool,
 ) -> Result<(), CliError> {
     let res = client
         .send_command(
             DaemonCommandKind::TokenCreate,
-            Some(json!({
-                "description": description,
-                "expires_in_days": expires_in_days,
-            })),
+            CreateTokenParams {
+                name,
+                description,
+                expires_in_days,
+                global,
+            },
         )
         .await?;
 
     log_debug!("Token creation result: {:?}", res);
 
-    let token: ApiToken = serde_json::from_value(res.data)
+    let token: GetTokenResponse = serde_json::from_value(res.data)
         .map_err(|e| format!("Failed to parse token creation response: {}", e))?;
 
     println!("API token created successfully:");
-    println!("ID: {}", token.id);
-    println!("Token: {}", token.token);
+    println!("Name: {}", token.name);
+    if let Some(secret) = &token.token {
+        println!("Token: {}", secret);
+    }
+    println!("Global: {}", if token.global { "yes" } else { "no" });
     if let Some(desc) = token.description {
         println!("Description: {}", desc);
     }
     println!(
         "Created at: {}",
-        &token.created_at.format("%Y-%m-%d %H:%M:%S")
+        token.created_at.format("%Y-%m-%d %H:%M:%S")
     );
     if let Some(expires) = token.expires_at {
-        println!("Expires at: {}", &expires.format("%Y-%m-%d %H:%M:%S"));
+        println!("Expires at: {}", expires.format("%Y-%m-%d %H:%M:%S"));
     } else {
         println!("Expires at: Never");
     }
@@ -83,12 +103,12 @@ async fn create_token(
 
 async fn list_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
     let res = client
-        .send_command(DaemonCommandKind::TokenList, None)
+        .send_command(DaemonCommandKind::TokenList, ())
         .await?;
 
     log_debug!("Token list result: {:?}", res);
 
-    let tokens: Vec<ApiToken> = serde_json::from_value(res.data)
+    let tokens: Vec<GetTokenResponse> = serde_json::from_value(res.data)
         .map_err(|e| format!("Failed to parse token list response: {}", e))?;
 
     if tokens.is_empty() {
@@ -97,8 +117,11 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
     }
 
     println!("API Tokens:");
-    println!("{:<5} {:<20} {:<20}", "ID", "DESCRIPTION", "EXPIRES AT");
-    println!("{}", "-".repeat(50));
+    println!(
+        "{:<25} {:<8} {:<20} {:<20}",
+        "NAME", "GLOBAL", "DESCRIPTION", "EXPIRES AT"
+    );
+    println!("{}", "-".repeat(75));
 
     for token in tokens {
         let desc = token.description.unwrap_or_else(|| "-".to_string());
@@ -107,18 +130,21 @@ async fn list_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "Never".to_string());
 
-        println!("{:<5} {:<20} {:<20}", token.id, desc, expires);
+        println!(
+            "{:<25} {:<8} {:<20} {:<20}",
+            token.name,
+            if token.global { "yes" } else { "no" },
+            desc,
+            expires
+        );
     }
 
     Ok(())
 }
 
-async fn delete_token(client: &DaemonSocketClient, token_id: i32) -> Result<(), CliError> {
+async fn delete_token(client: &DaemonSocketClient, name: String) -> Result<(), CliError> {
     let res = client
-        .send_command(
-            DaemonCommandKind::TokenDelete,
-            Some(json!({ "id": token_id })),
-        )
+        .send_command(DaemonCommandKind::TokenDelete, TokenNameParams { name })
         .await?;
 
     log_debug!("Token deletion result: {:?}", res);

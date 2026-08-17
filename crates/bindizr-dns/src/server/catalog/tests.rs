@@ -1,11 +1,6 @@
-use super::*;
+use bindizr_core::dns::name::ZoneName;
 
-#[test]
-fn is_catalog_zone_matches_catalog_name() {
-    assert!(is_catalog_zone("catalog.bind"));
-    assert!(!is_catalog_zone("example.com"));
-    assert!(!is_catalog_zone("catalog.example.com"));
-}
+use super::*;
 
 #[test]
 fn zone_name_to_member_id_is_stable_and_dns_safe() {
@@ -19,7 +14,7 @@ fn catalog_signature_changes_when_members_change() {
     let zones = vec![
         Zone {
             id: 1,
-            name: "example.com".to_string(),
+            name: ZoneName::from_row("example.com"),
             primary_ns: "ns1.example.com".to_string(),
             admin_email: "admin.example.com".to_string(),
             ttl: 3600,
@@ -32,7 +27,7 @@ fn catalog_signature_changes_when_members_change() {
         },
         Zone {
             id: 2,
-            name: "test.com".to_string(),
+            name: ZoneName::from_row("test.com"),
             primary_ns: "ns1.test.com".to_string(),
             admin_email: "admin.test.com".to_string(),
             ttl: 3600,
@@ -47,7 +42,7 @@ fn catalog_signature_changes_when_members_change() {
 
     let member_zones = zones
         .iter()
-        .map(|zone| zone.name.clone())
+        .map(|zone| zone.name.to_string())
         .collect::<Vec<_>>();
     let original = catalog_signature(&member_zones, &zones);
     let updated_members = vec!["example.com".to_string()];

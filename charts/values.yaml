@@ -4,7 +4,7 @@ fullnameOverride: ""
 bindizr:
   image:
     repository: kweonminsung/bindizr
-    tag: "0.1.0-beta.6"
+    tag: "0.1.0-beta.7"
     pullPolicy: IfNotPresent
   replicas: 2
 
@@ -14,6 +14,9 @@ bindizr:
     requireAuthentication: true
     # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
     metricsEnabled: true
+    # ExternalDNS provider API (/external-dns), consumed by the
+    # bindizr-external-dns adapter running next to external-dns.
+    externalDnsEnabled: false
     service:
       type: ClusterIP
       port: 8000
@@ -60,7 +63,7 @@ bindizrUi:
   enabled: false
   image:
     repository: kweonminsung/bindizr-ui
-    tag: "0.1.0-beta.6"
+    tag: "0.1.0-beta.7"
     pullPolicy: IfNotPresent
   replicas: 1
   env:

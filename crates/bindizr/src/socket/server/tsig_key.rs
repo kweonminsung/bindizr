@@ -1,41 +1,18 @@
 use bindizr_service::{
-    error::ServiceError, tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService,
-};
-use serde::Deserialize;
-
-use crate::{
-    api::types::{
-        CreateTsigKeyRequest, CreateZoneTsigPolicyRequest, GetTsigKeyResponse,
-        GetZoneTsigPolicyResponse,
-    },
-    socket::{
-        server::{parse_params, to_response_data},
-        types::DaemonResponse,
-    },
+    authorization::Caller,
+    error::ServiceError,
+    tsig_key::TsigKeyService,
+    types::{CreateTsigKeyRequest, GetTsigKeyResponse, GetZoneTsigPolicyResponse},
+    zone::tsig_policy::ZoneTsigPolicyService,
 };
 
-#[derive(Deserialize)]
-struct TsigKeyNameParams {
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct ZoneNameParams {
-    zone_name: String,
-}
-
-#[derive(Deserialize)]
-struct AddZoneTsigPolicyParams {
-    zone_name: String,
-    #[serde(flatten)]
-    request: CreateZoneTsigPolicyRequest,
-}
-
-#[derive(Deserialize)]
-struct RemoveZoneTsigPolicyParams {
-    zone_name: String,
-    id: i32,
-}
+use crate::socket::{
+    server::{parse_params, to_response_data},
+    types::{
+        AddZoneTsigPolicyParams, DaemonResponse, RemoveZonePolicyParams, TsigKeyNameParams,
+        ZonePolicyListParams,
+    },
+};
 
 /// Handle the `TsigKeyCreate` command by creating (or importing) a TSIG key.
 pub(super) async fn create_tsig_key(
@@ -44,6 +21,7 @@ pub(super) async fn create_tsig_key(
     let request: CreateTsigKeyRequest = parse_params(data)?;
 
     let key = TsigKeyService::create(
+        &Caller::Global,
         &request.name,
         request.algorithm.as_deref(),
         request.secret.as_deref(),
@@ -59,7 +37,7 @@ pub(super) async fn create_tsig_key(
 
 /// Handle the `TsigKeyList` command by returning all TSIG keys without secrets.
 pub(super) async fn list_tsig_keys() -> Result<DaemonResponse, ServiceError> {
-    let keys = TsigKeyService::list().await?;
+    let keys = TsigKeyService::list(&Caller::Global).await?;
     let keys: Vec<GetTsigKeyResponse> = keys.iter().map(GetTsigKeyResponse::from_key).collect();
 
     Ok(DaemonResponse {
@@ -72,7 +50,7 @@ pub(super) async fn list_tsig_keys() -> Result<DaemonResponse, ServiceError> {
 pub(super) async fn get_tsig_key(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: TsigKeyNameParams = parse_params(data)?;
 
-    let key = TsigKeyService::get(&params.name).await?;
+    let key = TsigKeyService::get(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),
@@ -86,7 +64,7 @@ pub(super) async fn delete_tsig_key(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: TsigKeyNameParams = parse_params(data)?;
 
-    TsigKeyService::delete(&params.name).await?;
+    TsigKeyService::delete(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: "TSIG key deleted successfully".to_string(),
@@ -101,6 +79,7 @@ pub(super) async fn add_zone_tsig_policy(
     let params: AddZoneTsigPolicyParams = parse_params(data)?;
 
     let policy = ZoneTsigPolicyService::add(
+        &Caller::Global,
         &params.zone_name,
         &params.request.tsig_key,
         params.request.record_name_pattern.as_deref(),
@@ -118,9 +97,9 @@ pub(super) async fn add_zone_tsig_policy(
 pub(super) async fn list_zone_tsig_policies(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: ZonePolicyListParams = parse_params(data)?;
 
-    let policies = ZoneTsigPolicyService::list(&params.zone_name).await?;
+    let policies = ZoneTsigPolicyService::list(&Caller::Global, &params.zone_name).await?;
     let policies: Vec<GetZoneTsigPolicyResponse> = policies
         .iter()
         .map(GetZoneTsigPolicyResponse::from_policy)
@@ -136,9 +115,9 @@ pub(super) async fn list_zone_tsig_policies(
 pub(super) async fn remove_zone_tsig_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: RemoveZoneTsigPolicyParams = parse_params(data)?;
+    let params: RemoveZonePolicyParams = parse_params(data)?;
 
-    ZoneTsigPolicyService::remove(&params.zone_name, params.id).await?;
+    ZoneTsigPolicyService::remove(&Caller::Global, &params.zone_name, params.id).await?;
 
     Ok(DaemonResponse {
         message: "TSIG policy deleted successfully".to_string(),

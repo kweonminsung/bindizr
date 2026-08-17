@@ -6,8 +6,12 @@ publish = false
 autotests = false
 
 [[bin]]
-name = "bindizr"
+name = "bindizr-e2e-server"
 path = "src/bin/bindizr.rs"
+
+[[bin]]
+name = "bindizr-e2e-external-dns"
+path = "src/bin/external_dns.rs"
 
 [[test]]
 name = "e2e"
@@ -15,10 +19,13 @@ path = "tests/e2e.rs"
 
 [dependencies]
 bindizr = { path = "../bindizr" }
+bindizr-external-dns = { path = "../bindizr-external-dns" }
 tokio.workspace = true
 
 [dev-dependencies]
-domain.workspace = true
+base64.workspace = true
+# `tsig` so the harness can sign an nsupdate request the way a client does.
+domain = { workspace = true, features = ["tsig"] }
 reqwest.workspace = true
 serde_json.workspace = true
 serial_test.workspace = true

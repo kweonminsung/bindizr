@@ -1,22 +1,25 @@
+use bindizr_service::types::{
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, CreateTsigKeyRequest,
+    CreateZoneRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest, ErrorResponse,
+    ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,
+    ExternalDnsChangesResponse, ExternalDnsRecordItem, ExternalDnsRecordsResponse,
+    ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse, GetRecordResponse,
+    GetTsigKeyResponse, GetZoneResponse, GetZoneTokenPolicyResponse, GetZoneTsigPolicyResponse,
+    HealthResponse, ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
+    MessageResponse, NotifyZoneRequest, PaginatedResponse, Pagination, RecordDiff, RecordDiffEntry,
+    RecordDiffSummary, RecordDiffValue, RecordItem, RecordResponse, RecordValueRequest,
+    RollbackSummary, RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse,
+    SnapshotDetailResponse, SnapshotDiffResponse, SnapshotRecordResponse, TsigKeyListResponse,
+    TsigKeyResponse, ZoneDetailResponse, ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
+    ZoneTokenPolicyListResponse, ZoneTokenPolicyResponse, ZoneTsigPolicyListResponse,
+    ZoneTsigPolicyResponse,
+};
 use utoipa::{
     Modify, OpenApi,
     openapi::security::{Http, HttpAuthScheme, SecurityScheme},
 };
 
-use super::types::{
-    BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
-    CreateTsigKeyRequest, CreateZoneRequest, CreateZoneTsigPolicyRequest, ErrorResponse,
-    GetRecordResponse, GetTsigKeyResponse, GetZoneResponse, GetZoneTsigPolicyResponse,
-    HealthResponse, ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
-    MessageResponse, NotifyZoneRequest, Pagination, RecordDiff, RecordDiffEntry, RecordDiffSummary,
-    RecordDiffValue, RecordListResponse, RecordResponse, RecordValueRequest, RollbackSummary,
-    RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse, SnapshotDetailResponse,
-    SnapshotDiffResponse, SnapshotListResponse, SnapshotRecordResponse, TsigKeyListResponse,
-    TsigKeyResponse, UpdateRecordRequest, ZoneDetailResponse, ZoneListResponse, ZoneResponse,
-    ZoneSnapshotResponse, ZoneStatusResponse, ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
-};
-
-/// OpenAPI document for the HTTP API (debug builds only).
+/// OpenAPI document for the HTTP API, served when `api.openapi_enabled` is on.
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -46,20 +49,37 @@ use super::types::{
         super::tsig_key::delete_tsig_key,
         super::tsig_key::get_zone_tsig_policies,
         super::tsig_key::create_zone_tsig_policy,
-        super::tsig_key::delete_zone_tsig_policy
+        super::tsig_key::delete_zone_tsig_policy,
+        super::token_policy::get_zone_token_policies,
+        super::token_policy::create_zone_token_policy,
+        super::token_policy::delete_zone_token_policy,
+        super::external_dns::get_external_dns_zones,
+        super::external_dns::get_external_dns_records,
+        super::external_dns::apply_external_dns_changes,
+        super::external_dns::adjust_external_dns_rrsets
     ),
     components(schemas(
-        BulkRecordItem,
         BulkRecordsResponse,
         CreateBulkRecordsRequest,
         CreateRecordRequest,
         CreateTsigKeyRequest,
         CreateZoneRequest,
+        CreateZoneTokenPolicyRequest,
         CreateZoneTsigPolicyRequest,
         ErrorResponse,
+        ExternalDnsAdjustRequest,
+        ExternalDnsAdjustResponse,
+        ExternalDnsChangesRequest,
+        ExternalDnsChangesResponse,
+        ExternalDnsRecordItem,
+        ExternalDnsRecordsResponse,
+        ExternalDnsRrset,
+        ExternalDnsRrsetUpdate,
+        ExternalDnsZonesResponse,
         GetRecordResponse,
         GetTsigKeyResponse,
         GetZoneResponse,
+        GetZoneTokenPolicyResponse,
         GetZoneTsigPolicyResponse,
         HealthResponse,
         ImportMode,
@@ -68,12 +88,15 @@ use super::types::{
         ImportZoneFileResponse,
         MessageResponse,
         NotifyZoneRequest,
+        PaginatedResponse<GetRecordResponse>,
+        PaginatedResponse<GetZoneResponse>,
+        PaginatedResponse<ZoneSnapshotResponse>,
         Pagination,
         RecordDiff,
         RecordDiffEntry,
         RecordDiffSummary,
         RecordDiffValue,
-        RecordListResponse,
+        RecordItem,
         RecordResponse,
         RecordValueRequest,
         RollbackSummary,
@@ -82,26 +105,31 @@ use super::types::{
         SecondaryStatusResponse,
         SnapshotDetailResponse,
         SnapshotDiffResponse,
-        SnapshotListResponse,
         SnapshotRecordResponse,
         TsigKeyListResponse,
         TsigKeyResponse,
-        UpdateRecordRequest,
         ZoneDetailResponse,
-        ZoneListResponse,
         ZoneResponse,
         ZoneSnapshotResponse,
         ZoneStatusResponse,
+        ZoneTokenPolicyListResponse,
+        ZoneTokenPolicyResponse,
         ZoneTsigPolicyListResponse,
         ZoneTsigPolicyResponse
     )),
+    // Global requirement; /health opts out with an empty per-path security.
+    security(
+        ("bearer_auth" = [])
+    ),
     modifiers(&SecurityAddon),
     tags(
         (name = "Health", description = "Service health probe for load balancers and orchestrators."),
         (name = "Zone", description = "Manage DNS zones including creation, update, deletion, and retrieval."),
         (name = "Record", description = "Manage DNS records including creation, update, deletion, and retrieval."),
         (name = "Notify", description = "Send DNS NOTIFY messages to secondary servers."),
-        (name = "TSIG", description = "Manage TSIG keys and per-zone TSIG policies for nsupdate authentication.")
+        (name = "TSIG", description = "Manage TSIG keys and per-zone TSIG policies for nsupdate authentication."),
+        (name = "Token", description = "Per-zone API token policies: record-plane grants for scoped tokens."),
+        (name = "ExternalDNS", description = "Provider endpoints for the ExternalDNS webhook adapter; registered only when api.external_dns_enabled is set.")
     ),
     info(
         title = "Bindizr HTTP API",

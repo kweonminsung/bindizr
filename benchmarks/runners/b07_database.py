@@ -27,6 +27,18 @@ from lib.resources import sampler_for  # noqa: E402
 SELF_SAMPLES = True
 
 
+def _mem_split(res: dict) -> tuple[float, float]:
+    """Bindizr's own peak vs the DB server container's, from the per-container
+    peaks. sqlite runs in-process, so its DB share is 0."""
+    by_service = {}
+    for name, mb in res.get("mem_by_container", {}).items():
+        # docker container names are "<project>-<service>-<index>".
+        parts = name.rsplit("-", 2)
+        by_service[parts[-2] if len(parts) == 3 else name] = mb
+    return (by_service.get("bindizr", 0),
+            by_service.get("mysql", 0) + by_service.get("postgres", 0))
+
+
 async def _bench_backend(adapter, cfg, zone, label) -> dict:
     c = cfg["crud"]
     conc, dur, warm = c["concurrency"], min(c["duration_secs"], 15), c["warmup_secs"]
@@ -57,6 +69,7 @@ async def _bench_backend(adapter, cfg, zone, label) -> dict:
     rr = await loadgen.run_closed_loop(read_step, conc, dur, warm)
     res = sampler.stop()
     cs, rs = cr.summary(), rr.summary()
+    bindizr_mem, db_mem = _mem_split(res)
     return {
         "backend": label,
         "create_tps": cs["tps"],
@@ -65,6 +78,8 @@ async def _bench_backend(adapter, cfg, zone, label) -> dict:
         "read_p95_ms": rs["p95_ms"],
         "error_rate": round((cr.errors + rr.errors) / max(cr.total + rr.total, 1), 5),
         "peak_mem_mb": res.get("peak_mem_mb", 0),
+        "bindizr_peak_mem_mb": bindizr_mem,
+        "db_peak_mem_mb": db_mem,
         "avg_cpu_pct": res.get("avg_cpu_pct", 0),
     }
 
@@ -88,6 +103,7 @@ async def _bulk_backend(adapter, cfg, zone, backend, size) -> dict:
     failed = getattr(adapter, "bulk_errors", 0)
     imported = max(size - failed, 0)
 
+    bindizr_mem, db_mem = _mem_split(res)
     return {
         "backend": backend,
         "size": size,
@@ -95,6 +111,8 @@ async def _bulk_backend(adapter, cfg, zone, backend, size) -> dict:
         "records_per_sec": round(imported / elapsed, 1) if elapsed else 0,
         "import_errors": failed,
         "peak_mem_mb": res.get("peak_mem_mb", 0),
+        "bindizr_peak_mem_mb": bindizr_mem,
+        "db_peak_mem_mb": db_mem,
         "avg_cpu_pct": res.get("avg_cpu_pct", 0),
     }
 

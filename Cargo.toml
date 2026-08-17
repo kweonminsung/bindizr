@@ -5,12 +5,13 @@ members = [
     "crates/bindizr-core",
     "crates/bindizr-db",
     "crates/bindizr-dns",
+    "crates/bindizr-external-dns",
     "crates/bindizr-service",
 ]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 edition = "2024"
 authors = ["kweonminsung"]
 description = "DNS Synchronization Service for BIND9"
@@ -25,7 +26,6 @@ categories = ["command-line-utilities", "network-programming"]
 [workspace.dependencies]
 async-trait = "0.1.89"
 axum = "0.8.9"
-axum-macros = "0.5.1"
 base64 = "0.23"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.6.1", features = ["derive"] }
@@ -55,7 +55,6 @@ tabled = "0.21"
 tempfile = "3.27.0"
 thiserror = "2.0.18"
 tokio = { version = "1", features = ["full"] }
-tower = "0.5"
 tower-http = { version = "0.7.0", features = ["cors"] }
 utoipa = { version = "5.5", features = ["axum_extras", "chrono", "yaml"] }
 

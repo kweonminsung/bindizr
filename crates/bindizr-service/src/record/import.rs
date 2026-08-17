@@ -3,12 +3,13 @@ use std::{
     time::Instant,
 };
 
+use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, delete_records_tx, insert_validated_records_tx, load_zone_tx},
-    record_value::record_values_equal,
+    bulk::PreparedRecord,
     validation::{
         normalize_record_owner_name, validate_delete_constraints,
         validate_record_add_constraints_normalized,
@@ -16,6 +17,7 @@ use super::{
     zonefile::parse_zone_file,
 };
 use crate::{
+    authorization::Caller,
     error::ServiceError,
     log_debug, log_error, log_info, log_warn,
     model::{
@@ -24,10 +26,11 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
+    timing::elapsed_ms,
     types::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff},
     zone::{
+        ZoneService,
         history::{ReconstructedRecord, build_record_diff},
-        snapshot::save_zone_snapshot_tx,
     },
 };
 
@@ -35,26 +38,20 @@ use crate::{
 /// it can be compared against existing records.
 struct DesiredRecord {
     prepared: PreparedRecord,
-    stored_name: String,
+    stored_name: OwnerName,
 }
 
 /// Whether `existing` is the record described by (name, type, value, priority).
 fn record_matches(
     existing: &Record,
-    stored_name: &str,
+    stored_name: &OwnerName,
     record_type: &RecordType,
     value: &str,
     priority: Option<i32>,
 ) -> bool {
-    existing.name.eq_ignore_ascii_case(stored_name)
+    existing.name == *stored_name
         && existing.record_type == *record_type
-        && record_values_equal(
-            &existing.value,
-            existing.priority,
-            value,
-            priority,
-            record_type,
-        )
+        && record_type.values_equal(&existing.value, existing.priority, value, priority)
 }
 
 fn desired_matches(existing: &Record, desired: &DesiredRecord) -> bool {
@@ -75,8 +72,23 @@ fn is_protected(zone: &Zone, record: &Record) -> bool {
 /// Outcome of the transactional part of a zone-file import.
 struct AppliedImport {
     response: ImportZoneFileResponse,
-    zone_name: String,
+    zone_name: ZoneName,
     changed: bool,
+}
+
+/// Per-stage timings, emitted as one debug summary after commit + NOTIFY;
+/// `db_write_ms`/`serial_ms` stay zero on a dry run or no-op.
+#[derive(Default)]
+struct ImportTimings {
+    load_zone_ms: f64,
+    load_existing_ms: f64,
+    parse_ms: f64,
+    normalize_ms: f64,
+    build_index_ms: f64,
+    reconcile_ms: f64,
+    validate_ms: f64,
+    db_write_ms: f64,
+    serial_ms: f64,
 }
 
 impl RecordService {
@@ -84,37 +96,30 @@ impl RecordService {
     /// apply the zone serial is incremented once and a single NOTIFY is sent. If
     /// any record fails validation nothing is applied and the errors are returned.
     pub async fn import_zone_file(
+        caller: &Caller,
         zone_name: &str,
         request: &ImportZoneFileRequest,
     ) -> Result<ImportZoneFileResponse, ServiceError> {
+        caller.require_global("import zone files")?;
+
         let mode = request.mode;
         let dry_run = request.dry_run;
 
         let t_total = Instant::now();
 
-        // Per-stage timings, filled inside the transaction and emitted as a single
-        // debug summary after commit + NOTIFY (see log_debug! below). db_write/serial
-        // stay zero when the import is a dry run or a no-op.
-        let mut load_zone_ms = 0.0f64;
-        let mut load_existing_ms = 0.0f64;
-        let mut parse_ms = 0.0f64;
-        let mut normalize_ms = 0.0f64;
-        let mut build_index_ms = 0.0f64;
-        let mut reconcile_ms = 0.0f64;
-        let mut validate_ms = 0.0f64;
-        let mut db_write_ms = 0.0f64;
-        let mut serial_ms = 0.0f64;
+        let mut timings = ImportTimings::default();
 
         let mut tx = RepositoryService::begin_tx("Failed to import zone file").await?;
 
         let apply_result: Result<AppliedImport, ServiceError> = async {
             let t = Instant::now();
-            let zone = load_zone_tx(&mut tx, zone_name).await?;
-            load_zone_ms = t.elapsed().as_secs_f64() * 1000.0;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let parsed = parse_zone_file(&request.content, &zone.name, zone.ttl);
-            parse_ms = t.elapsed().as_secs_f64() * 1000.0;
+            let parsed = parse_zone_file(&request.content, zone.name.as_str(), zone.ttl);
+            timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
 
@@ -122,10 +127,13 @@ impl RecordService {
             // indexed by owner name so the dedup check scans only same-name entries.
             let t = Instant::now();
             let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
-            let mut desired_by_name: HashMap<String, Vec<usize>> =
+            let mut desired_by_name: HashMap<OwnerName, Vec<usize>> =
                 HashMap::with_capacity(parsed.records.len());
             for record in parsed.records {
-                let value = match record.value.to_storage_value(&record.record_type) {
+                let value = match record
+                    .value
+                    .to_encoded_value(&record.record_type, record.priority)
+                {
                     Ok(value) => value,
                     Err(e) => {
                         errors.push(format!("{}: {}", record.owner_fqdn, e));
@@ -134,7 +142,7 @@ impl RecordService {
                 };
                 let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name)
                 {
-                    Ok(normalized) => normalized.stored_name,
+                    Ok(stored_name) => stored_name,
                     // Collect any client-input error (4xx) per record; only
                     // internal failures abort the whole import.
                     Err(e) if e.code.http_status() < 500 => {
@@ -144,16 +152,15 @@ impl RecordService {
                     Err(e) => return Err(e),
                 };
 
-                let name_key = stored_name.to_ascii_lowercase();
+                let name_key = stored_name.clone();
                 let duplicate_in_file = desired_by_name.get(&name_key).and_then(|idxs| {
                     idxs.iter().copied().find(|&i| {
                         desired[i].prepared.record_type == record.record_type
-                            && record_values_equal(
+                            && record.record_type.values_equal(
                                 &desired[i].prepared.value,
                                 desired[i].prepared.priority,
                                 &value,
                                 record.priority,
-                                &record.record_type,
                             )
                     })
                 });
@@ -189,7 +196,7 @@ impl RecordService {
                 });
             }
 
-            normalize_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.normalize_ms = elapsed_ms(t);
             let parsed_count = desired.len();
 
             // Append never deletes, so only rows sharing an owner name with the
@@ -198,53 +205,54 @@ impl RecordService {
             let t = Instant::now();
             let existing_records = match mode {
                 ImportMode::Append => {
-                    let mut names: Vec<String> = desired
-                        .iter()
-                        .map(|d| d.stored_name.to_ascii_lowercase())
-                        .collect();
+                    let mut names: Vec<OwnerName> =
+                        desired.iter().map(|d| d.stored_name.clone()).collect();
                     names.sort();
                     names.dedup();
-                    RepositoryService::get_records_by_zone_id_and_names_tx(&mut tx, zone.id, &names)
-                        .await
+                    RepositoryService::list_records_by_zone_id_and_names_tx(
+                        &mut tx,
+                        zone.id,
+                        &names,
+                        LockLevel::Exclusive,
+                    )
+                    .await
                 }
                 ImportMode::Replace | ImportMode::Upsert => {
-                    RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await
+                    RepositoryService::list_records_by_zone_id_tx(
+                        &mut tx,
+                        zone.id,
+                        LockLevel::Exclusive,
+                    )
+                    .await
                 }
             }
             .map_err(|e| {
                 log_error!("Failed to load zone records: {}", e);
                 ServiceError::internal("Failed to import zone file".to_string())
             })?;
-            load_existing_ms = t.elapsed().as_secs_f64() * 1000.0;
-
-            // Lowercase each existing owner name once and reuse it across the
-            // passes below instead of recomputing it per pass.
-            let t = Instant::now();
-            let existing_lower: Vec<String> = existing_records
-                .iter()
-                .map(|e| e.name.to_ascii_lowercase())
-                .collect();
+            timings.load_existing_ms = elapsed_ms(t);
 
             // Index existing records by owner name so each existing/desired
             // record is reconciled against only same-name rows.
-            let mut existing_by_name: HashMap<String, Vec<&Record>> =
+            let t = Instant::now();
+            let mut existing_by_name: HashMap<OwnerName, Vec<&Record>> =
                 HashMap::with_capacity(existing_records.len());
-            for (i, record) in existing_records.iter().enumerate() {
+            for record in existing_records.iter() {
                 existing_by_name
-                    .entry(existing_lower[i].clone())
+                    .entry(record.name.clone())
                     .or_default()
                     .push(record);
             }
-            build_index_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.build_index_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let desired_matches_existing = |e: &Record, e_lower: &str| {
+            let desired_matches_existing = |e: &Record| {
                 desired_by_name
-                    .get(e_lower)
+                    .get(&e.name)
                     .is_some_and(|idxs| idxs.iter().any(|&i| desired_matches(e, &desired[i])))
             };
-            let desired_key_matches_existing = |e: &Record, e_lower: &str| {
-                desired_by_name.get(e_lower).is_some_and(|idxs| {
+            let desired_key_matches_existing = |e: &Record| {
+                desired_by_name.get(&e.name).is_some_and(|idxs| {
                     idxs.iter()
                         .any(|&i| desired[i].prepared.record_type == e.record_type)
                 })
@@ -255,21 +263,17 @@ impl RecordService {
                 ImportMode::Append => Vec::new(),
                 ImportMode::Replace => existing_records
                     .iter()
-                    .enumerate()
-                    .filter(|(i, e)| {
-                        !is_protected(&zone, e) && !desired_matches_existing(e, &existing_lower[*i])
-                    })
-                    .map(|(_, e)| e.clone())
+                    .filter(|e| !is_protected(&zone, e) && !desired_matches_existing(e))
+                    .cloned()
                     .collect(),
                 ImportMode::Upsert => existing_records
                     .iter()
-                    .enumerate()
-                    .filter(|(i, e)| {
-                        desired_key_matches_existing(e, &existing_lower[*i])
+                    .filter(|e| {
+                        desired_key_matches_existing(e)
                             && !is_protected(&zone, e)
-                            && !desired_matches_existing(e, &existing_lower[*i])
+                            && !desired_matches_existing(e)
                     })
-                    .map(|(_, e)| e.clone())
+                    .cloned()
                     .collect(),
             };
 
@@ -285,7 +289,7 @@ impl RecordService {
                 let desired_ttl = effective_ttl(d.prepared.ttl);
                 let mut present = false;
                 let mut stale = false;
-                if let Some(es) = existing_by_name.get(&d.stored_name.to_ascii_lowercase()) {
+                if let Some(es) = existing_by_name.get(&d.stored_name) {
                     for &e in es {
                         if desired_matches(e, d) {
                             present = true;
@@ -306,26 +310,26 @@ impl RecordService {
                     unchanged += 1;
                 }
             }
-            reconcile_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.reconcile_ms = elapsed_ms(t);
 
             // Validate additions against an in-memory copy so constraint
             // violations are caught without writing anything. Simulated records
             // are indexed by name so each check scans only same-name candidates.
             let t = Instant::now();
             let del_ids: HashSet<i32> = dels.iter().chain(&ttl_dels).map(|d| d.id).collect();
-            let mut simulated_by_name: HashMap<String, Vec<Record>> =
+            let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
                 HashMap::with_capacity(existing_records.len());
-            for (i, e) in existing_records.iter().enumerate() {
+            for e in existing_records.iter() {
                 if !del_ids.contains(&e.id) {
                     simulated_by_name
-                        .entry(existing_lower[i].clone())
+                        .entry(e.name.clone())
                         .or_default()
                         .push(e.clone());
                 }
             }
             for add in &adds {
                 let same_name = simulated_by_name
-                    .entry(add.stored_name.to_ascii_lowercase())
+                    .entry(add.stored_name.clone())
                     .or_default();
                 match validate_record_add_constraints_normalized(
                     same_name,
@@ -349,7 +353,7 @@ impl RecordService {
                     Err(e) => return Err(e),
                 }
             }
-            validate_ms = t.elapsed().as_secs_f64() * 1000.0;
+            timings.validate_ms = elapsed_ms(t);
 
             let summary = ImportSummary {
                 parsed: parsed_count,
@@ -380,7 +384,10 @@ impl RecordService {
                 let t = Instant::now();
                 let mut all_dels = dels;
                 all_dels.extend(ttl_dels);
-                delete_records_tx(&mut tx, zone.id, new_serial, &all_dels).await?;
+                RecordService::delete_records_with_changes_tx(
+                    &mut tx, zone.id, new_serial, &all_dels,
+                )
+                .await?;
 
                 let to_insert: Vec<Record> = adds
                     .iter()
@@ -395,20 +402,16 @@ impl RecordService {
                         created_at: Utc::now(),
                     })
                     .collect();
-                insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
-                db_write_ms = t.elapsed().as_secs_f64() * 1000.0;
+                RecordService::insert_records_with_changes_tx(
+                    &mut tx, zone.id, new_serial, &to_insert,
+                )
+                .await?;
+                timings.db_write_ms = elapsed_ms(t);
 
                 let t = Instant::now();
-                // Increment zone serial once so IXFR consumers detect the import
-                RepositoryService::update_zone_serial_tx(&mut tx, zone.id, new_serial)
-                    .await
-                    .map_err(|e| {
-                        log_error!("Failed to update zone serial: {}", e);
-                        ServiceError::internal("Failed to update zone serial".to_string())
-                    })?;
-
-                save_zone_snapshot_tx(&mut tx, &zone, new_serial).await?;
-                serial_ms = t.elapsed().as_secs_f64() * 1000.0;
+                // Advance the serial once so IXFR consumers detect the import
+                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+                timings.serial_ms = elapsed_ms(t);
             }
 
             let response = ImportZoneFileResponse {
@@ -447,10 +450,12 @@ impl RecordService {
         );
 
         let t = Instant::now();
-        if changed && let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
+        if changed
+            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
+        {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
-        let notify_ms = t.elapsed().as_secs_f64() * 1000.0;
+        let notify_ms = elapsed_ms(t);
 
         // Per-stage breakdown for profiling; debug-gated so it stays out of
         // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
@@ -463,17 +468,17 @@ impl RecordService {
             mode,
             response.summary.parsed,
             response.applied,
-            parse_ms,
-            load_zone_ms,
-            load_existing_ms,
-            normalize_ms,
-            build_index_ms,
-            reconcile_ms,
-            validate_ms,
-            db_write_ms,
-            serial_ms,
+            timings.parse_ms,
+            timings.load_zone_ms,
+            timings.load_existing_ms,
+            timings.normalize_ms,
+            timings.build_index_ms,
+            timings.reconcile_ms,
+            timings.validate_ms,
+            timings.db_write_ms,
+            timings.serial_ms,
             notify_ms,
-            t_total.elapsed().as_secs_f64() * 1000.0,
+            elapsed_ms(t_total),
         );
 
         Ok(response)
@@ -516,7 +521,7 @@ fn import_diff(
 /// A placeholder record for in-memory comparison only; the negative id keeps it
 /// distinct from persisted rows.
 fn synthetic_record(
-    stored_name: &str,
+    stored_name: &OwnerName,
     record_type: &RecordType,
     value: &str,
     ttl: i32,
@@ -524,7 +529,7 @@ fn synthetic_record(
 ) -> Record {
     Record {
         id: -1,
-        name: stored_name.to_string(),
+        name: stored_name.clone(),
         record_type: record_type.clone(),
         value: value.to_string(),
         ttl,

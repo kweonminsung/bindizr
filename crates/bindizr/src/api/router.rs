@@ -1,21 +1,25 @@
-#[cfg(debug_assertions)]
-use axum::http::header::CONTENT_TYPE;
-use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing};
+use axum::{
+    Extension, Json, Router,
+    http::{StatusCode, header::CONTENT_TYPE},
+    response::IntoResponse,
+    routing,
+};
 use bindizr_core::config;
+use bindizr_service::authorization::Caller;
 use serde_json::json;
 use tower_http::cors::CorsLayer;
-#[cfg(debug_assertions)]
 use utoipa::OpenApi;
 
-#[cfg(debug_assertions)]
-use super::openapi::ApiDoc;
-use super::{notify::NotifyApi, record::RecordApi, tsig_key::TsigKeyApi, zone::ZoneApi};
+use super::{
+    external_dns::ExternalDnsApi, notify::NotifyApi, openapi::ApiDoc, record::RecordApi,
+    token_policy::TokenPolicyApi, tsig_key::TsigKeyApi, zone::ZoneApi,
+};
 
 /// HTTP API router assembling all route groups.
 pub(crate) struct ApiRouter;
 
 impl ApiRouter {
-    /// Build the full axum router with auth, CORS, and (in debug) OpenAPI routes.
+    /// Build the full axum router with auth, CORS, and the optional route groups.
     pub(crate) async fn routes() -> Router {
         let api_config = &config::get_bindizr_config().api;
 
@@ -24,12 +28,22 @@ impl ApiRouter {
             .merge(RecordApi::routes().await)
             .merge(NotifyApi::routes().await)
             .merge(TsigKeyApi::routes().await)
+            .merge(TokenPolicyApi::routes().await)
             .route("/", routing::get(ApiRouter::get_home));
+
+        // Unregistered when disabled, so the endpoints fall through to 404.
+        if api_config.external_dns_enabled {
+            api_router = api_router.merge(ExternalDnsApi::routes().await);
+        }
 
         if api_config.require_authentication {
             api_router = api_router.layer(axum::middleware::from_fn(
                 super::middleware::auth::auth_middleware,
             ));
+        } else {
+            // Grant Global explicitly so a missing caller stays a wiring
+            // error the extractor rejects instead of implying full access.
+            api_router = api_router.layer(Extension(Caller::Global));
         }
 
         let mut router = api_router;
@@ -42,8 +56,8 @@ impl ApiRouter {
             router = router.route("/metrics", routing::get(super::metrics::get_metrics));
         }
 
-        #[cfg(debug_assertions)]
-        {
+        // Also outside auth: the document is the API's own description.
+        if api_config.openapi_enabled {
             router = router
                 .route("/openapi.json", routing::get(ApiRouter::openapi_json))
                 .route("/openapi.yaml", routing::get(ApiRouter::openapi_yaml));
@@ -70,12 +84,10 @@ impl ApiRouter {
         )
     }
 
-    #[cfg(debug_assertions)]
     async fn openapi_json() -> impl IntoResponse {
         (StatusCode::OK, Json(ApiDoc::openapi()))
     }
 
-    #[cfg(debug_assertions)]
     async fn openapi_yaml() -> axum::response::Response {
         match ApiDoc::openapi().to_yaml() {
             Ok(openapi_yaml) => (

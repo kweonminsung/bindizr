@@ -15,13 +15,14 @@ mod utils;
 
 pub use bindizr_core::model;
 pub(crate) use bindizr_core::{config, log_error, log_info};
+use error::DatabaseError;
 
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
 static INITIALIZE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// A connection pool for one of the supported database backends.
 #[derive(Debug)]
-pub enum DatabasePool {
+pub(crate) enum DatabasePool {
     MySQL(Pool<MySql>),
     PostgreSQL(Pool<Postgres>),
     SQLite(Pool<Sqlite>),
@@ -29,22 +30,22 @@ pub enum DatabasePool {
 
 /// Supported database backend types.
 #[derive(Debug, Clone)]
-pub enum DatabaseType {
+pub(crate) enum DatabaseType {
     MySQL,
     PostgreSQL,
     SQLite,
 }
 
 /// Initialize the global database pool from configuration. Idempotent.
-pub async fn initialize() {
+pub async fn initialize() -> Result<(), DatabaseError> {
     if is_initialized() {
-        return;
+        return Ok(());
     }
 
     let initialize_guard = INITIALIZE_LOCK.lock().await;
 
     if is_initialized() {
-        return;
+        return Ok(());
     }
 
     let bindizr_config = config::get_bindizr_config();
@@ -59,24 +60,23 @@ pub async fn initialize() {
         DatabaseType::MySQL => bindizr_config.database.mysql.server_url.clone(),
         DatabaseType::PostgreSQL => bindizr_config.database.postgresql.server_url.clone(),
         DatabaseType::SQLite => utils::to_sqlite_url(&bindizr_config.database.sqlite.file_path)
-            .unwrap_or_else(|e| {
-                log_error!("{}", e);
-                std::process::exit(1);
-            }),
+            .map_err(DatabaseError::PoolError)?,
     };
 
     let pool = match database_type {
-        DatabaseType::MySQL => DatabasePool::new_mysql(&database_url).await,
-        DatabaseType::PostgreSQL => DatabasePool::new_postgres(&database_url).await,
-        DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await,
+        DatabaseType::MySQL => DatabasePool::new_mysql(&database_url).await?,
+        DatabaseType::PostgreSQL => DatabasePool::new_postgres(&database_url).await?,
+        DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await?,
     };
 
-    if DATABASE_POOL.set(pool).is_err() {
-        return;
-    }
+    // Cannot fail: the pool is set only here, under INITIALIZE_LOCK.
+    DATABASE_POOL
+        .set(pool)
+        .expect("database pool initialized twice");
 
     drop(initialize_guard);
     log_info!("Database pool initialized");
+    Ok(())
 }
 
 fn is_initialized() -> bool {
@@ -84,7 +84,7 @@ fn is_initialized() -> bool {
 }
 
 /// Return the global database pool, panicking if not yet initialized.
-pub fn get_pool() -> &'static DatabasePool {
+pub(crate) fn get_pool() -> &'static DatabasePool {
     DATABASE_POOL.get().expect("Database pool not initialized")
 }
 
@@ -99,48 +99,68 @@ fn networked_pool_max_connections() -> u32 {
 
 impl DatabasePool {
     /// Connect to MySQL, create tables, and return the pool.
-    pub async fn new_mysql(url: &str) -> Self {
+    pub(crate) async fn new_mysql(url: &str) -> Result<Self, DatabaseError> {
         let pool = MySqlPoolOptions::new()
             .max_connections(networked_pool_max_connections())
+            .after_connect(|conn, _| {
+                Box::pin(async move {
+                    // Row locks, not snapshot isolation, carry correctness:
+                    // READ COMMITTED matches PostgreSQL and sheds gap locking.
+                    sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+                        .execute(conn)
+                        .await
+                        .map(|_| ())
+                })
+            })
             .connect(url)
             .await
-            .unwrap_or_else(|e| {
-                log_error!("Failed to create MySQL database pool: {}", e);
-                std::process::exit(1);
-            });
+            .map_err(|e| {
+                DatabaseError::PoolError(format!("Failed to create MySQL database pool: {}", e))
+            })?;
 
         let database_pool = DatabasePool::MySQL(pool);
-
-        if let Err(e) = database_pool.create_tables().await {
-            log_error!("Failed to create tables: {}", e);
-            std::process::exit(1);
-        }
-
         database_pool
+            .create_tables()
+            .await
+            .map_err(DatabaseError::QueryFailed)?;
+
+        Ok(database_pool)
     }
 
     /// Connect to PostgreSQL, create tables, and return the pool.
-    pub async fn new_postgres(url: &str) -> Self {
+    pub(crate) async fn new_postgres(url: &str) -> Result<Self, DatabaseError> {
         let pool = PgPoolOptions::new()
             .max_connections(networked_pool_max_connections())
+            .after_connect(|conn, _| {
+                Box::pin(async move {
+                    // Already the default; pinned so all backends state one contract.
+                    sqlx::query(
+                        "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED",
+                    )
+                    .execute(conn)
+                    .await
+                    .map(|_| ())
+                })
+            })
             .connect(url)
             .await
-            .unwrap_or_else(|e| {
-                log_error!("Failed to create PostgreSQL database pool: {}", e);
-                std::process::exit(1);
-            });
+            .map_err(|e| {
+                DatabaseError::PoolError(format!(
+                    "Failed to create PostgreSQL database pool: {}",
+                    e
+                ))
+            })?;
 
         let database_pool = DatabasePool::PostgreSQL(pool);
-
-        if let Err(e) = database_pool.create_tables().await {
-            log_error!("Failed to create tables: {}", e);
-            std::process::exit(1);
-        }
-
         database_pool
+            .create_tables()
+            .await
+            .map_err(DatabaseError::QueryFailed)?;
+
+        Ok(database_pool)
     }
     /// Connect to SQLite, create tables, and return the pool.
-    pub async fn new_sqlite(url: &str) -> Self {
+    pub(crate) async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
         let pool = SqlitePoolOptions::new()
             .after_connect(|conn, _| {
                 Box::pin(async move {
@@ -153,29 +173,27 @@ impl DatabasePool {
             })
             .connect(url)
             .await
-            .unwrap_or_else(|e| {
-                log_error!("Failed to create SQLite database pool: {}", e);
-                std::process::exit(1);
-            });
+            .map_err(|e| {
+                DatabaseError::PoolError(format!("Failed to create SQLite database pool: {}", e))
+            })?;
 
         let database_pool = DatabasePool::SQLite(pool);
-
-        if let Err(e) = database_pool.create_tables().await {
-            log_error!("Failed to create tables: {}", e);
-            std::process::exit(1);
-        }
-
         database_pool
+            .create_tables()
+            .await
+            .map_err(DatabaseError::QueryFailed)?;
+
+        Ok(database_pool)
     }
 
     async fn create_tables(&self) -> Result<(), String> {
         match self {
             DatabasePool::MySQL(pool) => {
-                for query in schema::get_mysql_table_creation_queries() {
-                    let mut conn = pool.acquire().await.map_err(|e| {
-                        log_error!("Failed to acquire MySQL connection: {}", e);
-                        e.to_string()
-                    })?;
+                let mut conn = pool.acquire().await.map_err(|e| {
+                    log_error!("Failed to acquire MySQL connection: {}", e);
+                    e.to_string()
+                })?;
+                for query in schema::mysql_table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log_error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
@@ -183,11 +201,11 @@ impl DatabasePool {
                 }
             }
             DatabasePool::PostgreSQL(pool) => {
-                for query in schema::get_postgres_table_creation_queries() {
-                    let mut conn = pool.acquire().await.map_err(|e| {
-                        log_error!("Failed to acquire PostgreSQL connection: {}", e);
-                        e.to_string()
-                    })?;
+                let mut conn = pool.acquire().await.map_err(|e| {
+                    log_error!("Failed to acquire PostgreSQL connection: {}", e);
+                    e.to_string()
+                })?;
+                for query in schema::postgres_table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log_error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
@@ -195,11 +213,11 @@ impl DatabasePool {
                 }
             }
             DatabasePool::SQLite(pool) => {
-                for query in schema::get_sqlite_table_creation_queries() {
-                    let mut conn = pool.acquire().await.map_err(|e| {
-                        log_error!("Failed to acquire SQLite connection: {}", e);
-                        e.to_string()
-                    })?;
+                let mut conn = pool.acquire().await.map_err(|e| {
+                    log_error!("Failed to acquire SQLite connection: {}", e);
+                    e.to_string()
+                })?;
+                for query in schema::sqlite_table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log_error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
@@ -233,6 +251,11 @@ pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
 pub fn get_zone_tsig_policy_repository() -> Box<dyn repository::ZoneTsigPolicyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_tsig_policy_repository(pool)
+}
+
+pub fn get_zone_token_policy_repository() -> Box<dyn repository::ZoneTokenPolicyRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_zone_token_policy_repository(pool)
 }
 
 /// Return an API token repository backed by the global pool.

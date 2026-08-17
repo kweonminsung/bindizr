@@ -14,8 +14,12 @@ generator.
 Create a token with the CLI:
 
 ```bash
-$ bindizr token create --description "API access for monitoring"
+$ bindizr token create --name admin --global
 ```
+
+Tokens are scoped by default and act only on zones granted through
+[token policies](../cli/tokens.md); `--global` covers every zone and the
+zone plane.
 
 Then include it in the `Authorization` header:
 

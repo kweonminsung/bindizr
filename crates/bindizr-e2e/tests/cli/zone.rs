@@ -9,10 +9,6 @@ async fn zone_create_read_delete() {
     let zone_name = app.zone_name("cli-zone.example");
     let primary_ns = format!("ns1.{zone_name}");
 
-    let status = app.run_cli_success(&["status"]).await;
-    assert!(status.contains("BINDIZR STATUS"));
-    assert!(status.contains("Running"));
-
     let created = app.create_zone_cli(&zone_name, "3600").await;
     assert!(created.contains("Zone created successfully"));
 
@@ -268,6 +264,45 @@ async fn zone_export_via_cli() {
     let reimport: Value = serde_json::from_str(&reimport).expect("CLI did not return valid JSON");
     assert_eq!(reimport["summary"]["added"], 0, "{reimport}");
     assert_eq!(reimport["summary"]["deleted"], 0, "{reimport}");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_export_orders_by_name_then_type_then_rdata() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("export-order.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    // Fed in deliberately unsorted; rows also come back from the DB in no
+    // guaranteed order, so the export's own sort is what the assertion pins.
+    app.run_cli_success_with_input(
+        &["zone", "import", &zone_name, "-"],
+        "b IN A 192.0.2.2\n\
+         a IN TXT \"zzz\"\n\
+         a IN A 192.0.2.10\n\
+         a IN A 192.0.2.2\n\
+         a IN MX 10 mail.example.com.\n",
+    )
+    .await;
+
+    let exported = app.run_cli_success(&["zone", "export", &zone_name]).await;
+    let ordered: Vec<&str> = exported
+        .lines()
+        .filter(|l| l.starts_with("a\t") || l.starts_with("b\t"))
+        .collect();
+
+    // Rdata ties break as text, so 192.0.2.10 sorts before 192.0.2.2.
+    assert_eq!(
+        ordered,
+        vec![
+            "a\t3600\tIN\tA\t192.0.2.10",
+            "a\t3600\tIN\tA\t192.0.2.2",
+            "a\t3600\tIN\tMX\t10 mail.example.com.",
+            "a\t3600\tIN\tTXT\t\"zzz\"",
+            "b\t3600\tIN\tA\t192.0.2.2",
+        ],
+        "{exported}"
+    );
 }
 
 #[tokio::test]

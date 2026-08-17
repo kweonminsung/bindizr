@@ -3,15 +3,17 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use bindizr_core::dns::{
-    name::{soa_mailbox_to_email, to_fqdn},
-    record::display_record_owner_name,
-};
+use bindizr_core::dns::{name::OwnerName, record::SoaMailbox};
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
-use super::{ZoneService, snapshot::save_zone_snapshot_tx, validation::normalize_zone_name};
+use super::{
+    ZoneService, apex_ns_rrset_ttl, update::soa_replacement_changes,
+    validation::normalize_zone_name,
+};
 use crate::{
     RepositoryTx,
+    authorization::Caller,
     error::ServiceError,
     log_info, log_warn,
     model::{
@@ -21,8 +23,7 @@ use crate::{
         zone_snapshot::ZoneSnapshot,
     },
     record::{
-        canonical_record_value, delete_records_tx, insert_validated_records_tx, load_zone_tx,
-        validate_delete_constraints, validate_record_add_constraints_normalized,
+        RecordService, validate_delete_constraints, validate_record_add_constraints_normalized,
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -36,11 +37,11 @@ use crate::{
 /// carries no database id.
 #[derive(Debug, Clone)]
 pub struct ReconstructedRecord {
-    pub name: String,
-    pub record_type: RecordType,
-    pub value: String,
-    pub ttl: i32,
-    pub priority: Option<i32>,
+    pub(crate) name: OwnerName,
+    pub(crate) record_type: RecordType,
+    pub(crate) value: String,
+    pub(crate) ttl: i32,
+    pub(crate) priority: Option<i32>,
 }
 
 impl From<Record> for ReconstructedRecord {
@@ -55,29 +56,20 @@ impl From<Record> for ReconstructedRecord {
     }
 }
 
-impl From<ReconstructedRecord> for crate::types::SnapshotRecordResponse {
-    fn from(record: ReconstructedRecord) -> Self {
-        // Decode TXT out of its stored form, as the record endpoints do.
-        let value = display_record_value_request(&record.value, &record.record_type);
-        crate::types::SnapshotRecordResponse {
-            name: record.name,
-            record_type: record.record_type.to_string(),
-            value,
-            ttl: record.ttl,
-            priority: record.priority,
-        }
-    }
-}
-
 /// Hash key identifying a record for set matching: lowercased owner name,
 /// type, and the canonical comparison form of the value(+priority).
 type MatchKey = (String, String, String);
 
-fn match_key(name: &str, record_type: &RecordType, value: &str, priority: Option<i32>) -> MatchKey {
+fn match_key(
+    name: &OwnerName,
+    record_type: &RecordType,
+    value: &str,
+    priority: Option<i32>,
+) -> MatchKey {
     (
-        name.to_ascii_lowercase(),
+        name.to_stored(),
         record_type.to_string(),
-        canonical_record_value(value, priority, record_type).into_owned(),
+        record_type.canonical_value(value, priority).into_owned(),
     )
 }
 
@@ -100,18 +92,21 @@ async fn reconstruct_records_at_serial(
     current_serial: i32,
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
-    for record in RepositoryService::get_records_by_zone_id_tx(tx, zone_id).await? {
+    for record in
+        RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::None).await?
+    {
         state
             .entry(record_match_key(&record))
             .or_default()
             .push(record.into());
     }
 
-    let changes = RepositoryService::get_zone_changes_between_serials_tx(
+    let changes = RepositoryService::list_zone_changes_between_serials_tx(
         tx,
         zone_id,
         target_serial,
         current_serial,
+        LockLevel::None,
     )
     .await?;
 
@@ -138,7 +133,7 @@ async fn reconstruct_records_at_serial(
         );
 
         match change.operation.as_str() {
-            "ADD" => match state.get_mut(&key).and_then(Vec::pop) {
+            ZoneChange::OP_ADD => match state.get_mut(&key).and_then(Vec::pop) {
                 Some(_) => {}
                 // Tolerated: history anomalies (e.g. rows removed outside
                 // the change log) must not brick reconstruction.
@@ -148,7 +143,7 @@ async fn reconstruct_records_at_serial(
                     change.record_type
                 ),
             },
-            "DEL" => {
+            ZoneChange::OP_DEL => {
                 // The recorded row existed before this serial; restore it.
                 state.entry(key).or_default().push(ReconstructedRecord {
                     name: change.record_name.clone(),
@@ -180,7 +175,7 @@ async fn records_at_serial(
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     if serial == current_serial {
         let mut records: Vec<ReconstructedRecord> =
-            RepositoryService::get_records_by_zone_id_tx(tx, zone_id)
+            RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::None)
                 .await?
                 .into_iter()
                 .map(ReconstructedRecord::from)
@@ -201,9 +196,9 @@ async fn require_serial(
     if serial == zone.serial {
         return Ok(());
     }
-    RepositoryService::get_zone_snapshot_by_serial_tx(tx, zone.id, serial)
+    RepositoryService::get_zone_snapshot_by_serial_tx(tx, zone.id, serial, LockLevel::None)
         .await?
-        .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, serial))?;
+        .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), serial))?;
     Ok(())
 }
 
@@ -224,12 +219,14 @@ fn group_rrsets(
     let mut groups: BTreeMap<(String, String), Vec<GroupedRecord>> = BTreeMap::new();
     for record in records {
         let key = (
-            display_record_owner_name(&record.name, &zone.name),
+            record.name.to_fqdn(&zone.name),
             record.record_type.to_string(),
         );
         groups.entry(key).or_default().push(GroupedRecord {
             identity: (
-                canonical_record_value(&record.value, record.priority, &record.record_type)
+                record
+                    .record_type
+                    .canonical_value(&record.value, record.priority)
                     .into_owned(),
                 record.ttl,
             ),
@@ -243,8 +240,9 @@ fn group_rrsets(
     groups
 }
 
-fn group_identities(group: &[GroupedRecord]) -> Vec<(String, i32)> {
-    let mut ids: Vec<_> = group.iter().map(|r| r.identity.clone()).collect();
+/// Borrowed so the two sides can be compared without copying every identity.
+fn group_identities(group: &[GroupedRecord]) -> Vec<&(String, i32)> {
+    let mut ids: Vec<_> = group.iter().map(|r| &r.identity).collect();
     ids.sort();
     ids
 }
@@ -260,7 +258,7 @@ pub(crate) fn build_record_diff(
     before: &[ReconstructedRecord],
     after: &[ReconstructedRecord],
 ) -> RecordDiff {
-    let before_groups = group_rrsets(zone, before);
+    let mut before_groups = group_rrsets(zone, before);
     let mut after_groups = group_rrsets(zone, after);
 
     let mut keys: Vec<(String, String)> = before_groups.keys().cloned().collect();
@@ -276,9 +274,10 @@ pub(crate) fn build_record_diff(
     let (mut added, mut removed, mut changed) = (0usize, 0usize, 0usize);
 
     for key in keys {
-        let (name, record_type) = key.clone();
-        let before = before_groups.get(&key);
+        // Both maps are drained here, so each group can be moved into its entry.
+        let before = before_groups.remove(&key);
         let after = after_groups.remove(&key);
+        let (name, record_type) = key;
         match (before, after) {
             (None, Some(after)) => {
                 added += 1;
@@ -296,18 +295,18 @@ pub(crate) fn build_record_diff(
                     change: "removed".to_string(),
                     name,
                     record_type,
-                    from: group_values(before.clone()),
+                    from: group_values(before),
                     to: Vec::new(),
                 });
             }
             (Some(before), Some(after)) => {
-                if group_identities(before) != group_identities(&after) {
+                if group_identities(&before) != group_identities(&after) {
                     changed += 1;
                     entries.push(RecordDiffEntry {
                         change: "changed".to_string(),
                         name,
                         record_type,
-                        from: group_values(before.clone()),
+                        from: group_values(before),
                         to: group_values(after),
                     });
                 }
@@ -329,9 +328,9 @@ pub(crate) fn build_record_diff(
 /// Deterministic output order (hash-map iteration order is not).
 fn sort_records(records: &mut [ReconstructedRecord]) {
     records.sort_by(|a, b| {
-        (&a.name, a.record_type.to_string(), &a.value).cmp(&(
+        (&a.name, a.record_type.as_str(), &a.value).cmp(&(
             &b.name,
-            b.record_type.to_string(),
+            b.record_type.as_str(),
             &b.value,
         ))
     });
@@ -345,9 +344,11 @@ fn restored_zone_from_snapshot(
     snapshot: &ZoneSnapshot,
     new_serial: i32,
 ) -> Result<Zone, ServiceError> {
-    let admin_email = soa_mailbox_to_email(&snapshot.admin_email).map_err(|e| {
-        ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
-    })?;
+    let admin_email = SoaMailbox::from_encoded(&snapshot.admin_email)
+        .to_email()
+        .map_err(|e| {
+            ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
+        })?;
 
     Ok(Zone {
         id: zone.id,
@@ -376,12 +377,15 @@ fn soa_metadata_changed(zone: &Zone, restored: &Zone) -> bool {
 
 impl ZoneService {
     /// List a zone's snapshots (serial history), newest serial first.
+    /// Visibility is checked on the row whose id the queries use, so a
+    /// same-name recreation cannot swap the zone in.
     pub async fn list_snapshots(
+        caller: &Caller,
         zone_name: &str,
         limit: Option<u32>,
         offset: Option<u64>,
     ) -> Result<PaginatedResponse<ZoneSnapshot>, ServiceError> {
-        let zone = Self::get_by_name(zone_name).await?;
+        let zone = Self::get_by_name(caller, zone_name).await?;
 
         let total = RepositoryService::count_zone_snapshots(zone.id).await?;
         let effective_limit = limit.unwrap_or(50);
@@ -398,8 +402,10 @@ impl ZoneService {
     }
 
     /// Fetch the snapshot at `serial` together with the reconstructed record
-    /// set at that serial.
+    /// set at that serial. Visibility is checked on the row this tx locked, so
+    /// a same-name recreation cannot swap the zone in.
     pub async fn get_snapshot(
+        caller: &Caller,
         zone_name: &str,
         serial: i32,
     ) -> Result<(ZoneSnapshot, Vec<ReconstructedRecord>), ServiceError> {
@@ -407,11 +413,20 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to load snapshot").await?;
 
         let result = async {
-            let zone = load_zone_tx(&mut tx, &lookup_name).await?;
-            let snapshot =
-                RepositoryService::get_zone_snapshot_by_serial_tx(&mut tx, zone.id, serial)
-                    .await?
-                    .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, serial))?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Shared)
+                    .await?;
+            if !caller.zone_visible(zone.id) {
+                return Err(ServiceError::zone_not_found(zone_name));
+            }
+            let snapshot = RepositoryService::get_zone_snapshot_by_serial_tx(
+                &mut tx,
+                zone.id,
+                serial,
+                LockLevel::None,
+            )
+            .await?
+            .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), serial))?;
 
             let records = records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
 
@@ -424,8 +439,11 @@ impl ZoneService {
 
     /// Compute the record-level difference between two of a zone's serials.
     /// `to_serial` defaults to the zone's current serial when `None`. Each
-    /// serial must be the current one or an existing snapshot.
+    /// serial must be the current one or an existing snapshot. Visibility is
+    /// checked on the row this tx locked, so a same-name recreation cannot
+    /// swap the zone in.
     pub async fn diff_snapshots(
+        caller: &Caller,
         zone_name: &str,
         from_serial: i32,
         to_serial: Option<i32>,
@@ -434,7 +452,12 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to diff snapshots").await?;
 
         let result = async {
-            let zone = load_zone_tx(&mut tx, &lookup_name).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Shared)
+                    .await?;
+            if !caller.zone_visible(zone.id) {
+                return Err(ServiceError::zone_not_found(zone_name));
+            }
             let to_serial = to_serial.unwrap_or(zone.serial);
 
             require_serial(&mut tx, &zone, from_serial).await?;
@@ -460,15 +483,20 @@ impl ZoneService {
     /// serial advances to a new value (serials never go backward). The zone
     /// name is not part of a snapshot and is never restored.
     pub async fn rollback(
+        caller: &Caller,
         zone_name: &str,
         target_serial: i32,
         dry_run: bool,
     ) -> Result<RollbackZoneResponse, ServiceError> {
+        caller.require_global("roll back zones")?;
+
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to roll back zone").await?;
 
         let apply_result = async {
-            let zone = load_zone_tx(&mut tx, &lookup_name).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive)
+                    .await?;
 
             if target_serial < 1 || target_serial >= zone.serial {
                 return Err(ServiceError::invalid_input(format!(
@@ -476,17 +504,25 @@ impl ZoneService {
                     target_serial, zone.serial
                 )));
             }
-            let snapshot =
-                RepositoryService::get_zone_snapshot_by_serial_tx(&mut tx, zone.id, target_serial)
-                    .await?
-                    .ok_or_else(|| ServiceError::snapshot_not_found(&zone.name, target_serial))?;
+            let snapshot = RepositoryService::get_zone_snapshot_by_serial_tx(
+                &mut tx,
+                zone.id,
+                target_serial,
+                LockLevel::None,
+            )
+            .await?
+            .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), target_serial))?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let restored_zone = restored_zone_from_snapshot(&zone, &snapshot, new_serial)?;
             let soa_changed = soa_metadata_changed(&zone, &restored_zone);
 
-            let current_records =
-                RepositoryService::get_records_by_zone_id_tx(&mut tx, zone.id).await?;
+            let current_records = RepositoryService::list_records_by_zone_id_tx(
+                &mut tx,
+                zone.id,
+                LockLevel::Exclusive,
+            )
+            .await?;
             let target_records =
                 reconstruct_records_at_serial(&mut tx, zone.id, target_serial, zone.serial).await?;
 
@@ -512,10 +548,9 @@ impl ZoneService {
                 let key = record_match_key(record);
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
-                        // TTL-only difference: replace the row (DEL + ADD).
-                        // The pair preserves the record's identity, so the
-                        // primary_ns delete protection cannot be violated; SOA
-                        // lives in the zone's own fields.
+                        // The DEL + ADD pair preserves the record's identity, so
+                        // the primary_ns delete protection cannot be violated;
+                        // SOA lives in the zone's own fields.
                         if record.ttl != target.ttl && record.record_type != RecordType::SOA {
                             dels.push(record.clone());
                             to_add.push(target);
@@ -537,71 +572,55 @@ impl ZoneService {
             }
             to_add.extend(target_by_key.into_values().flatten());
 
-            // Defensive apex-NS guarantee (mirrors zone update): the restored
-            // primary_ns must keep a matching apex NS record.
-            let restored_ns_fqdn = to_fqdn(&restored_zone.primary_ns).to_ascii_lowercase();
-            let is_restored_apex_ns = |record_type: &RecordType, name: &str, value: &str| {
-                *record_type == RecordType::NS
-                    && name == "@"
-                    && to_fqdn(value).to_ascii_lowercase() == restored_ns_fqdn
-            };
+            // The restored primary_ns must keep a matching apex NS record.
             let deleted_ids: HashSet<i32> = dels.iter().map(|del| del.id).collect();
+            let surviving = |record: &&Record| !deleted_ids.contains(&record.id);
             let has_primary_ns = current_records
                 .iter()
-                .filter(|record| !deleted_ids.contains(&record.id))
-                .any(|record| {
-                    is_restored_apex_ns(&record.record_type, &record.name, &record.value)
-                })
-                || to_add.iter().any(|record| {
-                    is_restored_apex_ns(&record.record_type, &record.name, &record.value)
-                });
-            if !has_primary_ns {
-                // Join the apex NS RRset's TTL; a mixed-TTL RRset is rejected.
-                let is_apex_ns = |record_type: &RecordType, name: &str| {
-                    *record_type == RecordType::NS && name == "@"
-                };
-                let ns_rrset_ttl = to_add
+                .filter(surviving)
+                .any(|r| restored_zone.is_primary_ns(&r.record_type, &r.name, &r.value))
+                || to_add
                     .iter()
-                    .find(|record| is_apex_ns(&record.record_type, &record.name))
-                    .map(|record| record.ttl)
-                    .or_else(|| {
+                    .any(|r| restored_zone.is_primary_ns(&r.record_type, &r.name, &r.value));
+            if !has_primary_ns {
+                // Prefer a restored TTL: the restore is what this serial expresses.
+                let candidates = to_add
+                    .iter()
+                    .map(|r| (&r.record_type, &r.name, r.ttl))
+                    .chain(
                         current_records
                             .iter()
-                            .filter(|record| !deleted_ids.contains(&record.id))
-                            .find(|record| is_apex_ns(&record.record_type, &record.name))
-                            .map(|record| record.ttl)
-                    })
-                    .unwrap_or(restored_zone.ttl);
+                            .filter(surviving)
+                            .map(|r| (&r.record_type, &r.name, r.ttl)),
+                    );
 
                 to_add.push(ReconstructedRecord {
-                    name: "@".to_string(),
+                    name: OwnerName::apex(),
                     record_type: RecordType::NS,
                     value: restored_zone.primary_ns.clone(),
-                    ttl: ns_rrset_ttl,
+                    ttl: apex_ns_rrset_ttl(&restored_zone, candidates),
                     priority: None,
                 });
             }
 
             // Validate the adds in-memory against the post-delete record set
             // (mirrors the import reconcile).
-            let mut records_by_name: HashMap<String, Vec<Record>> = HashMap::new();
+            let mut records_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
             for record in &current_records {
                 if deleted_ids.contains(&record.id) {
                     continue;
                 }
                 records_by_name
-                    .entry(record.name.to_ascii_lowercase())
+                    .entry(record.name.clone())
                     .or_default()
                     .push(record.clone());
             }
             let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());
             for target in &to_add {
-                let same_name = records_by_name
-                    .entry(target.name.to_ascii_lowercase())
-                    .or_default();
+                let same_name = records_by_name.entry(target.name.clone()).or_default();
                 validate_record_add_constraints_normalized(
                     same_name,
-                    &target.name,
+                    &target.name.clone(),
                     &target.record_type,
                     &target.value,
                     target.ttl,
@@ -646,40 +665,15 @@ impl ZoneService {
             RepositoryService::update_zone_tx(&mut tx, restored_zone.clone()).await?;
 
             if soa_changed {
-                let soa_rdata = |zone: &Zone| -> Result<String, ServiceError> {
-                    zone.soa_rdata()
-                        .map_err(|e| ServiceError::invalid_zone(e.to_string()))
-                };
-                let changes = vec![
-                    ZoneChange {
-                        id: 0,
-                        zone_id: zone.id,
-                        serial: new_serial,
-                        operation: "DEL".to_string(),
-                        record_name: "@".to_string(),
-                        record_type: "SOA".to_string(),
-                        record_value: soa_rdata(&zone)?,
-                        record_ttl: zone.ttl,
-                        record_priority: None,
-                    },
-                    ZoneChange {
-                        id: 0,
-                        zone_id: zone.id,
-                        serial: new_serial,
-                        operation: "ADD".to_string(),
-                        record_name: "@".to_string(),
-                        record_type: "SOA".to_string(),
-                        record_value: soa_rdata(&restored_zone)?,
-                        record_ttl: restored_zone.ttl,
-                        record_priority: None,
-                    },
-                ];
+                let changes = soa_replacement_changes(&zone, &restored_zone, new_serial)?;
                 RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
             }
 
-            delete_records_tx(&mut tx, zone.id, new_serial, &dels).await?;
-            insert_validated_records_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
-            save_zone_snapshot_tx(&mut tx, &restored_zone, new_serial).await?;
+            RecordService::delete_records_with_changes_tx(&mut tx, zone.id, new_serial, &dels)
+                .await?;
+            RecordService::insert_records_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert)
+                .await?;
+            ZoneService::save_snapshot_tx(&mut tx, &restored_zone, new_serial).await?;
 
             Ok((
                 RollbackZoneResponse {
@@ -707,7 +701,8 @@ impl ZoneService {
                 response.summary.records_added,
                 response.summary.records_deleted
             );
-            if let Err(e) = crate::notify::send_notify_after_update(Some(&zone_name)).await {
+            if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
+            {
                 log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
             }
         }

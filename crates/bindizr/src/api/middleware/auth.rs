@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bindizr_core::log_debug;
-use bindizr_service::{auth::AuthService, error::ServiceError};
+use bindizr_service::{authorization::Caller, error::ServiceError};
 
 use crate::api::error::ApiError;
 
@@ -32,9 +32,9 @@ pub(crate) async fn auth_middleware(
 
     let token = &auth_str[7..];
 
-    match AuthService::validate_token(token).await {
-        Ok(api_token) => {
-            req.extensions_mut().insert(api_token);
+    match Caller::authenticate(token).await {
+        Ok(caller) => {
+            req.extensions_mut().insert(caller);
             Ok(next.run(req).await)
         }
         Err(err) => {

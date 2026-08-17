@@ -1,17 +1,23 @@
-use axum::{Json, Router, extract::Path, http::StatusCode, response::IntoResponse, routing};
-use bindizr_service::{tsig_key::TsigKeyService, zone::tsig_policy::ZoneTsigPolicyService};
-use serde::Deserialize;
-use serde_json::json;
-
-use crate::api::{
-    error::ApiError,
-    middleware::body_parser::JsonBody,
+use axum::{
+    Json, Router,
+    extract::Path,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing,
+};
+use bindizr_service::{
+    tsig_key::TsigKeyService,
     types::{
         CreateTsigKeyRequest, CreateZoneTsigPolicyRequest, ErrorResponse, GetTsigKeyResponse,
         GetZoneTsigPolicyResponse, MessageResponse, TsigKeyListResponse, TsigKeyResponse,
         ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
     },
+    zone::tsig_policy::ZoneTsigPolicyService,
 };
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
 /// Route group for TSIG key and zone TSIG policy endpoints.
 pub(crate) struct TsigKeyApi;
@@ -41,18 +47,18 @@ impl TsigKeyApi {
 
 #[derive(Deserialize)]
 pub(crate) struct TsigKeyNameParam {
-    pub name: String,
+    pub(crate) name: String,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct ZoneNameParam {
-    pub name: String,
+    pub(crate) name: String,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct ZoneTsigPolicyParam {
-    pub name: String,
-    pub id: i32,
+    pub(crate) name: String,
+    pub(crate) id: i32,
 }
 
 #[utoipa::path(
@@ -64,20 +70,18 @@ pub(crate) struct ZoneTsigPolicyParam {
         responses(
             (status = 200, description = "All TSIG keys", body = TsigKeyListResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 /// List all TSIG keys (secrets omitted).
-pub(crate) async fn get_tsig_keys() -> impl IntoResponse {
-    match TsigKeyService::list().await {
-        Ok(keys) => {
-            let keys: Vec<GetTsigKeyResponse> =
-                keys.iter().map(GetTsigKeyResponse::from_key).collect();
-            let json_body = json!({ "tsig_keys": keys });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn get_tsig_keys(
+    RequestCaller(caller): RequestCaller,
+) -> Result<Response, ApiError> {
+    let keys = TsigKeyService::list(&caller).await?;
+    let keys: Vec<GetTsigKeyResponse> = keys.iter().map(GetTsigKeyResponse::from_key).collect();
+    let json_body = json!({ "tsig_keys": keys });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -91,6 +95,7 @@ pub(crate) async fn get_tsig_keys() -> impl IntoResponse {
             (status = 201, description = "TSIG key created successfully", body = TsigKeyResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 409, description = "A TSIG key with the same name already exists", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -98,23 +103,20 @@ pub(crate) async fn get_tsig_keys() -> impl IntoResponse {
 )]
 /// Create a TSIG key, generating a secret unless one is imported.
 pub(crate) async fn create_tsig_key(
+    RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
-) -> impl IntoResponse {
-    match TsigKeyService::create(
+) -> Result<Response, ApiError> {
+    let key = TsigKeyService::create(
+        &caller,
         &body.name,
         body.algorithm.as_deref(),
         body.secret.as_deref(),
         body.global,
     )
-    .await
-    {
-        Ok(key) => {
-            let key = GetTsigKeyResponse::from_key(&key);
-            let json_body = json!({ "tsig_key": key });
-            (StatusCode::CREATED, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+    .await?;
+    let key = GetTsigKeyResponse::from_key(&key);
+    let json_body = json!({ "tsig_key": key });
+    Ok((StatusCode::CREATED, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -129,20 +131,20 @@ pub(crate) async fn create_tsig_key(
         responses(
             (status = 200, description = "The TSIG key", body = TsigKeyResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 /// Get one TSIG key by name, including its secret.
-pub(crate) async fn get_tsig_key(Path(params): Path<TsigKeyNameParam>) -> impl IntoResponse {
-    match TsigKeyService::get(&params.name).await {
-        Ok(key) => {
-            let key = GetTsigKeyResponse::from_key(&key);
-            let json_body = json!({ "tsig_key": key });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn get_tsig_key(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<TsigKeyNameParam>,
+) -> Result<Response, ApiError> {
+    let key = TsigKeyService::get(&caller, &params.name).await?;
+    let key = GetTsigKeyResponse::from_key(&key);
+    let json_body = json!({ "tsig_key": key });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -157,20 +159,20 @@ pub(crate) async fn get_tsig_key(Path(params): Path<TsigKeyNameParam>) -> impl I
         responses(
             (status = 200, description = "TSIG key deleted successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),
             (status = 409, description = "TSIG key is still referenced by zone TSIG policies", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 /// Delete a TSIG key that is not referenced by any policy.
-pub(crate) async fn delete_tsig_key(Path(params): Path<TsigKeyNameParam>) -> impl IntoResponse {
-    match TsigKeyService::delete(&params.name).await {
-        Ok(()) => {
-            let json_body = json!({ "message": "TSIG key deleted successfully" });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn delete_tsig_key(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<TsigKeyNameParam>,
+) -> Result<Response, ApiError> {
+    TsigKeyService::delete(&caller, &params.name).await?;
+    let json_body = json!({ "message": "TSIG key deleted successfully" });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -185,23 +187,23 @@ pub(crate) async fn delete_tsig_key(Path(params): Path<TsigKeyNameParam>) -> imp
         responses(
             (status = 200, description = "The zone's TSIG policies", body = ZoneTsigPolicyListResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 /// List all TSIG policies of a zone.
-pub(crate) async fn get_zone_tsig_policies(Path(params): Path<ZoneNameParam>) -> impl IntoResponse {
-    match ZoneTsigPolicyService::list(&params.name).await {
-        Ok(policies) => {
-            let policies: Vec<GetZoneTsigPolicyResponse> = policies
-                .iter()
-                .map(GetZoneTsigPolicyResponse::from_policy)
-                .collect();
-            let json_body = json!({ "tsig_policies": policies });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+pub(crate) async fn get_zone_tsig_policies(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    let policies = ZoneTsigPolicyService::list(&caller, &params.name).await?;
+    let policies: Vec<GetZoneTsigPolicyResponse> = policies
+        .iter()
+        .map(GetZoneTsigPolicyResponse::from_policy)
+        .collect();
+    let json_body = json!({ "tsig_policies": policies });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -218,6 +220,7 @@ pub(crate) async fn get_zone_tsig_policies(Path(params): Path<ZoneNameParam>) ->
             (status = 201, description = "TSIG policy created successfully", body = ZoneTsigPolicyResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone or TSIG key not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -225,24 +228,21 @@ pub(crate) async fn get_zone_tsig_policies(Path(params): Path<ZoneNameParam>) ->
 )]
 /// Create a TSIG policy for a zone.
 pub(crate) async fn create_zone_tsig_policy(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<CreateZoneTsigPolicyRequest>,
-) -> impl IntoResponse {
-    match ZoneTsigPolicyService::add(
+) -> Result<Response, ApiError> {
+    let policy = ZoneTsigPolicyService::add(
+        &caller,
         &params.name,
         &body.tsig_key,
         body.record_name_pattern.as_deref(),
         body.record_types.as_deref(),
     )
-    .await
-    {
-        Ok(policy) => {
-            let policy = GetZoneTsigPolicyResponse::from_policy(&policy);
-            let json_body = json!({ "tsig_policy": policy });
-            (StatusCode::CREATED, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+    .await?;
+    let policy = GetZoneTsigPolicyResponse::from_policy(&policy);
+    let json_body = json!({ "tsig_policy": policy });
+    Ok((StatusCode::CREATED, Json(json_body)).into_response())
 }
 
 #[utoipa::path(
@@ -257,19 +257,17 @@ pub(crate) async fn create_zone_tsig_policy(
         responses(
             (status = 200, description = "TSIG policy deleted successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone or TSIG policy not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 /// Delete one TSIG policy of a zone.
 pub(crate) async fn delete_zone_tsig_policy(
+    RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneTsigPolicyParam>,
-) -> impl IntoResponse {
-    match ZoneTsigPolicyService::remove(&params.name, params.id).await {
-        Ok(()) => {
-            let json_body = json!({ "message": "TSIG policy deleted successfully" });
-            (StatusCode::OK, Json(json_body)).into_response()
-        }
-        Err(err) => ApiError::from(err).into_response(),
-    }
+) -> Result<Response, ApiError> {
+    ZoneTsigPolicyService::remove(&caller, &params.name, params.id).await?;
+    let json_body = json!({ "message": "TSIG policy deleted successfully" });
+    Ok((StatusCode::OK, Json(json_body)).into_response())
 }

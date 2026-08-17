@@ -6,7 +6,10 @@ use std::{
     str::FromStr,
 };
 
-use bindizr_core::dns::name::{email_to_soa_mailbox, to_fqdn, to_owner_fqdn};
+use bindizr_core::dns::{
+    name::{OwnerName, ZoneName, to_fqdn},
+    record::{SoaMailbox, TxtRecordValue},
+};
 use domain::{
     base::{
         Message, MessageBuilder, Name, Serial, ToName, Ttl, UnknownRecordData,
@@ -20,8 +23,10 @@ use domain::{
 use crate::{
     error::XfrError,
     log_info,
-    model::{record::Record, zone::Zone},
-    txt,
+    model::{
+        record::{Record, RecordType},
+        zone::Zone,
+    },
 };
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix).
@@ -48,18 +53,18 @@ impl DnsMessageBuilder {
     }
 
     pub(crate) fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
-        let admin_email = email_to_soa_mailbox(&zone.admin_email)
-            .map_err(|e| XfrError::ProtocolError(e.to_string()))?;
+        let admin_email =
+            SoaMailbox::from_email(&zone.admin_email).map_err(XfrError::ProtocolError)?;
         let soa = Soa::new(
             parse_name(&zone.primary_ns)?,
-            parse_name(&admin_email)?,
+            parse_name(admin_email.as_str())?,
             Serial(serial),
             Ttl::from_secs(zone.refresh as u32),
             Ttl::from_secs(zone.retry as u32),
             Ttl::from_secs(zone.expire as u32),
             Ttl::from_secs(zone.minimum_ttl as u32),
         );
-        self.add_answer(parse_name(&zone.name)?, zone.ttl as u32, soa);
+        self.add_answer(parse_name(zone.name.as_str())?, zone.ttl as u32, soa);
         Ok(())
     }
 
@@ -74,7 +79,7 @@ impl DnsMessageBuilder {
             Ttl::from_secs(zone.expire as u32),
             Ttl::from_secs(zone.minimum_ttl as u32),
         );
-        self.add_answer(parse_name(&zone.name)?, zone.ttl as u32, soa);
+        self.add_answer(parse_name(zone.name.as_str())?, zone.ttl as u32, soa);
         Ok(())
     }
 
@@ -177,7 +182,7 @@ impl DnsMessageBuilder {
         let owner = parse_name(name)?;
 
         // Operator-supplied raw rdata is passed through unchanged.
-        if let Some(rdata) = txt::decode_raw_txt_rdata(text) {
+        if let Some(rdata) = TxtRecordValue::from_encoded(text).map(TxtRecordValue::into_rdata) {
             let data = UnknownRecordData::from_octets(Rtype::TXT, rdata)
                 .map_err(|e| XfrError::ProtocolError(format!("Invalid TXT rdata: {}", e)))?;
             self.add_answer(owner, ttl, data);
@@ -202,14 +207,14 @@ impl DnsMessageBuilder {
 
     /// Adds the catalog-zone NS record, which is the placeholder "invalid".
     pub(crate) fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), XfrError> {
-        let owner_name = to_fqdn(&zone.name);
+        let owner_name = zone.name.to_fqdn();
         self.add_ns_record(&owner_name, zone.ttl as u32, "invalid")?;
         Ok(())
     }
 
     /// Adds the catalog-zone version TXT record.
     pub(crate) fn add_catalog_version(&mut self, zone: &Zone) -> Result<(), XfrError> {
-        let version_name = format!("version.{}.", zone.name.trim_end_matches('.'));
+        let version_name = format!("version.{}.", zone.name);
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_txt_record(&version_name, zone.ttl as u32, "2")?;
         Ok(())
@@ -222,14 +227,18 @@ impl DnsMessageBuilder {
         member_zone: &str,
     ) -> Result<(), XfrError> {
         let member_id = crate::server::catalog::zone_name_to_member_id(member_zone);
-        let ptr_name = format!("{}.zones.{}.", member_id, zone.name.trim_end_matches('.'));
+        let ptr_name = format!("{}.zones.{}.", member_id, zone.name);
         let ptr_target = to_fqdn(member_zone);
         self.add_ptr_record(&ptr_name, zone.ttl as u32, &ptr_target)?;
         Ok(())
     }
 
     /// Adds an answer from a database Record model.
-    pub(crate) fn add_record(&mut self, record: &Record, zone_name: &str) -> Result<(), XfrError> {
+    pub(crate) fn add_record(
+        &mut self,
+        record: &Record,
+        zone_name: &ZoneName,
+    ) -> Result<(), XfrError> {
         self.add_record_parts(
             zone_name,
             &record.name,
@@ -244,15 +253,15 @@ impl DnsMessageBuilder {
     /// changes share this shape). Unsupported types are skipped.
     pub(crate) fn add_record_parts(
         &mut self,
-        zone_name: &str,
-        name: &str,
+        zone_name: &ZoneName,
+        name: &OwnerName,
         record_type: &str,
         value: &str,
         ttl: i32,
         priority: Option<i32>,
     ) -> Result<(), XfrError> {
         let ttl = ttl as u32;
-        let owner_name = to_owner_fqdn(name, zone_name);
+        let owner_name = name.to_fqdn(zone_name);
 
         match record_type {
             "A" => {
@@ -269,13 +278,16 @@ impl DnsMessageBuilder {
             }
             "CNAME" => self.add_cname_record(&owner_name, ttl, value),
             "MX" => {
-                let (mx_priority, target) = parse_mx_record_value(value, priority)?;
+                let (mx_priority, target) =
+                    RecordType::mx_wire_fields(value, priority).map_err(XfrError::ProtocolError)?;
                 self.add_mx_record(&owner_name, ttl, mx_priority, target)
             }
             "NS" => self.add_ns_record(&owner_name, ttl, value),
             "PTR" => self.add_ptr_record(&owner_name, ttl, value),
             "SRV" => {
-                let (srv_priority, weight, port, target) = parse_srv_record_value(value, priority)?;
+                let (srv_priority, weight, port, target) =
+                    RecordType::srv_wire_fields(value, priority)
+                        .map_err(XfrError::ProtocolError)?;
                 self.add_srv_record(&owner_name, ttl, srv_priority, weight, port, target)
             }
             "TXT" => self.add_txt_record(&owner_name, ttl, value),
@@ -292,7 +304,9 @@ impl DnsMessageBuilder {
         let record = domain::base::Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
         let mut answer = Vec::new();
         // Composing into a Vec is infallible.
-        record.compose_record(&mut answer).unwrap();
+        record
+            .compose_record(&mut answer)
+            .expect("composing into a Vec cannot run out of space");
         self.push_answer(answer);
     }
 
@@ -363,67 +377,6 @@ impl DnsMessageBuilder {
         self.build_message_into(&mut message);
         message
     }
-}
-
-fn parse_mx_record_value(
-    value: &str,
-    fallback_priority: Option<i32>,
-) -> Result<(u16, &str), XfrError> {
-    let fields = value.split_whitespace().collect::<Vec<_>>();
-    match fields.as_slice() {
-        [priority, target] => Ok((parse_u16_field(priority, "MX priority")?, target)),
-        [target] => Ok((
-            parse_optional_priority(fallback_priority, "MX priority")?,
-            target,
-        )),
-        _ => Err(XfrError::ProtocolError(format!(
-            "Invalid MX record value: {value}"
-        ))),
-    }
-}
-
-fn parse_srv_record_value(
-    value: &str,
-    fallback_priority: Option<i32>,
-) -> Result<(u16, u16, u16, &str), XfrError> {
-    let fields = value.split_whitespace().collect::<Vec<_>>();
-    let (priority, weight, port, target) = match fields.as_slice() {
-        [priority, weight, port, target] => (
-            parse_u16_field(priority, "SRV priority")?,
-            *weight,
-            *port,
-            *target,
-        ),
-        [weight, port, target] => (
-            parse_optional_priority(fallback_priority, "SRV priority")?,
-            *weight,
-            *port,
-            *target,
-        ),
-        _ => {
-            return Err(XfrError::ProtocolError(format!(
-                "Invalid SRV record value: {value}"
-            )));
-        }
-    };
-
-    Ok((
-        priority,
-        parse_u16_field(weight, "SRV weight")?,
-        parse_u16_field(port, "SRV port")?,
-        target,
-    ))
-}
-
-fn parse_optional_priority(priority: Option<i32>, field: &str) -> Result<u16, XfrError> {
-    u16::try_from(priority.unwrap_or(10))
-        .map_err(|_| XfrError::ProtocolError(format!("Invalid {field}")))
-}
-
-fn parse_u16_field(value: &str, field: &str) -> Result<u16, XfrError> {
-    value
-        .parse()
-        .map_err(|_| XfrError::ProtocolError(format!("Invalid {field}: {value}")))
 }
 
 pub(crate) async fn add_answer_and_flush_if_needed<W, F>(
@@ -503,7 +456,9 @@ pub(crate) fn build_error_response(
 
     let mut question = builder.question();
     // Composing one question into a Vec cannot fail.
-    question.push((qname, qtype)).unwrap();
+    question
+        .push((qname, qtype))
+        .expect("composing into a Vec cannot run out of space");
 
     question.finish()
 }

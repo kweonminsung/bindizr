@@ -1,10 +1,10 @@
 # Docker Compose
 
-Use the default `docker-compose.yml` with Docker Swarm for a containerized
+Use `examples/swarm/docker-compose.yml` with Docker Swarm for a containerized
 Bindizr deployment.
 
 ```bash
-$ docker stack deploy -c docker-compose.yml bindizr
+$ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ```
 
 The stack runs Bindizr, PostgreSQL, and BIND9 on an overlay network, using

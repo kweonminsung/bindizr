@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 /// Default path to the bindizr configuration file.
-pub const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
+pub(crate) const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
 
@@ -25,12 +25,19 @@ pub struct BindizrConfig {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
-    #[serde(alias = "port")]
     pub listen_port: u16,
     pub require_authentication: bool,
     /// Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
     #[serde(default = "default_metrics_enabled")]
     pub metrics_enabled: bool,
+    /// Register the `/external-dns` provider API endpoints. Which zones a
+    /// caller may manage is decided by its API token's zone policies.
+    #[serde(default)]
+    pub external_dns_enabled: bool,
+    /// Serve the OpenAPI document at GET /openapi.json and /openapi.yaml
+    /// (unauthenticated). Off by default: it describes the whole API surface.
+    #[serde(default)]
+    pub openapi_enabled: bool,
 }
 
 fn default_metrics_enabled() -> bool {
@@ -46,7 +53,7 @@ pub struct DatabaseConfig {
     pub mysql: MysqlConfig,
     #[serde(default)]
     pub sqlite: SqliteConfig,
-    #[serde(alias = "postgres", default)]
+    #[serde(default)]
     pub postgresql: PostgresqlConfig,
 }
 
@@ -233,15 +240,15 @@ impl std::str::FromStr for LogLevel {
 
 /// Load configuration from `conf_file_path` (or the default path / env var),
 /// apply environment overrides, and store it as the global config.
-pub fn initialize(conf_file_path: Option<&str>) {
+pub fn initialize(conf_file_path: Option<&str>) -> Result<(), String> {
     let conf_file_path = resolve_config_path(conf_file_path);
 
     println!("Initializing configuration from file: {}", conf_file_path);
 
-    let bindizr_config =
-        load_config_file(&conf_file_path).unwrap_or_else(|err| exit_config_error(err));
-
+    let bindizr_config = load_config_file(&conf_file_path)?;
     BINDIZR_CONFIG.get_or_init(|| bindizr_config);
+
+    Ok(())
 }
 
 /// Resolve the config file path: explicit argument, then `BINDIZR_CONFIG_PATH`,
@@ -318,6 +325,13 @@ fn apply_env_overrides_from(
     }
     if let Some(value) = get_env("BINDIZR_API_METRICS_ENABLED") {
         config.api.metrics_enabled = parse_env_value("BINDIZR_API_METRICS_ENABLED", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_API_EXTERNAL_DNS_ENABLED") {
+        config.api.external_dns_enabled =
+            parse_env_value("BINDIZR_API_EXTERNAL_DNS_ENABLED", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_API_OPENAPI_ENABLED") {
+        config.api.openapi_enabled = parse_env_value("BINDIZR_API_OPENAPI_ENABLED", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
         config.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;
@@ -416,11 +430,6 @@ fn validate_dns_config(config: &DnsConfig) -> Result<(), String> {
         );
     }
     Ok(())
-}
-
-fn exit_config_error(message: String) -> ! {
-    eprintln!("{}", message);
-    std::process::exit(1);
 }
 
 /// Return the global configuration; panics if [`initialize`] has not run.

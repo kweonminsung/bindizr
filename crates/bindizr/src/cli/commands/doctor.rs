@@ -150,7 +150,7 @@ async fn http_get_status_line(addr: SocketAddr) -> Result<String, String> {
 }
 
 async fn check_daemon_side(client: &DaemonSocketClient, report: &mut Report) {
-    let res = match client.send_command(DaemonCommandKind::Doctor, None).await {
+    let res = match client.send_command(DaemonCommandKind::Doctor, ()).await {
         Ok(res) => res,
         Err(e) => {
             report.fail(format!("Daemon-side checks failed: {}", e.message));

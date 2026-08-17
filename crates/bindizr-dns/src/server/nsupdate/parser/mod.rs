@@ -1,5 +1,6 @@
 use std::fmt;
 
+use bindizr_core::dns::name::join_labels;
 use domain::{
     base::{
         Message,
@@ -15,10 +16,10 @@ const DNS_HEADER_LEN: usize = 12;
 
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRequest {
-    pub zone_name: String,
-    pub prerequisites: Vec<UpdateRecord>,
-    pub updates: Vec<UpdateRecord>,
-    pub tsig: Option<TsigRecord>,
+    pub(crate) zone_name: String,
+    pub(crate) prerequisites: Vec<UpdateRecord>,
+    pub(crate) updates: Vec<UpdateRecord>,
+    pub(crate) tsig: Option<TsigRecord>,
 }
 
 /// One RR from the prerequisite or update section. `rdata_start` locates the
@@ -26,12 +27,12 @@ pub(super) struct UpdateRequest {
 /// lazily by the update flow.
 #[derive(Debug, Clone)]
 pub(super) struct UpdateRecord {
-    pub name: String,
-    pub rr_type: Rtype,
-    pub class: Class,
-    pub ttl: u32,
-    pub rdata: Vec<u8>,
-    pub rdata_start: usize,
+    pub(crate) name: String,
+    pub(crate) rr_type: Rtype,
+    pub(crate) class: Class,
+    pub(crate) ttl: u32,
+    pub(crate) rdata: Vec<u8>,
+    pub(crate) rdata_start: usize,
 }
 
 /// The request's TSIG record, reduced to what the update flow needs: the key
@@ -41,8 +42,8 @@ pub(super) struct UpdateRecord {
 /// that happens.
 #[derive(Debug, Clone)]
 pub(super) struct TsigRecord {
-    pub name: String,
-    pub fudge: u16,
+    pub(crate) name: String,
+    pub(crate) fudge: u16,
 }
 
 #[derive(Debug)]
@@ -200,11 +201,10 @@ fn parse_tsig_rr(
     })
 }
 
-/// Renders a parsed name the way the update flow stores names: labels joined
-/// with '.', trailing dot, label bytes unescaped (dots inside a label survive
-/// as-is).
+/// Renders a parsed name in presentation form, escaping a `.` or `\` inside a
+/// label so the text decodes back to the same labels (RFC 1035, Section 5.1).
 pub(super) fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
-    let mut out = String::new();
+    let mut labels = Vec::new();
 
     for label in name.iter() {
         if label.is_root() {
@@ -212,15 +212,14 @@ pub(super) fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, Pars
         }
 
         let text = std::str::from_utf8(label.as_slice()).map_err(|_| ParseError::InvalidName)?;
-        out.push_str(text);
-        out.push('.');
+        labels.push(text.to_string());
     }
 
-    if out.is_empty() {
-        out.push('.');
+    if labels.is_empty() {
+        return Ok(".".to_string());
     }
 
-    Ok(out)
+    Ok(format!("{}.", join_labels(&labels)))
 }
 
 #[cfg(test)]

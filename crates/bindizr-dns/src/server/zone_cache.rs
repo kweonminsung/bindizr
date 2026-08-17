@@ -67,8 +67,16 @@ pub(crate) async fn list_records(
     Ok(records)
 }
 
+/// The cache holds no invariant a panicking thread could leave broken, so a
+/// poisoned lock is recovered rather than failing every later query.
+fn locked_cache() -> std::sync::MutexGuard<'static, HashMap<i32, CachedZone>> {
+    cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn lookup(zone_id: i32, serial: i32) -> Option<Arc<Vec<Record>>> {
-    let mut map = cache().lock().unwrap();
+    let mut map = locked_cache();
     let entry = map
         .get_mut(&zone_id)
         .filter(|entry| entry.serial == serial)?;
@@ -77,7 +85,7 @@ fn lookup(zone_id: i32, serial: i32) -> Option<Arc<Vec<Record>>> {
 }
 
 fn store(zone_id: i32, serial: i32, records: Arc<Vec<Record>>) {
-    let mut map = cache().lock().unwrap();
+    let mut map = locked_cache();
     // Evict the least-recently-used entry when inserting a new zone would exceed
     // the cap. Updating an existing zone (same key) never grows the map.
     if !map.contains_key(&zone_id) && map.len() >= MAX_ENTRIES {

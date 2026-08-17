@@ -3,25 +3,27 @@ use chrono::Utc;
 
 use super::ZoneService;
 use crate::{
+    authorization::Caller,
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
+    model::zone::Zone,
     repository::RepositoryService,
     serial::{generate_serial, validate_initial_serial},
     types::CreateZoneRequest,
     zone::{
         DEFAULT_EXPIRE, DEFAULT_MINIMUM_TTL, DEFAULT_REFRESH, DEFAULT_RETRY,
-        snapshot::save_zone_snapshot_tx,
         validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
     },
 };
 
 impl ZoneService {
     /// Create a new zone with an apex NS record and NOTIFY the catalog zone.
-    pub async fn create(create_zone_request: &CreateZoneRequest) -> Result<Zone, ServiceError> {
+    pub async fn create(
+        caller: &Caller,
+        create_zone_request: &CreateZoneRequest,
+    ) -> Result<Zone, ServiceError> {
+        caller.require_global("create zones")?;
+
         let validated = validate_create_zone_request(create_zone_request)?;
         let timers = resolve_soa_timers(
             create_zone_request,
@@ -35,7 +37,7 @@ impl ZoneService {
 
         // Parent/child zones are allowed; only the same normalized zone name is rejected.
         // Names are stored normalized, so an exact lookup is enough to detect a collision.
-        match RepositoryService::get_zone_by_name(&validated.name).await {
+        match RepositoryService::get_zone_by_name(validated.name.as_str()).await {
             Ok(Some(_)) => {
                 log_error!("Zone with name {} already exists", validated.name);
                 return Err(ServiceError::zone_conflict(format!(
@@ -86,26 +88,19 @@ impl ZoneService {
                 }
             })?;
 
-            // Keep zones.primary_ns aligned with at least one apex NS record in records table.
-            let primary_ns_apex_record = Record {
-                id: 0,
-                name: "@".to_string(),
-                record_type: RecordType::NS,
-                value: validated.primary_ns.clone(),
-                ttl: validated.ttl,
-                priority: None,
-                zone_id: created_zone.id,
-                created_at: Utc::now(),
-            };
+            // A new zone has no IXFR history to log against, so the apex NS row
+            // goes in directly.
+            RepositoryService::create_record_tx(
+                &mut tx,
+                created_zone.primary_ns_record(created_zone.ttl),
+            )
+            .await
+            .map_err(|e| {
+                log_error!("Failed to create primary NS record: {}", e);
+                ServiceError::internal("Failed to create primary NS record".to_string())
+            })?;
 
-            RepositoryService::create_record_tx(&mut tx, primary_ns_apex_record)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to create primary NS record: {}", e);
-                    ServiceError::internal("Failed to create primary NS record".to_string())
-                })?;
-
-            save_zone_snapshot_tx(&mut tx, &created_zone, created_zone.serial).await?;
+            ZoneService::save_snapshot_tx(&mut tx, &created_zone, created_zone.serial).await?;
 
             Ok::<Zone, ServiceError>(created_zone)
         }

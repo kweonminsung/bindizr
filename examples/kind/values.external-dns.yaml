@@ -1,0 +1,15 @@
+# Enables the /external-dns provider API consumed by the adapter sidecar in
+# external-dns.yaml. Apply on top of values.yaml (plus values.arm.yaml on
+# arm64), then restart bindizr so the config file change is picked up:
+#
+#   helm upgrade bindizr charts -n bindizr -f examples/kind/values.yaml \
+#     -f examples/kind/values.external-dns.yaml
+#   kubectl -n bindizr rollout restart deploy/bindizr
+
+bindizr:
+  api:
+    externalDnsEnabled: true
+    # Without authentication the router never evaluates the adapter's token
+    # (every request runs as Caller::Global), so the token grants would not
+    # scope ExternalDNS or become its domain filter.
+    requireAuthentication: true

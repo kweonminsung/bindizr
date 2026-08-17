@@ -1,53 +1,28 @@
 use async_trait::async_trait;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{RepositoryTx, ZoneFilter, ZoneRepository},
+    repository::{
+        LockLevel, RepositoryTx, ZoneFilter, ZoneRepository,
+        sql::{like_pattern, lock_clause},
+    },
 };
 
 /// PostgreSQL-backed implementation of `ZoneRepository`.
-pub struct PostgresZoneRepository {
+pub(crate) struct PostgresZoneRepository {
     pool: Pool<Postgres>,
 }
 
 impl PostgresZoneRepository {
-    /// Create a new repository backed by the given connection pool.
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
 }
 
 #[async_trait]
 impl ZoneRepository for PostgresZoneRepository {
-    async fn create(&self, mut zone: Zone) -> Result<Zone, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let result = sqlx::query(
-            r#"
-            INSERT INTO zones (name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING id
-            "#,
-        )
-        .bind(&zone.name)
-        .bind(&zone.primary_ns)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
-        .bind(zone.serial)
-        .bind(zone.refresh)
-        .bind(zone.retry)
-        .bind(zone.expire)
-        .bind(zone.minimum_ttl)
-        .fetch_one(&mut *conn)
-        .await?;
-
-        zone.id = result.get::<i32, _>(0);
-
-        Ok(zone)
-    }
-
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -62,7 +37,7 @@ impl ZoneRepository for PostgresZoneRepository {
             RETURNING id
             "#,
         )
-        .bind(&zone.name)
+        .bind(zone.name.as_str())
         .bind(&zone.primary_ns)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
@@ -78,25 +53,15 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zone)
     }
 
-    async fn get_by_id(&self, id: i32) -> Result<Option<Zone>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&mut *conn)
-            .await?;
-
-        Ok(zone)
-    }
-
     async fn get_by_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
+        lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1 FOR UPDATE")
+        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = $1{}",lock_clause(lock_level))))
             .bind(id)
             .fetch_optional(&mut **postgres_tx)
             .await?;
@@ -119,12 +84,14 @@ impl ZoneRepository for PostgresZoneRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
+        lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zone = sqlx::query_as::<_, Zone>(
-            "SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1 FOR UPDATE",
-        )
+        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(
+            format!("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = $1{}",
+            lock_clause(lock_level),
+        )))
         .bind(name)
         .fetch_optional(&mut **postgres_tx)
         .await?;
@@ -132,7 +99,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zone)
     }
 
-    async fn get_all(&self) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
@@ -142,7 +109,21 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zones)
     }
 
-    async fn get_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
+    async fn list_all_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        lock_level: LockLevel,
+    ) -> Result<Vec<Zone>, DatabaseError> {
+        let postgres_tx = tx.as_postgres()?;
+
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
+            .fetch_all(&mut **postgres_tx)
+            .await?;
+
+        Ok(zones)
+    }
+
+    async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
 
@@ -160,9 +141,14 @@ impl ZoneRepository for PostgresZoneRepository {
               AND ($15::INT4 IS NULL OR serial = $16)
               AND (
                     $17::TEXT IS NULL
-                    OR LOWER(name) LIKE LOWER($18)
-                    OR LOWER(primary_ns) LIKE LOWER($19)
-                    OR LOWER(admin_email) LIKE LOWER($20)
+                    OR LOWER(name) LIKE LOWER($18) ESCAPE '\'
+                    OR LOWER(primary_ns) LIKE LOWER($19) ESCAPE '\'
+                    OR LOWER(admin_email) LIKE LOWER($20) ESCAPE '\'
+              )
+              AND (
+                    $23::INT4 IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = $23 AND p.zone_id = zones.id)
               )
             ORDER BY name
             LIMIT $21 OFFSET $22
@@ -195,6 +181,7 @@ impl ZoneRepository for PostgresZoneRepository {
                 .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
                 .unwrap_or(0),
         )
+        .bind(filter.scope_token_id)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -227,9 +214,14 @@ impl ZoneRepository for PostgresZoneRepository {
               AND ($15::INT4 IS NULL OR serial = $16)
               AND (
                     $17::TEXT IS NULL
-                    OR LOWER(name) LIKE LOWER($18)
-                    OR LOWER(primary_ns) LIKE LOWER($19)
-                    OR LOWER(admin_email) LIKE LOWER($20)
+                    OR LOWER(name) LIKE LOWER($18) ESCAPE '\'
+                    OR LOWER(primary_ns) LIKE LOWER($19) ESCAPE '\'
+                    OR LOWER(admin_email) LIKE LOWER($20) ESCAPE '\'
+              )
+              AND (
+                    $21::INT4 IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = $21 AND p.zone_id = zones.id)
               )
             "#,
         )
@@ -253,37 +245,11 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
+        .bind(filter.scope_token_id)
         .fetch_one(&mut *conn)
         .await?;
 
         Ok(count as u64)
-    }
-
-    async fn update(&self, zone: Zone) -> Result<Zone, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        sqlx::query(
-            r#"
-            UPDATE zones 
-            SET name = $1, primary_ns = $2, admin_email = $3,
-                ttl = $4, serial = $5, refresh = $6, retry = $7, expire = $8, minimum_ttl = $9
-            WHERE id = $10
-            "#,
-        )
-        .bind(&zone.name)
-        .bind(&zone.primary_ns)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
-        .bind(zone.serial)
-        .bind(zone.refresh)
-        .bind(zone.retry)
-        .bind(zone.expire)
-        .bind(zone.minimum_ttl)
-        .bind(zone.id)
-        .execute(&mut *conn)
-        .await?;
-
-        Ok(zone)
     }
 
     async fn update_tx(
@@ -301,7 +267,7 @@ impl ZoneRepository for PostgresZoneRepository {
             WHERE id = $10
             "#,
         )
-        .bind(&zone.name)
+        .bind(zone.name.as_str())
         .bind(&zone.primary_ns)
         .bind(&zone.admin_email)
         .bind(zone.ttl)
@@ -315,17 +281,6 @@ impl ZoneRepository for PostgresZoneRepository {
         .await?;
 
         Ok(zone)
-    }
-
-    async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        sqlx::query("DELETE FROM zones WHERE id = $1")
-            .bind(id)
-            .execute(&mut *conn)
-            .await?;
-
-        Ok(())
     }
 
     async fn update_serial_tx(
@@ -353,11 +308,4 @@ impl ZoneRepository for PostgresZoneRepository {
             .await?;
         Ok(())
     }
-}
-
-fn like_pattern(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| format!("%{}%", value))
 }

@@ -1,12 +1,19 @@
 mod common;
 
 mod api {
+    mod external_dns;
     mod health;
     mod metrics;
     mod notify;
+    mod openapi;
     mod record;
+    mod token_policy;
     mod tsig_key;
     mod zone;
+}
+
+mod dns {
+    mod nsupdate;
 }
 
 mod cli {
@@ -14,6 +21,7 @@ mod cli {
     mod daemon;
     mod doctor;
     mod record;
+    mod token;
     mod tsig_key;
     mod zone;
 }

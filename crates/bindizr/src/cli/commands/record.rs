@@ -1,12 +1,21 @@
+use bindizr_service::types::{
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
+    GetRecordsFilter, RecordItem, RecordValueRequest, UpdateRecordPatch,
+};
 use clap::Subcommand;
-use serde_json::json;
 
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, RecordRow, print_output_with_table, render_change_preview},
+        output::{
+            ItemOrPage, OutputFormat, RecordRow, parse_response, print_response,
+            render_change_preview,
+        },
     },
-    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+    socket::{
+        client::DaemonSocketClient,
+        types::{BulkCreateRecordsParams, DaemonCommandKind, RecordIdParams, UpdateRecordParams},
+    },
 };
 
 /// Subcommands for managing records.
@@ -51,22 +60,22 @@ pub(crate) enum RecordCommand {
         value: Option<String>,
         /// Filter by TTL
         #[arg(long)]
-        ttl: Option<i64>,
+        ttl: Option<i32>,
         /// Filter by minimum TTL
         #[arg(long)]
-        min_ttl: Option<i64>,
+        min_ttl: Option<i32>,
         /// Filter by maximum TTL
         #[arg(long)]
-        max_ttl: Option<i64>,
+        max_ttl: Option<i32>,
         /// Filter by priority
         #[arg(long)]
-        priority: Option<i64>,
+        priority: Option<i32>,
         /// Filter by minimum priority
         #[arg(long)]
-        min_priority: Option<i64>,
+        min_priority: Option<i32>,
         /// Filter by maximum priority
         #[arg(long)]
-        max_priority: Option<i64>,
+        max_priority: Option<i32>,
         /// Search records by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
@@ -171,16 +180,18 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ttl,
             priority,
         } => {
-            let data = json!({
-                "name": name,
-                "record_type": record_type,
-                "value": value,
-                "zone_name": zone,
-                "ttl": ttl,
-                "priority": priority,
-            });
             let response = client
-                .send_command(DaemonCommandKind::CreateRecord, Some(data))
+                .send_command(
+                    DaemonCommandKind::CreateRecord,
+                    CreateRecordRequest {
+                        name,
+                        record_type,
+                        value: RecordValueRequest::String(value),
+                        zone_name: zone,
+                        ttl,
+                        priority,
+                    },
+                )
                 .await?;
             println!("{}", response.message);
         }
@@ -213,28 +224,23 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 || search.is_some()
                 || limit.is_some()
                 || offset.is_some();
-            let filter_payload = || {
-                json!({
-                    "zone_name": zone,
-                    "name": name,
-                    "record_type": record_type,
-                    "value": value,
-                    "ttl": ttl,
-                    "min_ttl": min_ttl,
-                    "max_ttl": max_ttl,
-                    "priority": priority,
-                    "min_priority": min_priority,
-                    "max_priority": max_priority,
-                    "search": search,
-                    "limit": limit,
-                    "offset": offset,
-                })
-            };
+            let filter = has_filters.then_some(GetRecordsFilter {
+                zone_name: zone,
+                name,
+                record_type,
+                value,
+                ttl,
+                min_ttl,
+                max_ttl,
+                priority,
+                min_priority,
+                max_priority,
+                search,
+                limit,
+                offset,
+            });
             let data = client
-                .send_command(
-                    DaemonCommandKind::ListRecords,
-                    has_filters.then(filter_payload),
-                )
+                .send_command(DaemonCommandKind::ListRecords, filter)
                 .await?
                 .data;
 
@@ -262,48 +268,39 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     );
                 }
             };
+            let records: Vec<RecordItem> = serde_json::from_value(records)
+                .map_err(|e| format!("Invalid record in '{}': {}", file, e))?;
 
             let response = client
                 .send_command(
                     DaemonCommandKind::BulkCreateRecords,
-                    // Preview never applies; it is a dry run rendered as a diff.
-                    Some(json!({
-                        "zone_name": zone,
-                        "records": records,
-                        "dry_run": dry_run || preview,
-                    })),
+                    BulkCreateRecordsParams {
+                        zone_name: zone,
+                        request: CreateBulkRecordsRequest {
+                            records,
+                            // Preview never applies; it is a dry run rendered as a diff.
+                            dry_run: dry_run || preview,
+                        },
+                    },
                 )
                 .await?;
 
             if preview && output == OutputFormat::Table {
-                let entries = response
-                    .data
-                    .get("diff")
-                    .and_then(|d| d.get("entries"))
-                    .and_then(|v| v.as_array())
-                    .cloned()
-                    .unwrap_or_default();
-                print!("{}", render_change_preview(&entries));
+                let bulk: BulkRecordsResponse = parse_response(&response.data)?;
+                print!("{}", render_change_preview(&bulk.diff.entries));
                 return Ok(());
             }
 
             if output == OutputFormat::Table {
                 println!("{}", response.message);
             }
-            print_output_with_table(&response.data, output, |data| {
-                data.get("records")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| RecordRow::from_json(v).ok())
-                            .collect()
-                    })
-                    .ok_or_else(|| "Missing created records in response".to_string())
+            print_response(&response.data, output, |bulk: &BulkRecordsResponse| {
+                bulk.records.iter().map(RecordRow::from).collect()
             })?;
         }
         RecordCommand::Get { id, output } => {
             let data = client
-                .send_command(DaemonCommandKind::GetRecord, Some(json!({ "id": id })))
+                .send_command(DaemonCommandKind::GetRecord, RecordIdParams { id })
                 .await?
                 .data;
 
@@ -321,14 +318,16 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let data = client
                 .send_command(
                     DaemonCommandKind::UpdateRecord,
-                    Some(json!({
-                        "id": id,
-                        "name": name,
-                        "record_type": record_type,
-                        "value": value,
-                        "ttl": ttl,
-                        "priority": priority,
-                    })),
+                    UpdateRecordParams {
+                        id,
+                        patch: UpdateRecordPatch {
+                            name,
+                            record_type,
+                            value: value.map(RecordValueRequest::String),
+                            ttl,
+                            priority,
+                        },
+                    },
                 )
                 .await?
                 .data;
@@ -339,7 +338,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let response = client
                 .send_command(
                     DaemonCommandKind::DeleteRecord,
-                    Some(json!({ "id": record_id })),
+                    RecordIdParams { id: record_id },
                 )
                 .await?;
             println!("{}", response.message);
@@ -350,16 +349,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 }
 
 fn print_records(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
-    print_output_with_table(data, output, |data| {
-        if let Some(arr) = data.get("items").and_then(|value| value.as_array()) {
-            Ok(arr
-                .iter()
-                .filter_map(|v| RecordRow::from_json(v).ok())
-                .collect())
-        } else {
-            RecordRow::from_json(data)
-                .map(|row| vec![row])
-                .map_err(|e| format!("Failed to parse record: {}", e))
-        }
+    print_response(data, output, |records: &ItemOrPage<GetRecordResponse>| {
+        records.items().iter().map(RecordRow::from).collect()
     })
 }

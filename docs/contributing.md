@@ -48,7 +48,8 @@ on GitHub.
 
     The API reference comes from the `#[utoipa::path]` annotations in
     `crates/bindizr/src/api/`. Change the annotations, then regenerate the spec
-    from a debug build — never edit the YAML by hand.
+    from a bindizr running with `api.openapi_enabled = true` — never edit the
+    YAML by hand.
 
 ## The rest
 

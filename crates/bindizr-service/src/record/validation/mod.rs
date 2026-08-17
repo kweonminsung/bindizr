@@ -1,9 +1,13 @@
 //! DNS record constraint validation: CNAME/NS/MX/SOA rules, duplicate
 //! detection, and owner-name normalization.
 
-use bindizr_core::dns::name::{is_apex_name, is_same_or_subdomain_fqdn, to_fqdn};
+use bindizr_core::dns::{
+    name::{OwnerName, ParseNameError, ZoneName},
+    record::MxRecordValue,
+};
+use bindizr_db::repository::LockLevel;
 
-use super::record_value::{is_null_mx_record_value, record_values_equal, validate_record_value};
+use super::RecordService;
 use crate::{
     error::ServiceError,
     log_error,
@@ -12,119 +16,58 @@ use crate::{
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    validation::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_wire_labels},
 };
 
-pub(super) struct NormalizedOwnerName {
-    /// Name stored in the database according to the current relative-name policy.
-    pub stored_name: String,
-}
-
-pub(super) fn normalize_record_owner_name(
-    input_name: &str,
-    zone_name: &str,
-) -> Result<NormalizedOwnerName, ServiceError> {
-    let input = input_name.trim();
-
-    if input.is_empty() {
-        return Err(ServiceError::invalid_record_name(
-            "record name must not be empty".to_string(),
-        ));
-    }
-
-    if has_whitespace_or_control(input) {
-        return Err(ServiceError::invalid_record_name(
-            "record name must not contain whitespace or control characters".to_string(),
-        ));
-    }
-
-    let zone_fqdn = normalize_absolute_owner_fqdn(&to_fqdn(zone_name))?;
-    let owner_fqdn = if input == "@" {
-        zone_fqdn.clone()
-    } else if input.ends_with('.') {
-        normalize_absolute_owner_fqdn(input)?
-    } else {
-        let candidate = format!("{}.", input.to_ascii_lowercase());
-        validate_wire_labels(&candidate, "record name")?;
-
-        if is_same_or_subdomain_fqdn(&candidate, &zone_fqdn) {
-            candidate
-        } else {
-            normalize_absolute_owner_fqdn(&format!("{}.{}", input, zone_fqdn))?
-        }
-    };
-
-    if !is_same_or_subdomain_fqdn(&owner_fqdn, &zone_fqdn) {
-        return Err(ServiceError::invalid_record_name(format!(
-            "record name '{}' is outside zone '{}'",
-            input_name, zone_name
-        )));
-    }
-
-    Ok(NormalizedOwnerName {
-        stored_name: owner_fqdn_to_stored_name(&owner_fqdn, &zone_fqdn),
-    })
-}
-
-fn normalize_absolute_owner_fqdn(value: &str) -> Result<String, ServiceError> {
-    let without_trailing_dot = value.trim().trim_end_matches('.');
-
-    if without_trailing_dot.is_empty() {
-        return Err(ServiceError::invalid_record_name(
-            "record name must not be the root zone".to_string(),
-        ));
-    }
-
-    if without_trailing_dot.len() > MAX_DOMAIN_LEN {
-        return Err(ServiceError::invalid_record_name(
-            "record name must be 253 bytes or fewer".to_string(),
-        ));
-    }
-
-    let fqdn = format!("{}.", without_trailing_dot.to_ascii_lowercase());
-    validate_wire_labels(&fqdn, "record name")?;
-    Ok(fqdn)
-}
-
-fn owner_fqdn_to_stored_name(owner_fqdn: &str, zone_fqdn: &str) -> String {
-    if owner_fqdn == zone_fqdn {
-        return "@".to_string();
-    }
-
-    owner_fqdn
-        .trim_end_matches(zone_fqdn)
-        .trim_end_matches('.')
-        .to_string()
-}
-
-/// Normalize `owner_name` and validate the add. Callers holding an already
-/// normalized name should use [`validate_record_add_constraints_normalized`].
-pub(super) fn validate_record_add_constraints(
-    zone: &Zone,
-    zone_records: &[Record],
-    owner_name: &str,
+/// Core value validation with the error mapped to `INVALID_RECORD_VALUE`.
+fn validate_record_value(
     record_type: &RecordType,
     value: &str,
-    ttl: i32,
     priority: Option<i32>,
-) -> Result<NormalizedOwnerName, ServiceError> {
-    let normalized_owner = normalize_record_owner_name(owner_name, &zone.name)?;
-    validate_record_add_constraints_normalized(
-        zone_records,
-        &normalized_owner.stored_name,
-        record_type,
-        value,
-        ttl,
-        priority,
-        None,
-    )?;
-    Ok(normalized_owner)
+) -> Result<(), ServiceError> {
+    record_type
+        .validate_value(value, priority)
+        .map_err(ServiceError::invalid_record_value)
+}
+
+pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
+    value
+        .parse::<RecordType>()
+        .map_err(|_| ServiceError::invalid_input(format!("invalid record type: {}", value)))
+}
+
+pub(crate) fn normalize_record_owner_name(
+    input_name: &str,
+    zone: &ZoneName,
+) -> Result<OwnerName, ServiceError> {
+    let owner = OwnerName::parse_in_zone(input_name, zone).map_err(|e| match e {
+        ParseNameError::OutsideZone => ServiceError::invalid_record_name(format!(
+            "record name '{}' is outside zone '{}'",
+            input_name, zone
+        )),
+        other => ServiceError::invalid_record_name(format!("record name {}", other)),
+    })?;
+
+    Ok(owner)
+}
+
+/// Whether any record already holds the candidate's rdata. Canonical
+/// comparison keeps protocol and API callers agreeing on "already exists".
+fn has_matching_rdata<'a>(
+    records: impl IntoIterator<Item = &'a Record>,
+    record_type: &RecordType,
+    value: &str,
+    priority: Option<i32>,
+) -> bool {
+    records.into_iter().any(|r| {
+        r.record_type == *record_type
+            && record_type.values_equal(&r.value, r.priority, value, priority)
+    })
 }
 
 /// Validate an add whose owner name has already been normalized to `stored_name`.
 pub(crate) fn validate_record_add_constraints_normalized(
     zone_records: &[Record],
-    stored_name: &str,
+    stored_name: &OwnerName,
     record_type: &RecordType,
     value: &str,
     ttl: i32,
@@ -139,7 +82,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
 
     validate_record_value(record_type, value, priority)?;
 
-    if *record_type == RecordType::CNAME && stored_name == "@" {
+    if *record_type == RecordType::CNAME && stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
             "CNAME record cannot have '@' as name".to_string(),
         ));
@@ -147,16 +90,15 @@ pub(crate) fn validate_record_add_constraints_normalized(
 
     let existing_records_with_name: Vec<_> = zone_records
         .iter()
-        .filter(|r| {
-            r.name.eq_ignore_ascii_case(stored_name)
-                && except_record_id.map(|id| id != r.id).unwrap_or(true)
-        })
+        .filter(|r| r.name == *stored_name && except_record_id.map(|id| id != r.id).unwrap_or(true))
         .collect();
 
-    if existing_records_with_name.iter().any(|r| {
-        r.record_type == *record_type
-            && record_values_equal(&r.value, r.priority, value, priority, record_type)
-    }) {
+    if has_matching_rdata(
+        existing_records_with_name.iter().copied(),
+        record_type,
+        value,
+        priority,
+    ) {
         return Err(ServiceError::record_conflict(format!(
             "Record '{}' {} '{}' already exists in this zone",
             stored_name, record_type, value
@@ -164,9 +106,9 @@ pub(crate) fn validate_record_add_constraints_normalized(
     }
 
     if *record_type == RecordType::MX {
-        let adding_null_mx = is_null_mx_record_value(value, priority);
+        let adding_null_mx = MxRecordValue::is_null_value(value, priority);
         let has_existing_null_mx = existing_records_with_name.iter().any(|r| {
-            r.record_type == RecordType::MX && is_null_mx_record_value(&r.value, r.priority)
+            r.record_type == RecordType::MX && MxRecordValue::is_null_value(&r.value, r.priority)
         });
         let has_existing_mx = existing_records_with_name
             .iter()
@@ -198,7 +140,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         }
     }
 
-    if *record_type == RecordType::NS && stored_name != "@" {
+    if *record_type == RecordType::NS && !stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
             "NS records must use apex owner name '@'".to_string(),
         ));
@@ -219,7 +161,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
 }
 
 /// Reject deletions of the SOA record or the NS record referenced by `primary_ns`.
-pub fn validate_delete_constraints(
+pub(crate) fn validate_delete_constraints(
     zone: &Zone,
     deleting_records: &[Record],
 ) -> Result<(), ServiceError> {
@@ -233,10 +175,7 @@ pub fn validate_delete_constraints(
     }
 
     for record in deleting_records {
-        if record.record_type == RecordType::NS
-            && is_apex_name(&record.name, &zone.name)
-            && to_fqdn(&record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns))
-        {
+        if zone.is_primary_ns(&record.record_type, &record.name, &record.value) {
             return Err(ServiceError::invalid_input(
                 "Cannot delete NS record referenced by zone primary_ns".to_string(),
             ));
@@ -252,7 +191,6 @@ pub(super) fn validate_record_update_constraints_normalized(
     zone_records: &[Record],
     existing_record: &Record,
     updated_record: &Record,
-    stored_name: &str,
 ) -> Result<(), ServiceError> {
     // SOA is managed via the zone's own fields and cannot be set on a record.
     if updated_record.record_type == RecordType::SOA {
@@ -264,7 +202,7 @@ pub(super) fn validate_record_update_constraints_normalized(
 
     validate_record_add_constraints_normalized(
         zone_records,
-        stored_name,
+        &updated_record.name,
         &updated_record.record_type,
         &updated_record.value,
         updated_record.ttl,
@@ -272,13 +210,16 @@ pub(super) fn validate_record_update_constraints_normalized(
         Some(existing_record.id),
     )?;
 
-    if existing_record.record_type == RecordType::NS
-        && is_apex_name(&existing_record.name, &zone.name)
-        && to_fqdn(&existing_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns))
-    {
-        let still_primary = updated_record.record_type == RecordType::NS
-            && is_apex_name(&updated_record.name, &zone.name)
-            && to_fqdn(&updated_record.value).eq_ignore_ascii_case(&to_fqdn(&zone.primary_ns));
+    if zone.is_primary_ns(
+        &existing_record.record_type,
+        &existing_record.name,
+        &existing_record.value,
+    ) {
+        let still_primary = zone.is_primary_ns(
+            &updated_record.record_type,
+            &updated_record.name,
+            &updated_record.value,
+        );
 
         if !still_primary {
             return Err(ServiceError::invalid_input(
@@ -290,40 +231,58 @@ pub(super) fn validate_record_update_constraints_normalized(
     Ok(())
 }
 
-/// Validate an add against conflicting records loaded within the caller's transaction.
-pub async fn validate_add_constraints_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
-    owner_name: &str,
-    record_type: &RecordType,
-    value: &str,
-    ttl: i32,
-    priority: Option<i32>,
-) -> Result<(), ServiceError> {
-    // Only records sharing the owner name can conflict, so load just those
-    // instead of the whole zone.
-    let lookup_owner = normalize_record_owner_name(owner_name, &zone.name)?;
-    let zone_records = RepositoryService::get_records_by_zone_id_and_name_tx(
-        tx,
-        zone.id,
-        &lookup_owner.stored_name,
-    )
-    .await
-    .map_err(|e| {
-        log_error!("Failed to load zone records: {}", e);
-        ServiceError::internal("Failed to load zone records".to_string())
-    })?;
+/// What an add resolves to against the records already in the zone.
+pub(crate) enum AddOutcome {
+    /// Nothing holds this rdata and every constraint passed.
+    New,
+    Duplicate,
+}
 
-    validate_record_add_constraints(
-        zone,
-        &zone_records,
-        owner_name,
-        record_type,
-        value,
-        ttl,
-        priority,
-    )
-    .map(|_| ())
+impl RecordService {
+    /// Validate an add against conflicting records loaded within the caller's
+    /// transaction, reporting an rdata-identical record as
+    /// [`AddOutcome::Duplicate`] rather than rejecting it — RFC 2136,
+    /// Section 3.4.2.2 makes it a silent no-op. The API paths call the
+    /// validator directly, where the same case stays a conflict.
+    pub(crate) async fn validate_add_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        owner_name: &OwnerName,
+        record_type: &RecordType,
+        value: &str,
+        ttl: i32,
+        priority: Option<i32>,
+    ) -> Result<AddOutcome, ServiceError> {
+        // Only records sharing the owner name can conflict, so load just those
+        // instead of the whole zone.
+        let zone_records = RepositoryService::list_records_by_zone_id_and_name_tx(
+            tx,
+            zone.id,
+            owner_name,
+            LockLevel::Exclusive,
+        )
+        .await
+        .map_err(|e| {
+            log_error!("Failed to load zone records: {}", e);
+            ServiceError::internal("Failed to load zone records".to_string())
+        })?;
+
+        if has_matching_rdata(zone_records.iter(), record_type, value, priority) {
+            return Ok(AddOutcome::Duplicate);
+        }
+
+        validate_record_add_constraints_normalized(
+            &zone_records,
+            owner_name,
+            record_type,
+            value,
+            ttl,
+            priority,
+            None,
+        )?;
+
+        Ok(AddOutcome::New)
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,5 @@
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use bindizr_core::dns::is_catalog_zone;
 use domain::base::{
     Message, Name,
     iana::{Opcode, Rcode},
@@ -10,41 +9,14 @@ use crate::{
     config, error::XfrError, log_error, log_info, metrics::metrics, service::zone::ZoneService,
 };
 
-/// Sends DNS NOTIFY to all configured secondary servers.
-/// A `None` zone_name notifies all zones; `force` bumps the target serial first.
-pub async fn send_notify(zone_name: Option<&str>, force: bool) -> Result<(), XfrError> {
-    if force {
-        force_increment_serial(zone_name).await?;
-    }
-
+/// Sends DNS NOTIFY to all configured secondary servers; a `None` zone_name
+/// notifies all zones. Existence checks and forced bumps live in
+/// `ZoneService::notify_for`.
+pub async fn send_notify(zone_name: Option<&str>) -> Result<(), XfrError> {
     match zone_name {
         Some(name) => send_notify_for_zone(name).await,
         None => send_notify_for_all_zones().await,
     }
-}
-
-async fn force_increment_serial(zone_name: Option<&str>) -> Result<(), XfrError> {
-    if matches!(zone_name, Some(name) if is_catalog_zone(name)) {
-        log_info!("Skipping forced serial increment for virtual catalog zone");
-        return Ok(());
-    }
-
-    let bumped_zones = ZoneService::force_increment_serial(zone_name)
-        .await
-        .map_err(|e| {
-            if e.code == crate::service::error::ErrorCode::ZoneNotFound {
-                XfrError::ZoneNotFound(zone_name.unwrap_or_default().to_string())
-            } else {
-                XfrError::DatabaseError(e.to_string())
-            }
-        })?;
-
-    log_info!(
-        "Forced serial increment for {} zone(s) before NOTIFY",
-        bumped_zones.len()
-    );
-
-    Ok(())
 }
 
 /// Sends DNS NOTIFY for every zone.
@@ -66,7 +38,7 @@ async fn send_notify_for_all_zones() -> Result<(), XfrError> {
 
     for zone in zones {
         log_info!("Processing NOTIFY for zone: {}", zone.name);
-        if let Err(e) = send_notify_for_zone(&zone.name).await {
+        if let Err(e) = send_notify_for_zone(zone.name.as_str()).await {
             log_error!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
             failures.push(format!("{}: {}", zone.name, e));
         }
@@ -82,13 +54,6 @@ async fn send_notify_for_all_zones() -> Result<(), XfrError> {
 /// Sends DNS NOTIFY to all configured secondary servers for one zone.
 async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
-
-    if !is_catalog_zone(zone_name) {
-        ZoneService::find(zone_name)
-            .await
-            .map_err(|e| XfrError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| XfrError::ZoneNotFound(zone_name.to_string()))?;
-    }
 
     let reports = notify_secondaries(zone_name).await?;
     if reports.is_empty() {
@@ -111,9 +76,9 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
         Ok(())
     } else {
         Err(XfrError::NotifyFailed(format!(
-            "zone {}{}",
+            "zone {} ({})",
             zone_name,
-            format_failures(&failures)
+            failures.join("; ")
         )))
     }
 }
@@ -182,14 +147,6 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>,
     }
 
     Ok(reports)
-}
-
-fn format_failures(failures: &[String]) -> String {
-    if failures.is_empty() {
-        String::new()
-    } else {
-        format!(" ({})", failures.join("; "))
-    }
 }
 
 /// Sends a NOTIFY to one server, retrying up to the configured limit.

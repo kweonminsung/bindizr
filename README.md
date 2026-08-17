@@ -26,7 +26,7 @@ DNS Synchronization Service for BIND9
 
 &nbsp;<img src="docs/assets/concepts.png" width="462px" alt="Bindizr control plane and XFR server feeding BIND9 secondaries, which answer client queries">
 
-Bindizr owns the zone data and the transfer path; standard BIND9 secondaries discover zones through the catalog zone (RFC 9432) and answer client queries. Adding it in front of BIND9 costs nothing on the query path — `Bindizr + BIND9` serves **62,448 QPS against native BIND9's 61,629**.
+Bindizr owns the zone data and the transfer path; standard BIND9 secondaries discover zones through the catalog zone (RFC 9432) and answer client queries. Adding it in front of BIND9 costs nothing on the query path — `Bindizr + BIND9` serves **57,466 QPS against native BIND9's 57,674**.
 
 ## Features
 
@@ -36,6 +36,7 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus a sync/async apply mode that batches NOTIFYs under load.
 - **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone update policies.
+- **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone History** — per-serial snapshots with diffs between serials and rollback.
 - **Observability** — health probe, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
 
@@ -51,7 +52,7 @@ at your database instead.
 
 ```bash
 $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-beta.6 --set postgresql.enabled=true
+  --version 0.1.0-beta.7 --set postgresql.enabled=true
 ```
 
 ### Docker Swarm
@@ -59,7 +60,7 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 Brings up Bindizr, PostgreSQL, and BIND9 on an overlay network.
 
 ```bash
-$ docker stack deploy -c docker-compose.yml bindizr
+$ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ```
 
 ### Package install
@@ -89,7 +90,7 @@ API authentication is on by default for Helm and package installs — the Compos
 stack ships with it off. Create a token before calling the API:
 
 ```bash
-$ bindizr token create
+$ bindizr token create --name admin --global
 ```
 
 ## Documentation

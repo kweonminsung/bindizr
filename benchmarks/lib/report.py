@@ -182,11 +182,18 @@ def _render_b07(rows: list[dict]) -> str:
             r.get("backend", "-"), _pm(r, "create_tps"), _pm(r, "read_tps"),
             _pm(r, "create_p95_ms", 2), _pm(r, "read_p95_ms", 2),
             f'{r.get("error_rate", 0) * 100:.2f}%', r.get("peak_mem_mb", "-"),
+            r.get("bindizr_peak_mem_mb", "-"), r.get("db_peak_mem_mb", "-"),
             r.get("runs", 1),
         ] for r in crud]
         out.append(_md_table(
             ["Backend", "Create TPS", "Read TPS", "Create p95 (ms)",
-             "Read p95 (ms)", "Error Rate", "Peak mem (MB)", "Runs"], crud_rows))
+             "Read p95 (ms)", "Error Rate", "Peak mem (MB)",
+             "Bindizr mem (MB)", "DB mem (MB)", "Runs"], crud_rows))
+        out.append("\n> Peak mem is the highest per-tick stack total (Bindizr "
+                   "+ BIND9 + DB server, per `docker stats`). The split "
+                   "columns are each container's own peak, taken at possibly "
+                   "different ticks and excluding BIND9, so they need not sum "
+                   "to it. sqlite runs in-process, so its DB share is 0.\n")
 
     if bulk:
         out.append("\n### 7b — Bulk import by backend\n")
@@ -195,11 +202,13 @@ def _render_b07(rows: list[dict]) -> str:
             r.get("backend", "-"), r.get("size", "-"),
             _pm(r, "import_secs", 3), _pm(r, "records_per_sec"),
             r.get("import_errors", "-"), r.get("peak_mem_mb", "-"),
+            r.get("bindizr_peak_mem_mb", "-"), r.get("db_peak_mem_mb", "-"),
             r.get("runs", 1),
         ] for r in bulk]
         out.append(_md_table(
             ["Backend", "Records", "Import (s)", "Records/sec", "Errors",
-             "Peak mem (MB)", "Runs"], bulk_rows))
+             "Peak mem (MB)", "Bindizr mem (MB)", "DB mem (MB)", "Runs"],
+            bulk_rows))
         out.append(_bulk_linearity_note(
             [{**r, "system": r.get("backend", "-")} for r in bulk]))
 

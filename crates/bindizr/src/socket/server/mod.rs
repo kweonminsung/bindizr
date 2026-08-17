@@ -1,3 +1,6 @@
+//! Unix-socket daemon API for the CLI; reachable only by the local daemon
+//! owner, so every command runs with global access (no token scoping).
+
 pub(crate) mod control;
 mod doctor;
 mod notify;
@@ -54,6 +57,15 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ZoneTsigPolicyRemove => {
                     tsig_key::remove_zone_tsig_policy(&cmd.data).await
                 }
+                DaemonCommandKind::ZoneTokenPolicyAdd => {
+                    token::add_zone_token_policy(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneTokenPolicyList => {
+                    token::list_zone_token_policies(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneTokenPolicyRemove => {
+                    token::remove_zone_token_policy(&cmd.data).await
+                }
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
@@ -67,7 +79,7 @@ async fn handle_client(stream: UnixStream) {
                     record::bulk_create_records(&cmd.data).await
                 }
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
-                DaemonCommandKind::NotifyZone => notify::handle_notify_zone(cmd.data).await,
+                DaemonCommandKind::NotifyZone => notify::handle_notify_zone(&cmd.data).await,
                 DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
                 DaemonCommandKind::ExportZoneFile => zone::export_zone(&cmd.data).await,
                 DaemonCommandKind::ListZoneSnapshots => zone::list_zone_snapshots(&cmd.data).await,
@@ -195,13 +207,6 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e),
     }
-}
-
-/// Extract the required `zone_name` string field from a command payload.
-pub(super) fn required_zone_name(data: &serde_json::Value) -> Result<&str, ServiceError> {
-    data.get("zone_name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ServiceError::invalid_input("Missing or invalid 'zone_name' field"))
 }
 
 /// Deserialize a command payload into its typed parameter struct, so missing

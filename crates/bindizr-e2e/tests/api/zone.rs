@@ -470,7 +470,6 @@ async fn zone_import_zone_file_replace_mode() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Seed two A records.
     seed_records(
         &app,
         zone_name,
@@ -517,12 +516,87 @@ async fn zone_import_zone_file_replace_mode() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_import_zone_file_upsert_mode_replaces_only_named_rrsets() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // The three ways upsert must differ from replace, which would drop all of
+    // these: a multi-record RRset, another type on that owner, another owner.
+    seed_records(
+        &app,
+        zone_name,
+        json!([
+            { "name": "www", "record_type": "A", "value": "192.0.2.1" },
+            { "name": "www", "record_type": "A", "value": "192.0.2.2" },
+            { "name": "www", "record_type": "TXT", "value": "keep me" },
+            { "name": "other", "record_type": "A", "value": "192.0.2.9" }
+        ]),
+    )
+    .await;
+
+    // Only the `www` A RRset appears in the file, so only it is replaced.
+    let content = "www IN A 192.0.2.3\n";
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/imports"),
+            Some(json!({ "content": content, "mode": "upsert" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["summary"]["added"], 1);
+    assert_eq!(body["summary"]["deleted"], 2);
+
+    let values = |body: &serde_json::Value| -> Vec<String> {
+        let mut v: Vec<String> = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["value"].as_str().unwrap().to_string())
+            .collect();
+        v.sort();
+        v
+    };
+
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=www&record_type=A"),
+            None,
+        )
+        .await;
+    assert_eq!(values(&body), vec!["192.0.2.3"]);
+
+    // Same owner, different type: untouched.
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=www&record_type=TXT"),
+            None,
+        )
+        .await;
+    assert_eq!(values(&body), vec!["keep me"]);
+
+    // Different owner entirely: untouched.
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=other"),
+            None,
+        )
+        .await;
+    assert_eq!(values(&body), vec!["192.0.2.9"]);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_reconciles_ttl() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Seed a record with an explicit TTL of 300.
     seed_records(
         &app,
         zone_name,
@@ -656,9 +730,8 @@ async fn zone_import_preview_shows_empty_diff_on_validation_error() {
     assert_eq!(body["diff"]["summary"]["added"], 0);
 }
 
-// --- append fast-path adversarial tests -------------------------------------
-// Append imports load only rows sharing an owner name with the file; these
-// verify that constraint checks against records existing only in the DB still hold.
+// Append imports load only rows sharing an owner name with the file, so these
+// check constraints against records that exist only in the DB.
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -711,7 +784,6 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Seed a CNAME directly in the DB.
     seed_records(
         &app,
         zone_name,
@@ -1178,4 +1250,51 @@ async fn zone_status_reports_secondaries() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
+}
+
+// Both read the apex row's owner: the snapshot returned it blank, and the
+// update check compared the client spelling against the row form.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn apex_rows_render_and_update_through_their_presentation_name() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, detail) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/snapshots/{}", zone["serial"]),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = detail["records"]
+        .as_array()
+        .expect("snapshot records")
+        .iter()
+        .map(|record| record["name"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(names, ["@"], "apex row did not render as the apex");
+
+    let records = app.list_records(zone_name).await;
+    let ns = records
+        .iter()
+        .find(|record| record["record_type"] == "NS")
+        .expect("apex NS row");
+    for spelling in ["@", zone_name] {
+        let (status, body) = app
+            .request(
+                Method::PUT,
+                &format!("/records/{}", ns["id"].as_i64().unwrap()),
+                Some(json!({
+                    "name": spelling,
+                    "record_type": "NS",
+                    "value": ns["value"],
+                    "ttl": 1200,
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{spelling}: {body}");
+    }
 }
