@@ -145,7 +145,11 @@ impl ZoneRepository for PostgresZoneRepository {
                     OR LOWER(primary_ns) LIKE LOWER($19) ESCAPE '\'
                     OR LOWER(admin_email) LIKE LOWER($20) ESCAPE '\'
               )
-              AND ($23::INT4[] IS NULL OR id = ANY($23))
+              AND (
+                    $23::INT4 IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = $23 AND p.zone_id = zones.id)
+              )
             ORDER BY name
             LIMIT $21 OFFSET $22
             "#,
@@ -177,7 +181,7 @@ impl ZoneRepository for PostgresZoneRepository {
                 .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
                 .unwrap_or(0),
         )
-        .bind(&filter.ids)
+        .bind(filter.scope_token_id)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -214,7 +218,11 @@ impl ZoneRepository for PostgresZoneRepository {
                     OR LOWER(primary_ns) LIKE LOWER($19) ESCAPE '\'
                     OR LOWER(admin_email) LIKE LOWER($20) ESCAPE '\'
               )
-              AND ($21::INT4[] IS NULL OR id = ANY($21))
+              AND (
+                    $21::INT4 IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = $21 AND p.zone_id = zones.id)
+              )
             "#,
         )
         .bind(&filter.name)
@@ -237,7 +245,7 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&filter.ids)
+        .bind(filter.scope_token_id)
         .fetch_one(&mut *conn)
         .await?;
 

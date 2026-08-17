@@ -85,6 +85,15 @@ impl Caller {
         }
     }
 
+    /// The token whose grants bound the caller's visibility; `None` means
+    /// unrestricted. List queries join it against the policies in SQL.
+    pub(crate) fn scope_token_id(&self) -> Option<i32> {
+        match self {
+            Caller::Global => None,
+            Caller::Token { id, .. } => Some(*id),
+        }
+    }
+
     /// Whether the caller may see `zone_id`.
     pub(crate) fn zone_visible(&self, zone_id: i32) -> bool {
         match self {

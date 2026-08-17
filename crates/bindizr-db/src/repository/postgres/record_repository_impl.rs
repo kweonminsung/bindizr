@@ -328,7 +328,11 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.record_type) LIKE LOWER($26) ESCAPE '\'
                     OR LOWER(r.display_value) LIKE LOWER($27) ESCAPE '\'
             )
-            AND ($30::INT4[] IS NULL OR r.zone_id = ANY($30))
+              AND (
+                    $30::INT4 IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = $30 AND p.zone_id = r.zone_id)
+              )
             -- r.name ties across an RRset, so without r.id a plan change
             -- between two pages could drop or repeat a row.
             ORDER BY r.name, r.id
@@ -369,7 +373,7 @@ impl RecordRepository for PostgresRecordRepository {
                 .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
                 .unwrap_or(0),
         )
-        .bind(&filter.zone_ids)
+        .bind(filter.scope_token_id)
         .bind(value_exact)
         .fetch_all(&mut *conn)
         .await?;
@@ -415,7 +419,11 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.record_type) LIKE LOWER($26) ESCAPE '\'
                     OR LOWER(r.display_value) LIKE LOWER($27) ESCAPE '\'
             )
-            AND ($28::INT4[] IS NULL OR r.zone_id = ANY($28))
+              AND (
+                    $28::INT4 IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = $28 AND p.zone_id = r.zone_id)
+              )
             "#
         )))
         .bind(&filter.zone_name)
@@ -445,7 +453,7 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&filter.zone_ids)
+        .bind(filter.scope_token_id)
         .bind(value_exact)
         .fetch_one(&mut *conn)
         .await?;

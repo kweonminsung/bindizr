@@ -51,17 +51,12 @@ impl RecordService {
         caller: &Caller,
         filter: GetRecordsFilter,
     ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
-        let zone_ids = caller.visible_zone_ids().map(|visible| {
-            let mut zone_ids: Vec<i32> = visible.into_iter().collect();
-            zone_ids.sort_unstable();
-            zone_ids
-        });
-        Self::list_filtered(filter, zone_ids).await
+        Self::list_filtered(filter, caller.scope_token_id()).await
     }
 
     async fn list_filtered(
         filter: GetRecordsFilter,
-        zone_ids: Option<Vec<i32>>,
+        scope_token_id: Option<i32>,
     ) -> Result<PaginatedResponse<RecordWithZone>, ServiceError> {
         let zone_name = filter
             .zone_name
@@ -74,7 +69,7 @@ impl RecordService {
         // Scoped callers read unknown and invisible zones alike as empty
         // pages, so skip the 404 probe.
         if let Some(name) = zone_name.as_ref()
-            && zone_ids.is_none()
+            && scope_token_id.is_none()
         {
             ZoneService::lookup_by_name(name.as_str()).await?;
         }
@@ -93,7 +88,7 @@ impl RecordService {
             min_priority: filter.min_priority,
             max_priority: filter.max_priority,
             search: filter.search,
-            zone_ids,
+            scope_token_id,
             limit,
             offset,
         };

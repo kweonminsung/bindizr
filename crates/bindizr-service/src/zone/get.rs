@@ -57,17 +57,12 @@ impl ZoneService {
         caller: &Caller,
         filter: GetZonesFilter,
     ) -> Result<PaginatedResponse<Zone>, ServiceError> {
-        let ids = caller.visible_zone_ids().map(|visible| {
-            let mut ids: Vec<i32> = visible.into_iter().collect();
-            ids.sort_unstable();
-            ids
-        });
-        Self::list_filtered(filter, ids).await
+        Self::list_filtered(filter, caller.scope_token_id()).await
     }
 
     async fn list_filtered(
         filter: GetZonesFilter,
-        ids: Option<Vec<i32>>,
+        scope_token_id: Option<i32>,
     ) -> Result<PaginatedResponse<Zone>, ServiceError> {
         let limit = filter.limit;
         let offset = filter.offset;
@@ -82,7 +77,7 @@ impl ZoneService {
             max_ttl: filter.max_ttl,
             serial: filter.serial,
             search: filter.search,
-            ids,
+            scope_token_id,
             limit,
             offset,
         };

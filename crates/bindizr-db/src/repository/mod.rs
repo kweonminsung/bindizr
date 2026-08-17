@@ -50,8 +50,10 @@ pub struct ZoneFilter {
     pub max_ttl: Option<i32>,
     pub serial: Option<i32>,
     pub search: Option<String>,
-    /// Restrict to these zones (scoped-token visibility); `None` is unrestricted.
-    pub ids: Option<Vec<i32>>,
+    /// Restrict to zones granted to this token, joined against
+    /// `zone_token_policies` in SQL so the bind count stays fixed; `None` is
+    /// unrestricted.
+    pub scope_token_id: Option<i32>,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }
@@ -70,8 +72,10 @@ pub struct RecordFilter {
     pub min_priority: Option<i32>,
     pub max_priority: Option<i32>,
     pub search: Option<String>,
-    /// Restrict to these zones (scoped-token visibility); `None` is unrestricted.
-    pub zone_ids: Option<Vec<i32>>,
+    /// Restrict to zones granted to this token, joined against
+    /// `zone_token_policies` in SQL so the bind count stays fixed; `None` is
+    /// unrestricted.
+    pub scope_token_id: Option<i32>,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }

@@ -290,13 +290,7 @@ impl RecordRepository for MySqlRecordRepository {
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
-        let zone_ids_clause = match filter.zone_ids.as_deref() {
-            None => String::new(),
-            Some([]) => "AND 1 = 0".to_string(),
-            Some(ids) => format!("AND r.zone_id IN ({})", vec!["?"; ids.len()].join(",")),
-        };
-
-        let mut query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
+        let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
             SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
                    r.zone_id, z.name AS zone_name
@@ -327,7 +321,11 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(r.record_type) LIKE LOWER(?) ESCAPE '\\'
                     OR LOWER(r.display_value) LIKE LOWER(?) ESCAPE '\\'
             )
-            {zone_ids_clause}
+              AND (
+                    ? IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id)
+              )
             -- r.name ties across an RRset, so without r.id a plan change
             -- between two pages could drop or repeat a row.
             ORDER BY r.name, r.id
@@ -362,12 +360,9 @@ impl RecordRepository for MySqlRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search);
-        if let Some(ids) = &filter.zone_ids {
-            for zone_id in ids {
-                query = query.bind(zone_id);
-            }
-        }
         let records = query
+            .bind(filter.scope_token_id)
+            .bind(filter.scope_token_id)
             .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
             .bind(
                 filter
@@ -388,13 +383,7 @@ impl RecordRepository for MySqlRecordRepository {
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
-        let zone_ids_clause = match filter.zone_ids.as_deref() {
-            None => String::new(),
-            Some([]) => "AND 1 = 0".to_string(),
-            Some(ids) => format!("AND r.zone_id IN ({})", vec!["?"; ids.len()].join(",")),
-        };
-
-        let mut query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
+        let query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
             FROM records r
@@ -424,7 +413,11 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(r.record_type) LIKE LOWER(?) ESCAPE '\\'
                     OR LOWER(r.display_value) LIKE LOWER(?) ESCAPE '\\'
             )
-            {zone_ids_clause}
+              AND (
+                    ? IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id)
+              )
             "#
         )))
         .bind(&filter.zone_name)
@@ -454,12 +447,9 @@ impl RecordRepository for MySqlRecordRepository {
         .bind(&search)
         .bind(&search)
         .bind(&search)
-        .bind(&search);
-        if let Some(ids) = &filter.zone_ids {
-            for zone_id in ids {
-                query = query.bind(zone_id);
-            }
-        }
+        .bind(&search)
+        .bind(filter.scope_token_id)
+        .bind(filter.scope_token_id);
         let count = query.fetch_one(&mut *conn).await?;
 
         Ok(count as u64)
