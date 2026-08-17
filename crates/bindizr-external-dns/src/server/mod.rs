@@ -15,8 +15,8 @@ use crate::{
     metrics::metrics,
     upstream::{UpstreamClient, UpstreamError},
     wire::{
-        Changes, DomainFilter, Endpoint, MEDIA_TYPE, adjust_endpoints,
-        group_records_into_endpoints, to_bindizr_changes,
+        Changes, DomainFilter, Endpoint, MEDIA_TYPE, group_records_into_endpoints,
+        merge_adjusted_endpoints, to_bindizr_changes, to_bindizr_rrsets,
     },
 };
 
@@ -219,8 +219,9 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
     track("records_apply", started, response)
 }
 
-/// `POST /adjustendpoints` — validate and normalize desired endpoints.
-async fn adjust_endpoints_handler(body: String) -> Response {
+/// `POST /adjustendpoints` — validate locally, canonicalize on the bindizr
+/// server so this answer cannot drift from the stored form.
+async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: String) -> Response {
     let started = Instant::now();
 
     let endpoints: Vec<Endpoint> = match serde_json::from_str(&body) {
@@ -238,12 +239,34 @@ async fn adjust_endpoints_handler(body: String) -> Response {
         }
     };
 
-    let response = match adjust_endpoints(endpoints) {
-        Ok(adjusted) => json_response(&adjusted),
+    let rrsets = match to_bindizr_rrsets(&endpoints) {
+        Ok(rrsets) => rrsets,
         Err(message) => {
             log_warn!("event=adjustendpoints rejected={}", message);
-            (StatusCode::BAD_REQUEST, message).into_response()
+            return track(
+                "adjustendpoints",
+                started,
+                (StatusCode::BAD_REQUEST, message).into_response(),
+            );
         }
+    };
+
+    let response = match state.upstream.adjust_rrsets(&rrsets).await {
+        // A short answer would silently drop endpoints in the zip below.
+        Ok(adjusted) if adjusted.len() != endpoints.len() => (
+            StatusCode::BAD_GATEWAY,
+            format!(
+                "bindizr adjusted {} of {} rrsets",
+                adjusted.len(),
+                endpoints.len()
+            ),
+        )
+            .into_response(),
+        Ok(adjusted) => {
+            log_info!("event=adjustendpoints endpoints={}", endpoints.len());
+            json_response(&merge_adjusted_endpoints(endpoints, adjusted))
+        }
+        Err(e) => upstream_error_response(e),
     };
     track("adjustendpoints", started, response)
 }

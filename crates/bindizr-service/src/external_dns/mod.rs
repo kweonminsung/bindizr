@@ -11,14 +11,32 @@ mod tests;
 use std::collections::HashMap;
 
 use crate::{
-    authorization::Caller, error::ServiceError, model::zone::Zone, repository::RepositoryService,
-    types::ExternalDnsRecordItem,
+    authorization::Caller,
+    error::ServiceError,
+    model::zone::Zone,
+    repository::RepositoryService,
+    types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecordItem},
 };
 
 /// Business logic for the ExternalDNS provider API.
 pub struct ExternalDnsService;
 
 impl ExternalDnsService {
+    /// Canonicalize desired RRsets to the form applying them would store, so
+    /// the adapter's AdjustEndpoints answer cannot drift from the server's
+    /// normalization. Takes no caller: it only normalizes the request's own
+    /// payload.
+    pub fn adjust_rrsets(
+        request: &ExternalDnsAdjustRequest,
+    ) -> Result<ExternalDnsAdjustResponse, ServiceError> {
+        let rrsets = request
+            .rrsets
+            .iter()
+            .map(apply::adjust_rrset)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ExternalDnsAdjustResponse { rrsets })
+    }
+
     /// Names of the zones the caller may manage.
     pub async fn list_zones(caller: &Caller) -> Result<Vec<String>, ServiceError> {
         let visible = caller.visible_zone_ids();

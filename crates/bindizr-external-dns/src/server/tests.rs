@@ -19,6 +19,7 @@ struct MockState {
     zones: (u16, String),
     records: (u16, String),
     changes: (u16, String),
+    adjust: (u16, String),
 }
 
 struct MockUpstream {
@@ -52,6 +53,7 @@ async fn mock_handler(State(state): State<MockState>, request: Request) -> Respo
         "/external-dns/zones" => state.zones.clone(),
         "/external-dns/records" => state.records.clone(),
         "/external-dns/changes" => state.changes.clone(),
+        "/external-dns/adjust" => state.adjust.clone(),
         "/health" => (200, r#"{"status":"healthy"}"#.to_string()),
         _ => (
             404,
@@ -71,12 +73,26 @@ async fn spawn_mock(
     records: (u16, Value),
     changes: (u16, Value),
 ) -> MockUpstream {
+    let not_mocked = (
+        500,
+        json!({"error": "adjust is not mocked", "code": "INTERNAL"}),
+    );
+    spawn_mock_with_adjust(zones, records, changes, not_mocked).await
+}
+
+async fn spawn_mock_with_adjust(
+    zones: (u16, Value),
+    records: (u16, Value),
+    changes: (u16, Value),
+    adjust: (u16, Value),
+) -> MockUpstream {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let state = MockState {
         requests: requests.clone(),
         zones: (zones.0, zones.1.to_string()),
         records: (records.0, records.1.to_string()),
         changes: (changes.0, changes.1.to_string()),
+        adjust: (adjust.0, adjust.1.to_string()),
     };
     let router = axum::Router::new().fallback(mock_handler).with_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -334,28 +350,68 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
 }
 
 #[tokio::test]
-async fn adjustendpoints_normalizes_txt_and_echoes_endpoints() {
+async fn adjustendpoints_forwards_rrsets_and_maps_the_servers_answer_back() {
     let (zones, records, changes) = ok_mock_bodies();
-    let mock = spawn_mock(zones, records, changes).await;
+    let mock = spawn_mock_with_adjust(
+        zones,
+        records,
+        changes,
+        (
+            200,
+            json!({"rrsets": [
+                {"name": "a.example.com", "record_type": "AAAA", "ttl": 300, "values": ["2001:db8::1"]},
+                {"name": "b.example.com", "record_type": "TXT", "values": ["\"v=spf1 -all\""]}
+            ]}),
+        ),
+    )
+    .await;
     let base = spawn_adapter(mock.addr, None).await;
 
     let (status, body) = post(
         &format!("{}/adjustendpoints", base),
         json!([
-            {"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": 300},
+            {"dnsName": "a.example.com", "targets": ["2001:0DB8::1"], "recordType": "aaaa", "recordTTL": 300, "labels": {"owner": "default"}},
             {"dnsName": "b.example.com", "targets": ["v=spf1 -all"], "recordType": "TXT"}
         ]),
     )
     .await;
 
     assert_eq!(status, StatusCode::OK);
+    // Identity fields stay the caller's; type/TTL/targets are the server's.
     assert_eq!(
         serde_json::from_str::<Value>(&body).unwrap(),
         json!([
-            {"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": 300},
+            {"dnsName": "a.example.com", "targets": ["2001:db8::1"], "recordType": "AAAA", "recordTTL": 300, "labels": {"owner": "default"}},
             {"dnsName": "b.example.com", "targets": ["\"v=spf1 -all\""], "recordType": "TXT"}
         ])
     );
+
+    let recorded = mock.recorded();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].0, "/external-dns/adjust");
+    assert_eq!(
+        serde_json::from_str::<Value>(&recorded[0].2).unwrap(),
+        json!({"rrsets": [
+            {"name": "a.example.com", "record_type": "AAAA", "ttl": 300, "values": ["2001:0DB8::1"]},
+            {"name": "b.example.com", "record_type": "TXT", "values": ["v=spf1 -all"]}
+        ]})
+    );
+}
+
+#[tokio::test]
+async fn adjustendpoints_rejects_invalid_endpoints_before_the_round_trip() {
+    let (zones, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock(zones, records, changes).await;
+    let base = spawn_adapter(mock.addr, None).await;
+
+    let (status, body) = post(
+        &format!("{}/adjustendpoints", base),
+        json!([{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "setIdentifier": "weighted"}]),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("setIdentifier"));
     assert!(mock.recorded().is_empty());
 }
 

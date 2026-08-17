@@ -68,11 +68,11 @@ pub(crate) struct DomainFilter {
 }
 
 /// One RRset of the bindizr `/external-dns` API (snake_case, internal shape).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct BindizrRrset {
     pub(crate) name: String,
     pub(crate) record_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) ttl: Option<i32>,
     pub(crate) values: Vec<String>,
 }
@@ -236,45 +236,34 @@ pub(crate) fn group_records_into_endpoints(records: Vec<BindizrRecordItem>) -> V
         .collect()
 }
 
-/// Normalize endpoints to the stored form `GET /records` returns — quoted
-/// TXT, lowercase FQDN CNAME targets, canonical address spellings — so the
-/// external-dns plan never sees a spurious diff. Provider-specific
-/// properties are dropped: removal in adjust is how a webhook provider
-/// declares them unsupported.
-pub(crate) fn adjust_endpoints(endpoints: Vec<Endpoint>) -> Result<Vec<Endpoint>, String> {
-    endpoints
-        .into_iter()
-        .map(|mut endpoint| {
-            validate_endpoint(&endpoint)?;
-            endpoint.provider_specific.clear();
-            match supported_record_type(&endpoint.record_type) {
-                Some(RecordType::TXT) => {
-                    endpoint.targets = endpoint
-                        .targets
-                        .iter()
-                        .map(|target| {
-                            bindizr_core::dns::record::TxtRecordValue::parse(target)
-                                .map(|rdata| rdata.to_presentation())
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                }
-                Some(record_type) => canonicalize_targets(&record_type, &mut endpoint.targets),
-                // validate_endpoint already rejected everything else.
-                None => {}
-            }
-            Ok(endpoint)
-        })
-        .collect()
+/// Validate desired endpoints and convert them for `POST /adjust`;
+/// validation is mirrored here so a bad plan fails without a round trip.
+pub(crate) fn to_bindizr_rrsets(endpoints: &[Endpoint]) -> Result<Vec<BindizrRrset>, String> {
+    for endpoint in endpoints {
+        validate_endpoint(endpoint)?;
+    }
+    Ok(endpoints.iter().map(to_bindizr_rrset).collect())
 }
 
-/// Rewrite targets to the row-encoded spelling the server stores; unparseable
-/// targets pass through so the apply path reports its ordinary error.
-fn canonicalize_targets(record_type: &RecordType, targets: &mut [String]) {
-    for target in targets {
-        if let Ok(encoded) = record_type.encoded_value(target, None) {
-            *target = encoded;
-        }
-    }
+/// Pair server-adjusted RRsets with the desired endpoints by position:
+/// identity (dnsName, labels) stays the caller's, type/TTL/targets are the
+/// server's. Dropping provider-specific properties declares them
+/// unsupported.
+pub(crate) fn merge_adjusted_endpoints(
+    endpoints: Vec<Endpoint>,
+    adjusted: Vec<BindizrRrset>,
+) -> Vec<Endpoint> {
+    endpoints
+        .into_iter()
+        .zip(adjusted)
+        .map(|(mut endpoint, rrset)| {
+            endpoint.provider_specific.clear();
+            endpoint.record_type = rrset.record_type;
+            endpoint.record_ttl = rrset.ttl.map(i64::from).unwrap_or(0);
+            endpoint.targets = rrset.values;
+            endpoint
+        })
+        .collect()
 }
 
 #[cfg(test)]

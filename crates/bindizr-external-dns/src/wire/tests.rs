@@ -1,8 +1,9 @@
 use serde_json::json;
 
 use super::{
-    BindizrRecordItem, Changes, DomainFilter, Endpoint, adjust_endpoints,
-    group_records_into_endpoints, to_bindizr_changes, validate_endpoint,
+    BindizrRecordItem, BindizrRrset, Changes, DomainFilter, Endpoint, ProviderSpecificProperty,
+    group_records_into_endpoints, merge_adjusted_endpoints, to_bindizr_changes, to_bindizr_rrsets,
+    validate_endpoint,
 };
 
 fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> Endpoint {
@@ -109,6 +110,10 @@ fn validate_endpoint_rejects_unsupported_shapes() {
     assert!(validate_endpoint(&with_set_id).is_err());
 
     assert!(validate_endpoint(&endpoint("a.example.com", "a", 300, &["192.0.2.1"])).is_ok());
+
+    // Whitespace-only content is valid TXT rdata but garbage for other types.
+    assert!(validate_endpoint(&endpoint("a.example.com", "A", 0, &["   "])).is_err());
+    assert!(validate_endpoint(&endpoint("t.example.com", "TXT", 0, &["   "])).is_ok());
 }
 
 #[test]
@@ -179,60 +184,54 @@ fn group_records_builds_one_endpoint_per_rrset() {
 }
 
 #[test]
-fn adjust_endpoints_canonicalizes_cname_and_address_targets() {
-    let adjusted = adjust_endpoints(vec![
-        endpoint("c.example.com", "CNAME", 300, &["CDN.Example.NET"]),
-        endpoint("v6.example.com", "AAAA", 0, &["2001:0DB8:0:0:0:0:0:1"]),
-        endpoint("v4.example.com", "A", 0, &["192.0.2.1"]),
-        // Unparseable addresses pass through for apply to reject.
-        endpoint("bad.example.com", "A", 0, &["not-an-ip"]),
+fn to_bindizr_rrsets_validates_and_converts_for_adjust() {
+    let rrsets = to_bindizr_rrsets(&[
+        endpoint("a.example.com", "a", 300, &["192.0.2.1"]),
+        endpoint("t.example.com", "TXT", 0, &["v=spf1 -all"]),
     ])
     .unwrap();
 
-    assert_eq!(adjusted[0].targets, vec!["cdn.example.net."]);
-    assert_eq!(adjusted[1].targets, vec!["2001:db8::1"]);
-    assert_eq!(adjusted[2].targets, vec!["192.0.2.1"]);
-    assert_eq!(adjusted[3].targets, vec!["not-an-ip"]);
+    assert_eq!(rrsets[0].record_type, "A");
+    assert_eq!(rrsets[0].ttl, Some(300));
+    assert_eq!(rrsets[1].ttl, None);
+    assert_eq!(rrsets[1].values, vec!["v=spf1 -all"]);
+
+    // One invalid endpoint rejects the whole set before any round trip.
+    assert!(
+        to_bindizr_rrsets(&[
+            endpoint("a.example.com", "A", 300, &["192.0.2.1"]),
+            endpoint("b.example.com", "SRV", 0, &["x"]),
+        ])
+        .is_err()
+    );
 }
 
 #[test]
-fn adjust_endpoints_keeps_whitespace_only_txt_targets() {
-    let adjusted = adjust_endpoints(vec![endpoint("t.example.com", "TXT", 0, &["   "])]).unwrap();
-    assert_eq!(adjusted[0].targets, vec![r#""   ""#]);
-
-    assert!(adjust_endpoints(vec![endpoint("a.example.com", "A", 300, &["   "])]).is_err());
-}
-
-#[test]
-fn adjust_endpoints_normalizes_txt_and_strips_provider_specific() {
-    let mut with_props = endpoint("a.example.com", "A", 300, &["192.0.2.1"]);
-    with_props.provider_specific = vec![super::ProviderSpecificProperty {
+fn merge_adjusted_endpoints_keeps_identity_and_takes_canonical_fields() {
+    let mut desired = endpoint("a.example.com", "aaaa", 300, &["2001:0DB8::1"]);
+    desired.labels.insert("owner".into(), "default".into());
+    desired.provider_specific = vec![ProviderSpecificProperty {
         name: "webhook/flag".to_string(),
         value: "on".to_string(),
     }];
 
-    let adjusted = adjust_endpoints(vec![
-        with_props,
-        endpoint("b.example.com", "TXT", 0, &["v=spf1 -all"]),
-        endpoint(
-            "c.example.com",
-            "TXT",
-            0,
-            &["\"heritage=external-dns,external-dns/owner=default\""],
-        ),
-    ])
-    .unwrap();
-
-    assert_eq!(
-        adjusted[0],
-        endpoint("a.example.com", "A", 300, &["192.0.2.1"])
-    );
-    assert_eq!(adjusted[1].targets, vec!["\"v=spf1 -all\""]);
-    // Already-canonical ownership records pass through byte-identical.
-    assert_eq!(
-        adjusted[2].targets,
-        vec!["\"heritage=external-dns,external-dns/owner=default\""]
+    let merged = merge_adjusted_endpoints(
+        vec![desired],
+        vec![BindizrRrset {
+            name: "a.example.com".to_string(),
+            record_type: "AAAA".to_string(),
+            ttl: Some(300),
+            values: vec!["2001:db8::1".to_string()],
+        }],
     );
 
-    assert!(adjust_endpoints(vec![endpoint("a.example.com", "SRV", 0, &["x"])]).is_err());
+    assert_eq!(merged[0].dns_name, "a.example.com");
+    assert_eq!(
+        merged[0].labels.get("owner").map(String::as_str),
+        Some("default")
+    );
+    assert!(merged[0].provider_specific.is_empty());
+    assert_eq!(merged[0].record_type, "AAAA");
+    assert_eq!(merged[0].record_ttl, 300);
+    assert_eq!(merged[0].targets, vec!["2001:db8::1"]);
 }

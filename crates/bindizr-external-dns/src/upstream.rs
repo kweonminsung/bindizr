@@ -5,7 +5,7 @@ use std::time::Duration;
 use bindizr_core::log_error;
 use serde::Deserialize;
 
-use crate::wire::{BindizrChanges, BindizrRecordItem};
+use crate::wire::{BindizrChanges, BindizrRecordItem, BindizrRrset};
 
 /// A bindizr API failure, split for the webhook error mapping in `server.rs`.
 #[derive(Debug)]
@@ -73,6 +73,30 @@ impl UpstreamClient {
             .json(changes);
         self.send(request).await?;
         Ok(())
+    }
+
+    /// Canonicalize desired RRsets on the bindizr server; the response
+    /// pairs with the request by position.
+    pub(crate) async fn adjust_rrsets(
+        &self,
+        rrsets: &[BindizrRrset],
+    ) -> Result<Vec<BindizrRrset>, UpstreamError> {
+        #[derive(serde::Serialize)]
+        struct AdjustRequest<'a> {
+            rrsets: &'a [BindizrRrset],
+        }
+        #[derive(Deserialize)]
+        struct AdjustBody {
+            rrsets: Vec<BindizrRrset>,
+        }
+        let request = self
+            .request(reqwest::Method::POST, "/external-dns/adjust")
+            .json(&AdjustRequest { rrsets });
+        let response = self.send(request).await?;
+        let body: AdjustBody = response.json().await.map_err(|e| {
+            UpstreamError::Unreachable(format!("invalid response from bindizr: {}", e))
+        })?;
+        Ok(body.rrsets)
     }
 
     /// Unauthenticated liveness probe of the bindizr server.

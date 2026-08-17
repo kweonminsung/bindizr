@@ -25,6 +25,18 @@ pub struct ExternalDnsRrsetUpdate {
     pub new: ExternalDnsRrset,
 }
 
+/// Request body for canonicalizing desired RRsets without applying them.
+#[derive(Deserialize, Debug, ToSchema)]
+pub struct ExternalDnsAdjustRequest {
+    pub rrsets: Vec<ExternalDnsRrset>,
+}
+
+/// The request's RRsets in the canonical form applying them would store.
+#[derive(Serialize, Debug, ToSchema)]
+pub struct ExternalDnsAdjustResponse {
+    pub rrsets: Vec<ExternalDnsRrset>,
+}
+
 /// Request body for applying an ExternalDNS change set atomically.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct ExternalDnsChangesRequest {

@@ -404,6 +404,27 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
     assert_eq!(endpoint["targets"], json!(["192.0.2.1"]));
     assert_eq!(endpoint["recordTTL"], json!(300));
 
+    // AdjustEndpoints canonicalizes on the server: type case, address
+    // spelling, and equivalent duplicates resolve to the stored form.
+    let response = client
+        .post(format!("{}/adjustendpoints", adapter.base_url))
+        .header(header::CONTENT_TYPE, MEDIA_TYPE)
+        .body(
+            json!([{"dnsName": format!("v6.{zone_name}"), "recordType": "aaaa",
+                    "targets": ["2001:0DB8::1", "2001:db8:0:0:0:0:0:1"], "recordTTL": 300}])
+            .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let adjusted: Value = response.json().await.unwrap();
+    assert_eq!(
+        adjusted,
+        json!([{"dnsName": format!("v6.{zone_name}"), "recordType": "AAAA",
+                "targets": ["2001:db8::1"], "recordTTL": 300}])
+    );
+
     // A wrong token surfaces as a permanent 401 through the adapter.
     let bad_adapter = ExternalDnsAdapter::spawn(app.base_url(), "not-a-real-token").await;
     let response = client

@@ -8,8 +8,9 @@ use axum::{
 use bindizr_service::{
     external_dns::ExternalDnsService,
     types::{
-        ErrorResponse, ExternalDnsChangesRequest, ExternalDnsChangesResponse,
-        ExternalDnsRecordsResponse, ExternalDnsZonesResponse,
+        ErrorResponse, ExternalDnsAdjustRequest, ExternalDnsAdjustResponse,
+        ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRecordsResponse,
+        ExternalDnsZonesResponse,
     },
 };
 use serde_json::json;
@@ -38,6 +39,12 @@ impl ExternalDnsApi {
                 // A whole external-dns plan arrives in one request, so it gets
                 // the same upload cap as bulk insert, not axum's 2 MiB default.
                 routing::post(apply_external_dns_changes)
+                    .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+            )
+            .route(
+                "/external-dns/adjust",
+                // The whole desired set arrives at once; same cap as changes.
+                routing::post(adjust_external_dns_rrsets)
                     .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
     }
@@ -81,6 +88,30 @@ pub(crate) async fn get_external_dns_records(
 ) -> Result<Response, ApiError> {
     let records = ExternalDnsService::list_records(&caller).await?;
     Ok((StatusCode::OK, Json(json!({ "records": records }))).into_response())
+}
+
+#[utoipa::path(
+        post,
+        path = "/external-dns/adjust",
+        tag = "ExternalDNS",
+        summary = "Canonicalize desired RRsets without applying them",
+        description = "Backs the adapter's AdjustEndpoints step: returns each desired RRset in the canonical form applying it would store (uppercase type, sorted deduplicated presentation values), so external-dns compares desired state against the exact spelling GET /external-dns/records returns.",
+        request_body = ExternalDnsAdjustRequest,
+        responses(
+            (status = 200, description = "Canonicalized RRsets, in request order", body = ExternalDnsAdjustResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Canonicalize desired RRsets for the ExternalDNS adapter's adjust step.
+pub(crate) async fn adjust_external_dns_rrsets(
+    RequestCaller(_caller): RequestCaller,
+    JsonBody(body): JsonBody<ExternalDnsAdjustRequest>,
+) -> Result<Response, ApiError> {
+    let response = ExternalDnsService::adjust_rrsets(&body)?;
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(

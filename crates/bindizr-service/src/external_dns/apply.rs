@@ -94,23 +94,30 @@ fn normalize_ttl(ttl: Option<i32>) -> Result<Option<i32>, ServiceError> {
     }
 }
 
-pub(super) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, ServiceError> {
-    let record_type = parse_supported_record_type(&rrset.record_type)?;
-    let name = normalize_lookup_name(&rrset.name)?;
-    let ttl = normalize_ttl(rrset.ttl)?;
-
+fn validate_rrset_shape(
+    rrset: &ExternalDnsRrset,
+    record_type: &RecordType,
+) -> Result<(), ServiceError> {
     if rrset.values.is_empty() {
         return Err(ServiceError::invalid_input(format!(
             "RRset '{}' {} must have at least one value",
             rrset.name, record_type
         )));
     }
-    if record_type == RecordType::CNAME && rrset.values.len() > 1 {
+    if *record_type == RecordType::CNAME && rrset.values.len() > 1 {
         return Err(ServiceError::invalid_record_value(format!(
             "CNAME RRset '{}' must have exactly one value",
             rrset.name
         )));
     }
+    Ok(())
+}
+
+pub(super) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, ServiceError> {
+    let record_type = parse_supported_record_type(&rrset.record_type)?;
+    let name = normalize_lookup_name(&rrset.name)?;
+    let ttl = normalize_ttl(rrset.ttl)?;
+    validate_rrset_shape(rrset, &record_type)?;
 
     // Deduplicate values that normalize identically (e.g. IPv6 spellings).
     let mut values: Vec<String> = Vec::with_capacity(rrset.values.len());
@@ -129,6 +136,34 @@ pub(super) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, Service
     Ok(RrsetOp {
         name,
         record_type,
+        ttl,
+        values,
+    })
+}
+
+/// One RRset in the canonical form `apply_changes` would store and
+/// `list_records` return. Unparseable values pass through so apply reports
+/// its ordinary error; the name is echoed as sent.
+pub(super) fn adjust_rrset(rrset: &ExternalDnsRrset) -> Result<ExternalDnsRrset, ServiceError> {
+    let record_type = parse_supported_record_type(&rrset.record_type)?;
+    let ttl = normalize_ttl(rrset.ttl)?;
+    validate_rrset_shape(rrset, &record_type)?;
+
+    let mut values: Vec<String> = Vec::with_capacity(rrset.values.len());
+    for value in &rrset.values {
+        let canonical = match record_type.encoded_value(value, None) {
+            Ok(encoded) => record_type.presentation_rdata(&encoded, None),
+            Err(_) => value.clone(),
+        };
+        if !values.contains(&canonical) {
+            values.push(canonical);
+        }
+    }
+    values.sort();
+
+    Ok(ExternalDnsRrset {
+        name: rrset.name.clone(),
+        record_type: record_type.to_string(),
         ttl,
         values,
     })

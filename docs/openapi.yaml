@@ -9,6 +9,50 @@ info:
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   version: 0.1.0-beta.7
 paths:
+  /external-dns/adjust:
+    post:
+      tags:
+      - ExternalDNS
+      summary: Canonicalize desired RRsets without applying them
+      description: 'Backs the adapter''s AdjustEndpoints step: returns each desired RRset in the canonical form applying it would store (uppercase type, sorted deduplicated presentation values), so external-dns compares desired state against the exact spelling GET /external-dns/records returns.'
+      operationId: adjust_external_dns_rrsets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalDnsAdjustRequest'
+        required: true
+      responses:
+        '200':
+          description: Canonicalized RRsets, in request order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalDnsAdjustResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /external-dns/changes:
     post:
       tags:
@@ -1960,6 +2004,26 @@ components:
         error:
           type: string
           example: Zone with name 'example.com' not found
+    ExternalDnsAdjustRequest:
+      type: object
+      description: Request body for canonicalizing desired RRsets without applying them.
+      required:
+      - rrsets
+      properties:
+        rrsets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRrset'
+    ExternalDnsAdjustResponse:
+      type: object
+      description: The request's RRsets in the canonical form applying them would store.
+      required:
+      - rrsets
+      properties:
+        rrsets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalDnsRrset'
     ExternalDnsChangesRequest:
       type: object
       description: Request body for applying an ExternalDNS change set atomically.

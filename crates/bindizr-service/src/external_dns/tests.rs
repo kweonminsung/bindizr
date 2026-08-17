@@ -2,7 +2,10 @@ use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
-    apply::{ZoneOps, compute_zone_change_set, convert_request, convert_rrset, group_ops_by_zone},
+    apply::{
+        ZoneOps, adjust_rrset, compute_zone_change_set, convert_request, convert_rrset,
+        group_ops_by_zone,
+    },
     policy::{find_authoritative_zone, normalize_lookup_name},
 };
 use crate::{
@@ -169,6 +172,60 @@ fn convert_rrset_parses_quoted_txt_values() {
     assert_eq!(op.record_type, RecordType::TXT);
     assert!(op.values[0].starts_with("bindizr:txt-rdata:v1:"));
     assert!(convert_rrset(&rrset("a.example.com", "TXT", None, &["\"unterminated"])).is_err());
+}
+
+#[test]
+fn adjust_rrset_canonicalizes_type_and_values() {
+    let adjusted = adjust_rrset(&rrset(
+        "v6.example.com",
+        "aaaa",
+        None,
+        &["2001:0DB8::2", "2001:db8::1", "2001:db8:0:0:0:0:0:1"],
+    ))
+    .unwrap();
+
+    assert_eq!(adjusted.record_type, "AAAA");
+    assert_eq!(adjusted.values, vec!["2001:db8::1", "2001:db8::2"]);
+
+    let adjusted = adjust_rrset(&rrset(
+        "c.example.com",
+        "CNAME",
+        Some(300),
+        &["CDN.Example.NET"],
+    ))
+    .unwrap();
+    assert_eq!(adjusted.values, vec!["cdn.example.net."]);
+    assert_eq!(adjusted.ttl, Some(300));
+}
+
+#[test]
+fn adjust_rrset_returns_txt_values_in_presentation_form() {
+    let adjusted = adjust_rrset(&rrset("t.example.com", "TXT", Some(0), &["v=spf1 -all"])).unwrap();
+    assert_eq!(adjusted.values, vec!["\"v=spf1 -all\""]);
+    // ExternalDNS sends TTL 0 for "not configured".
+    assert_eq!(adjusted.ttl, None);
+
+    // Already-canonical ownership records pass through byte-identical.
+    let canonical = "\"heritage=external-dns,external-dns/owner=default\"";
+    let adjusted = adjust_rrset(&rrset("t.example.com", "TXT", None, &[canonical])).unwrap();
+    assert_eq!(adjusted.values, vec![canonical]);
+
+    let adjusted = adjust_rrset(&rrset("t.example.com", "TXT", None, &["   "])).unwrap();
+    assert_eq!(adjusted.values, vec![r#""   ""#]);
+}
+
+#[test]
+fn adjust_rrset_passes_unparseable_values_through() {
+    let adjusted = adjust_rrset(&rrset("bad.example.com", "A", None, &["not-an-ip"])).unwrap();
+    assert_eq!(adjusted.values, vec!["not-an-ip"]);
+}
+
+#[test]
+fn adjust_rrset_rejects_unsupported_shapes() {
+    assert!(adjust_rrset(&rrset("a.example.com", "MX", None, &["x"])).is_err());
+    assert!(adjust_rrset(&rrset("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err());
+    assert!(adjust_rrset(&rrset("a.example.com", "A", None, &[])).is_err());
+    assert!(adjust_rrset(&rrset("a.example.com", "CNAME", None, &["a.", "b."])).is_err());
 }
 
 #[test]

@@ -18,8 +18,9 @@ mod zone;
 
 pub use common::{ErrorResponse, HealthResponse, MessageResponse};
 pub use external_dns::{
-    ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRecordItem,
-    ExternalDnsRecordsResponse, ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse,
+    ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,
+    ExternalDnsChangesResponse, ExternalDnsRecordItem, ExternalDnsRecordsResponse,
+    ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse,
 };
 pub use import::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse};
 pub use pagination::{PaginatedResponse, Pagination};

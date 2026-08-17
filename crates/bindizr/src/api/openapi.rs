@@ -1,17 +1,18 @@
 use bindizr_service::types::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, CreateTsigKeyRequest,
     CreateZoneRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest, ErrorResponse,
-    ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRecordItem,
-    ExternalDnsRecordsResponse, ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse,
-    GetRecordResponse, GetTsigKeyResponse, GetZoneResponse, GetZoneTokenPolicyResponse,
-    GetZoneTsigPolicyResponse, HealthResponse, ImportMode, ImportSummary, ImportZoneFileRequest,
-    ImportZoneFileResponse, MessageResponse, NotifyZoneRequest, PaginatedResponse, Pagination,
-    RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RecordItem, RecordResponse,
-    RecordValueRequest, RollbackSummary, RollbackZoneRequest, RollbackZoneResponse,
-    SecondaryStatusResponse, SnapshotDetailResponse, SnapshotDiffResponse, SnapshotRecordResponse,
-    TsigKeyListResponse, TsigKeyResponse, ZoneDetailResponse, ZoneResponse, ZoneSnapshotResponse,
-    ZoneStatusResponse, ZoneTokenPolicyListResponse, ZoneTokenPolicyResponse,
-    ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
+    ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,
+    ExternalDnsChangesResponse, ExternalDnsRecordItem, ExternalDnsRecordsResponse,
+    ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse, GetRecordResponse,
+    GetTsigKeyResponse, GetZoneResponse, GetZoneTokenPolicyResponse, GetZoneTsigPolicyResponse,
+    HealthResponse, ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
+    MessageResponse, NotifyZoneRequest, PaginatedResponse, Pagination, RecordDiff, RecordDiffEntry,
+    RecordDiffSummary, RecordDiffValue, RecordItem, RecordResponse, RecordValueRequest,
+    RollbackSummary, RollbackZoneRequest, RollbackZoneResponse, SecondaryStatusResponse,
+    SnapshotDetailResponse, SnapshotDiffResponse, SnapshotRecordResponse, TsigKeyListResponse,
+    TsigKeyResponse, ZoneDetailResponse, ZoneResponse, ZoneSnapshotResponse, ZoneStatusResponse,
+    ZoneTokenPolicyListResponse, ZoneTokenPolicyResponse, ZoneTsigPolicyListResponse,
+    ZoneTsigPolicyResponse,
 };
 use utoipa::{
     Modify, OpenApi,
@@ -54,7 +55,8 @@ use utoipa::{
         super::token_policy::delete_zone_token_policy,
         super::external_dns::get_external_dns_zones,
         super::external_dns::get_external_dns_records,
-        super::external_dns::apply_external_dns_changes
+        super::external_dns::apply_external_dns_changes,
+        super::external_dns::adjust_external_dns_rrsets
     ),
     components(schemas(
         BulkRecordsResponse,
@@ -65,6 +67,8 @@ use utoipa::{
         CreateZoneTokenPolicyRequest,
         CreateZoneTsigPolicyRequest,
         ErrorResponse,
+        ExternalDnsAdjustRequest,
+        ExternalDnsAdjustResponse,
         ExternalDnsChangesRequest,
         ExternalDnsChangesResponse,
         ExternalDnsRecordItem,
