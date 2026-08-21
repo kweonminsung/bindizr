@@ -19,8 +19,8 @@ use std::{
 
 use crate::{
     config,
-    model::{dnssec_record::DnssecRecord, record::Record},
-    service::{dnssec::DnssecService, error::ServiceError, record::RecordService},
+    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
+    service::{error::ServiceError, zone::ZoneService},
 };
 
 /// Cap on distinct zones held at once. Each entry holds a zone's full record
@@ -56,31 +56,42 @@ fn tick() -> u64 {
 
 /// Load a zone's transfer content for `serial`, from cache when enabled and
 /// fresh.
+/// Load a zone's transfer content, from cache when enabled and fresh.
+/// Serve the returned zone row, not the pre-read one — it is the row the
+/// content was read with. `None` when the zone was deleted meanwhile.
 pub(crate) async fn list_zone_content(
-    zone_id: i32,
-    serial: i32,
-) -> Result<ZoneContent, ServiceError> {
+    zone: Zone,
+) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
     if !config::bindizr_config().dns.zone_cache {
-        return load_content(zone_id).await;
+        return load_content(zone).await;
     }
 
     // Fast path: a cached entry at the current serial is still valid.
-    if let Some(content) = lookup(zone_id, serial) {
-        return Ok(content);
+    if let Some(content) = lookup(zone.id, zone.serial) {
+        return Ok(Some((zone, content)));
     }
 
     // Slow path: read and cache. Concurrent misses may load twice; both store
-    // the same serial's data, so the result is still correct.
-    let content = load_content(zone_id).await?;
-    store(zone_id, serial, content.clone());
-    Ok(content)
+    // one serial's consistent data, so the result is still correct.
+    let Some((zone, content)) = load_content(zone).await? else {
+        return Ok(None);
+    };
+    store(zone.id, zone.serial, content.clone());
+    Ok(Some((zone, content)))
 }
 
-async fn load_content(zone_id: i32) -> Result<ZoneContent, ServiceError> {
-    Ok(ZoneContent {
-        records: Arc::new(RecordService::list(zone_id).await?),
-        dnssec_records: Arc::new(DnssecService::list_records(zone_id).await?),
-    })
+async fn load_content(zone: Zone) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
+    let Some((zone, records, dnssec_records)) = ZoneService::transfer_content(zone.id).await?
+    else {
+        return Ok(None);
+    };
+    Ok(Some((
+        zone,
+        ZoneContent {
+            records: Arc::new(records),
+            dnssec_records: Arc::new(dnssec_records),
+        },
+    )))
 }
 
 /// The cache holds no invariant a panicking thread could leave broken, so a

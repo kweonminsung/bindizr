@@ -26,14 +26,16 @@ pub(crate) async fn handle_axfr(
         return catalog::handle_catalog_axfr_with_qtype(stream, query, response_qtype).await;
     }
 
+    // Non-locking pre-read, only to learn the zone id and probe the cache.
     let zone = ZoneService::find_by_name(zone_name_str)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
-    let content = zone_cache::list_zone_content(zone.id, zone.serial)
+    let (zone, content) = zone_cache::list_zone_content(zone)
         .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
+        .map_err(|e| XfrError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
     log_info!(
         "AXFR: zone {} has {} records + {} DNSSEC records, serial={}",

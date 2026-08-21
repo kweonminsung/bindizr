@@ -518,6 +518,9 @@ fn rrset_digest(signers: &[&Signer<'_>], rrset: &[&SignRecord]) -> String {
         hasher.update(rdata.as_bytes());
     }
     for signer in signers {
+        // Key tags are 16 bits and can collide across a rollover; the row id
+        // pins the actual signing key so a stale signature cannot be reused.
+        hasher.update(signer.key.id.to_be_bytes());
         hasher.update(signer.key_tag.to_be_bytes());
         hasher.update([signer.algorithm]);
     }

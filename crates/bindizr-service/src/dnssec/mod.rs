@@ -310,7 +310,32 @@ impl DnssecService {
                 return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
             }
 
-            let Some(keys) = promote_published_keys_tx(&mut tx, &zone, keys, None).await? else {
+            if !keys
+                .iter()
+                .any(|key| key.state == DnssecKeyState::Published)
+            {
+                return Err(ServiceError::dnssec_no_rollover_in_progress(
+                    zone.name.as_str(),
+                ));
+            }
+            // ZSKs have no parent DS to confirm; the scheduler promotes them
+            // after the publish hold-down.
+            let ds_published: Vec<i32> = keys
+                .iter()
+                .filter(|key| {
+                    key.state == DnssecKeyState::Published && key.role != DnssecKeyRole::Zsk
+                })
+                .map(|key| key.id)
+                .collect();
+            if ds_published.is_empty() {
+                return Err(ServiceError::invalid_input(
+                    "this rollover replaces the ZSK, which involves no parent DS; it is \
+                     promoted automatically after the publish hold-down",
+                ));
+            }
+            let Some(keys) =
+                promote_published_keys_tx(&mut tx, &zone, keys, Some(&ds_published)).await?
+            else {
                 return Err(ServiceError::dnssec_no_rollover_in_progress(
                     zone.name.as_str(),
                 ));
@@ -556,6 +581,9 @@ async fn promote_zsks_for_zone(
         let keys =
             RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
 
+        // The effective hold-down is at least the DNSKEY TTL, so resolvers
+        // age out the pre-rollover RRset first (RFC 7583, Section 3.3.1).
+        let cutoff = cutoff.min(Utc::now() - Duration::seconds(zone.default_ttl as i64));
         let due: Vec<i32> = keys
             .iter()
             .filter(|key| {

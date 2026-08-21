@@ -319,6 +319,17 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
         .find(|key| key["state"] == "published")
         .expect("rollover start pre-publishes the replacement key");
     assert_eq!(published["role"], "zsk");
+
+    // ds-seen has no meaning for a ZSK rollover — no parent DS is involved —
+    // and must not bypass the publish hold-down.
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
