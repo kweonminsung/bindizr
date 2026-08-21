@@ -9,7 +9,7 @@ use crate::{
     error::{ErrorCode, ServiceError},
     model::{
         record::{Record, RecordType},
-        zone::Zone,
+        zone::{DnssecDenial, Zone},
     },
 };
 
@@ -357,7 +357,7 @@ fn validate_record_value_rejects_priority_on_types_without_one() {
 }
 
 #[test]
-fn validate_delete_constraints_protects_soa_and_primary_ns() {
+fn validate_delete_constraints_protects_soa_and_mname() {
     let zone = test_zone();
 
     let soa = test_record(
@@ -369,8 +369,8 @@ fn validate_delete_constraints_protects_soa_and_primary_ns() {
     );
     assert!(validate_delete_constraints(&zone, &[soa]).is_err());
 
-    let primary_ns = test_record(2, "", RecordType::NS, "ns1.example.com.", None);
-    assert!(validate_delete_constraints(&zone, &[primary_ns]).is_err());
+    let mname = test_record(2, "", RecordType::NS, "ns1.example.com.", None);
+    assert!(validate_delete_constraints(&zone, &[mname]).is_err());
 
     let secondary_ns = test_record(3, "", RecordType::NS, "ns2.example.com.", None);
     assert!(validate_delete_constraints(&zone, &[secondary_ns]).is_ok());
@@ -380,14 +380,15 @@ fn test_zone() -> Zone {
     Zone {
         id: 1,
         name: ZoneName::from_row("example.com"),
-        primary_ns: "ns1.example.com".to_string(),
-        admin_email: "hostmaster@example.com".to_string(),
-        ttl: 3600,
+        mname: "ns1.example.com".to_string(),
+        rname: "hostmaster@example.com".to_string(),
+        default_ttl: 3600,
         serial: 2023010101,
         refresh: 7200,
         retry: 3600,
         expire: 604800,
         minimum_ttl: 86400,
+        dnssec_denial: DnssecDenial::Nsec,
         created_at: Utc::now(),
     }
 }

@@ -66,7 +66,7 @@ impl ZoneTsigPolicyRepository for SqliteZoneTsigPolicyRepository {
         Ok(policies)
     }
 
-    async fn list_by_zone_and_key_tx(
+    async fn list_by_zone_id_and_key_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

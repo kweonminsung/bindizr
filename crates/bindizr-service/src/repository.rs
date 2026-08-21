@@ -1,23 +1,26 @@
 use bindizr_core::dns::name::OwnerName;
+use chrono::{DateTime, Utc};
 
 use super::error::{ErrorCode, ServiceError};
 pub(crate) use crate::database::repository::RepositoryTx;
 use crate::{
     database::{
         error::DatabaseError,
-        get_api_token_repository, get_catalog_zone_state_repository, get_record_repository,
-        get_tsig_key_repository, get_zone_change_repository, get_zone_repository,
-        get_zone_snapshot_repository, get_zone_token_policy_repository,
-        get_zone_tsig_policy_repository,
+        get_api_token_repository, get_catalog_zone_state_repository, get_dnssec_key_repository,
+        get_dnssec_record_repository, get_record_repository, get_tsig_key_repository,
+        get_zone_change_repository, get_zone_repository, get_zone_token_policy_repository,
+        get_zone_tsig_policy_repository, get_zone_version_repository,
         model::{
             api_token::ApiToken,
+            dnssec_key::{DnssecKey, DnssecKeyState},
+            dnssec_record::DnssecRecord,
             record::{Record, RecordWithZone},
             tsig_key::TsigKey,
-            zone::Zone,
+            zone::{DnssecDenial, Zone},
             zone_change::ZoneChange,
-            zone_snapshot::ZoneSnapshot,
             zone_token_policy::ZoneTokenPolicy,
             zone_tsig_policy::ZoneTsigPolicy,
+            zone_version::ZoneVersion,
         },
         repository as db_repository,
         repository::{LockLevel, RecordFilter, ZoneFilter},
@@ -142,14 +145,14 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to reach the zones table: {}", e)))
     }
 
-    pub(super) async fn update_catalog_serial_for_signature_tx(
+    pub(super) async fn upsert_catalog_zone_state_tx(
         tx: &mut RepositoryTx<'_>,
         name: &str,
-        signature: &str,
+        digest: &str,
         base_serial: i32,
     ) -> Result<i32, ServiceError> {
         get_catalog_zone_state_repository()
-            .update_serial_for_signature_tx(tx, name, signature, base_serial)
+            .upsert_tx(tx, name, digest, base_serial)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to update catalog state: {}", e)))
     }
@@ -288,7 +291,7 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load record: {}", e)))
     }
 
-    pub(super) async fn create_zone_changes_tx(
+    pub(super) async fn create_zone_journal_tx(
         tx: &mut RepositoryTx<'_>,
         changes: &[ZoneChange],
     ) -> Result<(), ServiceError> {
@@ -298,25 +301,178 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to create zone changes: {}", e)))
     }
 
-    pub(super) async fn list_zone_changes_between_serials(
+    pub(super) async fn list_zone_journal_between_serials(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, ServiceError> {
         get_zone_change_repository()
-            .list_changes_between_serials(zone_id, from_serial, to_serial)
+            .list_between_serials(zone_id, from_serial, to_serial)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
     }
 
-    pub(super) async fn upsert_zone_snapshot_tx(
-        tx: &mut RepositoryTx<'_>,
-        snapshot: ZoneSnapshot,
-    ) -> Result<ZoneSnapshot, ServiceError> {
-        get_zone_snapshot_repository()
-            .upsert_tx(tx, snapshot)
+    pub(super) async fn prune_zone_journal_older_than(
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, ServiceError> {
+        get_zone_change_repository()
+            .prune_older_than(cutoff)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to save snapshot: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to prune zone changes: {}", e)))
+    }
+
+    pub(super) async fn upsert_zone_version_tx(
+        tx: &mut RepositoryTx<'_>,
+        version: ZoneVersion,
+    ) -> Result<ZoneVersion, ServiceError> {
+        get_zone_version_repository()
+            .upsert_tx(tx, version)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to save version: {}", e)))
+    }
+
+    pub(super) async fn prune_zone_versions_older_than(
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, ServiceError> {
+        get_zone_version_repository()
+            .prune_older_than(cutoff)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to prune versions: {}", e)))
+    }
+
+    pub(super) async fn create_dnssec_key_tx(
+        tx: &mut RepositoryTx<'_>,
+        key: DnssecKey,
+    ) -> Result<DnssecKey, ServiceError> {
+        get_dnssec_key_repository()
+            .create_tx(tx, key)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to create DNSSEC key: {}", e)))
+    }
+
+    pub(super) async fn list_dnssec_keys_by_zone_id(
+        zone_id: i32,
+    ) -> Result<Vec<DnssecKey>, ServiceError> {
+        get_dnssec_key_repository()
+            .list_by_zone_id(zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
+    }
+
+    pub(super) async fn list_dnssec_keys_by_zone_id_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        lock_level: LockLevel,
+    ) -> Result<Vec<DnssecKey>, ServiceError> {
+        get_dnssec_key_repository()
+            .list_by_zone_id_tx(tx, zone_id, lock_level)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
+    }
+
+    pub(super) async fn delete_dnssec_keys_by_zone_id_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), ServiceError> {
+        get_dnssec_key_repository()
+            .delete_by_zone_id_tx(tx, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete DNSSEC keys: {}", e)))
+    }
+
+    pub(super) async fn list_dnssec_keys_by_state_entered_before(
+        state: DnssecKeyState,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<DnssecKey>, ServiceError> {
+        get_dnssec_key_repository()
+            .list_by_state_entered_before(state, cutoff)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
+    }
+
+    pub(super) async fn update_dnssec_key_state_tx(
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        state: DnssecKeyState,
+        changed_at: DateTime<Utc>,
+    ) -> Result<(), ServiceError> {
+        get_dnssec_key_repository()
+            .update_state_tx(tx, id, state, changed_at)
+            .await
+            .map_err(|e| {
+                ServiceError::internal(format!("failed to update DNSSEC key state: {}", e))
+            })
+    }
+
+    pub(super) async fn delete_dnssec_key_tx(
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+    ) -> Result<(), ServiceError> {
+        get_dnssec_key_repository()
+            .delete_tx(tx, id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete DNSSEC key: {}", e)))
+    }
+
+    pub(super) async fn create_dnssec_records_tx(
+        tx: &mut RepositoryTx<'_>,
+        records: &[DnssecRecord],
+    ) -> Result<(), ServiceError> {
+        get_dnssec_record_repository()
+            .create_many_tx(tx, records)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to create DNSSEC records: {}", e)))
+    }
+
+    pub(super) async fn list_dnssec_records_by_zone_id(
+        zone_id: i32,
+    ) -> Result<Vec<DnssecRecord>, ServiceError> {
+        get_dnssec_record_repository()
+            .list_by_zone_id(zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC records: {}", e)))
+    }
+
+    pub(super) async fn list_dnssec_records_by_zone_id_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        lock_level: LockLevel,
+    ) -> Result<Vec<DnssecRecord>, ServiceError> {
+        get_dnssec_record_repository()
+            .list_by_zone_id_tx(tx, zone_id, lock_level)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC records: {}", e)))
+    }
+
+    pub(super) async fn delete_dnssec_records_tx(
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), ServiceError> {
+        get_dnssec_record_repository()
+            .delete_many_tx(tx, ids)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete DNSSEC records: {}", e)))
+    }
+
+    pub(super) async fn delete_dnssec_records_by_zone_id_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), ServiceError> {
+        get_dnssec_record_repository()
+            .delete_by_zone_id_tx(tx, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete DNSSEC records: {}", e)))
+    }
+
+    pub(super) async fn list_rrsig_zone_ids_expiring_before(
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<i32>, ServiceError> {
+        get_dnssec_record_repository()
+            .list_zone_ids_expiring_before(cutoff)
+            .await
+            .map_err(|e| {
+                ServiceError::internal(format!("failed to find zones needing re-signing: {}", e))
+            })
     }
 
     pub(super) async fn create_zone_tx(
@@ -341,6 +497,20 @@ impl RepositoryService {
             .map_err(|e| zone_name_race_error(name.as_str(), "update", e))
     }
 
+    /// Set only the zone's `dnssec_denial` mode, leaving other columns untouched.
+    pub(super) async fn update_zone_dnssec_denial_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        denial: DnssecDenial,
+    ) -> Result<(), ServiceError> {
+        get_zone_repository()
+            .update_dnssec_denial_tx(tx, zone_id, denial)
+            .await
+            .map_err(|e| {
+                ServiceError::internal(format!("failed to update zone DNSSEC options: {}", e))
+            })
+    }
+
     /// Bump only the zone serial, leaving its other columns untouched.
     pub(super) async fn update_zone_serial_tx(
         tx: &mut RepositoryTx<'_>,
@@ -363,58 +533,62 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to delete zone: {}", e)))
     }
 
-    pub(super) async fn get_zone_snapshot_by_serial(
+    pub(super) async fn get_zone_version_by_serial(
         zone_id: i32,
         serial: i32,
-    ) -> Result<Option<ZoneSnapshot>, ServiceError> {
-        get_zone_snapshot_repository()
+    ) -> Result<Option<ZoneVersion>, ServiceError> {
+        get_zone_version_repository()
             .get_by_zone_id_and_serial(zone_id, serial)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load snapshot: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load version: {}", e)))
     }
 
-    pub(super) async fn list_zone_snapshots_in_range(
+    pub(super) async fn list_zone_versions_in_range(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
-    ) -> Result<Vec<ZoneSnapshot>, ServiceError> {
-        get_zone_snapshot_repository()
+    ) -> Result<Vec<ZoneVersion>, ServiceError> {
+        get_zone_version_repository()
             .list_by_zone_id_in_serial_range(zone_id, from_serial, to_serial)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load snapshots: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load versions: {}", e)))
     }
 
-    pub(super) async fn list_zone_snapshots(
+    pub(super) async fn list_zone_versions(
         zone_id: i32,
+        user_changes_only: bool,
         limit: u32,
         offset: u64,
-    ) -> Result<Vec<ZoneSnapshot>, ServiceError> {
-        get_zone_snapshot_repository()
-            .list_by_zone_id(zone_id, limit, offset)
+    ) -> Result<Vec<ZoneVersion>, ServiceError> {
+        get_zone_version_repository()
+            .list_by_zone_id(zone_id, user_changes_only, limit, offset)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to list snapshots: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to list versions: {}", e)))
     }
 
-    pub(super) async fn count_zone_snapshots(zone_id: i32) -> Result<u64, ServiceError> {
-        get_zone_snapshot_repository()
-            .count_by_zone_id(zone_id)
+    pub(super) async fn count_zone_versions(
+        zone_id: i32,
+        user_changes_only: bool,
+    ) -> Result<u64, ServiceError> {
+        get_zone_version_repository()
+            .count_by_zone_id(zone_id, user_changes_only)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to count snapshots: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to count versions: {}", e)))
     }
 
-    pub(super) async fn get_zone_snapshot_by_serial_tx(
+    pub(super) async fn get_zone_version_by_serial_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         serial: i32,
         lock_level: LockLevel,
-    ) -> Result<Option<ZoneSnapshot>, ServiceError> {
-        get_zone_snapshot_repository()
+    ) -> Result<Option<ZoneVersion>, ServiceError> {
+        get_zone_version_repository()
             .get_by_zone_id_and_serial_tx(tx, zone_id, serial, lock_level)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load snapshot: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load version: {}", e)))
     }
 
-    pub(super) async fn list_zone_changes_between_serials_tx(
+    pub(super) async fn list_zone_journal_between_serials_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         from_serial: i32,
@@ -422,7 +596,7 @@ impl RepositoryService {
         lock_level: LockLevel,
     ) -> Result<Vec<ZoneChange>, ServiceError> {
         get_zone_change_repository()
-            .list_changes_between_serials_tx(tx, zone_id, from_serial, to_serial, lock_level)
+            .list_between_serials_tx(tx, zone_id, from_serial, to_serial, lock_level)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
     }
@@ -504,14 +678,14 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
     }
 
-    pub(super) async fn list_zone_tsig_policies_by_zone_and_key_tx(
+    pub(super) async fn list_zone_tsig_policies_by_zone_id_and_key_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         tsig_key_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
         get_zone_tsig_policy_repository()
-            .list_by_zone_and_key_tx(tx, zone_id, tsig_key_id, lock_level)
+            .list_by_zone_id_and_key_id_tx(tx, zone_id, tsig_key_id, lock_level)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
     }
@@ -576,14 +750,14 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
     }
 
-    pub(super) async fn list_zone_token_policies_by_zone_and_token_tx(
+    pub(super) async fn list_zone_token_policies_by_zone_id_and_token_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         api_token_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
         get_zone_token_policy_repository()
-            .list_by_zone_and_token_tx(tx, zone_id, api_token_id, lock_level)
+            .list_by_zone_id_and_token_id_tx(tx, zone_id, api_token_id, lock_level)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
     }

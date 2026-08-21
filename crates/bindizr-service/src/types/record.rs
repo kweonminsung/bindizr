@@ -8,7 +8,7 @@ use bindizr_core::dns::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::snapshot::RecordDiff;
+use super::version::RecordDiff;
 use crate::model::record::{Record, RecordType, RecordWithZone};
 
 /// API representation of a record, optionally carrying its zone name.

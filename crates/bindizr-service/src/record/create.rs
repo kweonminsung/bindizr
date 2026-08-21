@@ -9,6 +9,7 @@ use super::{
 };
 use crate::{
     authorization::{Caller, RecordWrite},
+    dnssec::DnssecService,
     error::ServiceError,
     log_error, log_info, log_warn,
     model::record::{Record, RecordWithZone},
@@ -82,7 +83,7 @@ impl RecordService {
                 };
 
             // Fixed at write time: a later zone TTL change will not move it.
-            let ttl = create_record_request.ttl.unwrap_or(zone.ttl);
+            let ttl = create_record_request.ttl.unwrap_or(zone.default_ttl);
 
             validate_record_add_constraints_normalized(
                 &existing_records_with_name,
@@ -118,6 +119,7 @@ impl RecordService {
                 ServiceError::internal("Failed to create record".to_string())
             })?;
 
+            DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok::<(Record, ZoneName), ServiceError>((created_record, zone.name))

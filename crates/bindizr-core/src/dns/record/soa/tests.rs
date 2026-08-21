@@ -1,4 +1,5 @@
-use super::SoaMailbox;
+use super::{SoaMailbox, SoaRecordValue};
+use crate::dns::name::encode_name;
 
 #[test]
 fn from_email_escapes_local_part() {
@@ -50,4 +51,26 @@ fn to_email_rejects_invalid_input() {
     assert!(SoaMailbox::from_encoded("no-separator").to_email().is_err());
     assert!(SoaMailbox::from_encoded(".example.com").to_email().is_err());
     assert!(SoaMailbox::from_encoded("dangling\\").to_email().is_err());
+}
+
+// RFC 1035, Section 3.3.13.
+#[test]
+fn encode_soa_rdata_is_names_then_five_counters() {
+    let rdata = SoaRecordValue {
+        mname: "ns1.example.com",
+        rname: "admin.example.com",
+        serial: 42,
+        refresh: 2,
+        retry: 3,
+        expire: 4,
+        minimum: 5,
+    }
+    .to_rdata()
+    .unwrap();
+    let mut expected = encode_name("ns1.example.com").unwrap();
+    expected.extend(encode_name("admin.example.com").unwrap());
+    for field in [42u32, 2, 3, 4, 5] {
+        expected.extend(field.to_be_bytes());
+    }
+    assert_eq!(rdata.as_bytes(), expected);
 }

@@ -134,7 +134,52 @@ fn dns_values_match(record_type: u16, expected: &[Value], answers: &[DnsAnswer])
     expected == actual
 }
 
+/// Wait until the secondary answers `name`/`record_type` with at least one
+/// record. For the DNSSEC types this harness cannot render (DNSKEY, RRSIG),
+/// presence is the assertion, so rdata stays undecoded.
+pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: u16) {
+    eprintln!("Waiting for a type {record_type} record for {name} on 127.0.0.1:{port}...");
+    for attempt in 1..=120 {
+        if matches!(query_dns_record_count(port, name, record_type), Ok(count) if count > 0) {
+            eprintln!("{name} type {record_type} is served by 127.0.0.1:{port}.");
+            return;
+        }
+
+        if attempt % 10 == 0 {
+            eprintln!(
+                "Still waiting for DNS type {record_type} on 127.0.0.1:{port}... {attempt}s elapsed"
+            );
+        }
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+
+    panic!("no type {record_type} record for {name} appeared on 127.0.0.1:{port}");
+}
+
 fn query_dns_record(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsAnswer>, String> {
+    let (query_id, response) = exchange_dns_query(port, name, record_type)?;
+    parse_dns_response(query_id, &response)
+}
+
+fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usize, String> {
+    let (query_id, response) = exchange_dns_query(port, name, record_type)?;
+    let message = Message::from_octets(response.as_slice()).map_err(|e| e.to_string())?;
+    if !check_response_header(query_id, &message)? {
+        return Ok(0);
+    }
+
+    let answer = message.answer().map_err(|e| e.to_string())?;
+    let mut count = 0;
+    for record in answer {
+        if record.map_err(|e| e.to_string())?.rtype().to_int() == record_type {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+fn exchange_dns_query(port: u16, name: &str, record_type: u16) -> Result<(u16, Vec<u8>), String> {
     let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -149,7 +194,7 @@ fn query_dns_record(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsAn
     let mut response = [0_u8; 1500];
     let (len, _) = socket.recv_from(&mut response).map_err(|e| e.to_string())?;
 
-    parse_dns_response(query_id, &response[..len])
+    Ok((query_id, response[..len].to_vec()))
 }
 
 fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8>, String> {
@@ -174,24 +219,8 @@ fn query_name(name: &str) -> Result<Name<Vec<u8>>, String> {
 
 fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<DnsAnswer>, String> {
     let message = Message::from_octets(response).map_err(|e| e.to_string())?;
-    let header = message.header();
-
-    if header.id() != query_id {
-        return Err("DNS response query id mismatch".to_string());
-    }
-    if !header.qr() {
-        return Err("DNS response is not marked as a response".to_string());
-    }
-    match header.rcode() {
-        Rcode::NOERROR => {}
-        Rcode::NXDOMAIN => return Ok(Vec::new()),
-        code => {
-            return Err(format!(
-                "DNS response returned {} RCODE ({})",
-                code,
-                code.to_int()
-            ));
-        }
+    if !check_response_header(query_id, &message)? {
+        return Ok(Vec::new());
     }
 
     let answer = message.answer().map_err(|e| e.to_string())?;
@@ -206,6 +235,28 @@ fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<DnsAnswer>, 
     }
 
     Ok(answers)
+}
+
+/// Validate the response's id, QR bit, and rcode; `false` is a well-formed
+/// NXDOMAIN, i.e. the name holds no records.
+fn check_response_header(query_id: u16, message: &Message<&[u8]>) -> Result<bool, String> {
+    let header = message.header();
+
+    if header.id() != query_id {
+        return Err("DNS response query id mismatch".to_string());
+    }
+    if !header.qr() {
+        return Err("DNS response is not marked as a response".to_string());
+    }
+    match header.rcode() {
+        Rcode::NOERROR => Ok(true),
+        Rcode::NXDOMAIN => Ok(false),
+        code => Err(format!(
+            "DNS response returned {} RCODE ({})",
+            code,
+            code.to_int()
+        )),
+    }
 }
 
 fn decode_dns_value(

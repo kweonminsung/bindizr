@@ -5,7 +5,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use bindizr_core::config::{self, ApplyMode};
+use bindizr_core::config::{self, NotifyMode};
 use tokio::{
     sync::mpsc::{UnboundedSender, unbounded_channel},
     time::{Instant, timeout},
@@ -47,7 +47,7 @@ static APPLY_QUEUE: OnceLock<UnboundedSender<ApplyJob>> = OnceLock::new();
 
 /// Spawn the background worker that drains queued NOTIFYs. First call wins;
 /// later calls are no-ops. Without it, async-mode writes fall back to inline.
-pub fn init_apply_worker() {
+pub fn init_notify_worker() {
     let (tx, mut rx) = unbounded_channel::<ApplyJob>();
     if APPLY_QUEUE.set(tx).is_err() {
         return; // already initialized
@@ -57,10 +57,10 @@ pub fn init_apply_worker() {
         // Block for the first job, then batch everything that arrives within
         // the configured window into a single NOTIFY per zone.
         while let Some(first) = rx.recv().await {
-            let mut batch = ApplyBatch::default();
+            let mut batch = NotifyBatch::default();
             batch.add(first);
 
-            let window = Duration::from_millis(config::get_bindizr_config().dns.apply_batch_ms);
+            let window = Duration::from_millis(config::get_bindizr_config().dns.notify_batch_ms);
             if !window.is_zero() {
                 let deadline = Instant::now() + window;
                 loop {
@@ -88,12 +88,12 @@ pub fn init_apply_worker() {
 /// Accumulates queued jobs so a burst collapses to one NOTIFY per zone. An
 /// all-zones job supersedes every per-zone job in the same batch.
 #[derive(Default)]
-struct ApplyBatch {
+struct NotifyBatch {
     all_zones: bool,
     zones: HashSet<String>,
 }
 
-impl ApplyBatch {
+impl NotifyBatch {
     fn add(&mut self, job: ApplyJob) {
         match job.zone_name {
             Some(name) => {
@@ -121,7 +121,7 @@ impl ApplyBatch {
 
 /// Queue a NOTIFY for later delivery. Returns `false` if the worker was never
 /// started, so the caller can fall back to sending inline.
-fn enqueue_apply(zone_name: Option<&str>) -> bool {
+fn enqueue_notify(zone_name: Option<&str>) -> bool {
     match APPLY_QUEUE.get() {
         Some(tx) => tx
             .send(ApplyJob {
@@ -140,7 +140,7 @@ pub(crate) async fn send_notify_after_update(zone_name: Option<&str>) -> Result<
         return Ok(());
     }
 
-    if dns.apply_mode == ApplyMode::Async && enqueue_apply(zone_name) {
+    if dns.notify_mode == NotifyMode::Async && enqueue_notify(zone_name) {
         return Ok(());
     }
 

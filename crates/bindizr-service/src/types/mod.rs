@@ -6,17 +6,22 @@
 //! derives `Deserialize` too.
 
 mod common;
+mod dnssec;
 mod external_dns;
 mod import;
 mod pagination;
 mod record;
-mod snapshot;
 mod token;
 mod token_policy;
 mod tsig;
+mod version;
 mod zone;
 
 pub use common::{ErrorResponse, HealthResponse, MessageResponse};
+pub use dnssec::{
+    DisableDnssecRequest, DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecStatusResponse,
+    EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest,
+};
 pub use external_dns::{
     ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,
     ExternalDnsChangesResponse, ExternalDnsRecordItem, ExternalDnsRecordsResponse,
@@ -29,11 +34,6 @@ pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
     GetRecordsFilter, RecordItem, RecordResponse, RecordValueRequest, UpdateRecordPatch,
 };
-pub use snapshot::{
-    RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
-    RollbackZoneRequest, RollbackZoneResponse, SnapshotDetailResponse, SnapshotDiffResponse,
-    SnapshotRecordResponse, ZoneSnapshotResponse,
-};
 pub use token::GetTokenResponse;
 pub use token_policy::{
     CreateZoneTokenPolicyRequest, GetZoneTokenPolicyResponse, ZoneTokenPolicyListResponse,
@@ -43,6 +43,11 @@ pub use tsig::{
     CreateTsigKeyRequest, CreateZoneTsigPolicyRequest, GetTsigKeyResponse,
     GetZoneTsigPolicyResponse, TsigKeyListResponse, TsigKeyResponse, ZoneTsigPolicyListResponse,
     ZoneTsigPolicyResponse,
+};
+pub use version::{
+    RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
+    RollbackZoneRequest, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
+    VersionRecordResponse, ZoneVersionResponse,
 };
 pub use zone::{
     CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter, NotifyZoneRequest,

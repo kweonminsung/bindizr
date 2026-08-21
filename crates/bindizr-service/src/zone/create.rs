@@ -6,7 +6,7 @@ use crate::{
     authorization::Caller,
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
-    model::zone::Zone,
+    model::zone::{DnssecDenial, Zone},
     repository::RepositoryService,
     serial::{generate_serial, validate_initial_serial},
     types::CreateZoneRequest,
@@ -65,9 +65,10 @@ impl ZoneService {
                 Zone {
                     id: 0,
                     name: validated.name.clone(),
-                    primary_ns: validated.primary_ns.clone(),
-                    admin_email: validated.admin_email.clone(),
-                    ttl: validated.ttl,
+                    mname: validated.mname.clone(),
+                    rname: validated.rname.clone(),
+                    dnssec_denial: DnssecDenial::Nsec,
+                    default_ttl: validated.ttl,
                     serial,
                     refresh: timers.refresh,
                     retry: timers.retry,
@@ -92,15 +93,15 @@ impl ZoneService {
             // goes in directly.
             RepositoryService::create_record_tx(
                 &mut tx,
-                created_zone.primary_ns_record(created_zone.ttl),
+                created_zone.mname_record(created_zone.default_ttl),
             )
             .await
             .map_err(|e| {
-                log_error!("Failed to create primary NS record: {}", e);
-                ServiceError::internal("Failed to create primary NS record".to_string())
+                log_error!("Failed to create mname NS record: {}", e);
+                ServiceError::internal("Failed to create mname NS record".to_string())
             })?;
 
-            ZoneService::save_snapshot_tx(&mut tx, &created_zone, created_zone.serial).await?;
+            ZoneService::save_version_tx(&mut tx, &created_zone, created_zone.serial).await?;
 
             Ok::<Zone, ServiceError>(created_zone)
         }
@@ -110,9 +111,9 @@ impl ZoneService {
             RepositoryService::finish_tx(tx, apply_result, "Failed to create zone").await?;
 
         log_info!(
-            "event=zone_create zone={} primary_ns={} serial={} zone_id={}",
+            "event=zone_create zone={} mname={} serial={} zone_id={}",
             created_zone.name,
-            created_zone.primary_ns,
+            created_zone.mname,
             created_zone.serial,
             created_zone.id
         );

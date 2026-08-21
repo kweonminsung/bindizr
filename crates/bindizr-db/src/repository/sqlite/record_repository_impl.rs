@@ -289,7 +289,7 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(r.name) = LOWER(?)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
               )
-              AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
+              AND (? IS NULL OR r.record_type = ?)
               AND (? IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
                     ELSE INSTR(r.display_value, ?) > 0
@@ -381,7 +381,7 @@ impl RecordRepository for SqliteRecordRepository {
                     OR LOWER(r.name) = LOWER(?)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER(?)
               )
-              AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
+              AND (? IS NULL OR r.record_type = ?)
               AND (? IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN INSTR(LOWER(r.display_value), LOWER(?)) > 0
                     ELSE INSTR(r.display_value, ?) > 0

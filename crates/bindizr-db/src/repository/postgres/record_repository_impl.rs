@@ -309,7 +309,7 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.name) = LOWER($4)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
-              AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
+              AND ($6::TEXT IS NULL OR r.record_type = $7)
               AND ($8::TEXT IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                     ELSE POSITION($31 IN r.display_value) > 0
@@ -400,7 +400,7 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.name) = LOWER($4)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
-              AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
+              AND ($6::TEXT IS NULL OR r.record_type = $7)
               AND ($8::TEXT IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                     ELSE POSITION($29 IN r.display_value) > 0

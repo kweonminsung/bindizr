@@ -66,35 +66,30 @@ pub(super) async fn apply_update(
     query_data: &[u8],
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
-    let result = apply_update_inner(request, query_data, &mut signer).await;
-    (result, signer)
-}
+    let result = async {
+        let zone_name = request.zone_name.trim_end_matches('.');
+        if zone_name.is_empty() {
+            return Err(UpdateError::NotZone(
+                "root zone is not supported".to_string(),
+            ));
+        }
 
-async fn apply_update_inner(
-    request: UpdateRequest,
-    query_data: &[u8],
-    signer: &mut Option<ResponseSigner>,
-) -> Result<bool, UpdateError> {
-    let zone_name = request.zone_name.trim_end_matches('.');
-    if zone_name.is_empty() {
-        return Err(UpdateError::NotZone(
-            "root zone is not supported".to_string(),
-        ));
+        // Authenticate before anything zone-specific: keys are zone-independent,
+        // and this lets even NOTZONE/REFUSED responses be signed.
+        let key = authenticate_request(&request, query_data, &mut signer).await?;
+
+        let update = DynamicUpdate {
+            zone_name: zone_name.to_string(),
+            key,
+            prerequisites: decode_prerequisites(&request.prerequisites, query_data)?,
+            updates: decode_updates(&request.updates, query_data)?,
+        };
+
+        let changed = DynamicUpdateService::apply(update).await?;
+        Ok(changed)
     }
-
-    // Authenticate before anything zone-specific: keys are zone-independent,
-    // and this lets even NOTZONE/REFUSED responses be signed.
-    let key = authenticate_request(&request, query_data, signer).await?;
-
-    let update = DynamicUpdate {
-        zone_name: zone_name.to_string(),
-        key,
-        prerequisites: decode_prerequisites(&request.prerequisites, query_data)?,
-        updates: decode_updates(&request.updates, query_data)?,
-    };
-
-    let changed = DynamicUpdateService::apply(update).await?;
-    Ok(changed)
+    .await;
+    (result, signer)
 }
 
 /// Verify the request's TSIG signature and record the response-signing

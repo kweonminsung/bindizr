@@ -27,7 +27,7 @@ impl ZoneService {
         zone_name: &str,
     ) -> Result<String, ServiceError> {
         // Read the zone and records in one locked transaction so the export is a
-        // single consistent snapshot, not stale SOA metadata with newer records.
+        // single consistent view, not stale SOA metadata with newer records.
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to export zone").await?;
         let load_result = async {
@@ -54,7 +54,7 @@ impl ZoneService {
         let origin = zone.name.to_fqdn();
         let mut out = String::new();
         out.push_str(&format!("$ORIGIN {origin}\n"));
-        out.push_str(&format!("$TTL {}\n", zone.ttl));
+        out.push_str(&format!("$TTL {}\n", zone.default_ttl));
 
         // SOA carries names as absolute FQDNs so they are not read as relative
         // to $ORIGIN. `soa_mailbox` already escapes the local part per RFC 1035.
@@ -63,8 +63,8 @@ impl ZoneService {
             .map_err(|e| ServiceError::internal(format!("Failed to render SOA mailbox: {e}")))?;
         out.push_str(&format!(
             "@\t{}\tIN\tSOA\t{} {} {} {} {} {} {}\n",
-            zone.ttl,
-            to_fqdn(&zone.primary_ns),
+            zone.default_ttl,
+            to_fqdn(&zone.mname),
             to_fqdn(mailbox.as_str()),
             zone.serial,
             zone.refresh,

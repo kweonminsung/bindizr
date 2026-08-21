@@ -3,7 +3,7 @@ use bindizr_db::repository::LockLevel;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, prepare_record, zone_changes_for},
+    bulk::{PreparedRecord, prepare_record, zone_journal_for},
     validation::{
         normalize_record_owner_name, parse_record_type,
         validate_record_update_constraints_normalized,
@@ -11,12 +11,13 @@ use super::{
 };
 use crate::{
     authorization::{Caller, RecordWrite},
+    dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType, RecordWithZone},
         zone::Zone,
-        zone_change::ZoneChange,
+        zone_change::ChangeOperation,
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -60,7 +61,7 @@ impl RecordService {
                 owner_name: normalize_record_owner_name(&owner_name, &zone.name)?,
                 record_type,
                 encoded_value,
-                ttl: request.ttl.unwrap_or(zone.ttl),
+                ttl: request.ttl.unwrap_or(zone.default_ttl),
                 priority: request.priority,
             })
         })
@@ -242,25 +243,26 @@ impl RecordService {
                 })?;
 
             // Record DEL(old)+ADD(new) zone changes for IXFR in one batch.
-            let mut changes = zone_changes_for(
+            let mut changes = zone_journal_for(
                 zone.id,
                 new_serial,
-                ZoneChange::OP_DEL,
+                ChangeOperation::Del,
                 std::slice::from_ref(&existing_record),
             );
-            changes.extend(zone_changes_for(
+            changes.extend(zone_journal_for(
                 zone.id,
                 new_serial,
-                ZoneChange::OP_ADD,
+                ChangeOperation::Add,
                 std::slice::from_ref(&updated_record),
             ));
-            RepositoryService::create_zone_changes_tx(&mut tx, &changes)
+            RepositoryService::create_zone_journal_tx(&mut tx, &changes)
                 .await
                 .map_err(|e| {
                     log_error!("Failed to create zone changes: {}", e);
                     ServiceError::internal("Failed to create zone change".to_string())
                 })?;
 
+            DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok::<(Record, ZoneName), ServiceError>((updated_record, zone_name))

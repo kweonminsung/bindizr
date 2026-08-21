@@ -10,11 +10,11 @@ mod force;
 mod get;
 pub(crate) mod history;
 mod notify;
-mod snapshot;
 pub mod token_policy;
 pub mod tsig_policy;
 mod update;
 pub(crate) mod validation;
+mod version;
 
 // Seconds. Bindizr drives propagation with NOTIFY, so refresh/retry stay short:
 // they only bound how long a secondary stays stale if a (UDP) NOTIFY is lost,
@@ -34,7 +34,7 @@ pub(super) fn apex_ns_rrset_ttl<'a>(
     candidates
         .into_iter()
         .find(|(record_type, name, _)| zone.is_apex_ns(record_type, name))
-        .map_or(zone.ttl, |(_, _, ttl)| ttl)
+        .map_or(zone.default_ttl, |(_, _, ttl)| ttl)
 }
 
 /// Business logic for creating, updating, and querying DNS zones.

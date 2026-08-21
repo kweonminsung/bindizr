@@ -4,6 +4,7 @@ use bindizr_db::repository::LockLevel;
 use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
     authorization::{Caller, RecordWrite},
+    dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     repository::RepositoryService,
@@ -102,6 +103,7 @@ impl RecordService {
             )
             .await?;
 
+            DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok(DeletedRecord {

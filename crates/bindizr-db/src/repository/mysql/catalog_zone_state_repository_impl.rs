@@ -11,28 +11,28 @@ pub(crate) struct MySqlCatalogZoneStateRepository;
 
 #[async_trait]
 impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
-    async fn update_serial_for_signature_tx(
+    async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
-        signature: &str,
+        digest: &str,
         base_serial: i32,
     ) -> Result<i32, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        // Advance the catalog serial only when the signature changes, kept
+        // Advance the catalog serial only when the digest changes, kept
         // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
-            INSERT INTO catalog_zone_state (name, signature, serial)
+            INSERT INTO catalog_zone_state (name, digest, serial)
             VALUES (?, ?, ?)
             ON DUPLICATE KEY UPDATE
-                serial = IF(signature = VALUES(signature), serial, GREATEST(serial + 1, VALUES(serial))),
-                signature = VALUES(signature)
+                serial = IF(digest = VALUES(digest), serial, GREATEST(serial + 1, VALUES(serial))),
+                digest = VALUES(digest)
             "#,
         )
         .bind(name)
-        .bind(signature)
+        .bind(digest)
         .bind(base_serial)
         .execute(&mut **mysql_tx)
         .await

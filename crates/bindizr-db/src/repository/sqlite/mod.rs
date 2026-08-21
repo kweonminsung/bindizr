@@ -1,19 +1,23 @@
 mod api_token_repository_impl;
 mod catalog_zone_state_repository_impl;
+mod dnssec_key_repository_impl;
+mod dnssec_record_repository_impl;
 mod record_repository_impl;
 mod tsig_key_repository_impl;
 mod zone_change_repository_impl;
 mod zone_repository_impl;
-mod zone_snapshot_repository_impl;
 mod zone_token_policy_repository_impl;
 mod zone_tsig_policy_repository_impl;
+mod zone_version_repository_impl;
 
 pub(crate) use api_token_repository_impl::SqliteApiTokenRepository;
 pub(crate) use catalog_zone_state_repository_impl::SqliteCatalogZoneStateRepository;
+pub(crate) use dnssec_key_repository_impl::SqliteDnssecKeyRepository;
+pub(crate) use dnssec_record_repository_impl::SqliteDnssecRecordRepository;
 pub(crate) use record_repository_impl::SqliteRecordRepository;
 pub(crate) use tsig_key_repository_impl::SqliteTsigKeyRepository;
 pub(crate) use zone_change_repository_impl::SqliteZoneChangeRepository;
 pub(crate) use zone_repository_impl::SqliteZoneRepository;
-pub(crate) use zone_snapshot_repository_impl::SqliteZoneSnapshotRepository;
 pub(crate) use zone_token_policy_repository_impl::SqliteZoneTokenPolicyRepository;
 pub(crate) use zone_tsig_policy_repository_impl::SqliteZoneTsigPolicyRepository;
+pub(crate) use zone_version_repository_impl::SqliteZoneVersionRepository;

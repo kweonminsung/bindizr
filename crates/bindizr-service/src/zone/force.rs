@@ -2,8 +2,8 @@ use bindizr_db::repository::LockLevel;
 
 use super::ZoneService;
 use crate::{
-    error::ServiceError, log_error, log_info, model::zone::Zone, repository::RepositoryService,
-    serial::generate_serial,
+    dnssec::DnssecService, error::ServiceError, log_error, log_info, model::zone::Zone,
+    repository::RepositoryService, serial::generate_serial,
 };
 
 impl ZoneService {
@@ -54,7 +54,10 @@ impl ZoneService {
                 ServiceError::internal("Failed to force increment zone serial".to_string())
             })?;
 
-            ZoneService::save_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
+            // The SOA rdata carries the serial, so its signature must follow
+            // every bump — forced ones included.
+            DnssecService::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
+            ZoneService::save_version_tx(&mut tx, &updated_zone, new_serial).await?;
 
             Ok::<Zone, ServiceError>(updated_zone)
         }

@@ -7,7 +7,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     log_error,
-    model::record::{Record, RecordWithZone},
+    model::record::{Record, RecordType, RecordWithZone},
     pagination::paginated_response,
     repository::RepositoryService,
     types::{GetRecordsFilter, PaginatedResponse},
@@ -69,11 +69,17 @@ impl RecordService {
         }
 
         let name = normalize_filter_record_name(filter.name, zone_name.as_ref());
+        let record_type = filter
+            .record_type
+            .as_deref()
+            .map(str::parse::<RecordType>)
+            .transpose()
+            .map_err(ServiceError::invalid_input)?;
 
         let record_filter = RecordFilter {
             zone_name: zone_name.map(|name| name.to_string()),
             name,
-            record_type: filter.record_type,
+            record_type,
             value: filter.value,
             ttl: filter.ttl,
             min_ttl: filter.min_ttl,

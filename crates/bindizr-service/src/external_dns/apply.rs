@@ -13,6 +13,7 @@ use super::{
 };
 use crate::{
     authorization::{Caller, RecordWrite},
+    dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
     log_info, log_warn,
     model::{
@@ -258,7 +259,7 @@ pub(super) fn compute_zone_change_set(
 
     let mut creates: Vec<Record> = Vec::new();
     for add in &ops.adds {
-        let ttl = add.ttl.unwrap_or(zone.ttl);
+        let ttl = add.ttl.unwrap_or(zone.default_ttl);
         for value in &add.values {
             let same_rdata = |row: &Record| {
                 row.name == add.name
@@ -425,6 +426,7 @@ impl ExternalDnsService {
                     &change_set.creates,
                 )
                 .await?;
+                DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
                 ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
                 records_deleted += change_set.deletes.len() as u32;

@@ -100,6 +100,33 @@ impl TryFrom<String> for RecordType {
     }
 }
 
+/// The write half: binding renders the canonical mnemonic, the row form
+/// `TryFrom<String>` parses.
+impl<DB: sqlx::Database> sqlx::Type<DB> for RecordType
+where
+    String: sqlx::Type<DB>,
+{
+    fn type_info() -> DB::TypeInfo {
+        <String as sqlx::Type<DB>>::type_info()
+    }
+
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <String as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for RecordType
+where
+    String: sqlx::Encode<'q, DB>,
+{
+    fn encode_by_ref(
+        &self,
+        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        self.as_str().to_string().encode_by_ref(buf)
+    }
+}
+
 impl std::str::FromStr for RecordType {
     type Err = String;
 
@@ -132,6 +159,21 @@ impl RecordType {
             RecordType::SOA => "SOA",
             RecordType::SRV => "SRV",
             RecordType::PTR => "PTR",
+        }
+    }
+
+    /// The RR TYPE number this type's records carry on the wire.
+    pub fn wire_type(&self) -> u16 {
+        match self {
+            RecordType::A => 1,
+            RecordType::NS => 2,
+            RecordType::CNAME => 5,
+            RecordType::SOA => 6,
+            RecordType::PTR => 12,
+            RecordType::MX => 15,
+            RecordType::TXT => 16,
+            RecordType::AAAA => 28,
+            RecordType::SRV => 33,
         }
     }
 

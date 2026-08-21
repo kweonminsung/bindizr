@@ -3,7 +3,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::{
     error::DatabaseError,
-    model::zone::Zone,
+    model::zone::{DnssecDenial, Zone},
     repository::{
         LockLevel, RepositoryTx, ZoneFilter, ZoneRepository,
         sql::{like_pattern, lock_clause},
@@ -32,14 +32,14 @@ impl ZoneRepository for MySqlZoneRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl)
+            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(zone.name.as_str())
-        .bind(&zone.primary_ns)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
+        .bind(&zone.mname)
+        .bind(&zone.rname)
+        .bind(zone.default_ttl)
         .bind(zone.serial)
         .bind(zone.refresh)
         .bind(zone.retry)
@@ -60,7 +60,7 @@ impl ZoneRepository for MySqlZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE id = ?{}",lock_clause(lock_level))))
+        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE id = ?{}",lock_clause(lock_level))))
             .bind(id)
             .fetch_optional(&mut **mysql_tx)
             .await?;
@@ -71,7 +71,7 @@ impl ZoneRepository for MySqlZoneRepository {
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE name = ?")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await
@@ -89,7 +89,7 @@ impl ZoneRepository for MySqlZoneRepository {
         let mysql_tx = tx.as_mysql()?;
 
         let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(
-            format!("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones WHERE name = ?{}",
+            format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE name = ?{}",
             lock_clause(lock_level),
         )))
         .bind(name)
@@ -102,7 +102,7 @@ impl ZoneRepository for MySqlZoneRepository {
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await
             ?;
@@ -117,7 +117,7 @@ impl ZoneRepository for MySqlZoneRepository {
     ) -> Result<Vec<Zone>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
             .fetch_all(&mut **mysql_tx)
             .await?;
 
@@ -129,21 +129,21 @@ impl ZoneRepository for MySqlZoneRepository {
         let search = like_pattern(filter.search.as_deref());
         let zones = sqlx::query_as::<_, Zone>(
             r#"
-            SELECT id, name, primary_ns, admin_email, ttl, serial, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at
             FROM zones
             WHERE (? IS NULL OR LOWER(name) = LOWER(?))
               AND (? IS NULL OR id = ?)
-              AND (? IS NULL OR LOWER(primary_ns) = LOWER(?))
-              AND (? IS NULL OR LOWER(admin_email) = LOWER(?))
-              AND (? IS NULL OR ttl = ?)
-              AND (? IS NULL OR ttl >= ?)
-              AND (? IS NULL OR ttl <= ?)
+              AND (? IS NULL OR LOWER(mname) = LOWER(?))
+              AND (? IS NULL OR LOWER(rname) = LOWER(?))
+              AND (? IS NULL OR default_ttl = ?)
+              AND (? IS NULL OR default_ttl >= ?)
+              AND (? IS NULL OR default_ttl <= ?)
               AND (? IS NULL OR serial = ?)
               AND (
                     ? IS NULL
                     OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
-                    OR LOWER(primary_ns) LIKE LOWER(?) ESCAPE '\\'
-                    OR LOWER(admin_email) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(mname) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(rname) LIKE LOWER(?) ESCAPE '\\'
               )
               AND (
                     ? IS NULL
@@ -158,16 +158,16 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(&filter.name)
         .bind(filter.id)
         .bind(filter.id)
-        .bind(&filter.primary_ns)
-        .bind(&filter.primary_ns)
-        .bind(&filter.admin_email)
-        .bind(&filter.admin_email)
-        .bind(filter.ttl)
-        .bind(filter.ttl)
-        .bind(filter.min_ttl)
-        .bind(filter.min_ttl)
-        .bind(filter.max_ttl)
-        .bind(filter.max_ttl)
+        .bind(&filter.mname)
+        .bind(&filter.mname)
+        .bind(&filter.rname)
+        .bind(&filter.rname)
+        .bind(filter.default_ttl)
+        .bind(filter.default_ttl)
+        .bind(filter.min_default_ttl)
+        .bind(filter.min_default_ttl)
+        .bind(filter.max_default_ttl)
+        .bind(filter.max_default_ttl)
         .bind(filter.serial)
         .bind(filter.serial)
         .bind(&search)
@@ -206,17 +206,17 @@ impl ZoneRepository for MySqlZoneRepository {
             FROM zones
             WHERE (? IS NULL OR LOWER(name) = LOWER(?))
               AND (? IS NULL OR id = ?)
-              AND (? IS NULL OR LOWER(primary_ns) = LOWER(?))
-              AND (? IS NULL OR LOWER(admin_email) = LOWER(?))
-              AND (? IS NULL OR ttl = ?)
-              AND (? IS NULL OR ttl >= ?)
-              AND (? IS NULL OR ttl <= ?)
+              AND (? IS NULL OR LOWER(mname) = LOWER(?))
+              AND (? IS NULL OR LOWER(rname) = LOWER(?))
+              AND (? IS NULL OR default_ttl = ?)
+              AND (? IS NULL OR default_ttl >= ?)
+              AND (? IS NULL OR default_ttl <= ?)
               AND (? IS NULL OR serial = ?)
               AND (
                     ? IS NULL
                     OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
-                    OR LOWER(primary_ns) LIKE LOWER(?) ESCAPE '\\'
-                    OR LOWER(admin_email) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(mname) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(rname) LIKE LOWER(?) ESCAPE '\\'
               )
               AND (
                     ? IS NULL
@@ -229,16 +229,16 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(&filter.name)
         .bind(filter.id)
         .bind(filter.id)
-        .bind(&filter.primary_ns)
-        .bind(&filter.primary_ns)
-        .bind(&filter.admin_email)
-        .bind(&filter.admin_email)
-        .bind(filter.ttl)
-        .bind(filter.ttl)
-        .bind(filter.min_ttl)
-        .bind(filter.min_ttl)
-        .bind(filter.max_ttl)
-        .bind(filter.max_ttl)
+        .bind(&filter.mname)
+        .bind(&filter.mname)
+        .bind(&filter.rname)
+        .bind(&filter.rname)
+        .bind(filter.default_ttl)
+        .bind(filter.default_ttl)
+        .bind(filter.min_default_ttl)
+        .bind(filter.min_default_ttl)
+        .bind(filter.max_default_ttl)
+        .bind(filter.max_default_ttl)
         .bind(filter.serial)
         .bind(filter.serial)
         .bind(&search)
@@ -263,14 +263,14 @@ impl ZoneRepository for MySqlZoneRepository {
         sqlx::query(
             r#"
             UPDATE zones 
-            SET name = ?, primary_ns = ?, admin_email = ?, ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?
+            SET name = ?, mname = ?, rname = ?, default_ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?
             WHERE id = ?
             "#,
         )
         .bind(zone.name.as_str())
-        .bind(&zone.primary_ns)
-        .bind(&zone.admin_email)
-        .bind(zone.ttl)
+        .bind(&zone.mname)
+        .bind(&zone.rname)
+        .bind(zone.default_ttl)
         .bind(zone.serial)
         .bind(zone.refresh)
         .bind(zone.retry)
@@ -281,6 +281,23 @@ impl ZoneRepository for MySqlZoneRepository {
         .await?;
 
         Ok(zone)
+    }
+
+    async fn update_dnssec_denial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        denial: DnssecDenial,
+    ) -> Result<(), DatabaseError> {
+        let mysql_tx = tx.as_mysql()?;
+
+        sqlx::query("UPDATE zones SET dnssec_denial = ? WHERE id = ?")
+            .bind(denial.as_str())
+            .bind(zone_id)
+            .execute(&mut **mysql_tx)
+            .await?;
+
+        Ok(())
     }
 
     async fn update_serial_tx(

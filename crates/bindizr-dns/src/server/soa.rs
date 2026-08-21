@@ -42,12 +42,7 @@ async fn soa_response_bytes(
 ) -> Result<Vec<u8>, XfrError> {
     match build_soa_response(query, client_ip).await {
         Ok(response) => Ok(response),
-        Err(XfrError::ZoneNotFound(_)) => Ok(wire::build_error_response(
-            query.query_id,
-            &query.qname,
-            query.qtype,
-            Rcode::NOTAUTH,
-        )),
+        Err(XfrError::ZoneNotFound(_)) => Ok(query.error_response(Rcode::NOTAUTH)),
         Err(err) => Err(err),
     }
 }

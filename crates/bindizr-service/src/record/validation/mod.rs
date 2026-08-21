@@ -160,7 +160,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
     Ok(())
 }
 
-/// Reject deletions of the SOA record or the NS record referenced by `primary_ns`.
+/// Reject deletions of the SOA record or the NS record referenced by `mname`.
 pub(crate) fn validate_delete_constraints(
     zone: &Zone,
     deleting_records: &[Record],
@@ -175,9 +175,9 @@ pub(crate) fn validate_delete_constraints(
     }
 
     for record in deleting_records {
-        if zone.is_primary_ns(&record.record_type, &record.name, &record.value) {
+        if zone.is_mname(&record.record_type, &record.name, &record.value) {
             return Err(ServiceError::invalid_input(
-                "Cannot delete NS record referenced by zone primary_ns".to_string(),
+                "Cannot delete NS record referenced by zone mname".to_string(),
             ));
         }
     }
@@ -210,12 +210,12 @@ pub(super) fn validate_record_update_constraints_normalized(
         Some(existing_record.id),
     )?;
 
-    if zone.is_primary_ns(
+    if zone.is_mname(
         &existing_record.record_type,
         &existing_record.name,
         &existing_record.value,
     ) {
-        let still_primary = zone.is_primary_ns(
+        let still_primary = zone.is_mname(
             &updated_record.record_type,
             &updated_record.name,
             &updated_record.value,
@@ -223,7 +223,7 @@ pub(super) fn validate_record_update_constraints_normalized(
 
         if !still_primary {
             return Err(ServiceError::invalid_input(
-                "Cannot modify the NS record referenced by zone primary_ns".to_string(),
+                "Cannot modify the NS record referenced by zone mname".to_string(),
             ));
         }
     }

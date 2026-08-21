@@ -2,6 +2,7 @@
 //! workflows built on the repository layer.
 
 pub mod authorization;
+pub mod dnssec;
 pub mod dynamic_update;
 pub mod error;
 pub mod external_dns;

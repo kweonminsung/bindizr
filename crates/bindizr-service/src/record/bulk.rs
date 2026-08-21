@@ -13,11 +13,12 @@ use super::{
 use crate::{
     RepositoryTx,
     authorization::{Caller, RecordWrite},
+    dnssec::DnssecService,
     error::ServiceError,
     log_debug, log_debug_enabled, log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType},
-        zone_change::ZoneChange,
+        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -73,10 +74,10 @@ pub(super) fn prepare_record(
     })
 }
 
-pub(super) fn zone_changes_for(
+pub(super) fn zone_journal_for(
     zone_id: i32,
     new_serial: i32,
-    operation: &str,
+    operation: ChangeOperation,
     records: &[Record],
 ) -> Vec<ZoneChange> {
     records
@@ -84,12 +85,13 @@ pub(super) fn zone_changes_for(
         .map(|record| ZoneChange {
             zone_id,
             serial: new_serial,
-            operation: operation.to_string(),
+            operation,
             record_name: record.name.clone(),
-            record_type: record.record_type.to_string(),
+            record_type: JournalRecordType::User(record.record_type.clone()),
             record_value: record.value.clone(),
             record_ttl: record.ttl,
             record_priority: record.priority,
+            derived: false,
         })
         .collect()
 }
@@ -108,8 +110,8 @@ impl RecordService {
         }
 
         let created_records = RepositoryService::create_records_tx(tx, records).await?;
-        let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_ADD, &created_records);
-        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
+        let changes = zone_journal_for(zone_id, new_serial, ChangeOperation::Add, &created_records);
+        RepositoryService::create_zone_journal_tx(tx, &changes).await?;
         Ok(created_records)
     }
 
@@ -126,15 +128,15 @@ impl RecordService {
 
         let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
         RepositoryService::delete_records_tx(tx, &ids).await?;
-        let changes = zone_changes_for(zone_id, new_serial, ZoneChange::OP_DEL, records);
-        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
+        let changes = zone_journal_for(zone_id, new_serial, ChangeOperation::Del, records);
+        RepositoryService::create_zone_journal_tx(tx, &changes).await?;
         Ok(())
     }
 }
 
 impl RecordService {
     /// Insert many records into a zone in one transaction. The zone serial is
-    /// incremented once, a single snapshot is saved, and a single NOTIFY is sent
+    /// incremented once, a single version is saved, and a single NOTIFY is sent
     /// after commit. Either every record is inserted or none is. On `dry_run`
     /// the same validation runs but nothing is written and no NOTIFY is sent;
     /// the returned records are the validated would-be records (placeholder
@@ -227,7 +229,7 @@ impl RecordService {
             let new_serial = generate_serial(Some(zone.serial))?;
 
             // The diff is only shown on a dry-run preview, so keep the `before`
-            // snapshot (and pay for building the diff) off the apply hot path.
+            // copy (and pay for building the diff) off the apply hot path.
             let before_records = if dry_run {
                 existing_records.clone()
             } else {
@@ -266,7 +268,7 @@ impl RecordService {
                 let same_name = records_by_name.entry(owner_name.clone()).or_default();
 
                 // Fixed at write time: a later zone TTL change will not move it.
-                let ttl = prepared_record.ttl.unwrap_or(zone.ttl);
+                let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
                 let t = timing_enabled.then(Instant::now);
                 validate_record_add_constraints_normalized(
@@ -320,6 +322,7 @@ impl RecordService {
 
             // Advance the serial once so IXFR consumers detect the batch
             let t = Instant::now();
+            DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
             timings.serial_ms = elapsed_ms(t);
 

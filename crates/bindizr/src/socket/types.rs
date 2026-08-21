@@ -1,7 +1,8 @@
 use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
-    ImportZoneFileRequest, RollbackZoneRequest, UpdateRecordPatch, UpdateZonePatch,
+    DisableDnssecRequest, EnableDnssecRequest, ImportZoneFileRequest, RollbackZoneRequest,
+    RolloverDnssecRequest, UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -37,11 +38,17 @@ pub(crate) enum DaemonCommandKind {
     NotifyZone,
     ImportZoneFile,
     ExportZoneFile,
-    ListZoneSnapshots,
-    GetZoneSnapshot,
-    DiffZoneSnapshots,
+    ListZoneVersions,
+    GetZoneVersion,
+    DiffZoneVersions,
     RollbackZone,
     ZoneStatus,
+    ZoneDnssecEnable,
+    ZoneDnssecDisable,
+    ZoneDnssecStatus,
+    ZoneDnssecSign,
+    ZoneDnssecRolloverStart,
+    ZoneDnssecRolloverDsSeen,
     Doctor,
     Shutdown,
     Restart,
@@ -160,7 +167,7 @@ pub(crate) struct UpdateRecordParams {
     pub(crate) patch: UpdateRecordPatch,
 }
 
-/// Payload for rolling a zone back to a snapshot serial.
+/// Payload for rolling a zone back to a version serial.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RollbackZoneParams {
     pub(crate) name: String,
@@ -168,17 +175,19 @@ pub(crate) struct RollbackZoneParams {
     pub(crate) request: RollbackZoneRequest,
 }
 
-/// Payload for listing a zone's snapshots.
+/// Payload for listing a zone's versions.
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct ListZoneSnapshotsParams {
+pub(crate) struct ListZoneVersionsParams {
     pub(crate) name: String,
     pub(crate) limit: Option<u32>,
     pub(crate) offset: Option<u64>,
+    #[serde(default)]
+    pub(crate) all: bool,
 }
 
-/// Payload addressing one of a zone's snapshots.
+/// Payload addressing one of a zone's versions.
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct ZoneSnapshotParams {
+pub(crate) struct ZoneVersionParams {
     pub(crate) name: String,
     pub(crate) serial: i32,
 }
@@ -186,10 +195,34 @@ pub(crate) struct ZoneSnapshotParams {
 /// Payload for diffing two of a zone's serials; a missing `to_serial` compares
 /// against the current serial.
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct DiffZoneSnapshotsParams {
+pub(crate) struct DiffZoneVersionsParams {
     pub(crate) name: String,
     pub(crate) from_serial: i32,
     pub(crate) to_serial: Option<i32>,
+}
+
+/// Payload for enabling DNSSEC on a zone.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct EnableZoneDnssecParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: EnableDnssecRequest,
+}
+
+/// Payload for disabling DNSSEC on a zone.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct DisableZoneDnssecParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: DisableDnssecRequest,
+}
+
+/// Payload for starting a DNSSEC key rollover on a zone.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct RolloverZoneDnssecParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: RolloverDnssecRequest,
 }
 
 /// Daemon status details returned by the `Status` command.

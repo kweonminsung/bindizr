@@ -2,6 +2,7 @@
 //! owner, so every command runs with global access (no token scoping).
 
 pub(crate) mod control;
+mod dnssec;
 mod doctor;
 mod notify;
 mod record;
@@ -82,11 +83,21 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::NotifyZone => notify::handle_notify_zone(&cmd.data).await,
                 DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
                 DaemonCommandKind::ExportZoneFile => zone::export_zone(&cmd.data).await,
-                DaemonCommandKind::ListZoneSnapshots => zone::list_zone_snapshots(&cmd.data).await,
-                DaemonCommandKind::GetZoneSnapshot => zone::get_zone_snapshot(&cmd.data).await,
-                DaemonCommandKind::DiffZoneSnapshots => zone::diff_zone_snapshots(&cmd.data).await,
+                DaemonCommandKind::ListZoneVersions => zone::list_zone_versions(&cmd.data).await,
+                DaemonCommandKind::GetZoneVersion => zone::get_zone_version(&cmd.data).await,
+                DaemonCommandKind::DiffZoneVersions => zone::diff_zone_versions(&cmd.data).await,
                 DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
                 DaemonCommandKind::ZoneStatus => zone::zone_status(&cmd.data).await,
+                DaemonCommandKind::ZoneDnssecEnable => dnssec::enable_dnssec(&cmd.data).await,
+                DaemonCommandKind::ZoneDnssecDisable => dnssec::disable_dnssec(&cmd.data).await,
+                DaemonCommandKind::ZoneDnssecStatus => dnssec::get_dnssec_status(&cmd.data).await,
+                DaemonCommandKind::ZoneDnssecSign => dnssec::sign_zone(&cmd.data).await,
+                DaemonCommandKind::ZoneDnssecRolloverStart => {
+                    dnssec::rollover_start(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneDnssecRolloverDsSeen => {
+                    dnssec::rollover_ds_seen(&cmd.data).await
+                }
                 DaemonCommandKind::Doctor => doctor::doctor().await,
                 DaemonCommandKind::Shutdown => control::shutdown(),
                 DaemonCommandKind::Restart => control::restart(),

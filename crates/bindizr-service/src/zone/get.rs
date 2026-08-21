@@ -30,12 +30,12 @@ impl ZoneService {
     }
 
     /// List the recorded zone changes between two serials, for building an IXFR.
-    pub async fn list_changes_between_serials(
+    pub async fn list_between_serials(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, ServiceError> {
-        RepositoryService::list_zone_changes_between_serials(zone_id, from_serial, to_serial).await
+        RepositoryService::list_zone_journal_between_serials(zone_id, from_serial, to_serial).await
     }
 
     /// Cheap database round-trip (limit-1 zones probe), for health checks.
@@ -64,11 +64,11 @@ impl ZoneService {
         let zone_filter = ZoneFilter {
             name: filter.name,
             id: filter.id,
-            primary_ns: filter.primary_ns,
-            admin_email: filter.admin_email,
-            ttl: filter.ttl,
-            min_ttl: filter.min_ttl,
-            max_ttl: filter.max_ttl,
+            mname: filter.mname,
+            rname: filter.rname,
+            default_ttl: filter.default_ttl,
+            min_default_ttl: filter.min_default_ttl,
+            max_default_ttl: filter.max_default_ttl,
             serial: filter.serial,
             search: filter.search,
             scope_token_id,

@@ -6,21 +6,26 @@ use chrono::Utc;
 use super::{Caller, RecordWrite, authorize_with_policies};
 use crate::{
     error::ErrorCode,
-    model::{record::RecordType, zone::Zone, zone_token_policy::ZoneTokenPolicy},
+    model::{
+        record::RecordType,
+        zone::{DnssecDenial, Zone},
+        zone_token_policy::ZoneTokenPolicy,
+    },
 };
 
 fn test_zone() -> Zone {
     Zone {
         id: 1,
         name: ZoneName::from_row("example.com"),
-        primary_ns: "ns1.example.com".to_string(),
-        admin_email: "hostmaster@example.com".to_string(),
-        ttl: 3600,
+        mname: "ns1.example.com".to_string(),
+        rname: "hostmaster@example.com".to_string(),
+        default_ttl: 3600,
         serial: 1,
         refresh: 7200,
         retry: 3600,
         expire: 604800,
         minimum_ttl: 86400,
+        dnssec_denial: DnssecDenial::Nsec,
         created_at: Utc::now(),
     }
 }

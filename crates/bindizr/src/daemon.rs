@@ -42,9 +42,11 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     bindizr_core::metrics::metrics();
 
     service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
-    service::notify::init_apply_worker();
+    service::notify::init_notify_worker();
 
     database::initialize().await.map_err(|e| e.to_string())?;
+
+    service::dnssec::init_maintenance_scheduler();
 
     dns::initialize().await;
 

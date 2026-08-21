@@ -68,7 +68,7 @@ impl ZoneTokenPolicyRepository for PostgresZoneTokenPolicyRepository {
         Ok(policies)
     }
 
-    async fn list_by_zone_and_token_tx(
+    async fn list_by_zone_id_and_token_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

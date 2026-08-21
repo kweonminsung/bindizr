@@ -104,8 +104,8 @@ fn print_config(config: &BindizrConfig) {
     print_value("listen_port", config.dns.listen_port);
     print_value("secondary_addrs", &config.dns.secondary_addrs);
     print_value("notify_after_update", config.dns.notify_after_update);
-    print_value("apply_mode", config.dns.apply_mode);
-    print_value("apply_batch_ms", config.dns.apply_batch_ms);
+    print_value("notify_mode", config.dns.notify_mode);
+    print_value("notify_batch_ms", config.dns.notify_batch_ms);
     print_value("zone_cache", config.dns.zone_cache);
     print_value("notify_on_startup", config.dns.notify_on_startup);
     print_value("notify_retries", config.dns.notify_retries);

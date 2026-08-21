@@ -302,7 +302,7 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(r.name) = LOWER(?)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) = LOWER(?)
               )
-              AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
+              AND (? IS NULL OR r.record_type = ?)
               AND (? IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN LOCATE(LOWER(?), LOWER(r.display_value)) > 0
                     ELSE LOCATE(BINARY ?, BINARY r.display_value) > 0
@@ -394,7 +394,7 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(r.name) = LOWER(?)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) = LOWER(?)
               )
-              AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
+              AND (? IS NULL OR r.record_type = ?)
               AND (? IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN LOCATE(LOWER(?), LOWER(r.display_value)) > 0
                     ELSE LOCATE(BINARY ?, BINARY r.display_value) > 0

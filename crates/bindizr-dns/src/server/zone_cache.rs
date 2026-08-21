@@ -19,8 +19,8 @@ use std::{
 
 use crate::{
     config,
-    model::record::Record,
-    service::{error::ServiceError, record::RecordService},
+    model::{dnssec_record::DnssecRecord, record::Record},
+    service::{dnssec::DnssecService, error::ServiceError, record::RecordService},
 };
 
 /// Cap on distinct zones held at once. Each entry holds a zone's full record
@@ -28,9 +28,17 @@ use crate::{
 /// working set of any realistic deployment.
 const MAX_ENTRIES: usize = 1024;
 
+/// Everything a full transfer serves for one zone: the user records and the
+/// derived DNSSEC plane (empty for an unsigned zone).
+#[derive(Clone)]
+pub(crate) struct ZoneContent {
+    pub(crate) records: Arc<Vec<Record>>,
+    pub(crate) dnssec_records: Arc<Vec<DnssecRecord>>,
+}
+
 struct CachedZone {
     serial: i32,
-    records: Arc<Vec<Record>>,
+    content: ZoneContent,
     /// Logical clock value at last hit; drives LRU eviction.
     last_used: u64,
 }
@@ -46,25 +54,33 @@ fn tick() -> u64 {
     CLOCK.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Load a zone's records for `serial`, from cache when enabled and fresh.
-pub(crate) async fn list_records(
+/// Load a zone's transfer content for `serial`, from cache when enabled and
+/// fresh.
+pub(crate) async fn list_zone_content(
     zone_id: i32,
     serial: i32,
-) -> Result<Arc<Vec<Record>>, ServiceError> {
+) -> Result<ZoneContent, ServiceError> {
     if !config::get_bindizr_config().dns.zone_cache {
-        return Ok(Arc::new(RecordService::list_by_zone_id(zone_id).await?));
+        return load_content(zone_id).await;
     }
 
     // Fast path: a cached entry at the current serial is still valid.
-    if let Some(records) = lookup(zone_id, serial) {
-        return Ok(records);
+    if let Some(content) = lookup(zone_id, serial) {
+        return Ok(content);
     }
 
     // Slow path: read and cache. Concurrent misses may load twice; both store
     // the same serial's data, so the result is still correct.
-    let records = Arc::new(RecordService::list_by_zone_id(zone_id).await?);
-    store(zone_id, serial, records.clone());
-    Ok(records)
+    let content = load_content(zone_id).await?;
+    store(zone_id, serial, content.clone());
+    Ok(content)
+}
+
+async fn load_content(zone_id: i32) -> Result<ZoneContent, ServiceError> {
+    Ok(ZoneContent {
+        records: Arc::new(RecordService::list_by_zone_id(zone_id).await?),
+        dnssec_records: Arc::new(DnssecService::list_records_by_zone_id(zone_id).await?),
+    })
 }
 
 /// The cache holds no invariant a panicking thread could leave broken, so a
@@ -75,16 +91,16 @@ fn locked_cache() -> std::sync::MutexGuard<'static, HashMap<i32, CachedZone>> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn lookup(zone_id: i32, serial: i32) -> Option<Arc<Vec<Record>>> {
+fn lookup(zone_id: i32, serial: i32) -> Option<ZoneContent> {
     let mut map = locked_cache();
     let entry = map
         .get_mut(&zone_id)
         .filter(|entry| entry.serial == serial)?;
     entry.last_used = tick();
-    Some(entry.records.clone())
+    Some(entry.content.clone())
 }
 
-fn store(zone_id: i32, serial: i32, records: Arc<Vec<Record>>) {
+fn store(zone_id: i32, serial: i32, content: ZoneContent) {
     let mut map = locked_cache();
     // Evict the least-recently-used entry when inserting a new zone would exceed
     // the cap. Updating an existing zone (same key) never grows the map.
@@ -101,7 +117,7 @@ fn store(zone_id: i32, serial: i32, records: Arc<Vec<Record>>) {
         zone_id,
         CachedZone {
             serial,
-            records,
+            content,
             last_used: tick(),
         },
     );

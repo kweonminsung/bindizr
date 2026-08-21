@@ -90,12 +90,7 @@ pub(crate) async fn handle_tcp_query(
     if let Err(err) = result {
         if matches!(err, XfrError::ZoneNotFound(_)) {
             count_xfr("notauth");
-            let response = wire::build_error_response(
-                query.query_id,
-                &query.qname,
-                query.qtype,
-                Rcode::NOTAUTH,
-            );
+            let response = query.error_response(Rcode::NOTAUTH);
             wire::write_tcp_message(stream, &response).await?;
             return Ok(());
         }

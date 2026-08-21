@@ -18,6 +18,7 @@ use super::{
 };
 use crate::{
     authorization::Caller,
+    dnssec::DnssecService,
     error::ServiceError,
     log_debug, log_error, log_info, log_warn,
     model::{
@@ -64,7 +65,7 @@ fn desired_matches(existing: &Record, desired: &DesiredRecord) -> bool {
     )
 }
 
-/// Records referenced by the zone's own SOA/primary NS must never be removed.
+/// Records referenced by the zone's own SOA/mname NS must never be removed.
 fn is_protected(zone: &Zone, record: &Record) -> bool {
     validate_delete_constraints(zone, std::slice::from_ref(record)).is_err()
 }
@@ -118,7 +119,7 @@ impl RecordService {
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let parsed = parse_zone_file(&request.content, zone.name.as_str(), zone.ttl);
+            let parsed = parse_zone_file(&request.content, zone.name.as_str(), zone.default_ttl);
             timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
@@ -165,7 +166,7 @@ impl RecordService {
                     })
                 });
                 if let Some(kept) = duplicate_in_file {
-                    let kept_ttl = desired[kept].prepared.ttl.unwrap_or(zone.ttl);
+                    let kept_ttl = desired[kept].prepared.ttl.unwrap_or(zone.default_ttl);
                     let this_ttl = record.ttl;
                     // The same RR at two TTLs is a mixed-TTL RRset (RFC 2181,
                     // Section 5.2); deduplication must not swallow the conflict.
@@ -279,7 +280,7 @@ impl RecordService {
 
             // Reconcile TTL only for upsert/replace.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
-            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.ttl);
+            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.default_ttl);
 
             let mut unchanged = 0usize;
             let mut updated = 0usize;
@@ -410,6 +411,7 @@ impl RecordService {
 
                 let t = Instant::now();
                 // Advance the serial once so IXFR consumers detect the import
+                DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
                 ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
                 timings.serial_ms = elapsed_ms(t);
             }
@@ -511,7 +513,7 @@ fn import_diff(
         name: add.stored_name.clone(),
         record_type: add.prepared.record_type.clone(),
         value: add.prepared.value.clone(),
-        ttl: add.prepared.ttl.unwrap_or(zone.ttl),
+        ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),
         priority: add.prepared.priority,
     }));
 

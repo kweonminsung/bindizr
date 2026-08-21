@@ -42,6 +42,17 @@ async fn record_create_read_update_delete() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
 
+    // The type filter parses at the service boundary, so junk is a 400
+    // rather than an empty page.
+    let (status, _) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=BOGUS"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
     let update_record_request = json!({
         "name": "api-updated",
         "record_type": "A",
@@ -78,9 +89,9 @@ async fn record_normalize_zone_name() {
 
     let create_zone_request = json!({
         "name": format!("{}.", zone_name.to_ascii_uppercase()),
-        "primary_ns": format!("ns1.{zone_name}"),
-        "admin_email": "hostmaster@example.com",
-        "ttl": 3600
+        "mname": format!("ns1.{zone_name}"),
+        "rname": "hostmaster@example.com",
+        "default_ttl": 3600
     });
     let (status, body) = app
         .request(Method::POST, "/zones", Some(create_zone_request))
@@ -287,9 +298,9 @@ async fn record_scope_by_zone() {
 
     let second_zone = json!({
         "name": second_zone_name,
-        "primary_ns": format!("ns1.{second_zone_name}"),
-        "admin_email": "admin@example.net",
-        "ttl": 3600
+        "mname": format!("ns1.{second_zone_name}"),
+        "rname": "admin@example.net",
+        "default_ttl": 3600
     });
     let (status, _) = app.request(Method::POST, "/zones", Some(second_zone)).await;
     assert_eq!(status, StatusCode::CREATED);
