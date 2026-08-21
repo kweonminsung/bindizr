@@ -53,6 +53,38 @@ fn is_mname_rejects_other_rows() {
 }
 
 #[test]
+fn apex_ns_rrset_ttl_joins_the_existing_apex_ns_rrset() {
+    let zone = test_zone();
+
+    // The first apex NS wins, so callers express their own priority by the
+    // order they chain candidate sources.
+    assert_eq!(
+        zone.apex_ns_rrset_ttl([
+            (&RecordType::A, &OwnerName::apex(), 60),
+            (&RecordType::NS, &OwnerName::from_row("sub"), 120),
+            (&RecordType::NS, &OwnerName::apex(), 900),
+            (&RecordType::NS, &OwnerName::apex(), 1800),
+        ]),
+        900
+    );
+}
+
+#[test]
+fn apex_ns_rrset_ttl_falls_back_to_the_zone_ttl() {
+    let zone = test_zone();
+
+    assert_eq!(zone.apex_ns_rrset_ttl([]), zone.default_ttl);
+    // Only apex NS rows share the RRset a synthesized row would join.
+    assert_eq!(
+        zone.apex_ns_rrset_ttl([
+            (&RecordType::A, &OwnerName::apex(), 60),
+            (&RecordType::NS, &OwnerName::from_row("sub"), 120)
+        ]),
+        zone.default_ttl
+    );
+}
+
+#[test]
 fn mname_record_builds_the_apex_row_for_the_zone() {
     let zone = test_zone();
     let record = zone.mname_record(600);

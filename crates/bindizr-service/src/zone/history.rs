@@ -7,10 +7,7 @@ use bindizr_core::dns::{name::OwnerName, record::SoaMailbox};
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
-use super::{
-    ZoneService, apex_ns_rrset_ttl, update::soa_replacement_changes,
-    validation::normalize_zone_name,
-};
+use super::{ZoneService, update::soa_replacement_changes, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
     authorization::Caller,
@@ -93,9 +90,7 @@ async fn reconstruct_records_at_serial(
     current_serial: i32,
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
-    for record in
-        RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::None).await?
-    {
+    for record in RepositoryService::list_records_tx(tx, zone_id, LockLevel::None).await? {
         state
             .entry(record_match_key(&record))
             .or_default()
@@ -169,7 +164,7 @@ async fn records_at_serial(
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     if serial == current_serial {
         let mut records: Vec<ReconstructedRecord> =
-            RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::None)
+            RepositoryService::list_records_tx(tx, zone_id, LockLevel::None)
                 .await?
                 .into_iter()
                 .map(ReconstructedRecord::from)
@@ -358,16 +353,6 @@ fn restored_zone_from_version(
     })
 }
 
-fn soa_metadata_changed(zone: &Zone, restored: &Zone) -> bool {
-    zone.mname != restored.mname
-        || zone.rname != restored.rname
-        || zone.default_ttl != restored.default_ttl
-        || zone.refresh != restored.refresh
-        || zone.retry != restored.retry
-        || zone.expire != restored.expire
-        || zone.minimum_ttl != restored.minimum_ttl
-}
-
 impl ZoneService {
     /// List a zone's versions (serial history), newest serial first. Unless
     /// `all`, signer-only serials (DNSSEC re-signs, rollovers) are skipped —
@@ -515,14 +500,10 @@ impl ZoneService {
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let restored_zone = restored_zone_from_version(&zone, &version, new_serial)?;
-            let soa_changed = soa_metadata_changed(&zone, &restored_zone);
+            let soa_changed = zone.soa_metadata_differs(&restored_zone);
 
-            let current_records = RepositoryService::list_records_by_zone_id_tx(
-                &mut tx,
-                zone.id,
-                LockLevel::Exclusive,
-            )
-            .await?;
+            let current_records =
+                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
             let target_records =
                 reconstruct_records_at_serial(&mut tx, zone.id, target_serial, zone.serial).await?;
 
@@ -598,7 +579,7 @@ impl ZoneService {
                     name: OwnerName::apex(),
                     record_type: RecordType::NS,
                     value: restored_zone.mname.clone(),
-                    ttl: apex_ns_rrset_ttl(&restored_zone, candidates),
+                    ttl: restored_zone.apex_ns_rrset_ttl(candidates),
                     priority: None,
                 });
             }

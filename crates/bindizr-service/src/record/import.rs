@@ -42,27 +42,17 @@ struct DesiredRecord {
     stored_name: OwnerName,
 }
 
-/// Whether `existing` is the record described by (name, type, value, priority).
-fn record_matches(
-    existing: &Record,
-    stored_name: &OwnerName,
-    record_type: &RecordType,
-    value: &str,
-    priority: Option<i32>,
-) -> bool {
-    existing.name == *stored_name
-        && existing.record_type == *record_type
-        && record_type.values_equal(&existing.value, existing.priority, value, priority)
-}
-
+/// Whether `existing` is the record the import wants present.
 fn desired_matches(existing: &Record, desired: &DesiredRecord) -> bool {
-    record_matches(
-        existing,
-        &desired.stored_name,
-        &desired.prepared.record_type,
-        &desired.prepared.value,
-        desired.prepared.priority,
-    )
+    let record_type = &desired.prepared.record_type;
+    existing.name == desired.stored_name
+        && existing.record_type == *record_type
+        && record_type.values_equal(
+            &existing.value,
+            existing.priority,
+            &desired.prepared.value,
+            desired.prepared.priority,
+        )
 }
 
 /// Records referenced by the zone's own SOA/mname NS must never be removed.
@@ -210,7 +200,7 @@ impl RecordService {
                         desired.iter().map(|d| d.stored_name.clone()).collect();
                     names.sort();
                     names.dedup();
-                    RepositoryService::list_records_by_zone_id_and_names_tx(
+                    RepositoryService::list_records_by_names_tx(
                         &mut tx,
                         zone.id,
                         &names,
@@ -219,12 +209,7 @@ impl RecordService {
                     .await
                 }
                 ImportMode::Replace | ImportMode::Upsert => {
-                    RepositoryService::list_records_by_zone_id_tx(
-                        &mut tx,
-                        zone.id,
-                        LockLevel::Exclusive,
-                    )
-                    .await
+                    RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::Exclusive).await
                 }
             }
             .map_err(|e| {

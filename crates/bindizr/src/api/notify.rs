@@ -8,7 +8,6 @@ use bindizr_service::{
     types::{ErrorResponse, MessageResponse, NotifyZoneRequest},
     zone::ZoneService,
 };
-use serde_json::json;
 
 use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
@@ -45,18 +44,8 @@ pub(crate) async fn notify_zones(
 ) -> Result<Response, ApiError> {
     ZoneService::notify(&caller, body.zone_name.as_deref(), body.bump_serial).await?;
 
-    let message = match body.zone_name {
-        Some(zone_name) if body.bump_serial => {
-            format!(
-                "NOTIFY sent successfully for zone: {} (serial bumped)",
-                zone_name
-            )
-        }
-        Some(zone_name) => format!("NOTIFY sent successfully for zone: {}", zone_name),
-        None if body.bump_serial => {
-            "NOTIFY sent successfully for all zones (serial bumped)".to_string()
-        }
-        None => "NOTIFY sent successfully for all zones".to_string(),
+    let response = MessageResponse {
+        message: body.success_message(),
     };
-    Ok((StatusCode::OK, Json(json!({ "message": message }))).into_response())
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

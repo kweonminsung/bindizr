@@ -1,9 +1,6 @@
 use serde_json::json;
 
-use super::{
-    BindizrRecordItem, Changes, DomainFilter, Endpoint, group_records_into_endpoints,
-    to_bindizr_changes, validate_endpoint,
-};
+use super::{BindizrRecordItem, Changes, DomainFilter, Endpoint, group_records_into_endpoints};
 
 fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> Endpoint {
     Endpoint {
@@ -95,28 +92,56 @@ fn domain_filter_serializes_include_list() {
 }
 
 #[test]
-fn validate_endpoint_rejects_unsupported_shapes() {
-    assert!(validate_endpoint(&endpoint("", "A", 0, &["192.0.2.1"])).is_err());
-    assert!(validate_endpoint(&endpoint("a.example.com", "NS", 0, &["x"])).is_err());
-    assert!(validate_endpoint(&endpoint("a.example.com", "MX", 0, &["x"])).is_err());
-    assert!(validate_endpoint(&endpoint("a.example.com", "A", 0, &[])).is_err());
-    assert!(validate_endpoint(&endpoint("a.example.com", "A", 0, &[""])).is_err());
-    assert!(validate_endpoint(&endpoint("a.example.com", "CNAME", 0, &["a.", "b."])).is_err());
-    assert!(validate_endpoint(&endpoint("a.example.com", "A", -1, &["192.0.2.1"])).is_err());
+fn endpoint_validate_rejects_unsupported_shapes() {
+    assert!(endpoint("", "A", 0, &["192.0.2.1"]).validate().is_err());
+    assert!(
+        endpoint("a.example.com", "NS", 0, &["x"])
+            .validate()
+            .is_err()
+    );
+    assert!(
+        endpoint("a.example.com", "MX", 0, &["x"])
+            .validate()
+            .is_err()
+    );
+    assert!(endpoint("a.example.com", "A", 0, &[]).validate().is_err());
+    assert!(endpoint("a.example.com", "A", 0, &[""]).validate().is_err());
+    assert!(
+        endpoint("a.example.com", "CNAME", 0, &["a.", "b."])
+            .validate()
+            .is_err()
+    );
+    assert!(
+        endpoint("a.example.com", "A", -1, &["192.0.2.1"])
+            .validate()
+            .is_err()
+    );
 
     let mut with_set_id = endpoint("a.example.com", "A", 0, &["192.0.2.1"]);
     with_set_id.set_identifier = "weighted".to_string();
-    assert!(validate_endpoint(&with_set_id).is_err());
+    assert!(with_set_id.validate().is_err());
 
-    assert!(validate_endpoint(&endpoint("a.example.com", "a", 300, &["192.0.2.1"])).is_ok());
+    assert!(
+        endpoint("a.example.com", "a", 300, &["192.0.2.1"])
+            .validate()
+            .is_ok()
+    );
 
     // Whitespace-only content is valid TXT rdata but garbage for other types.
-    assert!(validate_endpoint(&endpoint("a.example.com", "A", 0, &["   "])).is_err());
-    assert!(validate_endpoint(&endpoint("t.example.com", "TXT", 0, &["   "])).is_ok());
+    assert!(
+        endpoint("a.example.com", "A", 0, &["   "])
+            .validate()
+            .is_err()
+    );
+    assert!(
+        endpoint("t.example.com", "TXT", 0, &["   "])
+            .validate()
+            .is_ok()
+    );
 }
 
 #[test]
-fn to_bindizr_changes_pairs_updates_and_maps_ttl() {
+fn changes_to_bindizr_pairs_updates_and_maps_ttl() {
     let changes: Changes = serde_json::from_value(json!({
         "create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A", "recordTTL": 300}],
         "updateOld": [{"dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A"}],
@@ -124,7 +149,7 @@ fn to_bindizr_changes_pairs_updates_and_maps_ttl() {
     }))
     .unwrap();
 
-    let bindizr = to_bindizr_changes(&changes).unwrap();
+    let bindizr = changes.to_bindizr().unwrap();
 
     assert_eq!(bindizr.creates.len(), 1);
     assert_eq!(bindizr.creates[0].ttl, Some(300));
@@ -136,14 +161,14 @@ fn to_bindizr_changes_pairs_updates_and_maps_ttl() {
 }
 
 #[test]
-fn to_bindizr_changes_rejects_mismatched_update_pairs() {
+fn changes_to_bindizr_rejects_mismatched_update_pairs() {
     let changes: Changes = serde_json::from_value(json!({
         "updateOld": [{"dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A"}],
         "updateNew": []
     }))
     .unwrap();
 
-    assert!(to_bindizr_changes(&changes).is_err());
+    assert!(changes.to_bindizr().is_err());
 }
 
 #[test]

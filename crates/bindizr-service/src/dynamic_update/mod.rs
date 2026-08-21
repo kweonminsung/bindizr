@@ -365,7 +365,7 @@ async fn delete_matching(
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
     let owner = owner_in_zone(name, &zone.name)?;
-    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    let zone_records = RecordService::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
     let mut matched: Vec<Record> = Vec::new();
     for record in &zone_records {

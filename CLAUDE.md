@@ -70,7 +70,8 @@ One locking model covers the service layer; keep new code on it:
 
 - A **zone-data mutation** (records, serial, journal rows, versions) is one
   transaction that locks the zone row (`ZoneService::get_by_name_tx` /
-  `get_zone_by_*_tx`, `FOR UPDATE`) **before** any record rows — that order is
+  `get_zone_by_name_tx` / `get_zone_tx`, `FOR UPDATE`) **before** any record
+  rows — that order is
   the deadlock rule. Authorization, validation, and conflict checks decide on
   rows loaded inside that transaction, never on an earlier unlocked read.
 - Outside the transaction belong: pure input parsing/normalization,
@@ -185,9 +186,19 @@ entity methods, and are the only exemptions.
   already names and mark batch variants `_many`
   (`RecordRepository::create_many_tx`). `_many` never appears in the facade.
 - `_by_<keys>` — equality on named columns, joined with `_and_` and never
-  dropping `_id` (`list_by_zone_id_and_key_id_tx`).
+  dropping `_id` (`list_by_zone_id_and_key_id_tx`). The entity's canonical id
+  keys are elided, carried by the signature alone: bare `get`/`update`/
+  `delete` take the row's own id, bare `list`/`count` the owning zone's id
+  (`list_all` stays the unfiltered form). A non-id selector is always named,
+  the canonical scope still elided around it (`get_by_serial(zone_id,
+  serial)`, `list_by_name_tx(tx, zone_id, name)`). Every other key path is
+  spelled in full: a non-canonical side (`list_by_token_id`,
+  `count_by_key_id`, `delete_by_zone_id_tx`), a batch over many scopes
+  (`list_by_zone_ids`), and any key set whose elision would leave two methods
+  of one surface distinguishable only by their signatures — which is why the
+  two-sided policy tables spell everything.
 - `_with_<join>` — the result carries joined data
-  (`get_record_by_id_with_zone`); never a filter or semi-join.
+  (`get_record_with_zone`); never a filter or semi-join.
 - `_<predicate>` — a comparison filter as `<subject>_<comparison>`. Serial
   intervals keep their contracts in doc comments — the journal's
   `between_serials` is the IXFR half-open `(from, to]`, the versions'

@@ -13,7 +13,6 @@ use bindizr_service::{
     },
 };
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
@@ -71,8 +70,8 @@ pub(crate) async fn get_dnssec_status(
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::get_status(&caller, &params.name).await?;
-    let json_body = json!({ "dnssec": status });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -110,8 +109,8 @@ pub(crate) async fn enable_dnssec(
         body.split_keys,
     )
     .await?;
-    let json_body = json!({ "dnssec": status });
-    Ok((StatusCode::CREATED, Json(json_body)).into_response())
+    let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -142,8 +141,10 @@ pub(crate) async fn disable_dnssec(
     JsonBody(body): JsonBody<DisableDnssecRequest>,
 ) -> Result<Response, ApiError> {
     DnssecService::disable(&caller, &params.name, body.confirm_insecure).await?;
-    let json_body = json!({ "message": "DNSSEC disabled successfully" });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = MessageResponse {
+        message: "DNSSEC disabled successfully".to_string(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -169,8 +170,10 @@ pub(crate) async fn get_dnssec_ds_records(
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::get_status(&caller, &params.name).await?;
-    let json_body = json!({ "ds_records": status.ds_records });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = DnssecDsListResponse {
+        ds_records: status.ds_records,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -197,8 +200,10 @@ pub(crate) async fn sign_zone(
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
     DnssecService::sign(&caller, &params.name).await?;
-    let json_body = json!({ "message": "Zone signed successfully" });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = MessageResponse {
+        message: "Zone signed successfully".to_string(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -229,8 +234,8 @@ pub(crate) async fn start_dnssec_rollover(
     JsonBody(body): JsonBody<RolloverDnssecRequest>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::rollover_start(&caller, &params.name, body.role.as_deref()).await?;
-    let json_body = json!({ "dnssec": status });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -257,6 +262,6 @@ pub(crate) async fn ds_seen_dnssec_rollover(
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::rollover_ds_seen(&caller, &params.name).await?;
-    let json_body = json!({ "dnssec": status });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

@@ -18,7 +18,6 @@ use bindizr_service::{
     zone::ZoneService,
 };
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::api::{
     RequestCaller,
@@ -144,8 +143,11 @@ pub(crate) async fn list_zone_versions(
     for version in &response.items {
         items.push(ZoneVersionResponse::from_version(version)?);
     }
-    let json_body = json!({ "items": items, "pagination": response.pagination });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = PaginatedResponse {
+        items,
+        pagination: response.pagination,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -297,8 +299,11 @@ pub(crate) async fn get_zones(
         .iter()
         .map(GetZoneResponse::from_zone)
         .collect::<Vec<GetZoneResponse>>();
-    let json_body = json!({ "items": zones, "pagination": response.pagination });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = PaginatedResponse {
+        items: zones,
+        pagination: response.pagination,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -335,8 +340,8 @@ pub(crate) async fn get_zone(
         .collect::<Vec<GetRecordResponse>>();
 
     let zone = GetZoneResponse::from_zone(&raw_zone);
-    let json_body = json!({ "zone": zone, "records": records });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = ZoneDetailResponse { zone, records };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -360,9 +365,10 @@ pub(crate) async fn create_zone(
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
     let zone = ZoneService::create(&caller, &body).await?;
-    let zone = GetZoneResponse::from_zone(&zone);
-    let json_body = json!({ "zone": zone });
-    Ok((StatusCode::CREATED, Json(json_body)).into_response())
+    let response = ZoneResponse {
+        zone: GetZoneResponse::from_zone(&zone),
+    };
+    Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -391,9 +397,10 @@ pub(crate) async fn update_zone(
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
     let zone = ZoneService::update(&caller, &params.name, &body).await?;
-    let zone = GetZoneResponse::from_zone(&zone);
-    let json_body = json!({ "zone": zone });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = ZoneResponse {
+        zone: GetZoneResponse::from_zone(&zone),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -418,8 +425,10 @@ pub(crate) async fn delete_zone(
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
     ZoneService::delete(&caller, &params.name).await?;
-    let json_body = json!({ "message": "Zone deleted successfully" });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = MessageResponse {
+        message: "Zone deleted successfully".to_string(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(

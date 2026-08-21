@@ -255,7 +255,7 @@ impl RecordService {
     ) -> Result<AddOutcome, ServiceError> {
         // Only records sharing the owner name can conflict, so load just those
         // instead of the whole zone.
-        let zone_records = RepositoryService::list_records_by_zone_id_and_name_tx(
+        let zone_records = RepositoryService::list_records_by_name_tx(
             tx,
             zone.id,
             owner_name,

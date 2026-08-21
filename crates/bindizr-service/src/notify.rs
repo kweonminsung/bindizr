@@ -60,7 +60,7 @@ pub fn init_notify_worker() {
             let mut batch = NotifyBatch::default();
             batch.add(first);
 
-            let window = Duration::from_millis(config::get_bindizr_config().dns.notify_batch_ms);
+            let window = Duration::from_millis(config::bindizr_config().dns.notify_batch_ms);
             if !window.is_zero() {
                 let deadline = Instant::now() + window;
                 loop {
@@ -135,7 +135,7 @@ fn enqueue_notify(zone_name: Option<&str>) -> bool {
 /// Send a NOTIFY after a zone update, unless disabled by `notify_after_update`.
 /// In async mode it is queued and this returns at once; otherwise sent inline.
 pub(crate) async fn send_notify_after_update(zone_name: Option<&str>) -> Result<(), String> {
-    let dns = &config::get_bindizr_config().dns;
+    let dns = &config::bindizr_config().dns;
     if !dns.notify_after_update {
         return Ok(());
     }

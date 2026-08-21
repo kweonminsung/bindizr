@@ -1,5 +1,6 @@
 use super::value::{
-    parse_optional_u16_record_field, parse_u16_record_field, validate_domain_record_value,
+    DEFAULT_PRIORITY, parse_optional_u16_record_field, parse_u16_record_field,
+    validate_domain_record_value,
 };
 use crate::dns::name::to_fqdn_lowercase;
 
@@ -16,7 +17,11 @@ impl<'a> SrvRecordValue<'a> {
     pub(crate) fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
         match value.split_whitespace().collect::<Vec<_>>().as_slice() {
             [weight, port, target] => Ok(Self {
-                priority: parse_optional_u16_record_field("SRV priority", fallback_priority)?,
+                priority: parse_optional_u16_record_field(
+                    "SRV priority",
+                    fallback_priority,
+                    DEFAULT_PRIORITY,
+                )?,
                 weight: parse_u16_record_field("SRV weight", weight)?,
                 port: parse_u16_record_field("SRV port", port)?,
                 target,

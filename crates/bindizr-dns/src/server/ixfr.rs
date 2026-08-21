@@ -345,7 +345,7 @@ fn add_change(
             })?;
             builder.add_raw_rdata(
                 change.record_name.to_wire(zone_name),
-                record_type.to_int(),
+                record_type.wire_type(),
                 change.record_ttl as u32,
                 rdata,
             )

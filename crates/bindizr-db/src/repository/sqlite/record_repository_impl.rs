@@ -102,7 +102,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(out)
     }
 
-    async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
+    async fn get(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
@@ -114,7 +114,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
-    async fn get_by_id_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
+    async fn get_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let record = sqlx::query_as::<_, RecordWithZone>(
@@ -133,7 +133,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
-    async fn get_by_id_tx(
+    async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
@@ -149,7 +149,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
+    async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let records =
@@ -162,7 +162,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
-    async fn list_by_zone_id_tx(
+    async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -180,7 +180,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
-    async fn list_by_zone_id_and_name_tx(
+    async fn list_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -230,7 +230,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(out)
     }
 
-    async fn list_by_zone_id_and_names_tx(
+    async fn list_by_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

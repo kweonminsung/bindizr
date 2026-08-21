@@ -48,7 +48,7 @@ pub async fn initialize() -> Result<(), DatabaseError> {
         return Ok(());
     }
 
-    let bindizr_config = config::get_bindizr_config();
+    let bindizr_config = config::bindizr_config();
 
     let database_type = match bindizr_config.database.database_type {
         config::DatabaseType::Mysql => DatabaseType::MySQL,

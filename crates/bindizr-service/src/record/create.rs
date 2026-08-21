@@ -64,23 +64,22 @@ impl RecordService {
                 )
                 .await?;
 
-            let existing_records_with_name =
-                match RepositoryService::list_records_by_zone_id_and_name_tx(
-                    &mut tx,
-                    zone.id,
-                    &owner_name,
-                    LockLevel::Exclusive,
-                )
-                .await
-                {
-                    Ok(records) => records,
-                    Err(e) => {
-                        log_error!("Failed to check existing records: {}", e);
-                        return Err(ServiceError::internal(
-                            "Failed to create record".to_string(),
-                        ));
-                    }
-                };
+            let existing_records_with_name = match RepositoryService::list_records_by_name_tx(
+                &mut tx,
+                zone.id,
+                &owner_name,
+                LockLevel::Exclusive,
+            )
+            .await
+            {
+                Ok(records) => records,
+                Err(e) => {
+                    log_error!("Failed to check existing records: {}", e);
+                    return Err(ServiceError::internal(
+                        "Failed to create record".to_string(),
+                    ));
+                }
+            };
 
             // Fixed at write time: a later zone TTL change will not move it.
             let ttl = create_record_request.ttl.unwrap_or(zone.default_ttl);

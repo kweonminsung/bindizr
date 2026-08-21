@@ -46,7 +46,7 @@ where
 
 /// Bind the HTTP API listener and spawn the axum server in the background.
 pub(crate) async fn initialize() -> Result<(), String> {
-    let bindizr_config = config::get_bindizr_config();
+    let bindizr_config = config::bindizr_config();
     let addr = SocketAddr::from((
         bindizr_config.api.listen_addr,
         bindizr_config.api.listen_port,

@@ -24,8 +24,8 @@ pub(crate) enum ConfigCommand {
 pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliError> {
     match subcommand {
         ConfigCommand::Check { file } => check_config(file.as_deref()),
-        ConfigCommand::List => list_config().await,
-        ConfigCommand::Get { key } => get_config(&key).await,
+        ConfigCommand::List => print_config_list().await,
+        ConfigCommand::Get { key } => print_config_value(&key).await,
     }
 }
 
@@ -39,13 +39,13 @@ fn check_config(file: Option<&str>) -> Result<(), CliError> {
     Ok(())
 }
 
-async fn list_config() -> Result<(), CliError> {
+async fn print_config_list() -> Result<(), CliError> {
     let config = loaded_daemon_config().await?;
     print_config(&config);
     Ok(())
 }
 
-async fn get_config(key: &str) -> Result<(), CliError> {
+async fn print_config_value(key: &str) -> Result<(), CliError> {
     let config = loaded_daemon_config().await?;
     let value = serde_json::to_value(&config)
         .map_err(|e| format!("Failed to serialize configuration: {}", e))?;

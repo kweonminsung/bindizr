@@ -3,7 +3,7 @@ use std::str::FromStr;
 use bindizr_core::model::record::RecordType;
 use domain::base::{Name, iana::Rtype};
 
-use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, XfrError, encode_tcp_message, parse_name};
+use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, XfrError, encode_tcp_message};
 
 #[test]
 fn encode_tcp_message_rejects_oversized_payload() {

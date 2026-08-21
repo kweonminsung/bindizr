@@ -88,7 +88,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn get_by_zone_id_and_serial(
+    async fn get_by_serial(
         &self,
         zone_id: i32,
         serial: i32,
@@ -107,7 +107,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn list_by_zone_id_in_serial_range(
+    async fn list_in_serial_range(
         &self,
         zone_id: i32,
         from_serial: i32,
@@ -128,7 +128,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn list_by_zone_id(
+    async fn list(
         &self,
         zone_id: i32,
         user_changes_only: bool,
@@ -157,11 +157,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn count_by_zone_id(
-        &self,
-        zone_id: i32,
-        user_changes_only: bool,
-    ) -> Result<u64, DatabaseError> {
+    async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError> {
         let filter = if user_changes_only {
             USER_CHANGES_FILTER
         } else {
@@ -177,7 +173,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         Ok(count as u64)
     }
 
-    async fn get_by_zone_id_and_serial_tx(
+    async fn get_by_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

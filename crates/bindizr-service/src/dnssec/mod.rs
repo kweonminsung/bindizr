@@ -14,7 +14,7 @@ mod tests;
 use std::sync::OnceLock;
 
 use base64::Engine;
-use bindizr_core::config::get_bindizr_config;
+use bindizr_core::config::bindizr_config;
 use chrono::{DateTime, Duration, Utc};
 use rand::RngExt;
 
@@ -78,12 +78,8 @@ impl DnssecService {
         let result = async {
             let zone =
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let existing = RepositoryService::list_dnssec_keys_by_zone_id_tx(
-                &mut tx,
-                zone.id,
-                LockLevel::None,
-            )
-            .await?;
+            let existing =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
             if !existing.is_empty() {
                 return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
             }
@@ -142,22 +138,15 @@ impl DnssecService {
         let result = async {
             let zone =
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let keys = RepositoryService::list_dnssec_keys_by_zone_id_tx(
-                &mut tx,
-                zone.id,
-                LockLevel::None,
-            )
-            .await?;
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
             if keys.is_empty() {
                 return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
             }
 
-            let derived = RepositoryService::list_dnssec_records_by_zone_id_tx(
-                &mut tx,
-                zone.id,
-                LockLevel::None,
-            )
-            .await?;
+            let derived =
+                RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
+                    .await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let changes = derived_changes(zone.id, new_serial, &derived, &[])?;
@@ -186,11 +175,9 @@ impl DnssecService {
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
-        let zone = ZoneService::find_by_name(zone_name)
-            .await?
-            .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
-        let keys = RepositoryService::list_dnssec_keys_by_zone_id(zone.id).await?;
-        let derived = RepositoryService::list_dnssec_records_by_zone_id(zone.id).await?;
+        let zone = ZoneService::lookup_by_name(zone_name).await?;
+        let keys = RepositoryService::list_dnssec_keys(zone.id).await?;
+        let derived = RepositoryService::list_dnssec_records(zone.id).await?;
         let earliest = derived.iter().filter_map(|row| row.expires_at).min();
 
         build_status(&zone, zone.dnssec_denial, &keys, earliest, zone.serial)
@@ -205,12 +192,8 @@ impl DnssecService {
         let result = async {
             let zone =
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let keys = RepositoryService::list_dnssec_keys_by_zone_id_tx(
-                &mut tx,
-                zone.id,
-                LockLevel::None,
-            )
-            .await?;
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
             if keys.is_empty() {
                 return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
             }
@@ -239,12 +222,8 @@ impl DnssecService {
         let result = async {
             let zone =
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let keys = RepositoryService::list_dnssec_keys_by_zone_id_tx(
-                &mut tx,
-                zone.id,
-                LockLevel::None,
-            )
-            .await?;
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
             if keys.is_empty() {
                 return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
             }
@@ -325,12 +304,8 @@ impl DnssecService {
         let result = async {
             let zone =
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let keys = RepositoryService::list_dnssec_keys_by_zone_id_tx(
-                &mut tx,
-                zone.id,
-                LockLevel::None,
-            )
-            .await?;
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
             if keys.is_empty() {
                 return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
             }
@@ -358,8 +333,8 @@ impl DnssecService {
 
     /// Derived records of a zone's signed view, for assembling transfers.
     /// Takes no caller: DNS-plane reads are authorized by the transfer ACL.
-    pub async fn list_records_by_zone_id(zone_id: i32) -> Result<Vec<DnssecRecord>, ServiceError> {
-        RepositoryService::list_dnssec_records_by_zone_id(zone_id).await
+    pub async fn list_records(zone_id: i32) -> Result<Vec<DnssecRecord>, ServiceError> {
+        RepositoryService::list_dnssec_records(zone_id).await
     }
 
     /// Recompute the zone's signed view inside the caller's mutation
@@ -371,8 +346,7 @@ impl DnssecService {
         zone: &Zone,
         new_serial: i32,
     ) -> Result<(), ServiceError> {
-        let keys =
-            RepositoryService::list_dnssec_keys_by_zone_id_tx(tx, zone.id, LockLevel::None).await?;
+        let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
         if keys.is_empty() {
             return Ok(());
         }
@@ -389,13 +363,10 @@ impl DnssecService {
         keys: &[DnssecKey],
         force: bool,
     ) -> Result<bool, ServiceError> {
-        let records =
-            RepositoryService::list_records_by_zone_id_tx(tx, zone.id, LockLevel::None).await?;
-        let prev =
-            RepositoryService::list_dnssec_records_by_zone_id_tx(tx, zone.id, LockLevel::None)
-                .await?;
+        let records = RepositoryService::list_records_tx(tx, zone.id, LockLevel::None).await?;
+        let prev = RepositoryService::list_dnssec_records_tx(tx, zone.id, LockLevel::None).await?;
 
-        let dnssec = &get_bindizr_config().dnssec;
+        let dnssec = &bindizr_config().dnssec;
         let now = Utc::now();
         let jitter = rand::rng().random_range(0..=MAX_EXPIRATION_JITTER_SECS);
         let diff = signed_view::compute_signed_view(&signed_view::SignedViewParams {
@@ -447,7 +418,7 @@ pub fn init_maintenance_scheduler() {
 /// One scheduler pass: journal retention, signature refresh, and rollover
 /// advancement. Failures are logged, never fatal.
 async fn run_maintenance_pass() {
-    let config = get_bindizr_config();
+    let config = bindizr_config();
 
     let retention_days = config.dns.journal_retention_days;
     if retention_days > 0 {
@@ -548,13 +519,12 @@ async fn sign_zone_by_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to sign zone").await?;
     let result = async {
         let Some(zone) =
-            RepositoryService::get_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
+            RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
             return Ok(None);
         };
         let keys =
-            RepositoryService::list_dnssec_keys_by_zone_id_tx(&mut tx, zone.id, LockLevel::None)
-                .await?;
+            RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
         if keys.is_empty() {
             return Ok(None);
         }
@@ -579,13 +549,12 @@ async fn promote_zsks_for_zone(
     let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
     let result = async {
         let Some(zone) =
-            RepositoryService::get_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
+            RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
             return Ok(None);
         };
         let keys =
-            RepositoryService::list_dnssec_keys_by_zone_id_tx(&mut tx, zone.id, LockLevel::None)
-                .await?;
+            RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
 
         let due: Vec<i32> = keys
             .iter()
@@ -621,13 +590,12 @@ async fn remove_retired_keys_for_zone(
     let mut tx = RepositoryService::begin_tx("failed to remove retired keys").await?;
     let result = async {
         let Some(zone) =
-            RepositoryService::get_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
+            RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
             return Ok(None);
         };
         let keys =
-            RepositoryService::list_dnssec_keys_by_zone_id_tx(&mut tx, zone.id, LockLevel::None)
-                .await?;
+            RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
 
         let mut remaining = Vec::with_capacity(keys.len());
         let mut removed = 0usize;
@@ -832,8 +800,7 @@ async fn earliest_expiry_tx(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
 ) -> Result<Option<DateTime<Utc>>, ServiceError> {
-    let derived =
-        RepositoryService::list_dnssec_records_by_zone_id_tx(tx, zone_id, LockLevel::None).await?;
+    let derived = RepositoryService::list_dnssec_records_tx(tx, zone_id, LockLevel::None).await?;
     Ok(derived.iter().filter_map(|row| row.expires_at).min())
 }
 

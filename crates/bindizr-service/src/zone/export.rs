@@ -43,8 +43,7 @@ impl ZoneService {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
             let records =
-                RepositoryService::list_records_by_zone_id_tx(&mut tx, zone.id, LockLevel::None)
-                    .await?;
+                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
             Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
         }
         .await;

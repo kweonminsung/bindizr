@@ -49,7 +49,7 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         Ok(key)
     }
 
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<DnssecKey>, DatabaseError> {
+    async fn list(&self, zone_id: i32) -> Result<Vec<DnssecKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let keys = sqlx::query_as::<_, DnssecKey>(
@@ -67,7 +67,7 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         Ok(keys)
     }
 
-    async fn list_by_zone_id_tx(
+    async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

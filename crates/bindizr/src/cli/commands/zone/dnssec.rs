@@ -41,6 +41,10 @@ pub(crate) enum ZoneDnssecCommand {
     Disable {
         /// The name of the zone
         name: String,
+        /// Confirm the zone may go insecure: the DS record has been removed
+        /// from the parent zone and its TTL has passed
+        #[arg(long)]
+        confirm_insecure: bool,
     },
     /// Show a zone's DNSSEC status (keys, DS records, signature expiry)
     Status {
@@ -113,15 +117,16 @@ pub(super) async fn handle_command(
             println!("{}", response.message);
             print_status(&response.data)?;
         }
-        ZoneDnssecCommand::Disable { name } => {
+        ZoneDnssecCommand::Disable {
+            name,
+            confirm_insecure,
+        } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneDnssecDisable,
                     DisableZoneDnssecParams {
                         zone_name: name,
-                        request: DisableDnssecRequest {
-                            confirm_insecure: true,
-                        },
+                        request: DisableDnssecRequest { confirm_insecure },
                     },
                 )
                 .await?;

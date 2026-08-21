@@ -4,7 +4,7 @@ use bindizr_service::{
     record::RecordService,
     types::{
         CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-        VersionDetailResponse, VersionRecordResponse, ZoneVersionResponse,
+        PaginatedResponse, VersionDetailResponse, VersionRecordResponse, ZoneVersionResponse,
     },
     zone::ZoneService,
 };
@@ -38,14 +38,17 @@ pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
     };
 
     let zones = ZoneService::list_by_filter(&Caller::Global, filter).await?;
-    let response: Vec<GetZoneResponse> =
-        zones.items.iter().map(GetZoneResponse::from_zone).collect();
+    let response = PaginatedResponse {
+        items: zones
+            .items
+            .iter()
+            .map(GetZoneResponse::from_zone)
+            .collect::<Vec<_>>(),
+        pagination: zones.pagination,
+    };
     Ok(DaemonResponse {
-        message: format!("Found {} zone(s)", response.len()),
-        data: json!({
-            "items": response,
-            "pagination": zones.pagination,
-        }),
+        message: format!("Found {} zone(s)", response.items.len()),
+        data: to_response_data(response)?,
     })
 }
 
@@ -125,13 +128,14 @@ pub(super) async fn list_zone_versions(
         .iter()
         .map(ZoneVersionResponse::from_version)
         .collect::<Result<Vec<_>, _>>()?;
+    let response = PaginatedResponse {
+        items,
+        pagination: response.pagination,
+    };
 
     Ok(DaemonResponse {
-        message: format!("Found {} version(s)", items.len()),
-        data: json!({
-            "items": items,
-            "pagination": response.pagination,
-        }),
+        message: format!("Found {} version(s)", response.items.len()),
+        data: to_response_data(response)?,
     })
 }
 

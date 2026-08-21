@@ -4,7 +4,7 @@ use bindizr_core::dns::{
 };
 use bindizr_db::repository::LockLevel;
 
-use super::{ZoneService, apex_ns_rrset_ttl};
+use super::ZoneService;
 use crate::{
     authorization::Caller,
     dnssec::DnssecService,
@@ -197,7 +197,7 @@ impl ZoneService {
 
             // A rename / mname change must keep an apex NS matching the new
             // mname; only apex rows can satisfy that, so load just those.
-            let apex_records = RepositoryService::list_records_by_zone_id_and_name_tx(
+            let apex_records = RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone_id,
                 &OwnerName::apex(),
@@ -213,12 +213,13 @@ impl ZoneService {
                 .any(|r| updated_zone.is_mname(&r.record_type, &r.name, &r.value));
 
             if !has_mname {
-                let mname_record = updated_zone.mname_record(apex_ns_rrset_ttl(
-                    &updated_zone,
-                    apex_records
-                        .iter()
-                        .map(|r| (&r.record_type, &r.name, r.ttl)),
-                ));
+                let mname_record = updated_zone.mname_record(
+                    updated_zone.apex_ns_rrset_ttl(
+                        apex_records
+                            .iter()
+                            .map(|r| (&r.record_type, &r.name, r.ttl)),
+                    ),
+                );
 
                 RecordService::insert_records_with_changes_tx(
                     &mut tx,

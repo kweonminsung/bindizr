@@ -1,4 +1,6 @@
-use super::value::{parse_optional_u16_record_field, validate_domain_record_value};
+use super::value::{
+    DEFAULT_PRIORITY, parse_optional_u16_record_field, validate_domain_record_value,
+};
 use crate::dns::name::to_fqdn_lowercase;
 
 pub struct MxRecordValue<'a> {
@@ -20,7 +22,11 @@ impl<'a> MxRecordValue<'a> {
     pub(crate) fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
         match value.split_whitespace().collect::<Vec<_>>().as_slice() {
             [target] => Ok(Self {
-                priority: parse_optional_u16_record_field("MX priority", fallback_priority)?,
+                priority: parse_optional_u16_record_field(
+                    "MX priority",
+                    fallback_priority,
+                    DEFAULT_PRIORITY,
+                )?,
                 target,
             }),
             _ => Err(format!(

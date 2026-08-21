@@ -52,7 +52,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
-    async fn get_by_id_tx(
+    async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,

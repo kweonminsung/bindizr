@@ -1,3 +1,5 @@
+use serde_json::json;
+
 use super::*;
 
 /// Bind a test socket, or `None` in sandboxes that forbid Unix sockets.

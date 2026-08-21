@@ -245,7 +245,7 @@ impl DnsMessageBuilder {
     ) -> Result<(), XfrError> {
         self.add_raw_rdata(
             record.name.to_wire(zone_name),
-            record.record_type.to_int(),
+            record.record_type.wire_type(),
             record.ttl as u32,
             record.rdata.clone(),
         )
@@ -437,8 +437,15 @@ impl ParsedQuery {
         let qname = question.qname().to_name::<Vec<u8>>();
         let qtype = question.qtype();
 
+        // domain's `Display` renders the root as "." and otherwise omits the
+        // root dot, so only the root query maps to the empty zone form; a
+        // trailing escaped dot inside the last label stays data.
         let qname_presentation = qname.to_string();
-        let zone_name = qname_presentation.trim_end_matches('.').to_string();
+        let zone_name = if qname_presentation == "." {
+            String::new()
+        } else {
+            qname_presentation
+        };
 
         // An IXFR query carries the client's current serial in an
         // authority-section SOA (RFC 1995, Section 2).

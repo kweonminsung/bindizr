@@ -7,7 +7,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use base64::Engine;
 
-use super::TxtRecordValue;
+use super::{MxRecordValue, SrvRecordValue, TxtRecordValue};
 use crate::{dns::name::encode_name, model::record::RecordType};
 
 const JOURNAL_VALUE_PREFIX: &str = "bindizr:rdata:v1:";
@@ -133,14 +133,14 @@ impl EncodedRdata {
             }
             RecordType::CNAME | RecordType::NS | RecordType::PTR => encode_name(value)?,
             RecordType::MX => {
-                let (preference, target) = RecordType::mx_wire_fields(value, priority)?;
+                let (preference, target) = MxRecordValue::wire_fields(value, priority)?;
                 let mut rdata = preference.to_be_bytes().to_vec();
                 rdata.extend_from_slice(&encode_name(target)?);
                 rdata
             }
             RecordType::SRV => {
                 let (srv_priority, weight, port, target) =
-                    RecordType::srv_wire_fields(value, priority)?;
+                    SrvRecordValue::wire_fields(value, priority)?;
                 let mut rdata = Vec::with_capacity(6 + target.len() + 2);
                 rdata.extend_from_slice(&srv_priority.to_be_bytes());
                 rdata.extend_from_slice(&weight.to_be_bytes());

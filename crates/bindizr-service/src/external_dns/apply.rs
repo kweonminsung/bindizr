@@ -17,7 +17,7 @@ use crate::{
     error::{ErrorCode, ServiceError},
     log_info, log_warn,
     model::{
-        record::{EXTERNAL_DNS_RECORD_TYPES, Record, RecordType},
+        record::{Record, RecordType},
         zone::Zone,
     },
     record::{RecordService, parse_record_type, validate_record_add_constraints_normalized},
@@ -26,11 +26,6 @@ use crate::{
     types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRrset},
     zone::ZoneService,
 };
-
-/// Record types ExternalDNS may manage through this API.
-pub(super) fn is_supported_record_type(record_type: &RecordType) -> bool {
-    EXTERNAL_DNS_RECORD_TYPES.contains(record_type)
-}
 
 /// One desired RRset operation as the request spells it: values are
 /// row-encoded, but the owner is still an absolute lookup name with no zone
@@ -75,7 +70,7 @@ pub(super) struct ZoneChangeSet {
 
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {
     let parsed = parse_record_type(record_type)?;
-    if !is_supported_record_type(&parsed) {
+    if !parsed.is_external_dns_supported() {
         return Err(ServiceError::invalid_input(format!(
             "record type '{}' is not supported by the ExternalDNS API",
             parsed
@@ -398,7 +393,7 @@ impl ExternalDnsService {
                     .collect();
                 names.sort();
                 names.dedup();
-                let existing = RepositoryService::list_records_by_zone_id_and_names_tx(
+                let existing = RepositoryService::list_records_by_names_tx(
                     &mut tx,
                     zone.id,
                     &names,

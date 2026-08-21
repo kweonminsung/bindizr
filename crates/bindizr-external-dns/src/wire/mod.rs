@@ -103,111 +103,110 @@ pub(crate) struct BindizrRecordItem {
 /// The endpoint's record type, if bindizr's ExternalDNS API manages it.
 fn supported_record_type(record_type: &str) -> Option<RecordType> {
     let parsed = record_type.parse::<RecordType>().ok()?;
-    EXTERNAL_DNS_RECORD_TYPES
-        .contains(&parsed)
-        .then_some(parsed)
+    parsed.is_external_dns_supported().then_some(parsed)
 }
 
-/// Validate an endpoint against what the adapter supports; the message
-/// becomes a permanent (4xx) error body. Mirrors the server's own validation
-/// so a bad plan fails without a round trip.
-pub(crate) fn validate_endpoint(endpoint: &Endpoint) -> Result<(), String> {
-    if endpoint.dns_name.trim().is_empty() {
-        return Err("dnsName must not be empty".to_string());
-    }
-
-    let Some(record_type) = supported_record_type(&endpoint.record_type) else {
-        return Err(format!(
-            "record type '{}' is not supported (supported: {})",
-            endpoint.record_type,
-            EXTERNAL_DNS_RECORD_TYPES
-                .iter()
-                .map(RecordType::as_str)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    };
-
-    if endpoint.targets.is_empty() {
-        return Err(format!("endpoint '{}' has no targets", endpoint.dns_name));
-    }
-    // Whitespace-only TXT content is valid; for other types it is garbage.
-    let is_txt = record_type == RecordType::TXT;
-    if endpoint.targets.iter().any(|t| {
-        if is_txt {
-            t.is_empty()
-        } else {
-            t.trim().is_empty()
+impl Endpoint {
+    /// Validate against what the adapter supports; the message becomes a
+    /// permanent (4xx) error body. Mirrors the server's own validation so a
+    /// bad plan fails without a round trip.
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        if self.dns_name.trim().is_empty() {
+            return Err("dnsName must not be empty".to_string());
         }
-    }) {
-        return Err(format!(
-            "endpoint '{}' has an empty target",
-            endpoint.dns_name
-        ));
-    }
-    if record_type == RecordType::CNAME && endpoint.targets.len() > 1 {
-        return Err(format!(
-            "CNAME endpoint '{}' must have exactly one target",
-            endpoint.dns_name
-        ));
+
+        let Some(record_type) = supported_record_type(&self.record_type) else {
+            return Err(format!(
+                "record type '{}' is not supported (supported: {})",
+                self.record_type,
+                EXTERNAL_DNS_RECORD_TYPES
+                    .iter()
+                    .map(RecordType::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        };
+
+        if self.targets.is_empty() {
+            return Err(format!("endpoint '{}' has no targets", self.dns_name));
+        }
+        // Whitespace-only TXT content is valid; for other types it is garbage.
+        let is_txt = record_type == RecordType::TXT;
+        if self.targets.iter().any(|t| {
+            if is_txt {
+                t.is_empty()
+            } else {
+                t.trim().is_empty()
+            }
+        }) {
+            return Err(format!("endpoint '{}' has an empty target", self.dns_name));
+        }
+        if record_type == RecordType::CNAME && self.targets.len() > 1 {
+            return Err(format!(
+                "CNAME endpoint '{}' must have exactly one target",
+                self.dns_name
+            ));
+        }
+
+        if !self.set_identifier.is_empty() {
+            return Err("setIdentifier is not supported by this provider".to_string());
+        }
+
+        if self.record_ttl < 0 || self.record_ttl > i32::MAX as i64 {
+            return Err(format!("recordTTL {} is out of range", self.record_ttl));
+        }
+
+        Ok(())
     }
 
-    if !endpoint.set_identifier.is_empty() {
-        return Err("setIdentifier is not supported by this provider".to_string());
+    /// Convert a validated endpoint into a bindizr RRset. TXT targets pass
+    /// through in presentation form; the server parses and stores them.
+    pub(crate) fn to_bindizr_rrset(&self) -> BindizrRrset {
+        BindizrRrset {
+            name: self.dns_name.clone(),
+            record_type: self.record_type.to_ascii_uppercase(),
+            ttl: (self.record_ttl > 0).then_some(self.record_ttl as i32),
+            values: self.targets.clone(),
+        }
     }
-
-    if endpoint.record_ttl < 0 || endpoint.record_ttl > i32::MAX as i64 {
-        return Err(format!("recordTTL {} is out of range", endpoint.record_ttl));
-    }
-
-    Ok(())
 }
 
-/// Convert a validated endpoint into a bindizr RRset. TXT targets pass
-/// through in presentation form; the server parses and stores them.
-pub(crate) fn to_bindizr_rrset(endpoint: &Endpoint) -> BindizrRrset {
-    BindizrRrset {
-        name: endpoint.dns_name.clone(),
-        record_type: endpoint.record_type.to_ascii_uppercase(),
-        ttl: (endpoint.record_ttl > 0).then_some(endpoint.record_ttl as i32),
-        values: endpoint.targets.clone(),
-    }
-}
+impl Changes {
+    /// Convert into one bindizr change-set request. `updateOld[i]` and
+    /// `updateNew[i]` pair positionally, per the plan contract.
+    pub(crate) fn to_bindizr(&self) -> Result<BindizrChanges, String> {
+        if self.update_old.len() != self.update_new.len() {
+            return Err(format!(
+                "updateOld and updateNew must pair up ({} vs {} endpoints)",
+                self.update_old.len(),
+                self.update_new.len()
+            ));
+        }
 
-/// Convert a whole `plan.Changes` into one bindizr change-set request.
-/// `updateOld[i]` and `updateNew[i]` pair positionally, per the plan contract.
-pub(crate) fn to_bindizr_changes(changes: &Changes) -> Result<BindizrChanges, String> {
-    if changes.update_old.len() != changes.update_new.len() {
-        return Err(format!(
-            "updateOld and updateNew must pair up ({} vs {} endpoints)",
-            changes.update_old.len(),
-            changes.update_new.len()
-        ));
-    }
-
-    for endpoint in changes
-        .create
-        .iter()
-        .chain(&changes.update_old)
-        .chain(&changes.update_new)
-        .chain(&changes.delete)
-    {
-        validate_endpoint(endpoint)?;
-    }
-
-    Ok(BindizrChanges {
-        creates: changes.create.iter().map(to_bindizr_rrset).collect(),
-        updates: changes
-            .update_old
+        for endpoint in self
+            .create
             .iter()
-            .zip(&changes.update_new)
-            .map(|(old, new)| BindizrRrsetUpdate {
-                old: to_bindizr_rrset(old),
-                new: to_bindizr_rrset(new),
-            })
-            .collect(),
-        deletes: changes.delete.iter().map(to_bindizr_rrset).collect(),
-    })
+            .chain(&self.update_old)
+            .chain(&self.update_new)
+            .chain(&self.delete)
+        {
+            endpoint.validate()?;
+        }
+
+        Ok(BindizrChanges {
+            creates: self.create.iter().map(Endpoint::to_bindizr_rrset).collect(),
+            updates: self
+                .update_old
+                .iter()
+                .zip(&self.update_new)
+                .map(|(old, new)| BindizrRrsetUpdate {
+                    old: old.to_bindizr_rrset(),
+                    new: new.to_bindizr_rrset(),
+                })
+                .collect(),
+            deletes: self.delete.iter().map(Endpoint::to_bindizr_rrset).collect(),
+        })
+    }
 }
 
 /// Group bindizr record rows into endpoints: one per (dnsName, recordType,
@@ -240,9 +239,9 @@ pub(crate) fn group_records_into_endpoints(records: Vec<BindizrRecordItem>) -> V
 /// validation is mirrored here so a bad plan fails without a round trip.
 pub(crate) fn to_bindizr_rrsets(endpoints: &[Endpoint]) -> Result<Vec<BindizrRrset>, String> {
     for endpoint in endpoints {
-        validate_endpoint(endpoint)?;
+        endpoint.validate()?;
     }
-    Ok(endpoints.iter().map(to_bindizr_rrset).collect())
+    Ok(endpoints.iter().map(Endpoint::to_bindizr_rrset).collect())
 }
 
 /// Pair server-adjusted RRsets with the desired endpoints by position:

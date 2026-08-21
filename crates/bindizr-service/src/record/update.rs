@@ -39,7 +39,7 @@ struct ResolvedRecordUpdate {
 impl RecordService {
     /// Full replacement (HTTP PUT): every field comes from the request. The
     /// caller is authorized inside the update transaction.
-    pub async fn update_by_id(
+    pub async fn update(
         caller: &Caller,
         record_id: i32,
         request: &RecordItem,
@@ -70,7 +70,7 @@ impl RecordService {
 
     /// Partial update (CLI): omitted fields keep the stored record's value. The
     /// merge runs inside the transaction, against the row loaded there.
-    pub async fn patch_by_id(
+    pub async fn patch(
         caller: &Caller,
         record_id: i32,
         patch: &UpdateRecordPatch,
@@ -124,7 +124,7 @@ impl RecordService {
     ) -> Result<RecordWithZone, ServiceError> {
         // Resolve zone_id with a non-locking read so the tx locks zone before
         // record (the create/bulk/import order); the reverse can deadlock.
-        let zone_id = match RepositoryService::get_record_by_id(record_id).await {
+        let zone_id = match RepositoryService::get_record(record_id).await {
             Ok(Some(record)) => record.zone_id,
             Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
@@ -136,39 +136,35 @@ impl RecordService {
         let mut tx = RepositoryService::begin_tx("Failed to update record").await?;
 
         let apply_result = async {
-            let zone =
-                match RepositoryService::get_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
-                    .await
-                {
-                    Ok(Some(zone)) => zone,
-                    Ok(None) => {
-                        return Err(ServiceError::new(
-                            ErrorCode::ZoneNotFound,
-                            format!("Zone with id '{}' not found", zone_id),
-                        ));
-                    }
-                    Err(e) => {
-                        log_error!("Failed to fetch zone: {}", e);
-                        return Err(ServiceError::internal("Failed to fetch zone".to_string()));
-                    }
-                };
-
-            let existing_record = match RepositoryService::get_record_by_id_tx(
-                &mut tx,
-                record_id,
-                LockLevel::Exclusive,
-            )
-            .await
+            let zone = match RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive)
+                .await
             {
-                Ok(Some(record)) if record.zone_id == zone.id => record,
-                Ok(Some(_)) | Ok(None) => {
-                    return Err(ServiceError::record_not_found(record_id));
+                Ok(Some(zone)) => zone,
+                Ok(None) => {
+                    return Err(ServiceError::new(
+                        ErrorCode::ZoneNotFound,
+                        format!("Zone with id '{}' not found", zone_id),
+                    ));
                 }
                 Err(e) => {
-                    log_error!("Failed to fetch record: {}", e);
-                    return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                    log_error!("Failed to fetch zone: {}", e);
+                    return Err(ServiceError::internal("Failed to fetch zone".to_string()));
                 }
             };
+
+            let existing_record =
+                match RepositoryService::get_record_tx(&mut tx, record_id, LockLevel::Exclusive)
+                    .await
+                {
+                    Ok(Some(record)) if record.zone_id == zone.id => record,
+                    Ok(Some(_)) | Ok(None) => {
+                        return Err(ServiceError::record_not_found(record_id));
+                    }
+                    Err(e) => {
+                        log_error!("Failed to fetch record: {}", e);
+                        return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                    }
+                };
 
             // Invisible zones read as 404 so scoped tokens cannot probe ids.
             if !caller.zone_visible(zone.id) {
@@ -197,7 +193,7 @@ impl RecordService {
                 .await?;
             // Only records sharing the new owner name can conflict, so load just
             // those instead of the whole zone.
-            let zone_records = match RepositoryService::list_records_by_zone_id_and_name_tx(
+            let zone_records = match RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone.id,
                 &resolved.owner_name,

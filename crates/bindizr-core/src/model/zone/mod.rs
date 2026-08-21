@@ -79,22 +79,46 @@ pub struct Zone {
     pub created_at: DateTime<Utc>,
 }
 
+/// Whether the record is an apex NS row, whatever it points at.
+fn is_apex_ns(record_type: &RecordType, name: &OwnerName) -> bool {
+    *record_type == RecordType::NS && name.is_apex()
+}
+
 impl Zone {
     /// SOA RNAME (mailbox) in presentation form, e.g. `admin.example.com`.
     pub fn soa_mailbox(&self) -> Result<SoaMailbox, String> {
         SoaMailbox::from_email(&self.rname)
     }
 
-    /// Whether the record is an apex NS row, whatever it points at.
-    pub fn is_apex_ns(&self, record_type: &RecordType, name: &OwnerName) -> bool {
-        *record_type == RecordType::NS && name.is_apex()
-    }
-
     /// Whether the record is the apex NS this zone's `mname` names. One
     /// such row must exist for the zone to stay self-consistent.
     pub fn is_mname(&self, record_type: &RecordType, name: &OwnerName, value: &str) -> bool {
-        self.is_apex_ns(record_type, name)
-            && to_fqdn(value).eq_ignore_ascii_case(&to_fqdn(&self.mname))
+        is_apex_ns(record_type, name) && to_fqdn(value).eq_ignore_ascii_case(&to_fqdn(&self.mname))
+    }
+
+    /// TTL a synthesized apex NS must take to join the existing RRset rather
+    /// than split it (RFC 2181, Section 5.2). `candidates` are scanned in
+    /// priority order, falling back to the zone TTL.
+    pub fn apex_ns_rrset_ttl<'a>(
+        &self,
+        candidates: impl IntoIterator<Item = (&'a RecordType, &'a OwnerName, i32)>,
+    ) -> i32 {
+        candidates
+            .into_iter()
+            .find(|(record_type, name, _)| is_apex_ns(record_type, name))
+            .map_or(self.default_ttl, |(_, _, ttl)| ttl)
+    }
+
+    /// Whether the SOA metadata columns (everything but identity, serial, and
+    /// the DNSSEC denial mode) differ from `other`'s.
+    pub fn soa_metadata_differs(&self, other: &Zone) -> bool {
+        self.mname != other.mname
+            || self.rname != other.rname
+            || self.default_ttl != other.default_ttl
+            || self.refresh != other.refresh
+            || self.retry != other.retry
+            || self.expire != other.expire
+            || self.minimum_ttl != other.minimum_ttl
     }
 
     /// The apex NS row that satisfies [`Self::is_mname`].

@@ -25,7 +25,7 @@ const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 pub async fn initialize() {
     server::initialize().await;
 
-    let bindizr_config = config::get_bindizr_config();
+    let bindizr_config = config::bindizr_config();
     let listen_addr = SocketAddr::new(
         bindizr_config.dns.listen_addr,
         bindizr_config.dns.listen_port,

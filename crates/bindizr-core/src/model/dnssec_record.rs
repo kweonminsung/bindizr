@@ -41,7 +41,7 @@ pub enum DnssecRecordType {
 }
 
 impl DnssecRecordType {
-    pub fn to_int(self) -> u16 {
+    pub fn wire_type(self) -> u16 {
         match self {
             DnssecRecordType::Rrsig => 46,
             DnssecRecordType::Nsec => 47,
@@ -127,6 +127,6 @@ where
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        (self.to_int() as i32).encode_by_ref(buf)
+        (self.wire_type() as i32).encode_by_ref(buf)
     }
 }

@@ -127,6 +127,22 @@ pub struct NotifyZoneRequest {
     pub bump_serial: bool,
 }
 
+impl NotifyZoneRequest {
+    /// The success message every front end serves for this request.
+    pub fn success_message(&self) -> String {
+        let scope = match &self.zone_name {
+            Some(zone_name) => format!("zone: {}", zone_name),
+            None => "all zones".to_string(),
+        };
+        let suffix = if self.bump_serial {
+            " (serial bumped)"
+        } else {
+            ""
+        };
+        format!("NOTIFY sent successfully for {}{}", scope, suffix)
+    }
+}
+
 /// A zone together with all of its records.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ZoneDetailResponse {

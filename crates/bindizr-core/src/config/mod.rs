@@ -537,6 +537,6 @@ impl DnssecConfig {
 }
 
 /// Return the global configuration; panics if [`initialize`] has not run.
-pub fn get_bindizr_config() -> &'static BindizrConfig {
+pub fn bindizr_config() -> &'static BindizrConfig {
     BINDIZR_CONFIG.get().expect("Configuration not initialized")
 }

@@ -1,6 +1,6 @@
 //! Payloads not tied to one entity: messages, health, and errors.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::error::ServiceError;
@@ -20,7 +20,7 @@ pub struct HealthResponse {
 }
 
 /// Generic error response: a plain description plus a machine-readable code.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ErrorResponse {
     #[schema(example = "Zone with name 'example.com' not found")]
     pub error: String,

@@ -195,7 +195,7 @@ impl<'a> RepositoryTx<'a> {
 pub trait ZoneRepository: Send + Sync {
     async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
-    async fn get_by_id_tx(
+    async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
@@ -253,8 +253,8 @@ pub trait TsigKeyRepository: Send + Sync {
 #[async_trait]
 pub trait ZoneTsigPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTsigPolicy) -> Result<ZoneTsigPolicy, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError>;
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
+    async fn get(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError>;
+    async fn list(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
     /// Policies granting `tsig_key_id` rights in `zone_id`, for nsupdate
     /// authorization inside the update transaction.
     async fn list_by_zone_id_and_key_id_tx(
@@ -273,8 +273,8 @@ pub trait ZoneTsigPolicyRepository: Send + Sync {
 #[async_trait]
 pub trait ZoneTokenPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTokenPolicy) -> Result<ZoneTokenPolicy, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTokenPolicy>, DatabaseError>;
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
+    async fn get(&self, id: i32) -> Result<Option<ZoneTokenPolicy>, DatabaseError>;
+    async fn list(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
     /// Policies granting `api_token_id` rights in `zone_id`, for write
     /// authorization inside the caller's transaction.
     async fn list_by_zone_id_and_token_id_tx(
@@ -308,24 +308,24 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         records: &[Record],
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
-    async fn get_by_id_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError>;
-    async fn get_by_id_tx(
+    async fn get(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
+    async fn get_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError>;
+    async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
         lock_level: LockLevel,
     ) -> Result<Option<Record>, DatabaseError>;
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
+    async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     /// Records of every listed zone in one round trip.
     async fn list_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
-    async fn list_by_zone_id_tx(
+    async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn list_by_zone_id_and_name_tx(
+    async fn list_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -334,7 +334,7 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<Vec<Record>, DatabaseError>;
     /// Load records whose owner name is any of `names` (lowercased match). Used
     /// by bulk insert to fetch only the rows that could conflict with the batch.
-    async fn list_by_zone_id_and_names_tx(
+    async fn list_by_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -400,14 +400,14 @@ pub trait ZoneVersionRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         version: ZoneVersion,
     ) -> Result<ZoneVersion, DatabaseError>;
-    async fn get_by_zone_id_and_serial(
+    async fn get_by_serial(
         &self,
         zone_id: i32,
         serial: i32,
     ) -> Result<Option<ZoneVersion>, DatabaseError>;
     /// Versions with serial in the closed interval `[from_serial, to_serial]`;
     /// an IXFR needs both endpoint SOAs, unlike the journal's half-open range.
-    async fn list_by_zone_id_in_serial_range(
+    async fn list_in_serial_range(
         &self,
         zone_id: i32,
         from_serial: i32,
@@ -416,21 +416,17 @@ pub trait ZoneVersionRepository: Send + Sync {
     /// List versions for a zone, newest serial first, paginated. With
     /// `user_changes_only`, serials whose journal holds only signer-generated
     /// changes are skipped; the current serial is always listed.
-    async fn list_by_zone_id(
+    async fn list(
         &self,
         zone_id: i32,
         user_changes_only: bool,
         limit: u32,
         offset: u64,
     ) -> Result<Vec<ZoneVersion>, DatabaseError>;
-    async fn count_by_zone_id(
-        &self,
-        zone_id: i32,
-        user_changes_only: bool,
-    ) -> Result<u64, DatabaseError>;
-    /// Tx variant of [`Self::get_by_zone_id_and_serial`], for reads that must
+    async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError>;
+    /// Tx variant of [`Self::get_by_serial`], for reads that must
     /// be consistent with a mutation in the same transaction.
-    async fn get_by_zone_id_and_serial_tx(
+    async fn get_by_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -450,8 +446,8 @@ pub trait DnssecKeyRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         key: DnssecKey,
     ) -> Result<DnssecKey, DatabaseError>;
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<DnssecKey>, DatabaseError>;
-    async fn list_by_zone_id_tx(
+    async fn list(&self, zone_id: i32) -> Result<Vec<DnssecKey>, DatabaseError>;
+    async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -488,8 +484,8 @@ pub trait DnssecRecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         records: &[DnssecRecord],
     ) -> Result<(), DatabaseError>;
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<DnssecRecord>, DatabaseError>;
-    async fn list_by_zone_id_tx(
+    async fn list(&self, zone_id: i32) -> Result<Vec<DnssecRecord>, DatabaseError>;
+    async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -521,6 +517,10 @@ pub trait ApiTokenRepository: Send + Sync {
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError>;
     async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
+    /// Writes only the mutable columns (`description`, `expires_at`,
+    /// `last_used_at`); `name`, `token`, and `is_global` are fixed at create,
+    /// so callers must pass them through unchanged for the echoed row to be
+    /// truthful.
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }

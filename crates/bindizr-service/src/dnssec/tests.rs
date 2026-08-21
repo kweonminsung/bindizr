@@ -198,11 +198,16 @@ fn initial_signing_emits_key_rrsets_nsec_chain_and_rrsigs() {
         1
     );
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Dnskey.to_int() as i32).len(),
+        rrsigs_covering(
+            &diff.added,
+            &apex,
+            DnssecRecordType::Dnskey.wire_type() as i32
+        )
+        .len(),
         1
     );
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Cds.to_int() as i32).len(),
+        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Cds.wire_type() as i32).len(),
         1
     );
     assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
@@ -254,7 +259,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
             rrsigs_covering(
                 &diff.added,
                 &row.name,
-                DnssecRecordType::Nsec3.to_int() as i32
+                DnssecRecordType::Nsec3.wire_type() as i32
             )
             .len(),
             1
@@ -264,7 +269,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
         rrsigs_covering(
             &diff.added,
             &OwnerName::apex(),
-            DnssecRecordType::Nsec3param.to_int() as i32
+            DnssecRecordType::Nsec3param.wire_type() as i32
         )
         .len(),
         1
@@ -302,7 +307,12 @@ fn published_key_cosigns_key_rrsets_but_not_zone_data() {
     // Both SEP keys sign the DNSKEY RRset — a validator may arrive via either
     // DS — but only the active key signs zone data.
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Dnskey.to_int() as i32).len(),
+        rrsigs_covering(
+            &diff.added,
+            &apex,
+            DnssecRecordType::Dnskey.wire_type() as i32
+        )
+        .len(),
         2
     );
     assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
@@ -337,7 +347,12 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
     // old DS need it) and still co-signing that RRset...
     assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Dnskey).len(), 2);
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Dnskey.to_int() as i32).len(),
+        rrsigs_covering(
+            &diff.added,
+            &apex,
+            DnssecRecordType::Dnskey.wire_type() as i32
+        )
+        .len(),
         2
     );
     // ...but no longer advertised to the parent: its DS should be dropped.
@@ -380,11 +395,16 @@ fn split_keys_partition_key_rrsets_from_zone_data() {
     // (RFC 7344, Section 4.1); only the ZSK signs zone data.
     assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Dnskey.to_int() as i32).len(),
+        rrsigs_covering(
+            &diff.added,
+            &apex,
+            DnssecRecordType::Dnskey.wire_type() as i32
+        )
+        .len(),
         1
     );
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Cds.to_int() as i32).len(),
+        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Cds.wire_type() as i32).len(),
         1
     );
     assert_eq!(
@@ -483,13 +503,18 @@ fn record_change_reuses_unaffected_signatures() {
     // Untouched RRsets keep their signatures: neither the DNSKEY nor the
     // www A RRSIG appears on either side of the diff.
     assert!(
-        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Dnskey.to_int() as i32).is_empty()
+        rrsigs_covering(
+            &diff.added,
+            &apex,
+            DnssecRecordType::Dnskey.wire_type() as i32
+        )
+        .is_empty()
     );
     assert!(
         rrsigs_covering(
             &diff.removed,
             &apex,
-            DnssecRecordType::Dnskey.to_int() as i32
+            DnssecRecordType::Dnskey.wire_type() as i32
         )
         .is_empty()
     );

@@ -76,11 +76,11 @@ impl ZoneService {
     }
 
     /// Fetch every SOA version for a zone with serial in `[from_serial, to_serial]`.
-    pub async fn list_versions_in_range(
+    pub async fn list_versions_in_serial_range(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneVersion>, ServiceError> {
-        RepositoryService::list_zone_versions_in_range(zone_id, from_serial, to_serial).await
+        RepositoryService::list_zone_versions_in_serial_range(zone_id, from_serial, to_serial).await
     }
 }

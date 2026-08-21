@@ -11,7 +11,7 @@ pub(crate) async fn list_zone_journal(
     from_serial: u32,
     to_serial: u32,
 ) -> Result<Vec<ZoneChange>, XfrError> {
-    ZoneService::list_between_serials(zone_id, from_serial as i32, to_serial as i32)
+    ZoneService::list_journal_between_serials(zone_id, from_serial as i32, to_serial as i32)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))
 }
@@ -31,7 +31,7 @@ pub(crate) async fn list_zone_versions(
     from_serial: u32,
     to_serial: u32,
 ) -> Result<Vec<ZoneVersion>, XfrError> {
-    ZoneService::list_versions_in_range(zone_id, from_serial as i32, to_serial as i32)
+    ZoneService::list_versions_in_serial_range(zone_id, from_serial as i32, to_serial as i32)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))
 }

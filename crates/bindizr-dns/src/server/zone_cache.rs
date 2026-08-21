@@ -60,7 +60,7 @@ pub(crate) async fn list_zone_content(
     zone_id: i32,
     serial: i32,
 ) -> Result<ZoneContent, ServiceError> {
-    if !config::get_bindizr_config().dns.zone_cache {
+    if !config::bindizr_config().dns.zone_cache {
         return load_content(zone_id).await;
     }
 
@@ -78,8 +78,8 @@ pub(crate) async fn list_zone_content(
 
 async fn load_content(zone_id: i32) -> Result<ZoneContent, ServiceError> {
     Ok(ZoneContent {
-        records: Arc::new(RecordService::list_by_zone_id(zone_id).await?),
-        dnssec_records: Arc::new(DnssecService::list_records_by_zone_id(zone_id).await?),
+        records: Arc::new(RecordService::list(zone_id).await?),
+        dnssec_records: Arc::new(DnssecService::list_records(zone_id).await?),
     })
 }
 
