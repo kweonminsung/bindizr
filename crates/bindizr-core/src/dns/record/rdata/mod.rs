@@ -106,9 +106,9 @@ pub struct EncodedRdata {
 
 impl EncodedRdata {
     /// Wire RDATA for stored record columns (records and journal rows share
-    /// this shape). `Ok(None)` means the type has no wire mapping here (`SOA`
-    /// journal markers, unknown strings); the caller decides whether that is a
-    /// skip or an error.
+    /// this shape). `Ok(None)` means the type has no wire mapping here — the
+    /// `SOA` journal markers; the caller decides whether that is a skip or an
+    /// error.
     ///
     /// TXT is one opaque byte mapping for both stored forms: canonical RRset
     /// order is a byte comparison, and mixing differently derived TXT values in
