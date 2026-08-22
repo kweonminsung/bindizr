@@ -8,17 +8,20 @@ pub(crate) mod sqlite;
 
 use async_trait::async_trait;
 use bindizr_core::dns::name::OwnerName;
+use chrono::{DateTime, Utc};
 use sqlx::{MySql, Postgres, Sqlite};
 
 use super::model::{
     api_token::ApiToken,
-    record::{Record, RecordWithZone},
+    dnssec_key::{DnssecKey, DnssecKeyState},
+    dnssec_record::DnssecRecord,
+    record::{Record, RecordType, RecordWithZone},
     tsig_key::TsigKey,
-    zone::Zone,
+    zone::{DnssecDenial, Zone},
     zone_change::ZoneChange,
-    zone_snapshot::ZoneSnapshot,
     zone_token_policy::ZoneTokenPolicy,
     zone_tsig_policy::ZoneTsigPolicy,
+    zone_version::ZoneVersion,
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
 
@@ -43,11 +46,11 @@ pub enum LockLevel {
 pub struct ZoneFilter {
     pub name: Option<String>,
     pub id: Option<i32>,
-    pub primary_ns: Option<String>,
-    pub admin_email: Option<String>,
-    pub ttl: Option<i32>,
-    pub min_ttl: Option<i32>,
-    pub max_ttl: Option<i32>,
+    pub mname: Option<String>,
+    pub rname: Option<String>,
+    pub default_ttl: Option<i32>,
+    pub min_default_ttl: Option<i32>,
+    pub max_default_ttl: Option<i32>,
     pub serial: Option<i32>,
     pub search: Option<String>,
     /// Restrict to zones granted to this token, joined against
@@ -63,7 +66,7 @@ pub struct ZoneFilter {
 pub struct RecordFilter {
     pub zone_name: Option<String>,
     pub name: Option<String>,
-    pub record_type: Option<String>,
+    pub record_type: Option<RecordType>,
     pub value: Option<String>,
     pub ttl: Option<i32>,
     pub min_ttl: Option<i32>,
@@ -192,7 +195,7 @@ impl<'a> RepositoryTx<'a> {
 pub trait ZoneRepository: Send + Sync {
     async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
-    async fn get_by_id_tx(
+    async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
@@ -216,8 +219,17 @@ pub trait ZoneRepository: Send + Sync {
     /// Limit-1 probe of the zones table; health checks must stay cheap on
     /// large tables.
     async fn ping(&self) -> Result<(), DatabaseError>;
+    /// Full-row update, except `dnssec_denial`: that column is owned by
+    /// DNSSEC enable/disable, so ordinary zone updates cannot clobber it.
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
+    /// Set only `dnssec_denial`, leaving the zone's other columns untouched.
+    async fn update_dnssec_denial_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        denial: DnssecDenial,
+    ) -> Result<(), DatabaseError>;
     /// Bump only the serial, leaving the zone's other columns untouched.
     async fn update_serial_tx(
         &self,
@@ -241,11 +253,11 @@ pub trait TsigKeyRepository: Send + Sync {
 #[async_trait]
 pub trait ZoneTsigPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTsigPolicy) -> Result<ZoneTsigPolicy, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError>;
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
+    async fn get(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError>;
+    async fn list(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
     /// Policies granting `tsig_key_id` rights in `zone_id`, for nsupdate
     /// authorization inside the update transaction.
-    async fn list_by_zone_and_key_tx(
+    async fn list_by_zone_id_and_key_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -261,11 +273,11 @@ pub trait ZoneTsigPolicyRepository: Send + Sync {
 #[async_trait]
 pub trait ZoneTokenPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTokenPolicy) -> Result<ZoneTokenPolicy, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTokenPolicy>, DatabaseError>;
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
+    async fn get(&self, id: i32) -> Result<Option<ZoneTokenPolicy>, DatabaseError>;
+    async fn list(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
     /// Policies granting `api_token_id` rights in `zone_id`, for write
     /// authorization inside the caller's transaction.
-    async fn list_by_zone_and_token_tx(
+    async fn list_by_zone_id_and_token_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -296,24 +308,24 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         records: &[Record],
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
-    async fn get_by_id_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError>;
-    async fn get_by_id_tx(
+    async fn get(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
+    async fn get_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError>;
+    async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
         lock_level: LockLevel,
     ) -> Result<Option<Record>, DatabaseError>;
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
+    async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     /// Records of every listed zone in one round trip.
     async fn list_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
-    async fn list_by_zone_id_tx(
+    async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
-    async fn list_by_zone_id_and_name_tx(
+    async fn list_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -322,7 +334,7 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<Vec<Record>, DatabaseError>;
     /// Load records whose owner name is any of `names` (lowercased match). Used
     /// by bulk insert to fetch only the rows that could conflict with the batch.
-    async fn list_by_zone_id_and_names_tx(
+    async fn list_by_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -356,15 +368,17 @@ pub trait ZoneChangeRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         changes: &[ZoneChange],
     ) -> Result<(), DatabaseError>;
-    async fn list_changes_between_serials(
+    /// Journal rows with serial in `(from_serial, to_serial]` — the IXFR delta
+    /// half-open interval: changes strictly after `from_serial`.
+    async fn list_between_serials(
         &self,
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
-    /// Tx variant of [`Self::list_changes_between_serials`], for reads that must
+    /// Tx variant of [`Self::list_between_serials`], for reads that must
     /// be consistent with a mutation in the same transaction.
-    async fn list_changes_between_serials_tx(
+    async fn list_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -372,45 +386,128 @@ pub trait ZoneChangeRepository: Send + Sync {
         to_serial: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
+    /// Prune journal rows older than `cutoff`, whole serials at a time so the
+    /// remaining chain stays contiguous; requests below it fall back to AXFR.
+    /// Returns the number of rows deleted.
+    async fn prune_older_than(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
 }
 
-/// Persistence operations for zone snapshots.
+/// Persistence operations for zone versions.
 #[async_trait]
-pub trait ZoneSnapshotRepository: Send + Sync {
+pub trait ZoneVersionRepository: Send + Sync {
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
-        snapshot: ZoneSnapshot,
-    ) -> Result<ZoneSnapshot, DatabaseError>;
-    async fn get_by_zone_id_and_serial(
+        version: ZoneVersion,
+    ) -> Result<ZoneVersion, DatabaseError>;
+    async fn get_by_serial(
         &self,
         zone_id: i32,
         serial: i32,
-    ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
-    /// Fetch every snapshot for a zone whose serial is in `[from_serial, to_serial]`.
-    async fn list_by_zone_id_in_serial_range(
+    ) -> Result<Option<ZoneVersion>, DatabaseError>;
+    /// Versions with serial in the closed interval `[from_serial, to_serial]`;
+    /// an IXFR needs both endpoint SOAs, unlike the journal's half-open range.
+    async fn list_in_serial_range(
         &self,
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
-    ) -> Result<Vec<ZoneSnapshot>, DatabaseError>;
-    /// List snapshots for a zone, newest serial first, paginated.
-    async fn list_by_zone_id(
+    ) -> Result<Vec<ZoneVersion>, DatabaseError>;
+    /// List versions for a zone, newest serial first, paginated. With
+    /// `user_changes_only`, serials whose journal holds only signer-generated
+    /// changes are skipped; the current serial is always listed.
+    async fn list(
         &self,
         zone_id: i32,
+        user_changes_only: bool,
         limit: u32,
         offset: u64,
-    ) -> Result<Vec<ZoneSnapshot>, DatabaseError>;
-    async fn count_by_zone_id(&self, zone_id: i32) -> Result<u64, DatabaseError>;
-    /// Tx variant of [`Self::get_by_zone_id_and_serial`], for reads that must
+    ) -> Result<Vec<ZoneVersion>, DatabaseError>;
+    async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError>;
+    /// Tx variant of [`Self::get_by_serial`], for reads that must
     /// be consistent with a mutation in the same transaction.
-    async fn get_by_zone_id_and_serial_tx(
+    async fn get_by_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         serial: i32,
         lock_level: LockLevel,
-    ) -> Result<Option<ZoneSnapshot>, DatabaseError>;
+    ) -> Result<Option<ZoneVersion>, DatabaseError>;
+    /// Prune versions older than `cutoff`, always keeping each zone's newest
+    /// (the IXFR up-to-date response reads it). Returns rows deleted.
+    async fn prune_older_than(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
+}
+
+/// Persistence operations for DNSSEC signing keys.
+#[async_trait]
+pub trait DnssecKeyRepository: Send + Sync {
+    async fn create_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        key: DnssecKey,
+    ) -> Result<DnssecKey, DatabaseError>;
+    async fn list(&self, zone_id: i32) -> Result<Vec<DnssecKey>, DatabaseError>;
+    async fn list_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        lock_level: LockLevel,
+    ) -> Result<Vec<DnssecKey>, DatabaseError>;
+    /// Keys sitting in `state` since before `cutoff`: the rollover work list.
+    async fn list_by_state_entered_before(
+        &self,
+        state: DnssecKeyState,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<DnssecKey>, DatabaseError>;
+    async fn update_state_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        state: DnssecKeyState,
+        changed_at: DateTime<Utc>,
+    ) -> Result<(), DatabaseError>;
+    async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
+    async fn delete_by_zone_id_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), DatabaseError>;
+}
+
+/// Persistence operations for the derived DNSSEC plane (the signed view).
+#[async_trait]
+pub trait DnssecRecordRepository: Send + Sync {
+    /// Insert many derived records in one statement (chunked). Ids are not
+    /// returned.
+    async fn create_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        records: &[DnssecRecord],
+    ) -> Result<(), DatabaseError>;
+    async fn list(&self, zone_id: i32) -> Result<Vec<DnssecRecord>, DatabaseError>;
+    async fn list_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        lock_level: LockLevel,
+    ) -> Result<Vec<DnssecRecord>, DatabaseError>;
+    /// Delete many derived records in as few statements as the backend's bind
+    /// limit allows.
+    async fn delete_many_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        ids: &[i32],
+    ) -> Result<(), DatabaseError>;
+    async fn delete_by_zone_id_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), DatabaseError>;
+    /// Zones holding an RRSIG that expires before `cutoff`: the re-sign work list.
+    async fn list_zone_ids_expiring_before(
+        &self,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<i32>, DatabaseError>;
 }
 
 /// Persistence operations for API tokens.
@@ -420,6 +517,10 @@ pub trait ApiTokenRepository: Send + Sync {
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError>;
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError>;
     async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
+    /// Writes only the mutable columns (`description`, `expires_at`,
+    /// `last_used_at`); `name`, `token`, and `is_global` are fixed at create,
+    /// so callers must pass them through unchanged for the echoed row to be
+    /// truthful.
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
@@ -427,12 +528,13 @@ pub trait ApiTokenRepository: Send + Sync {
 /// Persistence operations for catalog zone state.
 #[async_trait]
 pub trait CatalogZoneStateRepository: Send + Sync {
-    /// Returns the catalog serial in effect after the update.
-    async fn update_serial_for_signature_tx(
+    /// The serial advances only when `digest` changed; returns the serial in
+    /// effect after the upsert.
+    async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
-        signature: &str,
+        digest: &str,
         base_serial: i32,
     ) -> Result<i32, DatabaseError>;
 }
@@ -551,19 +653,19 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create a zone snapshot repository for the given pool's backend.
-    pub(crate) fn create_zone_snapshot_repository(
+    /// Create a zone version repository for the given pool's backend.
+    pub(crate) fn create_zone_version_repository(
         pool: &DatabasePool,
-    ) -> Box<dyn ZoneSnapshotRepository> {
+    ) -> Box<dyn ZoneVersionRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
-                Box::new(mysql::MySqlZoneSnapshotRepository::new(mysql_pool.clone()))
+                Box::new(mysql::MySqlZoneVersionRepository::new(mysql_pool.clone()))
             }
             DatabasePool::PostgreSQL(postgres_pool) => Box::new(
-                postgres::PostgresZoneSnapshotRepository::new(postgres_pool.clone()),
+                postgres::PostgresZoneVersionRepository::new(postgres_pool.clone()),
             ),
             DatabasePool::SQLite(sqlite_pool) => Box::new(
-                sqlite::SqliteZoneSnapshotRepository::new(sqlite_pool.clone()),
+                sqlite::SqliteZoneVersionRepository::new(sqlite_pool.clone()),
             ),
         }
     }
@@ -576,6 +678,40 @@ impl RepositoryFactory {
             DatabasePool::MySQL(_) => Box::new(mysql::MySqlCatalogZoneStateRepository),
             DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresCatalogZoneStateRepository),
             DatabasePool::SQLite(_) => Box::new(sqlite::SqliteCatalogZoneStateRepository),
+        }
+    }
+
+    /// Create a DNSSEC key repository for the given pool's backend.
+    pub(crate) fn create_dnssec_key_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn DnssecKeyRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlDnssecKeyRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresDnssecKeyRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteDnssecKeyRepository::new(sqlite_pool.clone()))
+            }
+        }
+    }
+
+    /// Create a DNSSEC record repository for the given pool's backend.
+    pub(crate) fn create_dnssec_record_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn DnssecRecordRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlDnssecRecordRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresDnssecRecordRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteDnssecRecordRepository::new(sqlite_pool.clone()),
+            ),
         }
     }
 }

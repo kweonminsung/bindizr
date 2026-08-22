@@ -39,7 +39,7 @@ impl ZoneTokenPolicyService {
         caller.require_global("manage token policies")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
-        let token = find_token(token_name).await?;
+        let token = lookup_token(token_name).await?;
 
         if token.is_global {
             return Err(ServiceError::invalid_input(format!(
@@ -75,7 +75,7 @@ impl ZoneTokenPolicyService {
         caller.require_global("manage token policies")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
-        let policies = RepositoryService::list_zone_token_policies_by_zone_id(zone.id).await?;
+        let policies = RepositoryService::list_zone_token_policies(zone.id).await?;
 
         let token_names: HashMap<i32, String> = RepositoryService::list_api_tokens()
             .await?
@@ -105,7 +105,7 @@ impl ZoneTokenPolicyService {
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
 
-        let policy = RepositoryService::get_zone_token_policy_by_id(policy_id)
+        let policy = RepositoryService::get_zone_token_policy(policy_id)
             .await?
             .filter(|policy| policy.zone_id == zone.id)
             .ok_or_else(|| ServiceError::token_policy_not_found(policy_id))?;
@@ -114,7 +114,7 @@ impl ZoneTokenPolicyService {
     }
 }
 
-async fn find_token(token_name: &str) -> Result<ApiToken, ServiceError> {
+async fn lookup_token(token_name: &str) -> Result<ApiToken, ServiceError> {
     RepositoryService::get_api_token_by_name(&normalize_token_name(token_name)?)
         .await?
         .ok_or_else(|| ServiceError::token_not_found(token_name))

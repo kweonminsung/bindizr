@@ -16,7 +16,7 @@ use crate::{
     upstream::{UpstreamClient, UpstreamError},
     wire::{
         Changes, DomainFilter, Endpoint, MEDIA_TYPE, group_records_into_endpoints,
-        merge_adjusted_endpoints, to_bindizr_changes, to_bindizr_rrsets,
+        merge_adjusted_endpoints, to_bindizr_rrsets,
     },
 };
 
@@ -187,7 +187,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
         }
     };
 
-    let bindizr_changes = match to_bindizr_changes(&changes) {
+    let bindizr_changes = match changes.to_bindizr() {
         Ok(converted) => converted,
         Err(message) => {
             log_warn!("event=records_apply rejected={}", message);

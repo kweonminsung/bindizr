@@ -13,7 +13,6 @@ use bindizr_service::{
     zone::token_policy::ZoneTokenPolicyService,
 };
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
@@ -76,8 +75,10 @@ pub(crate) async fn get_zone_token_policies(
         .iter()
         .map(GetZoneTokenPolicyResponse::from_policy)
         .collect();
-    let json_body = json!({ "token_policies": policies });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = ZoneTokenPolicyListResponse {
+        token_policies: policies,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -114,8 +115,10 @@ pub(crate) async fn create_zone_token_policy(
         body.record_types.as_deref(),
     )
     .await?;
-    let json_body = json!({ "token_policy": GetZoneTokenPolicyResponse::from_policy(&policy) });
-    Ok((StatusCode::CREATED, Json(json_body)).into_response())
+    let response = ZoneTokenPolicyResponse {
+        token_policy: GetZoneTokenPolicyResponse::from_policy(&policy),
+    };
+    Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -141,6 +144,8 @@ pub(crate) async fn delete_zone_token_policy(
     Path(params): Path<ZoneTokenPolicyParam>,
 ) -> Result<Response, ApiError> {
     ZoneTokenPolicyService::remove(&caller, &params.name, params.id).await?;
-    let json_body = json!({ "message": "Token policy deleted successfully" });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = MessageResponse {
+        message: "Token policy deleted successfully".to_string(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

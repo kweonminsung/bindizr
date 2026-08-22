@@ -25,7 +25,7 @@ DNS Synchronization Service for BIND9
 
 -   :material-console: **[Drive it](cli/index.md)**
 
-    Zones, records, snapshots, TSIG keys, and API tokens from the CLI.
+    Zones, records, versions, TSIG keys, and API tokens from the CLI.
 
 -   :material-api: **[Automate it](http-api/index.md)**
 
@@ -63,7 +63,7 @@ DNS Synchronization Service for BIND9
 
 - **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests, managed TSIG keys, and per-zone update policies.
 
-- **Zone History**: Per-serial SOA snapshots with diffs between serials and rollback to a previous serial.
+- **Zone Versions**: A version per serial, with diffs between serials and rollback to a previous serial.
 
 - **Observability**: Health probe endpoint, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
 

@@ -25,14 +25,14 @@ pub(super) fn record_start_time() {
 }
 
 /// Handle the `Status` command by returning the daemon's PID, version, and config.
-pub(super) fn get_status() -> Result<DaemonResponse, ServiceError> {
+pub(super) fn status() -> Result<DaemonResponse, ServiceError> {
     let pid = Some(process::id());
     let version = env!("CARGO_PKG_VERSION");
     let status = DaemonStatusResponse {
         pid,
         version: version.to_string(),
         started_at_ms: STARTED_AT_MS.get().copied().unwrap_or(0),
-        config: config::get_bindizr_config().clone(),
+        config: config::bindizr_config().clone(),
     };
 
     let response = DaemonResponse {

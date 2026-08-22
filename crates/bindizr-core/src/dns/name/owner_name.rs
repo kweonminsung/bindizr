@@ -99,6 +99,18 @@ impl OwnerName {
         self.render_labels()
     }
 
+    /// The wire form within `zone`: this owner's labels, the zone's, then the
+    /// root.
+    pub fn to_wire(&self, zone: &ZoneName) -> Result<Vec<u8>, ParseNameError> {
+        let zone_labels = zone.labels();
+        super::labels_to_wire(
+            self.0
+                .iter()
+                .map(String::as_str)
+                .chain(zone_labels.iter().map(String::as_str)),
+        )
+    }
+
     /// The absolute form within `zone`.
     pub fn to_fqdn(&self, zone: &ZoneName) -> String {
         if self.is_apex() {

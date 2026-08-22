@@ -56,8 +56,8 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             secret,
             global,
         } => create_tsig_key(&client, name, algorithm, secret, global).await,
-        TsigKeyCommand::List => list_tsig_keys(&client).await,
-        TsigKeyCommand::Get { name } => get_tsig_key(&client, name).await,
+        TsigKeyCommand::List => print_tsig_keys(&client).await,
+        TsigKeyCommand::Get { name } => print_tsig_key(&client, name).await,
         TsigKeyCommand::Delete { name } => delete_tsig_key(&client, name).await,
     }
 }
@@ -94,7 +94,7 @@ async fn create_tsig_key(
     Ok(())
 }
 
-async fn list_tsig_keys(client: &DaemonSocketClient) -> Result<(), CliError> {
+async fn print_tsig_keys(client: &DaemonSocketClient) -> Result<(), CliError> {
     let res = client
         .send_command(DaemonCommandKind::TsigKeyList, ())
         .await?;
@@ -129,7 +129,7 @@ async fn list_tsig_keys(client: &DaemonSocketClient) -> Result<(), CliError> {
     Ok(())
 }
 
-async fn get_tsig_key(client: &DaemonSocketClient, name: String) -> Result<(), CliError> {
+async fn print_tsig_key(client: &DaemonSocketClient, name: String) -> Result<(), CliError> {
     let res = client
         .send_command(DaemonCommandKind::TsigKeyGet, TsigKeyNameParams { name })
         .await?;

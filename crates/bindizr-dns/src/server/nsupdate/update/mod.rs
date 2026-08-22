@@ -14,7 +14,7 @@ use domain::{
 
 use super::{
     auth::ResponseSigner,
-    parser::{UpdateRecord, UpdateRequest, presentation_name},
+    parser::{UpdateRecord, UpdateRequest, to_presentation_name},
 };
 use crate::{
     model::{record::RecordType, tsig_key::TsigKey},
@@ -66,35 +66,35 @@ pub(super) async fn apply_update(
     query_data: &[u8],
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
-    let result = apply_update_inner(request, query_data, &mut signer).await;
-    (result, signer)
-}
+    let result = async {
+        // The parser's presentation form appends exactly one root dot; strip
+        // only it, so an escaped trailing dot inside the last label stays data.
+        let zone_name = request
+            .zone_name
+            .strip_suffix('.')
+            .unwrap_or(&request.zone_name);
+        if zone_name.is_empty() {
+            return Err(UpdateError::NotZone(
+                "root zone is not supported".to_string(),
+            ));
+        }
 
-async fn apply_update_inner(
-    request: UpdateRequest,
-    query_data: &[u8],
-    signer: &mut Option<ResponseSigner>,
-) -> Result<bool, UpdateError> {
-    let zone_name = request.zone_name.trim_end_matches('.');
-    if zone_name.is_empty() {
-        return Err(UpdateError::NotZone(
-            "root zone is not supported".to_string(),
-        ));
+        // Authenticate before anything zone-specific: keys are zone-independent,
+        // and this lets even NOTZONE/REFUSED responses be signed.
+        let key = authenticate_request(&request, query_data, &mut signer).await?;
+
+        let update = DynamicUpdate {
+            zone_name: zone_name.to_string(),
+            key,
+            prerequisites: decode_prerequisites(&request.prerequisites, query_data)?,
+            updates: decode_updates(&request.updates, query_data)?,
+        };
+
+        let changed = DynamicUpdateService::apply(update).await?;
+        Ok(changed)
     }
-
-    // Authenticate before anything zone-specific: keys are zone-independent,
-    // and this lets even NOTZONE/REFUSED responses be signed.
-    let key = authenticate_request(&request, query_data, signer).await?;
-
-    let update = DynamicUpdate {
-        zone_name: zone_name.to_string(),
-        key,
-        prerequisites: decode_prerequisites(&request.prerequisites, query_data)?,
-        updates: decode_updates(&request.updates, query_data)?,
-    };
-
-    let changed = DynamicUpdateService::apply(update).await?;
-    Ok(changed)
+    .await;
+    (result, signer)
 }
 
 /// Verify the request's TSIG signature and record the response-signing
@@ -109,7 +109,7 @@ async fn authenticate_request(
     let tsig = match &request.tsig {
         Some(tsig) => tsig,
         None => {
-            if config::get_bindizr_config().dns.nsupdate_allow_unsigned {
+            if config::bindizr_config().dns.nsupdate_allow_unsigned {
                 return Ok(None);
             }
             return Err(UpdateError::Refused(
@@ -319,7 +319,7 @@ fn rr_to_record_value(
             let name = parse_rdata(message, update, record_type.as_str(), |parser| {
                 ParsedName::parse(parser).ok()
             })?;
-            let value = presentation_name(&name).map_err(|e| {
+            let value = to_presentation_name(&name).map_err(|e| {
                 UpdateError::Refused(format!("invalid {} rdata: {}", record_type.as_str(), e))
             })?;
             Ok((record_type, value, None))
@@ -342,13 +342,13 @@ fn rr_to_record_value(
         }
         RecordType::MX => {
             let data = parse_rdata(message, update, "MX", |parser| Mx::parse(parser).ok())?;
-            let host = presentation_name(data.exchange())
+            let host = to_presentation_name(data.exchange())
                 .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
             Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
         }
         RecordType::SRV => {
             let data = parse_rdata(message, update, "SRV", |parser| Srv::parse(parser).ok())?;
-            let target = presentation_name(data.target())
+            let target = to_presentation_name(data.target())
                 .map_err(|e| UpdateError::Refused(format!("invalid SRV rdata: {}", e)))?;
             // Priority lives in its own column, so the value holds the rest.
             Ok((

@@ -7,7 +7,7 @@ use crate::common::{TestApp, assert_cli_failure_contains, assert_cli_success};
 async fn zone_create_read_delete() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-zone.example");
-    let primary_ns = format!("ns1.{zone_name}");
+    let mname = format!("ns1.{zone_name}");
 
     let created = app.create_zone_cli(&zone_name, "3600").await;
     assert!(created.contains("Zone created successfully"));
@@ -17,7 +17,7 @@ async fn zone_create_read_delete() {
         .await;
     let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
     assert_eq!(zone["name"], zone_name);
-    assert_eq!(zone["primary_ns"], primary_ns);
+    assert_eq!(zone["mname"], mname);
 
     let deleted = app.run_cli_success(&["zone", "delete", &zone_name]).await;
     assert!(deleted.contains("deleted successfully"));
@@ -55,8 +55,8 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
     assert_eq!(updated["refresh"], 300);
     assert_eq!(updated["retry"], 60);
     // Omitted fields keep their current values.
-    assert_eq!(updated["ttl"], 3600);
-    assert_eq!(updated["primary_ns"], format!("ns1.{zone_name}"));
+    assert_eq!(updated["default_ttl"], 3600);
+    assert_eq!(updated["mname"], format!("ns1.{zone_name}"));
 }
 
 #[tokio::test]
@@ -76,9 +76,9 @@ async fn zone_filter_and_paginate() {
             "list",
             "--search",
             app.namespace(),
-            "--min-ttl",
+            "--min-default-ttl",
             "7000",
-            "--max-ttl",
+            "--max-default-ttl",
             "8000",
             "--output",
             "json",
@@ -128,18 +128,18 @@ async fn zone_reject_invalid_name_and_ttl() {
         ("_tcp.example", "3600", "ASCII letters"),
         ("low-ttl.example", "0", "ttl must be at least"),
     ] {
-        let primary_ns = format!("ns1.{name}");
-        let admin_email = format!("hostmaster@{name}");
+        let mname = format!("ns1.{name}");
+        let rname = format!("hostmaster@{name}");
         let args = [
             "zone",
             "create",
             "--name",
             name,
-            "--primary-ns",
-            &primary_ns,
-            "--admin-email",
-            &admin_email,
-            "--ttl",
+            "--mname",
+            &mname,
+            "--rname",
+            &rname,
+            "--default-ttl",
             ttl,
         ];
         let output = app.run_cli(&args).await;
@@ -342,7 +342,7 @@ async fn zone_import_preview_via_cli() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_snapshots_and_rollback_flow() {
+async fn zone_versions_and_rollback_flow() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -381,13 +381,13 @@ async fn zone_snapshots_and_rollback_flow() {
     ])
     .await;
 
-    let snapshots = app
-        .run_cli_success(&["zone", "snapshot", "list", &zone_name, "--output", "json"])
+    let versions = app
+        .run_cli_success(&["zone", "version", "list", &zone_name, "--output", "json"])
         .await;
-    let snapshots: Value = serde_json::from_str(&snapshots).expect("CLI did not return valid JSON");
-    let serials: Vec<i64> = snapshots["items"]
+    let versions: Value = serde_json::from_str(&versions).expect("CLI did not return valid JSON");
+    let serials: Vec<i64> = versions["items"]
         .as_array()
-        .expect("missing snapshot items")
+        .expect("missing version items")
         .iter()
         .map(|item| item["serial"].as_i64().unwrap())
         .collect();
@@ -396,7 +396,7 @@ async fn zone_snapshots_and_rollback_flow() {
     let detail = app
         .run_cli_success(&[
             "zone",
-            "snapshot",
+            "version",
             "get",
             &zone_name,
             target_serial,
@@ -417,7 +417,7 @@ async fn zone_snapshots_and_rollback_flow() {
     // Serial 1 -> 2 added the www A record; 2 -> 3 added extra.
     let diff = app
         .run_cli_success(&[
-            "zone", "snapshot", "diff", &zone_name, "1", "2", "--output", "json",
+            "zone", "version", "diff", &zone_name, "1", "2", "--output", "json",
         ])
         .await;
     let diff: Value = serde_json::from_str(&diff).expect("CLI did not return valid JSON");
@@ -434,7 +434,7 @@ async fn zone_snapshots_and_rollback_flow() {
     // Omitting the second serial compares against the current serial (3).
     let diff_to_current = app
         .run_cli_success(&[
-            "zone", "snapshot", "diff", &zone_name, "1", "--output", "json",
+            "zone", "version", "diff", &zone_name, "1", "--output", "json",
         ])
         .await;
     let diff_to_current: Value =
@@ -450,7 +450,7 @@ async fn zone_snapshots_and_rollback_flow() {
     let dry_run = app
         .run_cli_success(&[
             "zone",
-            "snapshot",
+            "version",
             "rollback",
             &zone_name,
             target_serial,
@@ -461,7 +461,7 @@ async fn zone_snapshots_and_rollback_flow() {
     assert!(dry_run.contains("nothing applied"));
 
     let rolled_back = app
-        .run_cli_success(&["zone", "snapshot", "rollback", &zone_name, target_serial])
+        .run_cli_success(&["zone", "version", "rollback", &zone_name, target_serial])
         .await;
     assert!(rolled_back.contains("Zone rolled back to serial 2 (new serial 4)"));
 
@@ -481,7 +481,7 @@ async fn zone_snapshots_and_rollback_flow() {
     assert!(names[0].starts_with("www."));
 
     // Rolling back to the current serial is rejected with a hint.
-    let args = ["zone", "snapshot", "rollback", &zone_name, "4"];
+    let args = ["zone", "version", "rollback", &zone_name, "4"];
     let output = app.run_cli(&args).await;
     assert_cli_failure_contains(&args, &output, "must be less than the current serial");
 }

@@ -25,7 +25,7 @@ const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 pub async fn initialize() {
     server::initialize().await;
 
-    let bindizr_config = config::get_bindizr_config();
+    let bindizr_config = config::bindizr_config();
     let listen_addr = SocketAddr::new(
         bindizr_config.dns.listen_addr,
         bindizr_config.dns.listen_port,
@@ -116,7 +116,7 @@ async fn handle_tcp_query(
         return server::nsupdate::handle_tcp_nsupdate(stream, query_data, client_addr).await;
     }
 
-    let query = match wire::parse_query(query_data) {
+    let query = match wire::ParsedQuery::parse(query_data) {
         Ok(query) => query,
         Err(e) => {
             log_warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);
@@ -175,7 +175,7 @@ async fn run_udp_server(
             continue;
         }
 
-        let query = match wire::parse_query(query_data) {
+        let query = match wire::ParsedQuery::parse(query_data) {
             Ok(query) => query,
             Err(_) => continue,
         };

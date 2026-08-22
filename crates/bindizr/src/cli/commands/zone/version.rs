@@ -1,8 +1,8 @@
-//! The `zone snapshot` subcommands: list, show, diff, and rollback.
+//! The `zone version` subcommands: list, show, diff, and rollback.
 
 use bindizr_service::types::{
-    PaginatedResponse, RollbackZoneRequest, RollbackZoneResponse, SnapshotDetailResponse,
-    SnapshotDiffResponse, ZoneSnapshotResponse,
+    PaginatedResponse, RollbackZoneRequest, RollbackZoneResponse, VersionDetailResponse,
+    VersionDiffResponse, ZoneVersionResponse,
 };
 use clap::Subcommand;
 
@@ -10,42 +10,45 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, RollbackSummaryRow, SnapshotRecordRow, SnapshotRow, parse_response,
+            OutputFormat, RollbackSummaryRow, VersionRecordRow, VersionRow, parse_response,
             print_response, print_table, render_diff_lines,
         },
     },
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, DiffZoneSnapshotsParams, ListZoneSnapshotsParams,
-            RollbackZoneParams, ZoneSnapshotParams,
+            DaemonCommandKind, DiffZoneVersionsParams, ListZoneVersionsParams, RollbackZoneParams,
+            ZoneVersionParams,
         },
     },
 };
 
-/// Subcommands for inspecting a zone's snapshots.
+/// Subcommands for inspecting a zone's versions.
 #[derive(Subcommand, Debug)]
-pub(crate) enum ZoneSnapshotCommand {
-    /// List a zone's snapshots (serial history)
+pub(crate) enum ZoneVersionCommand {
+    /// List a zone's versions (serial history)
     #[command(alias = "ls")]
     List {
         /// The name of the zone
         name: String,
-        /// Maximum number of snapshots to return
+        /// Maximum number of versions to return
         #[arg(long)]
         limit: Option<u32>,
-        /// Number of snapshots to skip
+        /// Number of versions to skip
         #[arg(long)]
         offset: Option<u64>,
+        /// Include signer-only serials (DNSSEC re-signs and rollovers)
+        #[arg(long)]
+        all: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
-    /// Show the zone state captured at one snapshot serial
+    /// Show the zone state captured at one version serial
     Get {
         /// The name of the zone
         name: String,
-        /// Snapshot serial to inspect
+        /// Version serial to inspect
         serial: i32,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
@@ -63,11 +66,11 @@ pub(crate) enum ZoneSnapshotCommand {
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
-    /// Roll a zone back to the state captured at a snapshot serial
+    /// Roll a zone back to the state captured at a version serial
     Rollback {
         /// The name of the zone
         name: String,
-        /// Target snapshot serial (the zone serial still advances)
+        /// Target version serial (the zone serial still advances)
         serial: i32,
         /// Compute and report the rollback without applying any change
         #[arg(long)]
@@ -80,22 +83,24 @@ pub(crate) enum ZoneSnapshotCommand {
 
 pub(super) async fn handle_command(
     client: &DaemonSocketClient,
-    subcommand: ZoneSnapshotCommand,
+    subcommand: ZoneVersionCommand,
 ) -> Result<(), CliError> {
     match subcommand {
-        ZoneSnapshotCommand::List {
+        ZoneVersionCommand::List {
             name,
             limit,
             offset,
+            all,
             output,
         } => {
             let data = client
                 .send_command(
-                    DaemonCommandKind::ListZoneSnapshots,
-                    ListZoneSnapshotsParams {
+                    DaemonCommandKind::ListZoneVersions,
+                    ListZoneVersionsParams {
                         name,
                         limit,
                         offset,
+                        all,
                     },
                 )
                 .await?
@@ -104,37 +109,37 @@ pub(super) async fn handle_command(
             print_response(
                 &data,
                 output,
-                |page: &PaginatedResponse<ZoneSnapshotResponse>| {
-                    page.items.iter().map(SnapshotRow::from).collect()
+                |page: &PaginatedResponse<ZoneVersionResponse>| {
+                    page.items.iter().map(VersionRow::from).collect()
                 },
             )?;
         }
-        ZoneSnapshotCommand::Get {
+        ZoneVersionCommand::Get {
             name,
             serial,
             output,
         } => {
             let data = client
                 .send_command(
-                    DaemonCommandKind::GetZoneSnapshot,
-                    ZoneSnapshotParams { name, serial },
+                    DaemonCommandKind::GetZoneVersion,
+                    ZoneVersionParams { name, serial },
                 )
                 .await?
                 .data;
 
-            // Table output shows two tables (snapshot, then its records);
+            // Table output shows two tables (version, then its records);
             // json/yaml print the whole payload once.
             if output == OutputFormat::Table {
-                let detail: SnapshotDetailResponse = parse_response(&data)?;
-                print_table(vec![SnapshotRow::from(&detail.snapshot)]);
-                print_table(detail.records.iter().map(SnapshotRecordRow::from).collect());
+                let detail: VersionDetailResponse = parse_response(&data)?;
+                print_table(vec![VersionRow::from(&detail.version)]);
+                print_table(detail.records.iter().map(VersionRecordRow::from).collect());
             } else {
-                print_response(&data, output, |detail: &SnapshotDetailResponse| {
-                    vec![SnapshotRow::from(&detail.snapshot)]
+                print_response(&data, output, |detail: &VersionDetailResponse| {
+                    vec![VersionRow::from(&detail.version)]
                 })?;
             }
         }
-        ZoneSnapshotCommand::Diff {
+        ZoneVersionCommand::Diff {
             name,
             from_serial,
             to_serial,
@@ -142,8 +147,8 @@ pub(super) async fn handle_command(
         } => {
             let data = client
                 .send_command(
-                    DaemonCommandKind::DiffZoneSnapshots,
-                    DiffZoneSnapshotsParams {
+                    DaemonCommandKind::DiffZoneVersions,
+                    DiffZoneVersionsParams {
                         name,
                         from_serial,
                         to_serial,
@@ -154,14 +159,14 @@ pub(super) async fn handle_command(
 
             match output {
                 OutputFormat::Table => {
-                    print!("{}", render_snapshot_diff(&parse_response(&data)?))
+                    print!("{}", render_version_diff(&parse_response(&data)?))
                 }
-                _ => print_response(&data, output, |_: &SnapshotDiffResponse| {
-                    Vec::<SnapshotRow>::new()
+                _ => print_response(&data, output, |_: &VersionDiffResponse| {
+                    Vec::<VersionRow>::new()
                 })?,
             }
         }
-        ZoneSnapshotCommand::Rollback {
+        ZoneVersionCommand::Rollback {
             name,
             serial,
             dry_run,
@@ -189,8 +194,8 @@ pub(super) async fn handle_command(
     Ok(())
 }
 
-/// Render a snapshot diff: the `+`/`-`/`~` lines plus SOA-serial and count footers.
-fn render_snapshot_diff(response: &SnapshotDiffResponse) -> String {
+/// Render a version diff: the `+`/`-`/`~` lines plus SOA-serial and count footers.
+fn render_version_diff(response: &VersionDiffResponse) -> String {
     let mut out = render_diff_lines(&response.diff.entries);
     let summary = &response.diff.summary;
 

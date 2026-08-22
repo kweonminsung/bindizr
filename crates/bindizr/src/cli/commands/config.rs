@@ -24,8 +24,8 @@ pub(crate) enum ConfigCommand {
 pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliError> {
     match subcommand {
         ConfigCommand::Check { file } => check_config(file.as_deref()),
-        ConfigCommand::List => list_config().await,
-        ConfigCommand::Get { key } => get_config(&key).await,
+        ConfigCommand::List => print_config_list().await,
+        ConfigCommand::Get { key } => print_config_value(&key).await,
     }
 }
 
@@ -39,13 +39,13 @@ fn check_config(file: Option<&str>) -> Result<(), CliError> {
     Ok(())
 }
 
-async fn list_config() -> Result<(), CliError> {
+async fn print_config_list() -> Result<(), CliError> {
     let config = loaded_daemon_config().await?;
     print_config(&config);
     Ok(())
 }
 
-async fn get_config(key: &str) -> Result<(), CliError> {
+async fn print_config_value(key: &str) -> Result<(), CliError> {
     let config = loaded_daemon_config().await?;
     let value = serde_json::to_value(&config)
         .map_err(|e| format!("Failed to serialize configuration: {}", e))?;
@@ -104,8 +104,8 @@ fn print_config(config: &BindizrConfig) {
     print_value("listen_port", config.dns.listen_port);
     print_value("secondary_addrs", &config.dns.secondary_addrs);
     print_value("notify_after_update", config.dns.notify_after_update);
-    print_value("apply_mode", config.dns.apply_mode);
-    print_value("apply_batch_ms", config.dns.apply_batch_ms);
+    print_value("notify_mode", config.dns.notify_mode);
+    print_value("notify_batch_ms", config.dns.notify_batch_ms);
     print_value("zone_cache", config.dns.zone_cache);
     print_value("notify_on_startup", config.dns.notify_on_startup);
     print_value("notify_retries", config.dns.notify_retries);

@@ -5,14 +5,14 @@ use axum::{
     routing,
 };
 use bindizr_core::config;
-use bindizr_service::authorization::Caller;
-use serde_json::json;
+use bindizr_service::{authorization::Caller, error::ServiceError, types::MessageResponse};
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 
 use super::{
-    external_dns::ExternalDnsApi, notify::NotifyApi, openapi::ApiDoc, record::RecordApi,
-    token_policy::TokenPolicyApi, tsig_key::TsigKeyApi, zone::ZoneApi,
+    dnssec::DnssecApi, error::ApiError, external_dns::ExternalDnsApi, notify::NotifyApi,
+    openapi::ApiDoc, record::RecordApi, token_policy::TokenPolicyApi, tsig_key::TsigKeyApi,
+    zone::ZoneApi,
 };
 
 /// HTTP API router assembling all route groups.
@@ -21,7 +21,7 @@ pub(crate) struct ApiRouter;
 impl ApiRouter {
     /// Build the full axum router with auth, CORS, and the optional route groups.
     pub(crate) async fn routes() -> Router {
-        let api_config = &config::get_bindizr_config().api;
+        let api_config = &config::bindizr_config().api;
 
         let mut api_router = Router::new()
             .merge(ZoneApi::routes().await)
@@ -29,6 +29,7 @@ impl ApiRouter {
             .merge(NotifyApi::routes().await)
             .merge(TsigKeyApi::routes().await)
             .merge(TokenPolicyApi::routes().await)
+            .merge(DnssecApi::routes().await)
             .route("/", routing::get(ApiRouter::get_home));
 
         // Unregistered when disabled, so the endpoints fall through to 404.
@@ -80,7 +81,9 @@ impl ApiRouter {
     async fn get_home() -> impl IntoResponse {
         (
             StatusCode::OK,
-            Json(json!({ "message": "bindizr API running" })),
+            Json(MessageResponse {
+                message: "bindizr API running".to_string(),
+            }),
         )
     }
 
@@ -96,13 +99,10 @@ impl ApiRouter {
                 openapi_yaml,
             )
                 .into_response(),
-            Err(err) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "error": format!("failed to generate OpenAPI YAML: {err}"),
-                })),
-            )
-                .into_response(),
+            Err(err) => ApiError(ServiceError::internal(format!(
+                "failed to generate OpenAPI YAML: {err}"
+            )))
+            .into_response(),
         }
     }
 

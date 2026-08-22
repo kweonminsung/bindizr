@@ -1,3 +1,5 @@
+use serde_json::json;
+
 use super::*;
 
 /// Bind a test socket, or `None` in sandboxes that forbid Unix sockets.
@@ -54,7 +56,7 @@ fn command_payloads_round_trip_between_client_and_server() {
         name: "example.com".to_string(),
         patch: UpdateZonePatch {
             new_name: Some("new.example.com".to_string()),
-            ttl: Some(300),
+            default_ttl: Some(300),
             ..UpdateZonePatch::default()
         },
     })
@@ -62,7 +64,7 @@ fn command_payloads_round_trip_between_client_and_server() {
     let parsed: UpdateZoneParams = parse_params(&sent).unwrap();
     assert_eq!(parsed.name, "example.com");
     assert_eq!(parsed.patch.new_name.as_deref(), Some("new.example.com"));
-    assert_eq!(parsed.patch.ttl, Some(300));
+    assert_eq!(parsed.patch.default_ttl, Some(300));
 
     let sent = serde_json::to_value(RollbackZoneParams {
         name: "example.com".to_string(),

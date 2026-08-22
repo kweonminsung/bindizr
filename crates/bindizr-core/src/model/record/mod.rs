@@ -100,6 +100,33 @@ impl TryFrom<String> for RecordType {
     }
 }
 
+/// The write half: binding renders the canonical mnemonic, the row form
+/// `TryFrom<String>` parses.
+impl<DB: sqlx::Database> sqlx::Type<DB> for RecordType
+where
+    String: sqlx::Type<DB>,
+{
+    fn type_info() -> DB::TypeInfo {
+        <String as sqlx::Type<DB>>::type_info()
+    }
+
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <String as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for RecordType
+where
+    String: sqlx::Encode<'q, DB>,
+{
+    fn encode_by_ref(
+        &self,
+        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        self.as_str().to_string().encode_by_ref(buf)
+    }
+}
+
 impl std::str::FromStr for RecordType {
     type Err = String;
 
@@ -132,6 +159,21 @@ impl RecordType {
             RecordType::SOA => "SOA",
             RecordType::SRV => "SRV",
             RecordType::PTR => "PTR",
+        }
+    }
+
+    /// The RR TYPE number this type's records carry on the wire.
+    pub fn wire_type(&self) -> u16 {
+        match self {
+            RecordType::A => 1,
+            RecordType::NS => 2,
+            RecordType::CNAME => 5,
+            RecordType::SOA => 6,
+            RecordType::PTR => 12,
+            RecordType::MX => 15,
+            RecordType::TXT => 16,
+            RecordType::AAAA => 28,
+            RecordType::SRV => 33,
         }
     }
 
@@ -235,20 +277,6 @@ impl RecordType {
         }
     }
 
-    /// The MX wire fields of a stored value, so encoders do not re-derive the
-    /// stored grammar.
-    pub fn mx_wire_fields(value: &str, priority: Option<i32>) -> Result<(u16, &str), String> {
-        MxRecordValue::wire_fields(value, priority)
-    }
-
-    /// The SRV wire fields of a stored value.
-    pub fn srv_wire_fields(
-        value: &str,
-        priority: Option<i32>,
-    ) -> Result<(u16, u16, u16, &str), String> {
-        SrvRecordValue::wire_fields(value, priority)
-    }
-
     /// Format a stored value of this record type for display.
     pub fn display_value(&self, value: &str) -> String {
         if *self == RecordType::TXT {
@@ -287,6 +315,12 @@ impl RecordType {
             }
             _ => self.display_value(value),
         }
+    }
+
+    /// Whether the ExternalDNS provider manages records of this type
+    /// ([`EXTERNAL_DNS_RECORD_TYPES`]).
+    pub fn is_external_dns_supported(&self) -> bool {
+        EXTERNAL_DNS_RECORD_TYPES.contains(self)
     }
 }
 

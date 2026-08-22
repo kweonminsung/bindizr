@@ -109,7 +109,7 @@ YAML example:
     record_type: A
     value: 192.0.2.1
     ttl: 300")]
-    Bulk {
+    BulkCreate {
         /// Path to a JSON or YAML file (an array of records, or an object with
         /// a 'records' array), or '-' to read from stdin
         file: String,
@@ -246,7 +246,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
             print_records(&data, output)?;
         }
-        RecordCommand::Bulk {
+        RecordCommand::BulkCreate {
             file,
             zone,
             dry_run,

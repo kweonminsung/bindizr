@@ -14,6 +14,7 @@ use prerequisite::evaluate_prerequisites_tx;
 
 use crate::{
     RepositoryTx,
+    dnssec::DnssecService,
     error::ServiceError,
     log_error, log_info,
     model::{
@@ -169,7 +170,8 @@ impl DynamicUpdateService {
             }
 
             if changed {
-                // Bump the serial and snapshot it so secondaries detect the change via
+                DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+                // Bump the serial and version it so secondaries detect the change via
                 // SOA/NOTIFY and can serve it as an IXFR delta.
                 ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
             }
@@ -190,7 +192,7 @@ impl DynamicUpdateService {
             );
 
             // Queue through the service like every other mutation path, so
-            // `dns.apply_mode` governs RFC 2136 writes too.
+            // `dns.notify_mode` governs RFC 2136 writes too.
             if let Err(e) = crate::notify::send_notify_after_update(Some(zone.name.as_str())).await
             {
                 log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
@@ -218,7 +220,7 @@ async fn authorize_key(
 
     // Share-lock the grants so a concurrent revocation waits for this
     // transaction instead of racing it.
-    let policies = RepositoryService::list_zone_tsig_policies_by_zone_and_key_tx(
+    let policies = RepositoryService::list_zone_tsig_policies_by_zone_id_and_key_id_tx(
         tx,
         zone.id,
         key.id,
@@ -363,7 +365,7 @@ async fn delete_matching(
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
     let owner = owner_in_zone(name, &zone.name)?;
-    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    let zone_records = RecordService::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
     let mut matched: Vec<Record> = Vec::new();
     for record in &zone_records {

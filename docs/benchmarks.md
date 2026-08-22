@@ -30,7 +30,7 @@ survives a restart and transfers to the secondaries immediately.
 ![IXFR transfer size in a 100,000-record zone: Bindizr moves 736 B for 1 change up to 558 KB for 10,000 changes, while PowerDNS moves about 5.5 MB regardless of the change count](assets/benchmarks/b05_ixfr_size_light.svg#only-light)
 ![IXFR transfer size in a 100,000-record zone: Bindizr moves 736 B for 1 change up to 558 KB for 10,000 changes, while PowerDNS moves about 5.5 MB regardless of the change count](assets/benchmarks/b05_ixfr_size_dark.svg#only-dark)
 
-A snapshot per SOA serial means an IXFR carries only what changed: **736 B for a
+A version per SOA serial means an IXFR carries only what changed: **736 B for a
 single change in a 100,000-record zone**, where the full zone is 5.5 MB.
 PowerDNS answers the same request with the entire zone; Knot DNS and Technitium
 track the Bindizr curve.

@@ -23,13 +23,20 @@ listen_addr = "0.0.0.0"
 listen_port = 53
 secondary_addrs = ""
 notify_after_update = true
-apply_mode = "sync"
-apply_batch_ms = 50
+notify_mode = "sync"
+notify_batch_ms = 50
 zone_cache = true
 notify_on_startup = false
 notify_retries = 3
 notify_timeout_secs = 3
 nsupdate_allow_unsigned = false
+journal_retention_days = 365
+
+[dnssec]
+signature_validity_days = 14
+signature_refresh_days = 5
+rollover_publish_holddown_secs = 86400
+rollover_retire_holddown_secs = 172800
 
 [logging]
 log_level = "info"

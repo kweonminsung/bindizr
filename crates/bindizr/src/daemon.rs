@@ -42,13 +42,15 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     bindizr_core::metrics::metrics();
 
     service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
-    service::notify::init_apply_worker();
+    service::notify::init_notify_worker();
 
     database::initialize().await.map_err(|e| e.to_string())?;
 
+    service::dnssec::init_maintenance_scheduler();
+
     dns::initialize().await;
 
-    if config::get_bindizr_config().dns.notify_on_startup {
+    if config::bindizr_config().dns.notify_on_startup {
         match dns::client::notify::send_notify(None).await {
             Ok(()) => log_info!("Startup DNS NOTIFY completed."),
             Err(e) => log_error!("Startup DNS NOTIFY failed: {}", e),

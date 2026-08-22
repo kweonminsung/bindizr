@@ -46,27 +46,27 @@ Bulk changes can be previewed before anything is written. `--preview` renders
 the change as a `+`/`-`/`~` diff and applies nothing:
 
 ```bash
-$ bindizr record bulk records.json --zone <ZONE_NAME> --preview
+$ bindizr record bulk-create records.json --zone <ZONE_NAME> --preview
 $ bindizr zone import <ZONE_NAME> zone.txt --preview
 ```
 
 ## Zone history
 
-Every SOA serial has a snapshot behind it, so a zone can be diffed and rolled
+Every SOA serial has a version behind it, so a zone can be diffed and rolled
 back.
 
 ```bash
-# List a zone's snapshots (SOA serials are a plain counter starting at 1)
-$ bindizr zone snapshot list <ZONE_NAME>
+# List a zone's versions (SOA serials are a plain counter starting at 1)
+$ bindizr zone version list <ZONE_NAME>
 
 # Diff the records between two serials (omit the second to compare to current)
-$ bindizr zone snapshot diff <ZONE_NAME> <FROM_SERIAL> [<TO_SERIAL>]
+$ bindizr zone version diff <ZONE_NAME> <FROM_SERIAL> [<TO_SERIAL>]
 
 # Inspect the zone state captured at a serial
-$ bindizr zone snapshot get <ZONE_NAME> <SERIAL>
+$ bindizr zone version get <ZONE_NAME> <SERIAL>
 
 # Roll a zone back to a previous serial (the serial still advances)
-$ bindizr zone snapshot rollback <ZONE_NAME> <SERIAL> [--dry-run]
+$ bindizr zone version rollback <ZONE_NAME> <SERIAL> [--dry-run]
 ```
 
 A rollback restores the records captured at that serial but still advances the

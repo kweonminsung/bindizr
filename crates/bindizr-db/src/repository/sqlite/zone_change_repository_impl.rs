@@ -27,12 +27,12 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
     ) -> Result<(), DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // 8 columns per row; keep bind count under SQLite's conservative limit.
+        // 9 columns per row; keep bind count under SQLite's conservative limit.
         const CHUNK: usize = 100;
-        const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?)";
+        const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?)";
         for chunk in changes.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO zone_changes (zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority) VALUES ",
+                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority, derived) VALUES ",
             );
             for i in 0..chunk.len() {
                 if i > 0 {
@@ -46,12 +46,13 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
                 query = query
                     .bind(c.zone_id)
                     .bind(c.serial)
-                    .bind(c.operation.clone())
+                    .bind(c.operation)
                     .bind(&c.record_name)
                     .bind(c.record_type.clone())
                     .bind(c.record_value.clone())
                     .bind(c.record_ttl)
-                    .bind(c.record_priority);
+                    .bind(c.record_priority)
+                    .bind(c.derived);
             }
             query
                 .execute(&mut **sqlite_tx)
@@ -61,7 +62,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         Ok(())
     }
 
-    async fn list_changes_between_serials(
+    async fn list_between_serials(
         &self,
         zone_id: i32,
         from_serial: i32,
@@ -69,8 +70,8 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
         sqlx::query_as::<_, ZoneChange>(
             r#"
-            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
-            FROM zone_changes
+            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority, derived
+            FROM zone_journal
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id
             "#
@@ -83,7 +84,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn list_changes_between_serials_tx(
+    async fn list_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -95,8 +96,8 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
 
         sqlx::query_as::<_, ZoneChange>(
             r#"
-            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority
-            FROM zone_changes
+            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority, derived
+            FROM zone_journal
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id
             "#
@@ -107,5 +108,37 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         .fetch_all(&mut **sqlite_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn prune_older_than(
+        &self,
+        cutoff: chrono::DateTime<chrono::Utc>,
+    ) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        // Delete whole serials only: everything up to the highest serial whose
+        // newest row predates the cutoff, so remaining IXFR steps stay complete.
+        // datetime(?) normalizes the bound value to the column's stored format.
+        let result = sqlx::query(
+            r#"
+            DELETE FROM zone_journal
+            WHERE EXISTS (
+                SELECT 1 FROM (
+                    SELECT zone_id AS cutoff_zone_id, MAX(serial) AS cutoff_serial
+                    FROM zone_journal
+                    WHERE created_at < datetime(?)
+                    GROUP BY zone_id
+                ) boundaries
+                WHERE boundaries.cutoff_zone_id = zone_journal.zone_id
+                  AND zone_journal.serial <= boundaries.cutoff_serial
+            )
+            "#,
+        )
+        .bind(cutoff)
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(result.rows_affected())
     }
 }

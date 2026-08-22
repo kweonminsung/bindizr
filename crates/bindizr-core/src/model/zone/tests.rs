@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use super::Zone;
+use super::{DnssecDenial, Zone};
 use crate::{
     dns::name::{OwnerName, ZoneName},
     model::record::RecordType,
@@ -10,28 +10,29 @@ fn test_zone() -> Zone {
     Zone {
         id: 1,
         name: ZoneName::from_row("example.com"),
-        primary_ns: "ns1.example.com".to_string(),
-        admin_email: "hostmaster@example.com".to_string(),
-        ttl: 3600,
+        mname: "ns1.example.com".to_string(),
+        rname: "hostmaster@example.com".to_string(),
+        default_ttl: 3600,
         serial: 1,
         refresh: 7200,
         retry: 3600,
         expire: 604800,
         minimum_ttl: 86400,
+        dnssec_denial: DnssecDenial::Nsec,
         created_at: Utc::now(),
     }
 }
 
 #[test]
-fn is_primary_ns_matches_the_apex_ns_naming_primary_ns() {
+fn is_mname_matches_the_apex_ns_naming_mname() {
     let zone = test_zone();
 
-    assert!(zone.is_primary_ns(&RecordType::NS, &OwnerName::apex(), "ns1.example.com"));
+    assert!(zone.is_mname(&RecordType::NS, &OwnerName::apex(), "ns1.example.com"));
     // Trailing-dot and case differences name the same host.
-    assert!(zone.is_primary_ns(&RecordType::NS, &OwnerName::apex(), "NS1.Example.Com."));
+    assert!(zone.is_mname(&RecordType::NS, &OwnerName::apex(), "NS1.Example.Com."));
     // These take the stored owner name, which is relative and holds the apex
     // as the empty name; a spelled-out zone name is a label under it.
-    assert!(!zone.is_primary_ns(
+    assert!(!zone.is_mname(
         &RecordType::NS,
         &OwnerName::from_row("example.com."),
         "ns1.example.com"
@@ -39,24 +40,56 @@ fn is_primary_ns_matches_the_apex_ns_naming_primary_ns() {
 }
 
 #[test]
-fn is_primary_ns_rejects_other_rows() {
+fn is_mname_rejects_other_rows() {
     let zone = test_zone();
 
-    assert!(!zone.is_primary_ns(&RecordType::NS, &OwnerName::apex(), "ns2.example.com"));
-    assert!(!zone.is_primary_ns(
+    assert!(!zone.is_mname(&RecordType::NS, &OwnerName::apex(), "ns2.example.com"));
+    assert!(!zone.is_mname(
         &RecordType::NS,
         &OwnerName::from_row("sub"),
         "ns1.example.com"
     ));
-    assert!(!zone.is_primary_ns(&RecordType::A, &OwnerName::apex(), "ns1.example.com"));
+    assert!(!zone.is_mname(&RecordType::A, &OwnerName::apex(), "ns1.example.com"));
 }
 
 #[test]
-fn primary_ns_record_builds_the_apex_row_for_the_zone() {
+fn apex_ns_rrset_ttl_joins_the_existing_apex_ns_rrset() {
     let zone = test_zone();
-    let record = zone.primary_ns_record(600);
 
-    assert!(zone.is_primary_ns(&record.record_type, &record.name, &record.value));
+    // The first apex NS wins, so callers express their own priority by the
+    // order they chain candidate sources.
+    assert_eq!(
+        zone.apex_ns_rrset_ttl([
+            (&RecordType::A, &OwnerName::apex(), 60),
+            (&RecordType::NS, &OwnerName::from_row("sub"), 120),
+            (&RecordType::NS, &OwnerName::apex(), 900),
+            (&RecordType::NS, &OwnerName::apex(), 1800),
+        ]),
+        900
+    );
+}
+
+#[test]
+fn apex_ns_rrset_ttl_falls_back_to_the_zone_ttl() {
+    let zone = test_zone();
+
+    assert_eq!(zone.apex_ns_rrset_ttl([]), zone.default_ttl);
+    // Only apex NS rows share the RRset a synthesized row would join.
+    assert_eq!(
+        zone.apex_ns_rrset_ttl([
+            (&RecordType::A, &OwnerName::apex(), 60),
+            (&RecordType::NS, &OwnerName::from_row("sub"), 120)
+        ]),
+        zone.default_ttl
+    );
+}
+
+#[test]
+fn mname_record_builds_the_apex_row_for_the_zone() {
+    let zone = test_zone();
+    let record = zone.mname_record(600);
+
+    assert!(zone.is_mname(&record.record_type, &record.name, &record.value));
     assert!(record.name.is_apex());
     assert_eq!(record.ttl, 600);
     assert_eq!(record.zone_id, zone.id);

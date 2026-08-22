@@ -112,7 +112,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(out)
     }
 
-    async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
+    async fn get(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1")
@@ -124,7 +124,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(record)
     }
 
-    async fn get_by_id_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
+    async fn get_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let record = sqlx::query_as::<_, RecordWithZone>(
@@ -143,7 +143,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(record)
     }
 
-    async fn get_by_id_tx(
+    async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
@@ -159,7 +159,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(record)
     }
 
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
+    async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let records =
@@ -172,7 +172,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(records)
     }
 
-    async fn list_by_zone_id_tx(
+    async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -191,7 +191,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(records)
     }
 
-    async fn list_by_zone_id_and_name_tx(
+    async fn list_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -245,7 +245,7 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(out)
     }
 
-    async fn list_by_zone_id_and_names_tx(
+    async fn list_by_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -309,7 +309,7 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.name) = LOWER($4)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
-              AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
+              AND ($6::TEXT IS NULL OR r.record_type = $7)
               AND ($8::TEXT IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                     ELSE POSITION($31 IN r.display_value) > 0
@@ -400,7 +400,7 @@ impl RecordRepository for PostgresRecordRepository {
                     OR LOWER(r.name) = LOWER($4)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
               )
-              AND ($6::TEXT IS NULL OR LOWER(r.record_type) = LOWER($7))
+              AND ($6::TEXT IS NULL OR r.record_type = $7)
               AND ($8::TEXT IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
                     ELSE POSITION($29 IN r.display_value) > 0

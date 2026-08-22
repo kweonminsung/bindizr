@@ -6,13 +6,13 @@ use crate::{
     error::ServiceError,
     log_error,
     metrics::metrics,
-    model::{zone::Zone, zone_snapshot::ZoneSnapshot},
+    model::{zone::Zone, zone_version::ZoneVersion},
     repository::RepositoryService,
 };
 
 impl ZoneService {
     /// Advance the zone serial so IXFR consumers detect the change, and
-    /// snapshot it in the same transaction.
+    /// version it in the same transaction.
     pub(crate) async fn advance_serial_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
@@ -25,27 +25,27 @@ impl ZoneService {
                 ServiceError::internal("Failed to update zone serial".to_string())
             })?;
 
-        Self::save_snapshot_tx(tx, zone, new_serial).await
+        Self::save_version_tx(tx, zone, new_serial).await
     }
 
-    /// Save a snapshot of the zone's SOA data for historical tracking.
-    pub(crate) async fn save_snapshot_tx(
+    /// Save a version of the zone's SOA data for historical tracking.
+    pub(crate) async fn save_version_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         serial: i32,
     ) -> Result<(), ServiceError> {
-        RepositoryService::upsert_zone_snapshot_tx(
+        RepositoryService::upsert_zone_version_tx(
             tx,
-            ZoneSnapshot {
+            ZoneVersion {
                 id: 0,
                 zone_id: zone.id,
                 serial,
-                primary_ns: zone.primary_ns.clone(),
-                admin_email: zone
+                mname: zone.mname.clone(),
+                rname: zone
                     .soa_mailbox()
-                    .map_err(ServiceError::invalid_zone)?
+                    .map_err(ServiceError::invalid_zone_field)?
                     .into_encoded(),
-                ttl: zone.ttl,
+                default_ttl: zone.default_ttl,
                 refresh: zone.refresh,
                 retry: zone.retry,
                 expire: zone.expire,
@@ -55,11 +55,11 @@ impl ZoneService {
         )
         .await
         .map_err(|e| {
-            log_error!("Failed to save SOA snapshot: {}", e);
-            ServiceError::internal("Failed to save SOA snapshot".to_string())
+            log_error!("Failed to save SOA version: {}", e);
+            ServiceError::internal("Failed to save SOA version".to_string())
         })?;
 
-        // Every serial-advancing path funnels through this snapshot write; count
+        // Every serial-advancing path funnels through this version write; count
         // bumps here. Incremented pre-commit: a later rollback overcounts, which
         // is acceptable for a monitoring counter.
         metrics().zone_serial_bumps_total.inc();
@@ -67,20 +67,20 @@ impl ZoneService {
         Ok(())
     }
 
-    /// Fetch the SOA snapshot recorded for a zone at the given serial, if any.
-    pub async fn find_snapshot_by_serial(
+    /// Fetch the SOA version recorded for a zone at the given serial, if any.
+    pub async fn find_version_by_serial(
         zone_id: i32,
         serial: i32,
-    ) -> Result<Option<ZoneSnapshot>, ServiceError> {
-        RepositoryService::get_zone_snapshot_by_serial(zone_id, serial).await
+    ) -> Result<Option<ZoneVersion>, ServiceError> {
+        RepositoryService::get_zone_version_by_serial(zone_id, serial).await
     }
 
-    /// Fetch every SOA snapshot for a zone with serial in `[from_serial, to_serial]`.
-    pub async fn list_snapshots_in_range(
+    /// Fetch every SOA version for a zone with serial in `[from_serial, to_serial]`.
+    pub async fn list_versions_in_serial_range(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
-    ) -> Result<Vec<ZoneSnapshot>, ServiceError> {
-        RepositoryService::list_zone_snapshots_in_range(zone_id, from_serial, to_serial).await
+    ) -> Result<Vec<ZoneVersion>, ServiceError> {
+        RepositoryService::list_zone_versions_in_serial_range(zone_id, from_serial, to_serial).await
     }
 }

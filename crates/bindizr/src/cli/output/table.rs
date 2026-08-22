@@ -3,7 +3,7 @@
 
 use bindizr_service::types::{
     GetRecordResponse, GetZoneResponse, ImportSummary, RecordValueRequest, RollbackZoneResponse,
-    SecondaryStatusResponse, SnapshotRecordResponse, ZoneSnapshotResponse, ZoneStatusResponse,
+    SecondaryStatusResponse, VersionRecordResponse, ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -31,12 +31,12 @@ pub(crate) struct ZoneRow {
     pub(crate) id: i32,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
-    #[tabled(rename = "PRIMARY-NS")]
-    pub(crate) primary_ns: String,
-    #[tabled(rename = "ADMIN-EMAIL")]
-    pub(crate) admin_email: String,
-    #[tabled(rename = "TTL")]
-    pub(crate) ttl: i32,
+    #[tabled(rename = "MNAME")]
+    pub(crate) mname: String,
+    #[tabled(rename = "RNAME")]
+    pub(crate) rname: String,
+    #[tabled(rename = "DEFAULT-TTL")]
+    pub(crate) default_ttl: i32,
     #[tabled(rename = "SERIAL")]
     pub(crate) serial: i32,
 }
@@ -46,9 +46,9 @@ impl From<&GetZoneResponse> for ZoneRow {
         ZoneRow {
             id: zone.id,
             name: zone.name.clone(),
-            primary_ns: zone.primary_ns.clone(),
-            admin_email: zone.admin_email.clone(),
-            ttl: zone.ttl,
+            mname: zone.mname.clone(),
+            rname: zone.rname.clone(),
+            default_ttl: zone.default_ttl,
             serial: zone.serial,
         }
     }
@@ -87,36 +87,36 @@ impl From<&GetRecordResponse> for RecordRow {
     }
 }
 
-/// Table row for zone snapshot display.
+/// Table row for zone version display.
 #[derive(Debug, Tabled)]
-pub(crate) struct SnapshotRow {
+pub(crate) struct VersionRow {
     #[tabled(rename = "SERIAL")]
     pub(crate) serial: i32,
-    #[tabled(rename = "PRIMARY-NS")]
-    pub(crate) primary_ns: String,
-    #[tabled(rename = "ADMIN-EMAIL")]
-    pub(crate) admin_email: String,
-    #[tabled(rename = "TTL")]
-    pub(crate) ttl: i32,
+    #[tabled(rename = "MNAME")]
+    pub(crate) mname: String,
+    #[tabled(rename = "RNAME")]
+    pub(crate) rname: String,
+    #[tabled(rename = "DEFAULT-TTL")]
+    pub(crate) default_ttl: i32,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
 
-impl From<&ZoneSnapshotResponse> for SnapshotRow {
-    fn from(snapshot: &ZoneSnapshotResponse) -> Self {
-        SnapshotRow {
-            serial: snapshot.serial,
-            primary_ns: snapshot.primary_ns.clone(),
-            admin_email: snapshot.admin_email.clone(),
-            ttl: snapshot.ttl,
-            created_at: snapshot.created_at.to_rfc3339(),
+impl From<&ZoneVersionResponse> for VersionRow {
+    fn from(version: &ZoneVersionResponse) -> Self {
+        VersionRow {
+            serial: version.serial,
+            mname: version.mname.clone(),
+            rname: version.rname.clone(),
+            default_ttl: version.default_ttl,
+            created_at: version.created_at.to_rfc3339(),
         }
     }
 }
 
-/// Table row for records reconstructed at a snapshot serial (no database id).
+/// Table row for records reconstructed at a version serial (no database id).
 #[derive(Debug, Tabled)]
-pub(crate) struct SnapshotRecordRow {
+pub(crate) struct VersionRecordRow {
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "TYPE")]
@@ -129,9 +129,9 @@ pub(crate) struct SnapshotRecordRow {
     pub(crate) priority: Option<i32>,
 }
 
-impl From<&SnapshotRecordResponse> for SnapshotRecordRow {
-    fn from(record: &SnapshotRecordResponse) -> Self {
-        SnapshotRecordRow {
+impl From<&VersionRecordResponse> for VersionRecordRow {
+    fn from(record: &VersionRecordResponse) -> Self {
+        VersionRecordRow {
             name: record.name.clone(),
             record_type: record.record_type.clone(),
             value: value_text(&record.value),

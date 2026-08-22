@@ -32,7 +32,7 @@ impl TsigKeyService {
         let name = normalize_key_name(name)?;
         let algorithm = parse_algorithm(algorithm)?;
         let secret = match secret {
-            Some(secret) => validate_secret(secret)?,
+            Some(secret) => normalize_secret(secret)?,
             None => generate_secret(),
         };
 
@@ -121,7 +121,7 @@ const MIN_IMPORTED_SECRET_BYTES: usize = 16;
 /// The base64 form must fit the `tsig_keys.secret` VARCHAR(255) column.
 const MAX_SECRET_BASE64_LEN: usize = 255;
 
-fn validate_secret(value: &str) -> Result<String, ServiceError> {
+fn normalize_secret(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed.len() > MAX_SECRET_BASE64_LEN {

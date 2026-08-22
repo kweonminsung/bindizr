@@ -8,7 +8,13 @@ use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
 use super::delta;
-use crate::{error::XfrError, log_info, model::zone::Zone, service::zone::ZoneService, wire};
+use crate::{
+    error::XfrError,
+    log_info,
+    model::zone::{DnssecDenial, Zone},
+    service::zone::ZoneService,
+    wire,
+};
 
 /// Generates the catalog zone and its member zone list.
 pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
@@ -34,14 +40,15 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     let catalog_zone = Zone {
         id: 0,
         name: ZoneName::from_row(CATALOG_ZONE_NAME),
-        primary_ns: "invalid".to_string(),
-        admin_email: "invalid".to_string(),
-        ttl: 3600,
+        mname: "invalid".to_string(),
+        rname: "invalid".to_string(),
+        default_ttl: 3600,
         serial,
         refresh: 3600,
         retry: 600,
         expire: 86400,
         minimum_ttl: 60,
+        dnssec_denial: DnssecDenial::Nsec,
         created_at: Utc::now(),
     };
 
@@ -49,14 +56,14 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
 }
 
 async fn generate_catalog_serial(member_zones: &[String], zones: &[Zone]) -> Result<i32, XfrError> {
-    let signature = catalog_signature(member_zones, zones);
+    let digest = catalog_digest(member_zones, zones);
     let base_serial = zones.iter().map(|z| z.serial).max().unwrap_or(1);
-    ZoneService::update_catalog_serial_for_signature(CATALOG_ZONE_NAME, &signature, base_serial)
+    ZoneService::advance_catalog_serial(CATALOG_ZONE_NAME, &digest, base_serial)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))
 }
 
-fn catalog_signature(member_zones: &[String], zones: &[Zone]) -> String {
+fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {
     // Index serials by lowercased name so the per-member lookup is O(1).
     let serial_by_name: HashMap<String, i32> = zones
         .iter()
@@ -99,32 +106,37 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     let mut messages_sent = 0usize;
     let serial = delta::serial_to_u32(catalog_zone.serial)?;
 
-    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
-        builder.add_catalog_soa(&catalog_zone, serial)
-    })
-    .await?;
-
-    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
-        builder.add_catalog_ns(&catalog_zone)
-    })
-    .await?;
-    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
-        builder.add_catalog_version(&catalog_zone)
-    })
-    .await?;
-
-    for member_zone in &member_zones {
-        wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
-            builder.add_catalog_ptr(&catalog_zone, member_zone)
+    builder
+        .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
+            builder.add_catalog_soa(&catalog_zone, serial)
         })
         .await?;
+
+    builder
+        .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
+            builder.add_catalog_ns(&catalog_zone)
+        })
+        .await?;
+    builder
+        .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
+            builder.add_catalog_schema_version(&catalog_zone)
+        })
+        .await?;
+
+    for member_zone in &member_zones {
+        builder
+            .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
+                builder.add_catalog_ptr(&catalog_zone, member_zone)
+            })
+            .await?;
     }
 
-    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
-        builder.add_catalog_soa(&catalog_zone, serial)
-    })
-    .await?;
-    messages_sent += wire::flush_message_if_not_empty(stream, &mut builder).await?;
+    builder
+        .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
+            builder.add_catalog_soa(&catalog_zone, serial)
+        })
+        .await?;
+    messages_sent += builder.flush_if_not_empty(stream).await?;
 
     log_info!(
         "Catalog AXFR completed: sent {} member zones in {} DNS message(s)",

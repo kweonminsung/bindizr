@@ -4,12 +4,17 @@ use bindizr_core::dns::{
 };
 use bindizr_db::repository::LockLevel;
 
-use super::{ZoneService, apex_ns_rrset_ttl};
+use super::ZoneService;
 use crate::{
     authorization::Caller,
+    dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
-    model::{zone::Zone, zone_change::ZoneChange},
+    model::{
+        record::RecordType,
+        zone::Zone,
+        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
+    },
     record::RecordService,
     repository::RepositoryService,
     serial::generate_serial,
@@ -31,22 +36,25 @@ pub(super) fn soa_replacement_changes(
     new_zone: &Zone,
     new_serial: i32,
 ) -> Result<Vec<ZoneChange>, ServiceError> {
-    let change = |operation: &str, zone: &Zone| -> Result<ZoneChange, ServiceError> {
+    let change = |operation: ChangeOperation, zone: &Zone| -> Result<ZoneChange, ServiceError> {
         Ok(ZoneChange {
             zone_id: old_zone.id,
             serial: new_serial,
-            operation: operation.to_string(),
+            operation,
             record_name: OwnerName::apex(),
-            record_type: "SOA".to_string(),
-            record_value: zone.soa_rdata().map_err(ServiceError::invalid_zone)?,
-            record_ttl: zone.ttl,
+            record_type: JournalRecordType::User(RecordType::SOA),
+            record_value: zone
+                .soa_presentation_rdata()
+                .map_err(ServiceError::invalid_zone_field)?,
+            record_ttl: zone.default_ttl,
             record_priority: None,
+            derived: false,
         })
     };
 
     Ok(vec![
-        change(ZoneChange::OP_DEL, old_zone)?,
-        change(ZoneChange::OP_ADD, new_zone)?,
+        change(ChangeOperation::Del, old_zone)?,
+        change(ChangeOperation::Add, new_zone)?,
     ])
 }
 
@@ -61,9 +69,9 @@ impl ZoneService {
         reject_serial(request.serial)?;
         Self::update_locked(zone_name, |_existing| CreateZoneRequest {
             name: request.name.clone(),
-            primary_ns: request.primary_ns.clone(),
-            admin_email: request.admin_email.clone(),
-            ttl: request.ttl,
+            mname: request.mname.clone(),
+            rname: request.rname.clone(),
+            default_ttl: request.default_ttl,
             serial: None,
             refresh: request.refresh,
             retry: request.retry,
@@ -87,15 +95,15 @@ impl ZoneService {
                 .new_name
                 .clone()
                 .unwrap_or_else(|| existing.name.to_string()),
-            primary_ns: patch
-                .primary_ns
+            mname: patch
+                .mname
                 .clone()
-                .unwrap_or_else(|| existing.primary_ns.clone()),
-            admin_email: patch
-                .admin_email
+                .unwrap_or_else(|| existing.mname.clone()),
+            rname: patch
+                .rname
                 .clone()
-                .unwrap_or_else(|| existing.admin_email.clone()),
-            ttl: patch.ttl.unwrap_or(existing.ttl),
+                .unwrap_or_else(|| existing.rname.clone()),
+            default_ttl: patch.default_ttl.unwrap_or(existing.default_ttl),
             serial: None,
             // Omitted timers fall back to the existing zone in resolve_soa_timers.
             refresh: patch.refresh,
@@ -163,14 +171,15 @@ impl ZoneService {
                 Zone {
                     id: zone_id,
                     name: validated.name.clone(),
-                    primary_ns: validated.primary_ns.clone(),
-                    admin_email: validated.admin_email.clone(),
-                    ttl: validated.ttl,
+                    mname: validated.mname.clone(),
+                    rname: validated.rname.clone(),
+                    default_ttl: validated.ttl,
                     serial: new_serial,
                     refresh: timers.refresh,
                     retry: timers.retry,
                     expire: timers.expire,
                     minimum_ttl: timers.minimum_ttl,
+                    dnssec_denial: existing_zone.dnssec_denial,
                     created_at: existing_zone.created_at,
                 },
             )
@@ -186,9 +195,9 @@ impl ZoneService {
                 }
             })?;
 
-            // A rename / primary_ns change must keep an apex NS matching the new
-            // primary_ns; only apex rows can satisfy that, so load just those.
-            let apex_records = RepositoryService::list_records_by_zone_id_and_name_tx(
+            // A rename / mname change must keep an apex NS matching the new
+            // mname; only apex rows can satisfy that, so load just those.
+            let apex_records = RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone_id,
                 &OwnerName::apex(),
@@ -199,41 +208,43 @@ impl ZoneService {
                 log_error!("Failed to fetch apex records: {}", e);
                 ServiceError::internal("Failed to update zone".to_string())
             })?;
-            let has_primary_ns = apex_records
+            let has_mname = apex_records
                 .iter()
-                .any(|r| updated_zone.is_primary_ns(&r.record_type, &r.name, &r.value));
+                .any(|r| updated_zone.is_mname(&r.record_type, &r.name, &r.value));
 
-            if !has_primary_ns {
-                let primary_ns_record = updated_zone.primary_ns_record(apex_ns_rrset_ttl(
-                    &updated_zone,
-                    apex_records
-                        .iter()
-                        .map(|r| (&r.record_type, &r.name, r.ttl)),
-                ));
+            if !has_mname {
+                let mname_record = updated_zone.mname_record(
+                    updated_zone.apex_ns_rrset_ttl(
+                        apex_records
+                            .iter()
+                            .map(|r| (&r.record_type, &r.name, r.ttl)),
+                    ),
+                );
 
                 RecordService::insert_records_with_changes_tx(
                     &mut tx,
                     zone_id,
                     new_serial,
-                    &[primary_ns_record],
+                    &[mname_record],
                 )
                 .await
                 .map_err(|e| {
-                    log_error!("Failed to create primary NS record during update: {}", e);
-                    ServiceError::internal("Failed to keep primary NS consistency".to_string())
+                    log_error!("Failed to create mname NS record during update: {}", e);
+                    ServiceError::internal("Failed to keep mname NS consistency".to_string())
                 })?;
             }
 
             let changes = soa_replacement_changes(&existing_zone, &updated_zone, new_serial)?;
 
-            RepositoryService::create_zone_changes_tx(&mut tx, &changes)
+            RepositoryService::create_zone_journal_tx(&mut tx, &changes)
                 .await
                 .map_err(|e| {
                     log_error!("Failed to create zone changes: {}", e);
                     ServiceError::internal("Failed to create zone change".to_string())
                 })?;
 
-            ZoneService::save_snapshot_tx(&mut tx, &updated_zone, new_serial).await?;
+            DnssecService::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
+            ZoneService::save_version_tx(&mut tx, &updated_zone, new_serial).await?;
 
             Ok(AppliedZoneUpdate {
                 zone: updated_zone,

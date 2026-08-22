@@ -37,7 +37,7 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 - **DNS NOTIFY** — configurable retries and timeouts, plus a sync/async apply mode that batches NOTIFYs under load.
 - **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone update policies.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
-- **Zone History** — per-serial snapshots with diffs between serials and rollback.
+- **Zone Versions** — a version per serial, with diffs between serials and rollback.
 - **Observability** — health probe, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
 
 ## Quick Start

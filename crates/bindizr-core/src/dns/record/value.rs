@@ -2,11 +2,18 @@
 
 use crate::dns::name::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label};
 
+/// Priority an MX or SRV row takes when its priority column is NULL; served
+/// and compared as this value, so both types must agree on it.
+pub(crate) const DEFAULT_PRIORITY: u16 = 10;
+
 pub(crate) fn parse_optional_u16_record_field(
     field: &str,
     value: Option<i32>,
+    default: u16,
 ) -> Result<u16, String> {
-    u16::try_from(value.unwrap_or(10)).map_err(|_| format!("{field} must be between 0 and 65535"))
+    value.map_or(Ok(default), |value| {
+        u16::try_from(value).map_err(|_| format!("{field} must be between 0 and 65535"))
+    })
 }
 
 pub(crate) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, String> {

@@ -38,7 +38,7 @@ impl ExternalDnsService {
     }
 
     /// Names of the zones the caller may manage.
-    pub async fn list_zones(caller: &Caller) -> Result<Vec<String>, ServiceError> {
+    pub async fn list_zone_names(caller: &Caller) -> Result<Vec<String>, ServiceError> {
         let visible = caller.visible_zone_ids();
         let zones = RepositoryService::list_zones().await?;
         Ok(zones
@@ -66,7 +66,7 @@ impl ExternalDnsService {
 
         let mut items = Vec::new();
         for record in records {
-            if !apply::is_supported_record_type(&record.record_type) {
+            if !record.record_type.is_external_dns_supported() {
                 continue;
             }
             let Some(zone) = zones_by_id.get(&record.zone_id) else {

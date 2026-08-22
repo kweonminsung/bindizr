@@ -23,7 +23,7 @@ enum SecondaryAclEntry {
 
 pub(crate) fn secondary_acl_from_config() -> SecondaryAcl {
     SecondaryAcl {
-        entries: parse_secondary_acl_entries(&config::get_bindizr_config().dns.secondary_addrs),
+        entries: parse_secondary_acl_entries(&config::bindizr_config().dns.secondary_addrs),
     }
 }
 

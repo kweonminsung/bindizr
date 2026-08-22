@@ -18,6 +18,8 @@ struct TestConfigToml {
     secondary_addrs: &'static str,
     /// Extra `[dns]` lines (newline-separated, no trailing newline).
     dns_notify: &'static str,
+    /// Renders a `[dnssec]` section with these lines when non-empty.
+    dnssec: &'static str,
 }
 
 impl Default for TestConfigToml {
@@ -30,6 +32,7 @@ impl Default for TestConfigToml {
             unselected_databases: true,
             secondary_addrs: "",
             dns_notify: "",
+            dnssec: "",
         }
     }
 }
@@ -45,6 +48,11 @@ impl TestConfigToml {
             .api_external_dns_enabled
             .map(|value| format!("external_dns_enabled = {}\n", value))
             .unwrap_or_default();
+        let dnssec = if self.dnssec.is_empty() {
+            String::new()
+        } else {
+            format!("\n[dnssec]\n{}\n", self.dnssec)
+        };
         format!(
             r#"
 [api]
@@ -62,7 +70,7 @@ file_path = "file::memory:?cache=shared"
 listen_addr = "127.0.0.1"
 listen_port = 53
 secondary_addrs = "{secondary_addrs}"
-{dns_notify}
+{dns_notify}{dnssec}
 [logging]
 log_level = "debug"
 "#,
@@ -72,6 +80,7 @@ log_level = "debug"
             database_type = self.database_type,
             secondary_addrs = self.secondary_addrs,
             dns_notify = self.dns_notify,
+            dnssec = dnssec,
         )
     }
 }
@@ -116,6 +125,62 @@ fn parse_bindizr_config_defaults_missing_optional_dns_fields() {
     assert_eq!(parsed.dns.notify_retries, 3);
     assert_eq!(parsed.dns.notify_timeout_secs, 5);
     assert!(!parsed.dns.nsupdate_allow_unsigned);
+}
+
+#[test]
+fn parse_bindizr_config_defaults_dnssec_and_journal_retention() {
+    let parsed = parse_config(&TestConfigToml::default()).unwrap();
+
+    assert_eq!(parsed.dnssec.signature_validity_days, 14);
+    assert_eq!(parsed.dnssec.signature_refresh_days, 5);
+    assert_eq!(parsed.dnssec.rollover_publish_holddown_secs, 86_400);
+    assert_eq!(parsed.dnssec.rollover_retire_holddown_secs, 172_800);
+    assert_eq!(parsed.dns.journal_retention_days, 365);
+}
+
+#[test]
+fn parse_bindizr_config_accepts_custom_dnssec_section() {
+    let parsed = parse_config(&TestConfigToml {
+        dnssec: "signature_validity_days = 30\nsignature_refresh_days = 10",
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(parsed.dnssec.signature_validity_days, 30);
+    assert_eq!(parsed.dnssec.signature_refresh_days, 10);
+}
+
+#[test]
+fn parse_bindizr_config_rejects_refresh_not_below_validity() {
+    let err = parse_config(&TestConfigToml {
+        dnssec: "signature_validity_days = 5\nsignature_refresh_days = 5",
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert!(err.contains("signature_refresh_days"), "got: {err}");
+}
+
+#[test]
+fn apply_env_overrides_covers_dnssec_and_journal_retention() {
+    let config = Config::builder()
+        .add_source(File::from_str(
+            &TestConfigToml::default().render(),
+            FileFormat::Toml,
+        ))
+        .build()
+        .unwrap();
+    let parsed = parse_bindizr_config_with_env(config, |name| match name {
+        "BINDIZR_DNSSEC_SIGNATURE_VALIDITY_DAYS" => Some("21".to_string()),
+        "BINDIZR_DNSSEC_SIGNATURE_REFRESH_DAYS" => Some("7".to_string()),
+        "BINDIZR_JOURNAL_RETENTION_DAYS" => Some("0".to_string()),
+        _ => None,
+    })
+    .unwrap();
+
+    assert_eq!(parsed.dnssec.signature_validity_days, 21);
+    assert_eq!(parsed.dnssec.signature_refresh_days, 7);
+    assert_eq!(parsed.dns.journal_retention_days, 0);
 }
 
 #[test]

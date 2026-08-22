@@ -11,33 +11,33 @@ pub(crate) struct PostgresCatalogZoneStateRepository;
 
 #[async_trait]
 impl CatalogZoneStateRepository for PostgresCatalogZoneStateRepository {
-    async fn update_serial_for_signature_tx(
+    async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
-        signature: &str,
+        digest: &str,
         base_serial: i32,
     ) -> Result<i32, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        // Advance the catalog serial only when the signature changes, kept
+        // Advance the catalog serial only when the digest changes, kept
         // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query_scalar::<_, i32>(
             r#"
-            INSERT INTO catalog_zone_state (name, signature, serial)
+            INSERT INTO catalog_zone_state (name, digest, serial)
             VALUES ($1, $2, $3)
             ON CONFLICT (name)
             DO UPDATE SET
                 serial = CASE
-                    WHEN catalog_zone_state.signature = EXCLUDED.signature THEN catalog_zone_state.serial
+                    WHEN catalog_zone_state.digest = EXCLUDED.digest THEN catalog_zone_state.serial
                     ELSE GREATEST(catalog_zone_state.serial + 1, EXCLUDED.serial)
                 END,
-                signature = EXCLUDED.signature
+                digest = EXCLUDED.digest
             RETURNING serial
             "#,
         )
         .bind(name)
-        .bind(signature)
+        .bind(digest)
         .bind(base_serial)
         .fetch_one(&mut **postgres_tx)
         .await

@@ -52,6 +52,11 @@ impl ZoneName {
     pub fn to_fqdn(&self) -> String {
         to_fqdn(&self.0)
     }
+
+    /// The wire form.
+    pub fn to_wire(&self) -> Result<Vec<u8>, ParseNameError> {
+        super::labels_to_wire(self.0.split('.'))
+    }
 }
 
 /// Decodes the stored form, so a row column can hold a zone name directly.

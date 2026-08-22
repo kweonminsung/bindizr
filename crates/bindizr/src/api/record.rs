@@ -14,7 +14,6 @@ use bindizr_service::{
     },
 };
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::api::{
     RequestCaller,
@@ -82,8 +81,11 @@ pub(crate) async fn get_records(
         .map(GetRecordResponse::from_record_with_zone)
         .collect::<Vec<_>>();
 
-    let json_body = json!({ "items": records, "pagination": raw_records.pagination });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = PaginatedResponse {
+        items: records,
+        pagination: raw_records.pagination,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -106,12 +108,12 @@ pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::get_by_id_with_zone(&caller, params.record_id).await?;
+    let raw_record = RecordService::get_with_zone(&caller, params.record_id).await?;
 
-    let record = GetRecordResponse::from_record_with_zone(&raw_record);
-
-    let json_body = json!({ "record": record });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = RecordResponse {
+        record: GetRecordResponse::from_record_with_zone(&raw_record),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -136,10 +138,10 @@ pub(crate) async fn create_record(
 ) -> Result<Response, ApiError> {
     let raw_record = RecordService::create(&caller, &body).await?;
 
-    let record = GetRecordResponse::from_record_with_zone(&raw_record);
-
-    let json_body = json!({ "record": record });
-    Ok((StatusCode::CREATED, Json(json_body)).into_response())
+    let response = RecordResponse {
+        record: GetRecordResponse::from_record_with_zone(&raw_record),
+    };
+    Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -167,12 +169,12 @@ pub(crate) async fn update_record(
     Path(params): Path<RecordIdParam>,
     JsonBody(body): JsonBody<RecordItem>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::update_by_id(&caller, params.record_id, &body).await?;
+    let raw_record = RecordService::update(&caller, params.record_id, &body).await?;
 
-    let record = GetRecordResponse::from_record_with_zone(&raw_record);
-
-    let json_body = json!({ "record": record });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = RecordResponse {
+        record: GetRecordResponse::from_record_with_zone(&raw_record),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -196,10 +198,12 @@ pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
 ) -> Result<Response, ApiError> {
-    RecordService::delete_by_id(&caller, params.record_id).await?;
+    RecordService::delete(&caller, params.record_id).await?;
 
-    let json_body = json!({ "message": "Record deleted successfully" });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = MessageResponse {
+        message: "Record deleted successfully".to_string(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(

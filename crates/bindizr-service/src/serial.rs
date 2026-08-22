@@ -1,7 +1,7 @@
 //! SOA serial-number generation: a plain monotonic counter.
 //!
 //! Serials start at 1 and advance by exactly one on every zone mutation; the
-//! "when" of a serial comes from `zone_soa_history.created_at`, not from the
+//! "when" of a serial comes from `zone_versions.created_at`, not from the
 //! serial itself. An explicit serial supplied at zone creation (e.g. when
 //! taking over a zone whose secondaries already track a serial) simply becomes
 //! the starting point and the counter continues from there. Stops at
@@ -19,7 +19,7 @@ pub(crate) const MAX_INITIAL_SERIAL: i32 = i32::MAX - RESERVED_SERIAL_HEADROOM;
 
 /// Generate the next SOA serial: `None` (new zone) yields 1; `Some(s)` yields
 /// `s + 1`. `i32::MAX` is an error rather than a saturating no-op, which would
-/// repeat a serial silently — `zone_soa_history` upserts on `(zone_id, serial)`.
+/// repeat a serial silently — `zone_versions` upserts on `(zone_id, serial)`.
 pub(crate) fn generate_serial(current_serial: Option<i32>) -> Result<i32, ServiceError> {
     match current_serial {
         Some(serial) if serial == i32::MAX => Err(ServiceError::zone_conflict(format!(
@@ -34,14 +34,14 @@ pub(crate) fn generate_serial(current_serial: Option<i32>) -> Result<i32, Servic
 /// Validate a client-supplied starting serial, returning it unchanged.
 pub(crate) fn validate_initial_serial(serial: i32) -> Result<i32, ServiceError> {
     if serial < 1 {
-        return Err(ServiceError::invalid_zone(format!(
+        return Err(ServiceError::invalid_zone_field(format!(
             "serial {} must be a positive integer",
             serial
         )));
     }
 
     if serial > MAX_INITIAL_SERIAL {
-        return Err(ServiceError::invalid_zone(format!(
+        return Err(ServiceError::invalid_zone_field(format!(
             "serial {} must not exceed {}, leaving room for the counter to advance",
             serial, MAX_INITIAL_SERIAL
         )));

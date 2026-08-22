@@ -1,5 +1,6 @@
 use super::{
-    OwnerName, ParseNameError, ZoneName, decode_name_labels, is_label_suffix, to_lookup_name,
+    OwnerName, ParseNameError, ZoneName, decode_name_labels, encode_name, is_label_suffix,
+    to_lookup_name,
 };
 
 fn zone() -> ZoneName {
@@ -454,5 +455,57 @@ fn worst_case_stored_form_fits_the_schema_column_width() {
     assert_eq!(
         OwnerName::parse_in_zone(&longer.join("."), &zone),
         Err(ParseNameError::TooLong)
+    );
+}
+
+#[test]
+fn encode_name_produces_length_prefixed_labels() {
+    assert_eq!(
+        encode_name("example.com.").unwrap(),
+        [&[7u8][..], b"example", &[3], b"com", &[0]].concat()
+    );
+}
+
+// An escaped dot stays inside one label (RFC 1035, Section 5.1); this is the
+// SOA RNAME shape an admin email with a dotted local part produces.
+#[test]
+fn encode_name_keeps_escaped_dots_in_one_label() {
+    assert_eq!(
+        encode_name(r"admin\.dns.example.com.").unwrap(),
+        [
+            &[9u8][..],
+            b"admin.dns",
+            &[7],
+            b"example",
+            &[3],
+            b"com",
+            &[0]
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn encode_name_maps_empty_and_root_to_the_root_name() {
+    assert_eq!(encode_name("").unwrap(), vec![0]);
+    assert_eq!(encode_name(".").unwrap(), vec![0]);
+}
+
+#[test]
+fn owner_to_wire_matches_the_encoded_fqdn() {
+    let zone = zone();
+    let owner = OwnerName::parse_in_zone(r"api\.v2.www", &zone).unwrap();
+    assert_eq!(
+        owner.to_wire(&zone).unwrap(),
+        encode_name(&owner.to_fqdn(&zone)).unwrap()
+    );
+}
+
+#[test]
+fn zone_to_wire_matches_the_encoded_fqdn() {
+    let zone = zone();
+    assert_eq!(
+        zone.to_wire().unwrap(),
+        encode_name(&zone.to_fqdn()).unwrap()
     );
 }

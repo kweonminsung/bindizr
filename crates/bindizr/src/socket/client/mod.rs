@@ -1,4 +1,4 @@
-use bindizr_service::error::ErrorCode;
+use bindizr_service::{error::ErrorCode, types::ErrorResponse};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
@@ -99,20 +99,16 @@ impl DaemonSocketClient {
             .await
             .map_err(|e| format!("Failed to read from socket: {}", e))?;
 
-        let response: serde_json::Value = serde_json::from_str(&response)
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
-        if let Some(error) = response.get("error").and_then(serde_json::Value::as_str) {
-            let code = response
-                .get("code")
-                .and_then(serde_json::Value::as_str)
-                .and_then(ErrorCode::parse);
+        // An error reply is an `ErrorResponse` instead of a `DaemonResponse`,
+        // so only a failed command parses here.
+        if let Ok(error) = serde_json::from_str::<ErrorResponse>(&response) {
             return Err(CliError {
-                code,
-                message: error.to_string(),
+                code: ErrorCode::parse(&error.code),
+                message: error.error,
             });
         }
 
-        Ok(serde_json::from_value(response)
+        Ok(serde_json::from_str(&response)
             .map_err(|e| format!("Failed to parse response: {}", e))?)
     }
 }

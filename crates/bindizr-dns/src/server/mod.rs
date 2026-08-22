@@ -54,7 +54,7 @@ pub(crate) async fn handle_tcp_query(
         Rtype::IXFR => Some("ixfr"),
         _ => None,
     };
-    let count_xfr = |result: &str| {
+    let record_xfr_metric = |result: &str| {
         if let Some(xfr_type) = xfr_type {
             metrics()
                 .xfr_total
@@ -64,7 +64,7 @@ pub(crate) async fn handle_tcp_query(
     };
 
     if let Err(err) = validate_secondary_acl(client_ip, secondary_acl).await {
-        count_xfr("refused");
+        record_xfr_metric("refused");
         return Err(err);
     }
 
@@ -89,22 +89,17 @@ pub(crate) async fn handle_tcp_query(
 
     if let Err(err) = result {
         if matches!(err, XfrError::ZoneNotFound(_)) {
-            count_xfr("notauth");
-            let response = wire::build_error_response(
-                query.query_id,
-                &query.qname,
-                query.qtype,
-                Rcode::NOTAUTH,
-            );
+            record_xfr_metric("notauth");
+            let response = query.error_response(Rcode::NOTAUTH);
             wire::write_tcp_message(stream, &response).await?;
             return Ok(());
         }
 
-        count_xfr("error");
+        record_xfr_metric("error");
         return Err(err);
     }
 
-    count_xfr("ok");
+    record_xfr_metric("ok");
     Ok(())
 }
 

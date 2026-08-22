@@ -40,7 +40,7 @@ impl ZoneTsigPolicyRepository for SqliteZoneTsigPolicyRepository {
         Ok(policy)
     }
 
-    async fn get_by_id(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError> {
+    async fn get(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let policy = sqlx::query_as::<_, ZoneTsigPolicy>(
@@ -53,7 +53,7 @@ impl ZoneTsigPolicyRepository for SqliteZoneTsigPolicyRepository {
         Ok(policy)
     }
 
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
+    async fn list(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let policies = sqlx::query_as::<_, ZoneTsigPolicy>(
@@ -66,7 +66,7 @@ impl ZoneTsigPolicyRepository for SqliteZoneTsigPolicyRepository {
         Ok(policies)
     }
 
-    async fn list_by_zone_and_key_tx(
+    async fn list_by_zone_id_and_key_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

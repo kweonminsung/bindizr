@@ -3,7 +3,7 @@
 Database repository implementations for the `bindizr` DNS control plane.
 
 This crate owns bindizr's database pool setup, schema initialization, and repository traits for
-zones, records, API tokens, zone changes, snapshots, and catalog zone state.
+zones, records, API tokens, zone changes, versions, and catalog zone state.
 
 ## Documentation
 

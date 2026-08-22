@@ -23,7 +23,7 @@ pub(super) async fn evaluate_prerequisites_tx(
         return Ok(());
     }
 
-    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    let zone_records = RecordService::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
     evaluate_against_records(zone, prerequisites, &zone_records)
 }
 
