@@ -81,10 +81,15 @@ pub(crate) async fn list_zone_content(
 }
 
 async fn load_content(zone: Zone) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
-    let Some((zone, records, dnssec_records)) = ZoneService::transfer_content(zone.id).await?
+    let Some((loaded, records, dnssec_records)) = ZoneService::transfer_content(zone.id).await?
     else {
         return Ok(None);
     };
+    // A rename since the pre-read would serve the new apex under the old name.
+    if loaded.name != zone.name {
+        return Ok(None);
+    }
+    let zone = loaded;
     Ok(Some((
         zone,
         ZoneContent {

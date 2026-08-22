@@ -625,6 +625,17 @@ async fn remove_retired_keys_for_zone(
         let keys =
             RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
 
+        // A retiring key outlives the signatures it made, which resolvers
+        // cache for their RRset's TTL (RFC 7583, Section 3.3.4).
+        let records = RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
+        let signed_ttl = records
+            .iter()
+            .map(|record| record.ttl)
+            .chain(std::iter::once(zone.default_ttl))
+            .max()
+            .unwrap_or(zone.default_ttl);
+        let cutoff = cutoff.min(Utc::now() - Duration::seconds(signed_ttl as i64));
+
         let mut remaining = Vec::with_capacity(keys.len());
         let mut removed = 0usize;
         for key in keys {
