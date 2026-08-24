@@ -532,6 +532,13 @@ impl DnssecConfig {
                     .to_string(),
             );
         }
+        // RFC 1982 serial arithmetic is only unambiguous while expiration -
+        // inception stays under 2^31 seconds (RFC 4034, Section 3.1.5).
+        if i64::from(self.signature_validity_days) * 86_400 > i64::from(u32::MAX / 2) {
+            return Err(
+                "dnssec.signature_validity_days must be less than 24856 (2^31 seconds)".to_string(),
+            );
+        }
         Ok(())
     }
 }

@@ -585,7 +585,10 @@ impl ZoneService {
             }
 
             // Validate the adds in-memory against the post-delete record set
-            // (mirrors the import reconcile).
+            // (mirrors the import reconcile). A DS requires the delegation NS
+            // it may restore alongside, and the map yields adds in hash order —
+            // validate DS rows last.
+            to_add.sort_by_key(|target| target.record_type == RecordType::DS);
             let mut records_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
             for record in &current_records {
                 if deleted_ids.contains(&record.id) {

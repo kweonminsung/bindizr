@@ -1178,6 +1178,74 @@ async fn zone_rollback_dry_run_then_apply() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for request in [
+        json!({
+            "name": "sub", "record_type": "NS", "value": "ns1.example.net.",
+            "ttl": 3600, "zone_name": zone_name
+        }),
+        json!({
+            "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab",
+            "ttl": 3600, "zone_name": zone_name
+        }),
+    ] {
+        let (status, _) = app.request(Method::POST, "/records", Some(request)).await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    let (_, zone_at_target) = app
+        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
+
+    for record_type in ["DS", "NS"] {
+        let (_, listing) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&record_type={record_type}&name=sub"),
+                None,
+            )
+            .await;
+        let id = listing["items"][0]["id"].as_i64().unwrap();
+        let (status, _) = app
+            .request(Method::DELETE, &format!("/records/{id}"), None)
+            .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // Restoring both at once must not depend on which validates first.
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/rollback"),
+            Some(json!({ "serial": target_serial })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["summary"]["records_added"], 2, "{body}");
+
+    for record_type in ["NS", "DS"] {
+        let (_, listing) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&record_type={record_type}&name=sub"),
+                None,
+            )
+            .await;
+        assert_eq!(
+            listing["items"].as_array().unwrap().len(),
+            1,
+            "{record_type} not restored"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_rollback_rejects_bad_serials() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;

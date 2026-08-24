@@ -162,6 +162,25 @@ fn parse_bindizr_config_rejects_refresh_not_below_validity() {
 }
 
 #[test]
+fn parse_bindizr_config_rejects_validity_beyond_serial_arithmetic_range() {
+    // RFC 4034, Section 3.1.5: serial arithmetic wraps at 2^31 seconds.
+    let err = parse_config(&TestConfigToml {
+        dnssec: "signature_validity_days = 24856
+signature_refresh_days = 5",
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(err.contains("signature_validity_days"), "got: {err}");
+
+    parse_config(&TestConfigToml {
+        dnssec: "signature_validity_days = 24855
+signature_refresh_days = 5",
+        ..Default::default()
+    })
+    .unwrap();
+}
+
+#[test]
 fn apply_env_overrides_covers_dnssec_and_journal_retention() {
     let config = Config::builder()
         .add_source(File::from_str(
