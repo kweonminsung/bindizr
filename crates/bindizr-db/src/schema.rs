@@ -138,6 +138,8 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
             private_key TEXT NOT NULL,
             state VARCHAR(16) NOT NULL,
             state_changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            eligible_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            max_signed_ttl INT NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             INDEX idx_dnssec_keys_zone (zone_id)
@@ -308,6 +310,8 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
             private_key TEXT NOT NULL,
             state VARCHAR(16) NOT NULL,
             state_changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            eligible_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            max_signed_ttl INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
@@ -482,6 +486,8 @@ pub(super) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             private_key TEXT NOT NULL,
             state TEXT NOT NULL,
             state_changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            eligible_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            max_signed_ttl INTEGER NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );

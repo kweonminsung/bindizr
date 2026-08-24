@@ -83,9 +83,10 @@ signs no zone data yet.
 
 What happens next depends on the key:
 
-- **ZSK** — no parent involvement, so after `rollover_publish_holddown_secs`
-  (default one day, giving caches time to learn the new `DNSKEY`) the
-  scheduler promotes it automatically: the new key signs everything, the old
+- **ZSK** — no parent involvement, so the scheduler promotes it
+  automatically once its publication wait — `rollover_publish_holddown_secs`
+  (default one day), never less than the zone's `DNSKEY` TTL, and fixed when
+  the key is published — has passed: the new key signs everything, the old
   key is retired.
 - **CSK / KSK** — the parent DS must change first. Publish the new DS at the
   parent (or let it consume the CDS), wait out the parent's DS TTL, then
@@ -99,9 +100,10 @@ What happens next depends on the key:
   ```
 
 A retired key stays in the `DNSKEY` RRset — cached signatures and a possibly
-lingering old DS still need it — until `rollover_retire_holddown_secs`
-(default two days) passes, when the scheduler removes it and the rollover is
-complete. `status` shows every key's role and lifecycle state
+lingering old DS still need it — until its retirement wait passes:
+`rollover_retire_holddown_secs` (default two days), and never less than the
+largest TTL among the RRsets it signed. The scheduler then removes it and the
+rollover is complete. `status` shows every key's role and lifecycle state
 (`published` / `active` / `retired`) throughout.
 
 ## Signature maintenance

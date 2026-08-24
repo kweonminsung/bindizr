@@ -371,12 +371,12 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to delete DNSSEC keys: {}", e)))
     }
 
-    pub(super) async fn list_dnssec_keys_by_state_entered_before(
+    pub(super) async fn list_dnssec_keys_by_state_eligible_before(
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<DnssecKey>, ServiceError> {
         get_dnssec_key_repository()
-            .list_by_state_entered_before(state, cutoff)
+            .list_by_state_eligible_before(state, cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
     }
@@ -386,9 +386,23 @@ impl RepositoryService {
         id: i32,
         state: DnssecKeyState,
         changed_at: DateTime<Utc>,
+        eligible_at: DateTime<Utc>,
     ) -> Result<(), ServiceError> {
         get_dnssec_key_repository()
-            .update_state_tx(tx, id, state, changed_at)
+            .update_state_tx(tx, id, state, changed_at, eligible_at)
+            .await
+            .map_err(|e| {
+                ServiceError::internal(format!("failed to update DNSSEC key state: {}", e))
+            })
+    }
+
+    pub(super) async fn update_dnssec_key_max_signed_ttl_tx(
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        max_signed_ttl: i32,
+    ) -> Result<(), ServiceError> {
+        get_dnssec_key_repository()
+            .update_max_signed_ttl_tx(tx, id, max_signed_ttl)
             .await
             .map_err(|e| {
                 ServiceError::internal(format!("failed to update DNSSEC key state: {}", e))

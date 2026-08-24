@@ -30,8 +30,8 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id
             "#,
         )
@@ -43,6 +43,8 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         .bind(&key.private_key)
         .bind(key.state.as_str())
         .bind(key.state_changed_at)
+        .bind(key.eligible_at)
+        .bind(key.max_signed_ttl)
         .fetch_one(&mut **postgres_tx)
         .await?;
 
@@ -61,7 +63,7 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         let keys = sqlx::query_as::<_, DnssecKey>(AssertSqlSafe(format!(
             "{}{}",
             r#"
-            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, created_at
+            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
             FROM dnssec_keys
             WHERE zone_id = $1
             ORDER BY id
@@ -75,7 +77,7 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         Ok(keys)
     }
 
-    async fn list_by_state_entered_before(
+    async fn list_by_state_eligible_before(
         &self,
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
@@ -84,9 +86,9 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
 
         let keys = sqlx::query_as::<_, DnssecKey>(
             r#"
-            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, created_at
+            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
             FROM dnssec_keys
-            WHERE state = $1 AND state_changed_at < $2
+            WHERE state = $1 AND eligible_at <= $2
             ORDER BY zone_id, id
             "#,
         )
@@ -104,14 +106,35 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         id: i32,
         state: DnssecKeyState,
         changed_at: DateTime<Utc>,
+        eligible_at: DateTime<Utc>,
     ) -> Result<(), DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        sqlx::query("UPDATE dnssec_keys SET state = $1, state_changed_at = $2 WHERE id = $3")
-            .bind(state.as_str())
-            .bind(changed_at)
-            .bind(id)
+        sqlx::query(
+            "UPDATE dnssec_keys SET state = $1, state_changed_at = $2, eligible_at = $3 WHERE id = $4",
+        )
+        .bind(state.as_str())
+        .bind(changed_at)
+        .bind(eligible_at)
+        .bind(id)
             .execute(&mut **postgres_tx)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn update_max_signed_ttl_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        max_signed_ttl: i32,
+    ) -> Result<(), DatabaseError> {
+        let pg_tx = tx.as_postgres()?;
+
+        sqlx::query("UPDATE dnssec_keys SET max_signed_ttl = $1 WHERE id = $2")
+            .bind(max_signed_ttl)
+            .bind(id)
+            .execute(&mut **pg_tx)
             .await?;
 
         Ok(())

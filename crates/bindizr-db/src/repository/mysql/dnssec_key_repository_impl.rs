@@ -30,8 +30,8 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(key.zone_id)
@@ -42,6 +42,8 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         .bind(&key.private_key)
         .bind(key.state.as_str())
         .bind(key.state_changed_at)
+        .bind(key.eligible_at)
+        .bind(key.max_signed_ttl)
         .execute(&mut **mysql_tx)
         .await?;
 
@@ -60,7 +62,7 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         let keys = sqlx::query_as::<_, DnssecKey>(AssertSqlSafe(format!(
             "{}{}",
             r#"
-            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, created_at
+            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
             FROM dnssec_keys
             WHERE zone_id = ?
             ORDER BY id
@@ -74,7 +76,7 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         Ok(keys)
     }
 
-    async fn list_by_state_entered_before(
+    async fn list_by_state_eligible_before(
         &self,
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
@@ -83,9 +85,9 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
 
         let keys = sqlx::query_as::<_, DnssecKey>(
             r#"
-            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, created_at
+            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
             FROM dnssec_keys
-            WHERE state = ? AND state_changed_at < ?
+            WHERE state = ? AND eligible_at <= ?
             ORDER BY zone_id, id
             "#,
         )
@@ -103,12 +105,33 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         id: i32,
         state: DnssecKeyState,
         changed_at: DateTime<Utc>,
+        eligible_at: DateTime<Utc>,
     ) -> Result<(), DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        sqlx::query("UPDATE dnssec_keys SET state = ?, state_changed_at = ? WHERE id = ?")
-            .bind(state.as_str())
-            .bind(changed_at)
+        sqlx::query(
+            "UPDATE dnssec_keys SET state = ?, state_changed_at = ?, eligible_at = ? WHERE id = ?",
+        )
+        .bind(state.as_str())
+        .bind(changed_at)
+        .bind(eligible_at)
+        .bind(id)
+        .execute(&mut **mysql_tx)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn update_max_signed_ttl_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        max_signed_ttl: i32,
+    ) -> Result<(), DatabaseError> {
+        let mysql_tx = tx.as_mysql()?;
+
+        sqlx::query("UPDATE dnssec_keys SET max_signed_ttl = ? WHERE id = ?")
+            .bind(max_signed_ttl)
             .bind(id)
             .execute(&mut **mysql_tx)
             .await?;

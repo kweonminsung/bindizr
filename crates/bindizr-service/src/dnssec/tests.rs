@@ -56,6 +56,7 @@ fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) ->
         role,
         state,
         fixed_now(),
+        fixed_now(),
     )
     .unwrap();
     key.id = id;

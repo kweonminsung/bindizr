@@ -453,7 +453,8 @@ pub trait DnssecKeyRepository: Send + Sync {
         lock_level: LockLevel,
     ) -> Result<Vec<DnssecKey>, DatabaseError>;
     /// Keys sitting in `state` since before `cutoff`: the rollover work list.
-    async fn list_by_state_entered_before(
+    /// Keys in `state` whose stamped transition deadline has passed.
+    async fn list_by_state_eligible_before(
         &self,
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
@@ -464,6 +465,13 @@ pub trait DnssecKeyRepository: Send + Sync {
         id: i32,
         state: DnssecKeyState,
         changed_at: DateTime<Utc>,
+        eligible_at: DateTime<Utc>,
+    ) -> Result<(), DatabaseError>;
+    async fn update_max_signed_ttl_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        max_signed_ttl: i32,
     ) -> Result<(), DatabaseError>;
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
     async fn delete_by_zone_id_tx(

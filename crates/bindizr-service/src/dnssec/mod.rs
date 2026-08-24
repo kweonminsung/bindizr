@@ -97,7 +97,7 @@ impl DnssecService {
             };
             let mut keys = Vec::with_capacity(roles.len());
             for role in roles {
-                let key = generate_key(&zone, algorithm, *role, DnssecKeyState::Active, now)?;
+                let key = generate_key(&zone, algorithm, *role, DnssecKeyState::Active, now, now)?;
                 keys.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
 
@@ -274,12 +274,19 @@ impl DnssecService {
                 .find(|key| key.role == target_role)
                 .expect("validated above that the role exists");
             let now = Utc::now();
+            // The wait covers the DNSKEY TTL resolvers are being served now
+            // (RFC 7583, Section 3.3.1).
+            let publish_wait = Duration::seconds(
+                (bindizr_config().dnssec.rollover_publish_holddown_secs as i64)
+                    .max(zone.default_ttl as i64),
+            );
             let new_key = generate_key(
                 &zone,
                 template.algorithm,
                 target_role,
                 DnssecKeyState::Published,
                 now,
+                now + publish_wait,
             )?;
             let new_key = RepositoryService::create_dnssec_key_tx(&mut tx, new_key).await?;
 
@@ -443,6 +450,28 @@ impl DnssecService {
             return Ok(false);
         }
 
+        // Caches can hold what this pass serves for these TTLs; retirement
+        // reads the running maximum back when stamping its removal deadline.
+        let data_ttl = records
+            .iter()
+            .map(|record| record.ttl)
+            .chain([zone.default_ttl, zone.minimum_ttl])
+            .max()
+            .unwrap_or(zone.default_ttl);
+        for key in keys {
+            let signed_ttl = if key.signs_zone_data() {
+                data_ttl
+            } else if key.signs_key_rrsets() {
+                zone.default_ttl
+            } else {
+                continue;
+            };
+            if signed_ttl > key.max_signed_ttl {
+                RepositoryService::update_dnssec_key_max_signed_ttl_tx(tx, key.id, signed_ttl)
+                    .await?;
+            }
+        }
+
         let changes = derived_changes(zone.id, new_serial, &diff.removed, &diff.added)?;
         RepositoryService::create_zone_journal_tx(tx, &changes).await?;
         let removed_ids: Vec<i32> = diff.removed.iter().map(|row| row.id).collect();
@@ -509,12 +538,10 @@ async fn run_maintenance_pass() {
     }
 
     // ZSK promotion needs no parent interaction, so it advances on its own
-    // once caches have had the publish hold-down to learn the new DNSKEY.
-    let publish_cutoff =
-        Utc::now() - Duration::seconds(config.dnssec.rollover_publish_holddown_secs as i64);
-    match RepositoryService::list_dnssec_keys_by_state_entered_before(
+    // once the deadline stamped at publication has passed.
+    match RepositoryService::list_dnssec_keys_by_state_eligible_before(
         DnssecKeyState::Published,
-        publish_cutoff,
+        Utc::now(),
     )
     .await
     {
@@ -526,7 +553,7 @@ async fn run_maintenance_pass() {
                 .collect();
             zone_ids.dedup();
             for zone_id in zone_ids {
-                match promote_zsks_for_zone(zone_id, publish_cutoff).await {
+                match promote_zsks_for_zone(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log_info!("Promoted pre-published ZSK for zone {}", zone_name);
                         notify_zone(&zone_name).await;
@@ -539,11 +566,9 @@ async fn run_maintenance_pass() {
         Err(e) => log_error!("Rollover promotion scan failed: {}", e),
     }
 
-    let retire_cutoff =
-        Utc::now() - Duration::seconds(config.dnssec.rollover_retire_holddown_secs as i64);
-    match RepositoryService::list_dnssec_keys_by_state_entered_before(
+    match RepositoryService::list_dnssec_keys_by_state_eligible_before(
         DnssecKeyState::Retired,
-        retire_cutoff,
+        Utc::now(),
     )
     .await
     {
@@ -551,7 +576,7 @@ async fn run_maintenance_pass() {
             let mut zone_ids: Vec<i32> = keys.iter().map(|key| key.zone_id).collect();
             zone_ids.dedup();
             for zone_id in zone_ids {
-                match remove_retired_keys_for_zone(zone_id, retire_cutoff).await {
+                match remove_retired_keys_for_zone(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log_info!("Removed retired DNSSEC key(s) for zone {}", zone_name);
                         notify_zone(&zone_name).await;
@@ -597,10 +622,7 @@ async fn sign_zone_by_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
 
 /// Promote a zone's hold-down-expired pre-published ZSKs in its own
 /// transaction. `None` when the state moved on concurrently.
-async fn promote_zsks_for_zone(
-    zone_id: i32,
-    cutoff: DateTime<Utc>,
-) -> Result<Option<String>, ServiceError> {
+async fn promote_zsks_for_zone(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
     let result = async {
         let Some(zone) =
@@ -611,15 +633,13 @@ async fn promote_zsks_for_zone(
         let keys =
             RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
 
-        // The effective hold-down is at least the DNSKEY TTL, so resolvers
-        // age out the pre-rollover RRset first (RFC 7583, Section 3.3.1).
-        let cutoff = cutoff.min(Utc::now() - Duration::seconds(zone.default_ttl as i64));
+        let now = Utc::now();
         let due: Vec<i32> = keys
             .iter()
             .filter(|key| {
                 key.role == DnssecKeyRole::Zsk
                     && key.state == DnssecKeyState::Published
-                    && key.state_changed_at < cutoff
+                    && key.eligible_at <= now
             })
             .map(|key| key.id)
             .collect();
@@ -641,10 +661,7 @@ async fn promote_zsks_for_zone(
 }
 
 /// Remove a zone's hold-down-expired retired keys in its own transaction.
-async fn remove_retired_keys_for_zone(
-    zone_id: i32,
-    cutoff: DateTime<Utc>,
-) -> Result<Option<String>, ServiceError> {
+async fn remove_retired_keys_for_zone(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to remove retired keys").await?;
     let result = async {
         let Some(zone) =
@@ -655,21 +672,11 @@ async fn remove_retired_keys_for_zone(
         let keys =
             RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
 
-        // A retiring key outlives the signatures it made, which resolvers
-        // cache for their RRset's TTL (RFC 7583, Section 3.3.4).
-        let records = RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
-        let signed_ttl = records
-            .iter()
-            .map(|record| record.ttl)
-            .chain(std::iter::once(zone.default_ttl))
-            .max()
-            .unwrap_or(zone.default_ttl);
-        let cutoff = cutoff.min(Utc::now() - Duration::seconds(signed_ttl as i64));
-
+        let now = Utc::now();
         let mut remaining = Vec::with_capacity(keys.len());
         let mut removed = 0usize;
         for key in keys {
-            if key.state == DnssecKeyState::Retired && key.state_changed_at < cutoff {
+            if key.state == DnssecKeyState::Retired && key.eligible_at <= now {
                 RepositoryService::delete_dnssec_key_tx(&mut tx, key.id).await?;
                 removed += 1;
             } else {
@@ -698,6 +705,9 @@ async fn promote_published_keys_tx(
     only: Option<&[i32]>,
 ) -> Result<Option<Vec<DnssecKey>>, ServiceError> {
     let now = Utc::now();
+    // The retiring key outlives the signatures it made, which resolvers cache
+    // for their RRset's TTL (RFC 7583, Section 3.3.4).
+    let retire_wait_floor = bindizr_config().dnssec.rollover_retire_holddown_secs as i64;
     let promoted_ids: Vec<i32> = keys
         .iter()
         .filter(|key| {
@@ -717,15 +727,31 @@ async fn promote_published_keys_tx(
     let mut updated = Vec::with_capacity(keys.len());
     for mut key in keys {
         if promoted_ids.contains(&key.id) {
-            RepositoryService::update_dnssec_key_state_tx(tx, key.id, DnssecKeyState::Active, now)
-                .await?;
+            RepositoryService::update_dnssec_key_state_tx(
+                tx,
+                key.id,
+                DnssecKeyState::Active,
+                now,
+                now,
+            )
+            .await?;
             key.state = DnssecKeyState::Active;
             key.state_changed_at = now;
+            key.eligible_at = now;
         } else if key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role) {
-            RepositoryService::update_dnssec_key_state_tx(tx, key.id, DnssecKeyState::Retired, now)
-                .await?;
+            let eligible_at =
+                now + Duration::seconds(retire_wait_floor.max(key.max_signed_ttl as i64));
+            RepositoryService::update_dnssec_key_state_tx(
+                tx,
+                key.id,
+                DnssecKeyState::Retired,
+                now,
+                eligible_at,
+            )
+            .await?;
             key.state = DnssecKeyState::Retired;
             key.state_changed_at = now;
+            key.eligible_at = eligible_at;
         }
         updated.push(key);
     }
@@ -744,6 +770,7 @@ fn generate_key(
     role: DnssecKeyRole,
     state: DnssecKeyState,
     now: DateTime<Utc>,
+    eligible_at: DateTime<Utc>,
 ) -> Result<DnssecKey, ServiceError> {
     let params = match algorithm {
         DnssecAlgorithm::EcdsaP256Sha256 => domain::crypto::sign::GenerateParams::EcdsaP256Sha256,
@@ -762,6 +789,8 @@ fn generate_key(
         private_key: secret.display_as_bind().to_string(),
         state,
         state_changed_at: now,
+        eligible_at,
+        max_signed_ttl: 0,
         created_at: now,
     })
 }

@@ -203,8 +203,15 @@ pub struct DnssecKey {
     pub private_key: String,
     #[sqlx(try_from = "String")]
     pub state: DnssecKeyState,
-    /// When the key entered `state`; rollover hold-downs count from here.
+    /// When the key entered `state`.
     pub state_changed_at: DateTime<Utc>,
+    /// When the key's next state transition is allowed, stamped at the
+    /// transition that started the wait — later TTL or hold-down changes
+    /// cannot shorten it.
+    pub eligible_at: DateTime<Utc>,
+    /// Largest TTL among the RRsets this key has signed, so retirement knows
+    /// how long resolvers can keep validating with it.
+    pub max_signed_ttl: i32,
     pub created_at: DateTime<Utc>,
 }
 
