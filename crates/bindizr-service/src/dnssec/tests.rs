@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::{DateTime, Duration, Utc};
 
@@ -74,6 +76,8 @@ struct ComputeArgs<'a> {
     denial: DnssecDenial,
     new_serial: i32,
     expiration: DateTime<Utc>,
+    /// `0` pins every RRset to `expiration`; the spread has its own test.
+    expiration_jitter_secs: i64,
     force: bool,
 }
 
@@ -89,6 +93,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
         now,
         inception: now - Duration::hours(1),
         expiration: args.expiration,
+        expiration_jitter_secs: args.expiration_jitter_secs,
         refresh_secs: 5 * 86_400,
         force: args.force,
     })
@@ -136,6 +141,56 @@ const RECORD_TYPE_NS: i32 = 2;
 const RECORD_TYPE_A: i32 = 1;
 
 #[test]
+fn expirations_spread_across_the_jitter_window() {
+    let zone = test_zone();
+    let keys = [test_key(
+        &zone,
+        1,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+    )];
+    let records: Vec<Record> = (0..12)
+        .map(|index| {
+            test_record(
+                &format!("host{index}"),
+                RecordType::A,
+                &format!("192.0.2.{index}"),
+                300,
+            )
+        })
+        .collect();
+    let window = 21_600;
+
+    let diff = compute(ComputeArgs {
+        zone: &zone,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        new_serial: 2,
+        expiration: default_expiration(),
+        expiration_jitter_secs: window,
+        force: false,
+    });
+
+    let expirations: BTreeSet<DateTime<Utc>> = rows_of_type(&diff.added, DnssecRecordType::Rrsig)
+        .iter()
+        .filter_map(|row| row.expires_at)
+        .collect();
+    assert!(
+        expirations.len() > 1,
+        "one pass would come due for every RRset at once: {expirations:?}"
+    );
+    let earliest = *expirations.iter().next().expect("signatures were emitted");
+    let latest = *expirations
+        .iter()
+        .next_back()
+        .expect("signatures were emitted");
+    assert!(latest <= default_expiration());
+    assert!(earliest > default_expiration() - Duration::seconds(window));
+}
+
+#[test]
 fn initial_signing_emits_key_rrsets_nsec_chain_and_rrsigs() {
     let zone = test_zone();
     let keys = [test_key(
@@ -157,6 +212,7 @@ fn initial_signing_emits_key_rrsets_nsec_chain_and_rrsigs() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 
@@ -238,6 +294,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
         denial: DnssecDenial::Nsec3,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 
@@ -296,6 +353,7 @@ fn published_key_cosigns_key_rrsets_but_not_zone_data() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 
@@ -339,6 +397,7 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 
@@ -385,6 +444,7 @@ fn split_keys_partition_key_rrsets_from_zone_data() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 
@@ -436,6 +496,7 @@ fn recompute_against_stored_plane_is_empty() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
     let stored = as_stored(&initial.added);
@@ -449,6 +510,7 @@ fn recompute_against_stored_plane_is_empty() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 
@@ -478,6 +540,7 @@ fn record_change_reuses_unaffected_signatures() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
     let stored = as_stored(&initial.added);
@@ -493,6 +556,7 @@ fn record_change_reuses_unaffected_signatures() {
         denial: DnssecDenial::Nsec,
         new_serial: 7,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 
@@ -565,6 +629,7 @@ fn signature_inside_refresh_window_is_resigned() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: fixed_now() + Duration::days(2),
+        expiration_jitter_secs: 0,
         force: false,
     });
     let stored = as_stored(&initial.added);
@@ -578,6 +643,7 @@ fn signature_inside_refresh_window_is_resigned() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 
@@ -618,6 +684,7 @@ fn delegation_ns_and_glue_are_unsigned() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 
@@ -660,6 +727,7 @@ fn force_resigns_every_rrset() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
     let stored = as_stored(&initial.added);
@@ -673,6 +741,7 @@ fn force_resigns_every_rrset() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration() + Duration::days(1),
+        expiration_jitter_secs: 0,
         force: true,
     });
 
@@ -709,6 +778,7 @@ fn mixed_ttl_rrset_signs_at_the_minimum() {
         denial: DnssecDenial::Nsec,
         new_serial: 6,
         expiration: default_expiration(),
+        expiration_jitter_secs: 0,
         force: false,
     });
 

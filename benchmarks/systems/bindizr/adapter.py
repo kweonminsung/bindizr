@@ -38,8 +38,8 @@ class BindizrAdapter(DnsAdapter):
 
     def __init__(self, cfg: dict, project: str, db_type: str | None = None,
                  notify_after_update: bool = True,
-                 apply_mode: str | None = None,
-                 apply_batch_ms: int | None = None,
+                 notify_mode: str | None = None,
+                 notify_batch_ms: int | None = None,
                  zone_cache: bool | None = None,
                  log_level: str | None = None):
         super().__init__(cfg, project)
@@ -56,9 +56,9 @@ class BindizrAdapter(DnsAdapter):
             self.resource_services.append("postgres")
         self.notify_after_update = notify_after_update
         # None => Bindizr's own defaults (sync / 50 / true); see compose.yml.
-        self.apply_mode = apply_mode or os.environ.get("BENCH_BINDIZR_APPLY_MODE", "sync")
-        self.apply_batch_ms = apply_batch_ms if apply_batch_ms is not None else int(
-            os.environ.get("BENCH_BINDIZR_APPLY_BATCH_MS", "50"))
+        self.notify_mode = notify_mode or os.environ.get("BENCH_BINDIZR_NOTIFY_MODE", "sync")
+        self.notify_batch_ms = notify_batch_ms if notify_batch_ms is not None else int(
+            os.environ.get("BENCH_BINDIZR_NOTIFY_BATCH_MS", "50"))
         self.zone_cache = zone_cache if zone_cache is not None else (
             os.environ.get("BENCH_BINDIZR_ZONE_CACHE", "true").lower() == "true")
         # Raise to "debug" to surface the server's per-stage timing lines
@@ -72,8 +72,8 @@ class BindizrAdapter(DnsAdapter):
         self.session: aiohttp.ClientSession | None = None
         env = {"BINDIZR_DB_TYPE": db_type,
                "BINDIZR_NOTIFY_AFTER_UPDATE": "true" if notify_after_update else "false",
-               "BINDIZR_APPLY_MODE": self.apply_mode,
-               "BINDIZR_APPLY_BATCH_MS": str(self.apply_batch_ms),
+               "BINDIZR_NOTIFY_MODE": self.notify_mode,
+               "BINDIZR_NOTIFY_BATCH_MS": str(self.notify_batch_ms),
                "BINDIZR_ZONE_CACHE": "true" if self.zone_cache else "false",
                "BINDIZR_LOG_LEVEL": self.log_level}
         if db_type == "mysql":
@@ -113,9 +113,9 @@ class BindizrAdapter(DnsAdapter):
         z = zone.rstrip(".")
         body = {
             "name": z,
-            "primary_ns": f"ns1.{z}.",
-            "admin_email": f"admin@{z}",
-            "ttl": 3600,
+            "mname": f"ns1.{z}.",
+            "rname": f"admin@{z}",
+            "default_ttl": 3600,
         }
         async with self.session.post(self.base + "/zones", json=body) as r:
             if r.status not in (200, 201, 409):

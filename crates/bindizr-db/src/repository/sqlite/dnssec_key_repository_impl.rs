@@ -49,24 +49,6 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(key)
     }
 
-    async fn list(&self, zone_id: i32) -> Result<Vec<DnssecKey>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let keys = sqlx::query_as::<_, DnssecKey>(
-            r#"
-            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, created_at
-            FROM dnssec_keys
-            WHERE zone_id = ?
-            ORDER BY id
-            "#,
-        )
-        .bind(zone_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(keys)
-    }
-
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

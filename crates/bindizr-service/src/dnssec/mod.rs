@@ -16,7 +16,6 @@ use std::sync::OnceLock;
 use base64::Engine;
 use bindizr_core::config::bindizr_config;
 use chrono::{DateTime, Duration, Utc};
-use rand::RngExt;
 
 use crate::{
     authorization::Caller,
@@ -35,8 +34,8 @@ use crate::{
     zone::ZoneService,
 };
 
-/// Spread signature expirations so one zone's signatures do not all come due
-/// in the same re-signing pass. Small next to the refresh window (days).
+/// Window the per-RRset expirations spread over, so one re-signing pass does
+/// not come due for every RRset at once. Small next to the refresh window.
 const MAX_EXPIRATION_JITTER_SECS: u64 = 21_600;
 
 /// Backdated inception absorbs validator clock skew; one hour covers any
@@ -175,12 +174,22 @@ impl DnssecService {
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
-        let zone = ZoneService::lookup_by_name(zone_name).await?;
-        let keys = RepositoryService::list_dnssec_keys(zone.id).await?;
-        let derived = RepositoryService::list_dnssec_records(zone.id).await?;
-        let earliest = derived.iter().filter_map(|row| row.expires_at).min();
+        // The DS records are derived from the apex name and the keys, so they
+        // are read together under the zone lock.
+        let mut tx = RepositoryService::begin_tx("failed to read DNSSEC status").await?;
+        let result = async {
+            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
+            let derived =
+                RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
+                    .await?;
+            let earliest = derived.iter().filter_map(|row| row.expires_at).min();
 
-        build_status(&zone, zone.dnssec_denial, &keys, earliest, zone.serial)
+            build_status(&zone, zone.dnssec_denial, &keys, earliest, zone.serial)
+        }
+        .await;
+        RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
     }
 
     /// Re-sign a zone from scratch, discarding stored signatures (recovery
@@ -415,7 +424,6 @@ impl DnssecService {
 
         let dnssec = &bindizr_config().dnssec;
         let now = Utc::now();
-        let jitter = rand::rng().random_range(0..=MAX_EXPIRATION_JITTER_SECS);
         let diff = signed_view::compute_signed_view(&signed_view::SignedViewParams {
             zone,
             new_serial,
@@ -425,8 +433,8 @@ impl DnssecService {
             denial: zone.dnssec_denial,
             now,
             inception: now - Duration::seconds(SIGNATURE_INCEPTION_OFFSET_SECS),
-            expiration: now + Duration::days(i64::from(dnssec.signature_validity_days))
-                - Duration::seconds(jitter as i64),
+            expiration: now + Duration::days(i64::from(dnssec.signature_validity_days)),
+            expiration_jitter_secs: MAX_EXPIRATION_JITTER_SECS as i64,
             refresh_secs: i64::from(dnssec.signature_refresh_days) * 86_400,
             force,
         })?;

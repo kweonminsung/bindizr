@@ -62,7 +62,10 @@ pub(super) struct SignedViewParams<'a> {
     pub(super) denial: DnssecDenial,
     pub(super) now: DateTime<Utc>,
     pub(super) inception: DateTime<Utc>,
+    /// The latest expiration a new signature takes; each RRset lands up to
+    /// `expiration_jitter_secs` earlier.
     pub(super) expiration: DateTime<Utc>,
+    pub(super) expiration_jitter_secs: i64,
     /// Re-sign when a stored signature expires within this window.
     pub(super) refresh_secs: i64,
     /// Ignore stored signatures entirely (manual re-sign).
@@ -303,8 +306,9 @@ pub(super) fn compute_signed_view(
                 }
             }
             None => {
+                let expiration = expiration_for(params, rrset[0].owner(), covered);
                 for signer in rrset_signers {
-                    let rrsig = signer.sign_rrset(rrset, params.inception, params.expiration)?;
+                    let rrsig = signer.sign_rrset(rrset, params.inception, expiration)?;
                     new_rows.push(derived_row(
                         zone,
                         owner.clone(),
@@ -312,7 +316,7 @@ pub(super) fn compute_signed_view(
                         Some(covered),
                         rrsig.ttl().as_secs() as i32,
                         to_rdata(rrsig.data()),
-                        Some(params.expiration),
+                        Some(expiration),
                         Some(digest.clone()),
                     ));
                 }
@@ -325,6 +329,26 @@ pub(super) fn compute_signed_view(
 
 fn derived_record_type(rtype: Rtype) -> Result<DnssecRecordType, ServiceError> {
     DnssecRecordType::try_from(rtype.to_int() as i32).map_err(signing_internal)
+}
+
+/// The RRset's slot in the jitter window, taken from its identity rather than
+/// drawn at random: [`compute_signed_view`] stays a function of its inputs,
+/// and an RRset keeps its slot across re-signings.
+fn expiration_for(params: &SignedViewParams<'_>, owner: &WireName, covered: i32) -> DateTime<Utc> {
+    if params.expiration_jitter_secs <= 0 {
+        return params.expiration;
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(owner.as_slice());
+    hasher.update(covered.to_be_bytes());
+    let slot = u64::from_be_bytes(
+        hasher.finalize()[..8]
+            .try_into()
+            .expect("8 bytes of digest"),
+    );
+    params.expiration
+        - chrono::Duration::seconds((slot % params.expiration_jitter_secs as u64) as i64)
 }
 
 fn is_key_rrset_type(rtype: Rtype) -> bool {
