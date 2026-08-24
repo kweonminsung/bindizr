@@ -491,7 +491,6 @@ pub trait DnssecRecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         records: &[DnssecRecord],
     ) -> Result<(), DatabaseError>;
-    async fn list(&self, zone_id: i32) -> Result<Vec<DnssecRecord>, DatabaseError>;
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

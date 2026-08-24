@@ -429,15 +429,6 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to create DNSSEC records: {}", e)))
     }
 
-    pub(super) async fn list_dnssec_records(
-        zone_id: i32,
-    ) -> Result<Vec<DnssecRecord>, ServiceError> {
-        get_dnssec_record_repository()
-            .list(zone_id)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC records: {}", e)))
-    }
-
     pub(super) async fn list_dnssec_records_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

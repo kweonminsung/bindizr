@@ -33,6 +33,12 @@ async fn zone_dnssec_lifecycle_via_cli() {
         .await;
     assert!(ds.contains(&format!("IN DS {key_tag} ")), "{ds}");
 
+    let records = app
+        .run_cli_success(&["zone", "dnssec", "records", &zone_name])
+        .await;
+    assert!(records.contains(" IN DNSKEY 257 3 "), "{records}");
+    assert!(records.contains(" IN RRSIG SOA "), "{records}");
+
     let signed = app
         .run_cli_success(&["zone", "dnssec", "sign", &zone_name])
         .await;

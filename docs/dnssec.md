@@ -66,6 +66,14 @@ safe to roll out gradually. Check the state at any time:
 bindizr zone dnssec status example.com
 ```
 
+The derived records themselves — `DNSKEY`, `RRSIG`, the denial chain, and
+`CDS`/`CDNSKEY` — can be inspected without a transfer, printed as `dig`
+would show them:
+
+```sh
+bindizr zone dnssec records example.com
+```
+
 ## Key rollover
 
 Rollover replaces a key without ever letting validation break, following the

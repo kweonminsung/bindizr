@@ -1,7 +1,8 @@
 //! The `zone dnssec` subcommands.
 
 use bindizr_service::types::{
-    DisableDnssecRequest, EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest,
+    DisableDnssecRequest, DnssecRecordInfo, EnableDnssecRequest, GetDnssecStatusResponse,
+    RolloverDnssecRequest,
 };
 use clap::Subcommand;
 
@@ -53,6 +54,12 @@ pub(crate) enum ZoneDnssecCommand {
     },
     /// Print a zone's DS records for pasting into the parent zone
     Ds {
+        /// The name of the zone
+        name: String,
+    },
+    /// Print the derived records of a zone's signed view (DNSKEY, RRSIG,
+    /// NSEC chain, CDS/CDNSKEY), as dig would show them
+    Records {
         /// The name of the zone
         name: String,
     },
@@ -144,6 +151,15 @@ pub(super) async fn handle_command(
                 .await?;
             print_ds_records(&response.data)?;
         }
+        ZoneDnssecCommand::Records { name } => {
+            let response = client
+                .send_command(
+                    DaemonCommandKind::ZoneDnssecRecords,
+                    ZoneNameParams { name },
+                )
+                .await?;
+            print_dnssec_records(&response.data)?;
+        }
         ZoneDnssecCommand::Sign { name } => {
             let response = client
                 .send_command(DaemonCommandKind::ZoneDnssecSign, ZoneNameParams { name })
@@ -223,6 +239,25 @@ fn print_status(data: &serde_json::Value) -> Result<(), String> {
     println!("DS records (register in the parent zone):");
     for ds in &status.ds_records {
         println!("  {}", ds.presentation);
+    }
+
+    Ok(())
+}
+
+fn print_dnssec_records(data: &serde_json::Value) -> Result<(), String> {
+    let records: Vec<DnssecRecordInfo> = parse_response(data)?;
+
+    if records.is_empty() {
+        println!("No DNSSEC records found");
+        return Ok(());
+    }
+
+    // dig-style master-file lines, so the output reads like a transfer.
+    for record in &records {
+        println!(
+            "{} {} IN {} {}",
+            record.name, record.ttl, record.record_type, record.rdata
+        );
     }
 
     Ok(())

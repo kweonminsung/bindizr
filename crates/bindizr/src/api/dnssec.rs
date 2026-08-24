@@ -8,8 +8,8 @@ use axum::{
 use bindizr_service::{
     dnssec::DnssecService,
     types::{
-        DisableDnssecRequest, DnssecDsListResponse, DnssecStatusResponse, EnableDnssecRequest,
-        ErrorResponse, MessageResponse, RolloverDnssecRequest,
+        DisableDnssecRequest, DnssecDsListResponse, DnssecRecordsResponse, DnssecStatusResponse,
+        EnableDnssecRequest, ErrorResponse, MessageResponse, RolloverDnssecRequest,
     },
 };
 use serde::Deserialize;
@@ -29,6 +29,10 @@ impl DnssecApi {
             .route(
                 "/zones/{name}/dnssec/ds",
                 routing::get(get_dnssec_ds_records),
+            )
+            .route(
+                "/zones/{name}/dnssec/records",
+                routing::get(list_dnssec_records),
             )
             .route("/zones/{name}/dnssec/sign", routing::post(sign_zone))
             .route(
@@ -174,6 +178,32 @@ pub(crate) async fn get_dnssec_ds_records(
         ds_records: status.ds_records,
     };
     Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/dnssec/records",
+        tag = "DNSSEC",
+        summary = "List a zone's derived DNSSEC records",
+        description = "Returns the system-generated records of the zone's signed view — DNSKEY, RRSIG, the NSEC/NSEC3 chain, and CDS/CDNSKEY — with RDATA in presentation form. These records are derived from the zone's data and keys and cannot be edited. Empty for an unsigned zone.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        responses(
+            (status = 200, description = "The zone's derived DNSSEC records", body = DnssecRecordsResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// List the derived records of a zone's signed view.
+pub(crate) async fn list_dnssec_records(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    let records = DnssecService::list_records(&caller, &params.name).await?;
+    Ok((StatusCode::OK, Json(DnssecRecordsResponse { records })).into_response())
 }
 
 #[utoipa::path(

@@ -66,6 +66,38 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(ds_records.len(), 1);
     assert_eq!(ds_records[0]["key_tag"], key_tag);
 
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/dnssec/records"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let records = body["records"].as_array().unwrap();
+    let of_type = |mnemonic: &str| {
+        records
+            .iter()
+            .filter(|r| r["record_type"] == mnemonic)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(of_type("DNSKEY").len(), 1);
+    assert!(!of_type("NSEC").is_empty());
+    let rrsig = of_type("RRSIG");
+    assert!(!rrsig.is_empty());
+    // Presentation form, not the base64 row form: an RRSIG starts with the
+    // mnemonic of the type it covers.
+    let soa_sig = rrsig
+        .iter()
+        .find(|r| r["covered_type"] == "SOA")
+        .expect("the SOA RRset is signed");
+    assert!(
+        soa_sig["rdata"].as_str().unwrap().starts_with("SOA "),
+        "{:?}",
+        soa_sig["rdata"]
+    );
+    assert!(soa_sig["expires_at"].is_string());
+
     let (status, _) = app
         .request(
             Method::POST,

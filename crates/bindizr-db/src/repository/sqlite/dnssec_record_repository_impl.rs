@@ -59,24 +59,6 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
         Ok(())
     }
 
-    async fn list(&self, zone_id: i32) -> Result<Vec<DnssecRecord>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let records = sqlx::query_as::<_, DnssecRecord>(
-            r#"
-            SELECT id, zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, rrset_digest
-            FROM dnssec_records
-            WHERE zone_id = ?
-            ORDER BY id
-            "#,
-        )
-        .bind(zone_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-        Ok(records)
-    }
-
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
