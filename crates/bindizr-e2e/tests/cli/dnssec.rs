@@ -86,13 +86,9 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     assert!(status.contains("published"), "{status}");
     assert!(status.contains("active"), "{status}");
 
+    // The API test covers the far side of the hold-down wait.
     let ds_seen = app
-        .run_cli_success(&["zone", "dnssec", "rollover", "ds-seen", &zone_name])
+        .run_cli(&["zone", "dnssec", "rollover", "ds-seen", &zone_name])
         .await;
-    assert!(ds_seen.contains("Key rollover advanced successfully"));
-
-    let status = app
-        .run_cli_success(&["zone", "dnssec", "status", &zone_name])
-        .await;
-    assert!(status.contains("retired"), "{status}");
+    assert!(!ds_seen.status.success());
 }

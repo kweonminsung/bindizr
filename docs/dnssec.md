@@ -89,7 +89,10 @@ What happens next depends on the key:
   key is retired.
 - **CSK / KSK** — the parent DS must change first. Publish the new DS at the
   parent (or let it consume the CDS), wait out the parent's DS TTL, then
-  confirm:
+  confirm. The confirmation is refused until the replacement has been
+  published for `rollover_publish_holddown_secs`, and never for less than the
+  zone's TTL — resolvers still holding the previous `DNSKEY` RRset could not
+  validate the new key's signatures:
 
   ```sh
   bindizr zone dnssec rollover ds-seen example.com

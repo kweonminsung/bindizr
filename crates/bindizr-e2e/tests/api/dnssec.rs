@@ -155,10 +155,30 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_csk_rollover_lifecycle() {
-    let app = TestApp::start().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-    let serial_before = zone["serial"].as_i64().unwrap();
+    let app = TestApp::start_with_options(TestAppOptions {
+        rollover_publish_holddown_secs: 0,
+        ..TestAppOptions::default()
+    })
+    .await;
+    // The hold-down never drops below the zone's DNSKEY TTL, so the minimum
+    // TTL is the shortest wait that still reaches promotion.
+    let zone_name = app.zone_name("rollover.example");
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "default_ttl": 60,
+                "serial": 10,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let zone_name = zone_name.as_str();
+    let serial_before = body["zone"]["serial"].as_i64().unwrap();
 
     let (status, body) = app
         .request(
@@ -223,6 +243,17 @@ async fn dnssec_csk_rollover_lifecycle() {
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_ROLLOVER_IN_PROGRESS");
+
+    // A replacement resolvers cannot have learned yet may not sign.
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    tokio::time::sleep(std::time::Duration::from_secs(61)).await;
 
     let (status, body) = app
         .request(

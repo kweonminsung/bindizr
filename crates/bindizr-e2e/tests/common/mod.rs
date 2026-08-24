@@ -47,12 +47,26 @@ pub(crate) struct TestApp {
 }
 
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
-#[derive(Default)]
 pub(crate) struct TestAppOptions {
     pub require_authentication: bool,
     pub external_dns_enabled: bool,
     pub nsupdate_allow_unsigned: bool,
     pub openapi_enabled: bool,
+    /// `0` lets a rollover be confirmed as soon as the zone's DNSKEY TTL
+    /// allows, instead of waiting out the one-day default.
+    pub rollover_publish_holddown_secs: u64,
+}
+
+impl Default for TestAppOptions {
+    fn default() -> Self {
+        Self {
+            require_authentication: false,
+            external_dns_enabled: false,
+            nsupdate_allow_unsigned: false,
+            openapi_enabled: false,
+            rollover_publish_holddown_secs: 86400,
+        }
+    }
 }
 
 enum TestRuntime {
@@ -666,6 +680,9 @@ notify_retries = 0
 notify_timeout_secs = 1
 nsupdate_allow_unsigned = {nsupdate_allow_unsigned}
 
+[dnssec]
+rollover_publish_holddown_secs = {rollover_publish_holddown_secs}
+
 [logging]
 log_level = "error"
 "#,
@@ -674,6 +691,7 @@ log_level = "error"
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_allow_unsigned = options.nsupdate_allow_unsigned,
         openapi_enabled = options.openapi_enabled,
+        rollover_publish_holddown_secs = options.rollover_publish_holddown_secs,
     );
 
     fs::write(config_path, config).expect("failed to write bindizr config");

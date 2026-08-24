@@ -333,6 +333,28 @@ impl DnssecService {
                      promoted automatically after the publish hold-down",
                 ));
             }
+
+            // The parent-side wait being confirmed does not shorten the
+            // zone-side one (RFC 7583, Section 3.3.1).
+            let publish_wait = Duration::seconds(
+                (bindizr_config().dnssec.rollover_publish_holddown_secs as i64)
+                    .max(zone.default_ttl as i64),
+            );
+            let promotable_at = keys
+                .iter()
+                .filter(|key| ds_published.contains(&key.id))
+                .map(|key| key.state_changed_at + publish_wait)
+                .max()
+                .expect("ds_published names at least one key");
+            if promotable_at > Utc::now() {
+                return Err(ServiceError::invalid_input(format!(
+                    "the replacement key must stay published for {} seconds before it can \
+                     sign, so resolvers holding the previous DNSKEY RRset can learn it; \
+                     retry after {}",
+                    publish_wait.num_seconds(),
+                    promotable_at.format("%Y-%m-%dT%H:%M:%SZ"),
+                )));
+            }
             let Some(keys) =
                 promote_published_keys_tx(&mut tx, &zone, keys, Some(&ds_published)).await?
             else {
