@@ -140,10 +140,24 @@ pub(crate) fn validate_record_add_constraints_normalized(
         }
     }
 
-    if *record_type == RecordType::NS && !stored_name.is_apex() {
-        return Err(ServiceError::invalid_record_name(
-            "NS records must use apex owner name '@'".to_string(),
-        ));
+    if *record_type == RecordType::DS {
+        // A DS names a child zone's key (RFC 4034, Section 5); the zone's
+        // own DS lives in its parent.
+        if stored_name.is_apex() {
+            return Err(ServiceError::invalid_record_name(
+                "DS records secure a child delegation; the zone's own DS belongs in the parent zone"
+                    .to_string(),
+            ));
+        }
+        let has_delegation = zone_records
+            .iter()
+            .any(|r| r.name == *stored_name && r.record_type == RecordType::NS);
+        if !has_delegation {
+            return Err(ServiceError::record_conflict(format!(
+                "DS record '{}' requires a delegation NS RRset at the same name; create the NS records first",
+                stored_name
+            )));
+        }
     }
 
     // RFC 2181, Section 5.2: one TTL per RRset.

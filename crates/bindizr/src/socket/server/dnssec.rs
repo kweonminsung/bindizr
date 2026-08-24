@@ -63,21 +63,6 @@ pub(super) async fn get_dnssec_status(
     })
 }
 
-/// Handle the `ZoneDnssecRecords` command by returning the derived records
-/// of a zone's signed view.
-pub(super) async fn list_dnssec_records(
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
-
-    let records = DnssecService::list_records(&Caller::Global, &params.name).await?;
-
-    Ok(DaemonResponse {
-        message: "DNSSEC records retrieved successfully".to_string(),
-        data: to_response_data(records)?,
-    })
-}
-
 /// Handle the `ZoneDnssecSign` command by re-signing a zone from scratch.
 pub(super) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;

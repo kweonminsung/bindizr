@@ -13,8 +13,9 @@ use serde_json::json;
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DiffZoneVersionsParams, ImportZoneFileParams, ListZoneVersionsParams,
-        RollbackZoneParams, UpdateZoneParams, ZoneNameParams, ZoneVersionParams,
+        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneFileParams,
+        ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams, ZoneNameParams,
+        ZoneVersionParams,
     },
 };
 
@@ -101,8 +102,9 @@ pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
 
 /// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
 pub(super) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
-    let zone_file = ZoneService::export_zone_file(&Caller::Global, &params.name).await?;
+    let params: ExportZoneFileParams = parse_params(data)?;
+    let zone_file =
+        ZoneService::export_zone_file(&Caller::Global, &params.name, params.signed).await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
         data: to_response_data(ExportZoneFileResponse { zone_file })?,

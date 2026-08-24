@@ -90,9 +90,6 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ZoneDnssecEnable => dnssec::enable_dnssec(&cmd.data).await,
                 DaemonCommandKind::ZoneDnssecDisable => dnssec::disable_dnssec(&cmd.data).await,
                 DaemonCommandKind::ZoneDnssecStatus => dnssec::get_dnssec_status(&cmd.data).await,
-                DaemonCommandKind::ZoneDnssecRecords => {
-                    dnssec::list_dnssec_records(&cmd.data).await
-                }
                 DaemonCommandKind::ZoneDnssecSign => dnssec::sign_zone(&cmd.data).await,
                 DaemonCommandKind::ZoneDnssecRolloverStart => {
                     dnssec::rollover_start(&cmd.data).await

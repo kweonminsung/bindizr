@@ -14,7 +14,7 @@ mod tests;
 use std::sync::OnceLock;
 
 use base64::Engine;
-use bindizr_core::config::bindizr_config;
+use bindizr_core::{config::bindizr_config, dns::record::Rdata};
 use chrono::{DateTime, Duration, Utc};
 
 use crate::{
@@ -24,13 +24,13 @@ use crate::{
     log_error, log_info, log_warn,
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
-        dnssec_record::DnssecRecord,
+        dnssec_record::{DnssecRecord, DnssecRecordType},
         zone::{DnssecDenial, Zone},
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::{RepositoryService, RepositoryTx},
     serial::generate_serial,
-    types::{DnssecDsInfo, DnssecKeyInfo, DnssecRecordInfo, GetDnssecStatusResponse},
+    types::{DnssecDsInfo, DnssecKeyInfo, GetDnssecStatusResponse},
     zone::ZoneService,
 };
 
@@ -190,29 +190,6 @@ impl DnssecService {
         }
         .await;
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
-    }
-
-    /// The derived records of a zone's signed view, rendered for operators;
-    /// empty for an unsigned zone.
-    pub async fn list_records(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<Vec<DnssecRecordInfo>, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
-
-        let mut tx = RepositoryService::begin_tx("failed to read DNSSEC records").await?;
-        let result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-            let derived =
-                RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
-                    .await?;
-            Ok(derived
-                .iter()
-                .map(|row| derived_record_info(&zone, row))
-                .collect())
-        }
-        .await;
-        RepositoryService::finish_tx(tx, result, "failed to read DNSSEC records").await
     }
 
     /// Re-sign a zone from scratch, discarding stored signatures (recovery
@@ -812,27 +789,9 @@ fn generate_key(
     })
 }
 
-fn derived_record_info(zone: &Zone, row: &DnssecRecord) -> DnssecRecordInfo {
-    use domain::base::iana::Rtype;
-
-    DnssecRecordInfo {
-        name: row.name.to_fqdn(&zone.name),
-        record_type: row.record_type.as_str().to_string(),
-        ttl: row.ttl,
-        rdata: rdata_presentation(row.record_type, &row.rdata),
-        covered_type: row
-            .covered_record_type
-            .map(|covered| Rtype::from_int(covered as u16).to_string()),
-        expires_at: row.expires_at,
-    }
-}
-
 /// Presentation form of a derived row's wire RDATA, as `dig` prints it; the
 /// base64 row form when it does not parse.
-fn rdata_presentation(
-    record_type: crate::model::dnssec_record::DnssecRecordType,
-    rdata: &bindizr_core::dns::record::Rdata,
-) -> String {
+pub(crate) fn rdata_presentation(record_type: DnssecRecordType, rdata: &Rdata) -> String {
     use domain::{
         base::{iana::Rtype, name::ParsedName, rdata::ParseRecordData},
         dep::octseq::parse::Parser,

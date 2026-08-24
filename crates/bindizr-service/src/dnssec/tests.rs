@@ -140,6 +140,7 @@ fn rrsigs_covering<'a>(
 const RECORD_TYPE_SOA: i32 = 6;
 const RECORD_TYPE_NS: i32 = 2;
 const RECORD_TYPE_A: i32 = 1;
+const RECORD_TYPE_DS: i32 = 43;
 
 #[test]
 fn expirations_spread_across_the_jitter_window() {
@@ -673,6 +674,12 @@ fn delegation_ns_and_glue_are_unsigned() {
     let records = [
         test_record("@", RecordType::NS, "ns1.example.com", 3600),
         test_record("sub", RecordType::NS, "ns.sub.example.com", 3600),
+        test_record(
+            "sub",
+            RecordType::DS,
+            "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383",
+            3600,
+        ),
         test_record("ns.sub", RecordType::A, "192.0.2.53", 3600),
         test_record("www", RecordType::A, "192.0.2.10", 300),
     ];
@@ -696,6 +703,9 @@ fn delegation_ns_and_glue_are_unsigned() {
     // and glue owns no NSEC; the delegation point itself stays in the chain.
     assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_NS).is_empty());
     assert!(rrsigs_covering(&diff.added, &glue, RECORD_TYPE_A).is_empty());
+    // The DS RRset at the cut is the parent's authoritative data (RFC 4035,
+    // Section 2.4), unlike the NS beside it.
+    assert_eq!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_DS).len(), 1);
     assert!(
         !diff
             .added

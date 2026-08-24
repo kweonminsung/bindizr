@@ -66,38 +66,6 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(ds_records.len(), 1);
     assert_eq!(ds_records[0]["key_tag"], key_tag);
 
-    let (status, body) = app
-        .request(
-            Method::GET,
-            &format!("/zones/{zone_name}/dnssec/records"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let records = body["records"].as_array().unwrap();
-    let of_type = |mnemonic: &str| {
-        records
-            .iter()
-            .filter(|r| r["record_type"] == mnemonic)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(of_type("DNSKEY").len(), 1);
-    assert!(!of_type("NSEC").is_empty());
-    let rrsig = of_type("RRSIG");
-    assert!(!rrsig.is_empty());
-    // Presentation form, not the base64 row form: an RRSIG starts with the
-    // mnemonic of the type it covers.
-    let soa_sig = rrsig
-        .iter()
-        .find(|r| r["covered_type"] == "SOA")
-        .expect("the SOA RRset is signed");
-    assert!(
-        soa_sig["rdata"].as_str().unwrap().starts_with("SOA "),
-        "{:?}",
-        soa_sig["rdata"]
-    );
-    assert!(soa_sig["expires_at"].is_string());
-
     let (status, _) = app
         .request(
             Method::POST,
@@ -146,6 +114,78 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         all_serials.contains(&signer_serial),
         "all=true must include signer-only serials: {all_serials:?}"
     );
+
+    // A DS secures a delegation, so the NS RRset must exist first.
+    let ds_value = "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "sub", "record_type": "DS", "value": ds_value,
+                "ttl": 3600, "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "sub", "record_type": "NS", "value": "ns1.delegated-child.example.",
+                "ttl": 3600, "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "sub", "record_type": "DS", "value": ds_value,
+                "ttl": 3600, "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // The unsigned export must stay the import-compatible user plane.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/export?signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let signed_export = body.as_str().unwrap().to_string();
+    assert!(
+        signed_export.contains("\tIN\tDNSKEY\t257 3 "),
+        "{signed_export}"
+    );
+    assert!(
+        signed_export.contains("\tIN\tRRSIG\tSOA "),
+        "{signed_export}"
+    );
+    assert!(signed_export.contains("\tIN\tNSEC\t"), "{signed_export}");
+    // The delegation: DS signed as the parent's data, its NS served unsigned.
+    assert!(
+        signed_export.contains("sub\t3600\tIN\tDS\t12345 13 2 "),
+        "{signed_export}"
+    );
+    assert!(
+        signed_export.contains("\tIN\tRRSIG\tDS "),
+        "{signed_export}"
+    );
+
+    let (status, body) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!body.as_str().unwrap().contains("RRSIG"), "{body}");
 
     // Without the going-insecure acknowledgement the disable is refused.
     let (status, _) = app

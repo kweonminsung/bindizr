@@ -1444,7 +1444,7 @@ paths:
       tags:
       - Zone
       summary: Export a zone as BIND master-file text
-      description: Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint.
+      description: Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint. With `signed`, the derived DNSSEC records (DNSKEY, RRSIG, the denial chain, CDS/CDNSKEY) are appended in presentation form — an inspection artifact, not an import input.
       operationId: export_zone
       parameters:
       - name: name
@@ -1453,6 +1453,12 @@ paths:
         required: true
         schema:
           type: string
+      - name: signed
+        in: query
+        description: Append the derived DNSSEC records.
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
           description: The zone as master-file text
@@ -2488,54 +2494,6 @@ components:
         state_changed_at:
           type: string
           format: date-time
-    DnssecRecordInfo:
-      type: object
-      description: One derived record of a zone's signed view.
-      required:
-      - name
-      - record_type
-      - ttl
-      - rdata
-      properties:
-        covered_type:
-          type:
-          - string
-          - 'null'
-          description: 'RRSIG rows: the type the signature covers.'
-          example: A
-        expires_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-          description: 'RRSIG rows: the signature expiration driving renewal.'
-        name:
-          type: string
-          example: www.example.com.
-        rdata:
-          type: string
-          description: |-
-            RDATA in presentation form, as `dig` prints it; the base64 row form
-            when it does not parse.
-          example: A 13 3 300 1756684800 1755475200 34217 example.com. mMBOMDta...
-        record_type:
-          type: string
-          description: '`DNSKEY`, `RRSIG`, `NSEC`, `NSEC3`, `NSEC3PARAM`, `CDS`, or `CDNSKEY`.'
-          example: RRSIG
-        ttl:
-          type: integer
-          format: int32
-          example: 300
-    DnssecRecordsResponse:
-      type: object
-      description: The derived records of a zone's signed view.
-      required:
-      - records
-      properties:
-        records:
-          type: array
-          items:
-            $ref: '#/components/schemas/DnssecRecordInfo'
     DnssecStatusResponse:
       type: object
       description: A zone's DNSSEC status wrapped in a response envelope.

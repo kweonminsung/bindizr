@@ -46,7 +46,6 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecEnable,
     ZoneDnssecDisable,
     ZoneDnssecStatus,
-    ZoneDnssecRecords,
     ZoneDnssecSign,
     ZoneDnssecRolloverStart,
     ZoneDnssecRolloverDsSeen,
@@ -137,6 +136,13 @@ pub(crate) struct AddZoneTokenPolicyParams {
 }
 
 /// Payload for importing zone-file text into a zone.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct ExportZoneFileParams {
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) signed: bool,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ImportZoneFileParams {
     pub(crate) zone_name: String,

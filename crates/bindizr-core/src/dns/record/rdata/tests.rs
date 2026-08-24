@@ -40,6 +40,19 @@ fn encode_cname_rdata_is_the_target_name() {
 }
 
 #[test]
+fn encode_ds_rdata_is_tag_algorithm_digest_type_then_digest() {
+    // RFC 4034, Section 5.1.
+    let encoded = EncodedRdata::from_columns(&RecordType::DS, "34217 13 2 4B9B6B07", None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(encoded.record_type, 43);
+    assert_eq!(
+        encoded.rdata.as_bytes(),
+        [0x85, 0xA9, 13, 2, 0x4B, 0x9B, 0x6B, 0x07]
+    );
+}
+
+#[test]
 fn encode_mx_rdata_is_preference_then_exchange() {
     // RFC 1035, Section 3.3.9; the preference lives in the priority column.
     let encoded = EncodedRdata::from_columns(&RecordType::MX, "mail.example.com", Some(10))

@@ -1,13 +1,11 @@
 # DNSSEC
 
-bindizr signs zones itself. When DNSSEC is enabled for a zone, bindizr
-generates its signing key(s), derives the zone's `DNSKEY`, `CDS`/`CDNSKEY`,
-denial-of-existence, and `RRSIG` records, and serves the signed zone over the
-same AXFR/IXFR path as before — your BIND9 secondaries need **no
-configuration changes** and serve the signed zone as-is. Every record change
-re-signs exactly what changed within the same transaction, so an incremental
-transfer always carries a consistent signed delta, and a background scheduler
-renews signatures before they expire.
+bindizr signs zones itself: enabling DNSSEC generates the zone's key(s),
+derives the `DNSKEY`, `CDS`/`CDNSKEY`, denial-of-existence, and `RRSIG`
+records, and serves them over the same AXFR/IXFR path — secondaries need
+**no configuration changes**. Every record change re-signs exactly what
+changed in the same transaction, and a background scheduler renews
+signatures before they expire.
 
 ## Enabling DNSSEC for a zone
 
@@ -23,31 +21,25 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{}'
 ```
 
-This generates a single CSK (combined signing key, ECDSA P-256/SHA-256 by
-default; pass `"algorithm": "ed25519"` or `--algorithm ed25519` for Ed25519),
-signs the whole zone, bumps the serial, and notifies the secondaries. The
-private key is stored server-side and never leaves bindizr; status responses
-carry only the public half.
+This generates a single CSK (ECDSA P-256/SHA-256 by default; `--algorithm
+ed25519` for Ed25519), signs the whole zone, and notifies the secondaries.
+The private key never leaves bindizr.
 
 Two options are fixed at enable time:
 
 `--denial nsec3` (`"denial": "nsec3"`)
-:   Use `NSEC3` denial of existence instead of the default `NSEC`, with the
-    RFC 9276 recommended parameters (SHA-1, zero iterations, no salt, no
-    opt-out). NSEC lets anyone walk the zone's names; NSEC3 hashes them. For
-    most managed zones NSEC is simpler and sufficient.
+:   `NSEC3` denial of existence (RFC 9276 parameters) instead of the default
+    `NSEC`. NSEC lets anyone walk the zone's names; NSEC3 hashes them.
 
 `--split-keys` (`"split_keys": true`)
-:   Use a KSK/ZSK pair instead of one CSK. The KSK signs the apex key RRsets
-    and is the only key the parent DS names; the ZSK signs the zone data and
-    rolls without ever touching the parent. Choose this when you expect to
-    roll data-signing keys often; a CSK is simpler otherwise.
+:   A KSK/ZSK pair instead of one CSK: the KSK is the only key the parent DS
+    names, so the ZSK rolls without touching the parent. A CSK is simpler
+    otherwise.
 
 ## Completing the chain of trust
 
-Signatures only validate once the parent zone delegates trust to your key.
-Fetch the DS record and register it at your parent (usually through your
-registrar):
+Signatures only validate once the parent delegates trust to your key. Fetch
+the DS record and register it at your parent (usually via your registrar):
 
 ```sh
 bindizr zone dnssec ds example.com
@@ -57,94 +49,70 @@ bindizr zone dnssec ds example.com
 example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
 ```
 
-Signed zones also publish matching `CDS`/`CDNSKEY` records (RFC 7344), so a
-parent that scans for them picks up DS changes automatically. Until the DS is
-published the zone serves signatures but resolvers treat it as insecure —
-safe to roll out gradually. Check the state at any time:
-
-```sh
-bindizr zone dnssec status example.com
-```
-
-The derived records themselves — `DNSKEY`, `RRSIG`, the denial chain, and
-`CDS`/`CDNSKEY` — can be inspected without a transfer, printed as `dig`
-would show them:
-
-```sh
-bindizr zone dnssec records example.com
-```
+Signed zones also publish `CDS`/`CDNSKEY` (RFC 7344) for parents that scan
+for DS changes. Until the DS is published, resolvers simply treat the zone
+as insecure — safe to roll out gradually. `bindizr zone dnssec status
+example.com` shows the signing state at any time.
 
 ## Key rollover
 
-Rollover replaces a key without ever letting validation break, following the
-pre-publish shape of RFC 7583:
+Rollover replaces a key without breaking validation (RFC 7583 pre-publish):
 
 ```sh
 bindizr zone dnssec rollover start example.com            # CSK zones
 bindizr zone dnssec rollover start example.com --role zsk # split-key zones
 ```
 
-`start` generates the replacement with the same algorithm and pre-publishes
-it: the new key joins the `DNSKEY` RRset (and, for CSK/KSK, the `CDS`/
-`CDNSKEY` set, advertising **both** DS records — the double-DS method) but
-signs no zone data yet.
+`start` pre-publishes a replacement with the same algorithm: it joins the
+`DNSKEY` RRset (and, for CSK/KSK, the CDS/CDNSKEY set — both DS records
+advertised) but signs nothing yet. The publication wait —
+`rollover_publish_holddown_secs` (default one day), never less than the
+zone's `DNSKEY` TTL, fixed when the key is published — gives resolver caches
+time to learn the new key. Then:
 
-What happens next depends on the key:
-
-- **ZSK** — no parent involvement, so the scheduler promotes it
-  automatically once its publication wait — `rollover_publish_holddown_secs`
-  (default one day), never less than the zone's `DNSKEY` TTL, and fixed when
-  the key is published — has passed: the new key signs everything, the old
-  key is retired.
-- **CSK / KSK** — the parent DS must change first. Publish the new DS at the
-  parent (or let it consume the CDS), wait out the parent's DS TTL, then
-  confirm. The confirmation is refused until the replacement has been
-  published for `rollover_publish_holddown_secs`, and never for less than the
-  zone's TTL — resolvers still holding the previous `DNSKEY` RRset could not
-  validate the new key's signatures:
+- **ZSK** — no parent involvement: the scheduler promotes it automatically
+  after the wait.
+- **CSK / KSK** — publish the new DS at the parent (or let it consume the
+  CDS), wait out the parent's DS TTL, then confirm; an early confirmation is
+  refused:
 
   ```sh
   bindizr zone dnssec rollover ds-seen example.com
   ```
 
-A retired key stays in the `DNSKEY` RRset — cached signatures and a possibly
-lingering old DS still need it — until its retirement wait passes:
-`rollover_retire_holddown_secs` (default two days), and never less than the
-largest TTL among the RRsets it signed. The scheduler then removes it and the
-rollover is complete. `status` shows every key's role and lifecycle state
-(`published` / `active` / `retired`) throughout.
+A retired key stays published until its own wait passes —
+`rollover_retire_holddown_secs` (default two days), never less than the
+largest TTL among the RRsets it signed — then the scheduler removes it.
+`status` shows every key's state (`published`/`active`/`retired`)
+throughout.
 
 ## Signature maintenance
 
-Signatures are valid for `dnssec.signature_validity_days` (default 14) and are
-renewed once fewer than `dnssec.signature_refresh_days` (default 5) remain.
-The scheduler scans hourly, re-signs what is due, advances rollovers, bumps
-serials, and notifies secondaries — no operator action is needed. `bindizr zone dnssec sign example.com` forces a
-full re-sign if you ever doubt the stored signatures.
+Signatures are valid for `dnssec.signature_validity_days` (default 14) and
+renewed once fewer than `dnssec.signature_refresh_days` (default 5) remain;
+the hourly scheduler handles this with no operator action. `bindizr zone
+dnssec sign example.com` forces a full re-sign if stored signatures are ever
+doubted.
 
 ## Disabling DNSSEC
 
-Turning signing off while the parent still publishes your DS makes the zone
-**bogus** for validating resolvers. Go insecure in this order:
+Dropping signatures while the parent still publishes your DS makes the zone
+**bogus**. Go insecure in order:
 
 1. Remove the DS record at the parent.
 2. Wait out the DS TTL.
 3. `bindizr zone dnssec disable example.com`
 
-Over HTTP the request body must acknowledge the procedure with
-`{"confirm_insecure": true}`; without it the request is refused. The removal
-propagates to secondaries as an ordinary incremental transfer.
+Over HTTP the body must acknowledge the procedure with
+`{"confirm_insecure": true}`.
 
 ## Behavior notes
 
-- The denial mode (`nsec`/`nsec3`) and key layout (CSK vs KSK/ZSK) are chosen at
-  enable time; to change them, disable and re-enable (going insecure in
-  between, per the procedure above).
-- Rollovers keep the key's algorithm. An algorithm change is a stricter
-  procedure (RFC 6840, Section 5.11) and is not supported.
-- Delegations follow RFC 4035: delegation `NS` RRsets and glue below a zone
-  cut are served but not signed.
-- Zone-file export and version diffs show user records only; the derived
-  DNSSEC records are system-owned and re-generated, never edited or rolled
-  back. Version listings likewise hide signer-only serials (re-signs,
-  rollovers) unless `all` is requested.
+- Denial mode and key layout are fixed at enable time; to change them,
+  disable and re-enable (going insecure in between).
+- Rollovers keep the key's algorithm; algorithm changes (RFC 6840,
+  Section 5.11) are not supported.
+- Delegation `NS` RRsets and glue below a cut are served but not signed
+  (RFC 4035); a child's `DS` record entered at the delegation is signed.
+- The derived records are system-owned: never edited, diffed, or rolled
+  back. Version listings hide signer-only serials unless `all` is requested.

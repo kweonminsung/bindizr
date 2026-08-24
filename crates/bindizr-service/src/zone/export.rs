@@ -8,8 +8,10 @@ use bindizr_db::repository::LockLevel;
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     authorization::Caller,
+    dnssec::rdata_presentation,
     error::ServiceError,
     model::{
+        dnssec_record::DnssecRecord,
         record::{Record, RecordType},
         zone::Zone,
     },
@@ -18,13 +20,15 @@ use crate::{
 
 impl ZoneService {
     /// Render a zone and its records as a BIND master file (RFC 1035). The
-    /// output round-trips through `zone import`, which manages the SOA itself
-    /// and so ignores the SOA line on the way back in. Visibility is checked
-    /// on the row this tx locked, so a same-name recreation cannot swap the
-    /// zone in.
+    /// unsigned output round-trips through `zone import`, which manages the
+    /// SOA itself and so ignores the SOA line on the way back in; `signed`
+    /// appends the derived DNSSEC records as an inspection artifact, not an
+    /// import input. Visibility is checked on the row this tx locked, so a
+    /// same-name recreation cannot swap the zone in.
     pub async fn export_zone_file(
         caller: &Caller,
         zone_name: &str,
+        signed: bool,
     ) -> Result<String, ServiceError> {
         // Read the zone and records in one locked transaction so the export is a
         // single consistent view, not stale SOA metadata with newer records.
@@ -44,10 +48,15 @@ impl ZoneService {
             }
             let records =
                 RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
-            Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
+            let derived = if signed {
+                RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None).await?
+            } else {
+                Vec::new()
+            };
+            Ok::<(Zone, Vec<Record>, Vec<DnssecRecord>), ServiceError>((zone, records, derived))
         }
         .await;
-        let (zone, mut records) =
+        let (zone, mut records, mut derived) =
             RepositoryService::finish_tx(tx, load_result, "Failed to export zone").await?;
 
         let origin = zone.name.to_fqdn();
@@ -100,6 +109,24 @@ impl ZoneService {
                 record
                     .record_type
                     .presentation_rdata(&record.value, record.priority),
+            );
+        }
+
+        derived.sort_by_cached_key(|row| {
+            (
+                row.name.clone(),
+                row.record_type,
+                rdata_presentation(row.record_type, &row.rdata),
+            )
+        });
+        for row in &derived {
+            let _ = writeln!(
+                out,
+                "{}\t{}\tIN\t{}\t{}",
+                row.name,
+                row.ttl,
+                row.record_type,
+                rdata_presentation(row.record_type, &row.rdata),
             );
         }
 

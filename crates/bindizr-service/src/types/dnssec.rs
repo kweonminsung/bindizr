@@ -103,35 +103,6 @@ pub struct GetDnssecStatusResponse {
     pub serial: i32,
 }
 
-/// One derived record of a zone's signed view.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct DnssecRecordInfo {
-    #[schema(example = "www.example.com.")]
-    pub name: String,
-    /// `DNSKEY`, `RRSIG`, `NSEC`, `NSEC3`, `NSEC3PARAM`, `CDS`, or `CDNSKEY`.
-    #[schema(example = "RRSIG")]
-    pub record_type: String,
-    #[schema(example = 300)]
-    pub ttl: i32,
-    /// RDATA in presentation form, as `dig` prints it; the base64 row form
-    /// when it does not parse.
-    #[schema(example = "A 13 3 300 1756684800 1755475200 34217 example.com. mMBOMDta...")]
-    pub rdata: String,
-    /// RRSIG rows: the type the signature covers.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = "A")]
-    pub covered_type: Option<String>,
-    /// RRSIG rows: the signature expiration driving renewal.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expires_at: Option<DateTime<Utc>>,
-}
-
-/// The derived records of a zone's signed view.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct DnssecRecordsResponse {
-    pub records: Vec<DnssecRecordInfo>,
-}
-
 /// A zone's DNSSEC status wrapped in a response envelope.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct DnssecStatusResponse {

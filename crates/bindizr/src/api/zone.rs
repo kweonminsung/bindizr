@@ -81,14 +81,21 @@ pub(crate) async fn get_zone_status(
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
+/// Query parameters for the zone export.
+#[derive(Deserialize)]
+pub(crate) struct ExportZoneQuery {
+    pub(crate) signed: Option<bool>,
+}
+
 #[utoipa::path(
         get,
         path = "/zones/{name}/export",
         tag = "Zone",
         summary = "Export a zone as BIND master-file text",
-        description = "Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint.",
+        description = "Renders the zone and its records as an RFC 1035 master file, the inverse of the import endpoint. With `signed`, the derived DNSSEC records (DNSKEY, RRSIG, the denial chain, CDS/CDNSKEY) are appended in presentation form — an inspection artifact, not an import input.",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone to export.")
+            ("name" = String, Path, description = "The name of the DNS zone to export."),
+            ("signed" = Option<bool>, Query, description = "Append the derived DNSSEC records.")
         ),
         responses(
             (status = 200, description = "The zone as master-file text", content_type = "text/plain", body = String),
@@ -101,8 +108,10 @@ pub(crate) async fn get_zone_status(
 pub(crate) async fn export_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
+    Query(query): Query<ExportZoneQuery>,
 ) -> Result<Response, ApiError> {
-    let zone_file = ZoneService::export_zone_file(&caller, &params.name).await?;
+    let zone_file =
+        ZoneService::export_zone_file(&caller, &params.name, query.signed.unwrap_or(false)).await?;
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],

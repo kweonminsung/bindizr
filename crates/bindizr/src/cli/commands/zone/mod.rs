@@ -4,8 +4,8 @@
 mod dnssec;
 mod token_policy;
 mod tsig_policy;
-
 mod version;
+
 use bindizr_service::types::{
     CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
     ImportMode as ServiceImportMode, ImportZoneFileRequest, ImportZoneFileResponse,
@@ -27,7 +27,10 @@ use crate::{
     },
     socket::{
         client::DaemonSocketClient,
-        types::{DaemonCommandKind, ImportZoneFileParams, UpdateZoneParams, ZoneNameParams},
+        types::{
+            DaemonCommandKind, ExportZoneFileParams, ImportZoneFileParams, UpdateZoneParams,
+            ZoneNameParams,
+        },
     },
 };
 
@@ -175,6 +178,9 @@ $INCLUDE is not supported.")]
     Export {
         /// The name of the zone
         name: String,
+        /// Append the derived DNSSEC records; for inspection, not re-import
+        #[arg(long)]
+        signed: bool,
     },
 
     /// Inspect or roll back a zone's versions (serial history)
@@ -377,9 +383,12 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .await?;
             println!("{}", response.message);
         }
-        ZoneCommand::Export { name } => {
+        ZoneCommand::Export { name, signed } => {
             let data = client
-                .send_command(DaemonCommandKind::ExportZoneFile, ZoneNameParams { name })
+                .send_command(
+                    DaemonCommandKind::ExportZoneFile,
+                    ExportZoneFileParams { name, signed },
+                )
                 .await?
                 .data;
             let export: ExportZoneFileResponse = parse_response(&data)?;

@@ -190,7 +190,30 @@ fn validate_add(
 }
 
 #[test]
-fn add_rejects_cname_at_apex_and_ns_below_apex() {
+fn add_couples_ds_to_an_existing_delegation() {
+    const DS_VALUE: &str =
+        "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
+
+    let at_apex = validate_add(&[], "", &RecordType::DS, DS_VALUE, RRSET_TTL, None);
+    assert_eq!(at_apex.unwrap_err().code, ErrorCode::InvalidRecordName);
+
+    let without_ns = validate_add(&[], "sub", &RecordType::DS, DS_VALUE, RRSET_TTL, None);
+    assert_eq!(without_ns.unwrap_err().code, ErrorCode::RecordConflict);
+
+    let delegation_ns = test_record(1, "sub", RecordType::NS, "ns.sub-host.example.com", None);
+    let with_ns = validate_add(
+        &[delegation_ns],
+        "sub",
+        &RecordType::DS,
+        DS_VALUE,
+        RRSET_TTL,
+        None,
+    );
+    assert!(with_ns.is_ok());
+}
+
+#[test]
+fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let cname_at_apex = validate_add(
         &[],
         "",
@@ -204,7 +227,7 @@ fn add_rejects_cname_at_apex_and_ns_below_apex() {
         ErrorCode::InvalidRecordName
     );
 
-    let ns_below_apex = validate_add(
+    let delegation_ns = validate_add(
         &[],
         "child",
         &RecordType::NS,
@@ -212,10 +235,7 @@ fn add_rejects_cname_at_apex_and_ns_below_apex() {
         RRSET_TTL,
         None,
     );
-    assert_eq!(
-        ns_below_apex.unwrap_err().code,
-        ErrorCode::InvalidRecordName
-    );
+    assert!(delegation_ns.is_ok());
 
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
     let cname_conflict = validate_add(
