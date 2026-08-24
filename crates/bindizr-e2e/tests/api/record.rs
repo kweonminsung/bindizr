@@ -655,6 +655,19 @@ async fn record_create_supported_types() {
         ("@", "TXT", "v=spf1 include:_spf.google.com ~all", None),
         ("ipv6", "AAAA", "2001:db8::1", None),
         ("alias", "CNAME", "www.example.com", None),
+        ("@", "CAA", "0 ISSUE letsencrypt.org", None),
+        (
+            "ssh",
+            "SSHFP",
+            "4 2 abababababababababababababababababababababababababababababababab",
+            None,
+        ),
+        (
+            "_443._tcp",
+            "TLSA",
+            "3 1 1 abababababababababababababababababababababababababababababababab",
+            None,
+        ),
     ];
 
     for (name, record_type, value, priority) in record_types {
@@ -676,6 +689,9 @@ async fn record_create_supported_types() {
             "MX" => "mail.example.com.",
             "SRV" => "5 5060 sip.example.com.",
             "CNAME" => "www.example.com.",
+            "CAA" => "0 issue \"letsencrypt.org\"",
+            "SSHFP" => "4 2 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
+            "TLSA" => "3 1 1 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
             _ => value,
         };
         assert_eq!(body["record"]["value"], expected_value);
@@ -694,9 +710,9 @@ async fn record_create_supported_types() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
-    // 5 created here + the apex NS record auto-created with the zone.
-    assert_eq!(records.len(), 6);
-    for record_type in ["MX", "SRV", "TXT", "AAAA", "CNAME"] {
+    // 8 created here + the apex NS record auto-created with the zone.
+    assert_eq!(records.len(), 9);
+    for record_type in ["MX", "SRV", "TXT", "AAAA", "CNAME", "CAA", "SSHFP", "TLSA"] {
         assert!(
             records
                 .iter()

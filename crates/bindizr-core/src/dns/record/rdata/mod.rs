@@ -7,7 +7,10 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use base64::Engine;
 
-use super::{DsRecordValue, MxRecordValue, SrvRecordValue, TxtRecordValue};
+use super::{
+    CaaRecordValue, DsRecordValue, MxRecordValue, SrvRecordValue, SshfpRecordValue,
+    TlsaRecordValue, TxtRecordValue,
+};
 use crate::{dns::name::encode_name, model::record::RecordType};
 
 const JOURNAL_VALUE_PREFIX: &str = "bindizr:rdata:v1:";
@@ -123,52 +126,34 @@ impl EncodedRdata {
                 let addr: Ipv4Addr = value
                     .parse()
                     .map_err(|_| format!("Invalid A record: {}", value))?;
-                addr.octets().to_vec()
+                Rdata::new(addr.octets().to_vec())?
             }
             RecordType::AAAA => {
                 let addr: Ipv6Addr = value
                     .parse()
                     .map_err(|_| format!("Invalid AAAA record: {}", value))?;
-                addr.octets().to_vec()
+                Rdata::new(addr.octets().to_vec())?
             }
-            RecordType::CNAME | RecordType::NS | RecordType::PTR => encode_name(value)?,
-            RecordType::DS => {
-                let (key_tag, algorithm, digest_type, digest) =
-                    DsRecordValue::parse(value)?.wire_fields();
-                let mut rdata = Vec::with_capacity(4 + digest.len());
-                rdata.extend_from_slice(&key_tag.to_be_bytes());
-                rdata.push(algorithm);
-                rdata.push(digest_type);
-                rdata.extend_from_slice(&digest);
-                rdata
+            RecordType::CAA => CaaRecordValue::parse(value)?.to_rdata()?,
+            RecordType::CNAME | RecordType::NS | RecordType::PTR => {
+                Rdata::new(encode_name(value)?)?
             }
-            RecordType::MX => {
-                let (preference, target) = MxRecordValue::wire_fields(value, priority)?;
-                let mut rdata = preference.to_be_bytes().to_vec();
-                rdata.extend_from_slice(&encode_name(target)?);
-                rdata
-            }
-            RecordType::SRV => {
-                let (srv_priority, weight, port, target) =
-                    SrvRecordValue::wire_fields(value, priority)?;
-                let mut rdata = Vec::with_capacity(6 + target.len() + 2);
-                rdata.extend_from_slice(&srv_priority.to_be_bytes());
-                rdata.extend_from_slice(&weight.to_be_bytes());
-                rdata.extend_from_slice(&port.to_be_bytes());
-                rdata.extend_from_slice(&encode_name(target)?);
-                rdata
-            }
-            RecordType::TXT => match TxtRecordValue::from_encoded(value) {
+            RecordType::DS => DsRecordValue::parse(value)?.to_rdata()?,
+            RecordType::MX => MxRecordValue::parse(value, priority)?.to_rdata()?,
+            RecordType::TXT => Rdata::new(match TxtRecordValue::from_encoded(value) {
                 // Operator-supplied raw rdata is passed through unchanged.
                 Some(raw) => raw.into_rdata(),
                 None => TxtRecordValue::from_string(value).into_rdata(),
-            },
+            })?,
             RecordType::SOA => return Ok(None),
+            RecordType::SRV => SrvRecordValue::parse(value, priority)?.to_rdata()?,
+            RecordType::SSHFP => SshfpRecordValue::parse(value)?.to_rdata()?,
+            RecordType::TLSA => TlsaRecordValue::parse(value)?.to_rdata()?,
         };
 
         Ok(Some(Self {
             record_type: record_type.wire_type(),
-            rdata: Rdata::new(rdata)?,
+            rdata,
         }))
     }
 }

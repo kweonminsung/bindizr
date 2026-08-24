@@ -1,7 +1,10 @@
 //! DS record values (RFC 4034, Section 5): a child zone's key digest, entered
 //! by the operator at the delegation point.
 
-use super::value::parse_u16_record_field;
+use super::{
+    Rdata,
+    value::{hex_upper, parse_hex_record_field, parse_u8_record_field, parse_u16_record_field},
+};
 
 pub(crate) struct DsRecordValue {
     key_tag: u16,
@@ -22,16 +25,11 @@ impl DsRecordValue {
                 "DS record value must be '<key tag> <algorithm> <digest type> <digest>': {value}"
             ));
         };
-        let digest_hex: String = fields.collect();
-        if digest_hex.is_empty() {
-            return Err("DS record digest must not be empty".to_string());
-        }
-
         Ok(Self {
             key_tag: parse_u16_record_field("DS key tag", key_tag)?,
-            algorithm: parse_u8_field("DS algorithm", algorithm)?,
-            digest_type: parse_u8_field("DS digest type", digest_type)?,
-            digest: parse_hex_digest(&digest_hex)?,
+            algorithm: parse_u8_record_field("DS algorithm", algorithm)?,
+            digest_type: parse_u8_record_field("DS digest type", digest_type)?,
+            digest: parse_hex_record_field("DS digest", fields)?,
         })
     }
 
@@ -67,33 +65,15 @@ impl DsRecordValue {
         )
     }
 
-    /// The wire fields of a stored value.
-    pub(crate) fn wire_fields(self) -> (u16, u8, u8, Vec<u8>) {
-        (self.key_tag, self.algorithm, self.digest_type, self.digest)
+    /// The wire-format RDATA of a stored value (RFC 4034, Section 5.1).
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+        let mut rdata = Vec::with_capacity(4 + self.digest.len());
+        rdata.extend_from_slice(&self.key_tag.to_be_bytes());
+        rdata.push(self.algorithm);
+        rdata.push(self.digest_type);
+        rdata.extend_from_slice(&self.digest);
+        Rdata::new(rdata)
     }
-}
-
-fn parse_u8_field(field: &str, value: &str) -> Result<u8, String> {
-    value
-        .parse::<u8>()
-        .map_err(|_| format!("{field} must be an unsigned 8-bit integer: {value}"))
-}
-
-fn parse_hex_digest(hex: &str) -> Result<Vec<u8>, String> {
-    if hex.len() % 2 != 0 {
-        return Err("DS digest must be an even number of hex digits".to_string());
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|_| format!("DS digest must be hex: {hex}"))
-        })
-        .collect()
-}
-
-fn hex_upper(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02X}")).collect()
 }
 
 #[cfg(test)]

@@ -1,7 +1,8 @@
-use super::value::{
-    DEFAULT_PRIORITY, parse_optional_u16_record_field, validate_domain_record_value,
+use super::{
+    Rdata,
+    value::{DEFAULT_PRIORITY, parse_optional_u16_record_field, validate_domain_record_value},
 };
-use crate::dns::name::to_fqdn_lowercase;
+use crate::dns::name::{encode_name, to_fqdn_lowercase};
 
 pub struct MxRecordValue<'a> {
     priority: u16,
@@ -35,14 +36,11 @@ impl<'a> MxRecordValue<'a> {
         }
     }
 
-    /// The wire fields of a stored value: the preference from the priority
-    /// column (default 10) and the exchange host.
-    pub(crate) fn wire_fields(
-        value: &'a str,
-        fallback_priority: Option<i32>,
-    ) -> Result<(u16, &'a str), String> {
-        let parsed = Self::parse(value, fallback_priority)?;
-        Ok((parsed.priority, parsed.target))
+    /// The wire-format RDATA of a stored value (RFC 1035, Section 3.3.9).
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+        let mut rdata = self.priority.to_be_bytes().to_vec();
+        rdata.extend_from_slice(&encode_name(self.target)?);
+        Rdata::new(rdata)
     }
 
     pub(crate) fn validate(&self) -> Result<(), String> {

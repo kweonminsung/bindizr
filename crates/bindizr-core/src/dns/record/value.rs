@@ -16,6 +16,39 @@ pub(crate) fn parse_optional_u16_record_field(
     })
 }
 
+pub(crate) fn parse_u8_record_field(field: &str, value: &str) -> Result<u8, String> {
+    value
+        .parse::<u8>()
+        .map_err(|_| format!("{field} must be an unsigned 8-bit integer: {value}"))
+}
+
+/// Decode a hex field that presentation form may split into whitespace-
+/// separated groups, as `dig` prints. RFC 1035 `(`/`)` markers are dropped:
+/// nsupdate and import re-parse `domain`'s form, which wraps hex in them.
+pub(crate) fn parse_hex_record_field<'a>(
+    field: &str,
+    groups: impl Iterator<Item = &'a str>,
+) -> Result<Vec<u8>, String> {
+    let hex: String = groups
+        .filter(|group| !matches!(*group, "(" | ")"))
+        .collect();
+    let hex = hex.as_str();
+    if hex.is_empty() {
+        return Err(format!("{field} must not be empty"));
+    }
+    if hex.len() % 2 != 0 {
+        return Err(format!("{field} must be an even number of hex digits"));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|_| format!("{field} must be hex")))
+        .collect()
+}
+
+pub(crate) fn hex_upper(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02X}")).collect()
+}
+
 pub(crate) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, String> {
     value
         .parse::<u16>()

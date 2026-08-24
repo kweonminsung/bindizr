@@ -40,6 +40,39 @@ fn encode_cname_rdata_is_the_target_name() {
 }
 
 #[test]
+fn encode_caa_rdata_is_flags_tag_length_tag_then_value() {
+    // RFC 8659, Section 4.1.
+    let encoded = EncodedRdata::from_columns(&RecordType::CAA, "0 issue \"letsencrypt.org\"", None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(encoded.record_type, 257);
+    let mut expected = vec![0u8, 5];
+    expected.extend_from_slice(b"issue");
+    expected.extend_from_slice(b"letsencrypt.org");
+    assert_eq!(encoded.rdata.as_bytes(), expected);
+}
+
+#[test]
+fn encode_sshfp_rdata_is_algorithm_type_then_fingerprint() {
+    // RFC 4255, Section 3.1.
+    let encoded = EncodedRdata::from_columns(&RecordType::SSHFP, "4 1 4B9B6B07", None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(encoded.record_type, 44);
+    assert_eq!(encoded.rdata.as_bytes(), [4, 1, 0x4B, 0x9B, 0x6B, 0x07]);
+}
+
+#[test]
+fn encode_tlsa_rdata_is_usage_selector_matching_then_data() {
+    // RFC 6698, Section 2.1.
+    let encoded = EncodedRdata::from_columns(&RecordType::TLSA, "3 1 0 4B9B6B07", None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(encoded.record_type, 52);
+    assert_eq!(encoded.rdata.as_bytes(), [3, 1, 0, 0x4B, 0x9B, 0x6B, 0x07]);
+}
+
+#[test]
 fn encode_ds_rdata_is_tag_algorithm_digest_type_then_digest() {
     // RFC 4034, Section 5.1.
     let encoded = EncodedRdata::from_columns(&RecordType::DS, "34217 13 2 4B9B6B07", None)

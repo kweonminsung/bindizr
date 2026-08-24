@@ -5,6 +5,7 @@
 
 mod a;
 mod aaaa;
+mod caa;
 mod cname;
 mod ds;
 mod mx;
@@ -13,11 +14,14 @@ mod ptr;
 mod rdata;
 mod soa;
 mod srv;
+mod sshfp;
+mod tlsa;
 mod txt;
 mod value;
 
 pub(crate) use a::ARecordValue;
 pub(crate) use aaaa::AaaaRecordValue;
+pub(crate) use caa::CaaRecordValue;
 pub(crate) use cname::CnameRecordValue;
 pub(crate) use ds::DsRecordValue;
 pub use mx::MxRecordValue;
@@ -26,4 +30,6 @@ pub(crate) use ptr::PtrRecordValue;
 pub use rdata::{EncodedRdata, Rdata};
 pub use soa::{SoaMailbox, SoaRecordValue};
 pub(crate) use srv::SrvRecordValue;
+pub(crate) use sshfp::SshfpRecordValue;
+pub(crate) use tlsa::TlsaRecordValue;
 pub use txt::{TxtContent, TxtRecordValue};

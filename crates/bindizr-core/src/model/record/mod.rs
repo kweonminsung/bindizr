@@ -6,8 +6,9 @@ use sqlx::FromRow;
 use crate::dns::{
     name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
-        ARecordValue, AaaaRecordValue, CnameRecordValue, DsRecordValue, MxRecordValue,
-        NsRecordValue, PtrRecordValue, SoaRecordValue, SrvRecordValue, TxtContent, TxtRecordValue,
+        ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DsRecordValue,
+        MxRecordValue, NsRecordValue, PtrRecordValue, SoaRecordValue, SrvRecordValue,
+        SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue,
     },
 };
 
@@ -80,6 +81,7 @@ impl RecordWithZone {
 pub enum RecordType {
     A,
     AAAA,
+    CAA,
     CNAME,
     DS,
     MX,
@@ -88,6 +90,8 @@ pub enum RecordType {
     SOA,
     SRV,
     PTR,
+    SSHFP,
+    TLSA,
 }
 impl std::fmt::Display for RecordType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -135,6 +139,7 @@ impl std::str::FromStr for RecordType {
         match s.to_uppercase().as_str() {
             "A" => Ok(RecordType::A),
             "AAAA" => Ok(RecordType::AAAA),
+            "CAA" => Ok(RecordType::CAA),
             "CNAME" => Ok(RecordType::CNAME),
             "DS" => Ok(RecordType::DS),
             "MX" => Ok(RecordType::MX),
@@ -143,6 +148,8 @@ impl std::str::FromStr for RecordType {
             "SOA" => Ok(RecordType::SOA),
             "SRV" => Ok(RecordType::SRV),
             "PTR" => Ok(RecordType::PTR),
+            "SSHFP" => Ok(RecordType::SSHFP),
+            "TLSA" => Ok(RecordType::TLSA),
             _ => Err(format!("Invalid record type: {}", s)),
         }
     }
@@ -154,6 +161,7 @@ impl RecordType {
         match self {
             RecordType::A => "A",
             RecordType::AAAA => "AAAA",
+            RecordType::CAA => "CAA",
             RecordType::CNAME => "CNAME",
             RecordType::DS => "DS",
             RecordType::MX => "MX",
@@ -162,6 +170,8 @@ impl RecordType {
             RecordType::SOA => "SOA",
             RecordType::SRV => "SRV",
             RecordType::PTR => "PTR",
+            RecordType::SSHFP => "SSHFP",
+            RecordType::TLSA => "TLSA",
         }
     }
 
@@ -178,6 +188,9 @@ impl RecordType {
             RecordType::TXT => 16,
             RecordType::AAAA => 28,
             RecordType::SRV => 33,
+            RecordType::SSHFP => 44,
+            RecordType::TLSA => 52,
+            RecordType::CAA => 257,
         }
     }
 
@@ -192,6 +205,7 @@ impl RecordType {
         match self {
             RecordType::A => ARecordValue::parse(value).map(|_| ()),
             RecordType::AAAA => AaaaRecordValue::parse(value).map(|_| ()),
+            RecordType::CAA => CaaRecordValue::parse(value)?.validate(),
             RecordType::CNAME => CnameRecordValue::parse(value).map(|_| ()),
             RecordType::DS => DsRecordValue::parse(value)?.validate(),
             RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
@@ -201,6 +215,8 @@ impl RecordType {
             RecordType::SOA => SoaRecordValue::parse(value)?.validate(),
             RecordType::SRV => SrvRecordValue::parse(value, priority)?.validate(),
             RecordType::PTR => PtrRecordValue::parse(value).map(|_| ()),
+            RecordType::SSHFP => SshfpRecordValue::parse(value)?.validate(),
+            RecordType::TLSA => TlsaRecordValue::parse(value)?.validate(),
         }
     }
 
@@ -229,6 +245,9 @@ impl RecordType {
             RecordType::AAAA => AaaaRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
+            RecordType::CAA => CaaRecordValue::parse(value)
+                .map(|parsed| Cow::Owned(parsed.canonical()))
+                .unwrap_or(Cow::Borrowed(value)),
             RecordType::CNAME => CnameRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
@@ -251,6 +270,12 @@ impl RecordType {
             RecordType::PTR => PtrRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
+            RecordType::SSHFP => SshfpRecordValue::parse(value)
+                .map(|parsed| Cow::Owned(parsed.canonical()))
+                .unwrap_or(Cow::Borrowed(value)),
+            RecordType::TLSA => TlsaRecordValue::parse(value)
+                .map(|parsed| Cow::Owned(parsed.canonical()))
+                .unwrap_or(Cow::Borrowed(value)),
         }
     }
 
@@ -261,29 +286,44 @@ impl RecordType {
         // TXT keeps raw bytes; every other type tolerates surrounding whitespace.
         let trimmed = value.trim();
         match self {
-            RecordType::TXT => TxtRecordValue::parse(value).map(TxtRecordValue::into_encoded),
             RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::AAAA => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::CAA => {
+                let parsed = CaaRecordValue::parse(trimmed)?;
+                parsed.validate()?;
+                Ok(parsed.canonical())
+            }
             RecordType::CNAME => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::DS => {
                 let parsed = DsRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::NS => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::PTR => PtrRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::MX => {
                 let parsed = MxRecordValue::parse(trimmed, priority)?;
                 parsed.validate()?;
                 Ok(parsed.encoded())
+            }
+            RecordType::TXT => TxtRecordValue::parse(value).map(TxtRecordValue::into_encoded),
+            RecordType::NS => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::SOA => {
+                let parsed = SoaRecordValue::parse(trimmed)?;
+                parsed.validate()?;
+                Ok(parsed.canonical())
             }
             RecordType::SRV => {
                 let parsed = SrvRecordValue::parse(trimmed, priority)?;
                 parsed.validate()?;
                 Ok(parsed.encoded())
             }
-            RecordType::SOA => {
-                let parsed = SoaRecordValue::parse(trimmed)?;
+            RecordType::PTR => PtrRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::SSHFP => {
+                let parsed = SshfpRecordValue::parse(trimmed)?;
+                parsed.validate()?;
+                Ok(parsed.canonical())
+            }
+            RecordType::TLSA => {
+                let parsed = TlsaRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }

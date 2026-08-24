@@ -340,11 +340,29 @@ fn rr_to_record_value(
                 None,
             ))
         }
+        RecordType::CAA => {
+            let data = parse_rdata(message, update, "CAA", |parser| {
+                domain::rdata::Caa::parse(parser).ok()
+            })?;
+            Ok((RecordType::CAA, data.to_string(), None))
+        }
         RecordType::DS => {
             let data = parse_rdata(message, update, "DS", |parser| {
                 domain::rdata::Ds::parse(parser).ok()
             })?;
             Ok((RecordType::DS, data.to_string(), None))
+        }
+        RecordType::SSHFP => {
+            let data = parse_rdata(message, update, "SSHFP", |parser| {
+                domain::rdata::Sshfp::parse(parser).ok()
+            })?;
+            Ok((RecordType::SSHFP, data.to_string(), None))
+        }
+        RecordType::TLSA => {
+            let data = parse_rdata(message, update, "TLSA", |parser| {
+                domain::rdata::Tlsa::parse(parser).ok()
+            })?;
+            Ok((RecordType::TLSA, data.to_string(), None))
         }
         RecordType::MX => {
             let data = parse_rdata(message, update, "MX", |parser| Mx::parse(parser).ok())?;
@@ -378,7 +396,10 @@ fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, UpdateError> {
         Rtype::NS => Ok(RecordType::NS),
         Rtype::CNAME => Ok(RecordType::CNAME),
         Rtype::PTR => Ok(RecordType::PTR),
+        Rtype::CAA => Ok(RecordType::CAA),
         Rtype::DS => Ok(RecordType::DS),
+        Rtype::SSHFP => Ok(RecordType::SSHFP),
+        Rtype::TLSA => Ok(RecordType::TLSA),
         Rtype::MX => Ok(RecordType::MX),
         Rtype::TXT => Ok(RecordType::TXT),
         Rtype::AAAA => Ok(RecordType::AAAA),
