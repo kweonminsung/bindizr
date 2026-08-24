@@ -46,6 +46,14 @@ impl SshfpRecordValue {
                 self.fingerprint.len()
             ));
         }
+        // RDLENGTH is 16 bits (RFC 1035, Section 4.1.3); 2 bytes are fixed
+        // fields. Enforced here so a stored row cannot poison a later AXFR.
+        if self.fingerprint.len() > 65_533 {
+            return Err(format!(
+                "SSHFP fingerprint must be at most 65533 bytes, got {}",
+                self.fingerprint.len()
+            ));
+        }
         Ok(())
     }
 

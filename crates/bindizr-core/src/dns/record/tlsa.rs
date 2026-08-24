@@ -51,6 +51,14 @@ impl TlsaRecordValue {
                 self.cert_data.len()
             ));
         }
+        // RDLENGTH is 16 bits (RFC 1035, Section 4.1.3); 3 bytes are fixed
+        // fields. Enforced here so a stored row cannot poison a later AXFR.
+        if self.cert_data.len() > 65_532 {
+            return Err(format!(
+                "TLSA certificate data must be at most 65532 bytes, got {}",
+                self.cert_data.len()
+            ));
+        }
         Ok(())
     }
 
@@ -102,5 +110,12 @@ mod tests {
                 .validate()
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn validate_caps_full_certificates_at_the_rdlength_limit() {
+        let oversized = format!("3 0 0 {}", "AB".repeat(65_533));
+        let err = TlsaRecordValue::parse(&oversized).unwrap().validate();
+        assert!(err.unwrap_err().contains("65532"));
     }
 }

@@ -44,8 +44,22 @@ impl<'a> CaaRecordValue<'a> {
         if self.value.is_empty() {
             return Err("CAA value must not be empty".to_string());
         }
-        if self.value.contains('"') {
-            return Err("CAA value must not contain quotes".to_string());
+        // These need the RFC 1035, Section 5.1 escapes the exporter never
+        // emits, so a stored value carrying them breaks the import round trip.
+        if self.value.contains('"') || self.value.contains('\\') {
+            return Err("CAA value must not contain quotes or backslashes".to_string());
+        }
+        if self.value.chars().any(|c| c.is_control()) {
+            return Err("CAA value must not contain control characters".to_string());
+        }
+        // RDLENGTH is 16 bits (RFC 1035, Section 4.1.3); flags and the
+        // length-prefixed tag precede the value.
+        if self.value.len() > 65_533 - self.tag.len() {
+            return Err(format!(
+                "CAA value must be at most {} bytes, got {}",
+                65_533 - self.tag.len(),
+                self.value.len()
+            ));
         }
         Ok(())
     }
@@ -100,5 +114,13 @@ mod tests {
         let inner_quote = CaaRecordValue::parse("0 issue a\"b").unwrap();
         assert!(inner_quote.validate().is_err());
         assert!(CaaRecordValue::parse("0 issue").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_escapes_the_exporter_never_emits() {
+        for value in ["0 issue a\\b", "0 issue a\tb"] {
+            let parsed = CaaRecordValue::parse(value).unwrap();
+            assert!(parsed.validate().is_err(), "{value} was accepted");
+        }
     }
 }

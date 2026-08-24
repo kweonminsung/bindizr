@@ -834,6 +834,32 @@ async fn record_bulk_insert() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let bulk_request = json!({
+        "records": [
+            { "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" },
+            { "name": "sub", "record_type": "NS", "value": "ns1.example.net." }
+        ]
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["inserted"], 2);
+    assert_eq!(body["records"][0]["record_type"], "DS");
+    assert_eq!(body["records"][1]["record_type"], "NS");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_is_all_or_nothing() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;

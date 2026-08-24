@@ -5,7 +5,7 @@ use super::{
     RecordService,
     bulk::{PreparedRecord, prepare_record, zone_journal_for},
     validation::{
-        normalize_record_owner_name, parse_record_type,
+        normalize_record_owner_name, parse_record_type, validate_delete_keeps_delegations,
         validate_record_update_constraints_normalized,
     },
 };
@@ -227,6 +227,31 @@ impl RecordService {
                 &existing_record,
                 &candidate_updated,
             )?;
+            // Retyping or renaming an NS removes it from the old name's RRset.
+            if existing_record.record_type == RecordType::NS
+                && (candidate_updated.record_type != RecordType::NS
+                    || candidate_updated.name != existing_record.name)
+            {
+                let old_name_records = if existing_record.name == candidate_updated.name {
+                    zone_records.clone()
+                } else {
+                    RepositoryService::list_records_by_name_tx(
+                        &mut tx,
+                        zone.id,
+                        &existing_record.name,
+                        LockLevel::Exclusive,
+                    )
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to load zone records: {}", e);
+                        ServiceError::internal("Failed to update record".to_string())
+                    })?
+                };
+                validate_delete_keeps_delegations(
+                    &old_name_records,
+                    std::slice::from_ref(&existing_record),
+                )?;
+            }
 
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();

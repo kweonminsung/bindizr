@@ -52,6 +52,14 @@ impl DsRecordValue {
                 self.digest.len()
             ));
         }
+        // RDLENGTH is 16 bits (RFC 1035, Section 4.1.3); 4 bytes are fixed
+        // fields. Enforced here so a stored row cannot poison a later AXFR.
+        if self.digest.len() > 65_531 {
+            return Err(format!(
+                "DS digest must be at most 65531 bytes, got {}",
+                self.digest.len()
+            ));
+        }
         Ok(())
     }
 

@@ -174,6 +174,36 @@ pub(crate) fn validate_record_add_constraints_normalized(
     Ok(())
 }
 
+/// Removing the last NS at a name while a DS survives there would leave the
+/// DS at a non-delegation name (RFC 4035, Section 2.4), which the add path
+/// refuses to create. `zone_records` must cover the deleted names.
+pub(crate) fn validate_delete_keeps_delegations(
+    zone_records: &[Record],
+    deleting_records: &[Record],
+) -> Result<(), ServiceError> {
+    let deleted_ids: std::collections::HashSet<i32> =
+        deleting_records.iter().map(|r| r.id).collect();
+    for deleted in deleting_records {
+        if deleted.record_type != RecordType::NS {
+            continue;
+        }
+        let remaining = |record_type: &RecordType| {
+            zone_records.iter().any(|r| {
+                r.name == deleted.name
+                    && r.record_type == *record_type
+                    && !deleted_ids.contains(&r.id)
+            })
+        };
+        if !remaining(&RecordType::NS) && remaining(&RecordType::DS) {
+            return Err(ServiceError::record_conflict(format!(
+                "delegation NS '{}' still secures DS records; delete the DS records first",
+                deleted.name
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Reject deletions of the SOA record or the NS record referenced by `mname`.
 pub(crate) fn validate_delete_constraints(
     zone: &Zone,

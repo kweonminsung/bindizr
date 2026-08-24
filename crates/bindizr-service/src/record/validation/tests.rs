@@ -2,7 +2,7 @@ use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
-    normalize_record_owner_name, validate_delete_constraints,
+    normalize_record_owner_name, validate_delete_constraints, validate_delete_keeps_delegations,
     validate_record_add_constraints_normalized, validate_record_value,
 };
 use crate::{
@@ -210,6 +210,23 @@ fn add_couples_ds_to_an_existing_delegation() {
         None,
     );
     assert!(with_ns.is_ok());
+}
+
+#[test]
+fn delete_keeps_a_ds_secured_delegation() {
+    let ns = test_record(1, "sub", RecordType::NS, "ns.sub-host.example.com", None);
+    let ds = test_record(2, "sub", RecordType::DS, "12345 13 2 4B9B", None);
+    let rows = [ns.clone(), ds.clone()];
+
+    let last_ns = validate_delete_keeps_delegations(&rows, std::slice::from_ref(&ns));
+    assert_eq!(last_ns.unwrap_err().code, ErrorCode::RecordConflict);
+
+    // Dropping the whole delegation in one operation stays allowed.
+    assert!(validate_delete_keeps_delegations(&rows, &[ns.clone(), ds.clone()]).is_ok());
+
+    let second_ns = test_record(3, "sub", RecordType::NS, "ns2.sub-host.example.com", None);
+    let rows = [ns.clone(), second_ns, ds];
+    assert!(validate_delete_keeps_delegations(&rows, std::slice::from_ref(&ns)).is_ok());
 }
 
 #[test]

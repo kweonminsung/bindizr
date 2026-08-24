@@ -342,6 +342,18 @@ impl RecordService {
                     Err(e) => return Err(e),
                 }
             }
+            // A replace can drop a delegation NS while its DS survives
+            // unchanged, so the coupling is re-checked on the final state.
+            for (name, rows) in &simulated_by_name {
+                if rows.iter().any(|r| r.record_type == RecordType::DS)
+                    && !rows.iter().any(|r| r.record_type == RecordType::NS)
+                {
+                    errors.push(format!(
+                        "'{}': DS records require a delegation NS RRset at the same name",
+                        name
+                    ));
+                }
+            }
             timings.validate_ms = elapsed_ms(t);
 
             let summary = ImportSummary {

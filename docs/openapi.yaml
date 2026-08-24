@@ -716,23 +716,23 @@ paths:
         required: false
         schema:
           type: string
-      - name: ttl
+      - name: default_ttl
         in: query
-        description: Filter by TTL.
+        description: Filter by default TTL.
         required: false
         schema:
           type: integer
           format: int32
-      - name: min_ttl
+      - name: min_default_ttl
         in: query
-        description: Filter by minimum TTL.
+        description: Filter by minimum default TTL.
         required: false
         schema:
           type: integer
           format: int32
-      - name: max_ttl
+      - name: max_default_ttl
         in: query
-        description: Filter by maximum TTL.
+        description: Filter by maximum default TTL.
         required: false
         schema:
           type: integer

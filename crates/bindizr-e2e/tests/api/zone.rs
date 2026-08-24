@@ -523,6 +523,42 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["summary"]["added"], 0, "{body}");
     assert_eq!(body["errors"].as_array().unwrap().len(), 0, "{body}");
+
+    // The delegation NS cannot go while its DS survives; DS first, then NS.
+    let record_id = |listing: &serde_json::Value| listing["items"][0]["id"].as_i64().unwrap();
+    let (_, ns_listing) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=NS&name=sub"),
+            None,
+        )
+        .await;
+    let (status, body) = app
+        .request(
+            Method::DELETE,
+            &format!("/records/{}", record_id(&ns_listing)),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+
+    let (_, ds_listing) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=DS&name=sub"),
+            None,
+        )
+        .await;
+    for listing in [ds_listing, ns_listing] {
+        let (status, _) = app
+            .request(
+                Method::DELETE,
+                &format!("/records/{}", record_id(&listing)),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+    }
 }
 
 #[tokio::test]
