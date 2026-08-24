@@ -53,6 +53,10 @@ pub(super) fn dns_record_type(record_type: &str) -> Option<u16> {
         "TXT" => Some(16),
         "AAAA" => Some(28),
         "SRV" => Some(33),
+        "DS" => Some(43),
+        "SSHFP" => Some(44),
+        "TLSA" => Some(52),
+        "CAA" => Some(257),
         _ => None,
     }
 }
@@ -292,10 +296,44 @@ fn decode_dns_value(
                 serde_json::to_value(segments).map_err(|error| error.to_string())?
             }
         }
+        AllRecordData::Ds(ds) => Value::String(format!(
+            "{} {} {} {}",
+            ds.key_tag(),
+            u8::from(ds.algorithm()),
+            u8::from(ds.digest_type()),
+            hex_upper(ds.digest())
+        )),
+        AllRecordData::Sshfp(sshfp) => Value::String(format!(
+            "{} {} {}",
+            u8::from(sshfp.algorithm()),
+            u8::from(sshfp.fingerprint_type()),
+            hex_upper(sshfp.fingerprint())
+        )),
+        AllRecordData::Tlsa(tlsa) => Value::String(format!(
+            "{} {} {} {}",
+            u8::from(tlsa.usage()),
+            u8::from(tlsa.selector()),
+            u8::from(tlsa.matching_type()),
+            hex_upper(tlsa.data())
+        )),
+        AllRecordData::Caa(caa) => Value::String(format!(
+            "{} {} \"{}\"",
+            caa.flags(),
+            caa.tag(),
+            String::from_utf8_lossy(caa.value().as_ref())
+        )),
         AllRecordData::Soa(_) => return Ok(None),
         _ => return Err(format!("unsupported DNS answer type {record_type}")),
     };
     Ok(Some(value))
+}
+
+fn hex_upper(bytes: impl AsRef<[u8]>) -> String {
+    bytes
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect()
 }
 
 /// Renders names the way records are compared here: labels joined with '.',
