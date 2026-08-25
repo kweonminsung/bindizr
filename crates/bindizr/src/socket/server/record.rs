@@ -1,7 +1,7 @@
 use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
-    record::RecordService,
+    record::{ListedRecord, RecordService},
     types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter, PaginatedResponse},
 };
 use serde_json::json;
@@ -35,7 +35,7 @@ pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
         items: records
             .items
             .iter()
-            .map(GetRecordResponse::from_record_with_zone)
+            .map(ListedRecord::to_response)
             .collect::<Vec<_>>(),
         pagination: records.pagination,
     };

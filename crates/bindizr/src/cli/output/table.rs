@@ -57,8 +57,8 @@ impl From<&GetZoneResponse> for ZoneRow {
 /// Table row for record display.
 #[derive(Debug, Tabled)]
 pub(crate) struct RecordRow {
-    #[tabled(rename = "ID")]
-    pub(crate) id: i32,
+    #[tabled(rename = "ID", display = "display_option_i32")]
+    pub(crate) id: Option<i32>,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "TYPE")]

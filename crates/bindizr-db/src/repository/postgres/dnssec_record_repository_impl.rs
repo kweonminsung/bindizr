@@ -4,8 +4,11 @@ use sqlx::{AssertSqlSafe, Pool, Postgres};
 
 use crate::{
     error::DatabaseError,
-    model::dnssec_record::DnssecRecord,
-    repository::{DnssecRecordRepository, LockLevel, RepositoryTx, sql::lock_clause},
+    model::dnssec_record::{DnssecRecord, DnssecRecordWithZone},
+    repository::{
+        DnssecRecordFilter, DnssecRecordRepository, LockLevel, RepositoryTx,
+        sql::{apex_owner_sql, lock_clause},
+    },
 };
 
 /// PostgreSQL-backed implementation of `DnssecRecordRepository`.
@@ -145,5 +148,109 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
         .await?;
 
         Ok(zone_ids)
+    }
+
+    async fn list_by_filter_with_zone(
+        &self,
+        filter: DnssecRecordFilter,
+    ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+        let apex_owner = apex_owner_sql();
+        let records = sqlx::query_as::<_, DnssecRecordWithZone>(AssertSqlSafe(format!(
+            r#"
+            SELECT d.name, d.record_type, d.ttl, d.rdata, d.zone_id, z.name AS zone_name
+            FROM dnssec_records d
+            INNER JOIN zones z ON z.id = d.zone_id
+            WHERE ($1::TEXT IS NULL OR LOWER(z.name) = LOWER($2))
+              AND (
+                    $3::TEXT IS NULL
+                    OR LOWER(d.name) = LOWER($4)
+                    OR LOWER(CASE WHEN d.name = {apex_owner} THEN z.name || '.' ELSE d.name || '.' || z.name || '.' END) = LOWER($5)
+              )
+              AND ($6::INT4 IS NULL OR d.record_type = $7)
+              AND ($8::INT4 IS NULL OR d.ttl = $9)
+              AND ($10::INT4 IS NULL OR d.ttl >= $11)
+              AND ($12::INT4 IS NULL OR d.ttl <= $13)
+              AND (
+                    $14::INT4 IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = $14 AND p.zone_id = d.zone_id)
+              )
+            -- d.name ties across an RRset, so without d.id a plan change
+            -- between two pages could drop or repeat a row.
+            ORDER BY d.name, d.id
+            LIMIT $15 OFFSET $16
+            "#
+        )))
+        .bind(&filter.zone_name)
+        .bind(&filter.zone_name)
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(filter.record_type)
+        .bind(filter.record_type)
+        .bind(filter.ttl)
+        .bind(filter.ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.scope_token_id)
+        .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+        .bind(
+            filter
+                .offset
+                .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+                .unwrap_or(0),
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+
+        Ok(records)
+    }
+
+    async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+        let apex_owner = apex_owner_sql();
+        let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
+            r#"
+            SELECT COUNT(*)
+            FROM dnssec_records d
+            INNER JOIN zones z ON z.id = d.zone_id
+            WHERE ($1::TEXT IS NULL OR LOWER(z.name) = LOWER($2))
+              AND (
+                    $3::TEXT IS NULL
+                    OR LOWER(d.name) = LOWER($4)
+                    OR LOWER(CASE WHEN d.name = {apex_owner} THEN z.name || '.' ELSE d.name || '.' || z.name || '.' END) = LOWER($5)
+              )
+              AND ($6::INT4 IS NULL OR d.record_type = $7)
+              AND ($8::INT4 IS NULL OR d.ttl = $9)
+              AND ($10::INT4 IS NULL OR d.ttl >= $11)
+              AND ($12::INT4 IS NULL OR d.ttl <= $13)
+              AND (
+                    $14::INT4 IS NULL
+                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                               WHERE p.api_token_id = $14 AND p.zone_id = d.zone_id)
+              )
+            "#
+        )))
+        .bind(&filter.zone_name)
+        .bind(&filter.zone_name)
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(&filter.name)
+        .bind(filter.record_type)
+        .bind(filter.record_type)
+        .bind(filter.ttl)
+        .bind(filter.ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.min_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.max_ttl)
+        .bind(filter.scope_token_id)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        Ok(count as u64)
     }
 }

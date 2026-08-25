@@ -268,6 +268,12 @@ paths:
         required: false
         schema:
           type: string
+      - name: signed
+        in: query
+        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id; record_type also accepts a derived type, while value, search, and priority filters keep the listing user-only.
+        required: false
+        schema:
+          type: boolean
       - name: limit
         in: query
         description: Maximum number of records to return.
@@ -2730,7 +2736,6 @@ components:
       type: object
       description: API representation of a record, optionally carrying its zone name.
       required:
-      - id
       - name
       - record_type
       - value
@@ -2738,8 +2743,13 @@ components:
       - zone_id
       properties:
         id:
-          type: integer
+          type:
+          - integer
+          - 'null'
           format: int32
+          description: |-
+            Absent on the derived DNSSEC rows of a signed listing, which are not
+            addressable records.
           example: 1
         name:
           type: string
@@ -3040,7 +3050,6 @@ components:
             type: object
             description: API representation of a record, optionally carrying its zone name.
             required:
-            - id
             - name
             - record_type
             - value
@@ -3048,8 +3057,13 @@ components:
             - zone_id
             properties:
               id:
-                type: integer
+                type:
+                - integer
+                - 'null'
                 format: int32
+                description: |-
+                  Absent on the derived DNSSEC rows of a signed listing, which are not
+                  addressable records.
                 example: 1
               name:
                 type: string

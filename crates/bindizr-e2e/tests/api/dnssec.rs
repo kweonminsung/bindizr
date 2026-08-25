@@ -437,6 +437,114 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn records_listing_signed_pages_the_derived_plane() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "www",
+                "record_type": "A",
+                "value": "192.0.2.10",
+                "zone_name": zone_name,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let user_total = body["pagination"]["total"].as_u64().unwrap();
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["id"].is_i64()),
+        "the unsigned listing holds only addressable user records"
+    );
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(
+        body["pagination"]["total"].as_u64().unwrap() as usize,
+        items.len()
+    );
+    assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
+    let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
+    for record_type in ["DNSKEY", "NSEC", "RRSIG"] {
+        assert!(
+            derived
+                .iter()
+                .any(|item| item["record_type"] == record_type),
+            "signed listing must carry a {record_type} row: {items:?}"
+        );
+    }
+    assert!(derived.iter().all(|item| item["priority"].is_null()));
+
+    // The derived plane pages after the user records under one offset space.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true&offset={user_total}&limit=2"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().all(|item| item["id"].is_null()));
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true&record_type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert!(!items.is_empty());
+    assert!(items.iter().all(|item| item["record_type"] == "RRSIG"));
+
+    // A derived type is only addressable through the signed view.
+    let (status, _) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn dnssec_enable_requires_a_global_token() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         require_authentication: true,

@@ -14,7 +14,7 @@ use sqlx::{MySql, Postgres, Sqlite};
 use super::model::{
     api_token::ApiToken,
     dnssec_key::{DnssecKey, DnssecKeyState},
-    dnssec_record::DnssecRecord,
+    dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     record::{Record, RecordType, RecordWithZone},
     tsig_key::TsigKey,
     zone::{DnssecDenial, Zone},
@@ -75,6 +75,25 @@ pub struct RecordFilter {
     pub min_priority: Option<i32>,
     pub max_priority: Option<i32>,
     pub search: Option<String>,
+    /// Restrict to zones granted to this token, joined against
+    /// `zone_token_policies` in SQL so the bind count stays fixed; `None` is
+    /// unrestricted.
+    pub scope_token_id: Option<i32>,
+    pub limit: Option<u32>,
+    pub offset: Option<u64>,
+}
+
+/// Optional criteria for querying derived DNSSEC records. Value, search, and
+/// priority have no derived-plane meaning, so the filter has no slot for them.
+#[derive(Clone, Debug, Default)]
+pub struct DnssecRecordFilter {
+    pub zone_name: Option<String>,
+    pub name: Option<String>,
+    /// The wire RR type number, the column form.
+    pub record_type: Option<i32>,
+    pub ttl: Option<i32>,
+    pub min_ttl: Option<i32>,
+    pub max_ttl: Option<i32>,
     /// Restrict to zones granted to this token, joined against
     /// `zone_token_policies` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
@@ -529,6 +548,11 @@ pub trait DnssecRecordRepository: Send + Sync {
         &self,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError>;
+    async fn list_by_filter_with_zone(
+        &self,
+        filter: DnssecRecordFilter,
+    ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError>;
+    async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError>;
 }
 
 /// Persistence operations for API tokens.

@@ -6,7 +6,7 @@ use axum::{
     routing,
 };
 use bindizr_service::{
-    record::RecordService,
+    record::{ListedRecord, RecordService},
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
         GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse, RecordItem,
@@ -58,6 +58,7 @@ impl RecordApi {
             ("min_priority" = Option<i32>, Query, description = "Filter by minimum priority."),
             ("max_priority" = Option<i32>, Query, description = "Filter by maximum priority."),
             ("search" = Option<String>, Query, description = "Partially search records."),
+            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id; record_type also accepts a derived type, while value, search, and priority filters keep the listing user-only."),
             ("limit" = Option<u32>, Query, description = "Maximum number of records to return."),
             ("offset" = Option<u64>, Query, description = "Number of records to skip.")
         ),
@@ -78,7 +79,7 @@ pub(crate) async fn get_records(
     let records = raw_records
         .items
         .iter()
-        .map(GetRecordResponse::from_record_with_zone)
+        .map(ListedRecord::to_response)
         .collect::<Vec<_>>();
 
     let response = PaginatedResponse {

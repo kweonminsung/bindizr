@@ -13,7 +13,7 @@ use crate::{
         model::{
             api_token::ApiToken,
             dnssec_key::{DnssecKey, DnssecKeyState},
-            dnssec_record::DnssecRecord,
+            dnssec_record::{DnssecRecord, DnssecRecordWithZone},
             record::{Record, RecordWithZone},
             tsig_key::TsigKey,
             zone::{DnssecDenial, Zone},
@@ -23,7 +23,7 @@ use crate::{
             zone_version::ZoneVersion,
         },
         repository as db_repository,
-        repository::{LockLevel, RecordFilter, ZoneFilter},
+        repository::{DnssecRecordFilter, LockLevel, RecordFilter, ZoneFilter},
     },
     log_error,
 };
@@ -470,6 +470,24 @@ impl RepositoryService {
             .delete_by_zone_id_tx(tx, zone_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to delete DNSSEC records: {}", e)))
+    }
+
+    pub(super) async fn list_dnssec_records_by_filter_with_zone(
+        filter: DnssecRecordFilter,
+    ) -> Result<Vec<DnssecRecordWithZone>, ServiceError> {
+        get_dnssec_record_repository()
+            .list_by_filter_with_zone(filter)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC records: {}", e)))
+    }
+
+    pub(super) async fn count_dnssec_records_by_filter(
+        filter: DnssecRecordFilter,
+    ) -> Result<u64, ServiceError> {
+        get_dnssec_record_repository()
+            .count_by_filter(filter)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
 
     pub(super) async fn list_rrsig_zone_ids_expiring_before(

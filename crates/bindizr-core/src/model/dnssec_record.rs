@@ -1,11 +1,15 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use crate::dns::{name::OwnerName, record::Rdata};
+use crate::dns::{
+    name::{OwnerName, ZoneName},
+    record::Rdata,
+};
 
 /// One record of a zone's derived DNSSEC plane (the signed view): the DNSKEY,
 /// NSEC, and RRSIG rows the signer generates. These are system-owned and never
-/// user data — the record API neither creates nor lists them.
+/// user data — the record API cannot create or modify them, and lists them
+/// only behind its `signed` flag.
 #[derive(Debug, Clone, FromRow)]
 pub struct DnssecRecord {
     pub id: i32,
@@ -25,6 +29,22 @@ pub struct DnssecRecord {
     /// RRSIG rows: digest of the signed RRset content, allowing a still-valid
     /// signature to be reused when the RRset has not changed.
     pub rrset_digest: Option<String>,
+}
+
+/// A derived record joined with its zone name, as the signed records listing
+/// returns it.
+#[derive(Debug, Clone, FromRow)]
+pub struct DnssecRecordWithZone {
+    #[sqlx(try_from = "String")]
+    pub name: OwnerName,
+    #[sqlx(try_from = "i32")]
+    pub record_type: DnssecRecordType,
+    pub ttl: i32,
+    #[sqlx(try_from = "String")]
+    pub rdata: Rdata,
+    pub zone_id: i32,
+    #[sqlx(try_from = "String")]
+    pub zone_name: ZoneName,
 }
 
 /// The record types the signer derives; rows store the wire RR type number

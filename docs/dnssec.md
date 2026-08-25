@@ -112,7 +112,9 @@ Over HTTP the body must acknowledge the procedure with
   disable and re-enable (going insecure in between).
 - Rollovers keep the key's algorithm; algorithm changes (RFC 6840,
   Section 5.11) are not supported.
-- Delegation `NS` RRsets and glue below a cut are served but not signed
-  (RFC 4035); a child's `DS` record entered at the delegation is signed.
+- At a delegation only the child's `DS` RRset is signed; the `NS` beside it
+  and glue at or below the cut are served unsigned (RFC 4035).
 - The derived records are system-owned: never edited, diffed, or rolled
-  back. Version listings hide signer-only serials unless `all` is requested.
+  back. Version listings hide signer-only serials unless `all` is requested;
+  `record list --signed` (`GET /records?signed=true`) pages them after the
+  user records.
