@@ -1364,6 +1364,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DnssecStatusResponse'
+        '400':
+          description: Bad request, the rollover is ZSK-only (no DS to confirm) or the publish hold-down has not passed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
           content:
