@@ -142,59 +142,7 @@ pub(super) fn compute_signed_view(
     let input = build_signing_input(params, &apex, &signers)?;
 
     let mut new_rows: Vec<DnssecRecord> = Vec::new();
-    let mut denial_records: Vec<SignRecord> = Vec::new();
-
-    // The chain is cheap to rebuild whole, and doing so removes incremental
-    // chain-repair edge cases entirely (RFC 9077 TTLs and zone cuts included).
-    if params.denial == DnssecDenial::Nsec3 {
-        // GenerateNsec3Config::default() is the RFC 9276 profile: SHA-1, zero
-        // iterations, no salt, no opt-out.
-        let Nsec3Records { nsec3s, nsec3param } = generate_nsec3s(
-            &apex,
-            RecordsIter::new_from_owned(&input),
-            &GenerateNsec3Config::<Vec<u8>, DefaultSorter>::default(),
-        )
-        .map_err(|e| signing_internal(format!("NSEC3 generation failed: {}", e)))?;
-
-        for nsec3 in nsec3s {
-            let class = nsec3.class();
-            let ttl = nsec3.ttl();
-            let (owner, data) = nsec3.into_owner_and_data();
-            denial_records.push(WireRecord::new(
-                owner,
-                class,
-                ttl,
-                ZoneRecordData::Nsec3(data),
-            ));
-        }
-        let class = nsec3param.class();
-        let ttl = nsec3param.ttl();
-        let (owner, data) = nsec3param.into_owner_and_data();
-        denial_records.push(WireRecord::new(
-            owner,
-            class,
-            ttl,
-            ZoneRecordData::Nsec3param(data),
-        ));
-    } else {
-        let nsecs = generate_nsecs(
-            &apex,
-            RecordsIter::new_from_owned(&input),
-            &GenerateNsecConfig::new(),
-        )
-        .map_err(|e| signing_internal(format!("NSEC generation failed: {}", e)))?;
-        for nsec in nsecs {
-            let class = nsec.class();
-            let ttl = nsec.ttl();
-            let (owner, data) = nsec.into_owner_and_data();
-            denial_records.push(WireRecord::new(
-                owner,
-                class,
-                ttl,
-                ZoneRecordData::Nsec(data),
-            ));
-        }
-    }
+    let denial_records = denial_records(&apex, &input, params.denial)?;
 
     // Rows for everything the signer owns: the apex key RRsets from `input`
     // and the denial chain. User records and the SOA stay in their own planes.
@@ -326,6 +274,54 @@ pub(super) fn compute_signed_view(
     }
 
     Ok(SignedViewDiff::from_planes(params.prev, new_rows))
+}
+
+/// The complete denial chain for `input` (canonical order): NSEC records, or
+/// the NSEC3 chain plus its NSEC3PARAM. The chain is cheap to rebuild whole,
+/// and doing so removes incremental chain-repair edge cases entirely
+/// (RFC 9077 TTLs and zone cuts included).
+fn denial_records(
+    apex: &WireName,
+    input: &[SignRecord],
+    denial: DnssecDenial,
+) -> Result<Vec<SignRecord>, ServiceError> {
+    fn into_sign_record<D>(
+        record: WireRecord<WireName, D>,
+        wrap: impl FnOnce(D) -> ZoneRecordData<Vec<u8>, WireName>,
+    ) -> SignRecord {
+        let class = record.class();
+        let ttl = record.ttl();
+        let (owner, data) = record.into_owner_and_data();
+        WireRecord::new(owner, class, ttl, wrap(data))
+    }
+
+    let mut records = Vec::new();
+    if denial == DnssecDenial::Nsec3 {
+        // GenerateNsec3Config::default() is the RFC 9276 profile: SHA-1, zero
+        // iterations, no salt, no opt-out.
+        let Nsec3Records { nsec3s, nsec3param } = generate_nsec3s(
+            apex,
+            RecordsIter::new_from_owned(input),
+            &GenerateNsec3Config::<Vec<u8>, DefaultSorter>::default(),
+        )
+        .map_err(|e| signing_internal(format!("NSEC3 generation failed: {}", e)))?;
+
+        for nsec3 in nsec3s {
+            records.push(into_sign_record(nsec3, ZoneRecordData::Nsec3));
+        }
+        records.push(into_sign_record(nsec3param, ZoneRecordData::Nsec3param));
+    } else {
+        let nsecs = generate_nsecs(
+            apex,
+            RecordsIter::new_from_owned(input),
+            &GenerateNsecConfig::new(),
+        )
+        .map_err(|e| signing_internal(format!("NSEC generation failed: {}", e)))?;
+        for nsec in nsecs {
+            records.push(into_sign_record(nsec, ZoneRecordData::Nsec));
+        }
+    }
+    Ok(records)
 }
 
 fn derived_record_type(rtype: Rtype) -> Result<DnssecRecordType, ServiceError> {
