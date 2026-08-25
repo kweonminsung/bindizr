@@ -33,7 +33,8 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INT NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            INDEX idx_records_zone_name (zone_id, name)
+            INDEX idx_records_zone_name (zone_id, name),
+            INDEX idx_records_zone_type (zone_id, record_type)
         );
         "#,
         r#"
@@ -198,6 +199,9 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
         "#,
         r#"
         CREATE INDEX IF NOT EXISTS idx_records_zone_name ON records(zone_id, name);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_records_zone_type ON records(zone_id, record_type);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS zone_journal (
@@ -377,6 +381,9 @@ pub(super) fn sqlite_table_creation_queries() -> Vec<&'static str> {
         "#,
         r#"
         CREATE INDEX IF NOT EXISTS idx_records_zone_name ON records(zone_id, name);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_records_zone_type ON records(zone_id, record_type);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS zone_journal (
