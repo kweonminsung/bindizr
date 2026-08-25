@@ -176,7 +176,7 @@ impl DnssecService {
 
         // The DS records are derived from the apex name and the keys, so they
         // are read together under the zone lock.
-        let mut tx = RepositoryService::begin_tx("failed to read DNSSEC status").await?;
+        let mut tx = RepositoryService::begin_read_tx("failed to read DNSSEC status").await?;
         let result = async {
             let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
             let keys =

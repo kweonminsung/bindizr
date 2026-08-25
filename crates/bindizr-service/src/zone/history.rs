@@ -392,7 +392,7 @@ impl ZoneService {
         serial: i32,
     ) -> Result<(ZoneVersion, Vec<ReconstructedRecord>), ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        let mut tx = RepositoryService::begin_tx("Failed to load version").await?;
+        let mut tx = RepositoryService::begin_read_tx("Failed to load version").await?;
 
         let result = async {
             let zone =
@@ -431,7 +431,7 @@ impl ZoneService {
         to_serial: Option<i32>,
     ) -> Result<VersionDiffResponse, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        let mut tx = RepositoryService::begin_tx("Failed to diff versions").await?;
+        let mut tx = RepositoryService::begin_read_tx("Failed to diff versions").await?;
 
         let result = async {
             let zone =

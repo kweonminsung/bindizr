@@ -41,14 +41,29 @@ fn zone_name_race_error(name: &str, action: &str, e: DatabaseError) -> ServiceEr
     }
 }
 
+/// Log a failed transaction open and map it to the caller's internal error.
+fn begin_tx_error(internal_msg: &'static str, e: DatabaseError) -> ServiceError {
+    log_error!("Failed to begin transaction: {}", e);
+    ServiceError::internal(internal_msg.to_string())
+}
+
 impl RepositoryService {
     pub(super) async fn begin_tx(
         internal_msg: &'static str,
     ) -> Result<RepositoryTx<'static>, ServiceError> {
-        db_repository::begin_transaction().await.map_err(|e| {
-            log_error!("Failed to begin transaction: {}", e);
-            ServiceError::internal(internal_msg.to_string())
-        })
+        db_repository::begin_transaction()
+            .await
+            .map_err(|e| begin_tx_error(internal_msg, e))
+    }
+
+    /// Begin a transaction for a caller that only reads; see
+    /// [`db_repository::begin_read_transaction`].
+    pub(super) async fn begin_read_tx(
+        internal_msg: &'static str,
+    ) -> Result<RepositoryTx<'static>, ServiceError> {
+        db_repository::begin_read_transaction()
+            .await
+            .map_err(|e| begin_tx_error(internal_msg, e))
     }
 
     /// Commit on success, roll back on failure. `E` is the caller's error

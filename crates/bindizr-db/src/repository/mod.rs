@@ -113,6 +113,19 @@ enum RepositoryTxKind<'a> {
 
 /// Begin a transaction on the global database pool.
 pub async fn begin_transaction() -> Result<RepositoryTx<'static>, DatabaseError> {
+    // IMMEDIATE takes SQLite's write lock up front so a read-then-write
+    // transaction can't fail late with "database is locked".
+    begin("BEGIN IMMEDIATE").await
+}
+
+/// Begin a transaction for multi-statement reads that write nothing: SQLite
+/// readers then run concurrently instead of taking the single writer slot.
+pub async fn begin_read_transaction() -> Result<RepositoryTx<'static>, DatabaseError> {
+    begin("BEGIN DEFERRED").await
+}
+
+/// Shared opener; only SQLite's BEGIN statement distinguishes the two.
+async fn begin(sqlite_begin: &'static str) -> Result<RepositoryTx<'static>, DatabaseError> {
     match get_pool() {
         DatabasePool::MySQL(pool) => pool
             .begin()
@@ -124,10 +137,8 @@ pub async fn begin_transaction() -> Result<RepositoryTx<'static>, DatabaseError>
             .await
             .map(|tx| RepositoryTx(RepositoryTxKind::PostgreSQL(tx)))
             .map_err(|e| DatabaseError::TransactionFailed(e.to_string())),
-        // BEGIN IMMEDIATE takes SQLite's write lock up front so a read-then-write
-        // transaction can't fail late with "database is locked".
         DatabasePool::SQLite(pool) => pool
-            .begin_with("BEGIN IMMEDIATE")
+            .begin_with(sqlite_begin)
             .await
             .map(|tx| RepositoryTx(RepositoryTxKind::SQLite(tx)))
             .map_err(|e| DatabaseError::TransactionFailed(e.to_string())),

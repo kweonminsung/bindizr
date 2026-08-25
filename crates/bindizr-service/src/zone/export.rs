@@ -29,7 +29,7 @@ impl ZoneService {
         // Read the zone and records in one locked transaction so the export is a
         // single consistent view, not stale SOA metadata with newer records.
         let lookup_name = normalize_zone_name(zone_name)?;
-        let mut tx = RepositoryService::begin_tx("Failed to export zone").await?;
+        let mut tx = RepositoryService::begin_read_tx("Failed to export zone").await?;
         let load_result = async {
             let zone = RepositoryService::get_zone_by_name_tx(
                 &mut tx,

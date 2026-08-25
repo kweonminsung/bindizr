@@ -115,7 +115,7 @@ impl ZoneService {
     pub async fn transfer_content(
         zone_id: i32,
     ) -> Result<Option<(Zone, Vec<Record>, Vec<DnssecRecord>)>, ServiceError> {
-        let mut tx = RepositoryService::begin_tx("failed to load transfer content").await?;
+        let mut tx = RepositoryService::begin_read_tx("failed to load transfer content").await?;
         let result = async {
             let Some(zone) =
                 RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Shared).await?
