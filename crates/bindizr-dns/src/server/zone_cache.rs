@@ -54,8 +54,6 @@ fn tick() -> u64 {
     CLOCK.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Load a zone's transfer content for `serial`, from cache when enabled and
-/// fresh.
 /// Load a zone's transfer content, from cache when enabled and fresh.
 /// Serve the returned zone row, not the pre-read one — it is the row the
 /// content was read with. `None` when the zone was deleted meanwhile.
