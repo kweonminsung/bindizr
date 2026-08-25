@@ -45,11 +45,14 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
             operation VARCHAR(10) NOT NULL,
             record_name VARCHAR(512) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
-            record_value TEXT NOT NULL,
+            record_value TEXT,
+            record_rdata BLOB,
             record_ttl INT NOT NULL,
             record_priority INT,
             derived BOOLEAN NOT NULL DEFAULT FALSE,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CHECK ((derived = TRUE AND record_value IS NULL AND record_rdata IS NOT NULL)
+                OR (derived = FALSE AND record_value IS NOT NULL AND record_rdata IS NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             INDEX idx_zone_serial (zone_id, serial)
         );
@@ -154,7 +157,7 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
             record_type INT NOT NULL,
             covered_record_type INT,
             ttl INT NOT NULL,
-            rdata TEXT NOT NULL,
+            rdata BLOB NOT NULL,
             expires_at DATETIME,
             rrset_digest VARCHAR(64),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
@@ -211,11 +214,14 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
             operation VARCHAR(10) NOT NULL,
             record_name VARCHAR(512) NOT NULL,
             record_type VARCHAR(50) NOT NULL,
-            record_value TEXT NOT NULL,
+            record_value TEXT,
+            record_rdata BYTEA,
             record_ttl INTEGER NOT NULL,
             record_priority INTEGER,
             derived BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CHECK ((derived = TRUE AND record_value IS NULL AND record_rdata IS NOT NULL)
+                OR (derived = FALSE AND record_value IS NOT NULL AND record_rdata IS NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -332,7 +338,7 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
             record_type INTEGER NOT NULL,
             covered_record_type INTEGER,
             ttl INTEGER NOT NULL,
-            rdata TEXT NOT NULL,
+            rdata BYTEA NOT NULL,
             expires_at TIMESTAMPTZ,
             rrset_digest VARCHAR(64),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
@@ -393,11 +399,14 @@ pub(super) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             operation TEXT NOT NULL,
             record_name TEXT NOT NULL,
             record_type TEXT NOT NULL,
-            record_value TEXT NOT NULL,
+            record_value TEXT,
+            record_rdata BLOB,
             record_ttl INTEGER NOT NULL,
             record_priority INTEGER,
             derived BOOLEAN NOT NULL DEFAULT FALSE,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CHECK ((derived = TRUE AND record_value IS NULL AND record_rdata IS NOT NULL)
+                OR (derived = FALSE AND record_value IS NOT NULL AND record_rdata IS NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -514,7 +523,7 @@ pub(super) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             record_type INTEGER NOT NULL,
             covered_record_type INTEGER,
             ttl INTEGER NOT NULL,
-            rdata TEXT NOT NULL,
+            rdata BLOB NOT NULL,
             expires_at DATETIME,
             rrset_digest TEXT,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, net::IpAddr};
 
 use bindizr_core::{
-    dns::{name::ZoneName, record::Rdata},
+    dns::name::ZoneName,
     model::zone_change::{ChangeOperation, JournalRecordType},
 };
 use domain::base::iana::Rtype;
@@ -336,10 +336,8 @@ fn add_change(
 ) -> Result<(), XfrError> {
     match &change.record_type {
         JournalRecordType::Derived(record_type) => {
-            let rdata = Rdata::from_journal_value(&change.record_value).ok_or_else(|| {
-                XfrError::ProtocolError(
-                    "derived change value is not wire-rdata encoded".to_string(),
-                )
+            let rdata = change.record_rdata.clone().ok_or_else(|| {
+                XfrError::ProtocolError("derived change carries no wire rdata".to_string())
             })?;
             builder.add_raw_rdata(
                 change.record_name.to_wire(zone_name),
@@ -348,14 +346,19 @@ fn add_change(
                 rdata,
             )
         }
-        JournalRecordType::User(record_type) => builder.add_record_parts(
-            zone_name,
-            &change.record_name,
-            record_type,
-            &change.record_value,
-            change.record_ttl,
-            change.record_priority,
-        ),
+        JournalRecordType::User(record_type) => {
+            let value = change.record_value.as_deref().ok_or_else(|| {
+                XfrError::ProtocolError("user change carries no record value".to_string())
+            })?;
+            builder.add_record_parts(
+                zone_name,
+                &change.record_name,
+                record_type,
+                value,
+                change.record_ttl,
+                change.record_priority,
+            )
+        }
         // The delta's SOA boundaries come from the version rows above.
         JournalRecordType::Soa => Ok(()),
     }

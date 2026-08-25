@@ -114,11 +114,19 @@ async fn reconstruct_records_at_serial(
         let JournalRecordType::User(record_type) = &change.record_type else {
             continue;
         };
+        let Some(record_value) = change.record_value.as_deref() else {
+            log_warn!(
+                "User change for '{}' {} carries no value; skipping during reconstruction",
+                change.record_name,
+                change.record_type
+            );
+            continue;
+        };
         let record_type = record_type.clone();
         let key = match_key(
             &change.record_name,
             &record_type,
-            &change.record_value,
+            record_value,
             change.record_priority,
         );
 
@@ -138,7 +146,7 @@ async fn reconstruct_records_at_serial(
                 state.entry(key).or_default().push(ReconstructedRecord {
                     name: change.record_name.clone(),
                     record_type,
-                    value: change.record_value.clone(),
+                    value: record_value.to_string(),
                     ttl: change.record_ttl,
                     priority: change.record_priority,
                 });

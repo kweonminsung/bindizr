@@ -117,7 +117,7 @@ impl DnssecService {
             }
         }
 
-        let changes = derived_changes(zone.id, new_serial, &diff.removed, &diff.added)?;
+        let changes = derived_changes(zone.id, new_serial, &diff.removed, &diff.added);
         RepositoryService::create_zone_journal_tx(tx, &changes).await?;
         let removed_ids: Vec<i32> = diff.removed.iter().map(|row| row.id).collect();
         RepositoryService::delete_dnssec_records_tx(tx, &removed_ids).await?;
@@ -148,36 +148,34 @@ pub(crate) fn rdata_presentation(record_type: DnssecRecordType, rdata: &Rdata) -
 }
 
 /// Journal rows for a derived-plane delta: DELs for `removed`, ADDs for
-/// `added`, all flagged `derived` with wire-rdata encoded values.
+/// `added`, all flagged `derived` and carrying their wire RDATA.
 fn derived_changes(
     zone_id: i32,
     new_serial: i32,
     removed: &[DnssecRecord],
     added: &[DnssecRecord],
-) -> Result<Vec<ZoneChange>, ServiceError> {
-    let change =
-        |operation: ChangeOperation, row: &DnssecRecord| -> Result<ZoneChange, ServiceError> {
-            Ok(ZoneChange {
-                zone_id,
-                serial: new_serial,
-                operation,
-                record_name: row.name.clone(),
-                record_type: JournalRecordType::Derived(row.record_type),
-                record_value: row.rdata.to_journal_value(),
-                record_ttl: row.ttl,
-                record_priority: None,
-                derived: true,
-            })
-        };
+) -> Vec<ZoneChange> {
+    let change = |operation: ChangeOperation, row: &DnssecRecord| ZoneChange {
+        zone_id,
+        serial: new_serial,
+        operation,
+        record_name: row.name.clone(),
+        record_type: JournalRecordType::Derived(row.record_type),
+        record_value: None,
+        record_rdata: Some(row.rdata.clone()),
+        record_ttl: row.ttl,
+        record_priority: None,
+        derived: true,
+    };
 
     let mut changes = Vec::with_capacity(removed.len() + added.len());
     for row in removed {
-        changes.push(change(ChangeOperation::Del, row)?);
+        changes.push(change(ChangeOperation::Del, row));
     }
     for row in added {
-        changes.push(change(ChangeOperation::Add, row)?);
+        changes.push(change(ChangeOperation::Add, row));
     }
-    Ok(changes)
+    changes
 }
 
 async fn notify_zone(zone_name: &str) {

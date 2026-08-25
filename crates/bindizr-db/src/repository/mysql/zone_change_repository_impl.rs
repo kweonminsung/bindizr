@@ -28,10 +28,10 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
         let mysql_tx = tx.as_mysql()?;
 
         const CHUNK: usize = 500;
-        const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         for chunk in changes.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority, derived) VALUES ",
+                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived) VALUES ",
             );
             for i in 0..chunk.len() {
                 if i > 0 {
@@ -49,6 +49,7 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
                     .bind(&c.record_name)
                     .bind(c.record_type.clone())
                     .bind(c.record_value.clone())
+                    .bind(c.record_rdata.clone())
                     .bind(c.record_ttl)
                     .bind(c.record_priority)
                     .bind(c.derived);
@@ -69,7 +70,7 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
     ) -> Result<Vec<ZoneChange>, DatabaseError> {
         sqlx::query_as::<_, ZoneChange>(
             r#"
-            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority, derived
+            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived
             FROM zone_journal
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id
@@ -94,7 +95,7 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
 
         sqlx::query_as::<_, ZoneChange>(
             AssertSqlSafe(format!("{}{}", r#"
-            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_ttl, record_priority, derived
+            SELECT zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived
             FROM zone_journal
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id

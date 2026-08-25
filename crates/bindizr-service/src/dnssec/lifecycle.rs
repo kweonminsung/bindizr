@@ -110,7 +110,7 @@ impl DnssecService {
                     .await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
-            let changes = derived_changes(zone.id, new_serial, &derived, &[])?;
+            let changes = derived_changes(zone.id, new_serial, &derived, &[]);
             RepositoryService::create_zone_journal_tx(&mut tx, &changes).await?;
             RepositoryService::delete_dnssec_records_by_zone_id_tx(&mut tx, zone.id).await?;
             RepositoryService::delete_dnssec_keys_by_zone_id_tx(&mut tx, zone.id).await?;

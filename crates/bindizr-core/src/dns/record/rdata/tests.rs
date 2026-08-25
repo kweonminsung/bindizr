@@ -114,22 +114,3 @@ fn rdata_rejects_bytes_beyond_the_rdlength_limit() {
     assert!(Rdata::new(vec![0; u16::MAX as usize]).is_ok());
     assert!(Rdata::new(vec![0; u16::MAX as usize + 1]).is_err());
 }
-
-#[test]
-fn rdata_round_trips_through_its_base64_row_form() {
-    let rdata = Rdata::new(vec![0x00, 0x2b, 0xff, 0x01]).unwrap();
-    assert_eq!(Rdata::from_base64(&rdata.to_base64()).unwrap(), rdata);
-}
-
-#[test]
-fn rdata_round_trips_through_its_journal_form() {
-    let rdata = Rdata::new(vec![0x00, 0x2b, 0xff, 0x01]).unwrap();
-    let decoded = Rdata::from_journal_value(&rdata.to_journal_value()).expect("valid journal form");
-    assert_eq!(decoded, rdata);
-}
-
-#[test]
-fn from_journal_value_rejects_unprefixed_or_invalid_base64() {
-    assert!(Rdata::from_journal_value("AAECAw==").is_none());
-    assert!(Rdata::from_journal_value("bindizr:rdata:v1:not base64!").is_none());
-}

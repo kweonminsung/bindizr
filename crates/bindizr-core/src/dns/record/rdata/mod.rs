@@ -13,8 +13,6 @@ use super::{
 };
 use crate::{dns::name::encode_name, model::record::RecordType};
 
-const JOURNAL_VALUE_PREFIX: &str = "bindizr:rdata:v1:";
-
 /// Wire-format RDATA bytes, capped at the RDLENGTH u16 limit
 /// (RFC 1035, Section 3.2.1) by construction.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -40,64 +38,48 @@ impl Rdata {
         self.0
     }
 
-    /// The row form (`dnssec_records.rdata`): plain base64.
+    /// Base64 presentation fallback for rows whose RDATA does not parse.
     pub fn to_base64(&self) -> String {
         base64::engine::general_purpose::STANDARD.encode(&self.0)
     }
-
-    pub fn from_base64(encoded: &str) -> Result<Self, String> {
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(encoded)
-            .map_err(|e| format!("RDATA is not base64: {}", e))?;
-        Self::new(bytes)
-    }
-
-    /// The journal form (`zone_journal.record_value`): prefixed base64, so a
-    /// derived row's wire bytes can share the column with plain user values.
-    pub fn to_journal_value(&self) -> String {
-        format!("{}{}", JOURNAL_VALUE_PREFIX, self.to_base64())
-    }
-
-    /// Decode the journal form; `None` if it is not valid.
-    pub fn from_journal_value(stored: &str) -> Option<Self> {
-        let encoded = stored.strip_prefix(JOURNAL_VALUE_PREFIX)?;
-        Self::from_base64(encoded).ok()
-    }
 }
 
-/// Decodes the row form, so a row column can hold RDATA directly.
-impl TryFrom<String> for Rdata {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::from_base64(&value)
-    }
-}
-
-/// The write half: binding renders [`Rdata::to_base64`], the row form
-/// [`TryFrom<String>`] decodes.
+/// The row form (`dnssec_records.rdata`, `zone_journal.record_rdata`) is the
+/// wire bytes themselves, in a binary column.
 impl<DB: sqlx::Database> sqlx::Type<DB> for Rdata
 where
-    String: sqlx::Type<DB>,
+    Vec<u8>: sqlx::Type<DB>,
 {
     fn type_info() -> DB::TypeInfo {
-        <String as sqlx::Type<DB>>::type_info()
+        <Vec<u8> as sqlx::Type<DB>>::type_info()
     }
 
     fn compatible(ty: &DB::TypeInfo) -> bool {
-        <String as sqlx::Type<DB>>::compatible(ty)
+        <Vec<u8> as sqlx::Type<DB>>::compatible(ty)
     }
 }
 
 impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for Rdata
 where
-    String: sqlx::Encode<'q, DB>,
+    Vec<u8>: sqlx::Encode<'q, DB>,
 {
     fn encode_by_ref(
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        self.to_base64().encode_by_ref(buf)
+        self.0.encode_by_ref(buf)
+    }
+}
+
+impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for Rdata
+where
+    Vec<u8>: sqlx::Decode<'r, DB>,
+{
+    fn decode(
+        value: <DB as sqlx::Database>::ValueRef<'r>,
+    ) -> Result<Self, sqlx::error::BoxDynError> {
+        let bytes = <Vec<u8> as sqlx::Decode<'r, DB>>::decode(value)?;
+        Self::new(bytes).map_err(Into::into)
     }
 }
 

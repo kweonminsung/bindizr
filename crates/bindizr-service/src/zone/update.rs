@@ -42,9 +42,11 @@ pub(super) fn soa_replacement_changes(
             operation,
             record_name: OwnerName::apex(),
             record_type: JournalRecordType::Soa,
-            record_value: zone
-                .soa_presentation_rdata()
-                .map_err(ServiceError::invalid_zone_field)?,
+            record_value: Some(
+                zone.soa_presentation_rdata()
+                    .map_err(ServiceError::invalid_zone_field)?,
+            ),
+            record_rdata: None,
             record_ttl: zone.default_ttl,
             record_priority: None,
             derived: false,

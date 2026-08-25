@@ -21,8 +21,6 @@ pub struct DnssecRecord {
     /// RRSIG rows: the covered RR type; NULL otherwise.
     pub covered_record_type: Option<i32>,
     pub ttl: i32,
-    /// Wire-format RDATA; the row form is plain base64.
-    #[sqlx(try_from = "String")]
     pub rdata: Rdata,
     /// RRSIG rows: signature expiration, driving the re-signing schedule.
     pub expires_at: Option<DateTime<Utc>>,
@@ -40,7 +38,6 @@ pub struct DnssecRecordWithZone {
     #[sqlx(try_from = "i32")]
     pub record_type: DnssecRecordType,
     pub ttl: i32,
-    #[sqlx(try_from = "String")]
     pub rdata: Rdata,
     pub zone_id: i32,
     #[sqlx(try_from = "String")]

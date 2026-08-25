@@ -1,11 +1,14 @@
 use sqlx::FromRow;
 
 use crate::{
-    dns::name::OwnerName,
+    dns::{name::OwnerName, record::Rdata},
     model::{dnssec_record::DnssecRecordType, record::RecordType},
 };
 
 /// A single record add/delete change within a zone, used for IXFR.
+///
+/// Exactly one of `record_value` and `record_rdata` is set, matching
+/// `derived`; a CHECK constraint enforces it on the row.
 #[derive(Debug, Clone, FromRow)]
 pub struct ZoneChange {
     pub zone_id: i32,
@@ -16,12 +19,16 @@ pub struct ZoneChange {
     pub record_name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: JournalRecordType,
-    pub record_value: String,
+    /// User rows and SOA markers: the record's row-form value.
+    pub record_value: Option<String>,
+    /// Derived rows: the exact wire RDATA the signer produced — signatures
+    /// cover these bytes, so IXFR must emit them unre-encoded.
+    pub record_rdata: Option<Rdata>,
     pub record_ttl: i32,
     pub record_priority: Option<i32>,
-    /// Signer-generated DNSSEC change (RRSIG/NSEC/DNSKEY, wire-rdata encoded
-    /// value). IXFR emits these like any change; history reconstruction and
-    /// diffs skip them — the derived plane is re-signed, never restored.
+    /// Signer-generated DNSSEC change (RRSIG/NSEC/DNSKEY). IXFR emits these
+    /// like any change; history reconstruction and diffs skip them — the
+    /// derived plane is re-signed, never restored.
     pub derived: bool,
 }
 
