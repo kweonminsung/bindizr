@@ -109,18 +109,13 @@ pub struct EncodedRdata {
 
 impl EncodedRdata {
     /// Wire RDATA for stored record columns (records and journal rows share
-    /// this shape). `Ok(None)` means the type has no wire mapping here — the
-    /// `SOA` journal markers; the caller decides whether that is a skip or an
-    /// error.
-    ///
-    /// TXT is one opaque byte mapping for both stored forms: canonical RRset
-    /// order is a byte comparison, and mixing differently derived TXT values in
-    /// one RRset would not sort as one.
+    /// this shape). TXT stays one opaque byte mapping: canonical RRset order
+    /// is a byte comparison over the rdata.
     pub fn from_columns(
         record_type: &RecordType,
         value: &str,
         priority: Option<i32>,
-    ) -> Result<Option<EncodedRdata>, String> {
+    ) -> Result<EncodedRdata, String> {
         let rdata = match record_type {
             RecordType::A => {
                 let addr: Ipv4Addr = value
@@ -140,21 +135,22 @@ impl EncodedRdata {
             }
             RecordType::DS => DsRecordValue::parse(value)?.to_rdata()?,
             RecordType::MX => MxRecordValue::parse(value, priority)?.to_rdata()?,
-            RecordType::TXT => Rdata::new(match TxtRecordValue::from_encoded(value) {
-                // Operator-supplied raw rdata is passed through unchanged.
-                Some(raw) => raw.into_rdata(),
-                None => TxtRecordValue::from_string(value).into_rdata(),
-            })?,
-            RecordType::SOA => return Ok(None),
+            // Stored TXT is always the encoded form; every entry path writes
+            // it, so anything else here is corruption, not a plain string.
+            RecordType::TXT => Rdata::new(
+                TxtRecordValue::from_encoded(value)
+                    .ok_or_else(|| format!("stored TXT value is not in encoded form: {value}"))?
+                    .into_rdata(),
+            )?,
             RecordType::SRV => SrvRecordValue::parse(value, priority)?.to_rdata()?,
             RecordType::SSHFP => SshfpRecordValue::parse(value)?.to_rdata()?,
             RecordType::TLSA => TlsaRecordValue::parse(value)?.to_rdata()?,
         };
 
-        Ok(Some(Self {
+        Ok(Self {
             record_type: record_type.wire_type(),
             rdata,
-        }))
+        })
     }
 }
 

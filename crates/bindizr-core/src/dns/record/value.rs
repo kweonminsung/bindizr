@@ -55,12 +55,6 @@ pub(crate) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, St
         .map_err(|_| format!("{field} must be an unsigned 16-bit integer: {value}"))
 }
 
-pub(crate) fn parse_u32_record_field(field: &str, value: &str) -> Result<u32, String> {
-    value
-        .parse::<u32>()
-        .map_err(|_| format!("{field} must be an unsigned 32-bit integer: {value}"))
-}
-
 pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();
 

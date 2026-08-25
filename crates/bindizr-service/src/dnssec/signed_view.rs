@@ -36,7 +36,6 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     error::ServiceError,
-    log_warn,
     model::{
         dnssec_key::DnssecKey,
         dnssec_record::{DnssecRecord, DnssecRecordType},
@@ -482,19 +481,9 @@ fn build_signing_input(
     }
 
     for record in params.records {
-        let Some(EncodedRdata { record_type, rdata }) =
+        let EncodedRdata { record_type, rdata } =
             EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)
-                .map_err(signing_internal)?
-        else {
-            // The XFR encoder skips these too; signing them would put types in
-            // the chain that a transfer never carries.
-            log_warn!(
-                "Skipping record of unsupported type {} while signing zone {}",
-                record.record_type,
-                zone.name
-            );
-            continue;
-        };
+                .map_err(signing_internal)?;
         let data = UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
             .map_err(|e| signing_internal(format!("invalid record rdata: {}", e)))?;
         let owner = to_wire_name(record.name.to_wire(&zone.name)).map_err(signing_internal)?;

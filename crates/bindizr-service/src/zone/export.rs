@@ -10,11 +10,7 @@ use crate::{
     authorization::Caller,
     dnssec::rdata_presentation,
     error::ServiceError,
-    model::{
-        dnssec_record::DnssecRecord,
-        record::{Record, RecordType},
-        zone::Zone,
-    },
+    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
     repository::RepositoryService,
 };
 
@@ -92,11 +88,6 @@ impl ZoneService {
         });
 
         for record in &records {
-            // A stray SOA row (never created through the API) would duplicate
-            // the apex SOA above.
-            if record.record_type == RecordType::SOA {
-                continue;
-            }
             // Written straight into `out`: a zone can hold millions of records,
             // and `push_str(&format!(..))` would allocate a line at a time.
             let _ = writeln!(

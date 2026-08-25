@@ -196,6 +196,16 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
+    pub(super) async fn list_ds_names_without_ns_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<Vec<String>, ServiceError> {
+        get_record_repository()
+            .list_ds_names_without_ns_tx(tx, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
+    }
+
     pub(super) async fn list_records_by_names_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

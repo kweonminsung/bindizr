@@ -28,12 +28,32 @@ impl ZoneService {
         Self::save_version_tx(tx, zone, new_serial).await
     }
 
+    /// A DS names a child zone's key (RFC 4034, Section 5), so it may only
+    /// stand at a delegation: every name holding a DS must also hold NS.
+    async fn validate_delegations_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), ServiceError> {
+        let orphaned = RepositoryService::list_ds_names_without_ns_tx(tx, zone_id).await?;
+        if let Some(name) = orphaned.first() {
+            let name = if name.is_empty() { "@" } else { name };
+            return Err(ServiceError::record_conflict(format!(
+                "DS records at '{}' require a delegation NS RRset at the same name",
+                name
+            )));
+        }
+        Ok(())
+    }
+
     /// Save a version of the zone's SOA data for historical tracking.
+    /// Every mutation path ends here, so the cross-row invariants are
+    /// checked once, against the final state, order-independently.
     pub(crate) async fn save_version_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         serial: i32,
     ) -> Result<(), ServiceError> {
+        Self::validate_delegations_tx(tx, zone.id).await?;
         RepositoryService::upsert_zone_version_tx(
             tx,
             ZoneVersion {

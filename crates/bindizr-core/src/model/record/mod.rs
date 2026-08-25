@@ -7,8 +7,8 @@ use crate::dns::{
     name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
         ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DsRecordValue,
-        MxRecordValue, NsRecordValue, PtrRecordValue, SoaRecordValue, SrvRecordValue,
-        SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue,
+        MxRecordValue, NsRecordValue, PtrRecordValue, SrvRecordValue, SshfpRecordValue,
+        TlsaRecordValue, TxtContent, TxtRecordValue,
     },
 };
 
@@ -87,7 +87,6 @@ pub enum RecordType {
     MX,
     TXT,
     NS,
-    SOA,
     SRV,
     PTR,
     SSHFP,
@@ -145,7 +144,6 @@ impl std::str::FromStr for RecordType {
             "MX" => Ok(RecordType::MX),
             "TXT" => Ok(RecordType::TXT),
             "NS" => Ok(RecordType::NS),
-            "SOA" => Ok(RecordType::SOA),
             "SRV" => Ok(RecordType::SRV),
             "PTR" => Ok(RecordType::PTR),
             "SSHFP" => Ok(RecordType::SSHFP),
@@ -167,7 +165,6 @@ impl RecordType {
             RecordType::MX => "MX",
             RecordType::TXT => "TXT",
             RecordType::NS => "NS",
-            RecordType::SOA => "SOA",
             RecordType::SRV => "SRV",
             RecordType::PTR => "PTR",
             RecordType::SSHFP => "SSHFP",
@@ -182,7 +179,6 @@ impl RecordType {
             RecordType::NS => 2,
             RecordType::CNAME => 5,
             RecordType::DS => 43,
-            RecordType::SOA => 6,
             RecordType::PTR => 12,
             RecordType::MX => 15,
             RecordType::TXT => 16,
@@ -209,10 +205,11 @@ impl RecordType {
             RecordType::CNAME => CnameRecordValue::parse(value).map(|_| ()),
             RecordType::DS => DsRecordValue::parse(value)?.validate(),
             RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
-            // Stored TXT bytes are unconstrained; encoded_value guards entry.
-            RecordType::TXT => Ok(()),
+            // Stored TXT is always the encoded form.
+            RecordType::TXT => TxtRecordValue::from_encoded(value)
+                .map(|_| ())
+                .ok_or_else(|| format!("stored TXT value is not in encoded form: {value}")),
             RecordType::NS => NsRecordValue::parse(value).map(|_| ()),
-            RecordType::SOA => SoaRecordValue::parse(value)?.validate(),
             RecordType::SRV => SrvRecordValue::parse(value, priority)?.validate(),
             RecordType::PTR => PtrRecordValue::parse(value).map(|_| ()),
             RecordType::SSHFP => SshfpRecordValue::parse(value)?.validate(),
@@ -261,9 +258,6 @@ impl RecordType {
             RecordType::NS => NsRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
-            RecordType::SOA => SoaRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or(Cow::Borrowed(value)),
             RecordType::SRV => SrvRecordValue::parse(value, fallback_priority)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
@@ -306,11 +300,6 @@ impl RecordType {
             }
             RecordType::TXT => TxtRecordValue::parse(value).map(TxtRecordValue::into_encoded),
             RecordType::NS => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::SOA => {
-                let parsed = SoaRecordValue::parse(trimmed)?;
-                parsed.validate()?;
-                Ok(parsed.canonical())
-            }
             RecordType::SRV => {
                 let parsed = SrvRecordValue::parse(trimmed, priority)?;
                 parsed.validate()?;

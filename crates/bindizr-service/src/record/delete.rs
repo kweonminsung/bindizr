@@ -1,13 +1,7 @@
-use bindizr_core::{
-    dns::name::{OwnerName, ZoneName},
-    model::record::RecordType,
-};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_db::repository::LockLevel;
 
-use super::{
-    RecordService,
-    validation::{validate_delete_constraints, validate_delete_keeps_delegations},
-};
+use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
@@ -96,23 +90,6 @@ impl RecordService {
             let new_serial = generate_serial(Some(zone.serial))?;
 
             validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
-            if existing_record.record_type == RecordType::NS {
-                let same_name = RepositoryService::list_records_by_name_tx(
-                    &mut tx,
-                    zone.id,
-                    &existing_record.name,
-                    LockLevel::Exclusive,
-                )
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to load zone records: {}", e);
-                    ServiceError::internal("Failed to delete record".to_string())
-                })?;
-                validate_delete_keeps_delegations(
-                    &same_name,
-                    std::slice::from_ref(&existing_record),
-                )?;
-            }
 
             Self::delete_records_with_changes_tx(
                 &mut tx,

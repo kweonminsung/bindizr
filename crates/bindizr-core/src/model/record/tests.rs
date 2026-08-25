@@ -32,22 +32,6 @@ fn values_equal_normalizes_name_like_values() {
 }
 
 #[test]
-fn values_equal_normalizes_soa_records() {
-    assert!(RecordType::SOA.values_equal(
-        "NS1.Example.COM hostmaster.example.com 2024010101 7200 3600 1209600 3600",
-        None,
-        "ns1.example.com. hostmaster.example.com. 2024010101 7200 3600 1209600 3600",
-        None
-    ));
-    assert!(!RecordType::SOA.values_equal(
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600",
-        None,
-        "ns1.example.com hostmaster.example.com 2024010102 7200 3600 1209600 3600",
-        None
-    ));
-}
-
-#[test]
 fn encoded_value_produces_one_spelling_per_rdata() {
     assert_eq!(
         RecordType::AAAA
@@ -72,15 +56,6 @@ fn encoded_value_produces_one_spelling_per_rdata() {
             .encoded_value("5 5060 Sip.Example.Com.", Some(10))
             .as_deref(),
         Ok("5 5060 sip.example.com.")
-    );
-    assert_eq!(
-        RecordType::SOA
-            .encoded_value(
-                "NS1.Example.COM hostmaster.example.com 1 7200 3600 1209600 3600",
-                None
-            )
-            .as_deref(),
-        Ok("ns1.example.com. hostmaster.example.com. 1 7200 3600 1209600 3600")
     );
 }
 

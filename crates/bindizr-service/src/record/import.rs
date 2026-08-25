@@ -302,9 +302,6 @@ impl RecordService {
             // violations are caught without writing anything. Simulated records
             // are indexed by name so each check scans only same-name candidates.
             let t = Instant::now();
-            // A DS requires the delegation NS at its name, which the same file
-            // may add — and exports sort DS before NS. Validate DS rows last.
-            adds.sort_by_key(|add| add.prepared.record_type == RecordType::DS);
             let del_ids: HashSet<i32> = dels.iter().chain(&ttl_dels).map(|d| d.id).collect();
             let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
                 HashMap::with_capacity(existing_records.len());
@@ -342,8 +339,8 @@ impl RecordService {
                     Err(e) => return Err(e),
                 }
             }
-            // A replace can drop a delegation NS while its DS survives
-            // unchanged, so the coupling is re-checked on the final state.
+            // Mirror of the version-time delegation check, so a dry run
+            // reports the violation per name instead of failing the apply.
             for (name, rows) in &simulated_by_name {
                 if rows.iter().any(|r| r.record_type == RecordType::DS)
                     && !rows.iter().any(|r| r.record_type == RecordType::NS)

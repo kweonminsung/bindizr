@@ -11,7 +11,6 @@ use crate::{
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     model::{
-        record::RecordType,
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
@@ -42,7 +41,7 @@ pub(super) fn soa_replacement_changes(
             serial: new_serial,
             operation,
             record_name: OwnerName::apex(),
-            record_type: JournalRecordType::User(RecordType::SOA),
+            record_type: JournalRecordType::Soa,
             record_value: zone
                 .soa_presentation_rdata()
                 .map_err(ServiceError::invalid_zone_field)?,

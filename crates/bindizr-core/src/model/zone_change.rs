@@ -59,6 +59,9 @@ impl TryFrom<String> for ChangeOperation {
 pub enum JournalRecordType {
     User(RecordType),
     Derived(DnssecRecordType),
+    /// Apex SOA transition marker; the SOA itself lives in zone columns and
+    /// `zone_versions`, never in a record row.
+    Soa,
 }
 
 impl JournalRecordType {
@@ -66,6 +69,7 @@ impl JournalRecordType {
         match self {
             JournalRecordType::User(record_type) => record_type.as_str(),
             JournalRecordType::Derived(record_type) => record_type.as_str(),
+            JournalRecordType::Soa => "SOA",
         }
     }
 }
@@ -80,6 +84,9 @@ impl TryFrom<String> for JournalRecordType {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.eq_ignore_ascii_case("SOA") {
+            return Ok(JournalRecordType::Soa);
+        }
         if let Ok(record_type) = value.parse::<RecordType>() {
             return Ok(JournalRecordType::User(record_type));
         }

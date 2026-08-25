@@ -381,10 +381,6 @@ fn rr_to_record_value(
                 Some(i32::from(data.priority())),
             ))
         }
-        _ => Err(UpdateError::Refused(format!(
-            "unsupported rr type: {}",
-            update.rr_type
-        ))),
     }
 }
 

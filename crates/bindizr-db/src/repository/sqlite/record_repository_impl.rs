@@ -230,6 +230,24 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(out)
     }
 
+    async fn list_ds_names_without_ns_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<Vec<String>, DatabaseError> {
+        let sqlite_tx = tx.as_sqlite()?;
+
+        let names = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT name FROM records WHERE zone_id = ? AND record_type = 'DS' AND name NOT IN (SELECT name FROM records WHERE zone_id = ? AND record_type = 'NS')",
+        )
+        .bind(zone_id)
+        .bind(zone_id)
+        .fetch_all(&mut **sqlite_tx)
+        .await?;
+
+        Ok(names)
+    }
+
     async fn list_by_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

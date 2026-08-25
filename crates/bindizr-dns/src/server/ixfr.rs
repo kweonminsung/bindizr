@@ -358,5 +358,7 @@ fn add_change(
             change.record_ttl,
             change.record_priority,
         ),
+        // The delta's SOA boundaries come from the version rows above.
+        JournalRecordType::Soa => Ok(()),
     }
 }

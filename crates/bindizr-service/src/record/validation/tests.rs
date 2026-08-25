@@ -1,8 +1,11 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::{
+    name::{OwnerName, ZoneName},
+    record::TxtRecordValue,
+};
 use chrono::Utc;
 
 use super::{
-    normalize_record_owner_name, validate_delete_constraints, validate_delete_keeps_delegations,
+    normalize_record_owner_name, validate_delete_constraints,
     validate_record_add_constraints_normalized, validate_record_value,
 };
 use crate::{
@@ -128,47 +131,6 @@ fn validate_srv_value_rejects_invalid_forms() {
     }
 }
 
-#[test]
-fn validate_soa_value_accepts_well_formed_records() {
-    assert!(
-        validate_record_value(
-            &RecordType::SOA,
-            "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600",
-            None,
-        )
-        .is_ok()
-    );
-    assert!(
-        validate_record_value(
-            &RecordType::SOA,
-            "ns1.example.com. hostmaster.example.com. 0 0 0 0 0",
-            None,
-        )
-        .is_ok()
-    );
-}
-
-#[test]
-fn validate_soa_value_rejects_invalid_forms() {
-    for value in [
-        "",
-        "ns1.example.com hostmaster.example.com",
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600",
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600 extra",
-        "ns1.example.com hostmaster.example.com serial 7200 3600 1209600 3600",
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 -1",
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 4294967296",
-        "bad..example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600",
-        "ns1.example.com bad..example.com 2024010101 7200 3600 1209600 3600",
-        ". . 2024010101 7200 3600 1209600 3600",
-    ] {
-        assert!(
-            validate_record_value(&RecordType::SOA, value, None).is_err(),
-            "SOA value {value:?} should be rejected"
-        );
-    }
-}
-
 /// Validate an add whose owner name is already in stored form.
 fn validate_add(
     zone_records: &[Record],
@@ -190,43 +152,17 @@ fn validate_add(
 }
 
 #[test]
-fn add_couples_ds_to_an_existing_delegation() {
+fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
     const DS_VALUE: &str =
         "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
 
     let at_apex = validate_add(&[], "", &RecordType::DS, DS_VALUE, RRSET_TTL, None);
     assert_eq!(at_apex.unwrap_err().code, ErrorCode::InvalidRecordName);
 
+    // The NS coupling is a final-state rule, enforced when the zone is
+    // versioned — a lone DS passes the per-add shape checks.
     let without_ns = validate_add(&[], "sub", &RecordType::DS, DS_VALUE, RRSET_TTL, None);
-    assert_eq!(without_ns.unwrap_err().code, ErrorCode::RecordConflict);
-
-    let delegation_ns = test_record(1, "sub", RecordType::NS, "ns.sub-host.example.com", None);
-    let with_ns = validate_add(
-        &[delegation_ns],
-        "sub",
-        &RecordType::DS,
-        DS_VALUE,
-        RRSET_TTL,
-        None,
-    );
-    assert!(with_ns.is_ok());
-}
-
-#[test]
-fn delete_keeps_a_ds_secured_delegation() {
-    let ns = test_record(1, "sub", RecordType::NS, "ns.sub-host.example.com", None);
-    let ds = test_record(2, "sub", RecordType::DS, "12345 13 2 4B9B", None);
-    let rows = [ns.clone(), ds.clone()];
-
-    let last_ns = validate_delete_keeps_delegations(&rows, std::slice::from_ref(&ns));
-    assert_eq!(last_ns.unwrap_err().code, ErrorCode::RecordConflict);
-
-    // Dropping the whole delegation in one operation stays allowed.
-    assert!(validate_delete_keeps_delegations(&rows, &[ns.clone(), ds.clone()]).is_ok());
-
-    let second_ns = test_record(3, "sub", RecordType::NS, "ns2.sub-host.example.com", None);
-    let rows = [ns.clone(), second_ns, ds];
-    assert!(validate_delete_keeps_delegations(&rows, std::slice::from_ref(&ns)).is_ok());
+    assert!(without_ns.is_ok());
 }
 
 #[test]
@@ -364,11 +300,12 @@ fn add_enforces_one_ttl_per_rrset() {
     assert!(matching_ttl.is_ok());
 
     // A different type at the same owner name is a different RRset.
+    let encoded_txt = TxtRecordValue::from_string("hello").into_encoded();
     let other_rrset = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
         &RecordType::TXT,
-        "hello",
+        &encoded_txt,
         600,
         None,
     );
@@ -377,11 +314,12 @@ fn add_enforces_one_ttl_per_rrset() {
 
 #[test]
 fn validate_record_value_rejects_priority_on_types_without_one() {
+    let encoded_txt = TxtRecordValue::from_string("hello").into_encoded();
     for (record_type, value) in [
         (RecordType::A, "192.0.2.1"),
         (RecordType::AAAA, "2001:db8::1"),
         (RecordType::CNAME, "target.example.com"),
-        (RecordType::TXT, "hello"),
+        (RecordType::TXT, encoded_txt.as_str()),
         (RecordType::NS, "ns1.example.com"),
         (RecordType::PTR, "host.example.com"),
     ] {
@@ -394,17 +332,8 @@ fn validate_record_value_rejects_priority_on_types_without_one() {
 }
 
 #[test]
-fn validate_delete_constraints_protects_soa_and_mname() {
+fn validate_delete_constraints_protects_the_mname_ns() {
     let zone = test_zone();
-
-    let soa = test_record(
-        1,
-        "",
-        RecordType::SOA,
-        "ns1.example.com hostmaster.example.com",
-        None,
-    );
-    assert!(validate_delete_constraints(&zone, &[soa]).is_err());
 
     let mname = test_record(2, "", RecordType::NS, "ns1.example.com.", None);
     assert!(validate_delete_constraints(&zone, &[mname]).is_err());

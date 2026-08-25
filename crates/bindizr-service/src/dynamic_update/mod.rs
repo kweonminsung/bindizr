@@ -22,9 +22,7 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    record::{
-        AddOutcome, RecordService, validate_delete_constraints, validate_delete_keeps_delegations,
-    },
+    record::{AddOutcome, RecordService, validate_delete_constraints},
     repository::RepositoryService,
     serial::generate_serial,
     zone::{ZoneService, tsig_policy},
@@ -396,10 +394,6 @@ async fn delete_matching(
             continue;
         }
 
-        if record.record_type == RecordType::SOA {
-            continue;
-        }
-
         matched.push(record.clone());
     }
 
@@ -408,8 +402,6 @@ async fn delete_matching(
     }
 
     validate_delete_constraints(zone, &matched)
-        .map_err(|e| DynamicUpdateError::Refused(e.to_string()))?;
-    validate_delete_keeps_delegations(&zone_records, &matched)
         .map_err(|e| DynamicUpdateError::Refused(e.to_string()))?;
 
     RecordService::delete_records_with_changes_tx(tx, zone.id, new_serial, &matched).await?;

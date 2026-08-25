@@ -1,8 +1,7 @@
 //! SOA record values, including the RNAME mailbox <-> email conversions.
 
-use super::value::{parse_u32_record_field, validate_domain_record_value};
 use crate::dns::{
-    name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, encode_name, to_fqdn_lowercase},
+    name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, encode_name},
     record::Rdata,
 };
 
@@ -19,49 +18,6 @@ pub struct SoaRecordValue<'a> {
 }
 
 impl<'a> SoaRecordValue<'a> {
-    pub(crate) fn parse(value: &'a str) -> Result<Self, String> {
-        // The trailing `None` rejects a value with more than seven fields.
-        let mut fields = value.split_whitespace();
-        match (
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-        ) {
-            (
-                Some(mname),
-                Some(rname),
-                Some(serial),
-                Some(refresh),
-                Some(retry),
-                Some(expire),
-                Some(minimum),
-                None,
-            ) => Ok(Self {
-                mname,
-                rname,
-                serial: parse_u32_record_field("SOA serial", serial)?,
-                refresh: parse_u32_record_field("SOA refresh", refresh)?,
-                retry: parse_u32_record_field("SOA retry", retry)?,
-                expire: parse_u32_record_field("SOA expire", expire)?,
-                minimum: parse_u32_record_field("SOA minimum", minimum)?,
-            }),
-            _ => Err(format!(
-                "SOA record value must be '<mname> <rname> <serial> <refresh> <retry> <expire> <minimum>': {value}"
-            )),
-        }
-    }
-
-    pub(crate) fn validate(&self) -> Result<(), String> {
-        validate_domain_record_value("SOA mname", self.mname)?;
-        validate_domain_record_value("SOA rname", self.rname)?;
-        Ok(())
-    }
-
     /// The wire-format RDATA of this SOA value.
     pub fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = encode_name(self.mname)?;
@@ -76,19 +32,6 @@ impl<'a> SoaRecordValue<'a> {
             rdata.extend_from_slice(&field.to_be_bytes());
         }
         Rdata::new(rdata)
-    }
-
-    pub(crate) fn canonical(&self) -> String {
-        format!(
-            "{} {} {} {} {} {} {}",
-            to_fqdn_lowercase(self.mname),
-            to_fqdn_lowercase(self.rname),
-            self.serial,
-            self.refresh,
-            self.retry,
-            self.expire,
-            self.minimum,
-        )
     }
 }
 

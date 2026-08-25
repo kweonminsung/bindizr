@@ -3,7 +3,7 @@
 
 use bindizr_core::dns::{
     name::{OwnerName, ParseNameError, ZoneName, encode_name, to_fqdn},
-    record::{EncodedRdata, Rdata, SoaRecordValue},
+    record::{EncodedRdata, Rdata, SoaRecordValue, TxtRecordValue},
 };
 use domain::{
     base::{
@@ -17,7 +17,6 @@ use domain::{
 
 use crate::{
     error::XfrError,
-    log_warn,
     model::{
         dnssec_record::DnssecRecord,
         record::{Record, RecordType},
@@ -27,6 +26,10 @@ use crate::{
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix).
 const DNS_TCP_MAX_SIZE: usize = 65535;
+
+/// RR TYPE number of SOA (RFC 1035); SOA never appears as a stored record
+/// row, so `RecordType` does not spell it.
+const SOA_WIRE_TYPE: u16 = 6;
 
 /// What [`DnsMessageBuilder::add_raw_rdata`] accepts as its owner: a parsed
 /// name, or a typed name's wire bytes still carrying their encoding error.
@@ -73,7 +76,7 @@ impl DnsMessageBuilder {
         let rdata = zone.soa_rdata(serial).map_err(XfrError::ProtocolError)?;
         self.add_raw_rdata(
             zone.name.to_wire(),
-            RecordType::SOA.wire_type(),
+            SOA_WIRE_TYPE,
             zone.default_ttl as u32,
             rdata,
         )
@@ -94,7 +97,7 @@ impl DnsMessageBuilder {
         .map_err(XfrError::ProtocolError)?;
         self.add_raw_rdata(
             zone.name.to_wire(),
-            RecordType::SOA.wire_type(),
+            SOA_WIRE_TYPE,
             zone.default_ttl as u32,
             rdata,
         )
@@ -121,7 +124,7 @@ impl DnsMessageBuilder {
         // IXFR SOA owner is the transfer QNAME.
         self.add_raw_rdata(
             self.qname.clone(),
-            RecordType::SOA.wire_type(),
+            SOA_WIRE_TYPE,
             soa.default_ttl as u32,
             rdata,
         )
@@ -137,15 +140,8 @@ impl DnsMessageBuilder {
         priority: Option<i32>,
     ) -> Result<(), XfrError> {
         match EncodedRdata::from_columns(record_type, value, priority) {
-            Ok(Some(EncodedRdata { record_type, rdata })) => {
+            Ok(EncodedRdata { record_type, rdata }) => {
                 self.add_raw_rdata(parse_name(name)?, record_type, ttl, rdata)
-            }
-            Ok(None) => {
-                log_warn!(
-                    "Dropping record of unsupported type {} from transfer",
-                    record_type
-                );
-                Ok(())
             }
             Err(e) => Err(XfrError::ProtocolError(e)),
         }
@@ -171,7 +167,7 @@ impl DnsMessageBuilder {
             &version_name,
             zone.default_ttl as u32,
             &RecordType::TXT,
-            "2",
+            &TxtRecordValue::from_string("2").into_encoded(),
             None,
         )
     }
@@ -221,20 +217,10 @@ impl DnsMessageBuilder {
         ttl: i32,
         priority: Option<i32>,
     ) -> Result<(), XfrError> {
-        match EncodedRdata::from_columns(record_type, value, priority)
-            .map_err(XfrError::ProtocolError)?
-        {
-            Some(EncodedRdata { record_type, rdata }) => {
-                self.add_raw_rdata(name.to_wire(zone_name), record_type, ttl as u32, rdata)
-            }
-            None => {
-                log_warn!(
-                    "Dropping record of unsupported type {} from transfer",
-                    record_type
-                );
-                Ok(())
-            }
-        }
+        let EncodedRdata { record_type, rdata } =
+            EncodedRdata::from_columns(record_type, value, priority)
+                .map_err(XfrError::ProtocolError)?;
+        self.add_raw_rdata(name.to_wire(zone_name), record_type, ttl as u32, rdata)
     }
 
     /// Adds a derived DNSSEC record; its RDATA is stored in wire form.

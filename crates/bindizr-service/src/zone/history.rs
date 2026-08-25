@@ -108,15 +108,12 @@ async fn reconstruct_records_at_serial(
 
     // Changes arrive ordered by (serial, id) ascending; undo them newest-first.
     for change in changes.iter().rev() {
-        // Derived DNSSEC rows are not user data: rollback re-signs the
-        // restored plane instead of restoring old signatures. SOA markers are
-        // zone metadata the version row already carries.
+        // Derived DNSSEC rows are not user data (rollback re-signs the
+        // restored plane), and SOA markers are zone metadata the version row
+        // already carries.
         let JournalRecordType::User(record_type) = &change.record_type else {
             continue;
         };
-        if *record_type == RecordType::SOA {
-            continue;
-        }
         let record_type = record_type.clone();
         let key = match_key(
             &change.record_name,
@@ -530,9 +527,8 @@ impl ZoneService {
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
                         // The DEL + ADD pair preserves the record's identity, so
-                        // the mname delete protection cannot be violated;
-                        // SOA lives in the zone's own fields.
-                        if record.ttl != target.ttl && record.record_type != RecordType::SOA {
+                        // the mname delete protection cannot be violated.
+                        if record.ttl != target.ttl {
                             dels.push(record.clone());
                             to_add.push(target);
                         } else {
@@ -585,10 +581,7 @@ impl ZoneService {
             }
 
             // Validate the adds in-memory against the post-delete record set
-            // (mirrors the import reconcile). A DS requires the delegation NS
-            // it may restore alongside, and the map yields adds in hash order —
-            // validate DS rows last.
-            to_add.sort_by_key(|target| target.record_type == RecordType::DS);
+            // (mirrors the import reconcile).
             let mut records_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
             for record in &current_records {
                 if deleted_ids.contains(&record.id) {

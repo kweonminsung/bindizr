@@ -74,12 +74,6 @@ pub(crate) fn validate_record_add_constraints_normalized(
     priority: Option<i32>,
     except_record_id: Option<i32>,
 ) -> Result<(), ServiceError> {
-    if *record_type == RecordType::SOA {
-        return Err(ServiceError::invalid_input(
-            "Cannot create SOA record manually".to_string(),
-        ));
-    }
-
     validate_record_value(record_type, value, priority)?;
 
     if *record_type == RecordType::CNAME && stored_name.is_apex() {
@@ -140,24 +134,13 @@ pub(crate) fn validate_record_add_constraints_normalized(
         }
     }
 
-    if *record_type == RecordType::DS {
-        // A DS names a child zone's key (RFC 4034, Section 5); the zone's
-        // own DS lives in its parent.
-        if stored_name.is_apex() {
-            return Err(ServiceError::invalid_record_name(
-                "DS records secure a child delegation; the zone's own DS belongs in the parent zone"
-                    .to_string(),
-            ));
-        }
-        let has_delegation = zone_records
-            .iter()
-            .any(|r| r.name == *stored_name && r.record_type == RecordType::NS);
-        if !has_delegation {
-            return Err(ServiceError::record_conflict(format!(
-                "DS record '{}' requires a delegation NS RRset at the same name; create the NS records first",
-                stored_name
-            )));
-        }
+    // A DS names a child zone's key (RFC 4034, Section 5); the zone's own
+    // DS lives in its parent. The NS coupling is checked at versioning.
+    if *record_type == RecordType::DS && stored_name.is_apex() {
+        return Err(ServiceError::invalid_record_name(
+            "DS records secure a child delegation; the zone's own DS belongs in the parent zone"
+                .to_string(),
+        ));
     }
 
     // RFC 2181, Section 5.2: one TTL per RRset.
@@ -174,50 +157,11 @@ pub(crate) fn validate_record_add_constraints_normalized(
     Ok(())
 }
 
-/// Removing the last NS at a name while a DS survives there would leave the
-/// DS at a non-delegation name (RFC 4035, Section 2.4), which the add path
-/// refuses to create. `zone_records` must cover the deleted names.
-pub(crate) fn validate_delete_keeps_delegations(
-    zone_records: &[Record],
-    deleting_records: &[Record],
-) -> Result<(), ServiceError> {
-    let deleted_ids: std::collections::HashSet<i32> =
-        deleting_records.iter().map(|r| r.id).collect();
-    for deleted in deleting_records {
-        if deleted.record_type != RecordType::NS {
-            continue;
-        }
-        let remaining = |record_type: &RecordType| {
-            zone_records.iter().any(|r| {
-                r.name == deleted.name
-                    && r.record_type == *record_type
-                    && !deleted_ids.contains(&r.id)
-            })
-        };
-        if !remaining(&RecordType::NS) && remaining(&RecordType::DS) {
-            return Err(ServiceError::record_conflict(format!(
-                "delegation NS '{}' still secures DS records; delete the DS records first",
-                deleted.name
-            )));
-        }
-    }
-    Ok(())
-}
-
 /// Reject deletions of the SOA record or the NS record referenced by `mname`.
 pub(crate) fn validate_delete_constraints(
     zone: &Zone,
     deleting_records: &[Record],
 ) -> Result<(), ServiceError> {
-    if deleting_records
-        .iter()
-        .any(|r| r.record_type == RecordType::SOA)
-    {
-        return Err(ServiceError::invalid_input(
-            "Cannot delete SOA record".to_string(),
-        ));
-    }
-
     for record in deleting_records {
         if zone.is_mname(&record.record_type, &record.name, &record.value) {
             return Err(ServiceError::invalid_input(
@@ -236,14 +180,6 @@ pub(super) fn validate_record_update_constraints_normalized(
     existing_record: &Record,
     updated_record: &Record,
 ) -> Result<(), ServiceError> {
-    // SOA is managed via the zone's own fields and cannot be set on a record.
-    if updated_record.record_type == RecordType::SOA {
-        log_error!("Cannot update to SOA record type");
-        return Err(ServiceError::invalid_input(
-            "Cannot update to SOA record type".to_string(),
-        ));
-    }
-
     validate_record_add_constraints_normalized(
         zone_records,
         &updated_record.name,

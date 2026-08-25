@@ -256,14 +256,8 @@ impl RecordService {
             let timing_enabled = log_debug_enabled!();
             let mut normalize_dur = std::time::Duration::ZERO;
             let mut validate_dur = std::time::Duration::ZERO;
-            // A DS validates against the delegation NS the same batch may
-            // carry, so DS items are checked last; `slots` keeps the response
-            // in request order.
-            let mut order: Vec<usize> = (0..prepared.len()).collect();
-            order.sort_by_key(|&i| prepared[i].record_type == RecordType::DS);
-            let mut slots: Vec<Option<Record>> = vec![None; prepared.len()];
-            for &index in &order {
-                let prepared_record = &prepared[index];
+            let mut to_insert = Vec::with_capacity(prepared.len());
+            for prepared_record in &prepared {
                 let t = timing_enabled.then(Instant::now);
                 let owner_name =
                     normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
@@ -301,12 +295,8 @@ impl RecordService {
                     created_at: Utc::now(),
                 };
                 same_name.push(record.clone());
-                slots[index] = Some(record);
+                to_insert.push(record);
             }
-            let to_insert: Vec<Record> = slots
-                .into_iter()
-                .map(|slot| slot.expect("every batch index is validated exactly once"))
-                .collect();
             timings.normalize_ms = duration_ms(normalize_dur);
             timings.validate_ms = duration_ms(validate_dur);
 
