@@ -249,6 +249,7 @@ pub(crate) async fn start_dnssec_rollover(
         ),
         responses(
             (status = 200, description = "Rollover advanced, new key promoted", body = DnssecStatusResponse),
+            (status = 400, description = "Bad request, the rollover is ZSK-only (no DS to confirm) or the publish hold-down has not passed", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),

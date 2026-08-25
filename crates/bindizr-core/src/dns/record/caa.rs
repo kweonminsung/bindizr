@@ -11,17 +11,18 @@ pub(crate) struct CaaRecordValue<'a> {
 
 impl<'a> CaaRecordValue<'a> {
     /// The value is `<flags> <tag> <value>`; the value keeps its surrounding
-    /// quotes optional, as presentation form allows both.
+    /// quotes optional, as presentation form allows both. Fields may be
+    /// separated by runs of whitespace, as aligned zone files spell them.
     pub(crate) fn parse(value: &'a str) -> Result<Self, String> {
-        let mut fields = value
-            .splitn(3, char::is_whitespace)
-            .filter(|f| !f.is_empty());
-        let (Some(flags), Some(tag), Some(rest)) = (fields.next(), fields.next(), fields.next())
-        else {
-            return Err(format!(
-                "CAA record value must be '<flags> <tag> <value>': {value}"
-            ));
-        };
+        let err = || format!("CAA record value must be '<flags> <tag> <value>': {value}");
+        let (flags, rest) = value
+            .trim()
+            .split_once(char::is_whitespace)
+            .ok_or_else(err)?;
+        let (tag, rest) = rest
+            .trim_start()
+            .split_once(char::is_whitespace)
+            .ok_or_else(err)?;
 
         Ok(Self {
             flags: parse_u8_record_field("CAA flags", flags)?,
@@ -105,6 +106,12 @@ mod tests {
         assert_eq!(quoted.canonical(), "0 issue \"letsencrypt.org\"");
         let bare = CaaRecordValue::parse("0 ISSUE letsencrypt.org").unwrap();
         assert_eq!(bare.canonical(), "0 issue \"letsencrypt.org\"");
+    }
+
+    #[test]
+    fn parse_accepts_repeated_whitespace_between_fields() {
+        let spaced = CaaRecordValue::parse("  0  issue \t \"letsencrypt.org\"  ").unwrap();
+        assert_eq!(spaced.canonical(), "0 issue \"letsencrypt.org\"");
     }
 
     #[test]
