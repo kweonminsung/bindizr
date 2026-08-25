@@ -1,7 +1,10 @@
 //! CAA record values (RFC 8659): which certificate authorities may issue for
 //! a name.
 
-use super::{Rdata, value::parse_u8_record_field};
+use super::{
+    Rdata,
+    value::{MAX_RECORD_RDATA, parse_u8_record_field},
+};
 
 pub(crate) struct CaaRecordValue<'a> {
     flags: u8,
@@ -53,12 +56,13 @@ impl<'a> CaaRecordValue<'a> {
         if self.value.chars().any(|c| c.is_control()) {
             return Err("CAA value must not contain control characters".to_string());
         }
-        // RDLENGTH is 16 bits (RFC 1035, Section 4.1.3); flags and the
-        // length-prefixed tag precede the value.
-        if self.value.len() > 65_533 - self.tag.len() {
+        // Bounded so the record fits one transfer message beside the flags and
+        // length-prefixed tag; enforced here so a stored row cannot poison an AXFR.
+        let max_value = MAX_RECORD_RDATA - 2 - self.tag.len();
+        if self.value.len() > max_value {
             return Err(format!(
                 "CAA value must be at most {} bytes, got {}",
-                65_533 - self.tag.len(),
+                max_value,
                 self.value.len()
             ));
         }

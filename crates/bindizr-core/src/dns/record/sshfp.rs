@@ -3,7 +3,7 @@
 
 use super::{
     Rdata,
-    value::{hex_upper, parse_hex_record_field, parse_u8_record_field},
+    value::{MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field},
 };
 
 pub(crate) struct SshfpRecordValue {
@@ -46,11 +46,12 @@ impl SshfpRecordValue {
                 self.fingerprint.len()
             ));
         }
-        // RDLENGTH is 16 bits (RFC 1035, Section 4.1.3); 2 bytes are fixed
-        // fields. Enforced here so a stored row cannot poison a later AXFR.
-        if self.fingerprint.len() > 65_533 {
+        // Bounded so the record fits one transfer message beside its 2 fixed
+        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
+        const MAX_FINGERPRINT: usize = MAX_RECORD_RDATA - 2;
+        if self.fingerprint.len() > MAX_FINGERPRINT {
             return Err(format!(
-                "SSHFP fingerprint must be at most 65533 bytes, got {}",
+                "SSHFP fingerprint must be at most {MAX_FINGERPRINT} bytes, got {}",
                 self.fingerprint.len()
             ));
         }

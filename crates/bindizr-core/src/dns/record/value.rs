@@ -1,10 +1,20 @@
 //! Shared field parsing/validation helpers for stored record values.
 
-use crate::dns::name::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label};
+use crate::dns::{
+    DNS_TCP_MAX_SIZE,
+    name::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label},
+};
 
 /// Priority an MX or SRV row takes when its priority column is NULL; served
 /// and compared as this value, so both types must agree on it.
 pub(crate) const DEFAULT_PRIORITY: u16 = 10;
+
+/// Maximum RDATA bytes for one stored record: the TCP message limit less the
+/// header and worst-case question and answer fields (wire names take
+/// `MAX_DOMAIN_LEN` + 2), so any accepted record fits a single-answer
+/// transfer message.
+pub(crate) const MAX_RECORD_RDATA: usize =
+    DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10);
 
 pub(crate) fn parse_optional_u16_record_field(
     field: &str,

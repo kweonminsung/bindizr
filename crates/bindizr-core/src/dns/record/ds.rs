@@ -3,7 +3,10 @@
 
 use super::{
     Rdata,
-    value::{hex_upper, parse_hex_record_field, parse_u8_record_field, parse_u16_record_field},
+    value::{
+        MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field,
+        parse_u16_record_field,
+    },
 };
 
 pub(crate) struct DsRecordValue {
@@ -52,11 +55,12 @@ impl DsRecordValue {
                 self.digest.len()
             ));
         }
-        // RDLENGTH is 16 bits (RFC 1035, Section 4.1.3); 4 bytes are fixed
-        // fields. Enforced here so a stored row cannot poison a later AXFR.
-        if self.digest.len() > 65_531 {
+        // Bounded so the record fits one transfer message beside its 4 fixed
+        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
+        const MAX_DIGEST: usize = MAX_RECORD_RDATA - 4;
+        if self.digest.len() > MAX_DIGEST {
             return Err(format!(
-                "DS digest must be at most 65531 bytes, got {}",
+                "DS digest must be at most {MAX_DIGEST} bytes, got {}",
                 self.digest.len()
             ));
         }

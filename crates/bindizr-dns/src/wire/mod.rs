@@ -2,6 +2,7 @@
 //! record/SOA serialization.
 
 use bindizr_core::dns::{
+    DNS_TCP_MAX_SIZE,
     name::{OwnerName, ParseNameError, ZoneName, encode_name, to_fqdn},
     record::{EncodedRdata, Rdata, SoaRecordValue, TxtRecordValue},
 };
@@ -23,9 +24,6 @@ use crate::{
         zone::Zone,
     },
 };
-
-/// Maximum size of a DNS message carried over TCP (16-bit length prefix).
-const DNS_TCP_MAX_SIZE: usize = 65535;
 
 /// RR TYPE number of SOA (RFC 1035); SOA never appears as a stored record
 /// row, so `RecordType` does not spell it.

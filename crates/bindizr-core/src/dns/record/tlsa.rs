@@ -3,7 +3,7 @@
 
 use super::{
     Rdata,
-    value::{hex_upper, parse_hex_record_field, parse_u8_record_field},
+    value::{MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field},
 };
 
 pub(crate) struct TlsaRecordValue {
@@ -51,11 +51,12 @@ impl TlsaRecordValue {
                 self.cert_data.len()
             ));
         }
-        // RDLENGTH is 16 bits (RFC 1035, Section 4.1.3); 3 bytes are fixed
-        // fields. Enforced here so a stored row cannot poison a later AXFR.
-        if self.cert_data.len() > 65_532 {
+        // Bounded so the record fits one transfer message beside its 3 fixed
+        // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
+        const MAX_CERT_DATA: usize = MAX_RECORD_RDATA - 3;
+        if self.cert_data.len() > MAX_CERT_DATA {
             return Err(format!(
-                "TLSA certificate data must be at most 65532 bytes, got {}",
+                "TLSA certificate data must be at most {MAX_CERT_DATA} bytes, got {}",
                 self.cert_data.len()
             ));
         }
@@ -113,9 +114,16 @@ mod tests {
     }
 
     #[test]
-    fn validate_caps_full_certificates_at_the_rdlength_limit() {
-        let oversized = format!("3 0 0 {}", "AB".repeat(65_533));
+    fn validate_caps_full_certificates_below_the_message_limit() {
+        let at_limit = format!("3 0 0 {}", "AB".repeat(64_996));
+        assert!(
+            TlsaRecordValue::parse(&at_limit)
+                .unwrap()
+                .validate()
+                .is_ok()
+        );
+        let oversized = format!("3 0 0 {}", "AB".repeat(64_997));
         let err = TlsaRecordValue::parse(&oversized).unwrap().validate();
-        assert!(err.unwrap_err().contains("65532"));
+        assert!(err.unwrap_err().contains("64996"));
     }
 }

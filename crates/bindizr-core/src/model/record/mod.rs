@@ -207,8 +207,8 @@ impl RecordType {
             RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
             // Stored TXT is always the encoded form.
             RecordType::TXT => TxtRecordValue::from_encoded(value)
-                .map(|_| ())
-                .ok_or_else(|| format!("stored TXT value is not in encoded form: {value}")),
+                .ok_or_else(|| format!("stored TXT value is not in encoded form: {value}"))?
+                .validate(),
             RecordType::NS => NsRecordValue::parse(value).map(|_| ()),
             RecordType::SRV => SrvRecordValue::parse(value, priority)?.validate(),
             RecordType::PTR => PtrRecordValue::parse(value).map(|_| ()),

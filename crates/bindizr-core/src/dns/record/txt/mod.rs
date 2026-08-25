@@ -1,5 +1,7 @@
 use base64::Engine;
 
+use super::value::MAX_RECORD_RDATA;
+
 const RAW_TXT_RDATA_PREFIX: &str = "bindizr:txt-rdata:v1:";
 
 /// The content of a TXT value: a single string or multiple character-strings.
@@ -80,6 +82,18 @@ impl TxtRecordValue {
         rdata.push(chunk_len as u8);
         rdata.extend_from_slice(&value.as_bytes()[chunk_start..]);
         Self(rdata)
+    }
+
+    /// Bounded so the record fits one transfer message; enforced here so a
+    /// stored row cannot poison an AXFR.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.0.len() > MAX_RECORD_RDATA {
+            return Err(format!(
+                "TXT record data must be at most {MAX_RECORD_RDATA} bytes, got {}",
+                self.0.len()
+            ));
+        }
+        Ok(())
     }
 
     /// Decode a prefixed-base64 encoded value; `None` if it is not valid.

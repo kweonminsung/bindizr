@@ -177,3 +177,16 @@ fn to_presentation_round_trips_ownership_records() {
         canonical
     );
 }
+
+#[test]
+fn validate_rejects_data_that_cannot_fit_one_dns_message() {
+    let segment = "a".repeat(255);
+    let value = TxtRecordValue::from_segments(vec![segment.as_str(); 256]).unwrap();
+    assert!(value.validate().is_err());
+    assert!(
+        TxtRecordValue::from_segments(vec![segment.as_str(); 4])
+            .unwrap()
+            .validate()
+            .is_ok()
+    );
+}
