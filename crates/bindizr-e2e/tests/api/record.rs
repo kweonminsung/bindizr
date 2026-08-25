@@ -860,6 +860,35 @@ async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // The commit-time delegation invariant only runs on apply, so the dry run
+    // must reject the same batch itself to keep its validation promise.
+    let bulk_request = json!({
+        "records": [
+            { "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" }
+        ],
+        "dry_run": true
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(
+        body["error"].as_str().unwrap().contains("delegation NS"),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_is_all_or_nothing() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;

@@ -301,6 +301,20 @@ impl RecordService {
             timings.validate_ms = duration_ms(validate_dur);
 
             if dry_run {
+                // Mirror `validate_delegations_tx` against the simulated final
+                // state: an insert-only batch can only violate it at names it
+                // touches, and those are all indexed here.
+                for (name, rows) in &records_by_name {
+                    if rows.iter().any(|r| r.record_type == RecordType::DS)
+                        && !rows.iter().any(|r| r.record_type == RecordType::NS)
+                    {
+                        return Err(ServiceError::record_conflict(format!(
+                            "DS records at '{}' require a delegation NS RRset at the same name",
+                            name
+                        )));
+                    }
+                }
+
                 // `after` = existing plus the inserts, so an insert into an
                 // existing RRset reads as `changed`, not a bare `added`.
                 let before: Vec<ReconstructedRecord> = before_records
