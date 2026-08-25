@@ -112,5 +112,8 @@ mod tests {
         assert!(DsRecordValue::parse("1 13 2 XYZ1").is_err());
         assert!(DsRecordValue::parse("1 13 2 4B9").is_err());
         assert!(DsRecordValue::parse("1 13 2").is_err());
+        // An even byte length with a multi-byte character once panicked by
+        // slicing the digest mid-character; it must fail as non-hex.
+        assert!(DsRecordValue::parse("1 13 2 4é4").is_err());
     }
 }

@@ -223,8 +223,9 @@ pub(super) fn compute_signed_view(
         ));
     }
 
-    // RRsets to sign: every authoritative RRset. Delegation NS RRsets and
-    // glue below a cut are served but not signed (RFC 4035, Section 2.2).
+    // RRsets to sign: every authoritative RRset. At a delegation the parent
+    // signs only the DS RRset; the NS beside it and glue at or below the cut
+    // are served but not signed (RFC 4035, Section 2.2).
     let delegations: BTreeSet<Vec<u8>> = input
         .iter()
         .filter(|r| r.rtype() == Rtype::NS && *r.owner() != apex)
@@ -246,9 +247,10 @@ pub(super) fn compute_signed_view(
     }
     signable.retain(|rrset| {
         let owner = rrset[0].owner();
-        let is_delegation_ns =
-            rrset[0].rtype() == Rtype::NS && delegations.contains(owner.as_slice());
-        !is_delegation_ns && !is_below_cut(owner, &apex, &delegations)
+        if delegations.contains(owner.as_slice()) {
+            return rrset[0].rtype() == Rtype::DS;
+        }
+        !is_below_cut(owner, &apex, &delegations)
     });
     for record in &denial_records {
         signable.push(vec![record]);

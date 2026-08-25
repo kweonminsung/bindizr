@@ -77,27 +77,14 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    let mut serials_in_changes: Vec<u32> = changes
+    let mut journal_serials: Vec<u32> = changes
         .iter()
         .map(|c| delta::serial_to_u32(c.serial))
         .collect::<Result<_, _>>()?;
-    serials_in_changes.sort_unstable();
-    serials_in_changes.dedup();
+    journal_serials.sort_unstable();
+    journal_serials.dedup();
 
-    let mut previous_serial = client_serial;
-    for &serial in &serials_in_changes {
-        if serial <= previous_serial {
-            log_warn!(
-                "IXFR: Non-monotonic serial chain (previous {}, got {}), falling back to AXFR",
-                previous_serial,
-                serial
-            );
-            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
-        }
-        previous_serial = serial;
-    }
-
-    if let Some(&last_serial) = serials_in_changes.last()
+    if let Some(&last_serial) = journal_serials.last()
         && last_serial != current_serial
     {
         log_warn!(
@@ -109,36 +96,47 @@ pub(crate) async fn handle_ixfr(
     }
 
     let mut versions_by_serial: HashMap<u32, delta::ZoneVersion> = HashMap::new();
-    versions_by_serial.reserve(serials_in_changes.len() + 1);
+    versions_by_serial.reserve(journal_serials.len() + 1);
 
-    // Fetch the whole serial span in one query; missing versions are caught
-    // by the chain validation below.
     for version in delta::list_zone_versions(zone.id, client_serial, current_serial).await? {
         if let Ok(serial) = delta::serial_to_u32(version.serial) {
             versions_by_serial.insert(serial, version);
         }
     }
 
-    // Every delta step needs both its old and new SOA versions.
-    for (idx, &serial) in serials_in_changes.iter().enumerate() {
-        let old_serial = if idx == 0 {
-            client_serial
-        } else {
-            serials_in_changes[idx - 1]
-        };
+    // The version rows are the authoritative list of serials the zone passed
+    // through; a journal skipping any of them (a partially pruned history)
+    // would replay an incomplete delta as if it were whole.
+    let mut version_serials: Vec<u32> = versions_by_serial
+        .keys()
+        .copied()
+        .filter(|&serial| serial > client_serial)
+        .collect();
+    version_serials.sort_unstable();
+    if journal_serials != version_serials {
+        log_warn!(
+            "IXFR: Journal covers serials {:?} but versions after {} are {:?}, falling back to AXFR",
+            journal_serials,
+            client_serial,
+            version_serials
+        );
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+    }
 
-        if !versions_by_serial.contains_key(&old_serial)
-            || !versions_by_serial.contains_key(&serial)
-        {
-            log_warn!("IXFR: Missing SOA version, falling back to AXFR");
-            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
-        }
+    // With the serial sets equal, every delta step has its new SOA version;
+    // only the client's own, the first step's old SOA, can still be missing.
+    if !versions_by_serial.contains_key(&client_serial) {
+        log_warn!(
+            "IXFR: Missing SOA version for client serial {}, falling back to AXFR",
+            client_serial
+        );
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     log_info!(
         "IXFR: Sending {} changes across {} serial steps from {} to {}",
         changes.len(),
-        serials_in_changes.len(),
+        journal_serials.len(),
         client_serial,
         current_serial
     );

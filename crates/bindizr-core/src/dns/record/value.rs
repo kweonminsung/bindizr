@@ -39,9 +39,17 @@ pub(crate) fn parse_hex_record_field<'a>(
     if hex.len() % 2 != 0 {
         return Err(format!("{field} must be an even number of hex digits"));
     }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|_| format!("{field} must be hex")))
+    // Decoded from bytes, not `&str` slices: a multi-byte character must fail
+    // as non-hex instead of panicking on a char boundary.
+    hex.as_bytes()
+        .chunks(2)
+        .map(|pair| {
+            let hi = (pair[0] as char).to_digit(16);
+            let lo = (pair[1] as char).to_digit(16);
+            hi.zip(lo)
+                .map(|(hi, lo)| (hi * 16 + lo) as u8)
+                .ok_or_else(|| format!("{field} must be hex"))
+        })
         .collect()
 }
 

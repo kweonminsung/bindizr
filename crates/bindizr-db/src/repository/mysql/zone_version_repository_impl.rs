@@ -194,11 +194,12 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn prune_older_than(
+    async fn prune_older_than_tx(
         &self,
+        tx: &mut RepositoryTx<'_>,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+        let mysql_tx = tx.as_mysql()?;
 
         // Each zone's newest version survives regardless of age: the IXFR
         // up-to-date response reads it.
@@ -215,7 +216,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
             "#,
         )
         .bind(cutoff)
-        .execute(&mut *conn)
+        .execute(&mut **mysql_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 

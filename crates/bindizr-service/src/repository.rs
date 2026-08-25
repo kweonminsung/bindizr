@@ -322,11 +322,12 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
     }
 
-    pub(super) async fn prune_zone_journal_older_than(
+    pub(super) async fn prune_zone_journal_older_than_tx(
+        tx: &mut RepositoryTx<'_>,
         cutoff: DateTime<Utc>,
     ) -> Result<u64, ServiceError> {
         get_zone_change_repository()
-            .prune_older_than(cutoff)
+            .prune_older_than_tx(tx, cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to prune zone changes: {}", e)))
     }
@@ -341,11 +342,12 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to save version: {}", e)))
     }
 
-    pub(super) async fn prune_zone_versions_older_than(
+    pub(super) async fn prune_zone_versions_older_than_tx(
+        tx: &mut RepositoryTx<'_>,
         cutoff: DateTime<Utc>,
     ) -> Result<u64, ServiceError> {
         get_zone_version_repository()
-            .prune_older_than(cutoff)
+            .prune_older_than_tx(tx, cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to prune versions: {}", e)))
     }

@@ -680,6 +680,7 @@ fn delegation_ns_and_glue_are_unsigned() {
             "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383",
             3600,
         ),
+        test_record("sub", RecordType::A, "192.0.2.53", 3600),
         test_record("ns.sub", RecordType::A, "192.0.2.53", 3600),
         test_record("www", RecordType::A, "192.0.2.10", 300),
     ];
@@ -699,9 +700,11 @@ fn delegation_ns_and_glue_are_unsigned() {
     let sub = OwnerName::parse_in_zone("sub", &zone.name).unwrap();
     let glue = OwnerName::parse_in_zone("ns.sub", &zone.name).unwrap();
 
-    // RFC 4035, Section 2.2: the delegation NS RRset and glue are not signed,
-    // and glue owns no NSEC; the delegation point itself stays in the chain.
+    // RFC 4035, Section 2.2: the delegation NS RRset and glue — the A at the
+    // cut owner included — are not signed, and glue owns no NSEC; the
+    // delegation point itself stays in the chain.
     assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_NS).is_empty());
+    assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_A).is_empty());
     assert!(rrsigs_covering(&diff.added, &glue, RECORD_TYPE_A).is_empty());
     // The DS RRset at the cut is the parent's authoritative data (RFC 4035,
     // Section 2.4), unlike the NS beside it.

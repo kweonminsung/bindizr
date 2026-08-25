@@ -183,11 +183,12 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn prune_older_than(
+    async fn prune_older_than_tx(
         &self,
+        tx: &mut RepositoryTx<'_>,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+        let pg_tx = tx.as_postgres()?;
 
         // Each zone's newest version survives regardless of age: the IXFR
         // up-to-date response reads it.
@@ -204,7 +205,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
             "#,
         )
         .bind(cutoff)
-        .execute(&mut *conn)
+        .execute(&mut **pg_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 

@@ -120,11 +120,12 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn prune_older_than(
+    async fn prune_older_than_tx(
         &self,
+        tx: &mut RepositoryTx<'_>,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+        let pg_tx = tx.as_postgres()?;
 
         // Delete whole serials only: everything up to the highest serial whose
         // newest row predates the cutoff, so remaining IXFR steps stay complete.
@@ -141,7 +142,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
             "#,
         )
         .bind(cutoff)
-        .execute(&mut *conn)
+        .execute(&mut **pg_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 

@@ -501,15 +501,16 @@ async fn run_maintenance_pass() {
     let retention_days = config.dns.journal_retention_days;
     if retention_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(retention_days));
-        match RepositoryService::prune_zone_journal_older_than(cutoff).await {
-            Ok(rows) if rows > 0 => log_info!("Pruned {} journal rows", rows),
+        match prune_zone_history(cutoff).await {
+            Ok((journal_rows, version_rows)) if journal_rows > 0 || version_rows > 0 => {
+                log_info!(
+                    "Pruned {} journal and {} version rows",
+                    journal_rows,
+                    version_rows
+                )
+            }
             Ok(_) => {}
-            Err(e) => log_error!("Journal pruning failed: {}", e),
-        }
-        match RepositoryService::prune_zone_versions_older_than(cutoff).await {
-            Ok(rows) if rows > 0 => log_info!("Pruned {} version rows", rows),
-            Ok(_) => {}
-            Err(e) => log_error!("Version pruning failed: {}", e),
+            Err(e) => log_error!("Zone history pruning failed: {}", e),
         }
     }
 
@@ -584,6 +585,22 @@ async fn run_maintenance_pass() {
         }
         Err(e) => log_error!("Retired-key scan failed: {}", e),
     }
+}
+
+/// Prune journal and version rows older than `cutoff` in one transaction: a
+/// serial pruned from one table but not the other would read to IXFR clients
+/// as a journal gap or a missing SOA. Returns (journal, version) rows deleted.
+async fn prune_zone_history(cutoff: DateTime<Utc>) -> Result<(u64, u64), ServiceError> {
+    let mut tx = RepositoryService::begin_tx("failed to prune zone history").await?;
+    let result = async {
+        let journal_rows =
+            RepositoryService::prune_zone_journal_older_than_tx(&mut tx, cutoff).await?;
+        let version_rows =
+            RepositoryService::prune_zone_versions_older_than_tx(&mut tx, cutoff).await?;
+        Ok::<_, ServiceError>((journal_rows, version_rows))
+    }
+    .await;
+    RepositoryService::finish_tx(tx, result, "failed to prune zone history").await
 }
 
 /// Re-sign one zone in its own transaction, bumping the serial only when the

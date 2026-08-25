@@ -396,7 +396,11 @@ pub trait ZoneChangeRepository: Send + Sync {
     /// Prune journal rows older than `cutoff`, whole serials at a time so the
     /// remaining chain stays contiguous; requests below it fall back to AXFR.
     /// Returns the number of rows deleted.
-    async fn prune_older_than(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
+    async fn prune_older_than_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, DatabaseError>;
 }
 
 /// Persistence operations for zone versions.
@@ -442,7 +446,11 @@ pub trait ZoneVersionRepository: Send + Sync {
     ) -> Result<Option<ZoneVersion>, DatabaseError>;
     /// Prune versions older than `cutoff`, always keeping each zone's newest
     /// (the IXFR up-to-date response reads it). Returns rows deleted.
-    async fn prune_older_than(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
+    async fn prune_older_than_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, DatabaseError>;
 }
 
 /// Persistence operations for DNSSEC signing keys.
