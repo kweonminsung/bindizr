@@ -125,7 +125,7 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE,
             INDEX idx_zone_token_policies_zone (zone_id),
-            INDEX idx_zone_token_policies_token (api_token_id)
+            INDEX idx_zone_token_policies_token_zone (api_token_id, zone_id)
         );
         "#,
         r#"
@@ -302,7 +302,7 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_zone_token_policies_zone ON zone_token_policies(zone_id);
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_token ON zone_token_policies(api_token_id);
+        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_token_zone ON zone_token_policies(api_token_id, zone_id);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS dnssec_keys (
@@ -484,7 +484,7 @@ pub(super) fn sqlite_table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_zone_token_policies_zone ON zone_token_policies(zone_id);
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_token ON zone_token_policies(api_token_id);
+        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_token_zone ON zone_token_policies(api_token_id, zone_id);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS dnssec_keys (

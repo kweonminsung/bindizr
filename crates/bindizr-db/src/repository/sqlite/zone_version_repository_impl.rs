@@ -10,9 +10,12 @@ use crate::{
 /// Hides serials whose journal carries only signer-generated changes
 /// (re-signs, rollovers). Serials with user changes, serials with no journal
 /// at all (zone creation, forced bumps), and the current serial stay listed.
+///
+/// Takes one extra `?` bind of the zone id, keeping the current-serial
+/// subquery uncorrelated.
 const USER_CHANGES_FILTER: &str = r#"
               AND (
-                  zone_versions.serial = (SELECT zones.serial FROM zones WHERE zones.id = zone_versions.zone_id)
+                  zone_versions.serial = (SELECT zones.serial FROM zones WHERE zones.id = ?)
                   OR EXISTS (
                       SELECT 1 FROM zone_journal
                       WHERE zone_journal.zone_id = zone_versions.zone_id
@@ -140,7 +143,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         } else {
             ""
         };
-        sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
+        let mut query = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
             r#"
             SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
             FROM zone_versions
@@ -149,12 +152,16 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
             LIMIT ? OFFSET ?
             "#
         )))
-        .bind(zone_id)
-        .bind(limit as i64)
-        .bind(i64::try_from(offset).unwrap_or(i64::MAX))
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+        .bind(zone_id);
+        if user_changes_only {
+            query = query.bind(zone_id);
+        }
+        query
+            .bind(limit as i64)
+            .bind(i64::try_from(offset).unwrap_or(i64::MAX))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
     async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError> {
@@ -163,13 +170,17 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         } else {
             ""
         };
-        let count: i64 = sqlx::query_scalar(AssertSqlSafe(format!(
+        let mut query = sqlx::query_scalar(AssertSqlSafe(format!(
             "SELECT COUNT(*) FROM zone_versions WHERE zone_id = ?{filter}"
         )))
-        .bind(zone_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        .bind(zone_id);
+        if user_changes_only {
+            query = query.bind(zone_id);
+        }
+        let count: i64 = query
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
         Ok(count as u64)
     }
 

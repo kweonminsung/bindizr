@@ -10,9 +10,12 @@ use crate::{
 /// Hides serials whose journal carries only signer-generated changes
 /// (re-signs, rollovers). Serials with user changes, serials with no journal
 /// at all (zone creation, forced bumps), and the current serial stay listed.
+///
+/// Reuses the enclosing query's `$1` (the zone id), keeping the
+/// current-serial subquery uncorrelated.
 const USER_CHANGES_FILTER: &str = r#"
               AND (
-                  zone_versions.serial = (SELECT zones.serial FROM zones WHERE zones.id = zone_versions.zone_id)
+                  zone_versions.serial = (SELECT zones.serial FROM zones WHERE zones.id = $1)
                   OR EXISTS (
                       SELECT 1 FROM zone_journal
                       WHERE zone_journal.zone_id = zone_versions.zone_id
