@@ -2,8 +2,9 @@
 //! the column set is all this module decides.
 
 use bindizr_service::types::{
-    GetRecordResponse, GetZoneResponse, ImportSummary, RecordValueRequest, RollbackZoneResponse,
-    SecondaryStatusResponse, VersionRecordResponse, ZoneStatusResponse, ZoneVersionResponse,
+    DnssecKeyInfo, GetRecordResponse, GetZoneResponse, ImportSummary, RecordValueRequest,
+    RollbackZoneResponse, SecondaryStatusResponse, VersionRecordResponse, ZoneStatusResponse,
+    ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -83,6 +84,36 @@ impl From<&GetRecordResponse> for RecordRow {
             ttl: record.ttl,
             priority: record.priority,
             zone_name: record.zone_name.clone().unwrap_or_default(),
+        }
+    }
+}
+
+/// Table row for DNSSEC signing-key display.
+#[derive(Debug, Tabled)]
+pub(crate) struct DnssecKeyRow {
+    #[tabled(rename = "ID")]
+    pub(crate) id: i32,
+    #[tabled(rename = "ROLE")]
+    pub(crate) role: String,
+    #[tabled(rename = "STATE")]
+    pub(crate) state: String,
+    #[tabled(rename = "ALGORITHM")]
+    pub(crate) algorithm: String,
+    #[tabled(rename = "KEY-TAG")]
+    pub(crate) key_tag: i32,
+    #[tabled(rename = "DNSKEY")]
+    pub(crate) dnskey: String,
+}
+
+impl From<&DnssecKeyInfo> for DnssecKeyRow {
+    fn from(key: &DnssecKeyInfo) -> Self {
+        DnssecKeyRow {
+            id: key.id,
+            role: key.role.clone(),
+            state: key.state.clone(),
+            algorithm: key.algorithm.clone(),
+            key_tag: key.key_tag,
+            dnskey: key.dnskey.clone(),
         }
     }
 }

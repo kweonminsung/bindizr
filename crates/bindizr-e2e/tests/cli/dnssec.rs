@@ -11,12 +11,12 @@ async fn zone_dnssec_lifecycle_via_cli() {
         .run_cli_success(&["zone", "dnssec", "enable", &zone_name])
         .await;
     assert!(enabled.contains("DNSSEC enabled successfully"));
-    assert!(enabled.contains("DNSSEC: enabled"));
+    assert!(enabled.contains("DNSSEC enabled"));
 
     let status = app
         .run_cli_success(&["zone", "dnssec", "status", &zone_name])
         .await;
-    assert!(status.contains("DNSSEC: enabled"));
+    assert!(status.contains("DNSSEC enabled"));
     // The keys table row is `ID ROLE STATE ALGORITHM KEY_TAG DNSKEY`.
     let key_row = status
         .lines()
@@ -58,7 +58,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     let status = app
         .run_cli_success(&["zone", "dnssec", "status", &zone_name])
         .await;
-    assert!(status.contains("DNSSEC: disabled"));
+    assert!(status.contains("DNSSEC disabled"));
 }
 
 #[tokio::test]
@@ -72,7 +72,7 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
         .run_cli_success(&["zone", "dnssec", "enable", &zone_name, "--denial", "nsec3"])
         .await;
     assert!(enabled.contains("DNSSEC enabled successfully"));
-    assert!(enabled.contains("Denial of existence: NSEC3"));
+    assert!(enabled.contains("NSEC3 denial"));
 
     let started = app
         .run_cli_success(&["zone", "dnssec", "rollover", "start", &zone_name])
@@ -82,7 +82,7 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     let status = app
         .run_cli_success(&["zone", "dnssec", "status", &zone_name])
         .await;
-    assert!(status.contains("Denial of existence: NSEC3"));
+    assert!(status.contains("NSEC3 denial"));
     assert!(status.contains("published"), "{status}");
     assert!(status.contains("active"), "{status}");
 

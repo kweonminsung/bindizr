@@ -4,7 +4,10 @@ use bindizr_service::types::{EnableDnssecRequest, GetDnssecStatusResponse, Rollo
 use clap::Subcommand;
 
 use crate::{
-    cli::{error::CliError, output::parse_response},
+    cli::{
+        error::CliError,
+        output::{DnssecKeyRow, OutputFormat, parse_response, print_response, print_table},
+    },
     socket::{
         client::DaemonSocketClient,
         types::{
@@ -31,6 +34,9 @@ pub(crate) enum ZoneDnssecCommand {
         /// without touching the parent zone's DS
         #[arg(long)]
         split_keys: bool,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
     /// Disable DNSSEC: delete the zone's keys and signatures. Remove the DS
     /// record from the parent zone and wait out its TTL first, or validating
@@ -43,6 +49,9 @@ pub(crate) enum ZoneDnssecCommand {
     Status {
         /// The name of the zone
         name: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
     /// Print a zone's DS records for pasting into the parent zone
     Ds {
@@ -73,6 +82,9 @@ pub(crate) enum ZoneDnssecRolloverCommand {
         /// omitted for CSK zones
         #[arg(long, value_name = "ksk|zsk")]
         role: Option<String>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
     /// Confirm the new DS has been seen at the parent (and its TTL has
     /// passed): promotes the pre-published key and retires the one it
@@ -80,6 +92,9 @@ pub(crate) enum ZoneDnssecRolloverCommand {
     DsSeen {
         /// The name of the zone
         name: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 }
 
@@ -93,6 +108,7 @@ pub(super) async fn handle_command(
             algorithm,
             denial,
             split_keys,
+            output,
         } => {
             let response = client
                 .send_command(
@@ -107,8 +123,10 @@ pub(super) async fn handle_command(
                     },
                 )
                 .await?;
-            println!("{}", response.message);
-            print_status(&response.data)?;
+            if output == OutputFormat::Table {
+                println!("{}", response.message);
+            }
+            print_status(&response.data, output)?;
         }
         ZoneDnssecCommand::Disable { name } => {
             let response = client
@@ -119,11 +137,11 @@ pub(super) async fn handle_command(
                 .await?;
             println!("{}", response.message);
         }
-        ZoneDnssecCommand::Status { name } => {
+        ZoneDnssecCommand::Status { name, output } => {
             let response = client
                 .send_command(DaemonCommandKind::ZoneDnssecStatus, ZoneNameParams { name })
                 .await?;
-            print_status(&response.data)?;
+            print_status(&response.data, output)?;
         }
         ZoneDnssecCommand::Ds { name } => {
             let response = client
@@ -138,7 +156,7 @@ pub(super) async fn handle_command(
             println!("{}", response.message);
         }
         ZoneDnssecCommand::Rollover { subcommand } => match subcommand {
-            ZoneDnssecRolloverCommand::Start { name, role } => {
+            ZoneDnssecRolloverCommand::Start { name, role, output } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverStart,
@@ -148,18 +166,22 @@ pub(super) async fn handle_command(
                         },
                     )
                     .await?;
-                println!("{}", response.message);
-                print_status(&response.data)?;
+                if output == OutputFormat::Table {
+                    println!("{}", response.message);
+                }
+                print_status(&response.data, output)?;
             }
-            ZoneDnssecRolloverCommand::DsSeen { name } => {
+            ZoneDnssecRolloverCommand::DsSeen { name, output } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverDsSeen,
                         ZoneNameParams { name },
                     )
                     .await?;
-                println!("{}", response.message);
-                print_status(&response.data)?;
+                if output == OutputFormat::Table {
+                    println!("{}", response.message);
+                }
+                print_status(&response.data, output)?;
             }
         },
     }
@@ -167,49 +189,40 @@ pub(super) async fn handle_command(
     Ok(())
 }
 
-fn print_status(data: &serde_json::Value) -> Result<(), String> {
-    let status: GetDnssecStatusResponse = parse_response(data)?;
-
-    println!("Zone: {}", status.zone_name);
-    println!(
-        "DNSSEC: {}",
-        if status.enabled {
-            "enabled"
-        } else {
-            "disabled"
-        }
-    );
-    if status.enabled {
-        println!("Denial of existence: {}", status.denial.to_uppercase());
+fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
+    if output != OutputFormat::Table {
+        return print_response(data, output, |status: &GetDnssecStatusResponse| {
+            status.keys.iter().map(DnssecKeyRow::from).collect()
+        });
     }
-    println!("Serial: {}", status.serial);
+
+    let status: GetDnssecStatusResponse = parse_response(data)?;
+    if !status.enabled {
+        println!(
+            "Zone {} (serial {}): DNSSEC disabled",
+            status.zone_name, status.serial
+        );
+        return Ok(());
+    }
+
+    println!(
+        "Zone {} (serial {}): DNSSEC enabled, {} denial",
+        status.zone_name,
+        status.serial,
+        status.denial.to_uppercase()
+    );
     if let Some(expires_at) = status.earliest_signature_expires_at {
         println!(
             "Earliest signature expiry: {}",
             expires_at.format("%Y-%m-%d %H:%M:%S")
         );
     }
-
-    if status.keys.is_empty() {
-        return Ok(());
-    }
-
-    println!("Keys:");
-    println!(
-        "{:<5} {:<5} {:<10} {:<18} {:<9} DNSKEY",
-        "ID", "ROLE", "STATE", "ALGORITHM", "KEY TAG"
-    );
-    println!("{}", "-".repeat(100));
-    for key in &status.keys {
-        println!(
-            "{:<5} {:<5} {:<10} {:<18} {:<9} {}",
-            key.id, key.role, key.state, key.algorithm, key.key_tag, key.dnskey
-        );
-    }
-
-    println!("DS records (register in the parent zone):");
-    for ds in &status.ds_records {
-        println!("  {}", ds.presentation);
+    print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
+    if !status.ds_records.is_empty() {
+        println!("DS records (register in the parent zone):");
+        for ds in &status.ds_records {
+            println!("  {}", ds.presentation);
+        }
     }
 
     Ok(())
