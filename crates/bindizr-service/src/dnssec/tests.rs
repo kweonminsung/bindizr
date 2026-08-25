@@ -4,7 +4,7 @@ use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::{DateTime, Duration, Utc};
 
 use super::{
-    generate_key,
+    keys::generate_key,
     signed_view::{SignedViewDiff, SignedViewParams, compute_signed_view},
 };
 use crate::model::{
