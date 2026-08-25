@@ -8,8 +8,8 @@ use axum::{
 use bindizr_service::{
     dnssec::DnssecService,
     types::{
-        DisableDnssecRequest, DnssecDsListResponse, DnssecStatusResponse, EnableDnssecRequest,
-        ErrorResponse, MessageResponse, RolloverDnssecRequest,
+        DnssecDsListResponse, DnssecStatusResponse, EnableDnssecRequest, ErrorResponse,
+        MessageResponse, RolloverDnssecRequest,
     },
 };
 use serde::Deserialize;
@@ -118,29 +118,25 @@ pub(crate) async fn enable_dnssec(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Disable DNSSEC for a zone",
-        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. While the parent zone still publishes a DS record, dropping the signatures makes the zone bogus for validating resolvers: remove the DS, wait out its TTL, then call this with `confirm_insecure` set.",
+        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. While the parent zone still publishes a DS record, dropping the signatures makes the zone bogus for validating resolvers: remove the DS and wait out its TTL before calling this.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
-        request_body = DisableDnssecRequest,
         responses(
             (status = 200, description = "DNSSEC disabled successfully", body = MessageResponse),
-            (status = 400, description = "Bad request, `confirm_insecure` not set", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 409, description = "DNSSEC is not enabled for the zone", body = ErrorResponse),
-            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Disable DNSSEC for a zone after the going-insecure confirmation.
+/// Disable DNSSEC for a zone.
 pub(crate) async fn disable_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<DisableDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    DnssecService::disable(&caller, &params.name, body.confirm_insecure).await?;
+    DnssecService::disable(&caller, &params.name).await?;
     let response = MessageResponse {
         message: "DNSSEC disabled successfully".to_string(),
     };

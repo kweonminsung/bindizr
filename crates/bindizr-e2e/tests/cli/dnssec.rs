@@ -50,20 +50,8 @@ async fn zone_dnssec_lifecycle_via_cli() {
         .await;
     assert!(signed.contains("Zone signed successfully"));
 
-    // The going-insecure interlock: the CLI must not confirm on its own.
-    let refused = app
-        .run_cli(&["zone", "dnssec", "disable", &zone_name])
-        .await;
-    assert!(!refused.status.success());
-
     let disabled = app
-        .run_cli_success(&[
-            "zone",
-            "dnssec",
-            "disable",
-            &zone_name,
-            "--confirm-insecure",
-        ])
+        .run_cli_success(&["zone", "dnssec", "disable", &zone_name])
         .await;
     assert!(disabled.contains("DNSSEC disabled successfully"));
 

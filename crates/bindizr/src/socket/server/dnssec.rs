@@ -2,10 +2,7 @@ use bindizr_service::{authorization::Caller, dnssec::DnssecService, error::Servi
 
 use crate::socket::{
     server::{parse_params, to_response_data},
-    types::{
-        DaemonResponse, DisableZoneDnssecParams, EnableZoneDnssecParams, RolloverZoneDnssecParams,
-        ZoneNameParams,
-    },
+    types::{DaemonResponse, EnableZoneDnssecParams, RolloverZoneDnssecParams, ZoneNameParams},
 };
 
 /// Handle the `ZoneDnssecEnable` command by generating a key and signing the zone.
@@ -30,18 +27,13 @@ pub(super) async fn enable_dnssec(
 }
 
 /// Handle the `ZoneDnssecDisable` command by deleting the zone's keys and
-/// signatures after the going-insecure confirmation.
+/// signatures.
 pub(super) async fn disable_dnssec(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: DisableZoneDnssecParams = parse_params(data)?;
+    let params: ZoneNameParams = parse_params(data)?;
 
-    DnssecService::disable(
-        &Caller::Global,
-        &params.zone_name,
-        params.request.confirm_insecure,
-    )
-    .await?;
+    DnssecService::disable(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC disabled successfully".to_string(),

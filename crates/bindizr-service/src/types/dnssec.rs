@@ -30,16 +30,6 @@ pub struct RolloverDnssecRequest {
     pub role: Option<String>,
 }
 
-/// Request body for disabling DNSSEC on a zone.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
-pub struct DisableDnssecRequest {
-    /// Acknowledges the going-insecure procedure: remove the parent DS,
-    /// wait out its TTL, then confirm.
-    #[serde(default)]
-    #[schema(example = true)]
-    pub confirm_insecure: bool,
-}
-
 /// A signing key's public half; the private key never leaves the server.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecKeyInfo {

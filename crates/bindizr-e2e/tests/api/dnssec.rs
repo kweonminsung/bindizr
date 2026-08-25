@@ -187,22 +187,8 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(status, StatusCode::OK);
     assert!(!body.as_str().unwrap().contains("RRSIG"), "{body}");
 
-    // Without the going-insecure acknowledgement the disable is refused.
     let (status, _) = app
-        .request(
-            Method::DELETE,
-            &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    let (status, _) = app
-        .request(
-            Method::DELETE,
-            &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "confirm_insecure": true })),
-        )
+        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
@@ -214,11 +200,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert!(body["dnssec"]["keys"].as_array().unwrap().is_empty());
 
     let (status, body) = app
-        .request(
-            Method::DELETE,
-            &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "confirm_insecure": true })),
-        )
+        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_NOT_ENABLED");

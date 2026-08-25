@@ -117,21 +117,11 @@ impl DnssecService {
         Ok(response)
     }
 
-    /// Disable DNSSEC for a zone. `confirm_insecure` acknowledges the
-    /// going-insecure procedure ([`crate::types::DisableDnssecRequest`]).
-    pub async fn disable(
-        caller: &Caller,
-        zone_name: &str,
-        confirm_insecure: bool,
-    ) -> Result<(), ServiceError> {
+    /// Disable DNSSEC for a zone. The caller is responsible for the
+    /// going-insecure order: remove the parent DS and wait out its TTL first,
+    /// or validating resolvers read the zone as bogus.
+    pub async fn disable(caller: &Caller, zone_name: &str) -> Result<(), ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
-        if !confirm_insecure {
-            return Err(ServiceError::invalid_input(
-                "disabling DNSSEC makes the zone bogus for validating resolvers while the parent \
-                 still publishes a DS record; remove the DS, wait out its TTL, then retry with \
-                 confirm_insecure set",
-            ));
-        }
 
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {

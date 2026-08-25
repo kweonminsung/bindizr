@@ -1,8 +1,6 @@
 //! The `zone dnssec` subcommands.
 
-use bindizr_service::types::{
-    DisableDnssecRequest, EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest,
-};
+use bindizr_service::types::{EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest};
 use clap::Subcommand;
 
 use crate::{
@@ -10,8 +8,7 @@ use crate::{
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, DisableZoneDnssecParams, EnableZoneDnssecParams,
-            RolloverZoneDnssecParams, ZoneNameParams,
+            DaemonCommandKind, EnableZoneDnssecParams, RolloverZoneDnssecParams, ZoneNameParams,
         },
     },
 };
@@ -41,10 +38,6 @@ pub(crate) enum ZoneDnssecCommand {
     Disable {
         /// The name of the zone
         name: String,
-        /// Confirm the zone may go insecure: the DS record has been removed
-        /// from the parent zone and its TTL has passed
-        #[arg(long)]
-        confirm_insecure: bool,
     },
     /// Show a zone's DNSSEC status (keys, DS records, signature expiry)
     Status {
@@ -117,17 +110,11 @@ pub(super) async fn handle_command(
             println!("{}", response.message);
             print_status(&response.data)?;
         }
-        ZoneDnssecCommand::Disable {
-            name,
-            confirm_insecure,
-        } => {
+        ZoneDnssecCommand::Disable { name } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneDnssecDisable,
-                    DisableZoneDnssecParams {
-                        zone_name: name,
-                        request: DisableDnssecRequest { confirm_insecure },
-                    },
+                    ZoneNameParams { name },
                 )
                 .await?;
             println!("{}", response.message);

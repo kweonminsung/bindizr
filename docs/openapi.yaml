@@ -1165,7 +1165,7 @@ paths:
       tags:
       - DNSSEC
       summary: Disable DNSSEC for a zone
-      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. While the parent zone still publishes a DS record, dropping the signatures makes the zone bogus for validating resolvers: remove the DS, wait out its TTL, then call this with `confirm_insecure` set.'
+      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. While the parent zone still publishes a DS record, dropping the signatures makes the zone bogus for validating resolvers: remove the DS and wait out its TTL before calling this.'
       operationId: disable_dnssec
       parameters:
       - name: name
@@ -1174,12 +1174,6 @@ paths:
         required: true
         schema:
           type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DisableDnssecRequest'
-        required: true
       responses:
         '200':
           description: DNSSEC disabled successfully
@@ -1187,12 +1181,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
-        '400':
-          description: Bad request, `confirm_insecure` not set
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
           content:
@@ -1213,12 +1201,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: DNSSEC is not enabled for the zone
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
           content:
             application/json:
               schema:
@@ -2412,16 +2394,6 @@ components:
           type: string
           description: Name of an existing TSIG key.
           example: update-key
-    DisableDnssecRequest:
-      type: object
-      description: Request body for disabling DNSSEC on a zone.
-      properties:
-        confirm_insecure:
-          type: boolean
-          description: |-
-            Acknowledges the going-insecure procedure: remove the parent DS,
-            wait out its TTL, then confirm.
-          example: true
     DnssecDsInfo:
       type: object
       description: A key's DS form for parent-zone registration (SHA-256, RFC 4509).

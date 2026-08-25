@@ -1,8 +1,8 @@
 use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
-    DisableDnssecRequest, EnableDnssecRequest, ImportZoneFileRequest, RollbackZoneRequest,
-    RolloverDnssecRequest, UpdateRecordPatch, UpdateZonePatch,
+    EnableDnssecRequest, ImportZoneFileRequest, RollbackZoneRequest, RolloverDnssecRequest,
+    UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -214,14 +214,6 @@ pub(crate) struct EnableZoneDnssecParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
     pub(crate) request: EnableDnssecRequest,
-}
-
-/// Payload for disabling DNSSEC on a zone.
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct DisableZoneDnssecParams {
-    pub(crate) zone_name: String,
-    #[serde(flatten)]
-    pub(crate) request: DisableDnssecRequest,
 }
 
 /// Payload for starting a DNSSEC key rollover on a zone.

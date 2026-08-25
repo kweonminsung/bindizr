@@ -103,9 +103,6 @@ Dropping signatures while the parent still publishes your DS makes the zone
 2. Wait out the DS TTL.
 3. `bindizr zone dnssec disable example.com`
 
-Over HTTP the body must acknowledge the procedure with
-`{"confirm_insecure": true}`.
-
 ## Behavior notes
 
 - Denial mode and key layout are fixed at enable time; to change them,
