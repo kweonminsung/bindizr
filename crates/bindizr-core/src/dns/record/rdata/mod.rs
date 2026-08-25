@@ -117,11 +117,13 @@ impl EncodedRdata {
             }
             RecordType::DS => DsRecordValue::parse(value)?.to_rdata()?,
             RecordType::MX => MxRecordValue::parse(value, priority)?.to_rdata()?,
-            // Stored TXT is always the encoded form; every entry path writes
-            // it, so anything else here is corruption, not a plain string.
+            // Stored TXT is always the presentation form; every entry path
+            // writes it, so anything else here is corruption, not a plain string.
             RecordType::TXT => Rdata::new(
-                TxtRecordValue::from_encoded(value)
-                    .ok_or_else(|| format!("stored TXT value is not in encoded form: {value}"))?
+                TxtRecordValue::from_presentation(value)
+                    .ok_or_else(|| {
+                        format!("stored TXT value is not in presentation form: {value}")
+                    })?
                     .into_rdata(),
             )?,
             RecordType::SRV => SrvRecordValue::parse(value, priority)?.to_rdata()?,

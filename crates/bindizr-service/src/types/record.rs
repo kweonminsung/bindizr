@@ -31,11 +31,11 @@ impl RecordValueRequest {
     ) -> Result<String, String> {
         match (record_type, self) {
             (RecordType::TXT, RecordValueRequest::String(value)) => {
-                Ok(TxtRecordValue::from_string(value).into_encoded())
+                Ok(TxtRecordValue::from_string(value).to_presentation())
             }
             (RecordType::TXT, RecordValueRequest::Segments(segments)) => {
                 TxtRecordValue::from_segments(segments.iter().map(String::as_str))
-                    .map(TxtRecordValue::into_encoded)
+                    .map(|parsed| parsed.to_presentation())
             }
             (_, RecordValueRequest::String(value)) => record_type.encoded_value(value, priority),
             (_, RecordValueRequest::Segments(_)) => {
@@ -59,7 +59,7 @@ pub(crate) fn display_record_value_request(
 }
 
 fn decode_txt_value_request(value: &str) -> RecordValueRequest {
-    match TxtRecordValue::from_encoded(value).and_then(|rdata| rdata.to_content()) {
+    match TxtRecordValue::from_presentation(value).and_then(|rdata| rdata.to_content()) {
         Some(TxtContent::Single(value)) => RecordValueRequest::String(value),
         Some(TxtContent::Segments(segments)) => RecordValueRequest::Segments(segments),
         None => RecordValueRequest::String(value.to_string()),

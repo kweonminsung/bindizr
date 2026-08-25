@@ -205,9 +205,9 @@ impl RecordType {
             RecordType::CNAME => CnameRecordValue::parse(value).map(|_| ()),
             RecordType::DS => DsRecordValue::parse(value)?.validate(),
             RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
-            // Stored TXT is always the encoded form.
-            RecordType::TXT => TxtRecordValue::from_encoded(value)
-                .ok_or_else(|| format!("stored TXT value is not in encoded form: {value}"))?
+            // Stored TXT is always the presentation form.
+            RecordType::TXT => TxtRecordValue::from_presentation(value)
+                .ok_or_else(|| format!("stored TXT value is not in presentation form: {value}"))?
                 .validate(),
             RecordType::NS => NsRecordValue::parse(value).map(|_| ()),
             RecordType::SRV => SrvRecordValue::parse(value, priority)?.validate(),
@@ -298,7 +298,7 @@ impl RecordType {
                 parsed.validate()?;
                 Ok(parsed.encoded())
             }
-            RecordType::TXT => TxtRecordValue::parse(value).map(TxtRecordValue::into_encoded),
+            RecordType::TXT => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
             RecordType::NS => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::SRV => {
                 let parsed = SrvRecordValue::parse(trimmed, priority)?;
@@ -322,7 +322,9 @@ impl RecordType {
     /// Format a stored value of this record type for display.
     pub fn display_value(&self, value: &str) -> String {
         if *self == RecordType::TXT {
-            return match TxtRecordValue::from_encoded(value).and_then(|rdata| rdata.to_content()) {
+            return match TxtRecordValue::from_presentation(value)
+                .and_then(|rdata| rdata.to_content())
+            {
                 Some(TxtContent::Single(value)) => value,
                 Some(TxtContent::Segments(segments)) => segments.join(""),
                 None => value.to_string(),
@@ -343,15 +345,11 @@ impl RecordType {
     }
 
     /// Render a stored value plus its priority column as zone-file rdata:
-    /// MX/SRV carry the priority inline (default 10), TXT is quoted per
-    /// character-string, and other types use their display form.
+    /// MX/SRV carry the priority inline (default 10), TXT rows already hold
+    /// their presentation form, and other types use their display form.
     pub fn presentation_rdata(&self, value: &str, priority: Option<i32>) -> String {
         match self {
-            RecordType::TXT => match TxtRecordValue::from_encoded(value) {
-                Some(rdata) => rdata.to_presentation(),
-                // Not an encoded TXT value; quote it as a single character-string.
-                None => TxtRecordValue::to_quoted_charstr(value.as_bytes()),
-            },
+            RecordType::TXT => value.to_string(),
             RecordType::MX | RecordType::SRV => {
                 format!("{} {}", priority.unwrap_or(10), self.display_value(value))
             }

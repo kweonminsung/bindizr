@@ -334,11 +334,10 @@ fn rr_to_record_value(
                     return Err(UpdateError::Refused("invalid TXT rdata".to_string()));
                 }
             }
-            Ok((
-                RecordType::TXT,
-                TxtRecordValue::from_rdata(&update.rdata).into_encoded(),
-                None,
-            ))
+            let value = TxtRecordValue::from_rdata(&update.rdata)
+                .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?
+                .to_presentation();
+            Ok((RecordType::TXT, value, None))
         }
         RecordType::CAA => {
             let data = parse_rdata(message, update, "CAA", |parser| {

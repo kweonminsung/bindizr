@@ -99,14 +99,14 @@ fn encoded_value_round_trips_txt_presentation_form() {
 
 #[test]
 fn presentation_rdata_txt_escapes_special_characters() {
-    let ascii = TxtRecordValue::from_string("v=spf1 \"x\\y\"").into_encoded();
+    let ascii = TxtRecordValue::from_string("v=spf1 \"x\\y\"").to_presentation();
     assert_eq!(
         RecordType::TXT.presentation_rdata(&ascii, None),
         "\"v=spf1 \\\"x\\\\y\\\"\""
     );
 
     // Control bytes are escaped as \DDD per RFC 1035, Section 5.1.
-    let control = TxtRecordValue::from_string("a\u{1}b").into_encoded();
+    let control = TxtRecordValue::from_string("a\u{1}b").to_presentation();
     assert_eq!(
         RecordType::TXT.presentation_rdata(&control, None),
         "\"a\\001b\""

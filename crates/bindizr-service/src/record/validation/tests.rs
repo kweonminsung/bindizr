@@ -300,7 +300,7 @@ fn add_enforces_one_ttl_per_rrset() {
     assert!(matching_ttl.is_ok());
 
     // A different type at the same owner name is a different RRset.
-    let encoded_txt = TxtRecordValue::from_string("hello").into_encoded();
+    let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
     let other_rrset = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
@@ -314,7 +314,7 @@ fn add_enforces_one_ttl_per_rrset() {
 
 #[test]
 fn validate_record_value_rejects_priority_on_types_without_one() {
-    let encoded_txt = TxtRecordValue::from_string("hello").into_encoded();
+    let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
     for (record_type, value) in [
         (RecordType::A, "192.0.2.1"),
         (RecordType::AAAA, "2001:db8::1"),

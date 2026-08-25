@@ -165,7 +165,7 @@ impl DnsMessageBuilder {
             &version_name,
             zone.default_ttl as u32,
             &RecordType::TXT,
-            &TxtRecordValue::from_string("2").into_encoded(),
+            &TxtRecordValue::from_string("2").to_presentation(),
             None,
         )
     }

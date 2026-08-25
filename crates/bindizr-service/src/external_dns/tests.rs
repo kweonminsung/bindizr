@@ -171,7 +171,10 @@ fn convert_rrset_parses_quoted_txt_values() {
     .unwrap();
 
     assert_eq!(op.record_type, RecordType::TXT);
-    assert!(op.values[0].starts_with("bindizr:txt-rdata:v1:"));
+    assert_eq!(
+        op.values[0],
+        "\"heritage=external-dns,external-dns/owner=default\""
+    );
     assert!(convert_rrset(&rrset("a.example.com", "TXT", None, &["\"unterminated"])).is_err());
 }
 

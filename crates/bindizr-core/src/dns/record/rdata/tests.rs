@@ -96,15 +96,15 @@ fn encode_srv_rdata_is_priority_weight_port_target() {
 }
 
 #[test]
-fn encode_txt_rdata_rejects_a_plain_unencoded_value() {
+fn encode_txt_rdata_rejects_a_plain_unquoted_value() {
     assert!(EncodedRdata::from_columns(&RecordType::TXT, "hello", None).is_err());
 }
 
 #[test]
-fn encode_txt_rdata_passes_stored_raw_rdata_through() {
+fn encode_txt_rdata_decodes_the_stored_presentation_form() {
     let stored = TxtRecordValue::from_segments(["a", "b"])
         .unwrap()
-        .into_encoded();
+        .to_presentation();
     let encoded = EncodedRdata::from_columns(&RecordType::TXT, &stored, None).unwrap();
     assert_eq!(encoded.rdata.as_bytes(), [1, b'a', 1, b'b']);
 }
