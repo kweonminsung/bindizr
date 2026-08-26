@@ -5,18 +5,17 @@
 use bindizr_core::config::bindizr_config;
 use chrono::{Duration, Utc};
 
-use super::{
-    DnssecService,
-    keys::{generate_key, promote_published_keys_tx},
-    notify_zone,
-    status::{build_status, earliest_expiry_tx},
-};
+use super::{DnssecService, generate_key, notify_zone, status::build_status};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
     error::ServiceError,
-    model::dnssec_key::{DnssecKeyRole, DnssecKeyState},
-    repository::RepositoryService,
+    log_info,
+    model::{
+        dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
+        zone::Zone,
+    },
+    repository::{RepositoryService, RepositoryTx},
     serial::generate_serial,
     types::GetDnssecStatusResponse,
     zone::ZoneService,
@@ -101,7 +100,7 @@ impl DnssecService {
             Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            let earliest = earliest_expiry_tx(&mut tx, zone.id).await?;
+            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
             build_status(&zone, zone.dnssec_denial, &keys, earliest, new_serial)
         }
         .await;
@@ -176,19 +175,13 @@ impl DnssecService {
                     promotable_at.format("%Y-%m-%dT%H:%M:%SZ"),
                 )));
             }
-            let Some(keys) =
-                promote_published_keys_tx(&mut tx, &zone, keys, Some(&ds_published)).await?
-            else {
-                return Err(ServiceError::dnssec_no_rollover_in_progress(
-                    zone.name.as_str(),
-                ));
-            };
+            let keys = Self::promote_published_keys_tx(&mut tx, &zone, keys, &ds_published).await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
             DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            let earliest = earliest_expiry_tx(&mut tx, zone.id).await?;
+            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
             build_status(&zone, zone.dnssec_denial, &keys, earliest, new_serial)
         }
         .await;
@@ -197,5 +190,63 @@ impl DnssecService {
 
         notify_zone(&response.zone_name).await;
         Ok(response)
+    }
+
+    /// Promote the published keys named by `promoted` — drawn from this
+    /// transaction's key list — and retire the active keys of the same roles.
+    pub(super) async fn promote_published_keys_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        keys: Vec<DnssecKey>,
+        promoted: &[i32],
+    ) -> Result<Vec<DnssecKey>, ServiceError> {
+        let now = Utc::now();
+        // The retiring key outlives the signatures it made, which resolvers
+        // cache for their RRset's TTL (RFC 7583, Section 3.3.4).
+        let retire_wait_floor = bindizr_config().dnssec.rollover_retire_holddown_secs as i64;
+        let promoted_roles: Vec<DnssecKeyRole> = keys
+            .iter()
+            .filter(|key| promoted.contains(&key.id))
+            .map(|key| key.role)
+            .collect();
+
+        let mut updated = Vec::with_capacity(keys.len());
+        for mut key in keys {
+            if promoted.contains(&key.id) {
+                RepositoryService::update_dnssec_key_state_tx(
+                    tx,
+                    key.id,
+                    DnssecKeyState::Active,
+                    now,
+                    now,
+                )
+                .await?;
+                key.state = DnssecKeyState::Active;
+                key.state_changed_at = now;
+                key.eligible_at = now;
+            } else if key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role) {
+                let eligible_at =
+                    now + Duration::seconds(retire_wait_floor.max(key.max_signed_ttl as i64));
+                RepositoryService::update_dnssec_key_state_tx(
+                    tx,
+                    key.id,
+                    DnssecKeyState::Retired,
+                    now,
+                    eligible_at,
+                )
+                .await?;
+                key.state = DnssecKeyState::Retired;
+                key.state_changed_at = now;
+                key.eligible_at = eligible_at;
+            }
+            updated.push(key);
+        }
+
+        log_info!(
+            "Promoted {} pre-published DNSSEC key(s) for zone {}",
+            promoted.len(),
+            zone.name
+        );
+        Ok(updated)
     }
 }

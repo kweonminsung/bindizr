@@ -281,6 +281,13 @@ impl ServiceError {
         )
     }
 
+    pub(crate) fn dnssec_signing_failed(message: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode::Internal,
+            format!("DNSSEC signing failed: {}", message.into()),
+        )
+    }
+
     pub(crate) fn dnssec_rollover_in_progress(zone_name: &str) -> Self {
         Self::new(
             ErrorCode::DnssecRolloverInProgress,

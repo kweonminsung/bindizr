@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use bindizr_core::config::bindizr_config;
 use chrono::{DateTime, Duration, Utc};
 
-use super::{DnssecService, keys::promote_published_keys_tx, notify_zone};
+use super::{DnssecService, notify_zone};
 use crate::{
     database::repository::LockLevel,
     error::ServiceError,
@@ -205,9 +205,7 @@ async fn promote_zsks_for_zone(zone_id: i32) -> Result<Option<String>, ServiceEr
             return Ok(None);
         }
 
-        let Some(keys) = promote_published_keys_tx(&mut tx, &zone, keys, Some(&due)).await? else {
-            return Ok(None);
-        };
+        let keys = DnssecService::promote_published_keys_tx(&mut tx, &zone, keys, &due).await?;
 
         let new_serial = generate_serial(Some(zone.serial))?;
         DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;

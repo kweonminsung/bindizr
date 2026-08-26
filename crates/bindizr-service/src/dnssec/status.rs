@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Utc};
 
-use super::{DnssecService, signed_view};
+use super::{DS_DIGEST_TYPE_SHA256, DnssecService, ds_rdata_for, to_wire_name};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -42,6 +42,15 @@ impl DnssecService {
         }
         .await;
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
+    }
+
+    pub(super) async fn earliest_expiry_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<Option<DateTime<Utc>>, ServiceError> {
+        let derived =
+            RepositoryService::list_dnssec_records_tx(tx, zone_id, LockLevel::None).await?;
+        Ok(derived.iter().filter_map(|row| row.expires_at).min())
     }
 }
 
@@ -90,31 +99,23 @@ pub(super) fn build_status(
 
 /// The key's DS form, decoded from the same RDATA the CDS records carry.
 fn ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
-    let apex = signed_view::to_wire_name(zone.name.to_wire())
+    let apex = to_wire_name(zone.name.to_wire())
         .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
-    let rdata = signed_view::ds_rdata_for(key, &apex)?;
+    let rdata = ds_rdata_for(key, &apex)?;
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 
     Ok(DnssecDsInfo {
         key_tag: key.key_tag,
         algorithm: key.algorithm.to_int() as u8,
-        digest_type: signed_view::DS_DIGEST_TYPE_SHA256,
+        digest_type: DS_DIGEST_TYPE_SHA256,
         digest: digest.clone(),
         presentation: format!(
             "{} IN DS {} {} {} {}",
             zone.name.to_fqdn(),
             key.key_tag,
             key.algorithm.to_int(),
-            signed_view::DS_DIGEST_TYPE_SHA256,
+            DS_DIGEST_TYPE_SHA256,
             digest
         ),
     })
-}
-
-pub(super) async fn earliest_expiry_tx(
-    tx: &mut RepositoryTx<'_>,
-    zone_id: i32,
-) -> Result<Option<DateTime<Utc>>, ServiceError> {
-    let derived = RepositoryService::list_dnssec_records_tx(tx, zone_id, LockLevel::None).await?;
-    Ok(derived.iter().filter_map(|row| row.expires_at).min())
 }

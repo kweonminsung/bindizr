@@ -3,15 +3,15 @@ use std::collections::BTreeSet;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::{DateTime, Duration, Utc};
 
-use super::{
-    keys::generate_key,
-    signed_view::{SignedViewDiff, SignedViewParams, compute_signed_view},
-};
-use crate::model::{
-    dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
-    dnssec_record::{DnssecRecord, DnssecRecordType},
-    record::{Record, RecordType},
-    zone::{DnssecDenial, Zone},
+use super::{SignedViewDiff, SignedViewParams};
+use crate::{
+    dnssec::generate_key,
+    model::{
+        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
+        dnssec_record::{DnssecRecord, DnssecRecordType},
+        record::{Record, RecordType},
+        zone::{DnssecDenial, Zone},
+    },
 };
 
 fn test_zone() -> Zone {
@@ -84,7 +84,7 @@ struct ComputeArgs<'a> {
 
 fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
     let now = fixed_now();
-    compute_signed_view(&SignedViewParams {
+    SignedViewParams {
         zone: args.zone,
         new_serial: args.new_serial,
         records: args.records,
@@ -97,7 +97,8 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
         expiration_jitter_secs: args.expiration_jitter_secs,
         refresh_secs: 5 * 86_400,
         force: args.force,
-    })
+    }
+    .compute()
     .unwrap()
 }
 

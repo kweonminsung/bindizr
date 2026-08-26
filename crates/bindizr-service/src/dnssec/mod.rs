@@ -7,25 +7,28 @@
 //! caches know the key (automatic for ZSKs, `ds-seen` for CSK/KSK), `retired`
 //! until caches drain, then removed.
 
-mod keys;
 mod lifecycle;
 mod maintenance;
 mod rollover;
 mod signed_view;
 mod status;
-#[cfg(test)]
-mod tests;
 
-use bindizr_core::{config::bindizr_config, dns::record::Rdata};
-use chrono::{Duration, Utc};
+use base64::Engine;
+use bindizr_core::{
+    config::bindizr_config,
+    dns::{name::ParseNameError, record::Rdata},
+};
+use chrono::{DateTime, Duration, Utc};
+use domain::base::{Name, iana::SecurityAlgorithm, rdata::ComposeRecordData};
 pub use maintenance::init_maintenance_scheduler;
+use sha2::{Digest, Sha256};
 
 use crate::{
     database::repository::LockLevel,
     error::ServiceError,
     log_warn,
     model::{
-        dnssec_key::DnssecKey,
+        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
         dnssec_record::{DnssecRecord, DnssecRecordType},
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
@@ -76,7 +79,7 @@ impl DnssecService {
 
         let dnssec = &bindizr_config().dnssec;
         let now = Utc::now();
-        let diff = signed_view::compute_signed_view(&signed_view::SignedViewParams {
+        let diff = signed_view::SignedViewParams {
             zone,
             new_serial,
             records: &records,
@@ -89,7 +92,8 @@ impl DnssecService {
             expiration_jitter_secs: MAX_EXPIRATION_JITTER_SECS as i64,
             refresh_secs: i64::from(dnssec.signature_refresh_days) * 86_400,
             force,
-        })?;
+        }
+        .compute()?;
 
         if diff.is_empty() {
             return Ok(false);
@@ -145,6 +149,88 @@ pub(crate) fn rdata_presentation(record_type: DnssecRecordType, rdata: &Rdata) -
     .filter(|_| parser.remaining() == 0)
     .map(|data| data.to_string())
     .unwrap_or_else(|| rdata.to_base64())
+}
+
+/// The name form the `domain` crate's DNSSEC machinery takes.
+type WireName = Name<Vec<u8>>;
+
+/// A typed name's wire bytes into the domain form.
+fn to_wire_name(wire: Result<Vec<u8>, ParseNameError>) -> Result<WireName, String> {
+    let wire = wire.map_err(|e| e.to_string())?;
+    Name::from_octets(wire).map_err(|e| format!("invalid wire name: {}", e))
+}
+
+/// DS digest type 2 = SHA-256 (RFC 4509), the one digest bindizr emits.
+const DS_DIGEST_TYPE_SHA256: u8 = 2;
+
+/// The key's DNSKEY RDATA rebuilt from its stored public half.
+fn dnskey_for(key: &DnssecKey) -> Result<domain::rdata::Dnskey<Vec<u8>>, ServiceError> {
+    let public_key = base64::engine::general_purpose::STANDARD
+        .decode(&key.public_key)
+        .map_err(|e| {
+            ServiceError::dnssec_signing_failed(format!("stored public key is not base64: {}", e))
+        })?;
+    domain::rdata::Dnskey::new(
+        key.role.flags(),
+        3,
+        SecurityAlgorithm::from_int(key.algorithm.to_int() as u8),
+        public_key,
+    )
+    .map_err(|e| {
+        ServiceError::dnssec_signing_failed(format!("stored public key is invalid: {}", e))
+    })
+}
+
+/// The key's DS RDATA (RFC 4034, Section 5.1.4): tag, algorithm, digest type,
+/// then SHA-256 over the canonical apex name and the DNSKEY RDATA.
+fn ds_rdata_for(key: &DnssecKey, apex: &WireName) -> Result<Rdata, ServiceError> {
+    let dnskey = dnskey_for(key)?;
+    let mut dnskey_rdata = Vec::new();
+    dnskey
+        .compose_rdata(&mut dnskey_rdata)
+        .expect("composing into a Vec cannot run out of space");
+
+    let mut hasher = Sha256::new();
+    hasher.update(apex.as_slice());
+    hasher.update(&dnskey_rdata);
+
+    let mut rdata = Vec::with_capacity(4 + 32);
+    rdata.extend_from_slice(&(key.key_tag as u16).to_be_bytes());
+    rdata.push(key.algorithm.to_int() as u8);
+    rdata.push(DS_DIGEST_TYPE_SHA256);
+    rdata.extend_from_slice(&hasher.finalize());
+    Rdata::new(rdata).map_err(ServiceError::dnssec_signing_failed)
+}
+
+fn generate_key(
+    zone: &Zone,
+    algorithm: DnssecAlgorithm,
+    role: DnssecKeyRole,
+    state: DnssecKeyState,
+    now: DateTime<Utc>,
+    eligible_at: DateTime<Utc>,
+) -> Result<DnssecKey, ServiceError> {
+    let params = match algorithm {
+        DnssecAlgorithm::EcdsaP256Sha256 => domain::crypto::sign::GenerateParams::EcdsaP256Sha256,
+        DnssecAlgorithm::Ed25519 => domain::crypto::sign::GenerateParams::Ed25519,
+    };
+    let (secret, dnskey) = domain::crypto::sign::generate(&params, role.flags())
+        .map_err(|e| ServiceError::internal(format!("failed to generate DNSSEC key: {}", e)))?;
+
+    Ok(DnssecKey {
+        id: 0,
+        zone_id: zone.id,
+        role,
+        algorithm,
+        key_tag: i32::from(dnskey.key_tag()),
+        public_key: base64::engine::general_purpose::STANDARD.encode(dnskey.public_key()),
+        private_key: secret.display_as_bind().to_string(),
+        state,
+        state_changed_at: now,
+        eligible_at,
+        max_signed_ttl: 0,
+        created_at: now,
+    })
 }
 
 /// Journal rows for a derived-plane delta: DELs for `removed`, ADDs for

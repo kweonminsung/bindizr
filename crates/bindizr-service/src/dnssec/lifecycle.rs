@@ -2,12 +2,7 @@
 
 use chrono::Utc;
 
-use super::{
-    DnssecService, derived_changes,
-    keys::generate_key,
-    notify_zone,
-    status::{build_status, earliest_expiry_tx},
-};
+use super::{DnssecService, derived_changes, generate_key, notify_zone, status::build_status};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -79,7 +74,7 @@ impl DnssecService {
             Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            let earliest = earliest_expiry_tx(&mut tx, zone.id).await?;
+            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
             build_status(&zone, denial, &keys, earliest, new_serial)
         }
         .await;
