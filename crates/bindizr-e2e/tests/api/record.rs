@@ -42,6 +42,17 @@ async fn record_create_read_update_delete() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
 
+    // The type filter parses at the service boundary, so junk is a 400
+    // rather than an empty page.
+    let (status, _) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=BOGUS"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
     let update_record_request = json!({
         "name": "api-updated",
         "record_type": "A",
@@ -78,9 +89,9 @@ async fn record_normalize_zone_name() {
 
     let create_zone_request = json!({
         "name": format!("{}.", zone_name.to_ascii_uppercase()),
-        "primary_ns": format!("ns1.{zone_name}"),
-        "admin_email": "hostmaster@example.com",
-        "ttl": 3600
+        "mname": format!("ns1.{zone_name}"),
+        "rname": "hostmaster@example.com",
+        "default_ttl": 3600
     });
     let (status, body) = app
         .request(Method::POST, "/zones", Some(create_zone_request))
@@ -287,9 +298,9 @@ async fn record_scope_by_zone() {
 
     let second_zone = json!({
         "name": second_zone_name,
-        "primary_ns": format!("ns1.{second_zone_name}"),
-        "admin_email": "admin@example.net",
-        "ttl": 3600
+        "mname": format!("ns1.{second_zone_name}"),
+        "rname": "admin@example.net",
+        "default_ttl": 3600
     });
     let (status, _) = app.request(Method::POST, "/zones", Some(second_zone)).await;
     assert_eq!(status, StatusCode::CREATED);
@@ -644,6 +655,19 @@ async fn record_create_supported_types() {
         ("@", "TXT", "v=spf1 include:_spf.google.com ~all", None),
         ("ipv6", "AAAA", "2001:db8::1", None),
         ("alias", "CNAME", "www.example.com", None),
+        ("@", "CAA", "0 ISSUE letsencrypt.org", None),
+        (
+            "ssh",
+            "SSHFP",
+            "4 2 abababababababababababababababababababababababababababababababab",
+            None,
+        ),
+        (
+            "_443._tcp",
+            "TLSA",
+            "3 1 1 abababababababababababababababababababababababababababababababab",
+            None,
+        ),
     ];
 
     for (name, record_type, value, priority) in record_types {
@@ -665,6 +689,9 @@ async fn record_create_supported_types() {
             "MX" => "mail.example.com.",
             "SRV" => "5 5060 sip.example.com.",
             "CNAME" => "www.example.com.",
+            "CAA" => "0 issue \"letsencrypt.org\"",
+            "SSHFP" => "4 2 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
+            "TLSA" => "3 1 1 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
             _ => value,
         };
         assert_eq!(body["record"]["value"], expected_value);
@@ -683,9 +710,9 @@ async fn record_create_supported_types() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
-    // 5 created here + the apex NS record auto-created with the zone.
-    assert_eq!(records.len(), 6);
-    for record_type in ["MX", "SRV", "TXT", "AAAA", "CNAME"] {
+    // 8 created here + the apex NS record auto-created with the zone.
+    assert_eq!(records.len(), 9);
+    for record_type in ["MX", "SRV", "TXT", "AAAA", "CNAME", "CAA", "SSHFP", "TLSA"] {
         assert!(
             records
                 .iter()
@@ -803,6 +830,61 @@ async fn record_bulk_insert() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let bulk_request = json!({
+        "records": [
+            { "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" },
+            { "name": "sub", "record_type": "NS", "value": "ns1.example.net." }
+        ]
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["inserted"], 2);
+    assert_eq!(body["records"][0]["record_type"], "DS");
+    assert_eq!(body["records"][1]["record_type"], "NS");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // The commit-time delegation invariant only runs on apply, so the dry run
+    // must reject the same batch itself to keep its validation promise.
+    let bulk_request = json!({
+        "records": [
+            { "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" }
+        ],
+        "dry_run": true
+    });
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/records/bulk"),
+            Some(bulk_request),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(
+        body["error"].as_str().unwrap().contains("delegation NS"),
+        "{body}"
+    );
 }
 
 #[tokio::test]

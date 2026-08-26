@@ -1,6 +1,9 @@
 use std::{collections::HashMap, net::IpAddr};
 
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::{
+    dns::name::ZoneName,
+    model::zone_change::{ChangeOperation, JournalRecordType},
+};
 use domain::base::iana::Rtype;
 use tokio::net::TcpStream;
 
@@ -44,10 +47,10 @@ pub(crate) async fn handle_ixfr(
 
     if client_serial == current_serial {
         log_info!("IXFR: Client is up-to-date (serial={})", current_serial);
-        let current_soa = match delta::find_zone_snapshot(zone.id, current_serial).await? {
-            Some(snapshot) => snapshot,
+        let current_soa = match delta::find_zone_version(zone.id, current_serial).await? {
+            Some(version) => version,
             None => {
-                log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
+                log_warn!("IXFR: Missing SOA version, falling back to AXFR");
                 return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
             }
         };
@@ -63,7 +66,7 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    let changes = delta::list_zone_changes(zone.id, client_serial, current_serial).await?;
+    let changes = delta::list_zone_journal(zone.id, client_serial, current_serial).await?;
 
     if changes.is_empty() {
         log_warn!(
@@ -74,27 +77,14 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    let mut serials_in_changes: Vec<u32> = changes
+    let mut journal_serials: Vec<u32> = changes
         .iter()
         .map(|c| delta::serial_to_u32(c.serial))
         .collect::<Result<_, _>>()?;
-    serials_in_changes.sort_unstable();
-    serials_in_changes.dedup();
+    journal_serials.sort_unstable();
+    journal_serials.dedup();
 
-    let mut previous_serial = client_serial;
-    for &serial in &serials_in_changes {
-        if serial <= previous_serial {
-            log_warn!(
-                "IXFR: Non-monotonic serial chain (previous {}, got {}), falling back to AXFR",
-                previous_serial,
-                serial
-            );
-            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
-        }
-        previous_serial = serial;
-    }
-
-    if let Some(&last_serial) = serials_in_changes.last()
+    if let Some(&last_serial) = journal_serials.last()
         && last_serial != current_serial
     {
         log_warn!(
@@ -105,37 +95,48 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    let mut snapshots_by_serial: HashMap<u32, delta::ZoneSnapshot> = HashMap::new();
-    snapshots_by_serial.reserve(serials_in_changes.len() + 1);
+    let mut versions_by_serial: HashMap<u32, delta::ZoneVersion> = HashMap::new();
+    versions_by_serial.reserve(journal_serials.len() + 1);
 
-    // Fetch the whole serial span in one query; missing snapshots are caught
-    // by the chain validation below.
-    for snapshot in delta::list_zone_snapshots(zone.id, client_serial, current_serial).await? {
-        if let Ok(serial) = delta::serial_to_u32(snapshot.serial) {
-            snapshots_by_serial.insert(serial, snapshot);
+    for version in delta::list_zone_versions(zone.id, client_serial, current_serial).await? {
+        if let Ok(serial) = delta::serial_to_u32(version.serial) {
+            versions_by_serial.insert(serial, version);
         }
     }
 
-    // Every delta step needs both its old and new SOA snapshots.
-    for (idx, &serial) in serials_in_changes.iter().enumerate() {
-        let old_serial = if idx == 0 {
-            client_serial
-        } else {
-            serials_in_changes[idx - 1]
-        };
+    // The version rows are the authoritative list of serials the zone passed
+    // through; a journal skipping any of them (a partially pruned history)
+    // would replay an incomplete delta as if it were whole.
+    let mut version_serials: Vec<u32> = versions_by_serial
+        .keys()
+        .copied()
+        .filter(|&serial| serial > client_serial)
+        .collect();
+    version_serials.sort_unstable();
+    if journal_serials != version_serials {
+        log_warn!(
+            "IXFR: Journal covers serials {:?} but versions after {} are {:?}, falling back to AXFR",
+            journal_serials,
+            client_serial,
+            version_serials
+        );
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+    }
 
-        if !snapshots_by_serial.contains_key(&old_serial)
-            || !snapshots_by_serial.contains_key(&serial)
-        {
-            log_warn!("IXFR: Missing SOA snapshot, falling back to AXFR");
-            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
-        }
+    // With the serial sets equal, every delta step has its new SOA version;
+    // only the client's own, the first step's old SOA, can still be missing.
+    if !versions_by_serial.contains_key(&client_serial) {
+        log_warn!(
+            "IXFR: Missing SOA version for client serial {}, falling back to AXFR",
+            client_serial
+        );
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
     log_info!(
         "IXFR: Sending {} changes across {} serial steps from {} to {}",
         changes.len(),
-        serials_in_changes.len(),
+        journal_serials.len(),
         client_serial,
         current_serial
     );
@@ -146,7 +147,7 @@ pub(crate) async fn handle_ixfr(
         &zone,
         client_serial,
         &changes,
-        &snapshots_by_serial,
+        &versions_by_serial,
     )
     .await
     {
@@ -178,12 +179,12 @@ pub(crate) async fn handle_ixfr(
 async fn send_up_to_date_response(
     stream: &mut TcpStream,
     query: &wire::ParsedQuery,
-    current_soa: &delta::ZoneSnapshot,
+    current_soa: &delta::ZoneVersion,
 ) -> Result<(), XfrError> {
     let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
 
-    builder.add_soa_from_snapshot(current_soa)?;
-    wire::flush_message_if_not_empty(stream, &mut builder).await?;
+    builder.add_version_soa(current_soa)?;
+    builder.flush_if_not_empty(stream).await?;
 
     Ok(())
 }
@@ -204,7 +205,7 @@ async fn send_ixfr_response(
     zone: &crate::model::zone::Zone,
     client_serial: u32,
     changes: &[delta::ZoneChange],
-    snapshots_by_serial: &HashMap<u32, delta::ZoneSnapshot>,
+    versions_by_serial: &HashMap<u32, delta::ZoneVersion>,
 ) -> Result<(), IxfrSendError> {
     let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
     let mut messages_sent = 0usize;
@@ -216,7 +217,7 @@ async fn send_ixfr_response(
         zone,
         client_serial,
         changes,
-        snapshots_by_serial,
+        versions_by_serial,
     )
     .await;
 
@@ -241,19 +242,20 @@ async fn stream_ixfr_body(
     zone: &crate::model::zone::Zone,
     client_serial: u32,
     changes: &[delta::ZoneChange],
-    snapshots_by_serial: &HashMap<u32, delta::ZoneSnapshot>,
+    versions_by_serial: &HashMap<u32, delta::ZoneVersion>,
 ) -> Result<(), XfrError> {
-    let current_snapshot = snapshots_by_serial
+    let current_version = versions_by_serial
         .get(&delta::serial_to_u32(zone.serial)?)
         .ok_or_else(|| {
-            XfrError::ProtocolError("Missing current serial SOA snapshot for IXFR".to_string())
+            XfrError::ProtocolError("Missing current serial SOA version for IXFR".to_string())
         })?;
 
     // Initial SOA (current serial).
-    wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
-        builder.add_soa_from_snapshot(current_snapshot)
-    })
-    .await?;
+    builder
+        .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
+            builder.add_version_soa(current_version)
+        })
+        .await?;
 
     let mut changes_by_serial: HashMap<u32, Vec<&delta::ZoneChange>> = HashMap::new();
     for change in changes {
@@ -274,53 +276,55 @@ async fn stream_ixfr_body(
         };
 
         // Old SOA (deletion section marker).
-        let old_soa = snapshots_by_serial.get(&old_serial).ok_or_else(|| {
-            XfrError::ProtocolError(format!(
-                "Missing old SOA snapshot for serial {}",
-                old_serial
-            ))
+        let old_soa = versions_by_serial.get(&old_serial).ok_or_else(|| {
+            XfrError::ProtocolError(format!("Missing old SOA version for serial {}", old_serial))
         })?;
-        wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
-            builder.add_soa_from_snapshot(old_soa)
-        })
-        .await?;
+        builder
+            .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
+                builder.add_version_soa(old_soa)
+            })
+            .await?;
 
         for change in serial_changes
             .iter()
-            .filter(|c| c.operation == delta::ZoneChange::OP_DEL)
+            .filter(|c| c.operation == ChangeOperation::Del)
         {
-            wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
-                add_change(builder, change, &zone.name)
-            })
-            .await?;
+            builder
+                .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
+                    add_change(builder, change, &zone.name)
+                })
+                .await?;
         }
 
         // New SOA (addition section marker).
-        let new_soa = snapshots_by_serial.get(&serial).ok_or_else(|| {
-            XfrError::ProtocolError(format!("Missing new SOA snapshot for serial {}", serial))
+        let new_soa = versions_by_serial.get(&serial).ok_or_else(|| {
+            XfrError::ProtocolError(format!("Missing new SOA version for serial {}", serial))
         })?;
-        wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
-            builder.add_soa_from_snapshot(new_soa)
-        })
-        .await?;
+        builder
+            .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
+                builder.add_version_soa(new_soa)
+            })
+            .await?;
 
         for change in serial_changes
             .iter()
-            .filter(|c| c.operation == delta::ZoneChange::OP_ADD)
+            .filter(|c| c.operation == ChangeOperation::Add)
         {
-            wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
-                add_change(builder, change, &zone.name)
-            })
-            .await?;
+            builder
+                .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
+                    add_change(builder, change, &zone.name)
+                })
+                .await?;
         }
     }
 
     // Final SOA (current serial).
-    wire::add_answer_and_flush_if_needed(stream, builder, messages_sent, |builder| {
-        builder.add_soa_from_snapshot(current_snapshot)
-    })
-    .await?;
-    *messages_sent += wire::flush_message_if_not_empty(stream, builder).await?;
+    builder
+        .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
+            builder.add_version_soa(current_version)
+        })
+        .await?;
+    *messages_sent += builder.flush_if_not_empty(stream).await?;
 
     Ok(())
 }
@@ -330,12 +334,32 @@ fn add_change(
     change: &delta::ZoneChange,
     zone_name: &ZoneName,
 ) -> Result<(), XfrError> {
-    builder.add_record_parts(
-        zone_name,
-        &change.record_name,
-        &change.record_type,
-        &change.record_value,
-        change.record_ttl,
-        change.record_priority,
-    )
+    match &change.record_type {
+        JournalRecordType::Derived(record_type) => {
+            let rdata = change.record_rdata.clone().ok_or_else(|| {
+                XfrError::ProtocolError("derived change carries no wire rdata".to_string())
+            })?;
+            builder.add_raw_rdata(
+                change.record_name.to_wire(zone_name),
+                record_type.wire_type(),
+                change.record_ttl as u32,
+                rdata,
+            )
+        }
+        JournalRecordType::User(record_type) => {
+            let value = change.record_value.as_deref().ok_or_else(|| {
+                XfrError::ProtocolError("user change carries no record value".to_string())
+            })?;
+            builder.add_record_parts(
+                zone_name,
+                &change.record_name,
+                record_type,
+                value,
+                change.record_ttl,
+                change.record_priority,
+            )
+        }
+        // The delta's SOA boundaries come from the version rows above.
+        JournalRecordType::Soa => Ok(()),
+    }
 }

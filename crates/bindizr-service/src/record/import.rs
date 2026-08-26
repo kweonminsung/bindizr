@@ -18,6 +18,7 @@ use super::{
 };
 use crate::{
     authorization::Caller,
+    dnssec::DnssecService,
     error::ServiceError,
     log_debug, log_error, log_info, log_warn,
     model::{
@@ -41,30 +42,20 @@ struct DesiredRecord {
     stored_name: OwnerName,
 }
 
-/// Whether `existing` is the record described by (name, type, value, priority).
-fn record_matches(
-    existing: &Record,
-    stored_name: &OwnerName,
-    record_type: &RecordType,
-    value: &str,
-    priority: Option<i32>,
-) -> bool {
-    existing.name == *stored_name
-        && existing.record_type == *record_type
-        && record_type.values_equal(&existing.value, existing.priority, value, priority)
-}
-
+/// Whether `existing` is the record the import wants present.
 fn desired_matches(existing: &Record, desired: &DesiredRecord) -> bool {
-    record_matches(
-        existing,
-        &desired.stored_name,
-        &desired.prepared.record_type,
-        &desired.prepared.value,
-        desired.prepared.priority,
-    )
+    let record_type = &desired.prepared.record_type;
+    existing.name == desired.stored_name
+        && existing.record_type == *record_type
+        && record_type.values_equal(
+            &existing.value,
+            existing.priority,
+            &desired.prepared.value,
+            desired.prepared.priority,
+        )
 }
 
-/// Records referenced by the zone's own SOA/primary NS must never be removed.
+/// Records referenced by the zone's own SOA/mname NS must never be removed.
 fn is_protected(zone: &Zone, record: &Record) -> bool {
     validate_delete_constraints(zone, std::slice::from_ref(record)).is_err()
 }
@@ -118,7 +109,7 @@ impl RecordService {
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let parsed = parse_zone_file(&request.content, zone.name.as_str(), zone.ttl);
+            let parsed = parse_zone_file(&request.content, zone.name.as_str(), zone.default_ttl);
             timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
@@ -165,7 +156,7 @@ impl RecordService {
                     })
                 });
                 if let Some(kept) = duplicate_in_file {
-                    let kept_ttl = desired[kept].prepared.ttl.unwrap_or(zone.ttl);
+                    let kept_ttl = desired[kept].prepared.ttl.unwrap_or(zone.default_ttl);
                     let this_ttl = record.ttl;
                     // The same RR at two TTLs is a mixed-TTL RRset (RFC 2181,
                     // Section 5.2); deduplication must not swallow the conflict.
@@ -209,7 +200,7 @@ impl RecordService {
                         desired.iter().map(|d| d.stored_name.clone()).collect();
                     names.sort();
                     names.dedup();
-                    RepositoryService::list_records_by_zone_id_and_names_tx(
+                    RepositoryService::list_records_by_names_tx(
                         &mut tx,
                         zone.id,
                         &names,
@@ -218,12 +209,7 @@ impl RecordService {
                     .await
                 }
                 ImportMode::Replace | ImportMode::Upsert => {
-                    RepositoryService::list_records_by_zone_id_tx(
-                        &mut tx,
-                        zone.id,
-                        LockLevel::Exclusive,
-                    )
-                    .await
+                    RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::Exclusive).await
                 }
             }
             .map_err(|e| {
@@ -279,7 +265,7 @@ impl RecordService {
 
             // Reconcile TTL only for upsert/replace.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
-            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.ttl);
+            let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.default_ttl);
 
             let mut unchanged = 0usize;
             let mut updated = 0usize;
@@ -353,6 +339,18 @@ impl RecordService {
                     Err(e) => return Err(e),
                 }
             }
+            // Mirror of the version-time delegation check, so a dry run
+            // reports the violation per name instead of failing the apply.
+            for (name, rows) in &simulated_by_name {
+                if rows.iter().any(|r| r.record_type == RecordType::DS)
+                    && !rows.iter().any(|r| r.record_type == RecordType::NS)
+                {
+                    errors.push(format!(
+                        "'{}': DS records require a delegation NS RRset at the same name",
+                        name
+                    ));
+                }
+            }
             timings.validate_ms = elapsed_ms(t);
 
             let summary = ImportSummary {
@@ -410,6 +408,7 @@ impl RecordService {
 
                 let t = Instant::now();
                 // Advance the serial once so IXFR consumers detect the import
+                DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
                 ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
                 timings.serial_ms = elapsed_ms(t);
             }
@@ -511,7 +510,7 @@ fn import_diff(
         name: add.stored_name.clone(),
         record_type: add.prepared.record_type.clone(),
         value: add.prepared.value.clone(),
-        ttl: add.prepared.ttl.unwrap_or(zone.ttl),
+        ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),
         priority: add.prepared.priority,
     }));
 

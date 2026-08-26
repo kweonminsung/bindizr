@@ -4,6 +4,7 @@ use bindizr_db::repository::LockLevel;
 use super::{RecordService, validation::validate_delete_constraints};
 use crate::{
     authorization::{Caller, RecordWrite},
+    dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
     log_error, log_info, log_warn,
     repository::RepositoryService,
@@ -24,10 +25,10 @@ impl RecordService {
     /// Delete a record by id, bumping the zone serial and recording a DEL
     /// change for IXFR. `caller` is authorized inside the delete transaction,
     /// so a concurrent rename cannot outrun the check.
-    pub async fn delete_by_id(caller: &Caller, record_id: i32) -> Result<(), ServiceError> {
+    pub async fn delete(caller: &Caller, record_id: i32) -> Result<(), ServiceError> {
         // Resolve zone_id with a non-locking read so the tx locks zone before
         // record (the create/bulk/import order); the reverse can deadlock.
-        let zone_id = match RepositoryService::get_record_by_id(record_id).await {
+        let zone_id = match RepositoryService::get_record(record_id).await {
             Ok(Some(record)) => record.zone_id,
             Ok(None) => {
                 return Err(ServiceError::record_not_found(record_id));
@@ -41,39 +42,35 @@ impl RecordService {
         let mut tx = RepositoryService::begin_tx("Failed to delete record").await?;
 
         let apply_result: Result<DeletedRecord, ServiceError> = async {
-            let zone =
-                match RepositoryService::get_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
-                    .await
-                {
-                    Ok(Some(zone)) => zone,
-                    Ok(None) => {
-                        return Err(ServiceError::new(
-                            ErrorCode::ZoneNotFound,
-                            format!("Zone with id '{}' not found", zone_id),
-                        ));
-                    }
-                    Err(e) => {
-                        log_error!("Failed to fetch zone: {}", e);
-                        return Err(ServiceError::internal("Failed to fetch zone".to_string()));
-                    }
-                };
-
-            let existing_record = match RepositoryService::get_record_by_id_tx(
-                &mut tx,
-                record_id,
-                LockLevel::Exclusive,
-            )
-            .await
+            let zone = match RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive)
+                .await
             {
-                Ok(Some(record)) if record.zone_id == zone.id => record,
-                Ok(Some(_)) | Ok(None) => {
-                    return Err(ServiceError::record_not_found(record_id));
+                Ok(Some(zone)) => zone,
+                Ok(None) => {
+                    return Err(ServiceError::new(
+                        ErrorCode::ZoneNotFound,
+                        format!("Zone with id '{}' not found", zone_id),
+                    ));
                 }
                 Err(e) => {
-                    log_error!("Failed to fetch record: {}", e);
-                    return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                    log_error!("Failed to fetch zone: {}", e);
+                    return Err(ServiceError::internal("Failed to fetch zone".to_string()));
                 }
             };
+
+            let existing_record =
+                match RepositoryService::get_record_tx(&mut tx, record_id, LockLevel::Exclusive)
+                    .await
+                {
+                    Ok(Some(record)) if record.zone_id == zone.id => record,
+                    Ok(Some(_)) | Ok(None) => {
+                        return Err(ServiceError::record_not_found(record_id));
+                    }
+                    Err(e) => {
+                        log_error!("Failed to fetch record: {}", e);
+                        return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                    }
+                };
 
             // Invisible zones read as 404 so scoped tokens cannot probe ids.
             if !caller.zone_visible(zone.id) {
@@ -102,6 +99,7 @@ impl RecordService {
             )
             .await?;
 
+            DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok(DeletedRecord {

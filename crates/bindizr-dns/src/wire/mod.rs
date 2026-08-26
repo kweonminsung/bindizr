@@ -1,36 +1,54 @@
 //! DNS wire-format encoding for zone-transfer responses: message framing and
 //! record/SOA serialization.
 
-use std::{
-    net::{Ipv4Addr, Ipv6Addr},
-    str::FromStr,
-};
-
 use bindizr_core::dns::{
-    name::{OwnerName, ZoneName, to_fqdn},
-    record::{SoaMailbox, TxtRecordValue},
+    DNS_TCP_MAX_SIZE,
+    name::{OwnerName, ParseNameError, ZoneName, encode_name, to_fqdn},
+    record::{EncodedRdata, Rdata, SoaRecordValue, TxtRecordValue},
 };
 use domain::{
     base::{
-        Message, MessageBuilder, Name, Serial, ToName, Ttl, UnknownRecordData,
+        Message, MessageBuilder, Name, ToName, Ttl, UnknownRecordData,
         iana::{Class, Rcode, Rtype},
         rdata::ComposeRecordData,
         record::ComposeRecord,
     },
-    rdata::{A, Aaaa, Cname, Mx, Ns, Ptr, Soa, Srv, Txt},
+    rdata::Soa,
 };
 
 use crate::{
     error::XfrError,
-    log_info,
     model::{
+        dnssec_record::DnssecRecord,
         record::{Record, RecordType},
         zone::Zone,
     },
 };
 
-/// Maximum size of a DNS message carried over TCP (16-bit length prefix).
-const DNS_TCP_MAX_SIZE: usize = 65535;
+/// RR TYPE number of SOA (RFC 1035); SOA never appears as a stored record
+/// row, so `RecordType` does not spell it.
+const SOA_WIRE_TYPE: u16 = 6;
+
+/// What [`DnsMessageBuilder::add_raw_rdata`] accepts as its owner: a parsed
+/// name, or a typed name's wire bytes still carrying their encoding error.
+pub(crate) trait IntoOwner {
+    fn into_owner(self) -> Result<Name<Vec<u8>>, XfrError>;
+}
+
+impl IntoOwner for Name<Vec<u8>> {
+    fn into_owner(self) -> Result<Name<Vec<u8>>, XfrError> {
+        Ok(self)
+    }
+}
+
+impl IntoOwner for Result<Vec<u8>, ParseNameError> {
+    fn into_owner(self) -> Result<Name<Vec<u8>>, XfrError> {
+        let wire =
+            self.map_err(|e| XfrError::ProtocolError(format!("invalid owner name: {}", e)))?;
+        Name::from_octets(wire)
+            .map_err(|e| XfrError::ProtocolError(format!("invalid owner name: {}", e)))
+    }
+}
 
 pub(crate) struct DnsMessageBuilder {
     query_id: u16,
@@ -53,171 +71,103 @@ impl DnsMessageBuilder {
     }
 
     pub(crate) fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
-        let admin_email =
-            SoaMailbox::from_email(&zone.admin_email).map_err(XfrError::ProtocolError)?;
-        let soa = Soa::new(
-            parse_name(&zone.primary_ns)?,
-            parse_name(admin_email.as_str())?,
-            Serial(serial),
-            Ttl::from_secs(zone.refresh as u32),
-            Ttl::from_secs(zone.retry as u32),
-            Ttl::from_secs(zone.expire as u32),
-            Ttl::from_secs(zone.minimum_ttl as u32),
-        );
-        self.add_answer(parse_name(zone.name.as_str())?, zone.ttl as u32, soa);
-        Ok(())
+        let rdata = zone.soa_rdata(serial).map_err(XfrError::ProtocolError)?;
+        self.add_raw_rdata(
+            zone.name.to_wire(),
+            SOA_WIRE_TYPE,
+            zone.default_ttl as u32,
+            rdata,
+        )
     }
 
     /// Adds a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
     pub(crate) fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
-        let soa = Soa::new(
-            parse_name("invalid")?,
-            parse_name("invalid")?,
-            Serial(serial),
-            Ttl::from_secs(zone.refresh as u32),
-            Ttl::from_secs(zone.retry as u32),
-            Ttl::from_secs(zone.expire as u32),
-            Ttl::from_secs(zone.minimum_ttl as u32),
-        );
-        self.add_answer(parse_name(zone.name.as_str())?, zone.ttl as u32, soa);
-        Ok(())
+        let rdata = SoaRecordValue {
+            mname: "invalid",
+            rname: "invalid",
+            serial,
+            refresh: zone.refresh as u32,
+            retry: zone.retry as u32,
+            expire: zone.expire as u32,
+            minimum: zone.minimum_ttl as u32,
+        }
+        .to_rdata()
+        .map_err(XfrError::ProtocolError)?;
+        self.add_raw_rdata(
+            zone.name.to_wire(),
+            SOA_WIRE_TYPE,
+            zone.default_ttl as u32,
+            rdata,
+        )
     }
 
-    /// Adds an SOA from a serial-specific snapshot.
-    pub(crate) fn add_soa_from_snapshot(
+    /// Adds an SOA from a serial-specific version.
+    pub(crate) fn add_version_soa(
         &mut self,
-        soa: &crate::server::delta::ZoneSnapshot,
+        soa: &crate::server::delta::ZoneVersion,
     ) -> Result<(), XfrError> {
         let serial = crate::server::delta::serial_to_u32(soa.serial)?;
-        let rdata = Soa::new(
-            parse_name(&soa.primary_ns)?,
-            parse_name(&soa.admin_email)?,
-            Serial(serial),
-            Ttl::from_secs(soa.refresh as u32),
-            Ttl::from_secs(soa.retry as u32),
-            Ttl::from_secs(soa.expire as u32),
-            Ttl::from_secs(soa.minimum_ttl as u32),
-        );
+        let rdata = SoaRecordValue {
+            mname: &soa.mname,
+            rname: &soa.rname,
+            serial,
+            refresh: soa.refresh as u32,
+            retry: soa.retry as u32,
+            expire: soa.expire as u32,
+            minimum: soa.minimum_ttl as u32,
+        }
+        .to_rdata()
+        .map_err(XfrError::ProtocolError)?;
 
         // IXFR SOA owner is the transfer QNAME.
-        self.add_answer(self.qname.clone(), soa.ttl as u32, rdata);
-        Ok(())
+        self.add_raw_rdata(
+            self.qname.clone(),
+            SOA_WIRE_TYPE,
+            soa.default_ttl as u32,
+            rdata,
+        )
     }
 
-    pub(crate) fn add_a_record(
+    /// Adds one answer of any supported stored type at an absolute owner name.
+    fn add_text_rdata(
         &mut self,
         name: &str,
         ttl: u32,
-        addr: Ipv4Addr,
+        record_type: &RecordType,
+        value: &str,
+        priority: Option<i32>,
     ) -> Result<(), XfrError> {
-        self.add_answer(parse_name(name)?, ttl, A::new(addr));
-        Ok(())
-    }
-
-    pub(crate) fn add_aaaa_record(
-        &mut self,
-        name: &str,
-        ttl: u32,
-        addr: Ipv6Addr,
-    ) -> Result<(), XfrError> {
-        self.add_answer(parse_name(name)?, ttl, Aaaa::new(addr));
-        Ok(())
-    }
-
-    pub(crate) fn add_cname_record(
-        &mut self,
-        name: &str,
-        ttl: u32,
-        target: &str,
-    ) -> Result<(), XfrError> {
-        self.add_answer(parse_name(name)?, ttl, Cname::new(parse_name(target)?));
-        Ok(())
-    }
-
-    pub(crate) fn add_mx_record(
-        &mut self,
-        name: &str,
-        ttl: u32,
-        priority: u16,
-        target: &str,
-    ) -> Result<(), XfrError> {
-        self.add_answer(
-            parse_name(name)?,
-            ttl,
-            Mx::new(priority, parse_name(target)?),
-        );
-        Ok(())
-    }
-
-    pub(crate) fn add_srv_record(
-        &mut self,
-        name: &str,
-        ttl: u32,
-        priority: u16,
-        weight: u16,
-        port: u16,
-        target: &str,
-    ) -> Result<(), XfrError> {
-        let srv = Srv::new(priority, weight, port, parse_name(target)?);
-        self.add_answer(parse_name(name)?, ttl, srv);
-        Ok(())
-    }
-
-    pub(crate) fn add_ns_record(
-        &mut self,
-        name: &str,
-        ttl: u32,
-        target: &str,
-    ) -> Result<(), XfrError> {
-        self.add_answer(parse_name(name)?, ttl, Ns::new(parse_name(target)?));
-        Ok(())
-    }
-
-    pub(crate) fn add_txt_record(
-        &mut self,
-        name: &str,
-        ttl: u32,
-        text: &str,
-    ) -> Result<(), XfrError> {
-        let owner = parse_name(name)?;
-
-        // Operator-supplied raw rdata is passed through unchanged.
-        if let Some(rdata) = TxtRecordValue::from_encoded(text).map(TxtRecordValue::into_rdata) {
-            let data = UnknownRecordData::from_octets(Rtype::TXT, rdata)
-                .map_err(|e| XfrError::ProtocolError(format!("Invalid TXT rdata: {}", e)))?;
-            self.add_answer(owner, ttl, data);
-            return Ok(());
+        match EncodedRdata::from_columns(record_type, value, priority) {
+            Ok(EncodedRdata { record_type, rdata }) => {
+                self.add_raw_rdata(parse_name(name)?, record_type, ttl, rdata)
+            }
+            Err(e) => Err(XfrError::ProtocolError(e)),
         }
-
-        let data = Txt::<Vec<u8>>::build_from_slice(text.as_bytes())
-            .map_err(|e| XfrError::ProtocolError(format!("Invalid TXT value: {}", e)))?;
-        self.add_answer(owner, ttl, data);
-        Ok(())
-    }
-
-    pub(crate) fn add_ptr_record(
-        &mut self,
-        name: &str,
-        ttl: u32,
-        target: &str,
-    ) -> Result<(), XfrError> {
-        self.add_answer(parse_name(name)?, ttl, Ptr::new(parse_name(target)?));
-        Ok(())
     }
 
     /// Adds the catalog-zone NS record, which is the placeholder "invalid".
     pub(crate) fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), XfrError> {
         let owner_name = zone.name.to_fqdn();
-        self.add_ns_record(&owner_name, zone.ttl as u32, "invalid")?;
-        Ok(())
+        self.add_text_rdata(
+            &owner_name,
+            zone.default_ttl as u32,
+            &RecordType::NS,
+            "invalid",
+            None,
+        )
     }
 
     /// Adds the catalog-zone version TXT record.
-    pub(crate) fn add_catalog_version(&mut self, zone: &Zone) -> Result<(), XfrError> {
+    pub(crate) fn add_catalog_schema_version(&mut self, zone: &Zone) -> Result<(), XfrError> {
         let version_name = format!("version.{}.", zone.name);
         // "2" is the RFC 9432 catalog zone schema version.
-        self.add_txt_record(&version_name, zone.ttl as u32, "2")?;
-        Ok(())
+        self.add_text_rdata(
+            &version_name,
+            zone.default_ttl as u32,
+            &RecordType::TXT,
+            &TxtRecordValue::from_string("2").to_presentation(),
+            None,
+        )
     }
 
     /// Adds a catalog-zone member PTR record.
@@ -229,8 +179,13 @@ impl DnsMessageBuilder {
         let member_id = crate::server::catalog::zone_name_to_member_id(member_zone);
         let ptr_name = format!("{}.zones.{}.", member_id, zone.name);
         let ptr_target = to_fqdn(member_zone);
-        self.add_ptr_record(&ptr_name, zone.ttl as u32, &ptr_target)?;
-        Ok(())
+        self.add_text_rdata(
+            &ptr_name,
+            zone.default_ttl as u32,
+            &RecordType::PTR,
+            &ptr_target,
+            None,
+        )
     }
 
     /// Adds an answer from a database Record model.
@@ -242,60 +197,56 @@ impl DnsMessageBuilder {
         self.add_record_parts(
             zone_name,
             &record.name,
-            record.record_type.as_str(),
+            &record.record_type,
             &record.value,
             record.ttl,
             record.priority,
         )
     }
 
-    /// Adds an answer from stored record columns (records and IXFR zone
-    /// changes share this shape). Unsupported types are skipped.
+    /// Adds an answer from stored record columns (records and journal
+    /// rows share this shape). Unsupported types are skipped.
     pub(crate) fn add_record_parts(
         &mut self,
         zone_name: &ZoneName,
         name: &OwnerName,
-        record_type: &str,
+        record_type: &RecordType,
         value: &str,
         ttl: i32,
         priority: Option<i32>,
     ) -> Result<(), XfrError> {
-        let ttl = ttl as u32;
-        let owner_name = name.to_fqdn(zone_name);
+        let EncodedRdata { record_type, rdata } =
+            EncodedRdata::from_columns(record_type, value, priority)
+                .map_err(XfrError::ProtocolError)?;
+        self.add_raw_rdata(name.to_wire(zone_name), record_type, ttl as u32, rdata)
+    }
 
-        match record_type {
-            "A" => {
-                let addr: Ipv4Addr = value
-                    .parse()
-                    .map_err(|_| XfrError::ProtocolError(format!("Invalid A record: {}", value)))?;
-                self.add_a_record(&owner_name, ttl, addr)
-            }
-            "AAAA" => {
-                let addr: Ipv6Addr = value.parse().map_err(|_| {
-                    XfrError::ProtocolError(format!("Invalid AAAA record: {}", value))
-                })?;
-                self.add_aaaa_record(&owner_name, ttl, addr)
-            }
-            "CNAME" => self.add_cname_record(&owner_name, ttl, value),
-            "MX" => {
-                let (mx_priority, target) =
-                    RecordType::mx_wire_fields(value, priority).map_err(XfrError::ProtocolError)?;
-                self.add_mx_record(&owner_name, ttl, mx_priority, target)
-            }
-            "NS" => self.add_ns_record(&owner_name, ttl, value),
-            "PTR" => self.add_ptr_record(&owner_name, ttl, value),
-            "SRV" => {
-                let (srv_priority, weight, port, target) =
-                    RecordType::srv_wire_fields(value, priority)
-                        .map_err(XfrError::ProtocolError)?;
-                self.add_srv_record(&owner_name, ttl, srv_priority, weight, port, target)
-            }
-            "TXT" => self.add_txt_record(&owner_name, ttl, value),
-            other => {
-                log_info!("Skipping unsupported record type: {}", other);
-                Ok(())
-            }
-        }
+    /// Adds a derived DNSSEC record; its RDATA is stored in wire form.
+    pub(crate) fn add_dnssec_record(
+        &mut self,
+        record: &DnssecRecord,
+        zone_name: &ZoneName,
+    ) -> Result<(), XfrError> {
+        self.add_raw_rdata(
+            record.name.to_wire(zone_name),
+            record.record_type.wire_type(),
+            record.ttl as u32,
+            record.rdata.clone(),
+        )
+    }
+
+    /// Adds an answer from wire-format RDATA bytes, with no per-type parser.
+    pub(crate) fn add_raw_rdata(
+        &mut self,
+        owner: impl IntoOwner,
+        record_type: u16,
+        ttl: u32,
+        rdata: Rdata,
+    ) -> Result<(), XfrError> {
+        let data = UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
+            .map_err(|e| XfrError::ProtocolError(format!("Invalid raw rdata: {}", e)))?;
+        self.add_answer(owner.into_owner()?, ttl, data);
+        Ok(())
     }
 
     /// Composes one class-IN answer RR into its own buffer so it can be
@@ -310,15 +261,15 @@ impl DnsMessageBuilder {
         self.push_answer(answer);
     }
 
-    pub(crate) fn answer_count(&self) -> usize {
+    fn answer_count(&self) -> usize {
         self.answers.len()
     }
 
-    pub(crate) fn message_len(&self) -> usize {
+    fn message_len(&self) -> usize {
         12 + self.qname.len() + 4 + self.answers_len
     }
 
-    pub(crate) fn pop_last_answer(&mut self) -> Option<Vec<u8>> {
+    fn pop_last_answer(&mut self) -> Option<Vec<u8>> {
         let answer = self.answers.pop();
         if let Some(answer) = &answer {
             self.answers_len -= answer.len();
@@ -326,14 +277,74 @@ impl DnsMessageBuilder {
         answer
     }
 
-    pub(crate) fn push_answer(&mut self, answer: Vec<u8>) {
+    fn push_answer(&mut self, answer: Vec<u8>) {
         self.answers_len += answer.len();
         self.answers.push(answer);
     }
 
-    pub(crate) fn clear_answers(&mut self) {
+    fn clear_answers(&mut self) {
         self.answers.clear();
         self.answers_len = 0;
+    }
+
+    pub(crate) async fn add_answer_and_flush_if_needed<W, F>(
+        &mut self,
+        writer: &mut W,
+        messages_sent: &mut usize,
+        add_answer: F,
+    ) -> Result<(), XfrError>
+    where
+        W: tokio::io::AsyncWriteExt + Unpin,
+        F: FnOnce(&mut DnsMessageBuilder) -> Result<(), XfrError>,
+    {
+        add_answer(self)?;
+
+        if self.message_len() <= DNS_TCP_MAX_SIZE {
+            return Ok(());
+        }
+
+        let last_answer = self.pop_last_answer().ok_or_else(|| {
+            XfrError::ProtocolError("DNS message exceeded maximum size without answers".to_string())
+        })?;
+
+        if self.answer_count() == 0 {
+            self.push_answer(last_answer);
+            return Err(XfrError::ProtocolError(format!(
+                "Single DNS answer is too large: {} bytes",
+                self.message_len()
+            )));
+        }
+
+        // Count the flush before the size check below so a caller can tell that
+        // bytes reached the client even when this call then returns an error.
+        *messages_sent += self.flush_if_not_empty(writer).await?;
+
+        self.push_answer(last_answer);
+        if self.message_len() > DNS_TCP_MAX_SIZE {
+            return Err(XfrError::ProtocolError(format!(
+                "Single DNS answer is too large: {} bytes",
+                self.message_len()
+            )));
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn flush_if_not_empty<W>(&mut self, writer: &mut W) -> Result<usize, XfrError>
+    where
+        W: tokio::io::AsyncWriteExt + Unpin,
+    {
+        let answer_count = self.answer_count();
+        if answer_count == 0 {
+            return Ok(0);
+        }
+
+        let frame = self.build_tcp_frame()?;
+        writer.write_all(&frame).await.map_err(XfrError::IoError)?;
+        writer.flush().await.map_err(XfrError::IoError)?;
+        self.clear_answers();
+
+        Ok(1)
     }
 
     fn build_message_into(&self, message: &mut Vec<u8>) {
@@ -356,7 +367,7 @@ impl DnsMessageBuilder {
 
     /// Serializes into a length-prefixed TCP frame in one buffer, with no
     /// intermediate message copy.
-    pub(crate) fn build_tcp_frame(&self) -> Result<Vec<u8>, XfrError> {
+    fn build_tcp_frame(&self) -> Result<Vec<u8>, XfrError> {
         let len = self.message_len();
         if len > DNS_TCP_MAX_SIZE {
             return Err(XfrError::ProtocolError(format!(
@@ -379,97 +390,10 @@ impl DnsMessageBuilder {
     }
 }
 
-pub(crate) async fn add_answer_and_flush_if_needed<W, F>(
-    writer: &mut W,
-    builder: &mut DnsMessageBuilder,
-    messages_sent: &mut usize,
-    add_answer: F,
-) -> Result<(), XfrError>
-where
-    W: tokio::io::AsyncWriteExt + Unpin,
-    F: FnOnce(&mut DnsMessageBuilder) -> Result<(), XfrError>,
-{
-    add_answer(builder)?;
-
-    if builder.message_len() <= DNS_TCP_MAX_SIZE {
-        return Ok(());
-    }
-
-    let last_answer = builder.pop_last_answer().ok_or_else(|| {
-        XfrError::ProtocolError("DNS message exceeded maximum size without answers".to_string())
-    })?;
-
-    if builder.answer_count() == 0 {
-        builder.push_answer(last_answer);
-        return Err(XfrError::ProtocolError(format!(
-            "Single DNS answer is too large: {} bytes",
-            builder.message_len()
-        )));
-    }
-
-    // Count the flush before the size check below so a caller can tell that
-    // bytes reached the client even when this call then returns an error.
-    *messages_sent += flush_message_if_not_empty(writer, builder).await?;
-
-    builder.push_answer(last_answer);
-    if builder.message_len() > DNS_TCP_MAX_SIZE {
-        return Err(XfrError::ProtocolError(format!(
-            "Single DNS answer is too large: {} bytes",
-            builder.message_len()
-        )));
-    }
-
-    Ok(())
-}
-
-pub(crate) async fn flush_message_if_not_empty<W>(
-    writer: &mut W,
-    builder: &mut DnsMessageBuilder,
-) -> Result<usize, XfrError>
-where
-    W: tokio::io::AsyncWriteExt + Unpin,
-{
-    let answer_count = builder.answer_count();
-    if answer_count == 0 {
-        return Ok(0);
-    }
-
-    let frame = builder.build_tcp_frame()?;
-    writer.write_all(&frame).await.map_err(XfrError::IoError)?;
-    writer.flush().await.map_err(XfrError::IoError)?;
-    builder.clear_answers();
-
-    Ok(1)
-}
-
-pub(crate) fn build_error_response(
-    query_id: u16,
-    qname: &Name<Vec<u8>>,
-    qtype: Rtype,
-    rcode: Rcode,
-) -> Vec<u8> {
-    let mut builder = MessageBuilder::new_vec();
-    let header = builder.header_mut();
-    header.set_id(query_id);
-    header.set_qr(true);
-    header.set_rcode(rcode);
-
-    let mut question = builder.question();
-    // Composing one question into a Vec cannot fail.
-    question
-        .push((qname, qtype))
-        .expect("composing into a Vec cannot run out of space");
-
-    question.finish()
-}
-
-/// Parses a presentation-form name, mapping empty/root input to the root name.
+/// Parses a presentation-form name through the one core name encoding.
 fn parse_name(name: &str) -> Result<Name<Vec<u8>>, XfrError> {
-    if name.trim_end_matches('.').is_empty() {
-        return Ok(Name::root_vec());
-    }
-
-    Name::from_str(name)
+    let wire = encode_name(name).map_err(XfrError::ProtocolError)?;
+    Name::from_octets(wire)
         .map_err(|e| XfrError::ProtocolError(format!("Invalid domain name '{}': {}", name, e)))
 }
 
@@ -483,37 +407,63 @@ pub(crate) struct ParsedQuery {
     pub(crate) query_id: u16,
 }
 
-pub(crate) fn parse_query(data: &[u8]) -> Result<ParsedQuery, XfrError> {
-    let message = Message::from_octets(data)
-        .map_err(|e| XfrError::ProtocolError(format!("Failed to parse DNS message: {}", e)))?;
+impl ParsedQuery {
+    pub(crate) fn parse(data: &[u8]) -> Result<ParsedQuery, XfrError> {
+        let message = Message::from_octets(data)
+            .map_err(|e| XfrError::ProtocolError(format!("Failed to parse DNS message: {}", e)))?;
 
-    let query_id = message.header().id();
+        let query_id = message.header().id();
 
-    let question = message
-        .first_question()
-        .ok_or_else(|| XfrError::ProtocolError("No question in DNS query".to_string()))?;
+        let question = message
+            .first_question()
+            .ok_or_else(|| XfrError::ProtocolError("No question in DNS query".to_string()))?;
 
-    let qname = question.qname().to_name::<Vec<u8>>();
-    let qtype = question.qtype();
+        let qname = question.qname().to_name::<Vec<u8>>();
+        let qtype = question.qtype();
 
-    let qname_presentation = qname.to_string();
-    let zone_name = qname_presentation.trim_end_matches('.').to_string();
+        // domain's `Display` renders the root as "." and otherwise omits the
+        // root dot, so only the root query maps to the empty zone form; a
+        // trailing escaped dot inside the last label stays data.
+        let qname_presentation = qname.to_string();
+        let zone_name = if qname_presentation == "." {
+            String::new()
+        } else {
+            qname_presentation
+        };
 
-    // An IXFR query carries the client's current serial in an
-    // authority-section SOA (RFC 1995, Section 2).
-    let client_serial = if qtype == Rtype::IXFR {
-        extract_ixfr_serial(&message)
-    } else {
-        None
-    };
+        // An IXFR query carries the client's current serial in an
+        // authority-section SOA (RFC 1995, Section 2).
+        let client_serial = if qtype == Rtype::IXFR {
+            extract_ixfr_serial(&message)
+        } else {
+            None
+        };
 
-    Ok(ParsedQuery {
-        qname,
-        zone_name,
-        qtype,
-        client_serial,
-        query_id,
-    })
+        Ok(ParsedQuery {
+            qname,
+            zone_name,
+            qtype,
+            client_serial,
+            query_id,
+        })
+    }
+
+    /// A response echoing this query with only `rcode` set.
+    pub(crate) fn error_response(&self, rcode: Rcode) -> Vec<u8> {
+        let mut builder = MessageBuilder::new_vec();
+        let header = builder.header_mut();
+        header.set_id(self.query_id);
+        header.set_qr(true);
+        header.set_rcode(rcode);
+
+        let mut question = builder.question();
+        // Composing one question into a Vec cannot fail.
+        question
+            .push((&self.qname, self.qtype))
+            .expect("composing into a Vec cannot run out of space");
+
+        question.finish()
+    }
 }
 
 fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<u32> {

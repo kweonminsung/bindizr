@@ -99,7 +99,7 @@ pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseEr
     if Rtype::from_int(ztype) != Rtype::SOA || Class::from_int(zclass) != Class::IN {
         return Err(ParseError::InvalidZoneSection);
     }
-    let zone_name = presentation_name(&zone)?;
+    let zone_name = to_presentation_name(&zone)?;
 
     let mut prerequisites = Vec::with_capacity(counts.ancount() as usize);
     for _ in 0..counts.ancount() {
@@ -127,7 +127,7 @@ pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseEr
 
 fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRecord, ParseError> {
     let name = ParsedName::parse(parser).map_err(|_| ParseError::InvalidName)?;
-    let name = presentation_name(&name)?;
+    let name = to_presentation_name(&name)?;
 
     let rr_type = Rtype::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?);
     let class = Class::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?);
@@ -196,14 +196,14 @@ fn parse_tsig_rr(
     }
 
     Ok(TsigRecord {
-        name: presentation_name(owner)?,
+        name: to_presentation_name(owner)?,
         fudge: record.fudge(),
     })
 }
 
 /// Renders a parsed name in presentation form, escaping a `.` or `\` inside a
 /// label so the text decodes back to the same labels (RFC 1035, Section 5.1).
-pub(super) fn presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
+pub(super) fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
     let mut labels = Vec::new();
 
     for label in name.iter() {

@@ -21,6 +21,7 @@ mod dns;
 pub(crate) mod nsupdate;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
+pub(crate) use dns::wait_for_any_dns_record;
 use dns::{dns_expected_value, dns_key_from_record, dns_record_type, wait_for_dns_records};
 
 const COMPOSE_FILE: &str = "docker-compose.yml";
@@ -46,12 +47,26 @@ pub(crate) struct TestApp {
 }
 
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
-#[derive(Default)]
 pub(crate) struct TestAppOptions {
     pub require_authentication: bool,
     pub external_dns_enabled: bool,
     pub nsupdate_allow_unsigned: bool,
     pub openapi_enabled: bool,
+    /// `0` lets a rollover be confirmed as soon as the zone's DNSKEY TTL
+    /// allows, instead of waiting out the one-day default.
+    pub rollover_publish_holddown_secs: u64,
+}
+
+impl Default for TestAppOptions {
+    fn default() -> Self {
+        Self {
+            require_authentication: false,
+            external_dns_enabled: false,
+            nsupdate_allow_unsigned: false,
+            openapi_enabled: false,
+            rollover_publish_holddown_secs: 86400,
+        }
+    }
 }
 
 enum TestRuntime {
@@ -181,6 +196,11 @@ impl TestApp {
         !self.dns_secondary_ports.is_empty()
     }
 
+    /// Ports of the compose stack's BIND9 secondaries; empty in local mode.
+    pub(crate) fn dns_secondary_ports(&self) -> &[u16] {
+        &self.dns_secondary_ports
+    }
+
     pub(crate) async fn request(
         &self,
         method: Method,
@@ -271,9 +291,9 @@ impl TestApp {
         let zone_name = self.zone_name("example.com");
         let request = json!({
             "name": zone_name,
-            "primary_ns": format!("ns1.{zone_name}"),
-            "admin_email": "admin@example.com",
-            "ttl": 3600,
+            "mname": format!("ns1.{zone_name}"),
+            "rname": "admin@example.com",
+            "default_ttl": 3600,
             "serial": 10,
             "refresh": 7200,
             "retry": 3600,
@@ -287,20 +307,20 @@ impl TestApp {
 
     /// CLI-side twin of `create_test_zone`: create a zone via `zone create` and
     /// return the CLI output.
-    pub(crate) async fn create_zone_cli(&self, zone_name: &str, ttl: &str) -> String {
-        let primary_ns = format!("ns1.{zone_name}");
-        let admin_email = format!("hostmaster@{zone_name}");
+    pub(crate) async fn create_zone_cli(&self, zone_name: &str, default_ttl: &str) -> String {
+        let mname = format!("ns1.{zone_name}");
+        let rname = format!("hostmaster@{zone_name}");
         self.run_cli_success(&[
             "zone",
             "create",
             "--name",
             zone_name,
-            "--primary-ns",
-            &primary_ns,
-            "--admin-email",
-            &admin_email,
-            "--ttl",
-            ttl,
+            "--mname",
+            &mname,
+            "--rname",
+            &rname,
+            "--default-ttl",
+            default_ttl,
         ])
         .await
     }
@@ -352,7 +372,7 @@ impl TestApp {
                 args,
                 [
                     "zone" | "record",
-                    "create" | "bulk" | "delete" | "import" | "notify" | "rollback",
+                    "create" | "bulk-create" | "delete" | "import" | "notify" | "rollback",
                     ..
                 ]
             )
@@ -660,6 +680,9 @@ notify_retries = 0
 notify_timeout_secs = 1
 nsupdate_allow_unsigned = {nsupdate_allow_unsigned}
 
+[dnssec]
+rollover_publish_holddown_secs = {rollover_publish_holddown_secs}
+
 [logging]
 log_level = "error"
 "#,
@@ -668,6 +691,7 @@ log_level = "error"
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_allow_unsigned = options.nsupdate_allow_unsigned,
         openapi_enabled = options.openapi_enabled,
+        rollover_publish_holddown_secs = options.rollover_publish_holddown_secs,
     );
 
     fs::write(config_path, config).expect("failed to write bindizr config");

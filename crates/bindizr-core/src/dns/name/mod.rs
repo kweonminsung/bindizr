@@ -98,5 +98,42 @@ pub fn to_fqdn(value: &str) -> String {
     format!("{}.", value.trim_end_matches('.'))
 }
 
+/// Encode a presentation-form name as uncompressed wire labels, mapping
+/// empty/root input to the root name.
+pub fn encode_name(name: &str) -> Result<Vec<u8>, String> {
+    if name.trim_end_matches('.').is_empty() {
+        return Ok(vec![0]);
+    }
+
+    let (labels, _) =
+        decode_name_labels(name).map_err(|e| format!("Invalid domain name '{}': {}", name, e))?;
+    labels_to_wire(labels.iter().map(String::as_str))
+        .map_err(|e| format!("Invalid domain name '{}': {}", name, e))
+}
+
+/// Length-prefixed wire labels plus the root. Limits are re-checked at this
+/// one emitter, so a row edited outside bindizr cannot smuggle a label past
+/// the length octet.
+pub(super) fn labels_to_wire<'a>(
+    labels: impl Iterator<Item = &'a str>,
+) -> Result<Vec<u8>, ParseNameError> {
+    let mut wire = Vec::new();
+    for label in labels {
+        if label.is_empty() {
+            return Err(ParseNameError::EmptyLabel);
+        }
+        if label.len() > MAX_DNS_LABEL_LEN {
+            return Err(ParseNameError::LabelTooLong);
+        }
+        wire.push(label.len() as u8);
+        wire.extend_from_slice(label.as_bytes());
+    }
+    wire.push(0);
+    if wire.len() > MAX_DOMAIN_LEN + 2 {
+        return Err(ParseNameError::TooLong);
+    }
+    Ok(wire)
+}
+
 #[cfg(test)]
 mod tests;

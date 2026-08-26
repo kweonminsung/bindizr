@@ -1,4 +1,7 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::{
+    name::{OwnerName, ZoneName},
+    record::TxtRecordValue,
+};
 use chrono::Utc;
 
 use super::{
@@ -9,7 +12,7 @@ use crate::{
     error::{ErrorCode, ServiceError},
     model::{
         record::{Record, RecordType},
-        zone::Zone,
+        zone::{DnssecDenial, Zone},
     },
 };
 
@@ -128,47 +131,6 @@ fn validate_srv_value_rejects_invalid_forms() {
     }
 }
 
-#[test]
-fn validate_soa_value_accepts_well_formed_records() {
-    assert!(
-        validate_record_value(
-            &RecordType::SOA,
-            "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600",
-            None,
-        )
-        .is_ok()
-    );
-    assert!(
-        validate_record_value(
-            &RecordType::SOA,
-            "ns1.example.com. hostmaster.example.com. 0 0 0 0 0",
-            None,
-        )
-        .is_ok()
-    );
-}
-
-#[test]
-fn validate_soa_value_rejects_invalid_forms() {
-    for value in [
-        "",
-        "ns1.example.com hostmaster.example.com",
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600",
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600 extra",
-        "ns1.example.com hostmaster.example.com serial 7200 3600 1209600 3600",
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 -1",
-        "ns1.example.com hostmaster.example.com 2024010101 7200 3600 1209600 4294967296",
-        "bad..example.com hostmaster.example.com 2024010101 7200 3600 1209600 3600",
-        "ns1.example.com bad..example.com 2024010101 7200 3600 1209600 3600",
-        ". . 2024010101 7200 3600 1209600 3600",
-    ] {
-        assert!(
-            validate_record_value(&RecordType::SOA, value, None).is_err(),
-            "SOA value {value:?} should be rejected"
-        );
-    }
-}
-
 /// Validate an add whose owner name is already in stored form.
 fn validate_add(
     zone_records: &[Record],
@@ -190,7 +152,21 @@ fn validate_add(
 }
 
 #[test]
-fn add_rejects_cname_at_apex_and_ns_below_apex() {
+fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
+    const DS_VALUE: &str =
+        "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
+
+    let at_apex = validate_add(&[], "", &RecordType::DS, DS_VALUE, RRSET_TTL, None);
+    assert_eq!(at_apex.unwrap_err().code, ErrorCode::InvalidRecordName);
+
+    // The NS coupling is a final-state rule, enforced when the zone is
+    // versioned — a lone DS passes the per-add shape checks.
+    let without_ns = validate_add(&[], "sub", &RecordType::DS, DS_VALUE, RRSET_TTL, None);
+    assert!(without_ns.is_ok());
+}
+
+#[test]
+fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let cname_at_apex = validate_add(
         &[],
         "",
@@ -204,7 +180,7 @@ fn add_rejects_cname_at_apex_and_ns_below_apex() {
         ErrorCode::InvalidRecordName
     );
 
-    let ns_below_apex = validate_add(
+    let delegation_ns = validate_add(
         &[],
         "child",
         &RecordType::NS,
@@ -212,10 +188,7 @@ fn add_rejects_cname_at_apex_and_ns_below_apex() {
         RRSET_TTL,
         None,
     );
-    assert_eq!(
-        ns_below_apex.unwrap_err().code,
-        ErrorCode::InvalidRecordName
-    );
+    assert!(delegation_ns.is_ok());
 
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
     let cname_conflict = validate_add(
@@ -327,11 +300,12 @@ fn add_enforces_one_ttl_per_rrset() {
     assert!(matching_ttl.is_ok());
 
     // A different type at the same owner name is a different RRset.
+    let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
     let other_rrset = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
         &RecordType::TXT,
-        "hello",
+        &encoded_txt,
         600,
         None,
     );
@@ -340,11 +314,12 @@ fn add_enforces_one_ttl_per_rrset() {
 
 #[test]
 fn validate_record_value_rejects_priority_on_types_without_one() {
+    let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
     for (record_type, value) in [
         (RecordType::A, "192.0.2.1"),
         (RecordType::AAAA, "2001:db8::1"),
         (RecordType::CNAME, "target.example.com"),
-        (RecordType::TXT, "hello"),
+        (RecordType::TXT, encoded_txt.as_str()),
         (RecordType::NS, "ns1.example.com"),
         (RecordType::PTR, "host.example.com"),
     ] {
@@ -357,20 +332,11 @@ fn validate_record_value_rejects_priority_on_types_without_one() {
 }
 
 #[test]
-fn validate_delete_constraints_protects_soa_and_primary_ns() {
+fn validate_delete_constraints_protects_the_mname_ns() {
     let zone = test_zone();
 
-    let soa = test_record(
-        1,
-        "",
-        RecordType::SOA,
-        "ns1.example.com hostmaster.example.com",
-        None,
-    );
-    assert!(validate_delete_constraints(&zone, &[soa]).is_err());
-
-    let primary_ns = test_record(2, "", RecordType::NS, "ns1.example.com.", None);
-    assert!(validate_delete_constraints(&zone, &[primary_ns]).is_err());
+    let mname = test_record(2, "", RecordType::NS, "ns1.example.com.", None);
+    assert!(validate_delete_constraints(&zone, &[mname]).is_err());
 
     let secondary_ns = test_record(3, "", RecordType::NS, "ns2.example.com.", None);
     assert!(validate_delete_constraints(&zone, &[secondary_ns]).is_ok());
@@ -380,14 +346,15 @@ fn test_zone() -> Zone {
     Zone {
         id: 1,
         name: ZoneName::from_row("example.com"),
-        primary_ns: "ns1.example.com".to_string(),
-        admin_email: "hostmaster@example.com".to_string(),
-        ttl: 3600,
+        mname: "ns1.example.com".to_string(),
+        rname: "hostmaster@example.com".to_string(),
+        default_ttl: 3600,
         serial: 2023010101,
         refresh: 7200,
         retry: 3600,
         expire: 604800,
         minimum_ttl: 86400,
+        dnssec_denial: DnssecDenial::Nsec,
         created_at: Utc::now(),
     }
 }

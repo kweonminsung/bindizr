@@ -124,13 +124,14 @@ impl Caller {
         match self {
             Caller::Global => Ok(()),
             Caller::Token { id, .. } => {
-                let policies = RepositoryService::list_zone_token_policies_by_zone_and_token_tx(
-                    tx,
-                    zone.id,
-                    *id,
-                    LockLevel::Shared,
-                )
-                .await?;
+                let policies =
+                    RepositoryService::list_zone_token_policies_by_zone_id_and_token_id_tx(
+                        tx,
+                        zone.id,
+                        *id,
+                        LockLevel::Shared,
+                    )
+                    .await?;
                 // Ahead of the per-write loop, which a batch resolving to no
                 // writes would otherwise pass vacuously.
                 if policies.is_empty() {

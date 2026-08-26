@@ -5,14 +5,14 @@ use crate::common::{TestApp, TestAppOptions};
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn notify_zone_all_and_force() {
+async fn notify_zone_all_and_bump_serial() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
     let request = json!({ "zone_name": zone["name"] });
     let (status, body) = app
-        .request(Method::POST, "/notify/zones", Some(request))
+        .request(Method::POST, "/zones/notify", Some(request))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -22,7 +22,7 @@ async fn notify_zone_all_and_force() {
 
     let request = json!({ "zone_name": null });
     let (status, body) = app
-        .request(Method::POST, "/notify/zones", Some(request))
+        .request(Method::POST, "/zones/notify", Some(request))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["message"], "NOTIFY sent successfully for all zones");
@@ -33,15 +33,15 @@ async fn notify_zone_all_and_force() {
     assert_eq!(status, StatusCode::OK);
     let before_serial = before["zone"]["serial"].as_i64().unwrap();
 
-    // force bumps the serial so secondaries transfer even when nothing changed.
-    let request = json!({ "zone_name": zone_name, "force": true });
+    // bump_serial makes secondaries transfer even when nothing changed.
+    let request = json!({ "zone_name": zone_name, "bump_serial": true });
     let (status, body) = app
-        .request(Method::POST, "/notify/zones", Some(request))
+        .request(Method::POST, "/zones/notify", Some(request))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         body["message"],
-        format!("NOTIFY sent successfully for zone: {zone_name} (forced)")
+        format!("NOTIFY sent successfully for zone: {zone_name} (serial bumped)")
     );
 
     let (status, after) = app
@@ -54,7 +54,7 @@ async fn notify_zone_all_and_force() {
     let missing_zone_name = app.zone_name("missing.example.com");
     let request = json!({ "zone_name": missing_zone_name });
     let (status, body) = app
-        .request(Method::POST, "/notify/zones", Some(request))
+        .request(Method::POST, "/zones/notify", Some(request))
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert!(
@@ -84,7 +84,7 @@ async fn scoped_token_cannot_notify_the_catalog_zone() {
     let (status, _) = app
         .request(
             Method::POST,
-            "/notify/zones",
+            "/zones/notify",
             Some(json!({ "zone_name": "catalog.bind" })),
         )
         .await;
@@ -94,7 +94,7 @@ async fn scoped_token_cannot_notify_the_catalog_zone() {
     let (status, _) = app
         .request(
             Method::POST,
-            "/notify/zones",
+            "/zones/notify",
             Some(json!({ "zone_name": "catalog.bind" })),
         )
         .await;

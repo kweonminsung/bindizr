@@ -1,12 +1,15 @@
 use super::{TxtContent, TxtRecordValue};
 
 #[test]
-fn raw_txt_rdata_encode_decode() {
+fn raw_txt_rdata_round_trips_through_the_row_form() {
     let rdata = [2, b'a', b'b', 1, b'c'];
-    let stored = TxtRecordValue::from_rdata(&rdata).into_encoded();
+    let stored = TxtRecordValue::from_rdata(&rdata)
+        .unwrap()
+        .to_presentation();
 
+    assert_eq!(stored, r#""ab" "c""#);
     assert_eq!(
-        TxtRecordValue::from_encoded(&stored).map(TxtRecordValue::into_rdata),
+        TxtRecordValue::from_presentation(&stored).map(TxtRecordValue::into_rdata),
         Some(rdata.to_vec())
     );
 }
@@ -33,8 +36,9 @@ fn txt_segments_reject_empty_lists() {
 }
 
 #[test]
-fn txt_value_rejects_empty_rdata() {
-    assert_eq!(TxtRecordValue::from_rdata(&[]).to_content(), None);
+fn from_rdata_rejects_empty_or_broken_charstring_chains() {
+    assert!(TxtRecordValue::from_rdata(&[]).is_err());
+    assert!(TxtRecordValue::from_rdata(&[5, b'a']).is_err());
 }
 
 #[test]
@@ -74,8 +78,9 @@ fn txt_string_splits_on_utf8_boundaries() {
 }
 
 #[test]
-fn from_encoded_ignores_invalid_prefix() {
-    assert!(TxtRecordValue::from_encoded("bindizr:txt-rdata:v1:A2Fi").is_none());
+fn from_presentation_rejects_unquoted_values() {
+    assert!(TxtRecordValue::from_presentation("v=spf1 -all").is_none());
+    assert!(TxtRecordValue::from_presentation("bindizr:txt-rdata:v1:A2Fi").is_none());
 }
 
 #[test]
@@ -175,5 +180,18 @@ fn to_presentation_round_trips_ownership_records() {
     assert_eq!(
         TxtRecordValue::parse(&canonical).unwrap().to_presentation(),
         canonical
+    );
+}
+
+#[test]
+fn validate_rejects_data_that_cannot_fit_one_dns_message() {
+    let segment = "a".repeat(255);
+    let value = TxtRecordValue::from_segments(vec![segment.as_str(); 256]).unwrap();
+    assert!(value.validate().is_err());
+    assert!(
+        TxtRecordValue::from_segments(vec![segment.as_str(); 4])
+            .unwrap()
+            .validate()
+            .is_ok()
     );
 }

@@ -13,7 +13,6 @@ use bindizr_service::{
         ExternalDnsZonesResponse,
     },
 };
-use serde_json::json;
 
 use crate::api::{
     RequestCaller,
@@ -66,8 +65,8 @@ impl ExternalDnsApi {
 pub(crate) async fn get_external_dns_zones(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
-    let zones = ExternalDnsService::list_zones(&caller).await?;
-    Ok((StatusCode::OK, Json(json!({ "zones": zones }))).into_response())
+    let zones = ExternalDnsService::list_zone_names(&caller).await?;
+    Ok((StatusCode::OK, Json(ExternalDnsZonesResponse { zones })).into_response())
 }
 
 #[utoipa::path(
@@ -87,7 +86,7 @@ pub(crate) async fn get_external_dns_records(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
     let records = ExternalDnsService::list_records(&caller).await?;
-    Ok((StatusCode::OK, Json(json!({ "records": records }))).into_response())
+    Ok((StatusCode::OK, Json(ExternalDnsRecordsResponse { records })).into_response())
 }
 
 #[utoipa::path(

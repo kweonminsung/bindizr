@@ -23,20 +23,13 @@ pub(super) async fn evaluate_prerequisites_tx(
         return Ok(());
     }
 
-    let zone_records = RecordService::list_by_zone_id_tx(tx, zone.id, LockLevel::Exclusive).await?;
-    evaluate_against_records(zone, prerequisites, &zone_records)
-}
+    let zone_records = RecordService::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
-fn evaluate_against_records(
-    zone: &Zone,
-    prerequisites: &[Prerequisite],
-    zone_records: &[Record],
-) -> Result<(), DynamicUpdateError> {
     for prerequisite in prerequisites {
         match prerequisite {
             Prerequisite::NameInUse { name } => {
                 let owner = owner_in_zone(name, &zone.name)?;
-                if !owner_exists(&owner, zone_records) {
+                if !owner_exists(&owner, &zone_records) {
                     return Err(DynamicUpdateError::NxDomain(format!(
                         "owner '{}' does not exist",
                         owner
@@ -45,7 +38,7 @@ fn evaluate_against_records(
             }
             Prerequisite::NameNotInUse { name } => {
                 let owner = owner_in_zone(name, &zone.name)?;
-                if owner_exists(&owner, zone_records) {
+                if owner_exists(&owner, &zone_records) {
                     return Err(DynamicUpdateError::YxDomain(format!(
                         "owner '{}' exists",
                         owner
@@ -54,7 +47,7 @@ fn evaluate_against_records(
             }
             Prerequisite::RrsetInUse { name, record_type } => {
                 let owner = owner_in_zone(name, &zone.name)?;
-                if !rrset_exists(&owner, record_type, zone_records) {
+                if !rrset_exists(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::NxRrset(format!(
                         "RRset {} {} does not exist",
                         owner, record_type
@@ -63,7 +56,7 @@ fn evaluate_against_records(
             }
             Prerequisite::RrsetNotInUse { name, record_type } => {
                 let owner = owner_in_zone(name, &zone.name)?;
-                if rrset_exists(&owner, record_type, zone_records) {
+                if rrset_exists(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::YxRrset(format!(
                         "RRset {} {} exists",
                         owner, record_type

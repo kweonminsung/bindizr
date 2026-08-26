@@ -1,24 +1,9 @@
+mod catalog_zone;
 pub mod name;
 pub mod record;
 
-/// Well-known name of the BIND catalog zone (RFC 9432).
-pub const CATALOG_ZONE_NAME: &str = "catalog.bind";
+pub use catalog_zone::{CATALOG_ZONE_NAME, is_catalog_zone};
 
-/// Whether `zone_name` is the virtual RFC 9432 catalog zone. Case-insensitive
-/// per RFC 4343; callers pass client-cased query names as-is.
-pub fn is_catalog_zone(zone_name: &str) -> bool {
-    zone_name.eq_ignore_ascii_case(CATALOG_ZONE_NAME)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn is_catalog_zone_ignores_ascii_case() {
-        assert!(is_catalog_zone("catalog.bind"));
-        assert!(is_catalog_zone("CATALOG.BIND"));
-        assert!(is_catalog_zone("Catalog.Bind"));
-        assert!(!is_catalog_zone("catalog.bind.example"));
-    }
-}
+/// Maximum size of a DNS message carried over TCP (16-bit length prefix,
+/// RFC 1035, Section 4.2.2). The record-value size caps derive from it.
+pub const DNS_TCP_MAX_SIZE: usize = 65_535;

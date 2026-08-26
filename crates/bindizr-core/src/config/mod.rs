@@ -18,6 +18,8 @@ pub struct BindizrConfig {
     pub api: ApiConfig,
     pub database: DatabaseConfig,
     pub dns: DnsConfig,
+    #[serde(default)]
+    pub dnssec: DnssecConfig,
     pub logging: LoggingConfig,
 }
 
@@ -116,12 +118,12 @@ pub struct DnsConfig {
     pub secondary_addrs: String,
     #[serde(default = "default_notify_after_update")]
     pub notify_after_update: bool,
-    /// `sync` runs reload/NOTIFY inline; `async` hands it to a background worker.
-    #[serde(default = "default_apply_mode")]
-    pub apply_mode: ApplyMode,
+    /// `sync` sends NOTIFY inline; `async` hands it to a background worker.
+    #[serde(default = "default_notify_mode")]
+    pub notify_mode: NotifyMode,
     /// Window (ms) over which async-mode NOTIFYs are collapsed to one per zone.
-    #[serde(default = "default_apply_batch_ms")]
-    pub apply_batch_ms: u64,
+    #[serde(default = "default_notify_batch_ms")]
+    pub notify_batch_ms: u64,
     /// Cache each zone's records by serial so repeated AXFRs skip the DB read.
     #[serde(default = "default_zone_cache")]
     pub zone_cache: bool,
@@ -135,17 +137,25 @@ pub struct DnsConfig {
     /// signed requests are always verified.
     #[serde(default)]
     pub nsupdate_allow_unsigned: bool,
+    /// Days of IXFR journal and SOA history to keep (0 = unlimited). Requests
+    /// for pruned serials fall back to AXFR; rollback reaches only kept serials.
+    #[serde(default = "default_journal_retention_days")]
+    pub journal_retention_days: u32,
+}
+
+fn default_journal_retention_days() -> u32 {
+    365
 }
 
 fn default_notify_after_update() -> bool {
     true
 }
 
-fn default_apply_mode() -> ApplyMode {
-    ApplyMode::Sync
+fn default_notify_mode() -> NotifyMode {
+    NotifyMode::Sync
 }
 
-fn default_apply_batch_ms() -> u64 {
+fn default_notify_batch_ms() -> u64 {
     50
 }
 
@@ -153,33 +163,33 @@ fn default_zone_cache() -> bool {
     true
 }
 
-/// When zone reload/NOTIFY runs relative to the write request.
+/// When NOTIFY dispatch runs relative to the write request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ApplyMode {
+pub enum NotifyMode {
     /// Inline: the write returns only after NOTIFY is sent.
     Sync,
     /// Queued to a background worker: the write returns at commit.
     Async,
 }
 
-impl fmt::Display for ApplyMode {
+impl fmt::Display for NotifyMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
-            ApplyMode::Sync => "sync",
-            ApplyMode::Async => "async",
+            NotifyMode::Sync => "sync",
+            NotifyMode::Async => "async",
         };
         write!(f, "{}", value)
     }
 }
 
-impl std::str::FromStr for ApplyMode {
+impl std::str::FromStr for NotifyMode {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "sync" => Ok(ApplyMode::Sync),
-            "async" => Ok(ApplyMode::Async),
+            "sync" => Ok(NotifyMode::Sync),
+            "async" => Ok(NotifyMode::Async),
             _ => Err("expected sync or async".to_string()),
         }
     }
@@ -190,6 +200,53 @@ fn default_notify_retries() -> u32 {
 }
 
 fn default_notify_timeout_secs() -> u64 {
+    5
+}
+
+/// DNSSEC signing parameters. Whether a zone is signed is runtime state
+/// managed through the API/CLI, not configuration.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct DnssecConfig {
+    #[serde(default = "default_signature_validity_days")]
+    pub signature_validity_days: u32,
+    /// Re-sign when a signature has fewer than this many days left.
+    #[serde(default = "default_signature_refresh_days")]
+    pub signature_refresh_days: u32,
+    /// How long a pre-published key stays visible before it may start
+    /// signing (caches must have learned the DNSKEY). ZSKs auto-advance
+    /// after this; for CSK/KSK it is the least wait before `rollover ds-seen`.
+    #[serde(default = "default_rollover_publish_holddown_secs")]
+    pub rollover_publish_holddown_secs: u64,
+    /// How long a retired key stays published before removal (caches must
+    /// have drained its signatures and the parent its DS).
+    #[serde(default = "default_rollover_retire_holddown_secs")]
+    pub rollover_retire_holddown_secs: u64,
+}
+
+impl Default for DnssecConfig {
+    fn default() -> Self {
+        Self {
+            signature_validity_days: default_signature_validity_days(),
+            signature_refresh_days: default_signature_refresh_days(),
+            rollover_publish_holddown_secs: default_rollover_publish_holddown_secs(),
+            rollover_retire_holddown_secs: default_rollover_retire_holddown_secs(),
+        }
+    }
+}
+
+fn default_rollover_publish_holddown_secs() -> u64 {
+    86_400
+}
+
+fn default_rollover_retire_holddown_secs() -> u64 {
+    172_800
+}
+
+fn default_signature_validity_days() -> u32 {
+    14
+}
+
+fn default_signature_refresh_days() -> u32 {
     5
 }
 
@@ -303,8 +360,9 @@ fn parse_bindizr_config_with_env(
         .map_err(|e| format!("Invalid Bindizr configuration: {}", e))?;
 
     apply_env_overrides_from(&mut bindizr_config, get_env)?;
-    validate_database_config(&bindizr_config.database)?;
-    validate_dns_config(&bindizr_config.dns)?;
+    bindizr_config.database.validate()?;
+    bindizr_config.dns.validate()?;
+    bindizr_config.dnssec.validate()?;
 
     Ok(bindizr_config)
 }
@@ -368,11 +426,11 @@ fn apply_env_overrides_from(
     if let Some(value) = get_env("BINDIZR_NOTIFY_AFTER_UPDATE") {
         config.dns.notify_after_update = parse_env_value("BINDIZR_NOTIFY_AFTER_UPDATE", &value)?;
     }
-    if let Some(value) = get_env("BINDIZR_APPLY_MODE") {
-        config.dns.apply_mode = parse_env_value("BINDIZR_APPLY_MODE", &value)?;
+    if let Some(value) = get_env("BINDIZR_NOTIFY_MODE") {
+        config.dns.notify_mode = parse_env_value("BINDIZR_NOTIFY_MODE", &value)?;
     }
-    if let Some(value) = get_env("BINDIZR_APPLY_BATCH_MS") {
-        config.dns.apply_batch_ms = parse_env_value("BINDIZR_APPLY_BATCH_MS", &value)?;
+    if let Some(value) = get_env("BINDIZR_NOTIFY_BATCH_MS") {
+        config.dns.notify_batch_ms = parse_env_value("BINDIZR_NOTIFY_BATCH_MS", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_ZONE_CACHE") {
         config.dns.zone_cache = parse_env_value("BINDIZR_ZONE_CACHE", &value)?;
@@ -385,6 +443,26 @@ fn apply_env_overrides_from(
     }
     if let Some(value) = get_env("BINDIZR_NOTIFY_TIMEOUT_SECS") {
         config.dns.notify_timeout_secs = parse_env_value("BINDIZR_NOTIFY_TIMEOUT_SECS", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_JOURNAL_RETENTION_DAYS") {
+        config.dns.journal_retention_days =
+            parse_env_value("BINDIZR_JOURNAL_RETENTION_DAYS", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_DNSSEC_SIGNATURE_VALIDITY_DAYS") {
+        config.dnssec.signature_validity_days =
+            parse_env_value("BINDIZR_DNSSEC_SIGNATURE_VALIDITY_DAYS", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_DNSSEC_SIGNATURE_REFRESH_DAYS") {
+        config.dnssec.signature_refresh_days =
+            parse_env_value("BINDIZR_DNSSEC_SIGNATURE_REFRESH_DAYS", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_DNSSEC_ROLLOVER_PUBLISH_HOLDDOWN_SECS") {
+        config.dnssec.rollover_publish_holddown_secs =
+            parse_env_value("BINDIZR_DNSSEC_ROLLOVER_PUBLISH_HOLDDOWN_SECS", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_DNSSEC_ROLLOVER_RETIRE_HOLDDOWN_SECS") {
+        config.dnssec.rollover_retire_holddown_secs =
+            parse_env_value("BINDIZR_DNSSEC_ROLLOVER_RETIRE_HOLDDOWN_SECS", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
         config.logging.log_level = parse_env_value("BINDIZR_LOG_LEVEL", &value)?;
@@ -403,36 +481,69 @@ where
         .map_err(|e| format!("Invalid {} environment variable '{}': {}", name, value, e))
 }
 
-fn validate_database_config(config: &DatabaseConfig) -> Result<(), String> {
-    match config.database_type {
-        DatabaseType::Mysql if config.mysql.server_url.trim().is_empty() => Err(
-            "database.mysql.server_url must not be empty when database.type is mysql".to_string(),
-        ),
-        DatabaseType::Postgresql if config.postgresql.server_url.trim().is_empty() => Err(
-            "database.postgresql.server_url must not be empty when database.type is postgresql"
-                .to_string(),
-        ),
-        DatabaseType::Sqlite if config.sqlite.file_path.trim().is_empty() => Err(
-            "database.sqlite.file_path must not be empty when database.type is sqlite".to_string(),
-        ),
-        _ => Ok(()),
+impl DatabaseConfig {
+    fn validate(&self) -> Result<(), String> {
+        match self.database_type {
+            DatabaseType::Mysql if self.mysql.server_url.trim().is_empty() => Err(
+                "database.mysql.server_url must not be empty when database.type is mysql"
+                    .to_string(),
+            ),
+            DatabaseType::Postgresql if self.postgresql.server_url.trim().is_empty() => Err(
+                "database.postgresql.server_url must not be empty when database.type is postgresql"
+                    .to_string(),
+            ),
+            DatabaseType::Sqlite if self.sqlite.file_path.trim().is_empty() => Err(
+                "database.sqlite.file_path must not be empty when database.type is sqlite"
+                    .to_string(),
+            ),
+            _ => Ok(()),
+        }
     }
 }
 
-/// Reject separators-only `secondary_addrs` (e.g. ","), which would otherwise
-/// read as "no secondaries configured".
-fn validate_dns_config(config: &DnsConfig) -> Result<(), String> {
-    let raw = &config.secondary_addrs;
-    if !raw.trim().is_empty() && raw.split(',').all(|entry| entry.trim().is_empty()) {
-        return Err(
-            "dns.secondary_addrs contains no addresses; use \"\" when there are no secondaries"
-                .to_string(),
-        );
+impl DnsConfig {
+    /// Reject separators-only `secondary_addrs` (e.g. ","), which would otherwise
+    /// read as "no secondaries configured".
+    fn validate(&self) -> Result<(), String> {
+        let raw = &self.secondary_addrs;
+        if !raw.trim().is_empty() && raw.split(',').all(|entry| entry.trim().is_empty()) {
+            return Err(
+                "dns.secondary_addrs contains no addresses; use \"\" when there are no secondaries"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
-    Ok(())
+}
+
+impl DnssecConfig {
+    /// A refresh window at least as long as the validity would re-sign on every
+    /// pass; requiring headroom keeps re-signing periodic and expiry reachable.
+    fn validate(&self) -> Result<(), String> {
+        if self.signature_validity_days == 0 {
+            return Err("dnssec.signature_validity_days must be greater than 0".to_string());
+        }
+        if self.signature_refresh_days == 0 {
+            return Err("dnssec.signature_refresh_days must be greater than 0".to_string());
+        }
+        if self.signature_refresh_days >= self.signature_validity_days {
+            return Err(
+                "dnssec.signature_refresh_days must be less than dnssec.signature_validity_days"
+                    .to_string(),
+            );
+        }
+        // RFC 1982 serial arithmetic is only unambiguous while expiration -
+        // inception stays under 2^31 seconds (RFC 4034, Section 3.1.5).
+        if i64::from(self.signature_validity_days) * 86_400 > i64::from(u32::MAX / 2) {
+            return Err(
+                "dnssec.signature_validity_days must be less than 24856 (2^31 seconds)".to_string(),
+            );
+        }
+        Ok(())
+    }
 }
 
 /// Return the global configuration; panics if [`initialize`] has not run.
-pub fn get_bindizr_config() -> &'static BindizrConfig {
+pub fn bindizr_config() -> &'static BindizrConfig {
     BINDIZR_CONFIG.get().expect("Configuration not initialized")
 }

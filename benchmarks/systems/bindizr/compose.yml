@@ -23,9 +23,9 @@ services:
       BINDIZR_SECONDARY_ADDRS: bind9:53
       BINDIZR_NOTIFY_AFTER_UPDATE: ${BINDIZR_NOTIFY_AFTER_UPDATE:-true}
       # sync = reload/NOTIFY inline on the write path; async = queued to a
-      # background worker that coalesces NOTIFYs per zone over apply_batch_ms.
-      BINDIZR_APPLY_MODE: ${BINDIZR_APPLY_MODE:-sync}
-      BINDIZR_APPLY_BATCH_MS: ${BINDIZR_APPLY_BATCH_MS:-50}
+      # background worker that coalesces NOTIFYs per zone over notify_batch_ms.
+      BINDIZR_NOTIFY_MODE: ${BINDIZR_NOTIFY_MODE:-sync}
+      BINDIZR_NOTIFY_BATCH_MS: ${BINDIZR_NOTIFY_BATCH_MS:-50}
       # Cache rendered zone records by serial so repeated AXFRs skip the DB read.
       BINDIZR_ZONE_CACHE: ${BINDIZR_ZONE_CACHE:-true}
       BINDIZR_NOTIFY_RETRIES: "3"

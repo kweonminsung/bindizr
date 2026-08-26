@@ -23,13 +23,20 @@ listen_addr = "127.0.0.1"     # DNS server listen address
 listen_port = 53              # DNS server listen port (UDP and TCP)
 secondary_addrs = ""          # Comma-separated secondary DNS server addresses for NOTIFY (e.g., "192.168.1.2:53,192.168.1.3:53") 
 notify_after_update = true    # Send DNS NOTIFY after zone changes
-apply_mode = "sync"           # "sync": reload/NOTIFY runs inline; "async": queued to a background worker
-apply_batch_ms = 50           # async only: window to batch NOTIFYs into one per zone (0 disables the wait)
+notify_mode = "sync"          # "sync": NOTIFY runs inline; "async": queued to a background worker
+notify_batch_ms = 50          # async only: window to batch NOTIFYs into one per zone (0 disables the wait)
 zone_cache = true             # Cache each zone's records by serial so repeated AXFRs skip the DB read
 notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
 notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
 nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests (not recommended in production; TSIG keys/policies are managed via CLI or HTTP API)
+journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
+
+[dnssec]
+signature_validity_days = 14  # RRSIG validity period
+signature_refresh_days = 5    # Re-sign when a signature has fewer than this many days left (must be < validity)
+rollover_publish_holddown_secs = 86400 # Wait before a pre-published key may start signing (ZSKs auto-advance)
+rollover_retire_holddown_secs = 172800 # Wait before a retired key is removed from the zone
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

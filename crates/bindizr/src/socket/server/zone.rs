@@ -4,7 +4,7 @@ use bindizr_service::{
     record::RecordService,
     types::{
         CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-        SnapshotDetailResponse, SnapshotRecordResponse, ZoneSnapshotResponse,
+        PaginatedResponse, VersionDetailResponse, VersionRecordResponse, ZoneVersionResponse,
     },
     zone::ZoneService,
 };
@@ -13,8 +13,9 @@ use serde_json::json;
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DiffZoneSnapshotsParams, ImportZoneFileParams, ListZoneSnapshotsParams,
-        RollbackZoneParams, UpdateZoneParams, ZoneNameParams, ZoneSnapshotParams,
+        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneFileParams,
+        ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams, ZoneNameParams,
+        ZoneVersionParams,
     },
 };
 
@@ -38,14 +39,17 @@ pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
     };
 
     let zones = ZoneService::list_by_filter(&Caller::Global, filter).await?;
-    let response: Vec<GetZoneResponse> =
-        zones.items.iter().map(GetZoneResponse::from_zone).collect();
+    let response = PaginatedResponse {
+        items: zones
+            .items
+            .iter()
+            .map(GetZoneResponse::from_zone)
+            .collect::<Vec<_>>(),
+        pagination: zones.pagination,
+    };
     Ok(DaemonResponse {
-        message: format!("Found {} zone(s)", response.len()),
-        data: json!({
-            "items": response,
-            "pagination": zones.pagination,
-        }),
+        message: format!("Found {} zone(s)", response.items.len()),
+        data: to_response_data(response)?,
     })
 }
 
@@ -98,69 +102,76 @@ pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
 
 /// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
 pub(super) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
-    let zone_file = ZoneService::export_zone_file(&Caller::Global, &params.name).await?;
+    let params: ExportZoneFileParams = parse_params(data)?;
+    let zone_file =
+        ZoneService::export_zone_file(&Caller::Global, &params.name, params.signed).await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
         data: to_response_data(ExportZoneFileResponse { zone_file })?,
     })
 }
 
-/// Handle the `ListZoneSnapshots` command by returning a zone's serial history.
-pub(super) async fn list_zone_snapshots(
+/// Handle the `ListZoneVersions` command by returning a zone's serial history.
+pub(super) async fn list_zone_versions(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ListZoneSnapshotsParams = parse_params(data)?;
+    let params: ListZoneVersionsParams = parse_params(data)?;
 
-    let response =
-        ZoneService::list_snapshots(&Caller::Global, &params.name, params.limit, params.offset)
-            .await?;
+    let response = ZoneService::list_versions(
+        &Caller::Global,
+        &params.name,
+        params.limit,
+        params.offset,
+        params.all,
+    )
+    .await?;
     let items = response
         .items
         .iter()
-        .map(ZoneSnapshotResponse::from_snapshot)
+        .map(ZoneVersionResponse::from_version)
         .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(DaemonResponse {
-        message: format!("Found {} snapshot(s)", items.len()),
-        data: json!({
-            "items": items,
-            "pagination": response.pagination,
-        }),
-    })
-}
-
-/// Handle the `GetZoneSnapshot` command by returning one snapshot with its
-/// reconstructed record set.
-pub(super) async fn get_zone_snapshot(
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneSnapshotParams = parse_params(data)?;
-
-    let (snapshot, records) =
-        ZoneService::get_snapshot(&Caller::Global, &params.name, params.serial).await?;
-    let response = SnapshotDetailResponse {
-        snapshot: ZoneSnapshotResponse::from_snapshot(&snapshot)?,
-        records: records
-            .into_iter()
-            .map(SnapshotRecordResponse::from)
-            .collect(),
+    let response = PaginatedResponse {
+        items,
+        pagination: response.pagination,
     };
 
     Ok(DaemonResponse {
-        message: format!("Snapshot '{}' retrieved successfully", params.serial),
+        message: format!("Found {} version(s)", response.items.len()),
         data: to_response_data(response)?,
     })
 }
 
-/// Handle the `DiffZoneSnapshots` command by diffing two of a zone's serials.
-/// A missing `to_serial` compares `from_serial` against the current serial.
-pub(super) async fn diff_zone_snapshots(
+/// Handle the `GetZoneVersion` command by returning one version with its
+/// reconstructed record set.
+pub(super) async fn get_zone_version(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: DiffZoneSnapshotsParams = parse_params(data)?;
+    let params: ZoneVersionParams = parse_params(data)?;
 
-    let response = ZoneService::diff_snapshots(
+    let (version, records) =
+        ZoneService::get_version(&Caller::Global, &params.name, params.serial).await?;
+    let response = VersionDetailResponse {
+        version: ZoneVersionResponse::from_version(&version)?,
+        records: records
+            .into_iter()
+            .map(VersionRecordResponse::from)
+            .collect(),
+    };
+
+    Ok(DaemonResponse {
+        message: format!("Version '{}' retrieved successfully", params.serial),
+        data: to_response_data(response)?,
+    })
+}
+
+/// Handle the `DiffZoneVersions` command by diffing two of a zone's serials.
+/// A missing `to_serial` compares `from_serial` against the current serial.
+pub(super) async fn diff_zone_versions(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: DiffZoneVersionsParams = parse_params(data)?;
+
+    let response = ZoneService::diff_versions(
         &Caller::Global,
         &params.name,
         params.from_serial,
@@ -180,7 +191,7 @@ pub(super) async fn diff_zone_snapshots(
     })
 }
 
-/// Handle the `RollbackZone` command by rolling a zone back to a snapshot serial.
+/// Handle the `RollbackZone` command by rolling a zone back to a version serial.
 pub(super) async fn rollback_zone(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {

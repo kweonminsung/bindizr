@@ -73,7 +73,7 @@ impl ZoneTsigPolicyService {
         caller.require_global("manage TSIG keys and policies")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
-        let policies = RepositoryService::list_zone_tsig_policies_by_zone_id(zone.id).await?;
+        let policies = RepositoryService::list_zone_tsig_policies(zone.id).await?;
 
         let key_names: HashMap<i32, String> = RepositoryService::list_tsig_keys()
             .await?
@@ -103,7 +103,7 @@ impl ZoneTsigPolicyService {
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
 
-        let policy = RepositoryService::get_zone_tsig_policy_by_id(policy_id)
+        let policy = RepositoryService::get_zone_tsig_policy(policy_id)
             .await?
             .filter(|policy| policy.zone_id == zone.id)
             .ok_or_else(|| ServiceError::tsig_policy_not_found(policy_id))?;

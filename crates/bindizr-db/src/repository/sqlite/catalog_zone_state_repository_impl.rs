@@ -11,32 +11,32 @@ pub(crate) struct SqliteCatalogZoneStateRepository;
 
 #[async_trait]
 impl CatalogZoneStateRepository for SqliteCatalogZoneStateRepository {
-    async fn update_serial_for_signature_tx(
+    async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
-        signature: &str,
+        digest: &str,
         base_serial: i32,
     ) -> Result<i32, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // Advance the catalog serial only when the signature changes, kept
+        // Advance the catalog serial only when the digest changes, kept
         // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
-            INSERT INTO catalog_zone_state (name, signature, serial)
+            INSERT INTO catalog_zone_state (name, digest, serial)
             VALUES (?, ?, ?)
             ON CONFLICT(name)
             DO UPDATE SET
                 serial = CASE
-                    WHEN signature = excluded.signature THEN serial
+                    WHEN digest = excluded.digest THEN serial
                     ELSE max(serial + 1, excluded.serial)
                 END,
-                signature = excluded.signature
+                digest = excluded.digest
             "#,
         )
         .bind(name)
-        .bind(signature)
+        .bind(digest)
         .bind(base_serial)
         .execute(&mut **sqlite_tx)
         .await

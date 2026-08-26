@@ -1,4 +1,4 @@
-//! Zone snapshot, diff, and rollback payloads.
+//! Zone version, diff, and rollback payloads.
 
 use bindizr_core::dns::record::SoaMailbox;
 use chrono::{DateTime, Utc};
@@ -7,21 +7,21 @@ use utoipa::ToSchema;
 
 use super::record::{RecordValueRequest, display_record_value_request};
 use crate::{
-    error::ServiceError, model::zone_snapshot::ZoneSnapshot, zone::history::ReconstructedRecord,
+    error::ServiceError, model::zone_version::ZoneVersion, zone::history::ReconstructedRecord,
 };
 
 /// One entry of a zone's serial history, with SOA metadata in API form
-/// (`admin_email` converted back from SOA mailbox form).
+/// (`rname` converted back from SOA mailbox form).
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct ZoneSnapshotResponse {
+pub struct ZoneVersionResponse {
     #[schema(example = 7)]
     pub serial: i32,
     #[schema(example = "ns1.example.com")]
-    pub primary_ns: String,
+    pub mname: String,
     #[schema(example = "admin@example.com")]
-    pub admin_email: String,
+    pub rname: String,
     #[schema(example = 3600)]
-    pub ttl: i32,
+    pub default_ttl: i32,
     #[schema(example = 7200)]
     pub refresh: i32,
     #[schema(example = 3600)]
@@ -33,31 +33,31 @@ pub struct ZoneSnapshotResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl ZoneSnapshotResponse {
-    pub fn from_snapshot(snapshot: &ZoneSnapshot) -> Result<Self, ServiceError> {
-        let admin_email = SoaMailbox::from_encoded(&snapshot.admin_email)
+impl ZoneVersionResponse {
+    pub fn from_version(version: &ZoneVersion) -> Result<Self, ServiceError> {
+        let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
             .map_err(|e| {
-                ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
+                ServiceError::internal(format!("Failed to decode version rname: {}", e))
             })?;
-        Ok(ZoneSnapshotResponse {
-            serial: snapshot.serial,
-            primary_ns: snapshot.primary_ns.clone(),
-            admin_email,
-            ttl: snapshot.ttl,
-            refresh: snapshot.refresh,
-            retry: snapshot.retry,
-            expire: snapshot.expire,
-            minimum_ttl: snapshot.minimum_ttl,
-            created_at: snapshot.created_at,
+        Ok(ZoneVersionResponse {
+            serial: version.serial,
+            mname: version.mname.clone(),
+            rname,
+            default_ttl: version.default_ttl,
+            refresh: version.refresh,
+            retry: version.retry,
+            expire: version.expire,
+            minimum_ttl: version.minimum_ttl,
+            created_at: version.created_at,
         })
     }
 }
 
-/// A record reconstructed from the zone's change history; unlike stored
+/// A record reconstructed from the zone's journal; unlike stored
 /// records it has no database id.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct SnapshotRecordResponse {
+pub struct VersionRecordResponse {
     #[schema(example = "www")]
     pub name: String,
     #[schema(example = "A")]
@@ -69,9 +69,9 @@ pub struct SnapshotRecordResponse {
     pub priority: Option<i32>,
 }
 
-impl From<ReconstructedRecord> for SnapshotRecordResponse {
+impl From<ReconstructedRecord> for VersionRecordResponse {
     fn from(record: ReconstructedRecord) -> Self {
-        SnapshotRecordResponse {
+        VersionRecordResponse {
             name: record.name.to_string(),
             record_type: record.record_type.to_string(),
             // Decode TXT out of its stored form, as the record endpoints do.
@@ -82,11 +82,11 @@ impl From<ReconstructedRecord> for SnapshotRecordResponse {
     }
 }
 
-/// One snapshot plus the reconstructed record set at that serial.
+/// One version plus the reconstructed record set at that serial.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct SnapshotDetailResponse {
-    pub snapshot: ZoneSnapshotResponse,
-    pub records: Vec<SnapshotRecordResponse>,
+pub struct VersionDetailResponse {
+    pub version: ZoneVersionResponse,
+    pub records: Vec<VersionRecordResponse>,
 }
 
 /// One record on one side of a diff. Rendering (zone-file rdata, priority
@@ -136,7 +136,7 @@ pub struct RecordDiff {
 
 /// The difference between two of a zone's serials.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct SnapshotDiffResponse {
+pub struct VersionDiffResponse {
     #[schema(example = 41)]
     pub from_serial: i32,
     #[schema(example = 42)]
@@ -144,7 +144,7 @@ pub struct SnapshotDiffResponse {
     pub diff: RecordDiff,
 }
 
-/// Request body for rolling a zone back to a snapshot serial.
+/// Request body for rolling a zone back to a version serial.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RollbackZoneRequest {
     #[schema(example = 7)]

@@ -17,9 +17,9 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
             "/zones",
             Some(json!({
                 "name": zone_name,
-                "primary_ns": format!("ns1.{zone_name}"),
-                "admin_email": "admin@example.com",
-                "ttl": 3600,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "default_ttl": 3600,
             })),
         )
         .await;
@@ -137,9 +137,9 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
             "/zones",
             Some(json!({
                 "name": new_zone,
-                "primary_ns": format!("ns1.{new_zone}"),
-                "admin_email": "admin@example.com",
-                "ttl": 3600,
+                "mname": format!("ns1.{new_zone}"),
+                "rname": "admin@example.com",
+                "default_ttl": 3600,
             })),
         )
         .await;
@@ -149,12 +149,12 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    // So does forced NOTIFY: it bumps the zone serial.
+    // So does a serial-bumping NOTIFY.
     let (status, _) = app
         .request(
             Method::POST,
-            "/notify/zones",
-            Some(json!({ "zone_name": granted_zone, "force": true })),
+            "/zones/notify",
+            Some(json!({ "zone_name": granted_zone, "bump_serial": true })),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);

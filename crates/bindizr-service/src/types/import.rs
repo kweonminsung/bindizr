@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::snapshot::RecordDiff;
+use super::version::RecordDiff;
 
 /// How parsed records are reconciled with the records already in the zone.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, ToSchema)]

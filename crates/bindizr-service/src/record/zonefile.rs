@@ -60,12 +60,16 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                     Rtype::SOA => continue, // managed via zone fields
                     Rtype::A => RecordType::A,
                     Rtype::AAAA => RecordType::AAAA,
+                    Rtype::CAA => RecordType::CAA,
                     Rtype::CNAME => RecordType::CNAME,
+                    Rtype::DS => RecordType::DS,
                     Rtype::MX => RecordType::MX,
                     Rtype::TXT => RecordType::TXT,
                     Rtype::NS => RecordType::NS,
                     Rtype::SRV => RecordType::SRV,
                     Rtype::PTR => RecordType::PTR,
+                    Rtype::SSHFP => RecordType::SSHFP,
+                    Rtype::TLSA => RecordType::TLSA,
                     other => {
                         errors.push(format!(
                             "unsupported record type '{}' for '{}'",

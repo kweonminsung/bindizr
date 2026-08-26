@@ -12,8 +12,8 @@ const MAX_TTL: i32 = 604_800;
 
 pub(super) struct ValidatedCreateZoneRequest {
     pub(crate) name: ZoneName,
-    pub(crate) primary_ns: String,
-    pub(crate) admin_email: String,
+    pub(crate) mname: String,
+    pub(crate) rname: String,
     pub(crate) ttl: i32,
 }
 
@@ -21,16 +21,16 @@ pub(super) fn validate_create_zone_request(
     request: &CreateZoneRequest,
 ) -> Result<ValidatedCreateZoneRequest, ServiceError> {
     let zone_name = normalize_zone_name(&request.name)?;
-    let primary_ns = normalize_domain_name(&request.primary_ns, "primary NS")?.to_string();
-    let admin_email = normalize_email(&request.admin_email)?;
-    let ttl = validate_ttl(request.ttl)?;
+    let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
+    let rname = normalize_email(&request.rname)?;
+    let ttl = validate_ttl(request.default_ttl)?;
 
-    validate_soa_wire_safety(&admin_email)?;
+    validate_soa_wire_safety(&rname)?;
 
     Ok(ValidatedCreateZoneRequest {
         name: zone_name,
-        primary_ns,
-        admin_email,
+        mname,
+        rname,
         ttl,
     })
 }
@@ -39,13 +39,13 @@ pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError>
     let trimmed = value.trim();
 
     if trimmed == "." {
-        return Err(ServiceError::invalid_zone(
+        return Err(ServiceError::invalid_zone_field(
             "zone name must not be the root zone".to_string(),
         ));
     }
 
     if trimmed.starts_with("*.") || trimmed == "*" {
-        return Err(ServiceError::invalid_zone(
+        return Err(ServiceError::invalid_zone_field(
             "wildcard zone names are not allowed".to_string(),
         ));
     }
@@ -56,41 +56,39 @@ pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError>
 /// Parse a domain name, phrasing any rejection against `field`. The rules
 /// live on [`ZoneName`]; this only maps the failure to a zone error.
 fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceError> {
-    ZoneName::parse(value).map_err(|e| ServiceError::invalid_zone(format!("{} {}", field, e)))
+    ZoneName::parse(value).map_err(|e| ServiceError::invalid_zone_field(format!("{} {}", field, e)))
 }
 
 fn normalize_email(value: &str) -> Result<String, ServiceError> {
     let value = value.trim();
 
     if value.is_empty() {
-        return Err(ServiceError::invalid_zone(
-            "admin email must not be empty".to_string(),
+        return Err(ServiceError::invalid_zone_field(
+            "rname must not be empty".to_string(),
         ));
     }
 
     if has_whitespace_or_control(value) {
-        return Err(ServiceError::invalid_zone(
-            "admin email must not contain whitespace or control characters".to_string(),
+        return Err(ServiceError::invalid_zone_field(
+            "rname must not contain whitespace or control characters".to_string(),
         ));
     }
 
     if value.matches('@').count() != 1 {
-        return Err(ServiceError::invalid_zone(
-            "admin email must contain exactly one @".to_string(),
+        return Err(ServiceError::invalid_zone_field(
+            "rname must contain exactly one @".to_string(),
         ));
     }
 
-    let (local, domain) = value
-        .split_once('@')
-        .expect("admin email contains exactly one @");
+    let (local, domain) = value.split_once('@').expect("rname contains exactly one @");
 
     validate_email_local_part(local)?;
-    let domain = normalize_domain_name(domain, "admin email domain")?;
+    let domain = normalize_domain_name(domain, "rname domain")?;
 
     let normalized = format!("{}@{}", local, domain);
     if normalized.len() > MAX_EMAIL_LEN {
-        return Err(ServiceError::invalid_zone(
-            "admin email must be 254 bytes or fewer".to_string(),
+        return Err(ServiceError::invalid_zone_field(
+            "rname must be 254 bytes or fewer".to_string(),
         ));
     }
 
@@ -99,26 +97,26 @@ fn normalize_email(value: &str) -> Result<String, ServiceError> {
 
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     if local.is_empty() {
-        return Err(ServiceError::invalid_zone(
-            "admin email local part must not be empty".to_string(),
+        return Err(ServiceError::invalid_zone_field(
+            "rname local part must not be empty".to_string(),
         ));
     }
 
     if local.len() > MAX_EMAIL_LOCAL_LEN {
-        return Err(ServiceError::invalid_zone(
-            "admin email local part must be 64 bytes or fewer".to_string(),
+        return Err(ServiceError::invalid_zone_field(
+            "rname local part must be 64 bytes or fewer".to_string(),
         ));
     }
 
     if local.starts_with('.') || local.ends_with('.') || local.contains("..") {
-        return Err(ServiceError::invalid_zone(
-            "admin email local part must not start, end, or contain consecutive dots".to_string(),
+        return Err(ServiceError::invalid_zone_field(
+            "rname local part must not start, end, or contain consecutive dots".to_string(),
         ));
     }
 
     if !local.chars().all(is_valid_email_local_char) {
-        return Err(ServiceError::invalid_zone(
-            "admin email local part contains invalid characters".to_string(),
+        return Err(ServiceError::invalid_zone_field(
+            "rname local part contains invalid characters".to_string(),
         ));
     }
 
@@ -153,14 +151,14 @@ fn is_valid_email_local_char(c: char) -> bool {
 
 fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
     if ttl < MIN_TTL {
-        return Err(ServiceError::invalid_zone(format!(
+        return Err(ServiceError::invalid_zone_field(format!(
             "ttl must be at least {} seconds",
             MIN_TTL
         )));
     }
 
     if ttl > MAX_TTL {
-        return Err(ServiceError::invalid_zone(format!(
+        return Err(ServiceError::invalid_zone_field(format!(
             "ttl must be at most {} seconds",
             MAX_TTL
         )));
@@ -203,7 +201,7 @@ fn resolve_soa_interval(
 ) -> Result<i32, ServiceError> {
     let resolved = value.unwrap_or(fallback);
     if resolved <= 0 {
-        return Err(ServiceError::invalid_zone(format!(
+        return Err(ServiceError::invalid_zone_field(format!(
             "{} must be a positive number of seconds",
             field
         )));
@@ -211,12 +209,11 @@ fn resolve_soa_interval(
     Ok(resolved)
 }
 
-// `zone_name` and `primary_ns` are already wire-safe after `normalize_domain_name`
-// (plain ASCII labels, each <= 63 bytes), so only the derived SOA RNAME, whose
-// label boundaries can shift during the email-to-mailbox escaping, needs rechecking.
-fn validate_soa_wire_safety(admin_email: &str) -> Result<(), ServiceError> {
-    let soa_mailbox = SoaMailbox::from_email(admin_email).map_err(ServiceError::invalid_zone)?;
-    soa_mailbox
-        .classify_wire_labels()
-        .map_err(|e| ServiceError::invalid_zone(format!("admin email SOA RNAME {}", e)))
+// `zone_name` and `mname` are already wire-safe after `normalize_domain_name`
+// (plain ASCII labels, each <= 63 bytes); the derived SOA RNAME's shifted
+// label boundaries are checked by `SoaMailbox::from_email` itself.
+fn validate_soa_wire_safety(rname: &str) -> Result<(), ServiceError> {
+    SoaMailbox::from_email(rname)
+        .map(|_| ())
+        .map_err(|e| ServiceError::invalid_zone_field(format!("rname {}", e)))
 }

@@ -1,8 +1,8 @@
 use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
-    record::RecordService,
-    types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
+    record::{ListedRecord, RecordService},
+    types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter, PaginatedResponse},
 };
 use serde_json::json;
 
@@ -15,7 +15,7 @@ use crate::socket::{
 pub(super) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: RecordIdParams = parse_params(data)?;
 
-    let record = RecordService::get_by_id_with_zone(&Caller::Global, params.id).await?;
+    let record = RecordService::get_with_zone(&Caller::Global, params.id).await?;
     Ok(DaemonResponse {
         message: "Record retrieved successfully".to_string(),
         data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
@@ -31,18 +31,18 @@ pub(super) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
     };
 
     let records = RecordService::list_with_zone_by_filter(&Caller::Global, filter).await?;
-    let response = records
-        .items
-        .iter()
-        .map(GetRecordResponse::from_record_with_zone)
-        .collect::<Vec<_>>();
+    let response = PaginatedResponse {
+        items: records
+            .items
+            .iter()
+            .map(ListedRecord::to_response)
+            .collect::<Vec<_>>(),
+        pagination: records.pagination,
+    };
 
     Ok(DaemonResponse {
-        message: format!("Found {} record(s)", response.len()),
-        data: json!({
-            "items": response,
-            "pagination": records.pagination,
-        }),
+        message: format!("Found {} record(s)", response.items.len()),
+        data: to_response_data(response)?,
     })
 }
 
@@ -65,7 +65,7 @@ pub(super) async fn update_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordParams = parse_params(data)?;
 
-    let record = RecordService::patch_by_id(&Caller::Global, params.id, &params.patch).await?;
+    let record = RecordService::patch(&Caller::Global, params.id, &params.patch).await?;
     Ok(DaemonResponse {
         message: "Record updated successfully".to_string(),
         data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
@@ -107,7 +107,7 @@ pub(super) async fn delete_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RecordIdParams = parse_params(data)?;
 
-    RecordService::delete_by_id(&Caller::Global, params.id).await?;
+    RecordService::delete(&Caller::Global, params.id).await?;
     Ok(DaemonResponse {
         message: format!("Record '{}' deleted successfully", params.id),
         data: json!(null),

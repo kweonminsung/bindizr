@@ -112,7 +112,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(out)
     }
 
-    async fn get_by_id(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
+    async fn get(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
@@ -124,7 +124,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
-    async fn get_by_id_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
+    async fn get_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let record = sqlx::query_as::<_, RecordWithZone>(
@@ -143,7 +143,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
-    async fn get_by_id_tx(
+    async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
@@ -159,7 +159,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
-    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
+    async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let records =
@@ -172,7 +172,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(records)
     }
 
-    async fn list_by_zone_id_tx(
+    async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -191,7 +191,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(records)
     }
 
-    async fn list_by_zone_id_and_name_tx(
+    async fn list_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -242,7 +242,25 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(out)
     }
 
-    async fn list_by_zone_id_and_names_tx(
+    async fn list_ds_names_without_ns_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<Vec<String>, DatabaseError> {
+        let mysql_tx = tx.as_mysql()?;
+
+        let names = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT name FROM records WHERE zone_id = ? AND record_type = 'DS' AND name NOT IN (SELECT name FROM records WHERE zone_id = ? AND record_type = 'NS')",
+        )
+        .bind(zone_id)
+        .bind(zone_id)
+        .fetch_all(&mut **mysql_tx)
+        .await?;
+
+        Ok(names)
+    }
+
+    async fn list_by_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -302,7 +320,7 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(r.name) = LOWER(?)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) = LOWER(?)
               )
-              AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
+              AND (? IS NULL OR r.record_type = ?)
               AND (? IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN LOCATE(LOWER(?), LOWER(r.display_value)) > 0
                     ELSE LOCATE(BINARY ?, BINARY r.display_value) > 0
@@ -394,7 +412,7 @@ impl RecordRepository for MySqlRecordRepository {
                     OR LOWER(r.name) = LOWER(?)
                     OR LOWER(CASE WHEN r.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(r.name, '.', z.name, '.') END) = LOWER(?)
               )
-              AND (? IS NULL OR LOWER(r.record_type) = LOWER(?))
+              AND (? IS NULL OR r.record_type = ?)
               AND (? IS NULL OR (CASE
                     WHEN r.record_type IN ({name_like_types}) THEN LOCATE(LOWER(?), LOWER(r.display_value)) > 0
                     ELSE LOCATE(BINARY ?, BINARY r.display_value) > 0

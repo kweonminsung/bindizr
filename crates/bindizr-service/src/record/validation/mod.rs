@@ -74,12 +74,6 @@ pub(crate) fn validate_record_add_constraints_normalized(
     priority: Option<i32>,
     except_record_id: Option<i32>,
 ) -> Result<(), ServiceError> {
-    if *record_type == RecordType::SOA {
-        return Err(ServiceError::invalid_input(
-            "Cannot create SOA record manually".to_string(),
-        ));
-    }
-
     validate_record_value(record_type, value, priority)?;
 
     if *record_type == RecordType::CNAME && stored_name.is_apex() {
@@ -140,9 +134,12 @@ pub(crate) fn validate_record_add_constraints_normalized(
         }
     }
 
-    if *record_type == RecordType::NS && !stored_name.is_apex() {
+    // A DS names a child zone's key (RFC 4034, Section 5); the zone's own
+    // DS lives in its parent. The NS coupling is checked at versioning.
+    if *record_type == RecordType::DS && stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
-            "NS records must use apex owner name '@'".to_string(),
+            "DS records secure a child delegation; the zone's own DS belongs in the parent zone"
+                .to_string(),
         ));
     }
 
@@ -160,24 +157,15 @@ pub(crate) fn validate_record_add_constraints_normalized(
     Ok(())
 }
 
-/// Reject deletions of the SOA record or the NS record referenced by `primary_ns`.
+/// Reject deletions of the SOA record or the NS record referenced by `mname`.
 pub(crate) fn validate_delete_constraints(
     zone: &Zone,
     deleting_records: &[Record],
 ) -> Result<(), ServiceError> {
-    if deleting_records
-        .iter()
-        .any(|r| r.record_type == RecordType::SOA)
-    {
-        return Err(ServiceError::invalid_input(
-            "Cannot delete SOA record".to_string(),
-        ));
-    }
-
     for record in deleting_records {
-        if zone.is_primary_ns(&record.record_type, &record.name, &record.value) {
+        if zone.is_mname(&record.record_type, &record.name, &record.value) {
             return Err(ServiceError::invalid_input(
-                "Cannot delete NS record referenced by zone primary_ns".to_string(),
+                "Cannot delete NS record referenced by zone mname".to_string(),
             ));
         }
     }
@@ -192,14 +180,6 @@ pub(super) fn validate_record_update_constraints_normalized(
     existing_record: &Record,
     updated_record: &Record,
 ) -> Result<(), ServiceError> {
-    // SOA is managed via the zone's own fields and cannot be set on a record.
-    if updated_record.record_type == RecordType::SOA {
-        log_error!("Cannot update to SOA record type");
-        return Err(ServiceError::invalid_input(
-            "Cannot update to SOA record type".to_string(),
-        ));
-    }
-
     validate_record_add_constraints_normalized(
         zone_records,
         &updated_record.name,
@@ -210,12 +190,12 @@ pub(super) fn validate_record_update_constraints_normalized(
         Some(existing_record.id),
     )?;
 
-    if zone.is_primary_ns(
+    if zone.is_mname(
         &existing_record.record_type,
         &existing_record.name,
         &existing_record.value,
     ) {
-        let still_primary = zone.is_primary_ns(
+        let still_primary = zone.is_mname(
             &updated_record.record_type,
             &updated_record.name,
             &updated_record.value,
@@ -223,7 +203,7 @@ pub(super) fn validate_record_update_constraints_normalized(
 
         if !still_primary {
             return Err(ServiceError::invalid_input(
-                "Cannot modify the NS record referenced by zone primary_ns".to_string(),
+                "Cannot modify the NS record referenced by zone mname".to_string(),
             ));
         }
     }
@@ -255,7 +235,7 @@ impl RecordService {
     ) -> Result<AddOutcome, ServiceError> {
         // Only records sharing the owner name can conflict, so load just those
         // instead of the whole zone.
-        let zone_records = RepositoryService::list_records_by_zone_id_and_name_tx(
+        let zone_records = RepositoryService::list_records_by_name_tx(
             tx,
             zone.id,
             owner_name,

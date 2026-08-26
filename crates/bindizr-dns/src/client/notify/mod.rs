@@ -93,7 +93,7 @@ pub struct SecondaryNotify {
 /// ACL admits each one, so every replica must hear the change). An empty
 /// `secondary_addrs` yields an empty list.
 pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>, XfrError> {
-    let dns_config = &config::get_bindizr_config().dns;
+    let dns_config = &config::bindizr_config().dns;
     let raw = dns_config.secondary_addrs.clone();
     if raw.trim().is_empty() {
         return Ok(Vec::new());
@@ -151,7 +151,7 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>,
 
 /// Sends a NOTIFY to one server, retrying up to the configured limit.
 async fn send_notify_to_server(
-    zone_name: &Name<Vec<u8>>,
+    qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
     retries: u32,
@@ -160,7 +160,7 @@ async fn send_notify_to_server(
     let mut last_error = None;
 
     for attempt in 1..=attempts {
-        match send_notify_to_server_once(zone_name, server_addr, timeout).await {
+        match send_notify_to_server_once(qname, server_addr, timeout).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 if attempt < attempts {
@@ -183,11 +183,11 @@ async fn send_notify_to_server(
 }
 
 async fn send_notify_to_server_once(
-    zone_name: &Name<Vec<u8>>,
+    qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<(), XfrError> {
-    let (query_id, notify_message) = super::build_question(Opcode::NOTIFY, true, zone_name);
+    let (query_id, notify_message) = super::build_question(Opcode::NOTIFY, true, qname);
 
     let (received, response) =
         super::udp_exchange(server_addr, timeout, &notify_message, "NOTIFY").await?;

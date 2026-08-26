@@ -1,9 +1,10 @@
 //! The `zone` subcommands. Each nested family owns its own grammar, dispatch,
 //! and output rendering in a sibling module.
 
-mod snapshot;
+mod dnssec;
 mod token_policy;
 mod tsig_policy;
+mod version;
 
 use bindizr_service::types::{
     CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
@@ -11,9 +12,10 @@ use bindizr_service::types::{
     NotifyZoneRequest, UpdateZonePatch, ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
-pub(crate) use snapshot::ZoneSnapshotCommand;
+pub(crate) use dnssec::ZoneDnssecCommand;
 pub(crate) use token_policy::ZoneTokenPolicyCommand;
 pub(crate) use tsig_policy::ZoneTsigPolicyCommand;
+pub(crate) use version::ZoneVersionCommand;
 
 use crate::{
     cli::{
@@ -25,7 +27,10 @@ use crate::{
     },
     socket::{
         client::DaemonSocketClient,
-        types::{DaemonCommandKind, ImportZoneFileParams, UpdateZoneParams, ZoneNameParams},
+        types::{
+            DaemonCommandKind, ExportZoneFileParams, ImportZoneFileParams, UpdateZoneParams,
+            ZoneNameParams,
+        },
     },
 };
 
@@ -37,15 +42,15 @@ pub(crate) enum ZoneCommand {
         /// Zone name
         #[arg(long)]
         name: String,
-        /// Primary nameserver
+        /// SOA MNAME (primary name server)
         #[arg(long)]
-        primary_ns: String,
-        /// Admin email
+        mname: String,
+        /// SOA RNAME, as an email address
         #[arg(long)]
-        admin_email: String,
-        /// TTL
+        rname: String,
+        /// Default record TTL (seconds)
         #[arg(long)]
-        ttl: i32,
+        default_ttl: i32,
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<i32>,
@@ -58,15 +63,15 @@ pub(crate) enum ZoneCommand {
         /// Rename the zone to this name
         #[arg(long)]
         new_name: Option<String>,
-        /// Primary nameserver
+        /// SOA MNAME (primary name server)
         #[arg(long)]
-        primary_ns: Option<String>,
-        /// Admin email
+        mname: Option<String>,
+        /// SOA RNAME, as an email address
         #[arg(long)]
-        admin_email: Option<String>,
-        /// TTL
+        rname: Option<String>,
+        /// Default record TTL (seconds)
         #[arg(long)]
-        ttl: Option<i32>,
+        default_ttl: Option<i32>,
         /// SOA refresh interval (seconds)
         #[arg(long)]
         refresh: Option<i32>,
@@ -93,21 +98,21 @@ pub(crate) enum ZoneCommand {
         /// Filter by zone ID
         #[arg(long)]
         id: Option<i32>,
-        /// Filter by primary name server
+        /// Filter by mname
         #[arg(long)]
-        primary_ns: Option<String>,
-        /// Filter by admin email
+        mname: Option<String>,
+        /// Filter by rname
         #[arg(long)]
-        admin_email: Option<String>,
-        /// Filter by TTL
+        rname: Option<String>,
+        /// Filter by default TTL
         #[arg(long)]
-        ttl: Option<i32>,
-        /// Filter by minimum TTL
+        default_ttl: Option<i32>,
+        /// Filter by minimum default TTL
         #[arg(long)]
-        min_ttl: Option<i32>,
-        /// Filter by maximum TTL
+        min_default_ttl: Option<i32>,
+        /// Filter by maximum default TTL
         #[arg(long)]
-        max_ttl: Option<i32>,
+        max_default_ttl: Option<i32>,
         /// Filter by serial
         #[arg(long)]
         serial: Option<i32>,
@@ -173,12 +178,15 @@ $INCLUDE is not supported.")]
     Export {
         /// The name of the zone
         name: String,
+        /// Append the derived DNSSEC records; for inspection, not re-import
+        #[arg(long)]
+        signed: bool,
     },
 
-    /// Inspect or roll back a zone's snapshots (serial history)
-    Snapshot {
+    /// Inspect or roll back a zone's versions (serial history)
+    Version {
         #[command(subcommand)]
-        subcommand: ZoneSnapshotCommand,
+        subcommand: ZoneVersionCommand,
     },
 
     /// Show how far each secondary has caught up with a zone
@@ -203,6 +211,12 @@ $INCLUDE is not supported.")]
     TokenPolicy {
         #[command(subcommand)]
         subcommand: ZoneTokenPolicyCommand,
+    },
+
+    /// Manage a zone's DNSSEC signing (keys, DS records, re-signing)
+    Dnssec {
+        #[command(subcommand)]
+        subcommand: ZoneDnssecCommand,
     },
 }
 
@@ -232,9 +246,10 @@ impl From<ImportMode> for ServiceImportMode {
 /// Arguments for the `zone notify` subcommand.
 #[derive(Args, Debug)]
 pub(crate) struct NotifyArgs {
-    /// Force serial increment before sending NOTIFY
-    #[arg(short, long)]
-    force: bool,
+    /// Bump the serial first, so secondaries transfer even when nothing
+    /// changed
+    #[arg(long)]
+    bump_serial: bool,
 
     /// Zone name to notify (optional: if not specified, notifies all zones)
     name: Option<String>,
@@ -247,9 +262,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
     match subcommand {
         ZoneCommand::Create {
             name,
-            primary_ns,
-            admin_email,
-            ttl,
+            mname,
+            rname,
+            default_ttl,
             serial,
         } => {
             let response = client
@@ -257,9 +272,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     DaemonCommandKind::CreateZone,
                     CreateZoneRequest {
                         name,
-                        primary_ns,
-                        admin_email,
-                        ttl,
+                        mname,
+                        rname,
+                        default_ttl,
                         serial,
                         refresh: None,
                         retry: None,
@@ -273,11 +288,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         ZoneCommand::List {
             name,
             id,
-            primary_ns,
-            admin_email,
-            ttl,
-            min_ttl,
-            max_ttl,
+            mname,
+            rname,
+            default_ttl,
+            min_default_ttl,
+            max_default_ttl,
             serial,
             search,
             limit,
@@ -286,11 +301,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         } => {
             let has_filters = name.is_some()
                 || id.is_some()
-                || primary_ns.is_some()
-                || admin_email.is_some()
-                || ttl.is_some()
-                || min_ttl.is_some()
-                || max_ttl.is_some()
+                || mname.is_some()
+                || rname.is_some()
+                || default_ttl.is_some()
+                || min_default_ttl.is_some()
+                || max_default_ttl.is_some()
                 || serial.is_some()
                 || search.is_some()
                 || limit.is_some()
@@ -298,11 +313,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let filter_payload = || GetZonesFilter {
                 name,
                 id,
-                primary_ns,
-                admin_email,
-                ttl,
-                min_ttl,
-                max_ttl,
+                mname,
+                rname,
+                default_ttl,
+                min_default_ttl,
+                max_default_ttl,
                 serial,
                 search,
                 limit,
@@ -329,9 +344,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         ZoneCommand::Update {
             name,
             new_name,
-            primary_ns,
-            admin_email,
-            ttl,
+            mname,
+            rname,
+            default_ttl,
             refresh,
             retry,
             expire,
@@ -346,9 +361,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         name,
                         patch: UpdateZonePatch {
                             new_name,
-                            primary_ns,
-                            admin_email,
-                            ttl,
+                            mname,
+                            rname,
+                            default_ttl,
                             refresh,
                             retry,
                             expire,
@@ -368,9 +383,12 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .await?;
             println!("{}", response.message);
         }
-        ZoneCommand::Export { name } => {
+        ZoneCommand::Export { name, signed } => {
             let data = client
-                .send_command(DaemonCommandKind::ExportZoneFile, ZoneNameParams { name })
+                .send_command(
+                    DaemonCommandKind::ExportZoneFile,
+                    ExportZoneFileParams { name, signed },
+                )
                 .await?
                 .data;
             let export: ExportZoneFileResponse = parse_response(&data)?;
@@ -421,9 +439,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 vec![ImportSummaryRow::from(&import.summary)]
             })?;
         }
-        ZoneCommand::Snapshot { subcommand } => {
-            snapshot::handle_command(&client, subcommand).await?
-        }
+        ZoneCommand::Version { subcommand } => version::handle_command(&client, subcommand).await?,
         ZoneCommand::Status { name, output } => {
             let response = client
                 .send_command(DaemonCommandKind::ZoneStatus, ZoneNameParams { name })
@@ -449,7 +465,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     DaemonCommandKind::NotifyZone,
                     NotifyZoneRequest {
                         zone_name: args.name,
-                        force: args.force,
+                        bump_serial: args.bump_serial,
                     },
                 )
                 .await?;
@@ -461,6 +477,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         ZoneCommand::TsigPolicy { subcommand } => {
             tsig_policy::handle_command(&client, subcommand).await?
         }
+        ZoneCommand::Dnssec { subcommand } => dnssec::handle_command(&client, subcommand).await?,
     }
 
     Ok(())

@@ -95,12 +95,9 @@ async def run(adapter, cfg, ctx) -> list:
             ci += 1
         await adapter.bulk_import(zone, batch)
 
-        # Hold until the serial and the record count both stop moving. A serial
-        # that never advances means the batch never landed, and an IXFR from the
-        # unchanged base_serial would answer with a tiny "up-to-date" SOA that
-        # reads as an efficient transfer; stopping at the *first* bump is just as
-        # wrong, since a batch over the adapter's chunk size lands as several
-        # transactions and would transfer only the chunks that had arrived.
+        # Hold until the serial and the record count both stop moving: an
+        # unchanged serial answers IXFR with a tiny "up-to-date" SOA, and the
+        # first bump may cover only one of a chunked batch's transactions.
         deadline = time.monotonic() + 120
         propagated = False
         prev = None

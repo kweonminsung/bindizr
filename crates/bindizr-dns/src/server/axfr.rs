@@ -26,19 +26,22 @@ pub(crate) async fn handle_axfr(
         return catalog::handle_catalog_axfr_with_qtype(stream, query, response_qtype).await;
     }
 
+    // Non-locking pre-read, only to learn the zone id and probe the cache.
     let zone = ZoneService::find_by_name(zone_name_str)
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
-    let records = zone_cache::list_records(zone.id, zone.serial)
+    let (zone, content) = zone_cache::list_zone_content(zone)
         .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
+        .map_err(|e| XfrError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
     log_info!(
-        "AXFR: zone {} has {} records, serial={}",
+        "AXFR: zone {} has {} records + {} DNSSEC records, serial={}",
         zone_name_str,
-        records.len(),
+        content.records.len(),
+        content.dnssec_records.len(),
         zone.serial
     );
 
@@ -46,29 +49,40 @@ pub(crate) async fn handle_axfr(
     let mut messages_sent = 0usize;
 
     let serial = delta::serial_to_u32(zone.serial)?;
-    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
-        builder.add_soa(&zone, serial)
-    })
-    .await?;
-
-    for record in records.iter() {
-        wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
-            builder.add_record(record, &zone.name)
+    builder
+        .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
+            builder.add_soa(&zone, serial)
         })
         .await?;
+
+    for record in content.records.iter() {
+        builder
+            .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
+                builder.add_record(record, &zone.name)
+            })
+            .await?;
+    }
+
+    for record in content.dnssec_records.iter() {
+        builder
+            .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
+                builder.add_dnssec_record(record, &zone.name)
+            })
+            .await?;
     }
 
     // Final SOA closes the transfer.
-    wire::add_answer_and_flush_if_needed(stream, &mut builder, &mut messages_sent, |builder| {
-        builder.add_soa(&zone, serial)
-    })
-    .await?;
-    messages_sent += wire::flush_message_if_not_empty(stream, &mut builder).await?;
+    builder
+        .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
+            builder.add_soa(&zone, serial)
+        })
+        .await?;
+    messages_sent += builder.flush_if_not_empty(stream).await?;
 
     log_info!(
         "AXFR completed for zone {}: sent {} records + 2 SOA records in {} DNS message(s)",
         zone_name_str,
-        records.len(),
+        content.records.len() + content.dnssec_records.len(),
         messages_sent
     );
 

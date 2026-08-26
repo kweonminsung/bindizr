@@ -1,73 +1,37 @@
 //! SOA record values, including the RNAME mailbox <-> email conversions.
 
-use super::value::{parse_u32_record_field, validate_domain_record_value};
-use crate::dns::name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, to_fqdn_lowercase};
+use crate::dns::{
+    name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, encode_name},
+    record::Rdata,
+};
 
-pub(crate) struct SoaRecordValue<'a> {
-    mname: &'a str,
-    rname: &'a str,
-    serial: u32,
-    refresh: u32,
-    retry: u32,
-    expire: u32,
-    minimum: u32,
+/// An SOA value as its wire fields (RFC 1035, Section 3.3.13); `rname` is the
+/// mailbox presentation form, not an email address.
+pub struct SoaRecordValue<'a> {
+    pub mname: &'a str,
+    pub rname: &'a str,
+    pub serial: u32,
+    pub refresh: u32,
+    pub retry: u32,
+    pub expire: u32,
+    pub minimum: u32,
 }
 
 impl<'a> SoaRecordValue<'a> {
-    pub(crate) fn parse(value: &'a str) -> Result<Self, String> {
-        // The trailing `None` rejects a value with more than seven fields.
-        let mut fields = value.split_whitespace();
-        match (
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-            fields.next(),
-        ) {
-            (
-                Some(mname),
-                Some(rname),
-                Some(serial),
-                Some(refresh),
-                Some(retry),
-                Some(expire),
-                Some(minimum),
-                None,
-            ) => Ok(Self {
-                mname,
-                rname,
-                serial: parse_u32_record_field("SOA serial", serial)?,
-                refresh: parse_u32_record_field("SOA refresh", refresh)?,
-                retry: parse_u32_record_field("SOA retry", retry)?,
-                expire: parse_u32_record_field("SOA expire", expire)?,
-                minimum: parse_u32_record_field("SOA minimum", minimum)?,
-            }),
-            _ => Err(format!(
-                "SOA record value must be '<mname> <rname> <serial> <refresh> <retry> <expire> <minimum>': {value}"
-            )),
-        }
-    }
-
-    pub(crate) fn validate(&self) -> Result<(), String> {
-        validate_domain_record_value("SOA mname", self.mname)?;
-        validate_domain_record_value("SOA rname", self.rname)?;
-        Ok(())
-    }
-
-    pub(crate) fn canonical(&self) -> String {
-        format!(
-            "{} {} {} {} {} {} {}",
-            to_fqdn_lowercase(self.mname),
-            to_fqdn_lowercase(self.rname),
+    /// The wire-format RDATA of this SOA value.
+    pub fn to_rdata(&self) -> Result<Rdata, String> {
+        let mut rdata = encode_name(self.mname)?;
+        rdata.extend_from_slice(&encode_name(self.rname)?);
+        for field in [
             self.serial,
             self.refresh,
             self.retry,
             self.expire,
             self.minimum,
-        )
+        ] {
+            rdata.extend_from_slice(&field.to_be_bytes());
+        }
+        Rdata::new(rdata)
     }
 }
 
@@ -77,21 +41,25 @@ impl<'a> SoaRecordValue<'a> {
 pub struct SoaMailbox(String);
 
 impl SoaMailbox {
-    /// Encode an email address into mailbox form.
+    /// Encode an email address into mailbox form. Escaping the local part can
+    /// shift label boundaries past the wire limits, so they are re-checked
+    /// here; the row form ([`Self::from_encoded`]) is trusted.
     pub fn from_email(email: &str) -> Result<Self, String> {
         let (local, domain) = match email.split_once('@') {
             Some(parts) if email.matches('@').count() == 1 => parts,
             _ => return Err("email must contain exactly one @".to_string()),
         };
 
-        Ok(Self(format!(
+        let mailbox = Self(format!(
             "{}.{}.",
             escape_local_part(local),
             domain.trim_end_matches('.')
-        )))
+        ));
+        mailbox.classify_wire_labels().map_err(|e| e.to_string())?;
+        Ok(mailbox)
     }
 
-    /// Wrap an already-encoded mailbox (e.g. a stored snapshot value) as-is;
+    /// Wrap an already-encoded mailbox (e.g. a stored version value) as-is;
     /// [`Self::to_email`] validates on decode.
     pub fn from_encoded(mailbox: impl Into<String>) -> Self {
         Self(mailbox.into())
@@ -124,24 +92,18 @@ impl SoaMailbox {
         Err("SOA mailbox is not a valid encoded email".to_string())
     }
 
-    /// The wire limits, measured on the decoded labels. The RNAME is the one
-    /// name bindizr escapes, and escaping the local part can push a label past
-    /// 63 bytes or the whole name past 253.
-    pub fn classify_wire_labels(&self) -> Result<(), String> {
+    fn classify_wire_labels(&self) -> Result<(), ParseNameError> {
         let bare = self.0.trim_end_matches('.');
         if bare.len() > MAX_DOMAIN_LEN {
-            return Err(format!("must be {} bytes or fewer", MAX_DOMAIN_LEN));
+            return Err(ParseNameError::TooLong);
         }
 
         for label in decode_labels(bare)? {
             if label.is_empty() {
-                return Err("must not contain empty labels".to_string());
+                return Err(ParseNameError::EmptyLabel);
             }
             if label.len() > MAX_DNS_LABEL_LEN {
-                return Err(format!(
-                    "labels must be {} bytes or fewer",
-                    MAX_DNS_LABEL_LEN
-                ));
+                return Err(ParseNameError::LabelTooLong);
             }
         }
 
@@ -159,7 +121,7 @@ impl SoaMailbox {
 
 /// Split a mailbox into its decoded labels, so the local part's escaped dots
 /// stay inside one label (RFC 1035, Section 5.1).
-fn decode_labels(mailbox: &str) -> Result<Vec<String>, String> {
+fn decode_labels(mailbox: &str) -> Result<Vec<String>, ParseNameError> {
     let mut labels = Vec::new();
     let mut label = String::new();
     let mut chars = mailbox.chars();
@@ -168,7 +130,7 @@ fn decode_labels(mailbox: &str) -> Result<Vec<String>, String> {
         match c {
             '\\' => match chars.next() {
                 Some(escaped) => label.push(escaped),
-                None => return Err("contains a dangling escape".to_string()),
+                None => return Err(ParseNameError::DanglingEscape),
             },
             '.' => labels.push(std::mem::take(&mut label)),
             c => label.push(c),

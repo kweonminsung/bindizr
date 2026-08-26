@@ -48,7 +48,7 @@ pub async fn initialize() -> Result<(), DatabaseError> {
         return Ok(());
     }
 
-    let bindizr_config = config::get_bindizr_config();
+    let bindizr_config = config::bindizr_config();
 
     let database_type = match bindizr_config.database.database_type {
         config::DatabaseType::Mysql => DatabaseType::MySQL,
@@ -104,7 +104,7 @@ impl DatabasePool {
             .max_connections(networked_pool_max_connections())
             .after_connect(|conn, _| {
                 Box::pin(async move {
-                    // Row locks, not snapshot isolation, carry correctness:
+                    // Row locks, not version isolation, carry correctness:
                     // READ COMMITTED matches PostgreSQL and sheds gap locking.
                     sqlx::query("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
                         .execute(conn)
@@ -270,14 +270,26 @@ pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository>
     repository::RepositoryFactory::create_zone_change_repository(pool)
 }
 
-/// Return a zone snapshot repository backed by the global pool.
-pub fn get_zone_snapshot_repository() -> Box<dyn repository::ZoneSnapshotRepository> {
+/// Return a zone version repository backed by the global pool.
+pub fn get_zone_version_repository() -> Box<dyn repository::ZoneVersionRepository> {
     let pool = get_pool();
-    repository::RepositoryFactory::create_zone_snapshot_repository(pool)
+    repository::RepositoryFactory::create_zone_version_repository(pool)
 }
 
 /// Return a catalog zone state repository backed by the global pool.
 pub fn get_catalog_zone_state_repository() -> Box<dyn repository::CatalogZoneStateRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_catalog_zone_state_repository(pool)
+}
+
+/// Return a DNSSEC key repository backed by the global pool.
+pub fn get_dnssec_key_repository() -> Box<dyn repository::DnssecKeyRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_dnssec_key_repository(pool)
+}
+
+/// Return a DNSSEC record repository backed by the global pool.
+pub fn get_dnssec_record_repository() -> Box<dyn repository::DnssecRecordRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_dnssec_record_repository(pool)
 }

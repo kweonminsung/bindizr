@@ -24,7 +24,7 @@ pub struct SecondaryProbe {
 /// One probe per configured entry; a hostname entry is tried at each resolved
 /// address until one answers. An empty `secondary_addrs` yields an empty list.
 pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, XfrError> {
-    let dns_config = &config::get_bindizr_config().dns;
+    let dns_config = &config::bindizr_config().dns;
     let raw = dns_config.secondary_addrs.clone();
     if raw.trim().is_empty() {
         return Ok(Vec::new());

@@ -79,6 +79,9 @@ pub(crate) enum RecordCommand {
         /// Search records by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
+        /// Append the derived DNSSEC records (RRSIG, DNSKEY, NSEC, ...)
+        #[arg(long)]
+        signed: bool,
         /// Maximum number of records to return
         #[arg(long)]
         limit: Option<u32>,
@@ -109,7 +112,7 @@ YAML example:
     record_type: A
     value: 192.0.2.1
     ttl: 300")]
-    Bulk {
+    BulkCreate {
         /// Path to a JSON or YAML file (an array of records, or an object with
         /// a 'records' array), or '-' to read from stdin
         file: String,
@@ -207,6 +210,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             min_priority,
             max_priority,
             search,
+            signed,
             limit,
             offset,
             output,
@@ -222,6 +226,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 || min_priority.is_some()
                 || max_priority.is_some()
                 || search.is_some()
+                || signed
                 || limit.is_some()
                 || offset.is_some();
             let filter = has_filters.then_some(GetRecordsFilter {
@@ -236,6 +241,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 min_priority,
                 max_priority,
                 search,
+                signed: signed.then_some(true),
                 limit,
                 offset,
             });
@@ -246,7 +252,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
             print_records(&data, output)?;
         }
-        RecordCommand::Bulk {
+        RecordCommand::BulkCreate {
             file,
             zone,
             dry_run,

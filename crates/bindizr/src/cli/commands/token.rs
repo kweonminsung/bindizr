@@ -50,7 +50,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             expires_in_days,
             global,
         } => create_token(&client, name, description, expires_in_days, global).await,
-        TokenCommand::List => list_tokens(&client).await,
+        TokenCommand::List => print_tokens(&client).await,
         TokenCommand::Delete { name } => delete_token(&client, name).await,
     }
 }
@@ -101,7 +101,7 @@ async fn create_token(
     Ok(())
 }
 
-async fn list_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
+async fn print_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
     let res = client
         .send_command(DaemonCommandKind::TokenList, ())
         .await?;

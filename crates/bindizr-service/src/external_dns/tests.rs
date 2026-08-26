@@ -12,7 +12,7 @@ use crate::{
     error::ErrorCode,
     model::{
         record::{Record, RecordType},
-        zone::Zone,
+        zone::{DnssecDenial, Zone},
     },
     types::{ExternalDnsChangesRequest, ExternalDnsRrset, ExternalDnsRrsetUpdate},
 };
@@ -21,14 +21,15 @@ fn test_zone(id: i32, name: &str) -> Zone {
     Zone {
         id,
         name: ZoneName::from_row(name),
-        primary_ns: format!("ns1.{}", name),
-        admin_email: format!("hostmaster@{}", name),
-        ttl: 3600,
+        mname: format!("ns1.{}", name),
+        rname: format!("hostmaster@{}", name),
+        default_ttl: 3600,
         serial: 1,
         refresh: 7200,
         retry: 3600,
         expire: 604800,
         minimum_ttl: 86400,
+        dnssec_denial: DnssecDenial::Nsec,
         created_at: Utc::now(),
     }
 }
@@ -170,7 +171,10 @@ fn convert_rrset_parses_quoted_txt_values() {
     .unwrap();
 
     assert_eq!(op.record_type, RecordType::TXT);
-    assert!(op.values[0].starts_with("bindizr:txt-rdata:v1:"));
+    assert_eq!(
+        op.values[0],
+        "\"heritage=external-dns,external-dns/owner=default\""
+    );
     assert!(convert_rrset(&rrset("a.example.com", "TXT", None, &["\"unterminated"])).is_err());
 }
 
@@ -284,7 +288,7 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
     assert!(change_set.deletes.is_empty());
     assert_eq!(change_set.creates.len(), 1);
     assert_eq!(change_set.creates[0].name, OwnerName::from_row("app"));
-    assert_eq!(change_set.creates[0].ttl, zone.ttl);
+    assert_eq!(change_set.creates[0].ttl, zone.default_ttl);
 }
 
 #[test]

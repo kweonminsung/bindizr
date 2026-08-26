@@ -27,9 +27,9 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
             "/zones",
             Some(json!({
                 "name": zone_name,
-                "primary_ns": format!("ns1.{zone_name}"),
-                "admin_email": "admin@example.com",
-                "ttl": 3600,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "default_ttl": 3600,
             })),
         )
         .await;

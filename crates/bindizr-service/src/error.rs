@@ -6,7 +6,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
     InvalidInput,
-    InvalidZone,
+    InvalidZoneField,
     InvalidRecordName,
     InvalidRecordValue,
     InvalidJsonBody,
@@ -16,12 +16,16 @@ pub enum ErrorCode {
     ZoneNotFound,
     RecordNotFound,
     TokenNotFound,
-    SnapshotNotFound,
+    VersionNotFound,
     TsigKeyNotFound,
     TsigKeyConflict,
     TsigKeyInUse,
     TsigPolicyNotFound,
     TokenPolicyNotFound,
+    DnssecAlreadyEnabled,
+    DnssecNotEnabled,
+    DnssecRolloverInProgress,
+    DnssecNoRolloverInProgress,
     Unauthorized,
     InvalidToken,
     Forbidden,
@@ -34,7 +38,7 @@ impl ErrorCode {
     pub fn as_str(&self) -> &'static str {
         match self {
             ErrorCode::InvalidInput => "INVALID_INPUT",
-            ErrorCode::InvalidZone => "INVALID_ZONE",
+            ErrorCode::InvalidZoneField => "INVALID_ZONE_FIELD",
             ErrorCode::InvalidRecordName => "INVALID_RECORD_NAME",
             ErrorCode::InvalidRecordValue => "INVALID_RECORD_VALUE",
             ErrorCode::InvalidJsonBody => "INVALID_JSON_BODY",
@@ -44,12 +48,16 @@ impl ErrorCode {
             ErrorCode::ZoneNotFound => "ZONE_NOT_FOUND",
             ErrorCode::RecordNotFound => "RECORD_NOT_FOUND",
             ErrorCode::TokenNotFound => "TOKEN_NOT_FOUND",
-            ErrorCode::SnapshotNotFound => "SNAPSHOT_NOT_FOUND",
+            ErrorCode::VersionNotFound => "VERSION_NOT_FOUND",
             ErrorCode::TsigKeyNotFound => "TSIG_KEY_NOT_FOUND",
             ErrorCode::TsigKeyConflict => "TSIG_KEY_CONFLICT",
             ErrorCode::TsigKeyInUse => "TSIG_KEY_IN_USE",
             ErrorCode::TsigPolicyNotFound => "TSIG_POLICY_NOT_FOUND",
             ErrorCode::TokenPolicyNotFound => "TOKEN_POLICY_NOT_FOUND",
+            ErrorCode::DnssecAlreadyEnabled => "DNSSEC_ALREADY_ENABLED",
+            ErrorCode::DnssecNotEnabled => "DNSSEC_NOT_ENABLED",
+            ErrorCode::DnssecRolloverInProgress => "DNSSEC_ROLLOVER_IN_PROGRESS",
+            ErrorCode::DnssecNoRolloverInProgress => "DNSSEC_NO_ROLLOVER_IN_PROGRESS",
             ErrorCode::Unauthorized => "UNAUTHORIZED",
             ErrorCode::InvalidToken => "INVALID_TOKEN",
             ErrorCode::Forbidden => "FORBIDDEN",
@@ -64,7 +72,7 @@ impl ErrorCode {
     pub fn parse(s: &str) -> Option<ErrorCode> {
         Some(match s {
             "INVALID_INPUT" => ErrorCode::InvalidInput,
-            "INVALID_ZONE" => ErrorCode::InvalidZone,
+            "INVALID_ZONE_FIELD" => ErrorCode::InvalidZoneField,
             "INVALID_RECORD_NAME" => ErrorCode::InvalidRecordName,
             "INVALID_RECORD_VALUE" => ErrorCode::InvalidRecordValue,
             "INVALID_JSON_BODY" => ErrorCode::InvalidJsonBody,
@@ -74,12 +82,16 @@ impl ErrorCode {
             "ZONE_NOT_FOUND" => ErrorCode::ZoneNotFound,
             "RECORD_NOT_FOUND" => ErrorCode::RecordNotFound,
             "TOKEN_NOT_FOUND" => ErrorCode::TokenNotFound,
-            "SNAPSHOT_NOT_FOUND" => ErrorCode::SnapshotNotFound,
+            "VERSION_NOT_FOUND" => ErrorCode::VersionNotFound,
             "TSIG_KEY_NOT_FOUND" => ErrorCode::TsigKeyNotFound,
             "TSIG_KEY_CONFLICT" => ErrorCode::TsigKeyConflict,
             "TSIG_KEY_IN_USE" => ErrorCode::TsigKeyInUse,
             "TSIG_POLICY_NOT_FOUND" => ErrorCode::TsigPolicyNotFound,
             "TOKEN_POLICY_NOT_FOUND" => ErrorCode::TokenPolicyNotFound,
+            "DNSSEC_ALREADY_ENABLED" => ErrorCode::DnssecAlreadyEnabled,
+            "DNSSEC_NOT_ENABLED" => ErrorCode::DnssecNotEnabled,
+            "DNSSEC_ROLLOVER_IN_PROGRESS" => ErrorCode::DnssecRolloverInProgress,
+            "DNSSEC_NO_ROLLOVER_IN_PROGRESS" => ErrorCode::DnssecNoRolloverInProgress,
             "UNAUTHORIZED" => ErrorCode::Unauthorized,
             "INVALID_TOKEN" => ErrorCode::InvalidToken,
             "FORBIDDEN" => ErrorCode::Forbidden,
@@ -93,7 +105,7 @@ impl ErrorCode {
     pub fn http_status(&self) -> u16 {
         match self {
             ErrorCode::InvalidInput
-            | ErrorCode::InvalidZone
+            | ErrorCode::InvalidZoneField
             | ErrorCode::InvalidRecordName
             | ErrorCode::InvalidRecordValue
             | ErrorCode::InvalidJsonBody => 400,
@@ -102,7 +114,7 @@ impl ErrorCode {
             ErrorCode::ZoneNotFound
             | ErrorCode::RecordNotFound
             | ErrorCode::TokenNotFound
-            | ErrorCode::SnapshotNotFound
+            | ErrorCode::VersionNotFound
             | ErrorCode::TsigKeyNotFound
             | ErrorCode::TsigPolicyNotFound
             | ErrorCode::TokenPolicyNotFound => 404,
@@ -110,7 +122,11 @@ impl ErrorCode {
             | ErrorCode::RecordConflict
             | ErrorCode::TokenConflict
             | ErrorCode::TsigKeyConflict
-            | ErrorCode::TsigKeyInUse => 409,
+            | ErrorCode::TsigKeyInUse
+            | ErrorCode::DnssecAlreadyEnabled
+            | ErrorCode::DnssecNotEnabled
+            | ErrorCode::DnssecRolloverInProgress
+            | ErrorCode::DnssecNoRolloverInProgress => 409,
             ErrorCode::PayloadTooLarge => 413,
             ErrorCode::UnsupportedMediaType => 415,
             ErrorCode::Internal => 500,
@@ -147,8 +163,8 @@ impl ServiceError {
         Self::new(ErrorCode::InvalidInput, message)
     }
 
-    pub(crate) fn invalid_zone(message: impl Into<String>) -> Self {
-        Self::new(ErrorCode::InvalidZone, message)
+    pub(crate) fn invalid_zone_field(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::InvalidZoneField, message)
     }
 
     pub(crate) fn invalid_record_name(message: impl Into<String>) -> Self {
@@ -183,10 +199,10 @@ impl ServiceError {
         Self::new(ErrorCode::Internal, message)
     }
 
-    pub(crate) fn zone_not_found(name: &str) -> Self {
+    pub(crate) fn zone_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::ZoneNotFound,
-            format!("Zone with name '{}' not found", name),
+            format!("Zone with name '{}' not found", name.into()),
         )
     }
 
@@ -197,40 +213,40 @@ impl ServiceError {
         )
     }
 
-    pub(crate) fn token_not_found(name: &str) -> Self {
+    pub(crate) fn token_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TokenNotFound,
-            format!("API token with name '{}' not found", name),
+            format!("API token with name '{}' not found", name.into()),
         )
     }
 
-    pub(crate) fn token_conflict(name: &str) -> Self {
+    pub(crate) fn token_conflict(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TokenConflict,
-            format!("API token with name '{}' already exists", name),
+            format!("API token with name '{}' already exists", name.into()),
         )
     }
 
-    pub(crate) fn tsig_key_not_found(name: &str) -> Self {
+    pub(crate) fn tsig_key_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TsigKeyNotFound,
-            format!("TSIG key with name '{}' not found", name),
+            format!("TSIG key with name '{}' not found", name.into()),
         )
     }
 
-    pub(crate) fn tsig_key_conflict(name: &str) -> Self {
+    pub(crate) fn tsig_key_conflict(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TsigKeyConflict,
-            format!("TSIG key with name '{}' already exists", name),
+            format!("TSIG key with name '{}' already exists", name.into()),
         )
     }
 
-    pub(crate) fn tsig_key_in_use(name: &str, policy_count: u64) -> Self {
+    pub(crate) fn tsig_key_in_use(name: impl Into<String>, policy_count: u64) -> Self {
         Self::new(
             ErrorCode::TsigKeyInUse,
             format!(
                 "TSIG key '{}' is referenced by {} TSIG polic{}",
-                name,
+                name.into(),
                 policy_count,
                 if policy_count == 1 { "y" } else { "ies" }
             ),
@@ -251,12 +267,54 @@ impl ServiceError {
         )
     }
 
-    pub(crate) fn snapshot_not_found(zone_name: &str, serial: i32) -> Self {
+    pub(crate) fn dnssec_already_enabled(zone_name: impl Into<String>) -> Self {
         Self::new(
-            ErrorCode::SnapshotNotFound,
+            ErrorCode::DnssecAlreadyEnabled,
+            format!("DNSSEC is already enabled for zone '{}'", zone_name.into()),
+        )
+    }
+
+    pub(crate) fn dnssec_not_enabled(zone_name: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode::DnssecNotEnabled,
+            format!("DNSSEC is not enabled for zone '{}'", zone_name.into()),
+        )
+    }
+
+    pub(crate) fn dnssec_signing_failed(message: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode::Internal,
+            format!("DNSSEC signing failed: {}", message.into()),
+        )
+    }
+
+    pub(crate) fn dnssec_rollover_in_progress(zone_name: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode::DnssecRolloverInProgress,
             format!(
-                "No snapshot with serial '{}' for zone '{}'",
-                serial, zone_name
+                "a key rollover is already in progress for zone '{}'",
+                zone_name.into()
+            ),
+        )
+    }
+
+    pub(crate) fn dnssec_no_rollover_in_progress(zone_name: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode::DnssecNoRolloverInProgress,
+            format!(
+                "no key rollover is in progress for zone '{}'",
+                zone_name.into()
+            ),
+        )
+    }
+
+    pub(crate) fn version_not_found(zone_name: impl Into<String>, serial: i32) -> Self {
+        Self::new(
+            ErrorCode::VersionNotFound,
+            format!(
+                "No version with serial '{}' for zone '{}'",
+                serial,
+                zone_name.into()
             ),
         )
     }

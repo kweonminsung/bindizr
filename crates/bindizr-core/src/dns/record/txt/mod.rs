@@ -1,6 +1,4 @@
-use base64::Engine;
-
-const RAW_TXT_RDATA_PREFIX: &str = "bindizr:txt-rdata:v1:";
+use super::value::MAX_RECORD_RDATA;
 
 /// The content of a TXT value: a single string or multiple character-strings.
 #[derive(Debug, PartialEq, Eq)]
@@ -9,8 +7,8 @@ pub enum TxtContent {
     Segments(Vec<String>),
 }
 
-/// A TXT value as raw RDATA (length-prefixed character-strings); stored as a
-/// prefixed base64 string.
+/// A TXT value as raw RDATA (length-prefixed character-strings); the row form
+/// is its canonical presentation rendering ([`Self::to_presentation`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TxtRecordValue(Vec<u8>);
 
@@ -31,9 +29,12 @@ impl TxtRecordValue {
         Self::from_segments(segments.iter().map(String::as_str))
     }
 
-    /// Wrap raw RDATA bytes as-is.
-    pub fn from_rdata(rdata: &[u8]) -> Self {
-        Self(rdata.to_vec())
+    /// Wrap raw RDATA bytes, validating the character-string chain.
+    pub fn from_rdata(rdata: &[u8]) -> Result<Self, String> {
+        if rdata.is_empty() || !is_valid_txt_rdata(rdata) {
+            return Err("TXT RDATA is not a valid character-string sequence".to_string());
+        }
+        Ok(Self(rdata.to_vec()))
     }
 
     /// Encode character-strings; errors if a segment exceeds 255 bytes or no
@@ -82,14 +83,23 @@ impl TxtRecordValue {
         Self(rdata)
     }
 
-    /// Decode a prefixed-base64 encoded value; `None` if it is not valid.
-    pub fn from_encoded(stored: &str) -> Option<Self> {
-        let encoded = stored.strip_prefix(RAW_TXT_RDATA_PREFIX)?;
-        base64::engine::general_purpose::STANDARD
-            .decode(encoded)
-            .ok()
-            .filter(|rdata| is_valid_txt_rdata(rdata))
-            .map(Self)
+    /// Bounded so the record fits one transfer message; enforced here so a
+    /// stored row cannot poison an AXFR.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.0.len() > MAX_RECORD_RDATA {
+            return Err(format!(
+                "TXT record data must be at most {MAX_RECORD_RDATA} bytes, got {}",
+                self.0.len()
+            ));
+        }
+        Ok(())
+    }
+
+    /// Strict row-form parse: space-separated quoted character-strings only;
+    /// `None` if the value is not in that form.
+    pub fn from_presentation(stored: &str) -> Option<Self> {
+        let segments = parse_quoted_segments(stored.trim()).ok()?;
+        Self::from_segments(segments.iter().map(String::as_str)).ok()
     }
 
     /// Decode into character-strings, collapsing a single segment into
@@ -116,9 +126,8 @@ impl TxtRecordValue {
         }
     }
 
-    /// Render as the canonical space-separated quoted form
-    /// [`crate::model::record::RecordType::presentation_rdata`] produces, so round trips
-    /// compare byte-equal.
+    /// The row form: each character-string quoted, space-separated, escaped
+    /// per RFC 1035, Section 5.1; canonical, so rows compare as text.
     pub fn to_presentation(&self) -> String {
         let mut segments = Vec::new();
         let mut pos = 0usize;
@@ -127,9 +136,6 @@ impl TxtRecordValue {
             pos += 1;
             segments.push(Self::to_quoted_charstr(&self.0[pos..pos + len]));
             pos += len;
-        }
-        if segments.is_empty() {
-            segments.push("\"\"".to_string());
         }
         segments.join(" ")
     }
@@ -148,15 +154,6 @@ impl TxtRecordValue {
         }
         out.push('"');
         out
-    }
-
-    /// The encoded form: prefixed base64 of the raw RDATA.
-    pub fn into_encoded(self) -> String {
-        format!(
-            "{}{}",
-            RAW_TXT_RDATA_PREFIX,
-            base64::engine::general_purpose::STANDARD.encode(&self.0)
-        )
     }
 
     /// The raw RDATA bytes.

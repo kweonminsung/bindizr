@@ -1,11 +1,9 @@
-use std::{net::Ipv4Addr, str::FromStr};
+use std::str::FromStr;
 
+use bindizr_core::model::record::RecordType;
 use domain::base::{Name, iana::Rtype};
 
-use super::{
-    DNS_TCP_MAX_SIZE, DnsMessageBuilder, XfrError, add_answer_and_flush_if_needed,
-    encode_tcp_message, flush_message_if_not_empty, parse_name,
-};
+use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, XfrError, encode_tcp_message};
 
 #[test]
 fn encode_tcp_message_rejects_oversized_payload() {
@@ -16,22 +14,6 @@ fn encode_tcp_message_rejects_oversized_payload() {
     assert!(matches!(err, XfrError::ProtocolError(_)));
 }
 
-/// The SOA RNAME is the one name bindizr escapes — an admin email whose local
-/// part has a dot encodes to `admin\.dns.example.com.` — so the encoder must
-/// keep that dot inside one label (RFC 1035, Section 5.1).
-#[test]
-fn parse_name_respects_escaped_dots() {
-    let name = parse_name(r"admin\.dns.example.com.").unwrap();
-
-    assert_eq!(
-        name.as_slice(),
-        [
-            9, b'a', b'd', b'm', b'i', b'n', b'.', b'd', b'n', b's', 7, b'e', b'x', b'a', b'm',
-            b'p', b'l', b'e', 3, b'c', b'o', b'm', 0
-        ]
-    );
-}
-
 #[tokio::test]
 async fn chunked_tcp_writer_splits_large_answer_sets() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
@@ -40,19 +22,20 @@ async fn chunked_tcp_writer_splits_large_answer_sets() {
     let mut sent = 0usize;
 
     for index in 0..4000 {
-        add_answer_and_flush_if_needed(&mut writer, &mut builder, &mut sent, |builder| {
-            builder.add_a_record(
-                &format!("host-{}.example.com.", index),
-                3600,
-                Ipv4Addr::new(192, 0, 2, (index % 255) as u8),
-            )
-        })
-        .await
-        .unwrap();
+        builder
+            .add_answer_and_flush_if_needed(&mut writer, &mut sent, |builder| {
+                builder.add_text_rdata(
+                    &format!("host-{}.example.com.", index),
+                    3600,
+                    &RecordType::A,
+                    &format!("192.0.2.{}", index % 255),
+                    None,
+                )
+            })
+            .await
+            .unwrap();
     }
-    flush_message_if_not_empty(&mut writer, &mut builder)
-        .await
-        .unwrap();
+    builder.flush_if_not_empty(&mut writer).await.unwrap();
 
     let mut answer_count = 0usize;
     let mut frame_count = 0;

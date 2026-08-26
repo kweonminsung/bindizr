@@ -14,11 +14,11 @@ pub struct GetZoneResponse {
     #[schema(example = "example.com")]
     pub name: String,
     #[schema(example = "ns1.example.com")]
-    pub primary_ns: String,
+    pub mname: String,
     #[schema(example = "admin@example.com")]
-    pub admin_email: String,
+    pub rname: String,
     #[schema(example = 3600)]
-    pub ttl: i32,
+    pub default_ttl: i32,
     #[schema(example = 42)]
     pub serial: i32,
     #[schema(example = 7200)]
@@ -36,9 +36,9 @@ impl GetZoneResponse {
         GetZoneResponse {
             id: zone.id,
             name: zone.name.to_string(),
-            primary_ns: zone.primary_ns.clone(),
-            admin_email: zone.admin_email.clone(),
-            ttl: zone.ttl,
+            mname: zone.mname.clone(),
+            rname: zone.rname.clone(),
+            default_ttl: zone.default_ttl,
             serial: zone.serial,
             refresh: zone.refresh,
             retry: zone.retry,
@@ -54,11 +54,11 @@ pub struct CreateZoneRequest {
     #[schema(example = "example.com")]
     pub name: String,
     #[schema(example = "ns1.example.com")]
-    pub primary_ns: String,
+    pub mname: String,
     #[schema(example = "admin@example.com")]
-    pub admin_email: String,
+    pub rname: String,
     #[schema(example = 3600)]
-    pub ttl: i32,
+    pub default_ttl: i32,
     /// Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
     #[schema(example = 42)]
     pub serial: Option<i32>,
@@ -80,15 +80,15 @@ pub struct GetZonesFilter {
     #[schema(example = 1)]
     pub id: Option<i32>,
     #[schema(example = "ns1.example.com")]
-    pub primary_ns: Option<String>,
+    pub mname: Option<String>,
     #[schema(example = "admin@example.com")]
-    pub admin_email: Option<String>,
+    pub rname: Option<String>,
     #[schema(example = 3600)]
-    pub ttl: Option<i32>,
+    pub default_ttl: Option<i32>,
     #[schema(example = 300)]
-    pub min_ttl: Option<i32>,
+    pub min_default_ttl: Option<i32>,
     #[schema(example = 86400)]
-    pub max_ttl: Option<i32>,
+    pub max_default_ttl: Option<i32>,
     #[schema(example = 42)]
     pub serial: Option<i32>,
     #[serde(alias = "q")]
@@ -105,9 +105,9 @@ pub struct GetZonesFilter {
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct UpdateZonePatch {
     pub new_name: Option<String>,
-    pub primary_ns: Option<String>,
-    pub admin_email: Option<String>,
-    pub ttl: Option<i32>,
+    pub mname: Option<String>,
+    pub rname: Option<String>,
+    pub default_ttl: Option<i32>,
     pub refresh: Option<i32>,
     pub retry: Option<i32>,
     pub expire: Option<i32>,
@@ -120,9 +120,27 @@ pub struct UpdateZonePatch {
 pub struct NotifyZoneRequest {
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
+    /// Bump the serial first, so secondaries transfer even when nothing
+    /// changed.
     #[serde(default)]
     #[schema(example = true)]
-    pub force: bool,
+    pub bump_serial: bool,
+}
+
+impl NotifyZoneRequest {
+    /// The success message every front end serves for this request.
+    pub fn success_message(&self) -> String {
+        let scope = match &self.zone_name {
+            Some(zone_name) => format!("zone: {}", zone_name),
+            None => "all zones".to_string(),
+        };
+        let suffix = if self.bump_serial {
+            " (serial bumped)"
+        } else {
+            ""
+        };
+        format!("NOTIFY sent successfully for {}{}", scope, suffix)
+    }
 }
 
 /// A zone together with all of its records.

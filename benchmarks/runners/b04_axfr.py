@@ -36,9 +36,8 @@ async def run(adapter, cfg, ctx) -> list:
     for size in cfg["sizes"]:
         await adapter.delete_zone(zone)
         # Wait for the delete to reach the XFR endpoint before recreating: the
-        # BIND9 secondary drops the zone via the catalog seconds after the API
-        # call, and recreating sooner lets the new low serial collide with the
-        # stale copy it still holds.
+        # secondary drops the zone via the catalog seconds later, and the new
+        # low serial would otherwise collide with the stale copy it still holds.
         drop_deadline = time.monotonic() + 30
         dropped = False
         while time.monotonic() < drop_deadline:

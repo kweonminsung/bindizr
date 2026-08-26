@@ -15,7 +15,6 @@ use bindizr_service::{
     zone::tsig_policy::ZoneTsigPolicyService,
 };
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
@@ -80,8 +79,8 @@ pub(crate) async fn get_tsig_keys(
 ) -> Result<Response, ApiError> {
     let keys = TsigKeyService::list(&caller).await?;
     let keys: Vec<GetTsigKeyResponse> = keys.iter().map(GetTsigKeyResponse::from_key).collect();
-    let json_body = json!({ "tsig_keys": keys });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = TsigKeyListResponse { tsig_keys: keys };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -114,9 +113,10 @@ pub(crate) async fn create_tsig_key(
         body.global,
     )
     .await?;
-    let key = GetTsigKeyResponse::from_key(&key);
-    let json_body = json!({ "tsig_key": key });
-    Ok((StatusCode::CREATED, Json(json_body)).into_response())
+    let response = TsigKeyResponse {
+        tsig_key: GetTsigKeyResponse::from_key(&key),
+    };
+    Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -142,9 +142,10 @@ pub(crate) async fn get_tsig_key(
     Path(params): Path<TsigKeyNameParam>,
 ) -> Result<Response, ApiError> {
     let key = TsigKeyService::get(&caller, &params.name).await?;
-    let key = GetTsigKeyResponse::from_key(&key);
-    let json_body = json!({ "tsig_key": key });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = TsigKeyResponse {
+        tsig_key: GetTsigKeyResponse::from_key(&key),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -171,8 +172,10 @@ pub(crate) async fn delete_tsig_key(
     Path(params): Path<TsigKeyNameParam>,
 ) -> Result<Response, ApiError> {
     TsigKeyService::delete(&caller, &params.name).await?;
-    let json_body = json!({ "message": "TSIG key deleted successfully" });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = MessageResponse {
+        message: "TSIG key deleted successfully".to_string(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -202,8 +205,10 @@ pub(crate) async fn get_zone_tsig_policies(
         .iter()
         .map(GetZoneTsigPolicyResponse::from_policy)
         .collect();
-    let json_body = json!({ "tsig_policies": policies });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = ZoneTsigPolicyListResponse {
+        tsig_policies: policies,
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -240,9 +245,10 @@ pub(crate) async fn create_zone_tsig_policy(
         body.record_types.as_deref(),
     )
     .await?;
-    let policy = GetZoneTsigPolicyResponse::from_policy(&policy);
-    let json_body = json!({ "tsig_policy": policy });
-    Ok((StatusCode::CREATED, Json(json_body)).into_response())
+    let response = ZoneTsigPolicyResponse {
+        tsig_policy: GetZoneTsigPolicyResponse::from_policy(&policy),
+    };
+    Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
 #[utoipa::path(
@@ -268,6 +274,8 @@ pub(crate) async fn delete_zone_tsig_policy(
     Path(params): Path<ZoneTsigPolicyParam>,
 ) -> Result<Response, ApiError> {
     ZoneTsigPolicyService::remove(&caller, &params.name, params.id).await?;
-    let json_body = json!({ "message": "TSIG policy deleted successfully" });
-    Ok((StatusCode::OK, Json(json_body)).into_response())
+    let response = MessageResponse {
+        message: "TSIG policy deleted successfully".to_string(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

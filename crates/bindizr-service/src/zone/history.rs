@@ -1,4 +1,4 @@
-//! Zone serial history: snapshot listing, point-in-time record reconstruction,
+//! Zone serial history: version listing, point-in-time record reconstruction,
 //! and serial-based rollback.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -7,20 +7,18 @@ use bindizr_core::dns::{name::OwnerName, record::SoaMailbox};
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
-use super::{
-    ZoneService, apex_ns_rrset_ttl, update::soa_replacement_changes,
-    validation::normalize_zone_name,
-};
+use super::{ZoneService, update::soa_replacement_changes, validation::normalize_zone_name};
 use crate::{
     RepositoryTx,
     authorization::Caller,
+    dnssec::DnssecService,
     error::ServiceError,
     log_info, log_warn,
     model::{
         record::{Record, RecordType},
         zone::Zone,
-        zone_change::ZoneChange,
-        zone_snapshot::ZoneSnapshot,
+        zone_change::{ChangeOperation, JournalRecordType},
+        zone_version::ZoneVersion,
     },
     record::{
         RecordService, validate_delete_constraints, validate_record_add_constraints_normalized,
@@ -29,11 +27,11 @@ use crate::{
     serial::generate_serial,
     types::{
         PaginatedResponse, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
-        RollbackSummary, RollbackZoneResponse, SnapshotDiffResponse, display_record_value_request,
+        RollbackSummary, RollbackZoneResponse, VersionDiffResponse, display_record_value_request,
     },
 };
 
-/// A record as it existed at a past serial, rebuilt from the change history;
+/// A record as it existed at a past serial, rebuilt from the journal;
 /// carries no database id.
 #[derive(Debug, Clone)]
 pub struct ReconstructedRecord {
@@ -82,9 +80,9 @@ fn record_match_key(record: &Record) -> MatchKey {
     )
 }
 
-/// Reverse-apply the zone's change history in `(target_serial, current_serial]`
+/// Reverse-apply the zone's journal in `(target_serial, current_serial]`
 /// onto the current record set, yielding the record set at `target_serial`.
-/// SOA rows are skipped (SOA state is restored from `zone_soa_history`).
+/// SOA rows are skipped (SOA state is restored from `zone_versions`).
 async fn reconstruct_records_at_serial(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
@@ -92,16 +90,14 @@ async fn reconstruct_records_at_serial(
     current_serial: i32,
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
-    for record in
-        RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::None).await?
-    {
+    for record in RepositoryService::list_records_tx(tx, zone_id, LockLevel::None).await? {
         state
             .entry(record_match_key(&record))
             .or_default()
             .push(record.into());
     }
 
-    let changes = RepositoryService::list_zone_changes_between_serials_tx(
+    let changes = RepositoryService::list_zone_journal_between_serials_tx(
         tx,
         zone_id,
         target_serial,
@@ -112,28 +108,30 @@ async fn reconstruct_records_at_serial(
 
     // Changes arrive ordered by (serial, id) ascending; undo them newest-first.
     for change in changes.iter().rev() {
-        if change.record_type == "SOA" {
+        // Derived DNSSEC rows are not user data (rollback re-signs the
+        // restored plane), and SOA markers are zone metadata the version row
+        // already carries.
+        let JournalRecordType::User(record_type) = &change.record_type else {
             continue;
-        }
-        let record_type: RecordType = match change.record_type.parse() {
-            Ok(record_type) => record_type,
-            Err(_) => {
-                log_warn!(
-                    "Skipping zone change with unknown record type '{}' during reconstruction",
-                    change.record_type
-                );
-                continue;
-            }
         };
+        let Some(record_value) = change.record_value.as_deref() else {
+            log_warn!(
+                "User change for '{}' {} carries no value; skipping during reconstruction",
+                change.record_name,
+                change.record_type
+            );
+            continue;
+        };
+        let record_type = record_type.clone();
         let key = match_key(
             &change.record_name,
             &record_type,
-            &change.record_value,
+            record_value,
             change.record_priority,
         );
 
-        match change.operation.as_str() {
-            ZoneChange::OP_ADD => match state.get_mut(&key).and_then(Vec::pop) {
+        match change.operation {
+            ChangeOperation::Add => match state.get_mut(&key).and_then(Vec::pop) {
                 Some(_) => {}
                 // Tolerated: history anomalies (e.g. rows removed outside
                 // the change log) must not brick reconstruction.
@@ -143,20 +141,16 @@ async fn reconstruct_records_at_serial(
                     change.record_type
                 ),
             },
-            ZoneChange::OP_DEL => {
+            ChangeOperation::Del => {
                 // The recorded row existed before this serial; restore it.
                 state.entry(key).or_default().push(ReconstructedRecord {
                     name: change.record_name.clone(),
                     record_type,
-                    value: change.record_value.clone(),
+                    value: record_value.to_string(),
                     ttl: change.record_ttl,
                     priority: change.record_priority,
                 });
             }
-            other => log_warn!(
-                "Skipping zone change with unknown operation '{}' during reconstruction",
-                other
-            ),
         }
     }
 
@@ -166,7 +160,7 @@ async fn reconstruct_records_at_serial(
 }
 
 /// The record set at `serial`: the live records when it is the current serial,
-/// otherwise reconstructed from the change history.
+/// otherwise reconstructed from the journal.
 async fn records_at_serial(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
@@ -175,7 +169,7 @@ async fn records_at_serial(
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
     if serial == current_serial {
         let mut records: Vec<ReconstructedRecord> =
-            RepositoryService::list_records_by_zone_id_tx(tx, zone_id, LockLevel::None)
+            RepositoryService::list_records_tx(tx, zone_id, LockLevel::None)
                 .await?
                 .into_iter()
                 .map(ReconstructedRecord::from)
@@ -187,7 +181,7 @@ async fn records_at_serial(
     }
 }
 
-/// A serial is diffable only if it is the current serial or has a snapshot.
+/// A serial is diffable only if it is the current serial or has a version.
 async fn require_serial(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
@@ -196,9 +190,9 @@ async fn require_serial(
     if serial == zone.serial {
         return Ok(());
     }
-    RepositoryService::get_zone_snapshot_by_serial_tx(tx, zone.id, serial, LockLevel::None)
+    RepositoryService::get_zone_version_by_serial_tx(tx, zone.id, serial, LockLevel::None)
         .await?
-        .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), serial))?;
+        .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
     Ok(())
 }
 
@@ -336,62 +330,58 @@ fn sort_records(records: &mut [ReconstructedRecord]) {
     });
 }
 
-/// Build the zone as it should look after rolling back to `snapshot`: SOA
-/// metadata from the snapshot, identity (id/name) and creation time unchanged,
+/// Build the zone as it should look after rolling back to `version`: SOA
+/// metadata from the version, identity (id/name) and creation time unchanged,
 /// serial advanced to `new_serial`.
-fn restored_zone_from_snapshot(
+fn restored_zone_from_version(
     zone: &Zone,
-    snapshot: &ZoneSnapshot,
+    version: &ZoneVersion,
     new_serial: i32,
 ) -> Result<Zone, ServiceError> {
-    let admin_email = SoaMailbox::from_encoded(&snapshot.admin_email)
+    let rname = SoaMailbox::from_encoded(&version.rname)
         .to_email()
-        .map_err(|e| {
-            ServiceError::internal(format!("Failed to decode snapshot admin email: {}", e))
-        })?;
+        .map_err(|e| ServiceError::internal(format!("Failed to decode version rname: {}", e)))?;
 
     Ok(Zone {
         id: zone.id,
         name: zone.name.clone(),
-        primary_ns: snapshot.primary_ns.clone(),
-        admin_email,
-        ttl: snapshot.ttl,
+        mname: version.mname.clone(),
+        rname,
+        default_ttl: version.default_ttl,
         serial: new_serial,
-        refresh: snapshot.refresh,
-        retry: snapshot.retry,
-        expire: snapshot.expire,
-        minimum_ttl: snapshot.minimum_ttl,
+        refresh: version.refresh,
+        retry: version.retry,
+        expire: version.expire,
+        dnssec_denial: zone.dnssec_denial,
+        minimum_ttl: version.minimum_ttl,
         created_at: zone.created_at,
     })
 }
 
-fn soa_metadata_changed(zone: &Zone, restored: &Zone) -> bool {
-    zone.primary_ns != restored.primary_ns
-        || zone.admin_email != restored.admin_email
-        || zone.ttl != restored.ttl
-        || zone.refresh != restored.refresh
-        || zone.retry != restored.retry
-        || zone.expire != restored.expire
-        || zone.minimum_ttl != restored.minimum_ttl
-}
-
 impl ZoneService {
-    /// List a zone's snapshots (serial history), newest serial first.
-    /// Visibility is checked on the row whose id the queries use, so a
-    /// same-name recreation cannot swap the zone in.
-    pub async fn list_snapshots(
+    /// List a zone's versions (serial history), newest serial first. Unless
+    /// `all`, signer-only serials (DNSSEC re-signs, rollovers) are skipped —
+    /// they hold nothing rollback could restore. Visibility is checked on the
+    /// row whose id the queries use, so a same-name recreation cannot swap
+    /// the zone in.
+    pub async fn list_versions(
         caller: &Caller,
         zone_name: &str,
         limit: Option<u32>,
         offset: Option<u64>,
-    ) -> Result<PaginatedResponse<ZoneSnapshot>, ServiceError> {
+        all: bool,
+    ) -> Result<PaginatedResponse<ZoneVersion>, ServiceError> {
         let zone = Self::get_by_name(caller, zone_name).await?;
 
-        let total = RepositoryService::count_zone_snapshots(zone.id).await?;
+        let total = RepositoryService::count_zone_versions(zone.id, !all).await?;
         let effective_limit = limit.unwrap_or(50);
-        let items =
-            RepositoryService::list_zone_snapshots(zone.id, effective_limit, offset.unwrap_or(0))
-                .await?;
+        let items = RepositoryService::list_zone_versions(
+            zone.id,
+            !all,
+            effective_limit,
+            offset.unwrap_or(0),
+        )
+        .await?;
 
         Ok(crate::pagination::paginated_response(
             items,
@@ -401,16 +391,16 @@ impl ZoneService {
         ))
     }
 
-    /// Fetch the snapshot at `serial` together with the reconstructed record
+    /// Fetch the version at `serial` together with the reconstructed record
     /// set at that serial. Visibility is checked on the row this tx locked, so
     /// a same-name recreation cannot swap the zone in.
-    pub async fn get_snapshot(
+    pub async fn get_version(
         caller: &Caller,
         zone_name: &str,
         serial: i32,
-    ) -> Result<(ZoneSnapshot, Vec<ReconstructedRecord>), ServiceError> {
+    ) -> Result<(ZoneVersion, Vec<ReconstructedRecord>), ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        let mut tx = RepositoryService::begin_tx("Failed to load snapshot").await?;
+        let mut tx = RepositoryService::begin_read_tx("Failed to load version").await?;
 
         let result = async {
             let zone =
@@ -419,37 +409,37 @@ impl ZoneService {
             if !caller.zone_visible(zone.id) {
                 return Err(ServiceError::zone_not_found(zone_name));
             }
-            let snapshot = RepositoryService::get_zone_snapshot_by_serial_tx(
+            let version = RepositoryService::get_zone_version_by_serial_tx(
                 &mut tx,
                 zone.id,
                 serial,
                 LockLevel::None,
             )
             .await?
-            .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), serial))?;
+            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
 
             let records = records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
 
-            Ok::<_, ServiceError>((snapshot, records))
+            Ok::<_, ServiceError>((version, records))
         }
         .await;
 
-        RepositoryService::finish_tx(tx, result, "Failed to load snapshot").await
+        RepositoryService::finish_tx(tx, result, "Failed to load version").await
     }
 
     /// Compute the record-level difference between two of a zone's serials.
     /// `to_serial` defaults to the zone's current serial when `None`. Each
-    /// serial must be the current one or an existing snapshot. Visibility is
+    /// serial must be the current one or an existing version. Visibility is
     /// checked on the row this tx locked, so a same-name recreation cannot
     /// swap the zone in.
-    pub async fn diff_snapshots(
+    pub async fn diff_versions(
         caller: &Caller,
         zone_name: &str,
         from_serial: i32,
         to_serial: Option<i32>,
-    ) -> Result<SnapshotDiffResponse, ServiceError> {
+    ) -> Result<VersionDiffResponse, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        let mut tx = RepositoryService::begin_tx("Failed to diff snapshots").await?;
+        let mut tx = RepositoryService::begin_read_tx("Failed to diff versions").await?;
 
         let result = async {
             let zone =
@@ -467,7 +457,7 @@ impl ZoneService {
                 records_at_serial(&mut tx, zone.id, from_serial, zone.serial).await?;
             let to_records = records_at_serial(&mut tx, zone.id, to_serial, zone.serial).await?;
 
-            Ok::<_, ServiceError>(SnapshotDiffResponse {
+            Ok::<_, ServiceError>(VersionDiffResponse {
                 from_serial,
                 to_serial,
                 diff: build_record_diff(&zone, &from_records, &to_records),
@@ -475,13 +465,13 @@ impl ZoneService {
         }
         .await;
 
-        RepositoryService::finish_tx(tx, result, "Failed to diff snapshots").await
+        RepositoryService::finish_tx(tx, result, "Failed to diff versions").await
     }
 
     /// Roll a zone back to the state captured at `target_serial`. The record
     /// set and SOA metadata return to that serial's state while the zone's
     /// serial advances to a new value (serials never go backward). The zone
-    /// name is not part of a snapshot and is never restored.
+    /// name is not part of a version and is never restored.
     pub async fn rollback(
         caller: &Caller,
         zone_name: &str,
@@ -504,30 +494,26 @@ impl ZoneService {
                     target_serial, zone.serial
                 )));
             }
-            let snapshot = RepositoryService::get_zone_snapshot_by_serial_tx(
+            let version = RepositoryService::get_zone_version_by_serial_tx(
                 &mut tx,
                 zone.id,
                 target_serial,
                 LockLevel::None,
             )
             .await?
-            .ok_or_else(|| ServiceError::snapshot_not_found(zone.name.as_str(), target_serial))?;
+            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target_serial))?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
-            let restored_zone = restored_zone_from_snapshot(&zone, &snapshot, new_serial)?;
-            let soa_changed = soa_metadata_changed(&zone, &restored_zone);
+            let restored_zone = restored_zone_from_version(&zone, &version, new_serial)?;
+            let soa_changed = zone.soa_metadata_differs(&restored_zone);
 
-            let current_records = RepositoryService::list_records_by_zone_id_tx(
-                &mut tx,
-                zone.id,
-                LockLevel::Exclusive,
-            )
-            .await?;
+            let current_records =
+                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
             let target_records =
                 reconstruct_records_at_serial(&mut tx, zone.id, target_serial, zone.serial).await?;
 
             // Diff current vs target, import-Replace style. Protection is
-            // evaluated against the restored zone so the restored primary_ns's
+            // evaluated against the restored zone so the restored mname's
             // apex NS is kept and the newer one becomes deletable.
             let mut target_by_key: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
             for target in target_records {
@@ -549,9 +535,8 @@ impl ZoneService {
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
                         // The DEL + ADD pair preserves the record's identity, so
-                        // the primary_ns delete protection cannot be violated;
-                        // SOA lives in the zone's own fields.
-                        if record.ttl != target.ttl && record.record_type != RecordType::SOA {
+                        // the mname delete protection cannot be violated.
+                        if record.ttl != target.ttl {
                             dels.push(record.clone());
                             to_add.push(target);
                         } else {
@@ -564,7 +549,7 @@ impl ZoneService {
                         {
                             dels.push(record.clone());
                         } else {
-                            // Protected rows (SOA / restored primary NS) stay.
+                            // Protected rows (SOA / restored mname NS) stay.
                             unchanged += 1;
                         }
                     }
@@ -572,17 +557,17 @@ impl ZoneService {
             }
             to_add.extend(target_by_key.into_values().flatten());
 
-            // The restored primary_ns must keep a matching apex NS record.
+            // The restored mname must keep a matching apex NS record.
             let deleted_ids: HashSet<i32> = dels.iter().map(|del| del.id).collect();
             let surviving = |record: &&Record| !deleted_ids.contains(&record.id);
-            let has_primary_ns = current_records
+            let has_mname = current_records
                 .iter()
                 .filter(surviving)
-                .any(|r| restored_zone.is_primary_ns(&r.record_type, &r.name, &r.value))
+                .any(|r| restored_zone.is_mname(&r.record_type, &r.name, &r.value))
                 || to_add
                     .iter()
-                    .any(|r| restored_zone.is_primary_ns(&r.record_type, &r.name, &r.value));
-            if !has_primary_ns {
+                    .any(|r| restored_zone.is_mname(&r.record_type, &r.name, &r.value));
+            if !has_mname {
                 // Prefer a restored TTL: the restore is what this serial expresses.
                 let candidates = to_add
                     .iter()
@@ -597,8 +582,8 @@ impl ZoneService {
                 to_add.push(ReconstructedRecord {
                     name: OwnerName::apex(),
                     record_type: RecordType::NS,
-                    value: restored_zone.primary_ns.clone(),
-                    ttl: apex_ns_rrset_ttl(&restored_zone, candidates),
+                    value: restored_zone.mname.clone(),
+                    ttl: restored_zone.apex_ns_rrset_ttl(candidates),
                     priority: None,
                 });
             }
@@ -666,14 +651,17 @@ impl ZoneService {
 
             if soa_changed {
                 let changes = soa_replacement_changes(&zone, &restored_zone, new_serial)?;
-                RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
+                RepositoryService::create_zone_journal_tx(&mut tx, &changes).await?;
             }
 
             RecordService::delete_records_with_changes_tx(&mut tx, zone.id, new_serial, &dels)
                 .await?;
             RecordService::insert_records_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert)
                 .await?;
-            ZoneService::save_snapshot_tx(&mut tx, &restored_zone, new_serial).await?;
+            // The restored user plane gets fresh signatures; old RRSIGs are
+            // never restored (derived journal rows are skipped on reconstruction).
+            DnssecService::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
+            ZoneService::save_version_tx(&mut tx, &restored_zone, new_serial).await?;
 
             Ok((
                 RollbackZoneResponse {
