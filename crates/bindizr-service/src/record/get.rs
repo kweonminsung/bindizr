@@ -60,6 +60,15 @@ impl RecordService {
         })
     }
 
+    /// Count the records visible to `caller`.
+    pub async fn count(caller: &Caller) -> Result<u64, ServiceError> {
+        RepositoryService::count_records_by_filter(RecordFilter {
+            scope_token_id: caller.scope_token_id(),
+            ..RecordFilter::default()
+        })
+        .await
+    }
+
     /// List records with their zone name matching `filter`, restricted to the
     /// caller's visible zones in SQL so pagination stays database-side. A
     /// filter naming an unknown or invisible zone reads as an empty page.
@@ -79,13 +88,19 @@ impl RecordService {
         let offset = filter.offset;
         let signed = filter.signed.unwrap_or(false);
 
+        // The filter lands on records.zone_id, so resolve the name here.
         // Scoped callers read unknown and invisible zones alike as empty
-        // pages, so skip the 404 probe.
-        if let Some(name) = zone_name.as_ref()
-            && scope_token_id.is_none()
-        {
-            ZoneService::lookup_by_name(name.as_str()).await?;
-        }
+        // pages, so a miss is one for them rather than a 404.
+        let zone_id = match zone_name.as_ref() {
+            Some(name) if scope_token_id.is_none() => {
+                Some(ZoneService::lookup_by_name(name.as_str()).await?.id)
+            }
+            Some(name) => match ZoneService::find_by_name(name.as_str()).await? {
+                Some(zone) => Some(zone.id),
+                None => return Ok(paginated_response(Vec::new(), limit, offset, 0)),
+            },
+            None => None,
+        };
 
         let name = to_record_name_filter(filter.name, zone_name.as_ref());
         let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
@@ -101,9 +116,8 @@ impl RecordService {
             && filter.min_priority.is_none()
             && filter.max_priority.is_none();
 
-        let zone_name = zone_name.map(|name| name.to_string());
         let record_filter = RecordFilter {
-            zone_name: zone_name.clone(),
+            zone_id,
             name: name.clone(),
             record_type: user_type,
             value: filter.value,
@@ -119,7 +133,7 @@ impl RecordService {
             offset,
         };
         let derived_filter = DnssecRecordFilter {
-            zone_name,
+            zone_id,
             name,
             record_type: derived_type.map(|record_type| record_type.wire_type() as i32),
             ttl: filter.ttl,

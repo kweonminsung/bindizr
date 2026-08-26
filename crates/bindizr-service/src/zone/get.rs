@@ -53,6 +53,15 @@ impl ZoneService {
 
     /// List the zones matching `filter` that the caller may see, restricted in
     /// SQL so pagination stays database-side.
+    /// Count the zones visible to `caller`.
+    pub async fn count(caller: &Caller) -> Result<u64, ServiceError> {
+        RepositoryService::count_zones_by_filter(ZoneFilter {
+            scope_token_id: caller.scope_token_id(),
+            ..ZoneFilter::default()
+        })
+        .await
+    }
+
     pub async fn list_by_filter(
         caller: &Caller,
         filter: GetZonesFilter,

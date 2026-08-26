@@ -160,7 +160,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
             SELECT d.name, d.record_type, d.ttl, d.rdata, d.zone_id, z.name AS zone_name
             FROM dnssec_records d
             INNER JOIN zones z ON z.id = d.zone_id
-            WHERE (? IS NULL OR LOWER(z.name) = LOWER(?))
+            WHERE (? IS NULL OR d.zone_id = ?)
               AND (
                     ? IS NULL
                     OR LOWER(d.name) = LOWER(?)
@@ -181,8 +181,8 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
             LIMIT ? OFFSET ?
             "#
         )))
-        .bind(&filter.zone_name)
-        .bind(&filter.zone_name)
+        .bind(filter.zone_id)
+        .bind(filter.zone_id)
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(&filter.name)
@@ -217,7 +217,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
             SELECT COUNT(*)
             FROM dnssec_records d
             INNER JOIN zones z ON z.id = d.zone_id
-            WHERE (? IS NULL OR LOWER(z.name) = LOWER(?))
+            WHERE (? IS NULL OR d.zone_id = ?)
               AND (
                     ? IS NULL
                     OR LOWER(d.name) = LOWER(?)
@@ -234,8 +234,8 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
               )
             "#
         )))
-        .bind(&filter.zone_name)
-        .bind(&filter.zone_name)
+        .bind(filter.zone_id)
+        .bind(filter.zone_id)
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(&filter.name)

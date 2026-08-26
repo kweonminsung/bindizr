@@ -321,7 +321,7 @@ impl RecordRepository for PostgresRecordRepository {
                    r.zone_id, z.name AS zone_name
             FROM records r
             INNER JOIN zones z ON z.id = r.zone_id
-            WHERE ($1::TEXT IS NULL OR LOWER(z.name) = LOWER($2))
+            WHERE ($1::INT4 IS NULL OR r.zone_id = $2)
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(r.name) = LOWER($4)
@@ -357,8 +357,8 @@ impl RecordRepository for PostgresRecordRepository {
             LIMIT $28 OFFSET $29
             "#
         )))
-        .bind(&filter.zone_name)
-        .bind(&filter.zone_name)
+        .bind(filter.zone_id)
+        .bind(filter.zone_id)
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(&filter.name)
@@ -412,7 +412,7 @@ impl RecordRepository for PostgresRecordRepository {
             SELECT COUNT(*)
             FROM records r
             INNER JOIN zones z ON z.id = r.zone_id
-            WHERE ($1::TEXT IS NULL OR LOWER(z.name) = LOWER($2))
+            WHERE ($1::INT4 IS NULL OR r.zone_id = $2)
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(r.name) = LOWER($4)
@@ -444,8 +444,8 @@ impl RecordRepository for PostgresRecordRepository {
               )
             "#
         )))
-        .bind(&filter.zone_name)
-        .bind(&filter.zone_name)
+        .bind(filter.zone_id)
+        .bind(filter.zone_id)
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(&filter.name)
