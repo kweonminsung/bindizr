@@ -87,6 +87,9 @@ impl RecordService {
         let limit = filter.limit;
         let offset = filter.offset;
         let signed = filter.signed.unwrap_or(false);
+        // Above the zone lookup: rejecting a malformed filter only for zones
+        // that exist would answer whether they do.
+        let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
         // The filter lands on records.zone_id, so resolve the name here.
         // Scoped callers read unknown and invisible zones alike as empty
@@ -103,7 +106,6 @@ impl RecordService {
         };
 
         let name = to_record_name_filter(filter.name, zone_name.as_ref());
-        let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
         let user_plane = derived_type.is_none();
         // Derived rows carry no value, priority, or search text, so those
