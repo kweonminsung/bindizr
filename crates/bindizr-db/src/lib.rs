@@ -88,9 +88,10 @@ pub(crate) fn get_pool() -> &'static DatabasePool {
     DATABASE_POOL.get().expect("Database pool not initialized")
 }
 
-/// Max pooled connections for the networked backends, scaled to the host.
-/// sqlx's default is a flat 10; size it to the available parallelism instead.
-fn networked_pool_max_connections() -> u32 {
+/// Max pooled connections, scaled to the host; sqlx's default is a flat 10.
+/// SQLite shares it: under WAL the pool bounds read concurrency rather than
+/// contending for the writer slot.
+fn pool_max_connections() -> u32 {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
@@ -101,7 +102,7 @@ impl DatabasePool {
     /// Connect to MySQL, create tables, and return the pool.
     pub(crate) async fn new_mysql(url: &str) -> Result<Self, DatabaseError> {
         let pool = MySqlPoolOptions::new()
-            .max_connections(networked_pool_max_connections())
+            .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
                 Box::pin(async move {
                     // Row locks, not version isolation, carry correctness:
@@ -130,7 +131,7 @@ impl DatabasePool {
     /// Connect to PostgreSQL, create tables, and return the pool.
     pub(crate) async fn new_postgres(url: &str) -> Result<Self, DatabaseError> {
         let pool = PgPoolOptions::new()
-            .max_connections(networked_pool_max_connections())
+            .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
                 Box::pin(async move {
                     // Already the default; pinned so all backends state one contract.
@@ -162,11 +163,23 @@ impl DatabasePool {
     /// Connect to SQLite, create tables, and return the pool.
     pub(crate) async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
         let pool = SqlitePoolOptions::new()
+            .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
                 Box::pin(async move {
                     // SQLite enforces foreign keys only when enabled per connection.
                     sqlx::query("PRAGMA foreign_keys = ON")
-                        .execute(conn)
+                        .execute(&mut *conn)
+                        .await?;
+                    // WAL keeps readers off the writer's lock. It is a
+                    // property of the file, so this re-asserts it per
+                    // connection rather than setting it.
+                    sqlx::query("PRAGMA journal_mode = WAL")
+                        .execute(&mut *conn)
+                        .await?;
+                    // SQLite's busy handler polls unfairly, so 5s starved
+                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY under load.
+                    sqlx::query("PRAGMA busy_timeout = 15000")
+                        .execute(&mut *conn)
                         .await
                         .map(|_| ())
                 })
