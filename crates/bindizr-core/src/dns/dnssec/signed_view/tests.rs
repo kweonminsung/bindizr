@@ -1,11 +1,13 @@
 use std::collections::BTreeSet;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::{DateTime, Duration, Utc};
 
 use super::{SignedViewDiff, SignedViewParams};
 use crate::{
-    dnssec::generate_key,
+    dns::{
+        dnssec::generate_key,
+        name::{OwnerName, ZoneName},
+    },
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
         dnssec_record::{DnssecRecord, DnssecRecordType},

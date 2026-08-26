@@ -1,6 +1,8 @@
 mod catalog_zone;
+pub mod dnssec;
 pub mod name;
 pub mod record;
+pub mod zonefile;
 
 pub use catalog_zone::{CATALOG_ZONE_NAME, is_catalog_zone};
 

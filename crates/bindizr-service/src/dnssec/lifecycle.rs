@@ -1,8 +1,9 @@
 //! Turning signing on and off, and the operator's force re-sign.
 
+use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
-use super::{DnssecService, derived_changes, generate_key, notify_zone, status::build_status};
+use super::{DnssecService, derived_changes, notify_zone, status::build_status};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -64,7 +65,8 @@ impl DnssecService {
             };
             let mut keys = Vec::with_capacity(roles.len());
             for role in roles {
-                let key = generate_key(&zone, algorithm, *role, DnssecKeyState::Active, now, now)?;
+                let key = generate_key(&zone, algorithm, *role, DnssecKeyState::Active, now, now)
+                    .map_err(ServiceError::dnssec_signing_failed)?;
                 keys.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
 

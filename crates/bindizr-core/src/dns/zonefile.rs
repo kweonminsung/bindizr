@@ -1,33 +1,42 @@
-use bindizr_core::dns::name::to_fqdn_lowercase;
+//! Reading BIND master-file text into records the record API can accept.
+
 use domain::{
     base::iana::{Class, Rtype},
     rdata::ZoneRecordData,
     zonefile::inplace::{Entry, Zonefile},
 };
 
-use crate::{model::record::RecordType, types::RecordValueRequest};
+use crate::{dns::name::to_fqdn_lowercase, model::record::RecordType};
 
-/// A single record extracted from a BIND zone file, expressed in the same
-/// input shape the record API accepts.
-pub(super) struct ParsedRecord {
-    /// Absolute owner name (e.g. `www.example.com.`).
-    pub(crate) owner_fqdn: String,
-    pub(crate) record_type: RecordType,
-    pub(crate) value: RecordValueRequest,
-    pub(crate) ttl: i32,
-    pub(crate) priority: Option<i32>,
+/// A record's value as the zone file spells it.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ZoneFileValue {
+    /// Presentation-form rdata, for every type but TXT.
+    Rdata(String),
+    /// A TXT record's character-strings, already checked for UTF-8.
+    CharacterStrings(Vec<String>),
 }
 
-pub(super) struct ParsedZoneFile {
-    pub(crate) records: Vec<ParsedRecord>,
+/// A single record extracted from a BIND zone file.
+pub struct ParsedRecord {
+    /// Absolute owner name (e.g. `www.example.com.`).
+    pub owner_fqdn: String,
+    pub record_type: RecordType,
+    pub value: ZoneFileValue,
+    pub ttl: i32,
+    pub priority: Option<i32>,
+}
+
+pub struct ParsedZoneFile {
+    pub records: Vec<ParsedRecord>,
     /// Human-readable problems (unsupported type, non-IN class, parse failure).
-    pub(crate) errors: Vec<String>,
+    pub errors: Vec<String>,
 }
 
 /// Parse BIND zone file text relative to `zone_name`. Relative names resolve
 /// against the origin, missing TTLs fall back to `default_ttl`, and SOA records
 /// are ignored (the zone's SOA comes from its own fields).
-pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> ParsedZoneFile {
+pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> ParsedZoneFile {
     let origin_fqdn = to_fqdn_lowercase(zone_name);
 
     // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and TTLs.
@@ -116,7 +125,7 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                             ));
                             continue;
                         }
-                        (RecordValueRequest::Segments(segments), None)
+                        (ZoneFileValue::CharacterStrings(segments), None)
                     }
                     other => {
                         let raw = other.to_string();
@@ -128,12 +137,12 @@ pub(super) fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) 
                                 match fields.next().and_then(|p| p.parse::<i32>().ok()) {
                                     Some(prio) => {
                                         let rest = fields.collect::<Vec<_>>().join(" ");
-                                        (RecordValueRequest::String(rest), Some(prio))
+                                        (ZoneFileValue::Rdata(rest), Some(prio))
                                     }
-                                    None => (RecordValueRequest::String(raw), None),
+                                    None => (ZoneFileValue::Rdata(raw), None),
                                 }
                             }
-                            _ => (RecordValueRequest::String(raw), None),
+                            _ => (ZoneFileValue::Rdata(raw), None),
                         }
                     }
                 };
@@ -196,7 +205,7 @@ mod tests {
             .find(|r| r.record_type == RecordType::TXT)
             .expect("a TXT record");
         match &rec.value {
-            RecordValueRequest::Segments(segments) => assert_eq!(segments, &["foo", "bar"]),
+            ZoneFileValue::CharacterStrings(segments) => assert_eq!(segments, &["foo", "bar"]),
             other => panic!("expected segments, got {other:?}"),
         }
     }

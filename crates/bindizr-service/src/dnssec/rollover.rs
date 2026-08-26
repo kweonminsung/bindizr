@@ -2,10 +2,10 @@
 //! promote it once the parent DS is confirmed. ZSK promotion, which needs no
 //! parent interaction, is the scheduler's.
 
-use bindizr_core::config::bindizr_config;
+use bindizr_core::{config::bindizr_config, dns::dnssec::generate_key};
 use chrono::{Duration, Utc};
 
-use super::{DnssecService, generate_key, notify_zone, status::build_status};
+use super::{DnssecService, notify_zone, status::build_status};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -91,7 +91,8 @@ impl DnssecService {
                 DnssecKeyState::Published,
                 now,
                 now + publish_wait,
-            )?;
+            )
+            .map_err(ServiceError::dnssec_signing_failed)?;
             let new_key = RepositoryService::create_dnssec_key_tx(&mut tx, new_key).await?;
 
             let mut keys = keys;

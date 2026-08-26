@@ -9,10 +9,6 @@ mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use bindizr_core::dns::{
-    name::{OwnerName, ZoneName},
-    record::{EncodedRdata, Rdata},
-};
 use chrono::{DateTime, Utc};
 use domain::{
     base::{
@@ -38,7 +34,10 @@ use sha2::{Digest, Sha256};
 
 use super::{WireName, dnskey_for, ds_rdata_for, to_wire_name};
 use crate::{
-    error::ServiceError,
+    dns::{
+        name::{OwnerName, ZoneName},
+        record::{EncodedRdata, Rdata},
+    },
     model::{
         dnssec_key::DnssecKey,
         dnssec_record::{DnssecRecord, DnssecRecordType},
@@ -49,24 +48,24 @@ use crate::{
 
 type SignRecord = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
 
-pub(super) struct SignedViewParams<'a> {
-    pub(super) zone: &'a Zone,
-    pub(super) new_serial: i32,
-    pub(super) records: &'a [Record],
-    pub(super) keys: &'a [DnssecKey],
+pub struct SignedViewParams<'a> {
+    pub zone: &'a Zone,
+    pub new_serial: i32,
+    pub records: &'a [Record],
+    pub keys: &'a [DnssecKey],
     /// The stored derived plane, the reuse source and diff baseline.
-    pub(super) prev: &'a [DnssecRecord],
-    pub(super) denial: DnssecDenial,
-    pub(super) now: DateTime<Utc>,
-    pub(super) inception: DateTime<Utc>,
+    pub prev: &'a [DnssecRecord],
+    pub denial: DnssecDenial,
+    pub now: DateTime<Utc>,
+    pub inception: DateTime<Utc>,
     /// The latest expiration a new signature takes; each RRset lands up to
     /// `expiration_jitter_secs` earlier.
-    pub(super) expiration: DateTime<Utc>,
-    pub(super) expiration_jitter_secs: i64,
+    pub expiration: DateTime<Utc>,
+    pub expiration_jitter_secs: i64,
     /// Re-sign when a stored signature expires within this window.
-    pub(super) refresh_secs: i64,
+    pub refresh_secs: i64,
     /// Ignore stored signatures entirely (manual re-sign).
-    pub(super) force: bool,
+    pub force: bool,
 }
 
 impl SignedViewParams<'_> {
@@ -91,10 +90,9 @@ impl SignedViewParams<'_> {
     }
 
     /// Compute the signed view these params describe.
-    pub(super) fn compute(&self) -> Result<SignedViewDiff, ServiceError> {
+    pub fn compute(&self) -> Result<SignedViewDiff, String> {
         let zone = self.zone;
-        let apex =
-            to_wire_name(zone.name.to_wire()).map_err(ServiceError::dnssec_signing_failed)?;
+        let apex = to_wire_name(zone.name.to_wire())?;
 
         let signers = self
             .keys
@@ -108,9 +106,10 @@ impl SignedViewParams<'_> {
         let data_signers: Vec<&Signer> =
             signers.iter().filter(|s| s.key.signs_zone_data()).collect();
         if !signers.is_empty() && (key_signers.is_empty() || data_signers.is_empty()) {
-            return Err(ServiceError::dnssec_signing_failed(
-                "zone has keys but no usable signer for the key RRsets or the zone data",
-            ));
+            return Err(
+                "zone has keys but no usable signer for the key RRsets or the zone data"
+                    .to_string(),
+            );
         }
 
         let input = build_signing_input(self, &apex, &signers)?;
@@ -256,13 +255,13 @@ impl SignedViewParams<'_> {
 
 /// The derived plane's change set. Rows in neither list are stored and
 /// current; `removed` rows carry their database ids.
-pub(super) struct SignedViewDiff {
-    pub(super) added: Vec<DnssecRecord>,
-    pub(super) removed: Vec<DnssecRecord>,
+pub struct SignedViewDiff {
+    pub added: Vec<DnssecRecord>,
+    pub removed: Vec<DnssecRecord>,
 }
 
 impl SignedViewDiff {
-    pub(super) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
     }
 
@@ -300,8 +299,8 @@ impl SignedViewDiff {
     }
 }
 
-fn derived_record_type(rtype: Rtype) -> Result<DnssecRecordType, ServiceError> {
-    DnssecRecordType::try_from(rtype.to_int() as i32).map_err(ServiceError::dnssec_signing_failed)
+fn derived_record_type(rtype: Rtype) -> Result<DnssecRecordType, String> {
+    DnssecRecordType::try_from(rtype.to_int() as i32)
 }
 
 fn is_key_rrset_type(rtype: Rtype) -> bool {
@@ -348,12 +347,12 @@ fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8
     false
 }
 
-fn owner_in_zone(owner: &WireName, zone: &ZoneName) -> Result<OwnerName, ServiceError> {
+fn owner_in_zone(owner: &WireName, zone: &ZoneName) -> Result<OwnerName, String> {
     OwnerName::parse_absolute_in_zone(&owner.to_string(), zone).map_err(|e| {
-        ServiceError::dnssec_signing_failed(format!(
+        format!(
             "derived owner '{}' is not inside zone '{}': {}",
             owner, zone, e
-        ))
+        )
     })
 }
 
@@ -367,14 +366,12 @@ struct Signer<'a> {
 }
 
 impl<'a> Signer<'a> {
-    fn new(apex: &WireName, key: &'a DnssecKey) -> Result<Self, ServiceError> {
+    fn new(apex: &WireName, key: &'a DnssecKey) -> Result<Self, String> {
         let dnskey = dnskey_for(key)?;
-        let secret = SecretKeyBytes::parse_from_bind(&key.private_key).map_err(|e| {
-            ServiceError::dnssec_signing_failed(format!("stored private key is invalid: {}", e))
-        })?;
-        let key_pair = KeyPair::from_bytes(&secret, &dnskey).map_err(|e| {
-            ServiceError::dnssec_signing_failed(format!("failed to load signing key: {}", e))
-        })?;
+        let secret = SecretKeyBytes::parse_from_bind(&key.private_key)
+            .map_err(|e| format!("stored private key is invalid: {}", e))?;
+        let key_pair = KeyPair::from_bytes(&secret, &dnskey)
+            .map_err(|e| format!("failed to load signing key: {}", e))?;
         Ok(Signer {
             key,
             signing_key: SigningKey::new(apex.clone(), key.role.flags(), key_pair),
@@ -389,16 +386,15 @@ impl<'a> Signer<'a> {
         rrset: &[&SignRecord],
         inception: DateTime<Utc>,
         expiration: DateTime<Utc>,
-    ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, ServiceError> {
-        let rrset = Rrset::new_from_refs(rrset)
-            .map_err(|e| ServiceError::dnssec_signing_failed(format!("invalid RRset: {}", e)))?;
+    ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, String> {
+        let rrset = Rrset::new_from_refs(rrset).map_err(|e| format!("invalid RRset: {}", e))?;
         sign_rrset(
             &self.signing_key,
             &rrset,
             Timestamp::from(inception.timestamp() as u32),
             Timestamp::from(expiration.timestamp() as u32),
         )
-        .map_err(|e| ServiceError::dnssec_signing_failed(format!("signing failed: {}", e)))
+        .map_err(|e| format!("signing failed: {}", e))
     }
 }
 
@@ -408,13 +404,11 @@ fn build_signing_input(
     params: &SignedViewParams<'_>,
     apex: &WireName,
     signers: &[Signer<'_>],
-) -> Result<Vec<SignRecord>, ServiceError> {
+) -> Result<Vec<SignRecord>, String> {
     let zone = params.zone;
     let mut input: Vec<SignRecord> = Vec::new();
 
-    let soa_bytes = zone
-        .soa_rdata(params.new_serial as u32)
-        .map_err(ServiceError::dnssec_signing_failed)?;
+    let soa_bytes = zone.soa_rdata(params.new_serial as u32)?;
     input.push(WireRecord::new(
         apex.clone(),
         Class::IN,
@@ -434,9 +428,7 @@ fn build_signing_input(
                 Rtype::CDS,
                 ds_rdata_for(signer.key, apex)?.into_bytes(),
             )
-            .map_err(|e| {
-                ServiceError::dnssec_signing_failed(format!("invalid CDS rdata: {}", e))
-            })?;
+            .map_err(|e| format!("invalid CDS rdata: {}", e))?;
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
@@ -447,9 +439,7 @@ fn build_signing_input(
                 Rtype::CDNSKEY,
                 to_rdata(&signer.dnskey).into_bytes(),
             )
-            .map_err(|e| {
-                ServiceError::dnssec_signing_failed(format!("invalid CDNSKEY rdata: {}", e))
-            })?;
+            .map_err(|e| format!("invalid CDNSKEY rdata: {}", e))?;
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
@@ -461,14 +451,10 @@ fn build_signing_input(
 
     for record in params.records {
         let EncodedRdata { record_type, rdata } =
-            EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)
-                .map_err(ServiceError::dnssec_signing_failed)?;
+            EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
         let data = UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
-            .map_err(|e| {
-                ServiceError::dnssec_signing_failed(format!("invalid record rdata: {}", e))
-            })?;
-        let owner = to_wire_name(record.name.to_wire(&zone.name))
-            .map_err(ServiceError::dnssec_signing_failed)?;
+            .map_err(|e| format!("invalid record rdata: {}", e))?;
+        let owner = to_wire_name(record.name.to_wire(&zone.name))?;
         input.push(WireRecord::new(
             owner,
             Class::IN,
@@ -500,12 +486,12 @@ fn build_signing_input(
 
 /// The typed SOA the denial generators require (they read MINIMUM per
 /// RFC 9077), parsed back from the one byte encoding the transfer serves.
-fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, ServiceError> {
+fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, String> {
     let mut parser = Parser::from_ref(rdata);
     domain::rdata::Soa::parse(&mut parser)
-        .map_err(|e| ServiceError::dnssec_signing_failed(format!("invalid SOA rdata: {}", e)))?
+        .map_err(|e| format!("invalid SOA rdata: {}", e))?
         .try_flatten_into()
-        .map_err(|e| ServiceError::dnssec_signing_failed(format!("invalid SOA rdata: {}", e)))
+        .map_err(|e| format!("invalid SOA rdata: {}", e))
 }
 
 /// The complete denial chain for `input` (canonical order): NSEC records, or
@@ -516,7 +502,7 @@ fn denial_records(
     apex: &WireName,
     input: &[SignRecord],
     denial: DnssecDenial,
-) -> Result<Vec<SignRecord>, ServiceError> {
+) -> Result<Vec<SignRecord>, String> {
     fn into_sign_record<D>(
         record: WireRecord<WireName, D>,
         wrap: impl FnOnce(D) -> ZoneRecordData<Vec<u8>, WireName>,
@@ -536,9 +522,7 @@ fn denial_records(
             RecordsIter::new_from_owned(input),
             &GenerateNsec3Config::<Vec<u8>, DefaultSorter>::default(),
         )
-        .map_err(|e| {
-            ServiceError::dnssec_signing_failed(format!("NSEC3 generation failed: {}", e))
-        })?;
+        .map_err(|e| format!("NSEC3 generation failed: {}", e))?;
 
         for nsec3 in nsec3s {
             records.push(into_sign_record(nsec3, ZoneRecordData::Nsec3));
@@ -550,9 +534,7 @@ fn denial_records(
             RecordsIter::new_from_owned(input),
             &GenerateNsecConfig::new(),
         )
-        .map_err(|e| {
-            ServiceError::dnssec_signing_failed(format!("NSEC generation failed: {}", e))
-        })?;
+        .map_err(|e| format!("NSEC generation failed: {}", e))?;
         for nsec in nsecs {
             records.push(into_sign_record(nsec, ZoneRecordData::Nsec));
         }

@@ -2,13 +2,12 @@
 
 use std::fmt::Write as _;
 
-use bindizr_core::dns::name::to_fqdn;
+use bindizr_core::dns::{dnssec::rdata_presentation, name::to_fqdn};
 use bindizr_db::repository::LockLevel;
 
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
     authorization::Caller,
-    dnssec::rdata_presentation,
     error::ServiceError,
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
     repository::RepositoryService,
