@@ -14,7 +14,7 @@ mod schema;
 mod utils;
 
 pub use bindizr_core::model;
-pub(crate) use bindizr_core::{config, log_error, log_info};
+pub(crate) use bindizr_core::{config, log_error, log_info, log_warn};
 use error::DatabaseError;
 
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
@@ -170,18 +170,25 @@ impl DatabasePool {
                     sqlx::query("PRAGMA foreign_keys = ON")
                         .execute(&mut *conn)
                         .await?;
-                    // WAL keeps readers off the writer's lock. It is a
-                    // property of the file, so this re-asserts it per
-                    // connection rather than setting it.
-                    sqlx::query("PRAGMA journal_mode = WAL")
-                        .execute(&mut *conn)
-                        .await?;
                     // SQLite's busy handler polls unfairly, so 5s starved
-                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY under load.
+                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY under load. Set
+                    // first so the WAL switch below waits rather than failing busy.
                     sqlx::query("PRAGMA busy_timeout = 15000")
                         .execute(&mut *conn)
-                        .await
-                        .map(|_| ())
+                        .await?;
+                    // WAL keeps readers off the writer's lock; being a file
+                    // property this re-asserts it per connection. SQLite answers
+                    // with the mode in force, not an error, if WAL cannot apply.
+                    let mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
+                        .fetch_one(&mut *conn)
+                        .await?;
+                    if !mode.eq_ignore_ascii_case("wal") {
+                        log_warn!(
+                            "SQLite journal_mode is '{}', not WAL: readers will queue behind writes",
+                            mode
+                        );
+                    }
+                    Ok(())
                 })
             })
             .connect(url)
