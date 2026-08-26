@@ -6,13 +6,15 @@ mod update;
 use std::net::SocketAddr;
 
 pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
-use bindizr_core::dns::{
-    message::Rcode,
-    nsupdate::{DEFAULT_FUDGE, build_response},
+use bindizr_core::{
+    dns::{
+        message::Rcode,
+        nsupdate::{DEFAULT_FUDGE, build_response},
+    },
+    log_info, log_warn,
+    metrics::metrics,
 };
 use tokio::net::{TcpStream, UdpSocket};
-
-use crate::{log_info, log_warn, metrics::metrics};
 
 pub(crate) async fn handle_tcp_nsupdate(
     stream: &mut TcpStream,
@@ -25,7 +27,7 @@ pub(crate) async fn handle_tcp_nsupdate(
         .await
         .ok_or_else(|| "Failed to build NSUPDATE TCP response".to_string())?;
 
-    crate::wire::write_tcp_message(stream, &response)
+    crate::dns::wire::write_tcp_message(stream, &response)
         .await
         .map_err(|e| format!("Failed to write NSUPDATE TCP response: {}", e))
 }

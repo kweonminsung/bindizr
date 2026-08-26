@@ -3,12 +3,15 @@
 
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use bindizr_core::dns::{
-    message::{Name, Opcode},
-    query::{build_question, extract_soa_serial},
+use bindizr_core::{
+    config,
+    dns::{
+        message::{Name, Opcode},
+        query::{build_question, extract_soa_serial},
+    },
 };
 
-use crate::{config, error::XfrError};
+use crate::dns::error::XfrError;
 
 /// Result of probing one configured secondary: the serial its SOA answer
 /// carries, or the reason the probe failed.

@@ -1,10 +1,14 @@
 use std::net::IpAddr;
 
-use bindizr_core::dns::{message, message::Rtype};
+use bindizr_core::{
+    dns::{message, message::Rtype},
+    log_info,
+};
+use bindizr_service::zone::ZoneService;
 use tokio::net::TcpStream;
 
 use super::{catalog, delta, zone_cache};
-use crate::{error::XfrError, log_info, service::zone::ZoneService};
+use crate::dns::error::XfrError;
 
 /// Handles an AXFR payload under `response_qtype`: the IXFR fallback keeps
 /// QTYPE=IXFR to match the original query.
@@ -49,7 +53,7 @@ pub(crate) async fn handle_axfr(
     let mut messages_sent = 0usize;
 
     let serial = delta::serial_to_u32(zone.serial)?;
-    crate::wire::add_answer_and_flush_if_needed(
+    crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,
         &mut messages_sent,
@@ -58,7 +62,7 @@ pub(crate) async fn handle_axfr(
     .await?;
 
     for record in content.records.iter() {
-        crate::wire::add_answer_and_flush_if_needed(
+        crate::dns::wire::add_answer_and_flush_if_needed(
             &mut builder,
             stream,
             &mut messages_sent,
@@ -68,7 +72,7 @@ pub(crate) async fn handle_axfr(
     }
 
     for record in content.dnssec_records.iter() {
-        crate::wire::add_answer_and_flush_if_needed(
+        crate::dns::wire::add_answer_and_flush_if_needed(
             &mut builder,
             stream,
             &mut messages_sent,
@@ -78,14 +82,14 @@ pub(crate) async fn handle_axfr(
     }
 
     // Final SOA closes the transfer.
-    crate::wire::add_answer_and_flush_if_needed(
+    crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,
         &mut messages_sent,
         |builder| builder.add_soa(&zone, serial),
     )
     .await?;
-    messages_sent += crate::wire::flush_if_not_empty(&mut builder, stream).await?;
+    messages_sent += crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
 
     log_info!(
         "AXFR completed for zone {}: sent {} records + 2 SOA records in {} DNS message(s)",

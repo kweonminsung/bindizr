@@ -17,11 +17,11 @@ use std::{
     },
 };
 
-use crate::{
+use bindizr_core::{
     config,
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
-    service::{error::ServiceError, zone::ZoneService},
 };
+use bindizr_service::{error::ServiceError, zone::ZoneService};
 
 /// Cap on distinct zones held at once. Each entry holds a zone's full record
 /// set, so this bounds worst-case memory while comfortably covering the active

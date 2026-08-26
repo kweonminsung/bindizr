@@ -4,7 +4,6 @@ members = [
     "crates/bindizr-e2e",
     "crates/bindizr-core",
     "crates/bindizr-db",
-    "crates/bindizr-dns",
     "crates/bindizr-external-dns",
     "crates/bindizr-service",
 ]

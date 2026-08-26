@@ -5,7 +5,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_dns as dns;
 use bindizr_service::{
     record::RecordService,
     types::{
@@ -19,10 +18,13 @@ use bindizr_service::{
 };
 use serde::Deserialize;
 
-use crate::api::{
-    RequestCaller,
-    error::ApiError,
-    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
+use crate::{
+    api::{
+        RequestCaller,
+        error::ApiError,
+        middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
+    },
+    dns,
 };
 
 /// Route group for zone endpoints.

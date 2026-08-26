@@ -14,11 +14,15 @@ pub(crate) mod zone_cache;
 
 use std::net::{IpAddr, SocketAddr};
 
-use bindizr_core::dns::message::{Rcode, Rtype};
+use bindizr_core::{
+    dns::message::{Rcode, Rtype},
+    log_info, log_warn,
+    metrics::metrics,
+};
 use catalog::generate_catalog_zone;
 use tokio::net::TcpStream;
 
-use crate::{error::XfrError, log_info, log_warn, metrics::metrics, wire};
+use crate::dns::{error::XfrError, wire};
 
 /// Initializes XFR support by ensuring the catalog zone exists.
 pub(crate) async fn initialize() {

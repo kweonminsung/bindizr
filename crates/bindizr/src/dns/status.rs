@@ -3,12 +3,11 @@
 //! service layer sits below this crate, so it lives here — the HTTP API and
 //! the daemon socket both call in rather than each assembling it.
 
-use crate::{
-    client::probe,
-    service::{
-        authorization::Caller, error::ServiceError, types::ZoneStatusResponse, zone::ZoneService,
-    },
+use bindizr_service::{
+    authorization::Caller, error::ServiceError, types::ZoneStatusResponse, zone::ZoneService,
 };
+
+use crate::dns::client::probe;
 
 /// Probe every configured secondary for `zone_name` and classify each against
 /// the zone's serial. With no secondaries configured the list is empty.

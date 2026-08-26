@@ -11,16 +11,13 @@ use bindizr_core::{
             parser::{UpdateRecord, UpdateRequest, rr_to_record_value, rr_type_to_record_type},
         },
     },
-};
-
-use crate::{
     model::tsig_key::TsigKey,
-    service::{
-        dynamic_update::{
-            DynamicUpdate, DynamicUpdateError, DynamicUpdateService, Prerequisite, UpdateOp,
-        },
-        tsig_key::TsigKeyService,
+};
+use bindizr_service::{
+    dynamic_update::{
+        DynamicUpdate, DynamicUpdateError, DynamicUpdateService, Prerequisite, UpdateOp,
     },
+    tsig_key::TsigKeyService,
 };
 
 #[derive(Debug)]

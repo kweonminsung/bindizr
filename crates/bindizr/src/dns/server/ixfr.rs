@@ -2,12 +2,14 @@ use std::{collections::HashMap, net::IpAddr};
 
 use bindizr_core::{
     dns::{message, message::Rtype, name::ZoneName},
+    log_info, log_warn,
     model::zone_change::{ChangeOperation, JournalRecordType},
 };
+use bindizr_service::zone::ZoneService;
 use tokio::net::TcpStream;
 
 use super::{axfr, catalog, delta};
-use crate::{error::XfrError, log_info, log_warn, service::zone::ZoneService};
+use crate::dns::error::XfrError;
 
 /// Handles an IXFR request.
 pub(crate) async fn handle_ixfr(
@@ -183,7 +185,7 @@ async fn send_up_to_date_response(
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
 
     builder.add_version_soa(current_soa)?;
-    crate::wire::flush_if_not_empty(&mut builder, stream).await?;
+    crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
 
     Ok(())
 }
@@ -201,7 +203,7 @@ enum IxfrSendError {
 async fn send_ixfr_response(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
-    zone: &crate::model::zone::Zone,
+    zone: &bindizr_core::model::zone::Zone,
     client_serial: u32,
     changes: &[delta::ZoneChange],
     versions_by_serial: &HashMap<u32, delta::ZoneVersion>,
@@ -238,7 +240,7 @@ async fn stream_ixfr_body(
     stream: &mut TcpStream,
     builder: &mut message::DnsMessageBuilder,
     messages_sent: &mut usize,
-    zone: &crate::model::zone::Zone,
+    zone: &bindizr_core::model::zone::Zone,
     client_serial: u32,
     changes: &[delta::ZoneChange],
     versions_by_serial: &HashMap<u32, delta::ZoneVersion>,
@@ -250,7 +252,7 @@ async fn stream_ixfr_body(
         })?;
 
     // Initial SOA (current serial).
-    crate::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
+    crate::dns::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
         builder.add_version_soa(current_version)
     })
     .await?;
@@ -277,16 +279,19 @@ async fn stream_ixfr_body(
         let old_soa = versions_by_serial.get(&old_serial).ok_or_else(|| {
             XfrError::ProtocolError(format!("Missing old SOA version for serial {}", old_serial))
         })?;
-        crate::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
-            builder.add_version_soa(old_soa)
-        })
+        crate::dns::wire::add_answer_and_flush_if_needed(
+            builder,
+            stream,
+            messages_sent,
+            |builder| builder.add_version_soa(old_soa),
+        )
         .await?;
 
         for change in serial_changes
             .iter()
             .filter(|c| c.operation == ChangeOperation::Del)
         {
-            crate::wire::add_answer_and_flush_if_needed(
+            crate::dns::wire::add_answer_and_flush_if_needed(
                 builder,
                 stream,
                 messages_sent,
@@ -299,16 +304,19 @@ async fn stream_ixfr_body(
         let new_soa = versions_by_serial.get(&serial).ok_or_else(|| {
             XfrError::ProtocolError(format!("Missing new SOA version for serial {}", serial))
         })?;
-        crate::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
-            builder.add_version_soa(new_soa)
-        })
+        crate::dns::wire::add_answer_and_flush_if_needed(
+            builder,
+            stream,
+            messages_sent,
+            |builder| builder.add_version_soa(new_soa),
+        )
         .await?;
 
         for change in serial_changes
             .iter()
             .filter(|c| c.operation == ChangeOperation::Add)
         {
-            crate::wire::add_answer_and_flush_if_needed(
+            crate::dns::wire::add_answer_and_flush_if_needed(
                 builder,
                 stream,
                 messages_sent,
@@ -319,11 +327,11 @@ async fn stream_ixfr_body(
     }
 
     // Final SOA (current serial).
-    crate::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
+    crate::dns::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
         builder.add_version_soa(current_version)
     })
     .await?;
-    *messages_sent += crate::wire::flush_if_not_empty(builder, stream).await?;
+    *messages_sent += crate::dns::wire::flush_if_not_empty(builder, stream).await?;
 
     Ok(())
 }

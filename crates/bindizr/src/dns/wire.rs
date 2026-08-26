@@ -7,7 +7,7 @@ use bindizr_core::dns::{
     message::{DnsMessageBuilder, encode_tcp_message},
 };
 
-use crate::error::XfrError;
+use crate::dns::error::XfrError;
 
 /// Add one answer, sending the frame that fills up first when it does.
 pub(crate) async fn add_answer_and_flush_if_needed<W, F>(

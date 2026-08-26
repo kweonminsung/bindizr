@@ -1,12 +1,12 @@
 use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{config, dns::CATALOG_ZONE_NAME};
-use bindizr_dns::client::{notify, probe};
 use bindizr_service::{
     authorization::Caller, error::ServiceError, types::GetZonesFilter, zone::ZoneService,
 };
 
 use crate::{
+    dns::client::{notify, probe},
     net::loopback_if_unspecified,
     socket::{
         server::to_response_data,

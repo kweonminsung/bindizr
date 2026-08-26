@@ -84,11 +84,11 @@ bindizr zone notify example.com
 
 This workspace is split into several crates:
 
-- `bindizr`: CLI, HTTP API, daemon socket, and application entry point.
-- `bindizr-core`: shared configuration, models, DNS record types, and logging.
+- `bindizr`: CLI, HTTP API, DNS server, daemon socket, and application entry point.
+- `bindizr-core`: shared configuration, models, logging, and the DNS library
+  (record types, wire format, DNSSEC signing, TSIG, zone files).
 - `bindizr-db`: database repositories and schema helpers.
 - `bindizr-service`: zone, record, token, serial, and notification workflows.
-- `bindizr-dns`: AXFR/IXFR, NOTIFY, TSIG, and nsupdate logic.
 
 ## Documentation
 

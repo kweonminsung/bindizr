@@ -1,6 +1,8 @@
 //! IXFR delta computation: the zone changes between two serials.
 
-use crate::{error::XfrError, service::zone::ZoneService};
+use bindizr_service::zone::ZoneService;
+
+use crate::dns::error::XfrError;
 
 pub(crate) type ZoneChange = bindizr_core::model::zone_change::ZoneChange;
 pub(crate) type ZoneVersion = bindizr_core::model::zone_version::ZoneVersion;

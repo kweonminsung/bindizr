@@ -1,13 +1,17 @@
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use bindizr_core::dns::{
-    message::{Name, Opcode},
-    query::validate_notify_response,
+use bindizr_core::{
+    config,
+    dns::{
+        message::{Name, Opcode},
+        query::validate_notify_response,
+    },
+    log_error, log_info,
+    metrics::metrics,
 };
+use bindizr_service::zone::ZoneService;
 
-use crate::{
-    config, error::XfrError, log_error, log_info, metrics::metrics, service::zone::ZoneService,
-};
+use crate::dns::error::XfrError;
 
 /// Sends DNS NOTIFY to all configured secondary servers; a `None` zone_name
 /// notifies all zones. Existence checks and forced bumps live in

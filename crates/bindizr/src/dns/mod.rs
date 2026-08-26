@@ -1,20 +1,20 @@
 //! DNS front end: the authoritative TCP/UDP server plus zone transfer
 //! (AXFR/IXFR), NOTIFY, SOA queries, RFC 2136 nsupdate, and secondary ACLs.
 
-use bindizr_core::dns::message;
-
 pub(crate) mod address;
-pub mod client;
+pub(crate) mod client;
 pub(crate) mod error;
 pub(crate) mod server;
-pub mod status;
+pub(crate) mod status;
 pub(crate) mod wire;
 
 use std::{io::ErrorKind, net::SocketAddr, time::Duration};
 
-use bindizr_core::dns::message::Rtype;
-pub(crate) use bindizr_core::{config, log_error, log_info, log_warn, metrics, model};
-pub(crate) use bindizr_service as service;
+use bindizr_core::{
+    config,
+    dns::message::{self, Rtype},
+    log_error, log_info, log_warn,
+};
 use server::acl::SecondaryAcl;
 use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
@@ -24,7 +24,7 @@ use tokio::{
 const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
-pub async fn initialize() {
+pub(crate) async fn initialize() {
     server::initialize().await;
 
     let bindizr_config = config::bindizr_config();
@@ -82,11 +82,16 @@ async fn handle_tcp_connection(
     secondary_acl: SecondaryAcl,
 ) -> Result<(), String> {
     loop {
-        let query_data = match timeout(TCP_IDLE_TIMEOUT, crate::wire::read_tcp_message(&mut stream))
-            .await
+        let query_data = match timeout(
+            TCP_IDLE_TIMEOUT,
+            crate::dns::wire::read_tcp_message(&mut stream),
+        )
+        .await
         {
             Ok(Ok(query_data)) => query_data,
-            Ok(Err(crate::error::XfrError::IoError(e))) if e.kind() == ErrorKind::UnexpectedEof => {
+            Ok(Err(crate::dns::error::XfrError::IoError(e)))
+                if e.kind() == ErrorKind::UnexpectedEof =>
+            {
                 break;
             }
             Ok(Err(e)) => return Err(format!("Failed to read DNS TCP message: {}", e)),

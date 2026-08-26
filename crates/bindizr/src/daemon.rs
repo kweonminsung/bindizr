@@ -7,10 +7,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bindizr_core::{config, log_error, log_info, logger};
 use bindizr_db as database;
-use bindizr_dns as dns;
 use bindizr_service as service;
 
-use crate::{api, socket};
+use crate::{api, dns, socket};
 
 /// Binds the service layer's NOTIFY port to the DNS client, so the service can
 /// trigger propagation without depending on this crate's DNS front end.

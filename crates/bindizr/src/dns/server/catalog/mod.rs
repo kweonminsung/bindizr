@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
 pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
-use bindizr_core::dns::{message, message::Rtype, name::ZoneName};
+use bindizr_core::{
+    dns::{message, message::Rtype, name::ZoneName},
+    log_info,
+    model::zone::{DnssecDenial, Zone},
+};
+use bindizr_service::zone::ZoneService;
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
 use super::delta;
-use crate::{
-    error::XfrError,
-    log_info,
-    model::zone::{DnssecDenial, Zone},
-    service::zone::ZoneService,
-};
+use crate::dns::error::XfrError;
 
 /// Generates the catalog zone and its member zone list.
 pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
@@ -104,7 +104,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     let mut messages_sent = 0usize;
     let serial = delta::serial_to_u32(catalog_zone.serial)?;
 
-    crate::wire::add_answer_and_flush_if_needed(
+    crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,
         &mut messages_sent,
@@ -112,14 +112,14 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     )
     .await?;
 
-    crate::wire::add_answer_and_flush_if_needed(
+    crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,
         &mut messages_sent,
         |builder| builder.add_catalog_ns(&catalog_zone),
     )
     .await?;
-    crate::wire::add_answer_and_flush_if_needed(
+    crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,
         &mut messages_sent,
@@ -128,7 +128,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     .await?;
 
     for member_zone in &member_zones {
-        crate::wire::add_answer_and_flush_if_needed(
+        crate::dns::wire::add_answer_and_flush_if_needed(
             &mut builder,
             stream,
             &mut messages_sent,
@@ -137,14 +137,14 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
         .await?;
     }
 
-    crate::wire::add_answer_and_flush_if_needed(
+    crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,
         &mut messages_sent,
         |builder| builder.add_catalog_soa(&catalog_zone, serial),
     )
     .await?;
-    messages_sent += crate::wire::flush_if_not_empty(&mut builder, stream).await?;
+    messages_sent += crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
 
     log_info!(
         "Catalog AXFR completed: sent {} member zones in {} DNS message(s)",

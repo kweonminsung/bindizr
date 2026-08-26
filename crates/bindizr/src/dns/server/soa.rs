@@ -3,17 +3,19 @@
 
 use std::net::{IpAddr, SocketAddr};
 
-use bindizr_core::dns::{
-    message,
-    message::{Rcode, Rtype},
+use bindizr_core::{
+    dns::{
+        message,
+        message::{Rcode, Rtype},
+    },
+    log_info,
 };
+use bindizr_service::zone::ZoneService;
 use tokio::net::{TcpStream, UdpSocket};
 
-use crate::{
+use crate::dns::{
     error::XfrError,
-    log_info,
     server::{catalog, delta},
-    service::zone::ZoneService,
     wire,
 };
 

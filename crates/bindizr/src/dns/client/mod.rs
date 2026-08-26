@@ -7,12 +7,12 @@ pub mod probe;
 
 use std::{net::SocketAddr, time::Duration};
 
+use bindizr_core::log_error;
 use tokio::net::{UdpSocket, lookup_host};
 
-use crate::{
+use crate::dns::{
     address::{ParsedAddress, parse_address_target},
     error::XfrError,
-    log_error,
 };
 
 /// Maximum size of a UDP DNS response we accept.
