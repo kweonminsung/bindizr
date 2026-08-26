@@ -35,7 +35,7 @@ impl RecordService {
             }
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                return Err(ServiceError::internal("Failed to fetch record"));
             }
         };
 
@@ -54,7 +54,7 @@ impl RecordService {
                 }
                 Err(e) => {
                     log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::internal("Failed to fetch zone".to_string()));
+                    return Err(ServiceError::internal("Failed to fetch zone"));
                 }
             };
 
@@ -68,7 +68,7 @@ impl RecordService {
                     }
                     Err(e) => {
                         log_error!("Failed to fetch record: {}", e);
-                        return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                        return Err(ServiceError::internal("Failed to fetch record"));
                     }
                 };
 

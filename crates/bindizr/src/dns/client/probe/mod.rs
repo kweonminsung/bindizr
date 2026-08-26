@@ -25,7 +25,7 @@ pub(crate) struct SecondaryProbe {
 /// address until one answers. An empty `secondary_addrs` yields an empty list.
 pub(crate) async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, XfrError> {
     let dns_config = &config::bindizr_config().dns;
-    let raw = dns_config.secondary_addrs.clone();
+    let raw = dns_config.secondary_addrs.as_str();
     if raw.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -36,7 +36,7 @@ pub(crate) async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryPr
 
     let mut probes = Vec::new();
     let mut tasks = Vec::new();
-    for (entry, result) in super::resolve_secondary_entries(&raw, timeout).await {
+    for (entry, result) in super::resolve_secondary_entries(raw, timeout).await {
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {

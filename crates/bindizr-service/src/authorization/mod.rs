@@ -196,7 +196,7 @@ async fn validate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
     if let Some(expires_at) = &stored_token.expires_at
         && Utc::now() >= *expires_at
     {
-        return Err(ServiceError::invalid_token("Token has expired".to_string()));
+        return Err(ServiceError::invalid_token("Token has expired"));
     }
 
     let stamp_is_fresh = stored_token.last_used_at.is_some_and(|last_used| {
@@ -213,7 +213,7 @@ async fn validate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
     .await
     .map_err(|e| {
         log_error!("Failed to update last_used_at: {}", e);
-        ServiceError::internal("Failed to update last_used_at".to_string())
+        ServiceError::internal("Failed to update last_used_at")
     })?;
 
     Ok(updated_token)

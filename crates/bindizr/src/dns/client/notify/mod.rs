@@ -98,7 +98,7 @@ pub(crate) struct SecondaryNotify {
 /// `secondary_addrs` yields an empty list.
 pub(crate) async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>, XfrError> {
     let dns_config = &config::bindizr_config().dns;
-    let raw = dns_config.secondary_addrs.clone();
+    let raw = dns_config.secondary_addrs.as_str();
     if raw.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -109,7 +109,7 @@ pub(crate) async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryN
         .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
 
     let mut reports = Vec::new();
-    for (entry, result) in super::resolve_secondary_entries(&raw, timeout).await {
+    for (entry, result) in super::resolve_secondary_entries(raw, timeout).await {
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {

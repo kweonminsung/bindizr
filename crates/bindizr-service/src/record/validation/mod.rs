@@ -244,7 +244,7 @@ impl RecordService {
         .await
         .map_err(|e| {
             log_error!("Failed to load zone records: {}", e);
-            ServiceError::internal("Failed to load zone records".to_string())
+            ServiceError::internal("Failed to load zone records")
         })?;
 
         if has_matching_rdata(zone_records.iter(), record_type, value, priority) {

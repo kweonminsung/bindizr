@@ -32,7 +32,7 @@ pub async fn execute() {
 
     let upstream = upstream::UpstreamClient::new(
         adapter_config.bindizr_url.clone(),
-        adapter_config.token.clone(),
+        adapter_config.token,
         adapter_config.timeout_secs,
     )
     .unwrap_or_else(|e| {

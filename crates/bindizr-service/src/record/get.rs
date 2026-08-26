@@ -186,7 +186,7 @@ impl RecordService {
             Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                return Err(ServiceError::internal("Failed to fetch record"));
             }
         };
 

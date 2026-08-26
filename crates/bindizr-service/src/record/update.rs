@@ -129,7 +129,7 @@ impl RecordService {
             Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                return Err(ServiceError::internal("Failed to fetch record"));
             }
         };
 
@@ -148,7 +148,7 @@ impl RecordService {
                 }
                 Err(e) => {
                     log_error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::internal("Failed to fetch zone".to_string()));
+                    return Err(ServiceError::internal("Failed to fetch zone"));
                 }
             };
 
@@ -162,7 +162,7 @@ impl RecordService {
                     }
                     Err(e) => {
                         log_error!("Failed to fetch record: {}", e);
-                        return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                        return Err(ServiceError::internal("Failed to fetch record"));
                     }
                 };
 
@@ -212,9 +212,9 @@ impl RecordService {
 
             let candidate_updated = Record {
                 id: existing_record.id,
-                name: resolved.owner_name.clone(),
-                record_type: resolved.record_type.clone(),
-                value: resolved.encoded_value.clone(),
+                name: resolved.owner_name,
+                record_type: resolved.record_type,
+                value: resolved.encoded_value,
                 ttl: resolved.ttl,
                 priority: resolved.priority,
                 zone_id: zone.id,
@@ -235,7 +235,7 @@ impl RecordService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to update record: {}", e);
-                    ServiceError::internal("Failed to update record".to_string())
+                    ServiceError::internal("Failed to update record")
                 })?;
 
             // Record DEL(old)+ADD(new) zone changes for IXFR in one batch.
@@ -255,7 +255,7 @@ impl RecordService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to create zone changes: {}", e);
-                    ServiceError::internal("Failed to create zone change".to_string())
+                    ServiceError::internal("Failed to create zone change")
                 })?;
 
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;

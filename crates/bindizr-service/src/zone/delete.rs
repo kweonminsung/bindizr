@@ -23,7 +23,7 @@ impl ZoneService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to delete zone: {}", e);
-                    ServiceError::internal("Failed to delete zone".to_string())
+                    ServiceError::internal("Failed to delete zone")
                 })?;
             Ok::<(i32, ZoneName), ServiceError>((zone.id, zone.name))
         }

@@ -287,7 +287,7 @@ impl RecordService {
 
                 let record = Record {
                     id: 0,
-                    name: owner_name.clone(),
+                    name: owner_name,
                     record_type: prepared_record.record_type.clone(),
                     value: prepared_record.value.clone(),
                     ttl,

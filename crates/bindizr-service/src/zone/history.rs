@@ -605,7 +605,7 @@ impl ZoneService {
                 let same_name = records_by_name.entry(target.name.clone()).or_default();
                 validate_record_add_constraints_normalized(
                     same_name,
-                    &target.name.clone(),
+                    &target.name,
                     &target.record_type,
                     &target.value,
                     target.ttl,
