@@ -293,6 +293,15 @@ Specifically avoid:
 Cite RFC sections as `RFC 2181, Section 5.2` (`Sections 5.2–5.3` for a range),
 never the `§` glyph.
 
+### Workspace lints
+
+`[workspace.lints]` in the root `Cargo.toml` is the one place lint levels are
+set; every crate opts in with `[lints] workspace = true`. `unsafe_code` is
+denied (the project is pure safe Rust), and `unreachable_pub` mechanically
+enforces the visibility rule below. Keep the set small: a lint that fights an
+idiom the codebase uses deliberately costs more than it catches, because the
+build must stay warning-free without `#[allow]`.
+
 ### No dead code, no `#[allow(dead_code)]`
 
 The workspace builds warning-free with no `#[allow(dead_code)]` anywhere; keep

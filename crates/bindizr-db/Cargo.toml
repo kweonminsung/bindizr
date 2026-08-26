@@ -20,3 +20,6 @@ log.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+
+[lints]
+workspace = true

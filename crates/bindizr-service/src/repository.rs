@@ -33,7 +33,7 @@ pub(crate) struct RepositoryService;
 /// Map a zone insert/update failure: the UNIQUE(name) backstop catches
 /// check-then-act races on the zone name and becomes the same conflict error
 /// the service-level pre-check produces; anything else stays internal.
-fn zone_name_race_error(name: &str, action: &str, e: DatabaseError) -> ServiceError {
+fn zone_name_race_error(name: &str, action: &str, e: &DatabaseError) -> ServiceError {
     if e.is_unique_violation() {
         ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
     } else {
@@ -42,9 +42,9 @@ fn zone_name_race_error(name: &str, action: &str, e: DatabaseError) -> ServiceEr
 }
 
 /// Log a failed transaction open and map it to the caller's internal error.
-fn begin_tx_error(internal_msg: &'static str, e: DatabaseError) -> ServiceError {
+fn begin_tx_error(internal_msg: &'static str, e: &DatabaseError) -> ServiceError {
     log_error!("Failed to begin transaction: {}", e);
-    ServiceError::internal(internal_msg.to_string())
+    ServiceError::internal(internal_msg)
 }
 
 impl RepositoryService {
@@ -53,7 +53,7 @@ impl RepositoryService {
     ) -> Result<RepositoryTx<'static>, ServiceError> {
         db_repository::begin_transaction()
             .await
-            .map_err(|e| begin_tx_error(internal_msg, e))
+            .map_err(|e| begin_tx_error(internal_msg, &e))
     }
 
     /// Begin a transaction for a caller that only reads; see
@@ -63,7 +63,7 @@ impl RepositoryService {
     ) -> Result<RepositoryTx<'static>, ServiceError> {
         db_repository::begin_read_transaction()
             .await
-            .map_err(|e| begin_tx_error(internal_msg, e))
+            .map_err(|e| begin_tx_error(internal_msg, &e))
     }
 
     /// Commit on success, roll back on failure. `E` is the caller's error
@@ -78,7 +78,7 @@ impl RepositoryService {
             Ok(value) => {
                 tx.commit().await.map_err(|e| {
                     log_error!("Failed to commit transaction: {}", e);
-                    E::from(ServiceError::internal(internal_msg.to_string()))
+                    E::from(ServiceError::internal(internal_msg))
                 })?;
                 Ok(value)
             }
@@ -524,7 +524,7 @@ impl RepositoryService {
         get_zone_repository()
             .create_tx(tx, zone)
             .await
-            .map_err(|e| zone_name_race_error(name.as_str(), "create", e))
+            .map_err(|e| zone_name_race_error(name.as_str(), "create", &e))
     }
 
     pub(crate) async fn update_zone_tx(
@@ -535,7 +535,7 @@ impl RepositoryService {
         get_zone_repository()
             .update_tx(tx, zone)
             .await
-            .map_err(|e| zone_name_race_error(name.as_str(), "update", e))
+            .map_err(|e| zone_name_race_error(name.as_str(), "update", &e))
     }
 
     /// Set only the zone's `dnssec_denial` mode, leaving other columns untouched.

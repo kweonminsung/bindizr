@@ -25,3 +25,6 @@ serde.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 utoipa.workspace = true
+
+[lints]
+workspace = true

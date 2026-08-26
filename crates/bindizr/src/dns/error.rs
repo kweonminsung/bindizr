@@ -2,7 +2,7 @@ use thiserror::Error;
 
 /// Errors produced while handling zone transfers, NOTIFY, and DNS wire I/O.
 #[derive(Debug, Error)]
-pub enum XfrError {
+pub(crate) enum XfrError {
     #[error("Zone not found: {0}")]
     ZoneNotFound(String),
 

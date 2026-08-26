@@ -8,7 +8,7 @@ pub fn is_catalog_zone(zone_name: &str) -> bool {
 }
 
 /// A member zone's catalog owner label (RFC 9432, Section 4.1).
-pub fn zone_name_to_member_id(zone_name: &str) -> String {
+pub(crate) fn zone_name_to_member_id(zone_name: &str) -> String {
     zone_name.replace('.', "-")
 }
 

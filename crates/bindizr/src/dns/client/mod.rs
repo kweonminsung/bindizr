@@ -2,8 +2,8 @@
 //! the UDP exchange, message-build, and secondary-resolution helpers they
 //! share.
 
-pub mod notify;
-pub mod probe;
+pub(crate) mod notify;
+pub(crate) mod probe;
 
 use std::{net::SocketAddr, time::Duration};
 

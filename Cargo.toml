@@ -22,6 +22,15 @@ rust-version = "1.85"
 keywords = ["dns", "bind9", "cli", "xfr"]
 categories = ["command-line-utilities", "network-programming"]
 
+[workspace.lints.rust]
+unsafe_code = "deny"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+redundant_clone = "warn"
+inefficient_to_string = "warn"
+
 [workspace.dependencies]
 async-trait = "0.1.89"
 axum = "0.8.9"

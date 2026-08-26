@@ -169,6 +169,7 @@ fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
 
 /// Resolved SOA timing fields. Used both as the fallback source (zone defaults on
 /// create, the existing zone's values on update) and as the validated output.
+#[derive(Clone, Copy)]
 pub(crate) struct ResolvedSoaTimers {
     pub(crate) refresh: i32,
     pub(crate) retry: i32,

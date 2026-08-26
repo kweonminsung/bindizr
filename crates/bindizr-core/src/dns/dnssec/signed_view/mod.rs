@@ -99,11 +99,11 @@ impl SignedViewParams<'_> {
             .iter()
             .map(|key| Signer::new(&apex, key))
             .collect::<Result<Vec<_>, _>>()?;
-        let key_signers: Vec<&Signer> = signers
+        let key_signers: Vec<&Signer<'_>> = signers
             .iter()
             .filter(|s| s.key.signs_key_rrsets())
             .collect();
-        let data_signers: Vec<&Signer> =
+        let data_signers: Vec<&Signer<'_>> =
             signers.iter().filter(|s| s.key.signs_zone_data()).collect();
         if !signers.is_empty() && (key_signers.is_empty() || data_signers.is_empty()) {
             return Err(
@@ -199,7 +199,7 @@ impl SignedViewParams<'_> {
             // The apex key RRsets must be signed by keys the parent DS names
             // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
             // active zone-data keys.
-            let rrset_signers: &[&Signer] =
+            let rrset_signers: &[&Signer<'_>] =
                 if *rrset[0].owner() == apex && is_key_rrset_type(rrset[0].rtype()) {
                     &key_signers
                 } else {

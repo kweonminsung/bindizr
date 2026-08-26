@@ -11,7 +11,7 @@ use crate::dns::client::probe;
 
 /// Probe every configured secondary for `zone_name` and classify each against
 /// the zone's serial. With no secondaries configured the list is empty.
-pub async fn zone_status(
+pub(crate) async fn zone_status(
     caller: &Caller,
     zone_name: &str,
 ) -> Result<ZoneStatusResponse, ServiceError> {

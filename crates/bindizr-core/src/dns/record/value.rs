@@ -7,16 +7,16 @@ use crate::dns::{
 
 /// Priority an MX or SRV row takes when its priority column is NULL; served
 /// and compared as this value, so both types must agree on it.
-pub const DEFAULT_PRIORITY: u16 = 10;
+pub(crate) const DEFAULT_PRIORITY: u16 = 10;
 
 /// Maximum RDATA bytes for one stored record: the TCP message limit less the
 /// header and worst-case question and answer fields (wire names take
 /// `MAX_DOMAIN_LEN` + 2), so any accepted record fits a single-answer
 /// transfer message.
-pub const MAX_RECORD_RDATA: usize =
+pub(crate) const MAX_RECORD_RDATA: usize =
     DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10);
 
-pub fn parse_optional_u16_record_field(
+pub(crate) fn parse_optional_u16_record_field(
     field: &str,
     value: Option<i32>,
     default: u16,
@@ -26,7 +26,7 @@ pub fn parse_optional_u16_record_field(
     })
 }
 
-pub fn parse_u8_record_field(field: &str, value: &str) -> Result<u8, String> {
+pub(crate) fn parse_u8_record_field(field: &str, value: &str) -> Result<u8, String> {
     value
         .parse::<u8>()
         .map_err(|_| format!("{field} must be an unsigned 8-bit integer: {value}"))
@@ -35,7 +35,7 @@ pub fn parse_u8_record_field(field: &str, value: &str) -> Result<u8, String> {
 /// Decode a hex field that presentation form may split into whitespace-
 /// separated groups, as `dig` prints. RFC 1035 `(`/`)` markers are dropped:
 /// nsupdate and import re-parse `domain`'s form, which wraps hex in them.
-pub fn parse_hex_record_field<'a>(
+pub(crate) fn parse_hex_record_field<'a>(
     field: &str,
     groups: impl Iterator<Item = &'a str>,
 ) -> Result<Vec<u8>, String> {
@@ -63,17 +63,17 @@ pub fn parse_hex_record_field<'a>(
         .collect()
 }
 
-pub fn hex_upper(bytes: &[u8]) -> String {
+pub(crate) fn hex_upper(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02X}")).collect()
 }
 
-pub fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, String> {
+pub(crate) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, String> {
     value
         .parse::<u16>()
         .map_err(|_| format!("{field} must be an unsigned 16-bit integer: {value}"))
 }
 
-pub fn validate_domain_record_value(field: &str, value: &str) -> Result<(), String> {
+pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();
 
     if trimmed.is_empty() {

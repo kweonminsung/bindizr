@@ -28,3 +28,6 @@ sqlx.workspace = true
 
 [dev-dependencies]
 hmac.workspace = true
+
+[lints]
+workspace = true

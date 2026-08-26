@@ -16,7 +16,7 @@ use crate::dns::error::XfrError;
 /// Sends DNS NOTIFY to all configured secondary servers; a `None` zone_name
 /// notifies all zones. Existence checks and forced bumps live in
 /// `ZoneService::notify_for`.
-pub async fn send_notify(zone_name: Option<&str>) -> Result<(), XfrError> {
+pub(crate) async fn send_notify(zone_name: Option<&str>) -> Result<(), XfrError> {
     match zone_name {
         Some(name) => send_notify_for_zone(name).await,
         None => send_notify_for_all_zones().await,
@@ -88,7 +88,7 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
 }
 
 /// One configured secondary's NOTIFY outcome.
-pub struct SecondaryNotify {
+pub(crate) struct SecondaryNotify {
     pub address: String,
     pub result: Result<(), String>,
 }
@@ -96,7 +96,7 @@ pub struct SecondaryNotify {
 /// Send NOTIFY for a zone to every resolved secondary address (the transfer
 /// ACL admits each one, so every replica must hear the change). An empty
 /// `secondary_addrs` yields an empty list.
-pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>, XfrError> {
+pub(crate) async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>, XfrError> {
     let dns_config = &config::bindizr_config().dns;
     let raw = dns_config.secondary_addrs.clone();
     if raw.trim().is_empty() {

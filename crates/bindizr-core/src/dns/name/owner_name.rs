@@ -206,7 +206,7 @@ pub fn decode_name_labels(name: &str) -> Result<(Vec<String>, bool), ParseNameEr
 
 /// Decode a presentation-form name into lowercase labels, resolving the `\X`
 /// and `\DDD` escapes (RFC 1035, Section 5.1).
-pub fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
+pub(crate) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
     let mut labels = Vec::new();
     let mut label: Vec<u8> = Vec::new();
     let mut chars = name.chars().peekable();
@@ -290,7 +290,7 @@ fn classify_wire_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameE
 const ESCAPED_IN_LABEL: [char; 8] = ['.', '\\', '@', ';', '(', ')', '"', '$'];
 
 /// Inverse of [`decode_labels`] for one label.
-pub fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
     if !label.contains(ESCAPED_IN_LABEL) {
         return std::borrow::Cow::Borrowed(label);
     }

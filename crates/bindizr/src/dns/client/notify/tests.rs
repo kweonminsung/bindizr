@@ -25,7 +25,7 @@ fn validate_notify_response_rejects_id_mismatch() {
 
     let err = validate_notify_response(5678, &response).unwrap_err();
 
-    assert!(err.to_string().contains("ID mismatch"));
+    assert!(err.contains("ID mismatch"));
 }
 
 #[test]
@@ -35,5 +35,5 @@ fn validate_notify_response_rejects_error_rcode() {
 
     let err = validate_notify_response(1234, &response).unwrap_err();
 
-    assert!(err.to_string().contains("RCODE 5"));
+    assert!(err.contains("RCODE 5"));
 }
