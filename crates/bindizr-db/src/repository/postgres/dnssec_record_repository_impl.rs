@@ -161,7 +161,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
             SELECT d.name, d.record_type, d.ttl, d.rdata, d.zone_id, z.name AS zone_name
             FROM dnssec_records d
             INNER JOIN zones z ON z.id = d.zone_id
-            WHERE ($1::INT4 IS NULL OR d.zone_id = $2)
+            WHERE ($1::TEXT IS NULL OR d.zone_id = (SELECT id FROM zones WHERE name = $2))
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(d.name) = LOWER($4)
@@ -182,8 +182,8 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
             LIMIT $15 OFFSET $16
             "#
         )))
-        .bind(filter.zone_id)
-        .bind(filter.zone_id)
+        .bind(&filter.zone_name)
+        .bind(&filter.zone_name)
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(&filter.name)
@@ -217,7 +217,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
             SELECT COUNT(*)
             FROM dnssec_records d
             INNER JOIN zones z ON z.id = d.zone_id
-            WHERE ($1::INT4 IS NULL OR d.zone_id = $2)
+            WHERE ($1::TEXT IS NULL OR d.zone_id = (SELECT id FROM zones WHERE name = $2))
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(d.name) = LOWER($4)
@@ -234,8 +234,8 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
               )
             "#
         )))
-        .bind(filter.zone_id)
-        .bind(filter.zone_id)
+        .bind(&filter.zone_name)
+        .bind(&filter.zone_name)
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(&filter.name)

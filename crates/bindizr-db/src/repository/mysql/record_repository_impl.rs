@@ -314,7 +314,7 @@ impl RecordRepository for MySqlRecordRepository {
                    r.zone_id, z.name AS zone_name
             FROM records r
             INNER JOIN zones z ON z.id = r.zone_id
-            WHERE (? IS NULL OR r.zone_id = ?)
+            WHERE (? IS NULL OR r.zone_id = (SELECT id FROM zones WHERE name = ?))
               AND (
                     ? IS NULL
                     OR LOWER(r.name) = LOWER(?)
@@ -350,8 +350,8 @@ impl RecordRepository for MySqlRecordRepository {
             LIMIT ? OFFSET ?
             "#
         )))
-        .bind(filter.zone_id)
-        .bind(filter.zone_id)
+        .bind(&filter.zone_name)
+        .bind(&filter.zone_name)
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(&filter.name)
@@ -406,7 +406,7 @@ impl RecordRepository for MySqlRecordRepository {
             SELECT COUNT(*)
             FROM records r
             INNER JOIN zones z ON z.id = r.zone_id
-            WHERE (? IS NULL OR r.zone_id = ?)
+            WHERE (? IS NULL OR r.zone_id = (SELECT id FROM zones WHERE name = ?))
               AND (
                     ? IS NULL
                     OR LOWER(r.name) = LOWER(?)
@@ -438,8 +438,8 @@ impl RecordRepository for MySqlRecordRepository {
               )
             "#
         )))
-        .bind(filter.zone_id)
-        .bind(filter.zone_id)
+        .bind(&filter.zone_name)
+        .bind(&filter.zone_name)
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(&filter.name)

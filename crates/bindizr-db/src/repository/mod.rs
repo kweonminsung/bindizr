@@ -64,9 +64,10 @@ pub struct ZoneFilter {
 /// Optional criteria for querying records.
 #[derive(Clone, Debug, Default)]
 pub struct RecordFilter {
-    /// The zone's id, resolved by the caller so the filter lands on
-    /// `records.zone_id` and keeps the listing on `idx_records_zone_name`.
-    pub zone_id: Option<i32>,
+    /// Matched through a subquery on `zones.name`, so the filter still lands
+    /// on `records.zone_id` and keeps the listing on `idx_records_zone_name`
+    /// while resolving the name as of the query rather than an earlier read.
+    pub zone_name: Option<String>,
     pub name: Option<String>,
     pub record_type: Option<RecordType>,
     pub value: Option<String>,
@@ -89,8 +90,8 @@ pub struct RecordFilter {
 /// priority have no derived-plane meaning, so the filter has no slot for them.
 #[derive(Clone, Debug, Default)]
 pub struct DnssecRecordFilter {
-    /// The zone's id, resolved from its name by the caller; see `RecordFilter`.
-    pub zone_id: Option<i32>,
+    /// Matched as in `RecordFilter`.
+    pub zone_name: Option<String>,
     pub name: Option<String>,
     /// The wire RR type number, the column form.
     pub record_type: Option<i32>,

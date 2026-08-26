@@ -87,25 +87,17 @@ impl RecordService {
         let limit = filter.limit;
         let offset = filter.offset;
         let signed = filter.signed.unwrap_or(false);
-        // Above the zone lookup: rejecting a bad filter only for zones that
-        // exist would answer whether they do.
-        let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
-        // The filter lands on records.zone_id, so resolve the name here.
         // Scoped callers read unknown and invisible zones alike as empty
-        // pages, so a miss is one for them rather than a 404.
-        let zone_id = match zone_name.as_ref() {
-            Some(name) if scope_token_id.is_none() => {
-                Some(ZoneService::lookup_by_name(name.as_str()).await?.id)
-            }
-            Some(name) => match ZoneService::find_by_name(name.as_str()).await? {
-                Some(zone) => Some(zone.id),
-                None => return Ok(paginated_response(Vec::new(), limit, offset, 0)),
-            },
-            None => None,
-        };
+        // pages, so skip the 404 probe.
+        if let Some(name) = zone_name.as_ref()
+            && scope_token_id.is_none()
+        {
+            ZoneService::lookup_by_name(name.as_str()).await?;
+        }
 
         let name = to_record_name_filter(filter.name, zone_name.as_ref());
+        let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
         let user_plane = derived_type.is_none();
         // Derived rows carry no value, priority, or search text, so those
@@ -118,8 +110,9 @@ impl RecordService {
             && filter.min_priority.is_none()
             && filter.max_priority.is_none();
 
+        let zone_name = zone_name.map(|name| name.to_string());
         let record_filter = RecordFilter {
-            zone_id,
+            zone_name: zone_name.clone(),
             name: name.clone(),
             record_type: user_type,
             value: filter.value,
@@ -135,7 +128,7 @@ impl RecordService {
             offset,
         };
         let derived_filter = DnssecRecordFilter {
-            zone_id,
+            zone_name,
             name,
             record_type: derived_type.map(|record_type| record_type.wire_type() as i32),
             ttl: filter.ttl,
