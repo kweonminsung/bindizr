@@ -37,7 +37,7 @@ impl DnssecAlgorithm {
     }
 
     /// All supported algorithm names, for error messages and CLI help.
-    pub(crate) fn supported_names() -> &'static [&'static str] {
+    pub fn supported_names() -> &'static [&'static str] {
         &["ecdsap256sha256", "ed25519"]
     }
 }

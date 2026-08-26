@@ -195,7 +195,7 @@ impl DnssecService {
 
     /// Promote the published keys named by `promoted` — drawn from this
     /// transaction's key list — and retire the active keys of the same roles.
-    pub(super) async fn promote_published_keys_tx(
+    pub(crate) async fn promote_published_keys_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         keys: Vec<DnssecKey>,

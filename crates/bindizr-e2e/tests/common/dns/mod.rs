@@ -334,7 +334,7 @@ fn decode_dns_value(
             "{} {} \"{}\"",
             caa.flags(),
             caa.tag(),
-            String::from_utf8_lossy(caa.value().as_ref())
+            String::from_utf8_lossy(caa.value())
         )),
         AllRecordData::Soa(_) => return Ok(None),
         _ => return Err(format!("unsupported DNS answer type {record_type}")),

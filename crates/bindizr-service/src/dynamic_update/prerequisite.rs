@@ -14,7 +14,7 @@ use crate::{
     record::RecordService,
 };
 
-pub(super) async fn evaluate_prerequisites_tx(
+pub(crate) async fn evaluate_prerequisites_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     prerequisites: &[Prerequisite],

@@ -45,7 +45,7 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
     }
 
-    pub(super) async fn earliest_expiry_tx(
+    pub(crate) async fn earliest_expiry_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Option<DateTime<Utc>>, ServiceError> {
@@ -55,7 +55,7 @@ impl DnssecService {
     }
 }
 
-pub(super) fn build_status(
+pub(crate) fn build_status(
     zone: &Zone,
     denial: DnssecDenial,
     keys: &[DnssecKey],

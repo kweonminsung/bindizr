@@ -36,7 +36,7 @@ pub(crate) async fn handle_ixfr(
         .map_err(|e| XfrError::DatabaseError(e.to_string()))?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
-    let current_serial = delta::serial_to_u32(zone.serial)?;
+    let current_serial = bindizr_core::dns::serial_to_u32(zone.serial)?;
 
     let client_serial = match query.client_serial {
         Some(s) => s,
@@ -80,7 +80,7 @@ pub(crate) async fn handle_ixfr(
 
     let mut journal_serials: Vec<u32> = changes
         .iter()
-        .map(|c| delta::serial_to_u32(c.serial))
+        .map(|c| bindizr_core::dns::serial_to_u32(c.serial))
         .collect::<Result<_, _>>()?;
     journal_serials.sort_unstable();
     journal_serials.dedup();
@@ -100,7 +100,7 @@ pub(crate) async fn handle_ixfr(
     versions_by_serial.reserve(journal_serials.len() + 1);
 
     for version in delta::list_zone_versions(zone.id, client_serial, current_serial).await? {
-        if let Ok(serial) = delta::serial_to_u32(version.serial) {
+        if let Ok(serial) = bindizr_core::dns::serial_to_u32(version.serial) {
             versions_by_serial.insert(serial, version);
         }
     }
@@ -246,7 +246,7 @@ async fn stream_ixfr_body(
     versions_by_serial: &HashMap<u32, delta::ZoneVersion>,
 ) -> Result<(), XfrError> {
     let current_version = versions_by_serial
-        .get(&delta::serial_to_u32(zone.serial)?)
+        .get(&bindizr_core::dns::serial_to_u32(zone.serial)?)
         .ok_or_else(|| {
             XfrError::ProtocolError("Missing current serial SOA version for IXFR".to_string())
         })?;
@@ -259,7 +259,7 @@ async fn stream_ixfr_body(
 
     let mut changes_by_serial: HashMap<u32, Vec<&delta::ZoneChange>> = HashMap::new();
     for change in changes {
-        let serial = delta::serial_to_u32(change.serial)?;
+        let serial = bindizr_core::dns::serial_to_u32(change.serial)?;
         changes_by_serial.entry(serial).or_default().push(change);
     }
 

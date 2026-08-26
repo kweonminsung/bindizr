@@ -174,7 +174,7 @@ pub(crate) fn validate_delete_constraints(
 }
 
 /// Validate an update whose new owner name is already normalized.
-pub(super) fn validate_record_update_constraints_normalized(
+pub(crate) fn validate_record_update_constraints_normalized(
     zone: &Zone,
     zone_records: &[Record],
     existing_record: &Record,

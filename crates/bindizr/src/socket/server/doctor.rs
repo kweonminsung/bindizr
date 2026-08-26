@@ -19,7 +19,7 @@ const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The daemon-side installation checks. The catalog zone is the one probed
 /// because it exists before any user zone, so serial comparison always works.
-pub(super) async fn doctor() -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn doctor() -> Result<DaemonResponse, ServiceError> {
     let config = config::bindizr_config();
 
     // Count zones without materializing them; large tables must fit the deadline.

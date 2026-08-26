@@ -49,7 +49,7 @@ pub(crate) enum ZoneTsigPolicyCommand {
     },
 }
 
-pub(super) async fn handle_command(
+pub(crate) async fn handle_command(
     client: &DaemonSocketClient,
     subcommand: ZoneTsigPolicyCommand,
 ) -> Result<(), CliError> {

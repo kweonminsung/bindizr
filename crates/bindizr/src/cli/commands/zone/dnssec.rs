@@ -98,7 +98,7 @@ pub(crate) enum ZoneDnssecRolloverCommand {
     },
 }
 
-pub(super) async fn handle_command(
+pub(crate) async fn handle_command(
     client: &DaemonSocketClient,
     subcommand: ZoneDnssecCommand,
 ) -> Result<(), CliError> {

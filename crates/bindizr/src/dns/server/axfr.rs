@@ -7,7 +7,7 @@ use bindizr_core::{
 use bindizr_service::zone::ZoneService;
 use tokio::net::TcpStream;
 
-use super::{catalog, delta, zone_cache};
+use super::{catalog, zone_cache};
 use crate::dns::error::XfrError;
 
 /// Handles an AXFR payload under `response_qtype`: the IXFR fallback keeps
@@ -52,7 +52,7 @@ pub(crate) async fn handle_axfr(
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
     let mut messages_sent = 0usize;
 
-    let serial = delta::serial_to_u32(zone.serial)?;
+    let serial = bindizr_core::dns::serial_to_u32(zone.serial)?;
     crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,

@@ -15,7 +15,7 @@ use crate::socket::{
 };
 
 /// Handle the `TokenCreate` command by creating a new API token.
-pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: CreateTokenParams = parse_params(data)?;
 
     let created_token = TokenService::create(
@@ -35,7 +35,7 @@ pub(super) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 }
 
 /// Handle the `TokenList` command by returning all API tokens.
-pub(super) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
     let tokens = TokenService::list(&Caller::Global).await?;
     let tokens: Vec<GetTokenResponse> = tokens.iter().map(GetTokenResponse::from_token).collect();
 
@@ -47,7 +47,7 @@ pub(super) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
 }
 
 /// Handle the `TokenDelete` command by deleting an API token by name.
-pub(super) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: TokenNameParams = parse_params(data)?;
 
     TokenService::delete(&Caller::Global, &params.name).await?;
@@ -60,7 +60,7 @@ pub(super) async fn delete_token(data: &serde_json::Value) -> Result<DaemonRespo
 }
 
 /// Handle the `ZoneTokenPolicyAdd` command by granting a token rights in a zone.
-pub(super) async fn add_zone_token_policy(
+pub(crate) async fn add_zone_token_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: AddZoneTokenPolicyParams = parse_params(data)?;
@@ -81,7 +81,7 @@ pub(super) async fn add_zone_token_policy(
 }
 
 /// Handle the `ZoneTokenPolicyList` command by returning a zone's policies.
-pub(super) async fn list_zone_token_policies(
+pub(crate) async fn list_zone_token_policies(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZonePolicyListParams = parse_params(data)?;
@@ -99,7 +99,7 @@ pub(super) async fn list_zone_token_policies(
 }
 
 /// Handle the `ZoneTokenPolicyRemove` command by removing one policy of a zone.
-pub(super) async fn remove_zone_token_policy(
+pub(crate) async fn remove_zone_token_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RemoveZonePolicyParams = parse_params(data)?;

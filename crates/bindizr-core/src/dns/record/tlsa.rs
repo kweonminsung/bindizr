@@ -6,7 +6,7 @@ use super::{
     value::{MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field},
 };
 
-pub(crate) struct TlsaRecordValue {
+pub struct TlsaRecordValue {
     cert_usage: u8,
     selector: u8,
     matching_type: u8,
@@ -16,7 +16,7 @@ pub(crate) struct TlsaRecordValue {
 impl TlsaRecordValue {
     /// The value is `<usage> <selector> <matching type> <certificate data>`;
     /// the hex data may be split into whitespace-separated groups.
-    pub(crate) fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, String> {
         let mut fields = value.split_whitespace();
         let (Some(cert_usage), Some(selector), Some(matching_type)) =
             (fields.next(), fields.next(), fields.next())
@@ -33,7 +33,7 @@ impl TlsaRecordValue {
         })
     }
 
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         // Digest lengths are fixed per matching type; type 0 is a full
         // certificate or SPKI and takes any length.
         let expected = match self.matching_type {
@@ -63,7 +63,7 @@ impl TlsaRecordValue {
         Ok(())
     }
 
-    pub(crate) fn canonical(&self) -> String {
+    pub fn canonical(&self) -> String {
         format!(
             "{} {} {} {}",
             self.cert_usage,
@@ -74,7 +74,7 @@ impl TlsaRecordValue {
     }
 
     /// The wire-format RDATA of a stored value (RFC 6698, Section 2.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = Vec::with_capacity(3 + self.cert_data.len());
         rdata.push(self.cert_usage);
         rdata.push(self.selector);

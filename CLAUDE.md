@@ -318,11 +318,18 @@ tests { … }`, larger ones move to `<module>/tests.rs` declared from `mod.rs`.
 
 ### Visibility records usage
 
-Items and struct fields carry the narrowest visibility that compiles: `pub`
-means another crate touches it today, `pub(crate)` that only its own crate
-does. A struct mixing the two is a measurement, not a design statement — widen
-a field when the compiler asks, and no sooner. This keeps rustc's dead-code
-analysis covering fields (`pub` fields are exempt) and keeps cross-crate struct
+The scheme is three-level and nothing else: private, `pub(crate)`, `pub`.
+`pub` means another crate touches it today, `pub(crate)` that only its own
+crate does, private that only its own module does. **Do not use `pub(super)`
+or `pub(in path)`** — their meaning depends on where the file sits, so it
+reads wrong after a move and has to churn with every reorganization; half the
+uses this codebase once had were at depth-1 modules, where `pub(super)` is
+just an obscure spelling of `pub(crate)`.
+
+Items and struct fields carry the narrowest of the three that compiles. A
+struct mixing them is a measurement, not a design statement — widen a field
+when the compiler asks, and no sooner. This keeps rustc's dead-code analysis
+covering fields (`pub` fields are exempt) and keeps cross-crate struct
 literals impossible.
 
 Deliberate exceptions: `bindizr_service::types` payloads are fully `pub` (their

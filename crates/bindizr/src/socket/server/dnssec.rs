@@ -6,7 +6,7 @@ use crate::socket::{
 };
 
 /// Handle the `ZoneDnssecEnable` command by generating a key and signing the zone.
-pub(super) async fn enable_dnssec(
+pub(crate) async fn enable_dnssec(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: EnableZoneDnssecParams = parse_params(data)?;
@@ -28,7 +28,7 @@ pub(super) async fn enable_dnssec(
 
 /// Handle the `ZoneDnssecDisable` command by deleting the zone's keys and
 /// signatures.
-pub(super) async fn disable_dnssec(
+pub(crate) async fn disable_dnssec(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
@@ -42,7 +42,7 @@ pub(super) async fn disable_dnssec(
 }
 
 /// Handle the `ZoneDnssecStatus` command by returning a zone's signing state.
-pub(super) async fn get_dnssec_status(
+pub(crate) async fn get_dnssec_status(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
@@ -56,7 +56,7 @@ pub(super) async fn get_dnssec_status(
 }
 
 /// Handle the `ZoneDnssecSign` command by re-signing a zone from scratch.
-pub(super) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
     DnssecService::sign(&Caller::Global, &params.name).await?;
@@ -69,7 +69,7 @@ pub(super) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse
 
 /// Handle the `ZoneDnssecRolloverStart` command by pre-publishing a
 /// replacement signing key.
-pub(super) async fn rollover_start(
+pub(crate) async fn rollover_start(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RolloverZoneDnssecParams = parse_params(data)?;
@@ -89,7 +89,7 @@ pub(super) async fn rollover_start(
 
 /// Handle the `ZoneDnssecRolloverDsSeen` command by promoting the
 /// pre-published key(s) and retiring the keys they replace.
-pub(super) async fn rollover_ds_seen(
+pub(crate) async fn rollover_ds_seen(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;

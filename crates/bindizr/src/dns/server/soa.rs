@@ -13,11 +13,7 @@ use bindizr_core::{
 use bindizr_service::zone::ZoneService;
 use tokio::net::{TcpStream, UdpSocket};
 
-use crate::dns::{
-    error::XfrError,
-    server::{catalog, delta},
-    wire,
-};
+use crate::dns::{error::XfrError, server::catalog, wire};
 
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
@@ -65,7 +61,10 @@ async fn build_soa_response(
         let (catalog_zone, _) = catalog::generate_catalog_zone().await?;
 
         let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
-        builder.add_catalog_soa(&catalog_zone, delta::serial_to_u32(catalog_zone.serial)?)?;
+        builder.add_catalog_soa(
+            &catalog_zone,
+            bindizr_core::dns::serial_to_u32(catalog_zone.serial)?,
+        )?;
         return Ok(builder.build());
     }
 
@@ -81,7 +80,7 @@ async fn build_soa_response(
     );
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
-    builder.add_soa(&zone, delta::serial_to_u32(zone.serial)?)?;
+    builder.add_soa(&zone, bindizr_core::dns::serial_to_u32(zone.serial)?)?;
 
     Ok(builder.build())
 }

@@ -10,14 +10,14 @@ const MAX_EMAIL_LOCAL_LEN: usize = 64;
 const MIN_TTL: i32 = 60;
 const MAX_TTL: i32 = 604_800;
 
-pub(super) struct ValidatedCreateZoneRequest {
+pub(crate) struct ValidatedCreateZoneRequest {
     pub(crate) name: ZoneName,
     pub(crate) mname: String,
     pub(crate) rname: String,
     pub(crate) ttl: i32,
 }
 
-pub(super) fn validate_create_zone_request(
+pub(crate) fn validate_create_zone_request(
     request: &CreateZoneRequest,
 ) -> Result<ValidatedCreateZoneRequest, ServiceError> {
     let zone_name = normalize_zone_name(&request.name)?;
@@ -169,7 +169,7 @@ fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
 
 /// Resolved SOA timing fields. Used both as the fallback source (zone defaults on
 /// create, the existing zone's values on update) and as the validated output.
-pub(super) struct ResolvedSoaTimers {
+pub(crate) struct ResolvedSoaTimers {
     pub(crate) refresh: i32,
     pub(crate) retry: i32,
     pub(crate) expire: i32,
@@ -178,7 +178,7 @@ pub(super) struct ResolvedSoaTimers {
 
 /// Validate client-supplied SOA timers, using `fallback` for omitted fields
 /// (zone defaults on create, the existing zone's values on update).
-pub(super) fn resolve_soa_timers(
+pub(crate) fn resolve_soa_timers(
     request: &CreateZoneRequest,
     fallback: ResolvedSoaTimers,
 ) -> Result<ResolvedSoaTimers, ServiceError> {

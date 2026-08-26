@@ -221,7 +221,7 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
 
 /// Deserialize a command payload into its typed parameter struct, so missing
 /// and wrongly typed fields are rejected instead of silently defaulting.
-pub(super) fn parse_params<T: serde::de::DeserializeOwned>(
+pub(crate) fn parse_params<T: serde::de::DeserializeOwned>(
     data: &serde_json::Value,
 ) -> Result<T, ServiceError> {
     serde_json::from_value(data.clone())
@@ -229,7 +229,7 @@ pub(super) fn parse_params<T: serde::de::DeserializeOwned>(
 }
 
 /// Serialize a handler result into the `DaemonResponse` data payload.
-pub(super) fn to_response_data<T: serde::Serialize>(
+pub(crate) fn to_response_data<T: serde::Serialize>(
     value: T,
 ) -> Result<serde_json::Value, ServiceError> {
     serde_json::to_value(value)

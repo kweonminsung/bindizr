@@ -21,7 +21,7 @@ use bindizr_service::{
 };
 
 #[derive(Debug)]
-pub(super) enum UpdateError {
+pub(crate) enum UpdateError {
     Refused(String),
     /// TSIG validation failed. Carries the complete NOTAUTH wire response,
     /// built during validation because it must echo (or sign against) the
@@ -75,7 +75,7 @@ impl From<DynamicUpdateError> for UpdateError {
 /// Apply an UPDATE request, returning whether zone data actually changed. The
 /// returned signer is `Some` once the request's TSIG was validated, so the
 /// response — success or failure — can be signed.
-pub(super) async fn apply_update(
+pub(crate) async fn apply_update(
     request: UpdateRequest,
     query_data: &[u8],
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {

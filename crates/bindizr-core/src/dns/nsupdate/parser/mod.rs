@@ -207,7 +207,7 @@ fn parse_tsig_rr(
 
 /// Renders a parsed name in presentation form, escaping a `.` or `\` inside a
 /// label so the text decodes back to the same labels (RFC 1035, Section 5.1).
-pub fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
+fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
     let mut labels = Vec::new();
 
     for label in name.iter() {

@@ -11,7 +11,6 @@ use chrono::Utc;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
-use super::delta;
 use crate::dns::error::XfrError;
 
 /// Generates the catalog zone and its member zone list.
@@ -102,7 +101,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
     let mut messages_sent = 0usize;
-    let serial = delta::serial_to_u32(catalog_zone.serial)?;
+    let serial = bindizr_core::dns::serial_to_u32(catalog_zone.serial)?;
 
     crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,

@@ -38,11 +38,6 @@ fn parse_type_filter(
 }
 
 impl RecordService {
-    /// List all records in a zone by zone id.
-    pub async fn list(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
-        RepositoryService::list_records(zone_id).await
-    }
-
     /// List all records in a zone by zone id, within the caller's transaction.
     pub(crate) async fn list_tx(
         tx: &mut RepositoryTx<'_>,

@@ -37,8 +37,3 @@ pub(crate) async fn list_zone_versions(
         .await
         .map_err(|e| XfrError::DatabaseError(e.to_string()))
 }
-
-pub(crate) fn serial_to_u32(serial: i32) -> Result<u32, XfrError> {
-    u32::try_from(serial)
-        .map_err(|_| XfrError::ProtocolError(format!("Invalid DNS serial: {}", serial)))
-}

@@ -30,7 +30,7 @@ struct AppliedZoneUpdate {
 
 /// DEL(old)+ADD(new) apex SOA changes for an in-place zone row update, so IXFR
 /// consumers replay the SOA transition.
-pub(super) fn soa_replacement_changes(
+pub(crate) fn soa_replacement_changes(
     old_zone: &Zone,
     new_zone: &Zone,
     new_serial: i32,

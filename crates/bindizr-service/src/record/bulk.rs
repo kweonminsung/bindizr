@@ -44,7 +44,7 @@ struct BulkTimings {
 
 /// A record whose type and value are parsed and ready to insert. The owner name
 /// is kept raw so the constraint validator can normalize it against the zone.
-pub(super) struct PreparedRecord {
+pub(crate) struct PreparedRecord {
     pub(crate) owner_name: String,
     pub(crate) record_type: RecordType,
     pub(crate) value: String,
@@ -53,7 +53,7 @@ pub(super) struct PreparedRecord {
 }
 
 /// Parse the record type and encode the value into its record-row form.
-pub(super) fn prepare_record(
+pub(crate) fn prepare_record(
     name: &str,
     record_type: &str,
     value: &RecordValueRequest,
@@ -74,7 +74,7 @@ pub(super) fn prepare_record(
     })
 }
 
-pub(super) fn zone_journal_for(
+pub(crate) fn zone_journal_for(
     zone_id: i32,
     new_serial: i32,
     operation: ChangeOperation,
