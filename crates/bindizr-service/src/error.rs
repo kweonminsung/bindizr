@@ -199,10 +199,10 @@ impl ServiceError {
         Self::new(ErrorCode::Internal, message)
     }
 
-    pub(crate) fn zone_not_found(name: &str) -> Self {
+    pub(crate) fn zone_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::ZoneNotFound,
-            format!("Zone with name '{}' not found", name),
+            format!("Zone with name '{}' not found", name.into()),
         )
     }
 
@@ -213,40 +213,40 @@ impl ServiceError {
         )
     }
 
-    pub(crate) fn token_not_found(name: &str) -> Self {
+    pub(crate) fn token_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TokenNotFound,
-            format!("API token with name '{}' not found", name),
+            format!("API token with name '{}' not found", name.into()),
         )
     }
 
-    pub(crate) fn token_conflict(name: &str) -> Self {
+    pub(crate) fn token_conflict(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TokenConflict,
-            format!("API token with name '{}' already exists", name),
+            format!("API token with name '{}' already exists", name.into()),
         )
     }
 
-    pub(crate) fn tsig_key_not_found(name: &str) -> Self {
+    pub(crate) fn tsig_key_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TsigKeyNotFound,
-            format!("TSIG key with name '{}' not found", name),
+            format!("TSIG key with name '{}' not found", name.into()),
         )
     }
 
-    pub(crate) fn tsig_key_conflict(name: &str) -> Self {
+    pub(crate) fn tsig_key_conflict(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TsigKeyConflict,
-            format!("TSIG key with name '{}' already exists", name),
+            format!("TSIG key with name '{}' already exists", name.into()),
         )
     }
 
-    pub(crate) fn tsig_key_in_use(name: &str, policy_count: u64) -> Self {
+    pub(crate) fn tsig_key_in_use(name: impl Into<String>, policy_count: u64) -> Self {
         Self::new(
             ErrorCode::TsigKeyInUse,
             format!(
                 "TSIG key '{}' is referenced by {} TSIG polic{}",
-                name,
+                name.into(),
                 policy_count,
                 if policy_count == 1 { "y" } else { "ies" }
             ),
@@ -267,17 +267,17 @@ impl ServiceError {
         )
     }
 
-    pub(crate) fn dnssec_already_enabled(zone_name: &str) -> Self {
+    pub(crate) fn dnssec_already_enabled(zone_name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecAlreadyEnabled,
-            format!("DNSSEC is already enabled for zone '{}'", zone_name),
+            format!("DNSSEC is already enabled for zone '{}'", zone_name.into()),
         )
     }
 
-    pub(crate) fn dnssec_not_enabled(zone_name: &str) -> Self {
+    pub(crate) fn dnssec_not_enabled(zone_name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecNotEnabled,
-            format!("DNSSEC is not enabled for zone '{}'", zone_name),
+            format!("DNSSEC is not enabled for zone '{}'", zone_name.into()),
         )
     }
 
@@ -288,29 +288,33 @@ impl ServiceError {
         )
     }
 
-    pub(crate) fn dnssec_rollover_in_progress(zone_name: &str) -> Self {
+    pub(crate) fn dnssec_rollover_in_progress(zone_name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecRolloverInProgress,
             format!(
                 "a key rollover is already in progress for zone '{}'",
-                zone_name
+                zone_name.into()
             ),
         )
     }
 
-    pub(crate) fn dnssec_no_rollover_in_progress(zone_name: &str) -> Self {
+    pub(crate) fn dnssec_no_rollover_in_progress(zone_name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecNoRolloverInProgress,
-            format!("no key rollover is in progress for zone '{}'", zone_name),
+            format!(
+                "no key rollover is in progress for zone '{}'",
+                zone_name.into()
+            ),
         )
     }
 
-    pub(crate) fn version_not_found(zone_name: &str, serial: i32) -> Self {
+    pub(crate) fn version_not_found(zone_name: impl Into<String>, serial: i32) -> Self {
         Self::new(
             ErrorCode::VersionNotFound,
             format!(
                 "No version with serial '{}' for zone '{}'",
-                serial, zone_name
+                serial,
+                zone_name.into()
             ),
         )
     }
