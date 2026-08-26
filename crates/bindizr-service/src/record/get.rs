@@ -60,6 +60,15 @@ impl RecordService {
         })
     }
 
+    /// Count the records visible to `caller`.
+    pub async fn count(caller: &Caller) -> Result<u64, ServiceError> {
+        RepositoryService::count_records_by_filter(RecordFilter {
+            scope_token_id: caller.scope_token_id(),
+            ..RecordFilter::default()
+        })
+        .await
+    }
+
     /// List records with their zone name matching `filter`, restricted to the
     /// caller's visible zones in SQL so pagination stays database-side. A
     /// filter naming an unknown or invisible zone reads as an empty page.

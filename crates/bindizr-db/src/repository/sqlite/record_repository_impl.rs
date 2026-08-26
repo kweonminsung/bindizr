@@ -230,22 +230,22 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(out)
     }
 
-    async fn list_ds_names_without_ns_tx(
+    async fn get_ds_name_without_ns_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-    ) -> Result<Vec<String>, DatabaseError> {
+    ) -> Result<Option<String>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let names = sqlx::query_scalar::<_, String>(
-            "SELECT DISTINCT name FROM records WHERE zone_id = ? AND record_type = 'DS' AND name NOT IN (SELECT name FROM records WHERE zone_id = ? AND record_type = 'NS')",
+        let name = sqlx::query_scalar::<_, String>(
+            "SELECT d.name FROM records d WHERE d.zone_id = ? AND d.record_type = 'DS' AND NOT EXISTS (SELECT 1 FROM records n WHERE n.zone_id = ? AND n.name = d.name AND n.record_type = 'NS') LIMIT 1",
         )
         .bind(zone_id)
         .bind(zone_id)
-        .fetch_all(&mut **sqlite_tx)
+        .fetch_optional(&mut **sqlite_tx)
         .await?;
 
-        Ok(names)
+        Ok(name)
     }
 
     async fn list_by_names_tx(
@@ -301,7 +301,7 @@ impl RecordRepository for SqliteRecordRepository {
                    r.zone_id, z.name AS zone_name
             FROM records r
             INNER JOIN zones z ON z.id = r.zone_id
-            WHERE (? IS NULL OR LOWER(z.name) = LOWER(?))
+            WHERE (? IS NULL OR r.zone_id = (SELECT id FROM zones WHERE name = ?))
               AND (
                     ? IS NULL
                     OR LOWER(r.name) = LOWER(?)
@@ -393,7 +393,7 @@ impl RecordRepository for SqliteRecordRepository {
             SELECT COUNT(*)
             FROM records r
             INNER JOIN zones z ON z.id = r.zone_id
-            WHERE (? IS NULL OR LOWER(z.name) = LOWER(?))
+            WHERE (? IS NULL OR r.zone_id = (SELECT id FROM zones WHERE name = ?))
               AND (
                     ? IS NULL
                     OR LOWER(r.name) = LOWER(?)

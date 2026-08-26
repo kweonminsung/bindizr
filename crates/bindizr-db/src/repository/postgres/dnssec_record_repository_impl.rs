@@ -161,7 +161,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
             SELECT d.name, d.record_type, d.ttl, d.rdata, d.zone_id, z.name AS zone_name
             FROM dnssec_records d
             INNER JOIN zones z ON z.id = d.zone_id
-            WHERE ($1::TEXT IS NULL OR LOWER(z.name) = LOWER($2))
+            WHERE ($1::TEXT IS NULL OR d.zone_id = (SELECT id FROM zones WHERE name = $2))
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(d.name) = LOWER($4)
@@ -217,7 +217,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
             SELECT COUNT(*)
             FROM dnssec_records d
             INNER JOIN zones z ON z.id = d.zone_id
-            WHERE ($1::TEXT IS NULL OR LOWER(z.name) = LOWER($2))
+            WHERE ($1::TEXT IS NULL OR d.zone_id = (SELECT id FROM zones WHERE name = $2))
               AND (
                     $3::TEXT IS NULL
                     OR LOWER(d.name) = LOWER($4)

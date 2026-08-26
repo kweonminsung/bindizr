@@ -64,6 +64,9 @@ pub struct ZoneFilter {
 /// Optional criteria for querying records.
 #[derive(Clone, Debug, Default)]
 pub struct RecordFilter {
+    /// Matched through a subquery on `zones.name`, so the filter still lands
+    /// on `records.zone_id` and keeps the listing on `idx_records_zone_name`
+    /// while resolving the name as of the query rather than an earlier read.
     pub zone_name: Option<String>,
     pub name: Option<String>,
     pub record_type: Option<RecordType>,
@@ -87,6 +90,7 @@ pub struct RecordFilter {
 /// priority have no derived-plane meaning, so the filter has no slot for them.
 #[derive(Clone, Debug, Default)]
 pub struct DnssecRecordFilter {
+    /// Matched as in `RecordFilter`.
     pub zone_name: Option<String>,
     pub name: Option<String>,
     /// The wire RR type number, the column form.
@@ -362,13 +366,15 @@ pub trait RecordRepository: Send + Sync {
         name: &OwnerName,
         lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
-    /// Owner names holding a DS record but no NS record — delegations a DS
-    /// would orphan. Row-form names, so the apex reads as the empty string.
-    async fn list_ds_names_without_ns_tx(
+    /// One owner name holding a DS record but no NS record — a delegation a DS
+    /// would orphan. Row-form name, so the apex reads as the empty string.
+    /// Every zone mutation runs this, so `record_type` leads the predicate to
+    /// keep it on `idx_records_zone_type`.
+    async fn get_ds_name_without_ns_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-    ) -> Result<Vec<String>, DatabaseError>;
+    ) -> Result<Option<String>, DatabaseError>;
     /// Load records whose owner name is any of `names` (lowercased match). Used
     /// by bulk insert to fetch only the rows that could conflict with the batch.
     async fn list_by_names_tx(
