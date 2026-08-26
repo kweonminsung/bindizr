@@ -34,10 +34,7 @@ use crate::{
         ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff,
         RecordValueRequest,
     },
-    zone::{
-        ZoneService,
-        history::{ReconstructedRecord, build_record_diff},
-    },
+    zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
 
 /// A record the import wants present, with its owner name already normalized so

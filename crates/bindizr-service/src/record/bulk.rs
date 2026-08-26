@@ -24,10 +24,7 @@ use crate::{
     serial::generate_serial,
     timing::{duration_ms, elapsed_ms},
     types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
-    zone::{
-        ZoneService,
-        history::{ReconstructedRecord, build_record_diff},
-    },
+    zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
