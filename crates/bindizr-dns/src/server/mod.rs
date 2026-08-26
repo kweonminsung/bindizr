@@ -1,6 +1,8 @@
 //! Inbound DNS serving: AXFR/IXFR dispatch with ACL gating, SOA responses,
 //! catalog-zone generation, and RFC 2136 nsupdate handling.
 
+use bindizr_core::dns::message;
+
 pub(crate) mod acl;
 pub(crate) mod axfr;
 pub(crate) mod catalog;
@@ -12,8 +14,8 @@ pub(crate) mod zone_cache;
 
 use std::net::{IpAddr, SocketAddr};
 
+use bindizr_core::dns::message::{Rcode, Rtype};
 use catalog::generate_catalog_zone;
-use domain::base::iana::{Rcode, Rtype};
 use tokio::net::TcpStream;
 
 use crate::{error::XfrError, log_info, log_warn, metrics::metrics, wire};
@@ -43,7 +45,7 @@ pub(crate) async fn handle_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
     secondary_acl: &acl::SecondaryAcl,
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
 
@@ -107,7 +109,7 @@ pub(crate) async fn handle_tcp_query(
 pub(crate) async fn handle_udp_query(
     client_addr: SocketAddr,
     secondary_acl: &acl::SecondaryAcl,
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
 

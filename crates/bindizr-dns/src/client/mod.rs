@@ -7,7 +7,6 @@ pub mod probe;
 
 use std::{net::SocketAddr, time::Duration};
 
-use domain::base::{MessageBuilder, Name, Rtype, iana::Opcode};
 use tokio::net::{UdpSocket, lookup_host};
 
 use crate::{
@@ -65,26 +64,6 @@ pub(crate) async fn udp_exchange(
         .map_err(XfrError::IoError)?;
 
     Ok((received, response))
-}
-
-/// Build a single-SOA-question DNS message with a random id, returning
-/// `(query_id, wire bytes)`.
-pub(crate) fn build_question(opcode: Opcode, aa: bool, qname: &Name<Vec<u8>>) -> (u16, Vec<u8>) {
-    let query_id = rand::random::<u16>();
-
-    let mut builder = MessageBuilder::new_vec();
-    let header = builder.header_mut();
-    header.set_id(query_id);
-    header.set_opcode(opcode);
-    header.set_aa(aa);
-
-    let mut question = builder.question();
-    // Composing one question into a Vec cannot fail.
-    question
-        .push((qname, Rtype::SOA))
-        .expect("composing into a Vec cannot run out of space");
-
-    (query_id, question.finish())
 }
 
 /// Resolve the comma-separated `secondary_addrs` config value into per-entry

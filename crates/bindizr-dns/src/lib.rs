@@ -1,6 +1,8 @@
 //! DNS front end: the authoritative TCP/UDP server plus zone transfer
 //! (AXFR/IXFR), NOTIFY, SOA queries, RFC 2136 nsupdate, and secondary ACLs.
 
+use bindizr_core::dns::message;
+
 pub(crate) mod address;
 pub mod client;
 pub(crate) mod error;
@@ -10,9 +12,9 @@ pub(crate) mod wire;
 
 use std::{io::ErrorKind, net::SocketAddr, time::Duration};
 
+use bindizr_core::dns::message::Rtype;
 pub(crate) use bindizr_core::{config, log_error, log_info, log_warn, metrics, model};
 pub(crate) use bindizr_service as service;
-use domain::base::iana::Rtype;
 use server::acl::SecondaryAcl;
 use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
@@ -116,7 +118,7 @@ async fn handle_tcp_query(
         return server::nsupdate::handle_tcp_nsupdate(stream, query_data, client_addr).await;
     }
 
-    let query = match wire::ParsedQuery::parse(query_data) {
+    let query = match message::ParsedQuery::parse(query_data) {
         Ok(query) => query,
         Err(e) => {
             log_warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);
@@ -175,7 +177,7 @@ async fn run_udp_server(
             continue;
         }
 
-        let query = match wire::ParsedQuery::parse(query_data) {
+        let query = match message::ParsedQuery::parse(query_data) {
             Ok(query) => query,
             Err(_) => continue,
         };

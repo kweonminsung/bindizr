@@ -15,12 +15,16 @@ categories.workspace = true
 [dependencies]
 base64.workspace = true
 chrono.workspace = true
-domain = { workspace = true, features = ["zonefile", "unstable-sign", "ring"] }
+domain = { workspace = true, features = ["tsig", "zonefile", "unstable-sign", "ring"] }
 hex.workspace = true
 config.workspace = true
 log.workspace = true
 once_cell.workspace = true
 prometheus.workspace = true
+rand.workspace = true
 serde.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
+
+[dev-dependencies]
+hmac.workspace = true

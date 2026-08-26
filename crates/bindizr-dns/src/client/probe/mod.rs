@@ -3,12 +3,9 @@
 
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use domain::{
-    base::{
-        Message, Name,
-        iana::{Opcode, Rcode},
-    },
-    rdata::Soa,
+use bindizr_core::dns::{
+    message::{Name, Opcode},
+    query::{build_question, extract_soa_serial},
 };
 
 use crate::{config, error::XfrError};
@@ -105,47 +102,13 @@ async fn probe_one(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<u32, String> {
-    let (query_id, query) = super::build_question(Opcode::QUERY, false, qname);
+    let (query_id, query) = build_question(Opcode::QUERY, false, qname);
 
     let (received, response) = super::udp_exchange(server_addr, timeout, &query, "SOA probe")
         .await
         .map_err(|e| e.to_string())?;
 
     extract_soa_serial(query_id, &response[..received])
-}
-
-/// Validates a SOA query response and extracts the serial from the first SOA
-/// record in the answer section.
-fn extract_soa_serial(query_id: u16, response: &[u8]) -> Result<u32, String> {
-    let message =
-        Message::from_octets(response).map_err(|e| format!("malformed response: {}", e))?;
-
-    let header = message.header();
-    if header.id() != query_id {
-        return Err(format!(
-            "response ID mismatch: expected {}, got {}",
-            query_id,
-            header.id()
-        ));
-    }
-    if !header.qr() {
-        return Err("response does not have QR bit set".to_string());
-    }
-    if header.tc() {
-        return Err("truncated response".to_string());
-    }
-    if header.rcode() != Rcode::NOERROR {
-        return Err(format!("RCODE {}", header.rcode().to_int()));
-    }
-
-    let answer = message
-        .answer()
-        .map_err(|e| format!("malformed answer section: {}", e))?;
-    answer
-        .limit_to::<Soa<_>>()
-        .find_map(|record| record.ok())
-        .map(|record| record.data().serial().into_int())
-        .ok_or_else(|| "no SOA record in answer".to_string())
 }
 
 #[cfg(test)]

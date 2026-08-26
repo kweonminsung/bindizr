@@ -1,19 +1,18 @@
 use std::{collections::HashMap, net::IpAddr};
 
 use bindizr_core::{
-    dns::name::ZoneName,
+    dns::{message, message::Rtype, name::ZoneName},
     model::zone_change::{ChangeOperation, JournalRecordType},
 };
-use domain::base::iana::Rtype;
 use tokio::net::TcpStream;
 
 use super::{axfr, catalog, delta};
-use crate::{error::XfrError, log_info, log_warn, service::zone::ZoneService, wire};
+use crate::{error::XfrError, log_info, log_warn, service::zone::ZoneService};
 
 /// Handles an IXFR request.
 pub(crate) async fn handle_ixfr(
     stream: &mut TcpStream,
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
     client_ip: IpAddr,
 ) -> Result<(), XfrError> {
     let zone_name_str = query.zone_name.as_str();
@@ -178,13 +177,13 @@ pub(crate) async fn handle_ixfr(
 /// Sends a single-SOA response when the client is already up-to-date.
 async fn send_up_to_date_response(
     stream: &mut TcpStream,
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
     current_soa: &delta::ZoneVersion,
 ) -> Result<(), XfrError> {
-    let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
+    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
 
     builder.add_version_soa(current_soa)?;
-    builder.flush_if_not_empty(stream).await?;
+    crate::wire::flush_if_not_empty(&mut builder, stream).await?;
 
     Ok(())
 }
@@ -201,13 +200,13 @@ enum IxfrSendError {
 /// left the stream dirty so the caller can decide about AXFR fallback.
 async fn send_ixfr_response(
     stream: &mut TcpStream,
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
     zone: &crate::model::zone::Zone,
     client_serial: u32,
     changes: &[delta::ZoneChange],
     versions_by_serial: &HashMap<u32, delta::ZoneVersion>,
 ) -> Result<(), IxfrSendError> {
-    let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
+    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
     let mut messages_sent = 0usize;
 
     let result = stream_ixfr_body(
@@ -237,7 +236,7 @@ async fn send_ixfr_response(
 /// mid-stream one.
 async fn stream_ixfr_body(
     stream: &mut TcpStream,
-    builder: &mut wire::DnsMessageBuilder,
+    builder: &mut message::DnsMessageBuilder,
     messages_sent: &mut usize,
     zone: &crate::model::zone::Zone,
     client_serial: u32,
@@ -251,11 +250,10 @@ async fn stream_ixfr_body(
         })?;
 
     // Initial SOA (current serial).
-    builder
-        .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
-            builder.add_version_soa(current_version)
-        })
-        .await?;
+    crate::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
+        builder.add_version_soa(current_version)
+    })
+    .await?;
 
     let mut changes_by_serial: HashMap<u32, Vec<&delta::ZoneChange>> = HashMap::new();
     for change in changes {
@@ -279,66 +277,68 @@ async fn stream_ixfr_body(
         let old_soa = versions_by_serial.get(&old_serial).ok_or_else(|| {
             XfrError::ProtocolError(format!("Missing old SOA version for serial {}", old_serial))
         })?;
-        builder
-            .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
-                builder.add_version_soa(old_soa)
-            })
-            .await?;
+        crate::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
+            builder.add_version_soa(old_soa)
+        })
+        .await?;
 
         for change in serial_changes
             .iter()
             .filter(|c| c.operation == ChangeOperation::Del)
         {
-            builder
-                .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
-                    add_change(builder, change, &zone.name)
-                })
-                .await?;
+            crate::wire::add_answer_and_flush_if_needed(
+                builder,
+                stream,
+                messages_sent,
+                |builder| add_change(builder, change, &zone.name),
+            )
+            .await?;
         }
 
         // New SOA (addition section marker).
         let new_soa = versions_by_serial.get(&serial).ok_or_else(|| {
             XfrError::ProtocolError(format!("Missing new SOA version for serial {}", serial))
         })?;
-        builder
-            .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
-                builder.add_version_soa(new_soa)
-            })
-            .await?;
+        crate::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
+            builder.add_version_soa(new_soa)
+        })
+        .await?;
 
         for change in serial_changes
             .iter()
             .filter(|c| c.operation == ChangeOperation::Add)
         {
-            builder
-                .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
-                    add_change(builder, change, &zone.name)
-                })
-                .await?;
+            crate::wire::add_answer_and_flush_if_needed(
+                builder,
+                stream,
+                messages_sent,
+                |builder| add_change(builder, change, &zone.name),
+            )
+            .await?;
         }
     }
 
     // Final SOA (current serial).
-    builder
-        .add_answer_and_flush_if_needed(stream, messages_sent, |builder| {
-            builder.add_version_soa(current_version)
-        })
-        .await?;
-    *messages_sent += builder.flush_if_not_empty(stream).await?;
+    crate::wire::add_answer_and_flush_if_needed(builder, stream, messages_sent, |builder| {
+        builder.add_version_soa(current_version)
+    })
+    .await?;
+    *messages_sent += crate::wire::flush_if_not_empty(builder, stream).await?;
 
     Ok(())
 }
 
 fn add_change(
-    builder: &mut wire::DnsMessageBuilder,
+    builder: &mut message::DnsMessageBuilder,
     change: &delta::ZoneChange,
     zone_name: &ZoneName,
-) -> Result<(), XfrError> {
+) -> Result<(), String> {
     match &change.record_type {
         JournalRecordType::Derived(record_type) => {
-            let rdata = change.record_rdata.clone().ok_or_else(|| {
-                XfrError::ProtocolError("derived change carries no wire rdata".to_string())
-            })?;
+            let rdata = change
+                .record_rdata
+                .clone()
+                .ok_or_else(|| "derived change carries no wire rdata".to_string())?;
             builder.add_raw_rdata(
                 change.record_name.to_wire(zone_name),
                 record_type.wire_type(),
@@ -347,9 +347,10 @@ fn add_change(
             )
         }
         JournalRecordType::User(record_type) => {
-            let value = change.record_value.as_deref().ok_or_else(|| {
-                XfrError::ProtocolError("user change carries no record value".to_string())
-            })?;
+            let value = change
+                .record_value
+                .as_deref()
+                .ok_or_else(|| "user change carries no record value".to_string())?;
             builder.add_record_parts(
                 zone_name,
                 &change.record_name,

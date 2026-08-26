@@ -7,7 +7,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Sha256, Sha384, Sha512};
 
 use super::*;
-use crate::server::nsupdate::parser::tests::minimal_update_with_ztype;
+use crate::dns::nsupdate::parser::tests::minimal_update_with_ztype;
 
 pub(crate) const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
@@ -116,9 +116,9 @@ fn response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Vec<u8>) {
     )
 }
 
-fn failed_response(err: UpdateError) -> Vec<u8> {
+fn failed_response(err: TsigError) -> Vec<u8> {
     match err {
-        UpdateError::TsigFailed { response, .. } => response,
+        TsigError::Failed { response, .. } => response,
         other => panic!("expected TsigFailed, got {:?}", other),
     }
 }

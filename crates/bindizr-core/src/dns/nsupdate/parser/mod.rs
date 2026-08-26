@@ -1,6 +1,5 @@
 use std::fmt;
 
-use bindizr_core::dns::name::join_labels;
 use domain::{
     base::{
         Message,
@@ -8,31 +7,36 @@ use domain::{
         name::ParsedName,
     },
     dep::octseq::parse::Parser,
-    rdata::tsig::Tsig,
+    rdata::{A, Aaaa, Mx, Srv, Txt, tsig::Tsig},
+};
+
+use crate::{
+    dns::{name::join_labels, record::TxtRecordValue},
+    model::record::RecordType,
 };
 
 /// Fixed length of a DNS message header, in bytes.
 const DNS_HEADER_LEN: usize = 12;
 
 #[derive(Debug, Clone)]
-pub(super) struct UpdateRequest {
-    pub(crate) zone_name: String,
-    pub(crate) prerequisites: Vec<UpdateRecord>,
-    pub(crate) updates: Vec<UpdateRecord>,
-    pub(crate) tsig: Option<TsigRecord>,
+pub struct UpdateRequest {
+    pub zone_name: String,
+    pub prerequisites: Vec<UpdateRecord>,
+    pub updates: Vec<UpdateRecord>,
+    pub tsig: Option<TsigRecord>,
 }
 
 /// One RR from the prerequisite or update section. `rdata_start` locates the
 /// rdata in the original message so compressed names inside it can be decoded
 /// lazily by the update flow.
 #[derive(Debug, Clone)]
-pub(super) struct UpdateRecord {
-    pub(crate) name: String,
-    pub(crate) rr_type: Rtype,
-    pub(crate) class: Class,
-    pub(crate) ttl: u32,
-    pub(crate) rdata: Vec<u8>,
-    pub(crate) rdata_start: usize,
+pub struct UpdateRecord {
+    pub name: String,
+    pub rr_type: Rtype,
+    pub class: Class,
+    pub ttl: u32,
+    pub rdata: Vec<u8>,
+    pub rdata_start: usize,
 }
 
 /// The request's TSIG record, reduced to what the update flow needs: the key
@@ -41,13 +45,13 @@ pub(super) struct UpdateRecord {
 /// rejects structurally invalid TSIG RRs with FORMERR (RFC 8945, Section 5.2) before
 /// that happens.
 #[derive(Debug, Clone)]
-pub(super) struct TsigRecord {
-    pub(crate) name: String,
-    pub(crate) fudge: u16,
+pub struct TsigRecord {
+    pub name: String,
+    pub fudge: u16,
 }
 
 #[derive(Debug)]
-pub(super) enum ParseError {
+pub enum ParseError {
     TooShort,
     InvalidOpcode,
     InvalidHeader,
@@ -71,7 +75,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-pub(super) fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
+pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
     let message = Message::from_octets(data).map_err(|_| ParseError::TooShort)?;
 
     if message.header().opcode() != Opcode::UPDATE {
@@ -203,7 +207,7 @@ fn parse_tsig_rr(
 
 /// Renders a parsed name in presentation form, escaping a `.` or `\` inside a
 /// label so the text decodes back to the same labels (RFC 1035, Section 5.1).
-pub(super) fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
+pub fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> {
     let mut labels = Vec::new();
 
     for label in name.iter() {
@@ -222,5 +226,124 @@ pub(super) fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, P
     Ok(format!("{}.", join_labels(&labels)))
 }
 
+pub fn parse_rdata<'a, T>(
+    message: &'a [u8],
+    update: &UpdateRecord,
+    what: &str,
+    parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
+) -> Result<T, String> {
+    let refused = || format!("invalid {} rdata", what);
+
+    let mut parser = Parser::from_ref(message);
+    parser.advance(update.rdata_start).map_err(|_| refused())?;
+    let value = parse(&mut parser).ok_or_else(refused)?;
+
+    if parser.pos() != update.rdata_start + update.rdata.len() {
+        return Err(refused());
+    }
+
+    Ok(value)
+}
+
+/// One UPDATE RR decoded into the record columns the service stores.
+pub fn rr_to_record_value(
+    update: &UpdateRecord,
+    message: &[u8],
+) -> Result<(RecordType, String, Option<i32>), String> {
+    match rr_type_to_record_type(update.rr_type)? {
+        RecordType::A => {
+            let data = parse_rdata(message, update, "A", |parser| A::parse(parser).ok())?;
+            Ok((RecordType::A, data.addr().to_string(), None))
+        }
+        RecordType::AAAA => {
+            let data = parse_rdata(message, update, "AAAA", |parser| Aaaa::parse(parser).ok())?;
+            Ok((RecordType::AAAA, data.addr().to_string(), None))
+        }
+        record_type @ (RecordType::CNAME | RecordType::NS | RecordType::PTR) => {
+            let name = parse_rdata(message, update, record_type.as_str(), |parser| {
+                ParsedName::parse(parser).ok()
+            })?;
+            let value = to_presentation_name(&name)
+                .map_err(|e| format!("invalid {} rdata: {}", record_type.as_str(), e))?;
+            Ok((record_type, value, None))
+        }
+        RecordType::TXT => {
+            let data = Txt::from_octets(update.rdata.as_slice())
+                .map_err(|e| format!("invalid TXT rdata: {}", e))?;
+            // TXT values must be valid UTF-8 (a project-wide rule), so reject
+            // non-UTF-8 character-strings even though the wire allows them.
+            for charstr in data.iter_charstrs() {
+                if std::str::from_utf8(charstr.as_slice()).is_err() {
+                    return Err("invalid TXT rdata".to_string());
+                }
+            }
+            let value = TxtRecordValue::from_rdata(&update.rdata)
+                .map_err(|e| format!("invalid TXT rdata: {}", e))?
+                .to_presentation();
+            Ok((RecordType::TXT, value, None))
+        }
+        RecordType::CAA => {
+            let data = parse_rdata(message, update, "CAA", |parser| {
+                domain::rdata::Caa::parse(parser).ok()
+            })?;
+            Ok((RecordType::CAA, data.to_string(), None))
+        }
+        RecordType::DS => {
+            let data = parse_rdata(message, update, "DS", |parser| {
+                domain::rdata::Ds::parse(parser).ok()
+            })?;
+            Ok((RecordType::DS, data.to_string(), None))
+        }
+        RecordType::SSHFP => {
+            let data = parse_rdata(message, update, "SSHFP", |parser| {
+                domain::rdata::Sshfp::parse(parser).ok()
+            })?;
+            Ok((RecordType::SSHFP, data.to_string(), None))
+        }
+        RecordType::TLSA => {
+            let data = parse_rdata(message, update, "TLSA", |parser| {
+                domain::rdata::Tlsa::parse(parser).ok()
+            })?;
+            Ok((RecordType::TLSA, data.to_string(), None))
+        }
+        RecordType::MX => {
+            let data = parse_rdata(message, update, "MX", |parser| Mx::parse(parser).ok())?;
+            let host = to_presentation_name(data.exchange())
+                .map_err(|e| format!("invalid MX rdata: {}", e))?;
+            Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
+        }
+        RecordType::SRV => {
+            let data = parse_rdata(message, update, "SRV", |parser| Srv::parse(parser).ok())?;
+            let target = to_presentation_name(data.target())
+                .map_err(|e| format!("invalid SRV rdata: {}", e))?;
+            // Priority lives in its own column, so the value holds the rest.
+            Ok((
+                RecordType::SRV,
+                format!("{} {} {}", data.weight(), data.port(), target),
+                Some(i32::from(data.priority())),
+            ))
+        }
+    }
+}
+
+/// Record types updatable via nsupdate. SOA is excluded because it is managed
+/// through the zone's own fields.
+pub fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, String> {
+    match rr_type {
+        Rtype::A => Ok(RecordType::A),
+        Rtype::NS => Ok(RecordType::NS),
+        Rtype::CNAME => Ok(RecordType::CNAME),
+        Rtype::PTR => Ok(RecordType::PTR),
+        Rtype::CAA => Ok(RecordType::CAA),
+        Rtype::DS => Ok(RecordType::DS),
+        Rtype::SSHFP => Ok(RecordType::SSHFP),
+        Rtype::TLSA => Ok(RecordType::TLSA),
+        Rtype::MX => Ok(RecordType::MX),
+        Rtype::TXT => Ok(RecordType::TXT),
+        Rtype::AAAA => Ok(RecordType::AAAA),
+        Rtype::SRV => Ok(RecordType::SRV),
+        _ => Err(format!("unsupported rr type: {}", rr_type)),
+    }
+}
 #[cfg(test)]
-pub(crate) mod tests;
+pub mod tests;

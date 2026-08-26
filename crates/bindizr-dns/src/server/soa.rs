@@ -3,7 +3,10 @@
 
 use std::net::{IpAddr, SocketAddr};
 
-use domain::base::iana::{Rcode, Rtype};
+use bindizr_core::dns::{
+    message,
+    message::{Rcode, Rtype},
+};
 use tokio::net::{TcpStream, UdpSocket};
 
 use crate::{
@@ -17,7 +20,7 @@ use crate::{
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
     let response = soa_response_bytes(query, client_addr.ip()).await?;
     wire::write_tcp_message(stream, &response).await?;
@@ -27,7 +30,7 @@ pub(crate) async fn handle_tcp_soa(
 pub(crate) async fn handle_udp_soa(
     socket: &UdpSocket,
     client_addr: SocketAddr,
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
     let response = soa_response_bytes(query, client_addr.ip()).await?;
     socket.send_to(&response, client_addr).await?;
@@ -37,7 +40,7 @@ pub(crate) async fn handle_udp_soa(
 /// Build the SOA response bytes, mapping an unknown zone to a NOTAUTH response
 /// (TCP and UDP send identical bytes).
 async fn soa_response_bytes(
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
     client_ip: IpAddr,
 ) -> Result<Vec<u8>, XfrError> {
     match build_soa_response(query, client_ip).await {
@@ -48,7 +51,7 @@ async fn soa_response_bytes(
 }
 
 async fn build_soa_response(
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
     client_ip: IpAddr,
 ) -> Result<Vec<u8>, XfrError> {
     let zone_name_str = query.zone_name.as_str();
@@ -59,7 +62,7 @@ async fn build_soa_response(
         log_info!("SOA query for catalog zone: {}", catalog::CATALOG_ZONE_NAME);
         let (catalog_zone, _) = catalog::generate_catalog_zone().await?;
 
-        let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
+        let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
         builder.add_catalog_soa(&catalog_zone, delta::serial_to_u32(catalog_zone.serial)?)?;
         return Ok(builder.build());
     }
@@ -75,7 +78,7 @@ async fn build_soa_response(
         zone.serial
     );
 
-    let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
+    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
     builder.add_soa(&zone, delta::serial_to_u32(zone.serial)?)?;
 
     Ok(builder.build())

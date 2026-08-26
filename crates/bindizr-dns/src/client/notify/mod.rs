@@ -1,8 +1,8 @@
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use domain::base::{
-    Message, Name,
-    iana::{Opcode, Rcode},
+use bindizr_core::dns::{
+    message::{Name, Opcode},
+    query::validate_notify_response,
 };
 
 use crate::{
@@ -187,7 +187,8 @@ async fn send_notify_to_server_once(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<(), XfrError> {
-    let (query_id, notify_message) = super::build_question(Opcode::NOTIFY, true, qname);
+    let (query_id, notify_message) =
+        bindizr_core::dns::query::build_question(Opcode::NOTIFY, true, qname);
 
     let (received, response) =
         super::udp_exchange(server_addr, timeout, &notify_message, "NOTIFY").await?;
@@ -199,43 +200,6 @@ async fn send_notify_to_server_once(
     );
 
     validate_notify_response(query_id, &response[..received])?;
-
-    Ok(())
-}
-
-fn validate_notify_response(query_id: u16, response: &[u8]) -> Result<(), XfrError> {
-    let message = Message::from_octets(response)
-        .map_err(|e| XfrError::ProtocolError(format!("NOTIFY response is malformed: {}", e)))?;
-
-    let header = message.header();
-    if header.id() != query_id {
-        return Err(XfrError::ProtocolError(format!(
-            "NOTIFY response ID mismatch: expected {}, got {}",
-            query_id,
-            header.id()
-        )));
-    }
-
-    if !header.qr() {
-        return Err(XfrError::ProtocolError(
-            "NOTIFY response does not have QR bit set".to_string(),
-        ));
-    }
-
-    if header.opcode() != Opcode::NOTIFY {
-        return Err(XfrError::ProtocolError(format!(
-            "NOTIFY response opcode mismatch: expected {}, got {}",
-            Opcode::NOTIFY.to_int(),
-            header.opcode().to_int()
-        )));
-    }
-
-    if header.rcode() != Rcode::NOERROR {
-        return Err(XfrError::ProtocolError(format!(
-            "NOTIFY response returned RCODE {}",
-            header.rcode().to_int()
-        )));
-    }
 
     Ok(())
 }

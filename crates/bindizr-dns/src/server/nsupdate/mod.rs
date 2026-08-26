@@ -1,30 +1,18 @@
 //! RFC 2136 dynamic DNS update (nsupdate) handling, including TSIG-authenticated
 //! requests.
 
-mod auth;
-mod parser;
 mod update;
 
 use std::net::SocketAddr;
 
-use domain::{
-    base::{
-        Message, MessageBuilder,
-        iana::{Opcode, Rcode},
-    },
-    rdata::tsig::Time48,
+pub(crate) use bindizr_core::dns::nsupdate::is_nsupdate;
+use bindizr_core::dns::{
+    message::Rcode,
+    nsupdate::{DEFAULT_FUDGE, build_response},
 };
 use tokio::net::{TcpStream, UdpSocket};
 
 use crate::{log_info, log_warn, metrics::metrics};
-
-/// Response-TSIG fudge for requests whose own fudge is unavailable
-/// (RFC 8945, Section 10 suggested default).
-const DEFAULT_FUDGE: u16 = 300;
-
-pub(crate) fn is_nsupdate(message: &[u8]) -> bool {
-    Message::from_octets(message).is_ok_and(|message| message.header().opcode() == Opcode::UPDATE)
-}
 
 pub(crate) async fn handle_tcp_nsupdate(
     stream: &mut TcpStream,
@@ -68,7 +56,7 @@ pub(crate) async fn handle_udp_nsupdate(
 /// Process an UPDATE request and return the complete wire response, or `None`
 /// for a message too malformed to answer.
 async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> Option<Vec<u8>> {
-    let parsed = match parser::parse_update_request(query_data) {
+    let parsed = match bindizr_core::dns::nsupdate::parser::parse_update_request(query_data) {
         Ok(req) => req,
         Err(e) => {
             log_warn!("NSUPDATE parse error from {}: {}", client_addr, e);
@@ -156,28 +144,3 @@ fn rcode_label(rcode: Rcode) -> &'static str {
         _ => "other",
     }
 }
-
-/// Build the response: request ID/opcode/question echoed, RCODE set, and a
-/// TSIG appended once the request's TSIG was validated — every response to a
-/// signed request must be signed (RFC 8945, Section 5.3).
-fn build_response(
-    query_data: &[u8],
-    rcode: Rcode,
-    signer: Option<auth::ResponseSigner>,
-    fudge: u16,
-) -> Option<Vec<u8>> {
-    let msg = Message::from_octets(query_data).ok()?;
-    let answer = MessageBuilder::new_vec().start_answer(&msg, rcode).ok()?;
-    let mut additional = answer.additional();
-
-    if let Some(signer) = signer {
-        signer
-            .answer_with_fudge(&mut additional, Time48::now(), fudge)
-            .ok()?;
-    }
-
-    Some(additional.finish())
-}
-
-#[cfg(test)]
-mod tests;

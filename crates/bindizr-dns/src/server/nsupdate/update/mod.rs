@@ -2,22 +2,19 @@
 //! TSIG verification, the wire shapes RFC 2136 fixes for each section, and
 //! rdata parsing. Everything that touches zone data lives in the service.
 
-use bindizr_core::{config, dns::record::TxtRecordValue};
-use domain::{
-    base::{
-        iana::{Class, Rtype},
-        name::ParsedName,
+use bindizr_core::{
+    config,
+    dns::{
+        message::{Class, Rtype},
+        nsupdate::{
+            auth::{ResponseSigner, TsigError},
+            parser::{UpdateRecord, UpdateRequest, rr_to_record_value, rr_type_to_record_type},
+        },
     },
-    dep::octseq::parse::Parser,
-    rdata::{A, Aaaa, Mx, Srv, Txt},
 };
 
-use super::{
-    auth::ResponseSigner,
-    parser::{UpdateRecord, UpdateRequest, to_presentation_name},
-};
 use crate::{
-    model::{record::RecordType, tsig_key::TsigKey},
+    model::tsig_key::TsigKey,
     service::{
         dynamic_update::{
             DynamicUpdate, DynamicUpdateError, DynamicUpdateService, Prerequisite, UpdateOp,
@@ -42,6 +39,26 @@ pub(super) enum UpdateError {
     NxRrset(String),
     NotZone(String),
     Internal(String),
+}
+
+/// Decoding failures from the wire parser are the client's fault.
+impl From<String> for UpdateError {
+    fn from(message: String) -> Self {
+        UpdateError::Refused(message)
+    }
+}
+
+impl From<TsigError> for UpdateError {
+    fn from(err: TsigError) -> Self {
+        match err {
+            TsigError::Malformed(msg) => UpdateError::Refused(msg),
+            TsigError::Internal(msg) => UpdateError::Internal(msg),
+            TsigError::Failed { message, response } => UpdateError::TsigFailed {
+                msg: message,
+                response,
+            },
+        }
+    }
 }
 
 impl From<DynamicUpdateError> for UpdateError {
@@ -124,8 +141,13 @@ async fn authenticate_request(
 
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.
-    let domain_key = key.as_ref().map(super::auth::to_domain_key).transpose()?;
-    *signer = Some(super::auth::validate_tsig(query_data, domain_key)?);
+    let domain_key = key
+        .as_ref()
+        .map(bindizr_core::dns::nsupdate::auth::to_domain_key)
+        .transpose()?;
+    *signer = Some(bindizr_core::dns::nsupdate::auth::validate_tsig(
+        query_data, domain_key,
+    )?);
 
     Ok(key)
 }
@@ -279,131 +301,6 @@ fn validate_delete_shape(update: &UpdateRecord, is_rrset_delete: bool) -> Result
     }
 
     Ok(())
-}
-
-/// Parses one rdata field in place inside the full message — so names may
-/// chase compression pointers — and requires the parse to consume it exactly.
-fn parse_rdata<'a, T>(
-    message: &'a [u8],
-    update: &UpdateRecord,
-    what: &str,
-    parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
-) -> Result<T, UpdateError> {
-    let refused = || UpdateError::Refused(format!("invalid {} rdata", what));
-
-    let mut parser = Parser::from_ref(message);
-    parser.advance(update.rdata_start).map_err(|_| refused())?;
-    let value = parse(&mut parser).ok_or_else(refused)?;
-
-    if parser.pos() != update.rdata_start + update.rdata.len() {
-        return Err(refused());
-    }
-
-    Ok(value)
-}
-
-fn rr_to_record_value(
-    update: &UpdateRecord,
-    message: &[u8],
-) -> Result<(RecordType, String, Option<i32>), UpdateError> {
-    match rr_type_to_record_type(update.rr_type)? {
-        RecordType::A => {
-            let data = parse_rdata(message, update, "A", |parser| A::parse(parser).ok())?;
-            Ok((RecordType::A, data.addr().to_string(), None))
-        }
-        RecordType::AAAA => {
-            let data = parse_rdata(message, update, "AAAA", |parser| Aaaa::parse(parser).ok())?;
-            Ok((RecordType::AAAA, data.addr().to_string(), None))
-        }
-        record_type @ (RecordType::CNAME | RecordType::NS | RecordType::PTR) => {
-            let name = parse_rdata(message, update, record_type.as_str(), |parser| {
-                ParsedName::parse(parser).ok()
-            })?;
-            let value = to_presentation_name(&name).map_err(|e| {
-                UpdateError::Refused(format!("invalid {} rdata: {}", record_type.as_str(), e))
-            })?;
-            Ok((record_type, value, None))
-        }
-        RecordType::TXT => {
-            let data = Txt::from_octets(update.rdata.as_slice())
-                .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?;
-            // TXT values must be valid UTF-8 (a project-wide rule), so reject
-            // non-UTF-8 character-strings even though the wire allows them.
-            for charstr in data.iter_charstrs() {
-                if std::str::from_utf8(charstr.as_slice()).is_err() {
-                    return Err(UpdateError::Refused("invalid TXT rdata".to_string()));
-                }
-            }
-            let value = TxtRecordValue::from_rdata(&update.rdata)
-                .map_err(|e| UpdateError::Refused(format!("invalid TXT rdata: {}", e)))?
-                .to_presentation();
-            Ok((RecordType::TXT, value, None))
-        }
-        RecordType::CAA => {
-            let data = parse_rdata(message, update, "CAA", |parser| {
-                domain::rdata::Caa::parse(parser).ok()
-            })?;
-            Ok((RecordType::CAA, data.to_string(), None))
-        }
-        RecordType::DS => {
-            let data = parse_rdata(message, update, "DS", |parser| {
-                domain::rdata::Ds::parse(parser).ok()
-            })?;
-            Ok((RecordType::DS, data.to_string(), None))
-        }
-        RecordType::SSHFP => {
-            let data = parse_rdata(message, update, "SSHFP", |parser| {
-                domain::rdata::Sshfp::parse(parser).ok()
-            })?;
-            Ok((RecordType::SSHFP, data.to_string(), None))
-        }
-        RecordType::TLSA => {
-            let data = parse_rdata(message, update, "TLSA", |parser| {
-                domain::rdata::Tlsa::parse(parser).ok()
-            })?;
-            Ok((RecordType::TLSA, data.to_string(), None))
-        }
-        RecordType::MX => {
-            let data = parse_rdata(message, update, "MX", |parser| Mx::parse(parser).ok())?;
-            let host = to_presentation_name(data.exchange())
-                .map_err(|e| UpdateError::Refused(format!("invalid MX rdata: {}", e)))?;
-            Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
-        }
-        RecordType::SRV => {
-            let data = parse_rdata(message, update, "SRV", |parser| Srv::parse(parser).ok())?;
-            let target = to_presentation_name(data.target())
-                .map_err(|e| UpdateError::Refused(format!("invalid SRV rdata: {}", e)))?;
-            // Priority lives in its own column, so the value holds the rest.
-            Ok((
-                RecordType::SRV,
-                format!("{} {} {}", data.weight(), data.port(), target),
-                Some(i32::from(data.priority())),
-            ))
-        }
-    }
-}
-
-/// Record types updatable via nsupdate. SOA is excluded because it is managed
-/// through the zone's own fields.
-fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, UpdateError> {
-    match rr_type {
-        Rtype::A => Ok(RecordType::A),
-        Rtype::NS => Ok(RecordType::NS),
-        Rtype::CNAME => Ok(RecordType::CNAME),
-        Rtype::PTR => Ok(RecordType::PTR),
-        Rtype::CAA => Ok(RecordType::CAA),
-        Rtype::DS => Ok(RecordType::DS),
-        Rtype::SSHFP => Ok(RecordType::SSHFP),
-        Rtype::TLSA => Ok(RecordType::TLSA),
-        Rtype::MX => Ok(RecordType::MX),
-        Rtype::TXT => Ok(RecordType::TXT),
-        Rtype::AAAA => Ok(RecordType::AAAA),
-        Rtype::SRV => Ok(RecordType::SRV),
-        _ => Err(UpdateError::Refused(format!(
-            "unsupported rr type: {}",
-            rr_type
-        ))),
-    }
 }
 
 #[cfg(test)]

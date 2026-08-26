@@ -24,3 +24,10 @@ pub enum XfrError {
     #[error("Access denied: {0}")]
     AccessDenied(String),
 }
+
+/// Protocol failures reported by the wire codec in `bindizr-core`.
+impl From<String> for XfrError {
+    fn from(message: String) -> Self {
+        XfrError::ProtocolError(message)
+    }
+}

@@ -1,16 +1,16 @@
 use std::net::IpAddr;
 
-use domain::base::iana::Rtype;
+use bindizr_core::dns::{message, message::Rtype};
 use tokio::net::TcpStream;
 
 use super::{catalog, delta, zone_cache};
-use crate::{error::XfrError, log_info, service::zone::ZoneService, wire};
+use crate::{error::XfrError, log_info, service::zone::ZoneService};
 
 /// Handles an AXFR payload under `response_qtype`: the IXFR fallback keeps
 /// QTYPE=IXFR to match the original query.
 pub(crate) async fn handle_axfr(
     stream: &mut TcpStream,
-    query: &wire::ParsedQuery,
+    query: &message::ParsedQuery,
     client_ip: IpAddr,
     response_qtype: Rtype,
 ) -> Result<(), XfrError> {
@@ -45,39 +45,47 @@ pub(crate) async fn handle_axfr(
         zone.serial
     );
 
-    let mut builder = wire::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
+    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
     let mut messages_sent = 0usize;
 
     let serial = delta::serial_to_u32(zone.serial)?;
-    builder
-        .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
-            builder.add_soa(&zone, serial)
-        })
-        .await?;
+    crate::wire::add_answer_and_flush_if_needed(
+        &mut builder,
+        stream,
+        &mut messages_sent,
+        |builder| builder.add_soa(&zone, serial),
+    )
+    .await?;
 
     for record in content.records.iter() {
-        builder
-            .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
-                builder.add_record(record, &zone.name)
-            })
-            .await?;
+        crate::wire::add_answer_and_flush_if_needed(
+            &mut builder,
+            stream,
+            &mut messages_sent,
+            |builder| builder.add_record(record, &zone.name),
+        )
+        .await?;
     }
 
     for record in content.dnssec_records.iter() {
-        builder
-            .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
-                builder.add_dnssec_record(record, &zone.name)
-            })
-            .await?;
+        crate::wire::add_answer_and_flush_if_needed(
+            &mut builder,
+            stream,
+            &mut messages_sent,
+            |builder| builder.add_dnssec_record(record, &zone.name),
+        )
+        .await?;
     }
 
     // Final SOA closes the transfer.
-    builder
-        .add_answer_and_flush_if_needed(stream, &mut messages_sent, |builder| {
-            builder.add_soa(&zone, serial)
-        })
-        .await?;
-    messages_sent += builder.flush_if_not_empty(stream).await?;
+    crate::wire::add_answer_and_flush_if_needed(
+        &mut builder,
+        stream,
+        &mut messages_sent,
+        |builder| builder.add_soa(&zone, serial),
+    )
+    .await?;
+    messages_sent += crate::wire::flush_if_not_empty(&mut builder, stream).await?;
 
     log_info!(
         "AXFR completed for zone {}: sent {} records + 2 SOA records in {} DNS message(s)",

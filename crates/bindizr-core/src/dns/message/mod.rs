@@ -1,23 +1,24 @@
 //! DNS wire-format encoding for zone-transfer responses: message framing and
 //! record/SOA serialization.
 
-use bindizr_core::dns::{
-    DNS_TCP_MAX_SIZE,
-    name::{OwnerName, ParseNameError, ZoneName, encode_name, to_fqdn},
-    record::{EncodedRdata, Rdata, SoaRecordValue, TxtRecordValue},
+pub use domain::base::{
+    Name,
+    iana::{Class, Opcode, Rcode, Rtype},
 };
 use domain::{
     base::{
-        Message, MessageBuilder, Name, ToName, Ttl, UnknownRecordData,
-        iana::{Class, Rcode, Rtype},
-        rdata::ComposeRecordData,
+        Message, MessageBuilder, ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData,
         record::ComposeRecord,
     },
     rdata::Soa,
 };
 
 use crate::{
-    error::XfrError,
+    dns::{
+        DNS_TCP_MAX_SIZE,
+        name::{OwnerName, ParseNameError, ZoneName, encode_name, to_fqdn},
+        record::{EncodedRdata, Rdata, SoaRecordValue, TxtRecordValue},
+    },
     model::{
         dnssec_record::DnssecRecord,
         record::{Record, RecordType},
@@ -25,32 +26,47 @@ use crate::{
     },
 };
 
+/// A size failure that may still carry a frame: the caller must send it so
+/// its message count reflects what reached the client before the failure.
+pub struct Overflow {
+    /// The answers buffered before the oversized one, if there were any.
+    pub frame: Option<Vec<u8>>,
+    pub message: String,
+}
+
+impl Overflow {
+    fn without_frame(message: String) -> Self {
+        Overflow {
+            frame: None,
+            message,
+        }
+    }
+}
+
 /// RR TYPE number of SOA (RFC 1035); SOA never appears as a stored record
 /// row, so `RecordType` does not spell it.
 const SOA_WIRE_TYPE: u16 = 6;
 
 /// What [`DnsMessageBuilder::add_raw_rdata`] accepts as its owner: a parsed
 /// name, or a typed name's wire bytes still carrying their encoding error.
-pub(crate) trait IntoOwner {
-    fn into_owner(self) -> Result<Name<Vec<u8>>, XfrError>;
+pub trait IntoOwner {
+    fn into_owner(self) -> Result<Name<Vec<u8>>, String>;
 }
 
 impl IntoOwner for Name<Vec<u8>> {
-    fn into_owner(self) -> Result<Name<Vec<u8>>, XfrError> {
+    fn into_owner(self) -> Result<Name<Vec<u8>>, String> {
         Ok(self)
     }
 }
 
 impl IntoOwner for Result<Vec<u8>, ParseNameError> {
-    fn into_owner(self) -> Result<Name<Vec<u8>>, XfrError> {
-        let wire =
-            self.map_err(|e| XfrError::ProtocolError(format!("invalid owner name: {}", e)))?;
-        Name::from_octets(wire)
-            .map_err(|e| XfrError::ProtocolError(format!("invalid owner name: {}", e)))
+    fn into_owner(self) -> Result<Name<Vec<u8>>, String> {
+        let wire = self.map_err(|e| format!("invalid owner name: {}", e))?;
+        Name::from_octets(wire).map_err(|e| format!("invalid owner name: {}", e))
     }
 }
 
-pub(crate) struct DnsMessageBuilder {
+pub struct DnsMessageBuilder {
     query_id: u16,
     qname: Name<Vec<u8>>,
     qtype: u16,
@@ -60,7 +76,7 @@ pub(crate) struct DnsMessageBuilder {
 }
 
 impl DnsMessageBuilder {
-    pub(crate) fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
+    pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
         Self {
             query_id,
             qname: qname.clone(),
@@ -70,8 +86,8 @@ impl DnsMessageBuilder {
         }
     }
 
-    pub(crate) fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
-        let rdata = zone.soa_rdata(serial).map_err(XfrError::ProtocolError)?;
+    pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), String> {
+        let rdata = zone.soa_rdata(serial)?;
         self.add_raw_rdata(
             zone.name.to_wire(),
             SOA_WIRE_TYPE,
@@ -81,7 +97,7 @@ impl DnsMessageBuilder {
     }
 
     /// Adds a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
-    pub(crate) fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), XfrError> {
+    pub fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), String> {
         let rdata = SoaRecordValue {
             mname: "invalid",
             rname: "invalid",
@@ -91,8 +107,7 @@ impl DnsMessageBuilder {
             expire: zone.expire as u32,
             minimum: zone.minimum_ttl as u32,
         }
-        .to_rdata()
-        .map_err(XfrError::ProtocolError)?;
+        .to_rdata()?;
         self.add_raw_rdata(
             zone.name.to_wire(),
             SOA_WIRE_TYPE,
@@ -102,11 +117,11 @@ impl DnsMessageBuilder {
     }
 
     /// Adds an SOA from a serial-specific version.
-    pub(crate) fn add_version_soa(
+    pub fn add_version_soa(
         &mut self,
-        soa: &crate::server::delta::ZoneVersion,
-    ) -> Result<(), XfrError> {
-        let serial = crate::server::delta::serial_to_u32(soa.serial)?;
+        soa: &crate::model::zone_version::ZoneVersion,
+    ) -> Result<(), String> {
+        let serial = crate::dns::serial_to_u32(soa.serial)?;
         let rdata = SoaRecordValue {
             mname: &soa.mname,
             rname: &soa.rname,
@@ -116,8 +131,7 @@ impl DnsMessageBuilder {
             expire: soa.expire as u32,
             minimum: soa.minimum_ttl as u32,
         }
-        .to_rdata()
-        .map_err(XfrError::ProtocolError)?;
+        .to_rdata()?;
 
         // IXFR SOA owner is the transfer QNAME.
         self.add_raw_rdata(
@@ -136,17 +150,17 @@ impl DnsMessageBuilder {
         record_type: &RecordType,
         value: &str,
         priority: Option<i32>,
-    ) -> Result<(), XfrError> {
+    ) -> Result<(), String> {
         match EncodedRdata::from_columns(record_type, value, priority) {
             Ok(EncodedRdata { record_type, rdata }) => {
                 self.add_raw_rdata(parse_name(name)?, record_type, ttl, rdata)
             }
-            Err(e) => Err(XfrError::ProtocolError(e)),
+            Err(e) => Err(e),
         }
     }
 
     /// Adds the catalog-zone NS record, which is the placeholder "invalid".
-    pub(crate) fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), XfrError> {
+    pub fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), String> {
         let owner_name = zone.name.to_fqdn();
         self.add_text_rdata(
             &owner_name,
@@ -158,7 +172,7 @@ impl DnsMessageBuilder {
     }
 
     /// Adds the catalog-zone version TXT record.
-    pub(crate) fn add_catalog_schema_version(&mut self, zone: &Zone) -> Result<(), XfrError> {
+    pub fn add_catalog_schema_version(&mut self, zone: &Zone) -> Result<(), String> {
         let version_name = format!("version.{}.", zone.name);
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_text_rdata(
@@ -171,12 +185,8 @@ impl DnsMessageBuilder {
     }
 
     /// Adds a catalog-zone member PTR record.
-    pub(crate) fn add_catalog_ptr(
-        &mut self,
-        zone: &Zone,
-        member_zone: &str,
-    ) -> Result<(), XfrError> {
-        let member_id = crate::server::catalog::zone_name_to_member_id(member_zone);
+    pub fn add_catalog_ptr(&mut self, zone: &Zone, member_zone: &str) -> Result<(), String> {
+        let member_id = crate::dns::zone_name_to_member_id(member_zone);
         let ptr_name = format!("{}.zones.{}.", member_id, zone.name);
         let ptr_target = to_fqdn(member_zone);
         self.add_text_rdata(
@@ -189,11 +199,7 @@ impl DnsMessageBuilder {
     }
 
     /// Adds an answer from a database Record model.
-    pub(crate) fn add_record(
-        &mut self,
-        record: &Record,
-        zone_name: &ZoneName,
-    ) -> Result<(), XfrError> {
+    pub fn add_record(&mut self, record: &Record, zone_name: &ZoneName) -> Result<(), String> {
         self.add_record_parts(
             zone_name,
             &record.name,
@@ -206,7 +212,7 @@ impl DnsMessageBuilder {
 
     /// Adds an answer from stored record columns (records and journal
     /// rows share this shape). Unsupported types are skipped.
-    pub(crate) fn add_record_parts(
+    pub fn add_record_parts(
         &mut self,
         zone_name: &ZoneName,
         name: &OwnerName,
@@ -214,19 +220,18 @@ impl DnsMessageBuilder {
         value: &str,
         ttl: i32,
         priority: Option<i32>,
-    ) -> Result<(), XfrError> {
+    ) -> Result<(), String> {
         let EncodedRdata { record_type, rdata } =
-            EncodedRdata::from_columns(record_type, value, priority)
-                .map_err(XfrError::ProtocolError)?;
+            EncodedRdata::from_columns(record_type, value, priority)?;
         self.add_raw_rdata(name.to_wire(zone_name), record_type, ttl as u32, rdata)
     }
 
     /// Adds a derived DNSSEC record; its RDATA is stored in wire form.
-    pub(crate) fn add_dnssec_record(
+    pub fn add_dnssec_record(
         &mut self,
         record: &DnssecRecord,
         zone_name: &ZoneName,
-    ) -> Result<(), XfrError> {
+    ) -> Result<(), String> {
         self.add_raw_rdata(
             record.name.to_wire(zone_name),
             record.record_type.wire_type(),
@@ -236,15 +241,15 @@ impl DnsMessageBuilder {
     }
 
     /// Adds an answer from wire-format RDATA bytes, with no per-type parser.
-    pub(crate) fn add_raw_rdata(
+    pub fn add_raw_rdata(
         &mut self,
         owner: impl IntoOwner,
         record_type: u16,
         ttl: u32,
         rdata: Rdata,
-    ) -> Result<(), XfrError> {
+    ) -> Result<(), String> {
         let data = UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
-            .map_err(|e| XfrError::ProtocolError(format!("Invalid raw rdata: {}", e)))?;
+            .map_err(|e| format!("Invalid raw rdata: {}", e))?;
         self.add_answer(owner.into_owner()?, ttl, data);
         Ok(())
     }
@@ -287,64 +292,57 @@ impl DnsMessageBuilder {
         self.answers_len = 0;
     }
 
-    pub(crate) async fn add_answer_and_flush_if_needed<W, F>(
-        &mut self,
-        writer: &mut W,
-        messages_sent: &mut usize,
-        add_answer: F,
-    ) -> Result<(), XfrError>
+    /// Buffer one answer. When it would push the message past the TCP size
+    /// limit, the answers buffered before it are returned as a ready frame and
+    /// the new answer stays buffered for the next one.
+    pub fn add_answer_or_overflow<F>(&mut self, add_answer: F) -> Result<Option<Vec<u8>>, Overflow>
     where
-        W: tokio::io::AsyncWriteExt + Unpin,
-        F: FnOnce(&mut DnsMessageBuilder) -> Result<(), XfrError>,
+        F: FnOnce(&mut DnsMessageBuilder) -> Result<(), String>,
     {
-        add_answer(self)?;
+        add_answer(self).map_err(Overflow::without_frame)?;
 
         if self.message_len() <= DNS_TCP_MAX_SIZE {
-            return Ok(());
+            return Ok(None);
         }
 
         let last_answer = self.pop_last_answer().ok_or_else(|| {
-            XfrError::ProtocolError("DNS message exceeded maximum size without answers".to_string())
+            Overflow::without_frame("DNS message exceeded maximum size without answers".to_string())
         })?;
 
         if self.answer_count() == 0 {
             self.push_answer(last_answer);
-            return Err(XfrError::ProtocolError(format!(
-                "Single DNS answer is too large: {} bytes",
-                self.message_len()
-            )));
+            return Err(Overflow::without_frame(self.too_large_message()));
         }
 
-        // Count the flush before the size check below so a caller can tell that
-        // bytes reached the client even when this call then returns an error.
-        *messages_sent += self.flush_if_not_empty(writer).await?;
+        let frame = self.take_frame().map_err(Overflow::without_frame)?;
 
         self.push_answer(last_answer);
         if self.message_len() > DNS_TCP_MAX_SIZE {
-            return Err(XfrError::ProtocolError(format!(
-                "Single DNS answer is too large: {} bytes",
-                self.message_len()
-            )));
+            return Err(Overflow {
+                frame,
+                message: self.too_large_message(),
+            });
         }
 
-        Ok(())
+        Ok(frame)
     }
 
-    pub(crate) async fn flush_if_not_empty<W>(&mut self, writer: &mut W) -> Result<usize, XfrError>
-    where
-        W: tokio::io::AsyncWriteExt + Unpin,
-    {
-        let answer_count = self.answer_count();
-        if answer_count == 0 {
-            return Ok(0);
+    /// The buffered answers as a length-prefixed TCP frame, clearing them;
+    /// `None` when nothing is buffered.
+    pub fn take_frame(&mut self) -> Result<Option<Vec<u8>>, String> {
+        if self.answer_count() == 0 {
+            return Ok(None);
         }
-
         let frame = self.build_tcp_frame()?;
-        writer.write_all(&frame).await.map_err(XfrError::IoError)?;
-        writer.flush().await.map_err(XfrError::IoError)?;
         self.clear_answers();
+        Ok(Some(frame))
+    }
 
-        Ok(1)
+    fn too_large_message(&self) -> String {
+        format!(
+            "Single DNS answer is too large: {} bytes",
+            self.message_len()
+        )
     }
 
     fn build_message_into(&self, message: &mut Vec<u8>) {
@@ -367,13 +365,10 @@ impl DnsMessageBuilder {
 
     /// Serializes into a length-prefixed TCP frame in one buffer, with no
     /// intermediate message copy.
-    fn build_tcp_frame(&self) -> Result<Vec<u8>, XfrError> {
+    fn build_tcp_frame(&self) -> Result<Vec<u8>, String> {
         let len = self.message_len();
         if len > DNS_TCP_MAX_SIZE {
-            return Err(XfrError::ProtocolError(format!(
-                "Message too large: {} bytes",
-                len
-            )));
+            return Err(format!("Message too large: {} bytes", len));
         }
 
         let mut frame = Vec::with_capacity(2 + len);
@@ -383,7 +378,7 @@ impl DnsMessageBuilder {
     }
 
     /// Consumes the builder and returns the serialized DNS message.
-    pub(crate) fn build(self) -> Vec<u8> {
+    pub fn build(self) -> Vec<u8> {
         let mut message = Vec::with_capacity(self.message_len());
         self.build_message_into(&mut message);
         message
@@ -391,32 +386,31 @@ impl DnsMessageBuilder {
 }
 
 /// Parses a presentation-form name through the one core name encoding.
-fn parse_name(name: &str) -> Result<Name<Vec<u8>>, XfrError> {
-    let wire = encode_name(name).map_err(XfrError::ProtocolError)?;
-    Name::from_octets(wire)
-        .map_err(|e| XfrError::ProtocolError(format!("Invalid domain name '{}': {}", name, e)))
+fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
+    let wire = encode_name(name)?;
+    Name::from_octets(wire).map_err(|e| format!("Invalid domain name '{}': {}", name, e))
 }
 
 /// A DNS query parsed once at the listener and handed to every handler.
-pub(crate) struct ParsedQuery {
-    pub(crate) qname: Name<Vec<u8>>,
+pub struct ParsedQuery {
+    pub qname: Name<Vec<u8>>,
     /// Presentation form of `qname` without the trailing dot.
-    pub(crate) zone_name: String,
-    pub(crate) qtype: Rtype,
-    pub(crate) client_serial: Option<u32>,
-    pub(crate) query_id: u16,
+    pub zone_name: String,
+    pub qtype: Rtype,
+    pub client_serial: Option<u32>,
+    pub query_id: u16,
 }
 
 impl ParsedQuery {
-    pub(crate) fn parse(data: &[u8]) -> Result<ParsedQuery, XfrError> {
+    pub fn parse(data: &[u8]) -> Result<ParsedQuery, String> {
         let message = Message::from_octets(data)
-            .map_err(|e| XfrError::ProtocolError(format!("Failed to parse DNS message: {}", e)))?;
+            .map_err(|e| format!("Failed to parse DNS message: {}", e))?;
 
         let query_id = message.header().id();
 
         let question = message
             .first_question()
-            .ok_or_else(|| XfrError::ProtocolError("No question in DNS query".to_string()))?;
+            .ok_or_else(|| "No question in DNS query".to_string())?;
 
         let qname = question.qname().to_name::<Vec<u8>>();
         let qtype = question.qtype();
@@ -449,7 +443,7 @@ impl ParsedQuery {
     }
 
     /// A response echoing this query with only `rcode` set.
-    pub(crate) fn error_response(&self, rcode: Rcode) -> Vec<u8> {
+    pub fn error_response(&self, rcode: Rcode) -> Vec<u8> {
         let mut builder = MessageBuilder::new_vec();
         let header = builder.header_mut();
         header.set_id(self.query_id);
@@ -475,12 +469,9 @@ fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<u32> {
         .map(|record| record.data().serial().into_int())
 }
 
-pub(crate) fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, XfrError> {
+pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, String> {
     if message.len() > DNS_TCP_MAX_SIZE {
-        return Err(XfrError::ProtocolError(format!(
-            "Message too large: {} bytes",
-            message.len()
-        )));
+        return Err(format!("Message too large: {} bytes", message.len()));
     }
 
     let len = message.len() as u16;
@@ -488,67 +479,6 @@ pub(crate) fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, XfrError> {
     result.extend_from_slice(&len.to_be_bytes());
     result.extend_from_slice(message);
     Ok(result)
-}
-
-pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
-    reader: &mut R,
-) -> Result<Vec<u8>, XfrError> {
-    let mut len_buf = [0u8; 2];
-    if reader
-        .read(&mut len_buf[..1])
-        .await
-        .map_err(XfrError::IoError)?
-        == 0
-    {
-        return Err(XfrError::IoError(std::io::Error::new(
-            std::io::ErrorKind::UnexpectedEof,
-            "connection closed",
-        )));
-    }
-    reader.read_exact(&mut len_buf[1..]).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::UnexpectedEof {
-            XfrError::ProtocolError("Incomplete DNS TCP length prefix".to_string())
-        } else {
-            XfrError::IoError(e)
-        }
-    })?;
-
-    let len = u16::from_be_bytes(len_buf) as usize;
-
-    if len > DNS_TCP_MAX_SIZE {
-        return Err(XfrError::ProtocolError(format!(
-            "Message too large: {} bytes",
-            len
-        )));
-    }
-
-    let mut message_buf = vec![0u8; len];
-    reader.read_exact(&mut message_buf).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::UnexpectedEof {
-            XfrError::ProtocolError(format!(
-                "Incomplete DNS TCP message: expected {} bytes",
-                len
-            ))
-        } else {
-            XfrError::IoError(e)
-        }
-    })?;
-
-    Ok(message_buf)
-}
-
-pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
-    writer: &mut W,
-    message: &[u8],
-) -> Result<(), XfrError> {
-    let encoded = encode_tcp_message(message)?;
-    writer
-        .write_all(&encoded)
-        .await
-        .map_err(XfrError::IoError)?;
-    writer.flush().await.map_err(XfrError::IoError)?;
-
-    Ok(())
 }
 
 #[cfg(test)]

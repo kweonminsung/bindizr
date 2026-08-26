@@ -3,13 +3,6 @@ use bindizr_core::{dns::name::ZoneName, model::zone::DnssecDenial};
 use super::*;
 
 #[test]
-fn zone_name_to_member_id_is_stable_and_dns_safe() {
-    assert_eq!(zone_name_to_member_id("example.com"), "example-com");
-    assert_eq!(zone_name_to_member_id("api.example.com"), "api-example-com");
-    assert_eq!(zone_name_to_member_id("test.co.uk"), "test-co-uk");
-}
-
-#[test]
 fn catalog_digest_changes_when_members_change() {
     let zones = vec![
         Zone {
