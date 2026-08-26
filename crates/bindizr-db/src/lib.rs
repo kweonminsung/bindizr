@@ -90,7 +90,7 @@ pub(crate) fn get_pool() -> &'static DatabasePool {
 
 /// Max pooled connections, scaled to the host; sqlx's default is a flat 10.
 /// SQLite shares it: under WAL the pool bounds read concurrency rather than
-/// contending for the writer slot.
+/// contention for the writer slot.
 fn pool_max_connections() -> u32 {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -171,8 +171,8 @@ impl DatabasePool {
                         .execute(&mut *conn)
                         .await?;
                     // SQLite's busy handler polls unfairly, so 5s starved
-                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY under load. Set
-                    // first so the WAL switch below waits rather than failing busy.
+                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY. Set before the
+                    // WAL switch below, which takes a lock of its own.
                     sqlx::query("PRAGMA busy_timeout = 15000")
                         .execute(&mut *conn)
                         .await?;

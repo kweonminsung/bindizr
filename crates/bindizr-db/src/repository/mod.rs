@@ -367,8 +367,8 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<Vec<Record>, DatabaseError>;
     /// One owner name holding a DS record but no NS record — a delegation a DS
     /// would orphan. Row-form name, so the apex reads as the empty string.
-    /// Every zone mutation runs this, so the predicate leads with `record_type`
-    /// to stay on `idx_records_zone_type` rather than walk the zone.
+    /// Every zone mutation runs this, so `record_type` leads the predicate to
+    /// keep it on `idx_records_zone_type`.
     async fn get_ds_name_without_ns_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

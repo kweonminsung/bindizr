@@ -87,8 +87,8 @@ impl RecordService {
         let limit = filter.limit;
         let offset = filter.offset;
         let signed = filter.signed.unwrap_or(false);
-        // Above the zone lookup: rejecting a malformed filter only for zones
-        // that exist would answer whether they do.
+        // Above the zone lookup: rejecting a bad filter only for zones that
+        // exist would answer whether they do.
         let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
         // The filter lands on records.zone_id, so resolve the name here.
