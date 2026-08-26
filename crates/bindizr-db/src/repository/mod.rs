@@ -362,13 +362,15 @@ pub trait RecordRepository: Send + Sync {
         name: &OwnerName,
         lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
-    /// Owner names holding a DS record but no NS record — delegations a DS
-    /// would orphan. Row-form names, so the apex reads as the empty string.
-    async fn list_ds_names_without_ns_tx(
+    /// One owner name holding a DS record but no NS record — a delegation a DS
+    /// would orphan. Row-form name, so the apex reads as the empty string.
+    /// Every zone mutation runs this, so the predicate leads with `record_type`
+    /// to stay on `idx_records_zone_type` rather than walk the zone.
+    async fn get_ds_name_without_ns_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-    ) -> Result<Vec<String>, DatabaseError>;
+    ) -> Result<Option<String>, DatabaseError>;
     /// Load records whose owner name is any of `names` (lowercased match). Used
     /// by bulk insert to fetch only the rows that could conflict with the batch.
     async fn list_by_names_tx(

@@ -245,22 +245,22 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(out)
     }
 
-    async fn list_ds_names_without_ns_tx(
+    async fn get_ds_name_without_ns_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-    ) -> Result<Vec<String>, DatabaseError> {
+    ) -> Result<Option<String>, DatabaseError> {
         let pg_tx = tx.as_postgres()?;
 
-        let names = sqlx::query_scalar::<_, String>(
-            "SELECT DISTINCT name FROM records WHERE zone_id = $1 AND record_type = 'DS' AND name NOT IN (SELECT name FROM records WHERE zone_id = $2 AND record_type = 'NS')",
+        let name = sqlx::query_scalar::<_, String>(
+            "SELECT d.name FROM records d WHERE d.zone_id = $1 AND d.record_type = 'DS' AND NOT EXISTS (SELECT 1 FROM records n WHERE n.zone_id = $2 AND n.name = d.name AND n.record_type = 'NS') LIMIT 1",
         )
         .bind(zone_id)
         .bind(zone_id)
-        .fetch_all(&mut **pg_tx)
+        .fetch_optional(&mut **pg_tx)
         .await?;
 
-        Ok(names)
+        Ok(name)
     }
 
     async fn list_by_names_tx(

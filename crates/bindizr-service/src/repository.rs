@@ -211,12 +211,12 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
-    pub(crate) async fn list_ds_names_without_ns_tx(
+    pub(crate) async fn get_ds_name_without_ns_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-    ) -> Result<Vec<String>, ServiceError> {
+    ) -> Result<Option<String>, ServiceError> {
         get_record_repository()
-            .list_ds_names_without_ns_tx(tx, zone_id)
+            .get_ds_name_without_ns_tx(tx, zone_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
