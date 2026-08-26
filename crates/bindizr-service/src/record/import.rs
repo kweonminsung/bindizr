@@ -3,7 +3,10 @@ use std::{
     time::Instant,
 };
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::{
+    name::{OwnerName, ZoneName},
+    zonefile::{ZoneFileValue, parse_zone_file},
+};
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
@@ -14,7 +17,6 @@ use super::{
         normalize_record_owner_name, validate_delete_constraints,
         validate_record_add_constraints_normalized,
     },
-    zonefile::parse_zone_file,
 };
 use crate::{
     authorization::Caller,
@@ -28,11 +30,11 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     timing::elapsed_ms,
-    types::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff},
-    zone::{
-        ZoneService,
-        history::{ReconstructedRecord, build_record_diff},
+    types::{
+        ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff,
+        RecordValueRequest,
     },
+    zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
 
 /// A record the import wants present, with its owner name already normalized so
@@ -121,10 +123,13 @@ impl RecordService {
             let mut desired_by_name: HashMap<OwnerName, Vec<usize>> =
                 HashMap::with_capacity(parsed.records.len());
             for record in parsed.records {
-                let value = match record
-                    .value
-                    .to_encoded_value(&record.record_type, record.priority)
-                {
+                let requested = match record.value {
+                    ZoneFileValue::Rdata(rdata) => RecordValueRequest::String(rdata),
+                    ZoneFileValue::CharacterStrings(segments) => {
+                        RecordValueRequest::Segments(segments)
+                    }
+                };
+                let value = match requested.to_encoded_value(&record.record_type, record.priority) {
                     Ok(value) => value,
                     Err(e) => {
                         errors.push(format!("{}: {}", record.owner_fqdn, e));
@@ -214,7 +219,7 @@ impl RecordService {
             }
             .map_err(|e| {
                 log_error!("Failed to load zone records: {}", e);
-                ServiceError::internal("Failed to import zone file".to_string())
+                ServiceError::internal("Failed to import zone file")
             })?;
             timings.load_existing_ms = elapsed_ms(t);
 

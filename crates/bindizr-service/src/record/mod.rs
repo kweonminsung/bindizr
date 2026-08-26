@@ -5,12 +5,11 @@ mod get;
 mod import;
 mod update;
 mod validation;
-mod zonefile;
 
+use bindizr_core::dns::dnssec::rdata_presentation;
 pub(crate) use validation::{AddOutcome, validate_delete_constraints};
 
 use crate::{
-    dnssec::rdata_presentation,
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},
     types::{GetRecordResponse, RecordValueRequest},
 };

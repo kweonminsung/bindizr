@@ -1,9 +1,10 @@
 //! Assembling the status a signed zone reports: key inventory and the DS
 //! records the parent needs.
 
+use bindizr_core::dns::dnssec::{DS_DIGEST_TYPE_SHA256, ds_rdata_for, to_wire_name};
 use chrono::{DateTime, Utc};
 
-use super::{DS_DIGEST_TYPE_SHA256, DnssecService, ds_rdata_for, to_wire_name};
+use super::DnssecService;
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -44,7 +45,7 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
     }
 
-    pub(super) async fn earliest_expiry_tx(
+    pub(crate) async fn earliest_expiry_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Option<DateTime<Utc>>, ServiceError> {
@@ -54,7 +55,7 @@ impl DnssecService {
     }
 }
 
-pub(super) fn build_status(
+pub(crate) fn build_status(
     zone: &Zone,
     denial: DnssecDenial,
     keys: &[DnssecKey],
@@ -101,7 +102,7 @@ pub(super) fn build_status(
 fn ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
     let apex = to_wire_name(zone.name.to_wire())
         .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
-    let rdata = ds_rdata_for(key, &apex)?;
+    let rdata = ds_rdata_for(key, &apex).map_err(ServiceError::dnssec_signing_failed)?;
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 
     Ok(DnssecDsInfo {

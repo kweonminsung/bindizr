@@ -6,7 +6,7 @@ use super::{
     value::{MAX_RECORD_RDATA, parse_u8_record_field},
 };
 
-pub(crate) struct CaaRecordValue<'a> {
+pub struct CaaRecordValue<'a> {
     flags: u8,
     tag: &'a str,
     value: &'a str,
@@ -16,7 +16,7 @@ impl<'a> CaaRecordValue<'a> {
     /// The value is `<flags> <tag> <value>`; the value keeps its surrounding
     /// quotes optional, as presentation form allows both. Fields may be
     /// separated by runs of whitespace, as aligned zone files spell them.
-    pub(crate) fn parse(value: &'a str) -> Result<Self, String> {
+    pub fn parse(value: &'a str) -> Result<Self, String> {
         let err = || format!("CAA record value must be '<flags> <tag> <value>': {value}");
         let (flags, rest) = value
             .trim()
@@ -34,7 +34,7 @@ impl<'a> CaaRecordValue<'a> {
         })
     }
 
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         // RFC 8659, Section 4.1: a tag is 1-15 alphanumeric characters.
         if self.tag.is_empty()
             || self.tag.len() > 15
@@ -69,7 +69,7 @@ impl<'a> CaaRecordValue<'a> {
         Ok(())
     }
 
-    pub(crate) fn canonical(&self) -> String {
+    pub fn canonical(&self) -> String {
         format!(
             "{} {} \"{}\"",
             self.flags,
@@ -79,7 +79,7 @@ impl<'a> CaaRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 8659, Section 5.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub fn to_rdata(&self) -> Result<Rdata, String> {
         let tag_len = u8::try_from(self.tag.len())
             .map_err(|_| format!("CAA tag must be 1-15 alphanumeric characters: {}", self.tag))?;
         let mut rdata = Vec::with_capacity(2 + self.tag.len() + self.value.len());

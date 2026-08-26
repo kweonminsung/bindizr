@@ -22,7 +22,7 @@ impl ZoneService {
             .await
             .map_err(|e| {
                 log_error!("Failed to update zone serial: {}", e);
-                ServiceError::internal("Failed to update zone serial".to_string())
+                ServiceError::internal("Failed to update zone serial")
             })?;
 
         Self::save_version_tx(tx, zone, new_serial).await
@@ -76,7 +76,7 @@ impl ZoneService {
         .await
         .map_err(|e| {
             log_error!("Failed to save SOA version: {}", e);
-            ServiceError::internal("Failed to save SOA version".to_string())
+            ServiceError::internal("Failed to save SOA version")
         })?;
 
         // Every serial-advancing path funnels through this version write; count

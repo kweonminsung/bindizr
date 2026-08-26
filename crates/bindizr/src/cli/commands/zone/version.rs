@@ -81,7 +81,7 @@ pub(crate) enum ZoneVersionCommand {
     },
 }
 
-pub(super) async fn handle_command(
+pub(crate) async fn handle_command(
     client: &DaemonSocketClient,
     subcommand: ZoneVersionCommand,
 ) -> Result<(), CliError> {

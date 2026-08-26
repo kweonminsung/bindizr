@@ -174,7 +174,7 @@ pub(crate) fn validate_delete_constraints(
 }
 
 /// Validate an update whose new owner name is already normalized.
-pub(super) fn validate_record_update_constraints_normalized(
+pub(crate) fn validate_record_update_constraints_normalized(
     zone: &Zone,
     zone_records: &[Record],
     existing_record: &Record,
@@ -244,7 +244,7 @@ impl RecordService {
         .await
         .map_err(|e| {
             log_error!("Failed to load zone records: {}", e);
-            ServiceError::internal("Failed to load zone records".to_string())
+            ServiceError::internal("Failed to load zone records")
         })?;
 
         if has_matching_rdata(zone_records.iter(), record_type, value, priority) {

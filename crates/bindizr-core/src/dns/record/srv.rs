@@ -7,7 +7,7 @@ use super::{
 };
 use crate::dns::name::{encode_name, to_fqdn_lowercase};
 
-pub(crate) struct SrvRecordValue<'a> {
+pub struct SrvRecordValue<'a> {
     priority: u16,
     weight: u16,
     port: u16,
@@ -17,7 +17,7 @@ pub(crate) struct SrvRecordValue<'a> {
 impl<'a> SrvRecordValue<'a> {
     /// The value is '<weight> <port> <target>'; the priority comes from the
     /// priority field (default 10), never inline.
-    pub(crate) fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
+    pub fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
         match value.split_whitespace().collect::<Vec<_>>().as_slice() {
             [weight, port, target] => Ok(Self {
                 priority: parse_optional_u16_record_field(
@@ -36,7 +36,7 @@ impl<'a> SrvRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 2782).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = Vec::with_capacity(6);
         rdata.extend_from_slice(&self.priority.to_be_bytes());
         rdata.extend_from_slice(&self.weight.to_be_bytes());
@@ -45,7 +45,7 @@ impl<'a> SrvRecordValue<'a> {
         Rdata::new(rdata)
     }
 
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         if self.target.trim() == "." {
             return Ok(());
         }
@@ -53,7 +53,7 @@ impl<'a> SrvRecordValue<'a> {
         validate_domain_record_value("SRV record target", self.target)
     }
 
-    pub(crate) fn canonical(&self) -> String {
+    pub fn canonical(&self) -> String {
         format!(
             "{} {} {} {}",
             self.priority,
@@ -65,7 +65,7 @@ impl<'a> SrvRecordValue<'a> {
 
     /// The value column's form: `<weight> <port> <target>` with a lowercase
     /// FQDN target.
-    pub(crate) fn encoded(&self) -> String {
+    pub fn encoded(&self) -> String {
         format!(
             "{} {} {}",
             self.weight,

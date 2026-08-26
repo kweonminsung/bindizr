@@ -15,7 +15,7 @@ use crate::socket::{
 static STARTED_AT_MS: OnceLock<u64> = OnceLock::new();
 
 /// Record the daemon start time; restart detection compares it across execs.
-pub(super) fn record_start_time() {
+pub(crate) fn record_start_time() {
     let _ = STARTED_AT_MS.set(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -25,7 +25,7 @@ pub(super) fn record_start_time() {
 }
 
 /// Handle the `Status` command by returning the daemon's PID, version, and config.
-pub(super) fn status() -> Result<DaemonResponse, ServiceError> {
+pub(crate) fn status() -> Result<DaemonResponse, ServiceError> {
     let pid = Some(process::id());
     let version = env!("CARGO_PKG_VERSION");
     let status = DaemonStatusResponse {

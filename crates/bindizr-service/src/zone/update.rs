@@ -30,7 +30,7 @@ struct AppliedZoneUpdate {
 
 /// DEL(old)+ADD(new) apex SOA changes for an in-place zone row update, so IXFR
 /// consumers replay the SOA transition.
-pub(super) fn soa_replacement_changes(
+pub(crate) fn soa_replacement_changes(
     old_zone: &Zone,
     new_zone: &Zone,
     new_serial: i32,
@@ -160,7 +160,7 @@ impl ZoneService {
                     Ok(_) => {}
                     Err(e) => {
                         log_error!("Failed to check existing zone: {}", e);
-                        return Err(ServiceError::internal("Failed to update zone".to_string()));
+                        return Err(ServiceError::internal("Failed to update zone"));
                     }
                 }
             }
@@ -171,9 +171,9 @@ impl ZoneService {
                 &mut tx,
                 Zone {
                     id: zone_id,
-                    name: validated.name.clone(),
-                    mname: validated.mname.clone(),
-                    rname: validated.rname.clone(),
+                    name: validated.name,
+                    mname: validated.mname,
+                    rname: validated.rname,
                     default_ttl: validated.ttl,
                     serial: new_serial,
                     refresh: timers.refresh,
@@ -192,7 +192,7 @@ impl ZoneService {
                 if e.code == ErrorCode::ZoneConflict {
                     e
                 } else {
-                    ServiceError::internal("Failed to update zone".to_string())
+                    ServiceError::internal("Failed to update zone")
                 }
             })?;
 
@@ -207,7 +207,7 @@ impl ZoneService {
             .await
             .map_err(|e| {
                 log_error!("Failed to fetch apex records: {}", e);
-                ServiceError::internal("Failed to update zone".to_string())
+                ServiceError::internal("Failed to update zone")
             })?;
             let has_mname = apex_records
                 .iter()
@@ -231,7 +231,7 @@ impl ZoneService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to create mname NS record during update: {}", e);
-                    ServiceError::internal("Failed to keep mname NS consistency".to_string())
+                    ServiceError::internal("Failed to keep mname NS consistency")
                 })?;
             }
 
@@ -241,7 +241,7 @@ impl ZoneService {
                 .await
                 .map_err(|e| {
                     log_error!("Failed to create zone changes: {}", e);
-                    ServiceError::internal("Failed to create zone change".to_string())
+                    ServiceError::internal("Failed to create zone change")
                 })?;
 
             DnssecService::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;

@@ -31,7 +31,7 @@ use crate::{
 /// row-encoded, but the owner is still an absolute lookup name with no zone
 /// resolved yet.
 #[derive(Debug)]
-pub(super) struct RrsetOp {
+pub(crate) struct RrsetOp {
     pub(crate) name: String,
     pub(crate) record_type: RecordType,
     /// Adds only; `None` resolves to the zone TTL at apply time.
@@ -39,7 +39,7 @@ pub(super) struct RrsetOp {
     pub(crate) values: Vec<String>,
 }
 
-pub(super) struct PendingOp {
+pub(crate) struct PendingOp {
     pub(crate) op: RrsetOp,
     pub(crate) is_delete: bool,
 }
@@ -47,7 +47,7 @@ pub(super) struct PendingOp {
 /// The same operation once grouping has decided which zone owns it, so the
 /// owner is relative to that zone.
 #[derive(Debug)]
-pub(super) struct ZoneRrsetOp {
+pub(crate) struct ZoneRrsetOp {
     pub(crate) name: OwnerName,
     pub(crate) record_type: RecordType,
     pub(crate) ttl: Option<i32>,
@@ -56,14 +56,14 @@ pub(super) struct ZoneRrsetOp {
 
 /// Adds and deletes of one request that resolved to the same zone.
 #[derive(Debug, Default)]
-pub(super) struct ZoneOps {
+pub(crate) struct ZoneOps {
     pub(crate) adds: Vec<ZoneRrsetOp>,
     pub(crate) dels: Vec<ZoneRrsetOp>,
 }
 
 /// The record rows one zone's operations resolve to.
 #[derive(Debug, Default)]
-pub(super) struct ZoneChangeSet {
+pub(crate) struct ZoneChangeSet {
     pub(crate) deletes: Vec<Record>,
     pub(crate) creates: Vec<Record>,
 }
@@ -109,7 +109,7 @@ fn validate_rrset_shape(
     Ok(())
 }
 
-pub(super) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, ServiceError> {
+pub(crate) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, ServiceError> {
     let record_type = parse_supported_record_type(&rrset.record_type)?;
     let name = normalize_lookup_name(&rrset.name)?;
     let ttl = normalize_ttl(rrset.ttl)?;
@@ -140,7 +140,7 @@ pub(super) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, Service
 /// One RRset in the canonical form `apply_changes` would store and
 /// `list_records` return. Unparseable values pass through so apply reports
 /// its ordinary error; the name is echoed as sent.
-pub(super) fn adjust_rrset(rrset: &ExternalDnsRrset) -> Result<ExternalDnsRrset, ServiceError> {
+pub(crate) fn adjust_rrset(rrset: &ExternalDnsRrset) -> Result<ExternalDnsRrset, ServiceError> {
     let record_type = parse_supported_record_type(&rrset.record_type)?;
     let ttl = normalize_ttl(rrset.ttl)?;
     validate_rrset_shape(rrset, &record_type)?;
@@ -167,7 +167,7 @@ pub(super) fn adjust_rrset(rrset: &ExternalDnsRrset) -> Result<ExternalDnsRrset,
 
 /// Flatten the request into ordered operations; an update becomes
 /// delete(old) + add(new), with unchanged pairs canceling later.
-pub(super) fn convert_request(
+pub(crate) fn convert_request(
     request: &ExternalDnsChangesRequest,
 ) -> Result<Vec<PendingOp>, ServiceError> {
     let mut ops = Vec::new();
@@ -198,7 +198,7 @@ pub(super) fn convert_request(
 
 /// Resolve every operation to its most-specific authoritative zone; the
 /// caller's write authorization is checked per zone inside the transaction.
-pub(super) fn group_ops_by_zone(
+pub(crate) fn group_ops_by_zone(
     zones: &[Zone],
     ops: Vec<PendingOp>,
 ) -> Result<BTreeMap<ZoneName, ZoneOps>, ServiceError> {
@@ -232,7 +232,7 @@ pub(super) fn group_ops_by_zone(
 
 /// Resolve one zone's operations against its current records; idempotent
 /// operations cancel out, so an effect-free request yields an empty set.
-pub(super) fn compute_zone_change_set(
+pub(crate) fn compute_zone_change_set(
     zone: &Zone,
     existing: &[Record],
     ops: &ZoneOps,

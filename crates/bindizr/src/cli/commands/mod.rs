@@ -1,19 +1,19 @@
-pub(super) mod config;
-pub(super) mod doctor;
-pub(super) mod record;
-pub(super) mod restart;
-pub(super) mod start;
-pub(super) mod status;
-pub(super) mod stop;
-pub(super) mod token;
-pub(super) mod tsig_key;
-pub(super) mod zone;
+pub(crate) mod config;
+pub(crate) mod doctor;
+pub(crate) mod record;
+pub(crate) mod restart;
+pub(crate) mod start;
+pub(crate) mod status;
+pub(crate) mod stop;
+pub(crate) mod token;
+pub(crate) mod tsig_key;
+pub(crate) mod zone;
 
 use std::time::Duration;
 
 /// Poll `check` every 100ms until it yields a value, bounded by `deadline`.
 /// Returns `None` on expiry.
-pub(super) async fn poll_with_deadline<T>(
+pub(crate) async fn poll_with_deadline<T>(
     deadline: Duration,
     mut check: impl AsyncFnMut() -> Option<T>,
 ) -> Option<T> {
@@ -30,7 +30,7 @@ pub(super) async fn poll_with_deadline<T>(
 }
 
 /// Read command input from a file path, or from stdin when the path is `-`.
-pub(super) fn read_input(path: &str) -> Result<String, String> {
+pub(crate) fn read_input(path: &str) -> Result<String, String> {
     if path == "-" {
         let mut buf = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)

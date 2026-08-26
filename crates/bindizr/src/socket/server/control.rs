@@ -20,7 +20,7 @@ pub(crate) fn init() -> mpsc::Receiver<DaemonControl> {
     rx
 }
 
-pub(super) fn shutdown() -> Result<DaemonResponse, ServiceError> {
+pub(crate) fn shutdown() -> Result<DaemonResponse, ServiceError> {
     request(DaemonControl::Shutdown)?;
     Ok(DaemonResponse {
         message: "Bindizr is shutting down".to_string(),
@@ -28,7 +28,7 @@ pub(super) fn shutdown() -> Result<DaemonResponse, ServiceError> {
     })
 }
 
-pub(super) fn restart() -> Result<DaemonResponse, ServiceError> {
+pub(crate) fn restart() -> Result<DaemonResponse, ServiceError> {
     request(DaemonControl::Restart)?;
     Ok(DaemonResponse {
         message: "Bindizr is restarting".to_string(),

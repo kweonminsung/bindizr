@@ -47,7 +47,7 @@ impl ZoneService {
     pub async fn list() -> Result<Vec<Zone>, ServiceError> {
         RepositoryService::list_zones().await.map_err(|e| {
             log_error!("Failed to fetch zones: {}", e);
-            ServiceError::internal("Failed to fetch zones".to_string())
+            ServiceError::internal("Failed to fetch zones")
         })
     }
 

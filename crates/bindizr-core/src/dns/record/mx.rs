@@ -20,7 +20,7 @@ impl<'a> MxRecordValue<'a> {
 
     /// The value is the target host only; the priority comes from the priority
     /// field (default 10), never inline.
-    pub(crate) fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
+    pub fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
         match value.split_whitespace().collect::<Vec<_>>().as_slice() {
             [target] => Ok(Self {
                 priority: parse_optional_u16_record_field(
@@ -37,13 +37,13 @@ impl<'a> MxRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 1035, Section 3.3.9).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = self.priority.to_be_bytes().to_vec();
         rdata.extend_from_slice(&encode_name(self.target)?);
         Rdata::new(rdata)
     }
 
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         if self.target.trim() == "." {
             if self.priority != 0 {
                 return Err("Null MX record target '.' must use priority 0".to_string());
@@ -55,16 +55,16 @@ impl<'a> MxRecordValue<'a> {
     }
 
     /// Null MX (RFC 7505): priority 0 with target `.`.
-    pub(crate) fn is_null(&self) -> bool {
+    pub fn is_null(&self) -> bool {
         self.priority == 0 && self.target.trim() == "."
     }
 
-    pub(crate) fn canonical(&self) -> String {
+    pub fn canonical(&self) -> String {
         format!("{} {}", self.priority, to_fqdn_lowercase(self.target))
     }
 
     /// The value column's form: the target host as a lowercase FQDN.
-    pub(crate) fn encoded(&self) -> String {
+    pub fn encoded(&self) -> String {
         to_fqdn_lowercase(self.target)
     }
 }

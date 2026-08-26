@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::socket::{server::parse_params, types::DaemonResponse};
 
 /// Handle the `NotifyZone` command by sending DNS NOTIFY for a zone or all zones.
-pub(super) async fn notify_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn notify_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let request: NotifyZoneRequest = parse_params(data)?;
 
     // The daemon socket is root-local, so commands run as the global caller.

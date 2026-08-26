@@ -1,6 +1,7 @@
 mod catalog_zone_state;
 mod create;
 mod delete;
+pub(crate) mod diff;
 mod export;
 mod force;
 mod get;

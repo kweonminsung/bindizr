@@ -219,17 +219,21 @@ version = "0.1.0-beta.7"
 dependencies = [
  "async-trait",
  "axum",
+ "base64 0.23.0",
  "bindizr-core",
  "bindizr-db",
- "bindizr-dns",
  "bindizr-service",
+ "chrono",
  "clap",
  "log",
+ "rand",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.11.0",
  "tabled",
  "tempfile",
+ "thiserror",
  "tokio",
  "tower-http 0.7.0",
  "utoipa",
@@ -242,10 +246,15 @@ dependencies = [
  "base64 0.23.0",
  "chrono",
  "config",
+ "domain",
+ "hex",
+ "hmac",
  "log",
  "once_cell",
  "prometheus",
+ "rand",
  "serde",
+ "sha2 0.11.0",
  "sqlx",
 ]
 
@@ -258,23 +267,6 @@ dependencies = [
  "chrono",
  "log",
  "sqlx",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "bindizr-dns"
-version = "0.1.0-beta.7"
-dependencies = [
- "base64 0.23.0",
- "bindizr-core",
- "bindizr-service",
- "chrono",
- "domain",
- "hmac",
- "log",
- "rand",
- "sha2 0.11.0",
  "thiserror",
  "tokio",
 ]
@@ -319,7 +311,6 @@ dependencies = [
  "bindizr-core",
  "bindizr-db",
  "chrono",
- "domain",
  "hex",
  "log",
  "rand",

@@ -9,7 +9,7 @@ use super::{
     },
 };
 
-pub(crate) struct DsRecordValue {
+pub struct DsRecordValue {
     key_tag: u16,
     algorithm: u8,
     digest_type: u8,
@@ -19,7 +19,7 @@ pub(crate) struct DsRecordValue {
 impl DsRecordValue {
     /// The value is `<key tag> <algorithm> <digest type> <digest>`; the hex
     /// digest may be split into whitespace-separated groups, as `dig` prints.
-    pub(crate) fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, String> {
         let mut fields = value.split_whitespace();
         let (Some(key_tag), Some(algorithm), Some(digest_type)) =
             (fields.next(), fields.next(), fields.next())
@@ -36,7 +36,7 @@ impl DsRecordValue {
         })
     }
 
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         // Digest lengths are fixed per type (RFC 4509 for SHA-256); a wrong
         // length is a broken delegation, not a serveable record.
         let expected = match self.digest_type {
@@ -67,7 +67,7 @@ impl DsRecordValue {
         Ok(())
     }
 
-    pub(crate) fn canonical(&self) -> String {
+    pub fn canonical(&self) -> String {
         format!(
             "{} {} {} {}",
             self.key_tag,
@@ -78,7 +78,7 @@ impl DsRecordValue {
     }
 
     /// The wire-format RDATA of a stored value (RFC 4034, Section 5.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = Vec::with_capacity(4 + self.digest.len());
         rdata.extend_from_slice(&self.key_tag.to_be_bytes());
         rdata.push(self.algorithm);

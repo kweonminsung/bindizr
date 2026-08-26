@@ -20,7 +20,7 @@ use crate::socket::{
 };
 
 /// Handle the `GetZone` command by returning a zone by name.
-pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
     let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
@@ -31,7 +31,7 @@ pub(super) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse,
 }
 
 /// Handle the `ListZones` command by returning zones matching the filter.
-pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn list_zones(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let filter: GetZonesFilter = if data.is_null() {
         GetZonesFilter::default()
     } else {
@@ -54,7 +54,7 @@ pub(super) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
 }
 
 /// Handle the `CreateZone` command by creating a new zone.
-pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let request: CreateZoneRequest = parse_params(data)?;
 
     let zone = ZoneService::create(&Caller::Global, &request).await?;
@@ -65,7 +65,7 @@ pub(super) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
 }
 
 /// Handle the `UpdateZone` command by applying a partial-update patch.
-pub(super) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateZoneParams = parse_params(data)?;
 
     let zone = ZoneService::patch(&Caller::Global, &params.name, &params.patch).await?;
@@ -77,7 +77,7 @@ pub(super) async fn update_zone(data: &serde_json::Value) -> Result<DaemonRespon
 
 /// Handle the `ImportZoneFile` command by reconciling BIND zone file text with
 /// a zone in a single transaction.
-pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ImportZoneFileParams = parse_params(data)?;
 
     let response =
@@ -101,7 +101,7 @@ pub(super) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
 }
 
 /// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
-pub(super) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ExportZoneFileParams = parse_params(data)?;
     let zone_file =
         ZoneService::export_zone_file(&Caller::Global, &params.name, params.signed).await?;
@@ -112,7 +112,7 @@ pub(super) async fn export_zone(data: &serde_json::Value) -> Result<DaemonRespon
 }
 
 /// Handle the `ListZoneVersions` command by returning a zone's serial history.
-pub(super) async fn list_zone_versions(
+pub(crate) async fn list_zone_versions(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ListZoneVersionsParams = parse_params(data)?;
@@ -143,7 +143,7 @@ pub(super) async fn list_zone_versions(
 
 /// Handle the `GetZoneVersion` command by returning one version with its
 /// reconstructed record set.
-pub(super) async fn get_zone_version(
+pub(crate) async fn get_zone_version(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneVersionParams = parse_params(data)?;
@@ -166,7 +166,7 @@ pub(super) async fn get_zone_version(
 
 /// Handle the `DiffZoneVersions` command by diffing two of a zone's serials.
 /// A missing `to_serial` compares `from_serial` against the current serial.
-pub(super) async fn diff_zone_versions(
+pub(crate) async fn diff_zone_versions(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DiffZoneVersionsParams = parse_params(data)?;
@@ -192,7 +192,7 @@ pub(super) async fn diff_zone_versions(
 }
 
 /// Handle the `RollbackZone` command by rolling a zone back to a version serial.
-pub(super) async fn rollback_zone(
+pub(crate) async fn rollback_zone(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RollbackZoneParams = parse_params(data)?;
@@ -226,10 +226,10 @@ pub(super) async fn rollback_zone(
 
 /// Handle the `ZoneStatus` command by probing every configured secondary for
 /// the SOA serial it serves and comparing it with the zone's serial.
-pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn zone_status(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let response = bindizr_dns::status::zone_status(&Caller::Global, &params.name).await?;
+    let response = crate::dns::status::zone_status(&Caller::Global, &params.name).await?;
 
     let in_sync = response
         .secondaries
@@ -254,7 +254,7 @@ pub(super) async fn zone_status(data: &serde_json::Value) -> Result<DaemonRespon
 }
 
 /// Handle the `DeleteZone` command by deleting a zone by name.
-pub(super) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
     ZoneService::delete(&Caller::Global, &params.name).await?;

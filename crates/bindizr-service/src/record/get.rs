@@ -38,11 +38,6 @@ fn parse_type_filter(
 }
 
 impl RecordService {
-    /// List all records in a zone by zone id.
-    pub async fn list(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
-        RepositoryService::list_records(zone_id).await
-    }
-
     /// List all records in a zone by zone id, within the caller's transaction.
     pub(crate) async fn list_tx(
         tx: &mut RepositoryTx<'_>,
@@ -191,7 +186,7 @@ impl RecordService {
             Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
                 log_error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::internal("Failed to fetch record".to_string()));
+                return Err(ServiceError::internal("Failed to fetch record"));
             }
         };
 

@@ -102,7 +102,7 @@ impl RecordService {
                 new_serial,
                 &[Record {
                     id: 0,
-                    name: owner_name.clone(),
+                    name: owner_name,
                     record_type,
                     value: record_value,
                     ttl,
@@ -115,7 +115,7 @@ impl RecordService {
             .pop()
             .ok_or_else(|| {
                 log_error!("Record insert returned no row");
-                ServiceError::internal("Failed to create record".to_string())
+                ServiceError::internal("Failed to create record")
             })?;
 
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;

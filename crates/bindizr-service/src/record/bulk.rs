@@ -24,10 +24,7 @@ use crate::{
     serial::generate_serial,
     timing::{duration_ms, elapsed_ms},
     types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
-    zone::{
-        ZoneService,
-        history::{ReconstructedRecord, build_record_diff},
-    },
+    zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
@@ -44,7 +41,7 @@ struct BulkTimings {
 
 /// A record whose type and value are parsed and ready to insert. The owner name
 /// is kept raw so the constraint validator can normalize it against the zone.
-pub(super) struct PreparedRecord {
+pub(crate) struct PreparedRecord {
     pub(crate) owner_name: String,
     pub(crate) record_type: RecordType,
     pub(crate) value: String,
@@ -53,7 +50,7 @@ pub(super) struct PreparedRecord {
 }
 
 /// Parse the record type and encode the value into its record-row form.
-pub(super) fn prepare_record(
+pub(crate) fn prepare_record(
     name: &str,
     record_type: &str,
     value: &RecordValueRequest,
@@ -74,7 +71,7 @@ pub(super) fn prepare_record(
     })
 }
 
-pub(super) fn zone_journal_for(
+pub(crate) fn zone_journal_for(
     zone_id: i32,
     new_serial: i32,
     operation: ChangeOperation,
@@ -287,7 +284,7 @@ impl RecordService {
 
                 let record = Record {
                     id: 0,
-                    name: owner_name.clone(),
+                    name: owner_name,
                     record_type: prepared_record.record_type.clone(),
                     value: prepared_record.value.clone(),
                     ttl,

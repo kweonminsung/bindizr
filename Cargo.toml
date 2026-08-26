@@ -4,7 +4,6 @@ members = [
     "crates/bindizr-e2e",
     "crates/bindizr-core",
     "crates/bindizr-db",
-    "crates/bindizr-dns",
     "crates/bindizr-external-dns",
     "crates/bindizr-service",
 ]
@@ -22,6 +21,15 @@ license = "Apache-2.0"
 rust-version = "1.85"
 keywords = ["dns", "bind9", "cli", "xfr"]
 categories = ["command-line-utilities", "network-programming"]
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+redundant_clone = "warn"
+inefficient_to_string = "warn"
 
 [workspace.dependencies]
 async-trait = "0.1.89"

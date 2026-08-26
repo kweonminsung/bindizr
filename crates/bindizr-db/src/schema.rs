@@ -3,7 +3,7 @@
 //! Name columns are `VARCHAR(512)`, not 255: rows hold the escaped presentation
 //! form, whose `\` escapes can nearly double the 253-byte wire limit.
 
-pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
+pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (
@@ -168,7 +168,7 @@ pub(super) fn mysql_table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
-pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
+pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (
@@ -353,7 +353,7 @@ pub(super) fn postgres_table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
-pub(super) fn sqlite_table_creation_queries() -> Vec<&'static str> {
+pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
         CREATE TABLE IF NOT EXISTS zones (

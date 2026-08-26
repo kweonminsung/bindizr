@@ -27,17 +27,19 @@ cargo +nightly fmt                                         # format (needs night
 
 ## Architecture — workspace crates
 
-- `bindizr-core` — config, logging, DNS value types, DB models.
+- `bindizr-core` — config, logging, DB models, and the DNS library: value
+  types, wire encoding/decoding, DNSSEC signing, TSIG, and zone-file parsing.
+  It owns the whole `domain` crate dependency; nothing above it uses `domain`
+  directly.
 - `bindizr-db` — repository layer. One impl per backend under
   `repository/{mysql,postgres,sqlite}/`. **The three backends are intentionally
   duplicated** (per-backend SQL + error text); do not try to deduplicate them.
-- `bindizr-dns` — XFR server (AXFR/IXFR/catalog/NOTIFY), wire encoding, and the
-  nsupdate front end (TSIG + decoding an UPDATE message into the operations the
-  service applies).
 - `bindizr-service` — business logic for zones/records (create/update/delete,
   bulk, zone-file import, tokens, serial bumping, RFC 2136 apply).
-- `bindizr` — the binary: the daemon runtime (`daemon.rs`), HTTP API (axum),
-  CLI (clap), Unix-socket daemon IPC.
+- `bindizr` — the binary: the daemon runtime (`daemon.rs`) and every front end
+  it serves — HTTP API (axum), CLI (clap), Unix-socket daemon IPC, and the DNS
+  server (`dns/`: TCP/UDP listeners, AXFR/IXFR/catalog/NOTIFY, nsupdate
+  dispatch). The protocol itself lives in core; `dns/` is I/O and dispatch.
 - `bindizr-external-dns` — a second binary: the ExternalDNS webhook provider
   adapter, forwarding to bindizr's `/external-dns` API over HTTP. No DNS logic
   or state of its own.
@@ -57,8 +59,8 @@ cargo +nightly fmt                                         # format (needs night
 - **Transactions are the service's.** No other crate opens one, so `*_tx`
   methods and `RepositoryTx` are `pub(crate)`.
 - **A use case has one home.** When two front ends answer the same question,
-  the assembly lives below both (`bindizr_dns::status::zone_status`), not
-  once per transport.
+  the assembly lives in one place both reach (`dns::status::zone_status`,
+  shared by the HTTP API and the daemon socket), not once per transport.
 - **Payload shapes are the service's.** `bindizr_service::types` is the wire
   contract of the HTTP API, the daemon socket, and the CLI alike; response
   types the CLI reads back derive `Deserialize` too. Front ends convert to
@@ -291,6 +293,15 @@ Specifically avoid:
 Cite RFC sections as `RFC 2181, Section 5.2` (`Sections 5.2–5.3` for a range),
 never the `§` glyph.
 
+### Workspace lints
+
+`[workspace.lints]` in the root `Cargo.toml` is the one place lint levels are
+set; every crate opts in with `[lints] workspace = true`. `unsafe_code` is
+denied (the project is pure safe Rust), and `unreachable_pub` mechanically
+enforces the visibility rule below. Keep the set small: a lint that fights an
+idiom the codebase uses deliberately costs more than it catches, because the
+build must stay warning-free without `#[allow]`.
+
 ### No dead code, no `#[allow(dead_code)]`
 
 The workspace builds warning-free with no `#[allow(dead_code)]` anywhere; keep
@@ -306,7 +317,8 @@ trait declaration, and its three backend impls all go together.
 ### Module file layout — `mod.rs`, never the sibling form
 
 A module with submodules is a directory containing `mod.rs`
-(`bindizr-dns/src/wire/mod.rs`), not the 2018-edition sibling form (`wire.rs`
+(`bindizr-core/src/dns/message/mod.rs`), not the 2018-edition sibling form
+(`message.rs`
 next to `wire/`). The community leans the other way, so the uniformity is
 deliberate — do not "modernize" it.
 
@@ -315,11 +327,18 @@ tests { … }`, larger ones move to `<module>/tests.rs` declared from `mod.rs`.
 
 ### Visibility records usage
 
-Items and struct fields carry the narrowest visibility that compiles: `pub`
-means another crate touches it today, `pub(crate)` that only its own crate
-does. A struct mixing the two is a measurement, not a design statement — widen
-a field when the compiler asks, and no sooner. This keeps rustc's dead-code
-analysis covering fields (`pub` fields are exempt) and keeps cross-crate struct
+The scheme is three-level and nothing else: private, `pub(crate)`, `pub`.
+`pub` means another crate touches it today, `pub(crate)` that only its own
+crate does, private that only its own module does. **Do not use `pub(super)`
+or `pub(in path)`** — their meaning depends on where the file sits, so it
+reads wrong after a move and has to churn with every reorganization; half the
+uses this codebase once had were at depth-1 modules, where `pub(super)` is
+just an obscure spelling of `pub(crate)`.
+
+Items and struct fields carry the narrowest of the three that compiles. A
+struct mixing them is a measurement, not a design statement — widen a field
+when the compiler asks, and no sooner. This keeps rustc's dead-code analysis
+covering fields (`pub` fields are exempt) and keeps cross-crate struct
 literals impossible.
 
 Deliberate exceptions: `bindizr_service::types` payloads are fully `pub` (their

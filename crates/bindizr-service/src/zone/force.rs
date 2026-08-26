@@ -51,7 +51,7 @@ impl ZoneService {
             .await
             .map_err(|e| {
                 log_error!("Failed to force increment zone serial: {}", e);
-                ServiceError::internal("Failed to force increment zone serial".to_string())
+                ServiceError::internal("Failed to force increment zone serial")
             })?;
 
             // The SOA rdata carries the serial, so its signature must follow

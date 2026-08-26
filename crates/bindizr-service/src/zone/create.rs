@@ -48,7 +48,7 @@ impl ZoneService {
             Ok(None) => {}
             Err(e) => {
                 log_error!("Failed to check existing zone: {}", e);
-                return Err(ServiceError::internal("Failed to create zone".to_string()));
+                return Err(ServiceError::internal("Failed to create zone"));
             }
         };
 
@@ -64,9 +64,9 @@ impl ZoneService {
                 &mut tx,
                 Zone {
                     id: 0,
-                    name: validated.name.clone(),
-                    mname: validated.mname.clone(),
-                    rname: validated.rname.clone(),
+                    name: validated.name,
+                    mname: validated.mname,
+                    rname: validated.rname,
                     dnssec_denial: DnssecDenial::Nsec,
                     default_ttl: validated.ttl,
                     serial,
@@ -85,7 +85,7 @@ impl ZoneService {
                 if e.code == ErrorCode::ZoneConflict {
                     e
                 } else {
-                    ServiceError::internal("Failed to create zone".to_string())
+                    ServiceError::internal("Failed to create zone")
                 }
             })?;
 
@@ -98,7 +98,7 @@ impl ZoneService {
             .await
             .map_err(|e| {
                 log_error!("Failed to create mname NS record: {}", e);
-                ServiceError::internal("Failed to create mname NS record".to_string())
+                ServiceError::internal("Failed to create mname NS record")
             })?;
 
             ZoneService::save_version_tx(&mut tx, &created_zone, created_zone.serial).await?;

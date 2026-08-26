@@ -6,7 +6,7 @@ use super::{
     value::{MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field},
 };
 
-pub(crate) struct SshfpRecordValue {
+pub struct SshfpRecordValue {
     algorithm: u8,
     fingerprint_type: u8,
     fingerprint: Vec<u8>,
@@ -15,7 +15,7 @@ pub(crate) struct SshfpRecordValue {
 impl SshfpRecordValue {
     /// The value is `<algorithm> <fingerprint type> <fingerprint>`; the hex
     /// fingerprint may be split into whitespace-separated groups.
-    pub(crate) fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, String> {
         let mut fields = value.split_whitespace();
         let (Some(algorithm), Some(fingerprint_type)) = (fields.next(), fields.next()) else {
             return Err(format!(
@@ -29,7 +29,7 @@ impl SshfpRecordValue {
         })
     }
 
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         // Fingerprint lengths are fixed per type: SHA-1 and SHA-256.
         let expected = match self.fingerprint_type {
             1 => Some(20),
@@ -58,7 +58,7 @@ impl SshfpRecordValue {
         Ok(())
     }
 
-    pub(crate) fn canonical(&self) -> String {
+    pub fn canonical(&self) -> String {
         format!(
             "{} {} {}",
             self.algorithm,
@@ -68,7 +68,7 @@ impl SshfpRecordValue {
     }
 
     /// The wire-format RDATA of a stored value (RFC 4255, Section 3.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = Vec::with_capacity(2 + self.fingerprint.len());
         rdata.push(self.algorithm);
         rdata.push(self.fingerprint_type);
