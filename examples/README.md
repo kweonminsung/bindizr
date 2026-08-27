@@ -88,7 +88,7 @@ kubectl -n bindizr rollout restart deploy/bindizr
 
 # 2. Create the zone ExternalDNS will manage, and a token granted to it.
 kubectl -n bindizr exec deploy/bindizr -- bindizr zone create --name example.com \
-  --primary-ns ns.example.com --admin-email admin@example.com --ttl 3600
+  --mname ns.example.com --rname admin@example.com --default-ttl 3600
 kubectl -n bindizr exec deploy/bindizr -- bindizr token create --name external-dns
 kubectl -n bindizr exec deploy/bindizr -- bindizr zone token-policy add example.com --token external-dns
 kubectl -n bindizr create secret generic bindizr-external-dns --from-literal=api-token=<token>
