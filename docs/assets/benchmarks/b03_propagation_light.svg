@@ -6,30 +6,30 @@
   <circle cx="268" cy="57" r="4.5" fill="#2a78d6"/>
   <text x="279.0" y="61.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">DNS-visible</text>
   <text x="140.0" y="98.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">Technitium</text>
-  <line x1="158.3" y1="94.0" x2="198.7" y2="94.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <line x1="158.3" y1="94.0" x2="200.5" y2="94.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
   <circle cx="158.3" cy="94.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
-  <circle cx="198.7" cy="94.0" r="4.5" fill="#8c8b85"/>
-  <text x="209.7" y="98.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">5.0 ms</text>
+  <circle cx="200.5" cy="94.0" r="4.5" fill="#8c8b85"/>
+  <text x="211.5" y="98.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">5.1 ms</text>
   <text x="140.0" y="130.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">PowerDNS</text>
-  <line x1="180.1" y1="126.0" x2="223.0" y2="126.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
-  <circle cx="180.1" cy="126.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
-  <circle cx="223.0" cy="126.0" r="4.5" fill="#8c8b85"/>
-  <text x="234.0" y="130.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">7.6 ms</text>
+  <line x1="180.8" y1="126.0" x2="227.1" y2="126.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="180.8" cy="126.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
+  <circle cx="227.1" cy="126.0" r="4.5" fill="#8c8b85"/>
+  <text x="238.1" y="130.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">7.9 ms</text>
   <text x="140.0" y="162.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">Knot DNS</text>
-  <line x1="309.7" y1="158.0" x2="352.9" y2="158.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
-  <circle cx="309.7" cy="158.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
-  <circle cx="352.9" cy="158.0" r="4.5" fill="#8c8b85"/>
-  <text x="363.9" y="162.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">21.5 ms</text>
+  <line x1="314.4" y1="158.0" x2="360.1" y2="158.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="314.4" cy="158.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
+  <circle cx="360.1" cy="158.0" r="4.5" fill="#8c8b85"/>
+  <text x="371.1" y="162.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">21.7 ms</text>
   <text x="140.0" y="194.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="end">BIND9 + nsupdate</text>
-  <line x1="316.0" y1="190.0" x2="358.3" y2="190.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
-  <circle cx="316.0" cy="190.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
-  <circle cx="358.3" cy="190.0" r="4.5" fill="#8c8b85"/>
-  <text x="369.3" y="194.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">22.0 ms</text>
+  <line x1="323.7" y1="190.0" x2="370.4" y2="190.0" stroke="#8c8b85" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="323.7" cy="190.0" r="4.5" fill="none" stroke="#8c8b85" stroke-width="2"/>
+  <circle cx="370.4" cy="190.0" r="4.5" fill="#8c8b85"/>
+  <text x="381.4" y="194.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">22.8 ms</text>
   <text x="140.0" y="226.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#52514e" text-anchor="end">Bindizr + BIND9</text>
-  <line x1="214.2" y1="222.0" x2="773.0" y2="222.0" stroke="#2a78d6" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
-  <circle cx="214.2" cy="222.0" r="4.5" fill="none" stroke="#2a78d6" stroke-width="2"/>
+  <line x1="195.3" y1="222.0" x2="773.0" y2="222.0" stroke="#2a78d6" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="195.3" cy="222.0" r="4.5" fill="none" stroke="#2a78d6" stroke-width="2"/>
   <circle cx="773.0" cy="222.0" r="4.5" fill="#2a78d6"/>
-  <text x="784.0" y="226.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start">66.3 ms</text>
+  <text x="784.0" y="226.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start">64.9 ms</text>
   <line x1="152" y1="84" x2="152" y2="244" stroke="#dcdbd5" stroke-width="1"/>
-  <text x="16.0" y="262.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#78776f" text-anchor="start">Bindizr acknowledges in 6.6 ms; the change is live on every secondary 66.3 ms after the call, carried there by NOTIFY + IXFR.</text>
+  <text x="16.0" y="262.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#78776f" text-anchor="start">Bindizr acknowledges in 4.5 ms; the change is live on every secondary 64.9 ms after the call, carried there by NOTIFY + IXFR.</text>
 </svg>
