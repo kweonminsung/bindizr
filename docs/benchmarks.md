@@ -9,20 +9,20 @@ container capped at 4 CPU / 4 GB.
 
 ## No overhead on the query path
 
-![DNS query throughput: Native BIND9 57,674 QPS, Bindizr + BIND9 57,466, CoreDNS 54,306, PowerDNS 51,718, Knot DNS 36,353, Technitium 10,978](assets/benchmarks/b08_query_throughput_light.svg#only-light)
-![DNS query throughput: Native BIND9 57,674 QPS, Bindizr + BIND9 57,466, CoreDNS 54,306, PowerDNS 51,718, Knot DNS 36,353, Technitium 10,978](assets/benchmarks/b08_query_throughput_dark.svg#only-dark)
+![DNS query throughput: CoreDNS 57,782 QPS, Bindizr + BIND9 57,656, Native BIND9 57,310, PowerDNS 54,704, Knot DNS 38,770, Technitium 11,545](assets/benchmarks/b08_query_throughput_light.svg#only-light)
+![DNS query throughput: CoreDNS 57,782 QPS, Bindizr + BIND9 57,656, Native BIND9 57,310, PowerDNS 54,704, Knot DNS 38,770, Technitium 11,545](assets/benchmarks/b08_query_throughput_dark.svg#only-dark)
 
 Bindizr never answers a client query — the BIND9 secondaries do. `Bindizr +
-BIND9` serves **57,466 QPS against native BIND9's 57,674** (−0.4%, within
+BIND9` serves **57,656 QPS against native BIND9's 57,310** (+0.6%, within
 run-to-run noise), and Bindizr itself draws no measurable CPU under that load.
 
 ## Bulk import
 
-![Bulk import of 10,000 records: Bindizr zone file 114,440 records/sec, Bindizr bulk API 90,058, BIND9 + rndc 88,996, PowerDNS 32,875, Knot DNS 20,599, CoreDNS 13,275, Technitium 8,168](assets/benchmarks/b02_bulk_import_light.svg#only-light)
-![Bulk import of 10,000 records: Bindizr zone file 114,440 records/sec, Bindizr bulk API 90,058, BIND9 + rndc 88,996, PowerDNS 32,875, Knot DNS 20,599, CoreDNS 13,275, Technitium 8,168](assets/benchmarks/b02_bulk_import_dark.svg#only-dark)
+![Bulk import of 10,000 records: Bindizr zone file 110,820 records/sec, Bindizr bulk API 92,212, BIND9 + rndc 35,880, PowerDNS 30,669, Knot DNS 16,973, CoreDNS 12,640, Technitium 8,505](assets/benchmarks/b02_bulk_import_light.svg#only-light)
+![Bulk import of 10,000 records: Bindizr zone file 110,820 records/sec, Bindizr bulk API 92,212, BIND9 + rndc 35,880, PowerDNS 30,669, Knot DNS 16,973, CoreDNS 12,640, Technitium 8,505](assets/benchmarks/b02_bulk_import_dark.svg#only-dark)
 
-A 10,000-record zone file imports in **88 ms**; the same records through the
-bulk record API take 111 ms. Both paths commit to the database, so the zone
+A 10,000-record zone file imports in **90 ms**; the same records through the
+bulk record API take 108 ms. Both paths commit to the database, so the zone
 survives a restart and transfers to the secondaries immediately.
 
 ## Incremental transfers stay incremental
@@ -37,11 +37,11 @@ track the Bindizr curve.
 
 ## Write path
 
-![Median record-create latency from API call to DNS visibility: Technitium 0.7 to 5.0 ms, PowerDNS 3.0 to 7.6 ms, Knot DNS 16.8 to 21.5 ms, BIND9 + nsupdate 17.5 to 22.0 ms, Bindizr + BIND9 6.6 to 66.3 ms](assets/benchmarks/b03_propagation_light.svg#only-light)
-![Median record-create latency from API call to DNS visibility: Technitium 0.7 to 5.0 ms, PowerDNS 3.0 to 7.6 ms, Knot DNS 16.8 to 21.5 ms, BIND9 + nsupdate 17.5 to 22.0 ms, Bindizr + BIND9 6.6 to 66.3 ms](assets/benchmarks/b03_propagation_dark.svg#only-dark)
+![Median record-create latency from API call to DNS visibility: Technitium 0.7 to 5.1 ms, PowerDNS 3.0 to 7.9 ms, Knot DNS 17.0 to 21.7 ms, BIND9 + nsupdate 17.9 to 22.8 ms, Bindizr + BIND9 4.5 to 64.9 ms](assets/benchmarks/b03_propagation_light.svg#only-light)
+![Median record-create latency from API call to DNS visibility: Technitium 0.7 to 5.1 ms, PowerDNS 3.0 to 7.9 ms, Knot DNS 17.0 to 21.7 ms, BIND9 + nsupdate 17.9 to 22.8 ms, Bindizr + BIND9 4.5 to 64.9 ms](assets/benchmarks/b03_propagation_dark.svg#only-dark)
 
-A create is acknowledged in **6.6 ms** and answers from the secondaries **66.3
-ms** after the call (p95 76 ms, p99 80 ms, no timeouts). Bindizr commits to the
+A create is acknowledged in **4.5 ms** and answers from the secondaries **64.9
+ms** after the call (p95 76 ms, p99 94 ms, no timeouts). Bindizr commits to the
 database and propagates by NOTIFY + IXFR, where the integrated servers answer
 from their own process as soon as they accept the write.
 
@@ -49,15 +49,16 @@ from their own process as soon as they accept the write.
 
 | System | Create TPS | Update TPS | Delete TPS | Read TPS | Read p95 | Errors |
 | --- | --- | --- | --- | --- | --- | --- |
-| Bindizr + BIND9 | 192.2 | 175.7 | 180.9 | **12,785.0** | **3.30 ms** | 0.00% |
-| Technitium DNS | **8,062.4** | **7,402.3** | **8,178.1** | 9,747.1 | 3.94 ms | 0.00% |
-| Knot DNS | 656.4 | 936.1 | 650.0 | 1,041.4 | 43.06 ms | 0.00% |
-| BIND9 + nsupdate | 367.2 | 788.5 | 357.8 | 1,033.4 | 43.64 ms | 0.00% |
-| PowerDNS Authoritative | 78.8 | 67.3 | 77.8 | 2,672.6 | 4.79 ms | 0.00% |
+| Bindizr + BIND9 | 368.9 | 357.5 | 353.4 | **12,705.1** | **3.20 ms** | 0.00% |
+| Technitium DNS | **8,185.6** | **7,309.7** | **8,280.3** | 9,935.0 | 3.75 ms | 0.00% |
+| Knot DNS | 701.7 | **1,045.6** | 720.2 | 1,094.5 | 40.30 ms | 0.00% |
+| BIND9 + nsupdate | 379.0 | 846.3 | 389.0 | 1,092.3 | 40.42 ms | 0.00% |
+| PowerDNS Authoritative | 81.2 | 64.9 | 78.0 | 2,790.7 | 4.53 ms | 0.00% |
 
 Each write is a durable database commit plus a zone-serial bump, which sets the
 per-record write rate — servers that hold the zone in memory do more per second
-here. These runs use SQLite; PostgreSQL raises creates from 187 to 522/sec. Read
+here. These runs use SQLite; PostgreSQL puts creates at 406/sec against
+SQLite's 365. Read
 is a management-plane read: an API `GET` where there is an API, a `dig`
 subprocess otherwise, so those p95s carry process-spawn cost.
 
@@ -65,15 +66,15 @@ subprocess otherwise, so those p95s carry process-spawn cost.
 
 | Backend | Create TPS | Read TPS | Read p95 | 100k bulk import | Peak memory (stack) |
 | --- | --- | --- | --- | --- | --- |
-| SQLite | 187.0 | 12,619.7 | 3.29 ms | 1.01 s (99,527/sec) | 138 MB |
-| MySQL | 223.7 | 11,616.3 | 4.94 ms | 2.29 s (43,673/sec) | 1,025 MB |
-| PostgreSQL | 522.1 | 11,117.3 | 4.88 ms | 2.12 s (47,182/sec) | 331 MB |
+| SQLite | 365.1 | 13,031.0 | 3.09 ms | 0.95 s (105,221/sec) | 181 MB |
+| MySQL | 222.1 | 12,066.0 | 4.83 ms | 2.64 s (37,925/sec) | 1,038 MB |
+| PostgreSQL | 405.8 | 11,634.4 | 4.73 ms | 2.47 s (40,567/sec) | 349 MB |
 
 Bulk import stays near-linear from 10k to 100k records on all three backends.
 Peak memory is the whole stack (Bindizr + BIND9 + the DB server container);
-the DB server dominates it — MySQL idles near 450 MB with its default buffer
-pool and `performance_schema` on, while Bindizr's own process stays small on
-every backend.
+the DB server dominates it — the MySQL container alone accounts for ~515 MB
+with its default buffer pool and `performance_schema` on, against ~88 MB for
+PostgreSQL, while Bindizr's own process stays at ~10 MB.
 
 ??? note "Software under test"
 
@@ -81,7 +82,7 @@ every backend.
     | --- | --- |
     | BIND9 | `internetsystemsconsortium/bind9:9.21` |
     | Bindizr | built from source |
-    | CoreDNS | `coredns/coredns:1.14.6` |
+    | CoreDNS | `coredns/coredns:1.14.7` |
     | Knot DNS | `cznic/knot:3.5` |
     | MySQL | `mysql:26.7` |
     | PostgreSQL | `postgres:18` |
