@@ -3,6 +3,7 @@ name = "bindizr-service"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+readme = "README.md"
 description = "Application services for bindizr zone, record, token, and notification workflows"
 homepage.workspace = true
 repository.workspace = true

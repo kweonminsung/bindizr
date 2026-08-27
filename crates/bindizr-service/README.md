@@ -2,8 +2,10 @@
 
 Application service layer for the `bindizr` DNS control plane.
 
-This crate implements the zone, record, token, serial, authentication, notification, and catalog
-zone workflows used by the bindizr CLI and HTTP API.
+This crate implements the zone, record, token, serial, authentication, notification, catalog
+zone, DNSSEC signing, zone-file import, version rollback, and RFC 2136 apply workflows used by
+the bindizr CLI, HTTP API, and DNS server. It owns authorization and transactions: every
+operation a front end can reach takes a caller and gates itself.
 
 ## Documentation
 

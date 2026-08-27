@@ -3,6 +3,7 @@ name = "bindizr-external-dns"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+readme = "README.md"
 description = "ExternalDNS webhook provider adapter for bindizr"
 homepage.workspace = true
 repository.workspace = true

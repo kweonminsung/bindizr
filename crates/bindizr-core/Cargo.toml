@@ -3,6 +3,7 @@ name = "bindizr-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+readme = "README.md"
 description = "Core models, configuration, DNS record types, and logging utilities for bindizr"
 homepage.workspace = true
 repository.workspace = true

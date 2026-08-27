@@ -3,6 +3,7 @@ name = "bindizr-db"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+readme = "README.md"
 description = "Database repositories for bindizr"
 homepage.workspace = true
 repository.workspace = true
