@@ -69,8 +69,7 @@ async fn build_soa_response(
     }
 
     let zone = ZoneService::find_by_name(zone_name_str)
-        .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))?
+        .await?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
     log_info!(

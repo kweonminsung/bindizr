@@ -76,8 +76,7 @@ pub(crate) async fn doctor() -> Result<DaemonResponse, ServiceError> {
         };
 
     let secondaries = probe::probe_secondaries(CATALOG_ZONE_NAME)
-        .await
-        .map_err(|e| ServiceError::internal(e.to_string()))?
+        .await?
         .into_iter()
         .map(|probe| match probe.result {
             Ok(serial) => DoctorProbeResult {
@@ -94,8 +93,7 @@ pub(crate) async fn doctor() -> Result<DaemonResponse, ServiceError> {
         .collect();
 
     let notifies = notify::notify_secondaries(CATALOG_ZONE_NAME)
-        .await
-        .map_err(|e| ServiceError::internal(e.to_string()))?
+        .await?
         .into_iter()
         .map(|notify| DoctorProbeResult {
             address: notify.address,

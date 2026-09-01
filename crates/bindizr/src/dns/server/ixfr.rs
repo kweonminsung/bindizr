@@ -3,12 +3,15 @@ use std::{collections::HashMap, net::IpAddr};
 use bindizr_core::{
     dns::{message, message::Rtype, name::ZoneName},
     log_info, log_warn,
-    model::zone_change::{ChangeOperation, JournalRecordType},
+    model::{
+        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
+        zone_version::ZoneVersion,
+    },
 };
 use bindizr_service::zone::ZoneService;
 use tokio::net::TcpStream;
 
-use super::{axfr, catalog, delta};
+use super::{axfr, catalog};
 use crate::dns::error::XfrError;
 
 /// Handles an IXFR request.
@@ -32,8 +35,7 @@ pub(crate) async fn handle_ixfr(
     }
 
     let zone = ZoneService::find_by_name(zone_name_str)
-        .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))?
+        .await?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
     let current_serial = bindizr_core::dns::serial_to_u32(zone.serial)?;
@@ -48,13 +50,14 @@ pub(crate) async fn handle_ixfr(
 
     if client_serial == current_serial {
         log_info!("IXFR: Client is up-to-date (serial={})", current_serial);
-        let current_soa = match delta::find_zone_version(zone.id, current_serial).await? {
-            Some(version) => version,
-            None => {
-                log_warn!("IXFR: Missing SOA version, falling back to AXFR");
-                return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
-            }
-        };
+        let current_soa =
+            match ZoneService::find_version_by_serial(zone.id, current_serial as i32).await? {
+                Some(version) => version,
+                None => {
+                    log_warn!("IXFR: Missing SOA version, falling back to AXFR");
+                    return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+                }
+            };
         return send_up_to_date_response(stream, query, &current_soa).await;
     }
 
@@ -67,7 +70,12 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    let changes = delta::list_zone_journal(zone.id, client_serial, current_serial).await?;
+    let changes = ZoneService::list_journal_between_serials(
+        zone.id,
+        client_serial as i32,
+        current_serial as i32,
+    )
+    .await?;
 
     if changes.is_empty() {
         log_warn!(
@@ -96,10 +104,16 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
     }
 
-    let mut versions_by_serial: HashMap<u32, delta::ZoneVersion> = HashMap::new();
+    let mut versions_by_serial: HashMap<u32, ZoneVersion> = HashMap::new();
     versions_by_serial.reserve(journal_serials.len() + 1);
 
-    for version in delta::list_zone_versions(zone.id, client_serial, current_serial).await? {
+    for version in ZoneService::list_versions_in_serial_range(
+        zone.id,
+        client_serial as i32,
+        current_serial as i32,
+    )
+    .await?
+    {
         if let Ok(serial) = bindizr_core::dns::serial_to_u32(version.serial) {
             versions_by_serial.insert(serial, version);
         }
@@ -180,7 +194,7 @@ pub(crate) async fn handle_ixfr(
 async fn send_up_to_date_response(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
-    current_soa: &delta::ZoneVersion,
+    current_soa: &ZoneVersion,
 ) -> Result<(), XfrError> {
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
 
@@ -205,8 +219,8 @@ async fn send_ixfr_response(
     query: &message::ParsedQuery,
     zone: &bindizr_core::model::zone::Zone,
     client_serial: u32,
-    changes: &[delta::ZoneChange],
-    versions_by_serial: &HashMap<u32, delta::ZoneVersion>,
+    changes: &[ZoneChange],
+    versions_by_serial: &HashMap<u32, ZoneVersion>,
 ) -> Result<(), IxfrSendError> {
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
     let mut messages_sent = 0usize;
@@ -242,8 +256,8 @@ async fn stream_ixfr_body(
     messages_sent: &mut usize,
     zone: &bindizr_core::model::zone::Zone,
     client_serial: u32,
-    changes: &[delta::ZoneChange],
-    versions_by_serial: &HashMap<u32, delta::ZoneVersion>,
+    changes: &[ZoneChange],
+    versions_by_serial: &HashMap<u32, ZoneVersion>,
 ) -> Result<(), XfrError> {
     let current_version = versions_by_serial
         .get(&bindizr_core::dns::serial_to_u32(zone.serial)?)
@@ -257,7 +271,7 @@ async fn stream_ixfr_body(
     })
     .await?;
 
-    let mut changes_by_serial: HashMap<u32, Vec<&delta::ZoneChange>> = HashMap::new();
+    let mut changes_by_serial: HashMap<u32, Vec<&ZoneChange>> = HashMap::new();
     for change in changes {
         let serial = bindizr_core::dns::serial_to_u32(change.serial)?;
         changes_by_serial.entry(serial).or_default().push(change);
@@ -338,7 +352,7 @@ async fn stream_ixfr_body(
 
 fn add_change(
     builder: &mut message::DnsMessageBuilder,
-    change: &delta::ZoneChange,
+    change: &ZoneChange,
     zone_name: &ZoneName,
 ) -> Result<(), String> {
     match &change.record_type {

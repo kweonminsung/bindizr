@@ -27,9 +27,7 @@ pub(crate) async fn send_notify(zone_name: Option<&str>) -> Result<(), XfrError>
 async fn send_notify_for_all_zones() -> Result<(), XfrError> {
     log_info!("Sending NOTIFY for all zones");
 
-    let zones = ZoneService::list()
-        .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
+    let zones = ZoneService::list().await?;
 
     if zones.is_empty() {
         log_info!("No zones found");
