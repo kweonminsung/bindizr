@@ -97,14 +97,15 @@ fn result_label(response: &Response) -> &'static str {
     }
 }
 
-/// The endpoint label a webhook route reports under; these are the values
-/// `metrics()` pre-registers.
-fn endpoint_label(method: &Method, route: &str) -> &'static str {
+/// The endpoint label a route reports under (`metrics()` pre-registers these).
+/// HEAD serves through `routing::get`; an unrouted method 405s, so `None`.
+fn endpoint_label(method: &Method, route: &str) -> Option<&'static str> {
     match (method.as_str(), route) {
-        ("GET", "/") => "negotiate",
-        ("GET", "/records") => "records_get",
-        ("POST", "/records") => "records_apply",
-        _ => "adjustendpoints",
+        ("GET" | "HEAD", "/") => Some("negotiate"),
+        ("GET" | "HEAD", "/records") => Some("records_get"),
+        ("POST", "/records") => Some("records_apply"),
+        ("POST", "/adjustendpoints") => Some("adjustendpoints"),
+        _ => None,
     }
 }
 
@@ -120,14 +121,16 @@ async fn track_webhook_metrics(request: Request, next: Next) -> Response {
 
     let response = next.run(request).await;
 
-    metrics()
-        .requests_total
-        .with_label_values(&[endpoint, result_label(&response)])
-        .inc();
-    metrics()
-        .request_duration_seconds
-        .with_label_values(&[endpoint])
-        .observe(started.elapsed().as_secs_f64());
+    if let Some(endpoint) = endpoint {
+        metrics()
+            .requests_total
+            .with_label_values(&[endpoint, result_label(&response)])
+            .inc();
+        metrics()
+            .request_duration_seconds
+            .with_label_values(&[endpoint])
+            .observe(started.elapsed().as_secs_f64());
+    }
     response
 }
 

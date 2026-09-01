@@ -439,3 +439,22 @@ async fn healthz_reflects_bindizr_reachability() {
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("bindizr_external_dns_requests_total"));
 }
+
+#[test]
+fn endpoint_label_tracks_head_with_get_and_skips_unrouted_methods() {
+    use axum::http::Method;
+
+    use super::endpoint_label;
+
+    assert_eq!(endpoint_label(&Method::HEAD, "/"), Some("negotiate"));
+    assert_eq!(
+        endpoint_label(&Method::HEAD, "/records"),
+        Some("records_get")
+    );
+    assert_eq!(
+        endpoint_label(&Method::POST, "/adjustendpoints"),
+        Some("adjustendpoints")
+    );
+    // An unsupported method 405s without a handler; it must not count.
+    assert_eq!(endpoint_label(&Method::DELETE, "/records"), None);
+}
