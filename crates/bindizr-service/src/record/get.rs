@@ -13,7 +13,7 @@ use crate::{
     },
     pagination::paginated_response,
     repository::RepositoryService,
-    types::{GetRecordsFilter, PaginatedResponse},
+    types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse},
     zone::{ZoneService, validation::normalize_zone_name},
 };
 
@@ -77,7 +77,7 @@ impl RecordService {
     pub async fn list_with_zone_by_filter(
         caller: &Caller,
         filter: GetRecordsFilter,
-    ) -> Result<PaginatedResponse<ListedRecord>, ServiceError> {
+    ) -> Result<PaginatedResponse<GetRecordResponse>, ServiceError> {
         let scope_token_id = caller.scope_token_id();
         let zone_name = filter
             .zone_name
@@ -176,6 +176,7 @@ impl RecordService {
             );
         }
 
+        let items = items.iter().map(ListedRecord::to_response).collect();
         Ok(paginated_response(
             items,
             limit,

@@ -9,7 +9,7 @@ use crate::{
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone, zone_change::ZoneChange},
     pagination::paginated_response,
     repository::RepositoryService,
-    types::{GetZonesFilter, PaginatedResponse},
+    types::{GetZoneResponse, GetZonesFilter, PaginatedResponse},
 };
 
 impl ZoneService {
@@ -65,7 +65,7 @@ impl ZoneService {
     pub async fn list_by_filter(
         caller: &Caller,
         filter: GetZonesFilter,
-    ) -> Result<PaginatedResponse<Zone>, ServiceError> {
+    ) -> Result<PaginatedResponse<GetZoneResponse>, ServiceError> {
         let scope_token_id = caller.scope_token_id();
         let limit = filter.limit;
         let offset = filter.offset;
@@ -87,7 +87,8 @@ impl ZoneService {
 
         let total = RepositoryService::count_zones_by_filter(zone_filter.clone()).await?;
         let zones = RepositoryService::list_zones_by_filter(zone_filter).await?;
-        Ok(paginated_response(zones, limit, offset, total))
+        let items = zones.iter().map(GetZoneResponse::from_zone).collect();
+        Ok(paginated_response(items, limit, offset, total))
     }
 
     /// Fetch a zone by name for `caller`; a zone it cannot see reads as

@@ -28,7 +28,10 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{PaginatedResponse, RollbackSummary, RollbackZoneResponse, VersionDiffResponse},
+    types::{
+        PaginatedResponse, RollbackSummary, RollbackZoneResponse, VersionDetailResponse,
+        VersionDiffResponse, VersionRecordResponse, ZoneVersionResponse,
+    },
 };
 
 /// A record as it existed at a past serial, rebuilt from the journal;
@@ -247,18 +250,22 @@ impl ZoneService {
         limit: Option<u32>,
         offset: Option<u64>,
         all: bool,
-    ) -> Result<PaginatedResponse<ZoneVersion>, ServiceError> {
+    ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
         let zone = Self::get_by_name(caller, zone_name).await?;
 
         let total = RepositoryService::count_zone_versions(zone.id, !all).await?;
         let effective_limit = limit.unwrap_or(50);
-        let items = RepositoryService::list_zone_versions(
+        let versions = RepositoryService::list_zone_versions(
             zone.id,
             !all,
             effective_limit,
             offset.unwrap_or(0),
         )
         .await?;
+        let items = versions
+            .iter()
+            .map(ZoneVersionResponse::from_version)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(crate::pagination::paginated_response(
             items,
@@ -275,7 +282,7 @@ impl ZoneService {
         caller: &Caller,
         zone_name: &str,
         serial: i32,
-    ) -> Result<(ZoneVersion, Vec<ReconstructedRecord>), ServiceError> {
+    ) -> Result<VersionDetailResponse, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_read_tx("Failed to load version").await?;
 
@@ -301,7 +308,15 @@ impl ZoneService {
         }
         .await;
 
-        RepositoryService::finish_tx(tx, result, "Failed to load version").await
+        let (version, records) =
+            RepositoryService::finish_tx(tx, result, "Failed to load version").await?;
+        Ok(VersionDetailResponse {
+            version: ZoneVersionResponse::from_version(&version)?,
+            records: records
+                .into_iter()
+                .map(VersionRecordResponse::from)
+                .collect(),
+        })
     }
 
     /// Compute the record-level difference between two of a zone's serials.
