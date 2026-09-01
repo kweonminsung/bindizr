@@ -71,7 +71,11 @@ zone's `DNSKEY` TTL, fixed when the key is published — gives resolver caches
 time to learn the new key. Then:
 
 - **ZSK** — no parent involvement: the scheduler promotes it automatically
-  after the wait.
+  after the wait. With `dnssec.zsk_lifetime_days` set (0, the default,
+  disables it), the scheduler also *starts* ZSK rollovers on its own once the
+  active ZSK outlives that many days, making split-key ZSK rotation fully
+  hands-off. CSKs are never auto-rolled — their rollover needs the parent DS
+  swap below.
 - **CSK / KSK** — publish the new DS at the parent (or let it consume the
   CDS), wait out the parent's DS TTL, then confirm; an early confirmation is
   refused:

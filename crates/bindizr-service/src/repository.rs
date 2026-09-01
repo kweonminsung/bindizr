@@ -12,7 +12,7 @@ use crate::{
         get_zone_tsig_policy_repository, get_zone_version_repository,
         model::{
             api_token::ApiToken,
-            dnssec_key::{DnssecKey, DnssecKeyState},
+            dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
             dnssec_record::{DnssecRecord, DnssecRecordWithZone},
             record::{Record, RecordWithZone},
             tsig_key::TsigKey,
@@ -404,6 +404,17 @@ impl RepositoryService {
     ) -> Result<Vec<DnssecKey>, ServiceError> {
         get_dnssec_key_repository()
             .list_by_state_eligible_before(state, cutoff)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
+    }
+
+    pub(crate) async fn list_dnssec_key_zone_ids_by_role_and_state_older_than(
+        role: DnssecKeyRole,
+        state: DnssecKeyState,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<i32>, ServiceError> {
+        get_dnssec_key_repository()
+            .list_zone_ids_by_role_and_state_older_than(role, state, cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
     }

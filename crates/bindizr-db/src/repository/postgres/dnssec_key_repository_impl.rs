@@ -4,7 +4,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
     error::DatabaseError,
-    model::dnssec_key::{DnssecKey, DnssecKeyState},
+    model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
     repository::{DnssecKeyRepository, LockLevel, RepositoryTx, sql::lock_clause},
 };
 
@@ -98,6 +98,31 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         .await?;
 
         Ok(keys)
+    }
+
+    async fn list_zone_ids_by_role_and_state_older_than(
+        &self,
+        role: DnssecKeyRole,
+        state: DnssecKeyState,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<i32>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let zone_ids = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT DISTINCT zone_id
+            FROM dnssec_keys
+            WHERE role = $1 AND state = $2 AND created_at < $3
+            ORDER BY zone_id
+            "#,
+        )
+        .bind(role.as_str())
+        .bind(state.as_str())
+        .bind(cutoff)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        Ok(zone_ids)
     }
 
     async fn update_state_tx(

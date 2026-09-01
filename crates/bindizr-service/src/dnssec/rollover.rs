@@ -72,23 +72,7 @@ impl DnssecService {
                 .iter()
                 .find(|key| key.role == target_role)
                 .expect("validated above that the role exists");
-            let now = Utc::now();
-            // The wait covers the DNSKEY TTL resolvers are being served now
-            // (RFC 7583, Section 3.3.1).
-            let publish_wait = Duration::seconds(
-                (bindizr_config().dnssec.rollover_publish_holddown_secs as i64)
-                    .max(zone.default_ttl as i64),
-            );
-            let new_key = generate_key(
-                &zone,
-                template.algorithm,
-                target_role,
-                DnssecKeyState::Published,
-                now,
-                now + publish_wait,
-            )
-            .map_err(ServiceError::dnssec_signing_failed)?;
-            let new_key = RepositoryService::create_dnssec_key_tx(&mut tx, new_key).await?;
+            let new_key = Self::publish_replacement_key_tx(&mut tx, &zone, template).await?;
 
             let mut keys = keys;
             keys.push(new_key);
@@ -181,6 +165,30 @@ impl DnssecService {
 
         notify_zone(&response.zone_name).await;
         Ok(response)
+    }
+
+    /// Generate and persist a pre-published replacement for `template`; the
+    /// hold-down covers the served DNSKEY TTL (RFC 7583, Section 3.3.1).
+    pub(crate) async fn publish_replacement_key_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        template: &DnssecKey,
+    ) -> Result<DnssecKey, ServiceError> {
+        let now = Utc::now();
+        let publish_wait = Duration::seconds(
+            (bindizr_config().dnssec.rollover_publish_holddown_secs as i64)
+                .max(zone.default_ttl as i64),
+        );
+        let new_key = generate_key(
+            zone,
+            template.algorithm,
+            template.role,
+            DnssecKeyState::Published,
+            now,
+            now + publish_wait,
+        )
+        .map_err(ServiceError::dnssec_signing_failed)?;
+        RepositoryService::create_dnssec_key_tx(tx, new_key).await
     }
 
     /// Promote the published keys named by `promoted` — drawn from this

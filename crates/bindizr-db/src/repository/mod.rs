@@ -13,7 +13,7 @@ use sqlx::{MySql, Postgres, Sqlite};
 
 use super::model::{
     api_token::ApiToken,
-    dnssec_key::{DnssecKey, DnssecKeyState},
+    dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
     dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     record::{Record, RecordType, RecordWithZone},
     tsig_key::TsigKey,
@@ -510,6 +510,14 @@ pub trait DnssecKeyRepository: Send + Sync {
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<DnssecKey>, DatabaseError>;
+    /// Zone ids holding a key of `role` in `state` created before `cutoff`:
+    /// the scheduled-rollover work list.
+    async fn list_zone_ids_by_role_and_state_older_than(
+        &self,
+        role: DnssecKeyRole,
+        state: DnssecKeyState,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<i32>, DatabaseError>;
     async fn update_state_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

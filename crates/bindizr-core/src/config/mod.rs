@@ -221,6 +221,10 @@ pub struct DnssecConfig {
     /// have drained its signatures and the parent its DS).
     #[serde(default = "default_rollover_retire_holddown_secs")]
     pub rollover_retire_holddown_secs: u64,
+    /// Active ZSKs older than this are rolled by the scheduler (0 disables).
+    /// CSKs need a parent DS swap, so they are never auto-rolled.
+    #[serde(default = "default_zsk_lifetime_days")]
+    pub zsk_lifetime_days: u32,
 }
 
 impl Default for DnssecConfig {
@@ -230,6 +234,7 @@ impl Default for DnssecConfig {
             signature_refresh_days: default_signature_refresh_days(),
             rollover_publish_holddown_secs: default_rollover_publish_holddown_secs(),
             rollover_retire_holddown_secs: default_rollover_retire_holddown_secs(),
+            zsk_lifetime_days: default_zsk_lifetime_days(),
         }
     }
 }
@@ -248,6 +253,10 @@ fn default_signature_validity_days() -> u32 {
 
 fn default_signature_refresh_days() -> u32 {
     5
+}
+
+fn default_zsk_lifetime_days() -> u32 {
+    0
 }
 
 /// Logging settings.
@@ -463,6 +472,10 @@ fn apply_env_overrides_from(
     if let Some(value) = get_env("BINDIZR_DNSSEC_ROLLOVER_RETIRE_HOLDDOWN_SECS") {
         config.dnssec.rollover_retire_holddown_secs =
             parse_env_value("BINDIZR_DNSSEC_ROLLOVER_RETIRE_HOLDDOWN_SECS", &value)?;
+    }
+    if let Some(value) = get_env("BINDIZR_DNSSEC_ZSK_LIFETIME_DAYS") {
+        config.dnssec.zsk_lifetime_days =
+            parse_env_value("BINDIZR_DNSSEC_ZSK_LIFETIME_DAYS", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
         config.logging.log_level = parse_env_value("BINDIZR_LOG_LEVEL", &value)?;
