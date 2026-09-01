@@ -17,14 +17,15 @@ async fn zone_dnssec_lifecycle_via_cli() {
         .run_cli_success(&["zone", "dnssec", "status", &zone_name])
         .await;
     assert!(status.contains("DNSSEC enabled"));
-    // The keys table row is `ID ROLE STATE ALGORITHM KEY_TAG DNSKEY`.
+    // The keys table row is `ID ROLE STATE ELIGIBLE-AT ALGORITHM KEY_TAG
+    // DNSKEY`; an active key's ELIGIBLE-AT renders as `-`.
     let key_row = status
         .lines()
         .find(|line| line.contains("ecdsap256sha256"))
         .expect("status lists the signing key");
     let key_tag = key_row
         .split_whitespace()
-        .nth(4)
+        .nth(5)
         .expect("key row carries a key tag");
     assert!(key_tag.parse::<u32>().expect("key tag is numeric") > 0);
 
