@@ -20,10 +20,23 @@ pub(crate) async fn verify(
 
     let resolver = bindizr_config().dnssec.ds_probe_resolver.trim().to_string();
     if !resolver.is_empty() {
-        let expected = DnssecService::get_status(caller, zone_name)
-            .await?
-            .ds_records;
+        let status = DnssecService::get_status(caller, zone_name).await?;
+        let expected = status.ds_records;
         let (ok, detail) = match probe::probe_parent_ds(&response.zone_name).await {
+            // A published withdrawal inverts the expectation: done once the
+            // parent serves no DS (RFC 8078).
+            Ok(seen) if status.withdrawing => (
+                seen.is_empty(),
+                if seen.is_empty() {
+                    format!("withdrawal complete: no DS at {}", resolver)
+                } else {
+                    format!(
+                        "{} DS record(s) still published at {}",
+                        seen.len(),
+                        resolver
+                    )
+                },
+            ),
             Ok(seen) if seen.is_empty() => (
                 false,
                 format!("no DS at {} (delegation is insecure)", resolver),
