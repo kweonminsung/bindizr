@@ -118,3 +118,65 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
         .await;
     assert!(!ds_seen.status.success());
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_dnssec_key_export_import_round_trip_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("dnssec-keys.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    app.run_cli_success(&["zone", "dnssec", "enable", &zone_name])
+        .await;
+
+    let status = app
+        .run_cli_success(&["zone", "dnssec", "status", &zone_name])
+        .await;
+    let key_tag = status
+        .lines()
+        .find(|line| line.contains("ecdsap256sha256"))
+        .and_then(|line| line.split_whitespace().nth(5))
+        .expect("status lists the signing key")
+        .to_string();
+
+    let dir = std::env::temp_dir().join(format!("bindizr-e2e-keys-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create export dir");
+    let dir_arg = dir.to_str().expect("utf-8 temp dir");
+    let exported = app
+        .run_cli_success(&[
+            "zone", "dnssec", "keys", "export", &zone_name, "--dir", dir_arg,
+        ])
+        .await;
+    assert!(exported.contains(".private"), "{exported}");
+
+    let base = dir.join(format!(
+        "K{zone_name}.+013+{:05}",
+        key_tag.parse::<u32>().unwrap()
+    ));
+    let key_file = format!("{}.key", base.display());
+    let private_file = format!("{}.private", base.display());
+    assert!(std::path::Path::new(&key_file).exists(), "{key_file}");
+
+    // Disable drops the keys; the import must restore the same key.
+    app.run_cli_success(&["zone", "dnssec", "disable", &zone_name])
+        .await;
+    let imported = app
+        .run_cli_success(&[
+            "zone",
+            "dnssec",
+            "keys",
+            "import",
+            &zone_name,
+            "--key",
+            &key_file,
+            "--private",
+            &private_file,
+        ])
+        .await;
+    assert!(
+        imported.contains("DNSSEC key imported successfully"),
+        "{imported}"
+    );
+    assert!(imported.contains(&key_tag), "{imported}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}

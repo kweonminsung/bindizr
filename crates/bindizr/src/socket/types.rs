@@ -1,8 +1,8 @@
 use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
-    EnableDnssecRequest, ImportZoneFileRequest, RollbackZoneRequest, RolloverDnssecRequest,
-    SetDnssecTimingRequest, UpdateRecordPatch, UpdateZonePatch,
+    EnableDnssecRequest, ImportDnssecKeyRequest, ImportZoneFileRequest, RollbackZoneRequest,
+    RolloverDnssecRequest, SetDnssecTimingRequest, UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,8 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecWithdraw,
     ZoneDnssecWithdrawCancel,
     ZoneDnssecTiming,
+    ZoneDnssecKeysExport,
+    ZoneDnssecKeysImport,
     ZoneDnssecVerify,
     Doctor,
     Shutdown,
@@ -216,6 +218,14 @@ pub(crate) struct RolloverZoneDnssecParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
     pub(crate) request: RolloverDnssecRequest,
+}
+
+/// Payload for importing one BIND key pair into a zone.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct ImportZoneDnssecKeyParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: ImportDnssecKeyRequest,
 }
 
 /// Payload for replacing a zone's DNSSEC timing overrides.

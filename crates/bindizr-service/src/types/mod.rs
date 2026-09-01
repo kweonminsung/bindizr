@@ -19,9 +19,10 @@ mod zone;
 
 pub use common::{ErrorResponse, HealthResponse, MessageResponse};
 pub use dnssec::{
-    DnssecCheckInfo, DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecStatusResponse,
-    DnssecTimingInfo, EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest,
-    SetDnssecTimingRequest, VerifyDnssecResponse,
+    DnssecCheckInfo, DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecKeyMaterial,
+    DnssecStatusResponse, DnssecTimingInfo, EnableDnssecRequest, ExportDnssecKeysResponse,
+    GetDnssecStatusResponse, ImportDnssecKeyRequest, RolloverDnssecRequest, SetDnssecTimingRequest,
+    VerifyDnssecResponse,
 };
 pub use external_dns::{
     ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,

@@ -128,6 +128,25 @@ while others keep rolling. `zone dnssec status` reports the effective values
 and which are overridden; changes take effect on the next signing pass or
 maintenance scan.
 
+## Key import and export
+
+Keys move in and out as BIND key files, so a zone signed by BIND (or any
+signer using that format) migrates without breaking its chain of trust:
+
+```sh
+# Write K<zone>.+<alg>+<tag>.key/.private files (the .private files are 0600)
+bindizr zone dnssec keys export example.com --dir /etc/bindizr/keys
+
+# Bring an existing pair in as an active key and re-sign with it
+bindizr zone dnssec keys import example.com \
+    --key Kexample.com.+013+12345.key --private Kexample.com.+013+12345.private
+```
+
+An imported key joins the signing set immediately; its role comes from the
+SEP flag (`--role` overrides, e.g. `ksk` for split-key zones). Both commands
+run only over the CLI/daemon socket — private keys never transit the HTTP
+API.
+
 ## Disabling DNSSEC
 
 Dropping signatures while the parent still publishes your DS makes the zone

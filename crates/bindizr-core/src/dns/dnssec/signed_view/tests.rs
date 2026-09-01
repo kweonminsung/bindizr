@@ -5,7 +5,7 @@ use chrono::{DateTime, Duration, Utc};
 use super::{SignedViewDiff, SignedViewParams};
 use crate::{
     dns::{
-        dnssec::generate_key,
+        dnssec::{generate_key, import_key},
         name::{OwnerName, ZoneName},
     },
     model::{
@@ -905,6 +905,33 @@ fn ed448_keys_generate_and_sign() {
     let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32);
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 16);
+}
+
+#[test]
+fn imported_bind_key_pair_round_trips() {
+    let zone = test_zone();
+    let generated = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let record = format!(
+        "example.com. 3600 IN DNSKEY 257 3 13 {}",
+        generated.public_key
+    );
+
+    let imported = import_key(&zone, None, &record, &generated.private_key, fixed_now()).unwrap();
+
+    assert_eq!(imported.role, DnssecKeyRole::Csk);
+    assert_eq!(imported.key_tag, generated.key_tag);
+    assert_eq!(imported.public_key, generated.public_key);
+    assert_eq!(imported.state, DnssecKeyState::Active);
+}
+
+#[test]
+fn import_rejects_a_mismatched_key_pair() {
+    let zone = test_zone();
+    let one = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let other = test_key(&zone, 2, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let record = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", one.public_key);
+
+    assert!(import_key(&zone, None, &record, &other.private_key, fixed_now()).is_err());
 }
 
 #[test]

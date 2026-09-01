@@ -1,8 +1,8 @@
 //! The `zone dnssec` subcommands.
 
 use bindizr_service::types::{
-    EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest, SetDnssecTimingRequest,
-    VerifyDnssecResponse,
+    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyRequest,
+    RolloverDnssecRequest, SetDnssecTimingRequest, VerifyDnssecResponse,
 };
 use clap::Subcommand;
 
@@ -17,7 +17,8 @@ use crate::{
         client::DaemonSocketClient,
         types::{
             DaemonCommandKind, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
-            RolloverZoneDnssecParams, TimingZoneDnssecParams, ZoneNameParams,
+            ImportZoneDnssecKeyParams, RolloverZoneDnssecParams, TimingZoneDnssecParams,
+            ZoneNameParams,
         },
     },
 };
@@ -95,6 +96,11 @@ pub(crate) enum ZoneDnssecCommand {
         #[command(subcommand)]
         subcommand: ZoneDnssecRolloverCommand,
     },
+    /// Import or export the zone's raw keys (BIND `K*.key`/`K*.private` form)
+    Keys {
+        #[command(subcommand)]
+        subcommand: ZoneDnssecKeysCommand,
+    },
     /// Replace the zone's timing overrides; an omitted flag reverts that
     /// knob to the global [dnssec] config
     Timing {
@@ -151,6 +157,37 @@ pub(crate) enum ZoneDnssecRolloverCommand {
     },
 }
 
+/// Subcommands for moving raw key material in and out of bindizr.
+#[derive(Subcommand, Debug)]
+pub(crate) enum ZoneDnssecKeysCommand {
+    /// Write the zone's keys as BIND key files (the .private files are 0600)
+    Export {
+        /// The name of the zone
+        name: String,
+        /// Directory to write the K*.key/K*.private files into
+        #[arg(long, default_value = ".")]
+        dir: String,
+    },
+    /// Import a BIND key pair as an active key and re-sign the zone: the
+    /// migration path for a zone already signed elsewhere
+    Import {
+        /// The name of the zone
+        name: String,
+        /// Path to the K*.key file (the DNSKEY record)
+        #[arg(long, value_name = "FILE")]
+        key: String,
+        /// Path to the matching K*.private file
+        #[arg(long, value_name = "FILE")]
+        private: String,
+        /// csk, ksk, or zsk; inferred from the SEP flag when omitted
+        #[arg(long, value_name = "ROLE")]
+        role: Option<String>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+}
+
 pub(crate) async fn handle_command(
     client: &DaemonSocketClient,
     subcommand: ZoneDnssecCommand,
@@ -197,6 +234,48 @@ pub(crate) async fn handle_command(
             }
             print_status(&response.data, output)?;
         }
+        ZoneDnssecCommand::Keys { subcommand } => match subcommand {
+            ZoneDnssecKeysCommand::Export { name, dir } => {
+                let response = client
+                    .send_command(
+                        DaemonCommandKind::ZoneDnssecKeysExport,
+                        ZoneNameParams { name },
+                    )
+                    .await?;
+                let exported: ExportDnssecKeysResponse =
+                    parse_response(&response.data).map_err(CliError::from)?;
+                write_key_files(&exported, &dir).map_err(CliError::from)?;
+            }
+            ZoneDnssecKeysCommand::Import {
+                name,
+                key,
+                private,
+                role,
+                output,
+            } => {
+                let dnskey = std::fs::read_to_string(&key)
+                    .map_err(|e| CliError::from(format!("Failed to read '{}': {}", key, e)))?;
+                let private_key = std::fs::read_to_string(&private)
+                    .map_err(|e| CliError::from(format!("Failed to read '{}': {}", private, e)))?;
+                let response = client
+                    .send_command(
+                        DaemonCommandKind::ZoneDnssecKeysImport,
+                        ImportZoneDnssecKeyParams {
+                            zone_name: name,
+                            request: ImportDnssecKeyRequest {
+                                dnskey,
+                                private_key,
+                                role,
+                            },
+                        },
+                    )
+                    .await?;
+                if output == OutputFormat::Table {
+                    println!("{}", response.message);
+                }
+                print_status(&response.data, output)?;
+            }
+        },
         ZoneDnssecCommand::Timing {
             name,
             signature_validity_days,
@@ -401,5 +480,41 @@ fn print_ds_records(data: &serde_json::Value) -> Result<(), String> {
         println!("{}", ds.presentation);
     }
 
+    Ok(())
+}
+
+/// Write one `K<zone>.+AAA+TTTTT.key`/`.private` pair per key; the
+/// `.private` file is written 0600.
+fn write_key_files(exported: &ExportDnssecKeysResponse, dir: &str) -> Result<(), String> {
+    use std::io::Write;
+
+    for key in &exported.keys {
+        let base = format!(
+            "K{}.+{:03}+{:05}",
+            exported.zone_name, key.algorithm, key.key_tag
+        );
+        let key_path = std::path::Path::new(dir).join(format!("{}.key", base));
+        let private_path = std::path::Path::new(dir).join(format!("{}.private", base));
+
+        std::fs::write(&key_path, format!("{}\n", key.dnskey_record))
+            .map_err(|e| format!("Failed to write '{}': {}", key_path.display(), e))?;
+
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options
+            .open(&private_path)
+            .map_err(|e| format!("Failed to write '{}': {}", private_path.display(), e))?;
+        file.write_all(key.private_key.as_bytes())
+            .map_err(|e| format!("Failed to write '{}': {}", private_path.display(), e))?;
+
+        println!(
+            "{} ({} key, tag {})",
+            key_path.display(),
+            key.role,
+            key.key_tag
+        );
+        println!("{}", private_path.display());
+    }
     Ok(())
 }

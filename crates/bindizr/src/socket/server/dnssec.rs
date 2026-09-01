@@ -3,8 +3,8 @@ use bindizr_service::{authorization::Caller, dnssec::DnssecService, error::Servi
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DsSeenZoneDnssecParams, EnableZoneDnssecParams, RolloverZoneDnssecParams,
-        TimingZoneDnssecParams, ZoneNameParams,
+        DaemonResponse, DsSeenZoneDnssecParams, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
+        RolloverZoneDnssecParams, TimingZoneDnssecParams, ZoneNameParams,
     },
 };
 
@@ -134,6 +134,37 @@ pub(crate) async fn set_dnssec_timing(
 
     Ok(DaemonResponse {
         message: "DNSSEC timing updated successfully".to_string(),
+        data: to_response_data(status)?,
+    })
+}
+
+/// Handle the `ZoneDnssecKeysExport` command by returning the keys in BIND
+/// file form.
+pub(crate) async fn export_dnssec_keys(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: ZoneNameParams = parse_params(data)?;
+
+    let response = DnssecService::export_keys(&Caller::Global, &params.name).await?;
+
+    Ok(DaemonResponse {
+        message: "DNSSEC keys exported successfully".to_string(),
+        data: to_response_data(response)?,
+    })
+}
+
+/// Handle the `ZoneDnssecKeysImport` command by adding a BIND key pair and
+/// re-signing.
+pub(crate) async fn import_dnssec_key(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: ImportZoneDnssecKeyParams = parse_params(data)?;
+
+    let status =
+        DnssecService::import_key(&Caller::Global, &params.zone_name, params.request).await?;
+
+    Ok(DaemonResponse {
+        message: "DNSSEC key imported successfully".to_string(),
         data: to_response_data(status)?,
     })
 }

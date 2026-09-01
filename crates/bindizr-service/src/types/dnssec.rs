@@ -162,6 +162,39 @@ pub struct SetDnssecTimingRequest {
     pub zsk_lifetime_days: Option<u32>,
 }
 
+/// One key's BIND file contents. Served only over the daemon socket:
+/// private keys never transit the HTTP API.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DnssecKeyMaterial {
+    pub role: String,
+    /// IANA algorithm number.
+    pub algorithm: i32,
+    pub key_tag: i32,
+    /// `K*.key` contents: the DNSKEY record line.
+    pub dnskey_record: String,
+    /// `K*.private` contents.
+    pub private_key: String,
+}
+
+/// Response body listing a zone's keys in BIND file form.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ExportDnssecKeysResponse {
+    pub zone_name: String,
+    pub keys: Vec<DnssecKeyMaterial>,
+}
+
+/// Request body importing one BIND key pair; daemon-socket only.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ImportDnssecKeyRequest {
+    /// `K*.key` contents, or the bare DNSKEY RDATA.
+    pub dnskey: String,
+    /// `K*.private` contents.
+    pub private_key: String,
+    /// `csk`/`ksk`/`zsk`; inferred from the SEP flag when omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+}
+
 /// One verification check's outcome.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecCheckInfo {
