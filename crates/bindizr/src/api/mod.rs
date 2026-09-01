@@ -21,7 +21,22 @@ use bindizr_core::{config, log_error, log_info};
 use bindizr_service::{authorization::Caller, error::ServiceError};
 use error::ApiError;
 use router::ApiRouter;
+use serde::Deserialize;
 use tokio::net::TcpListener;
+
+/// Path parameters addressing a zone by name.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ZoneNameParam {
+    pub(crate) name: String,
+}
+
+/// Path parameters addressing one of a zone's policies by zone name and
+/// policy id.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ZonePolicyParam {
+    pub(crate) name: String,
+    pub(crate) id: i32,
+}
 
 /// The caller attached by the auth middleware, or by the router's
 /// `Caller::Global` layer when authentication is disabled. A request without

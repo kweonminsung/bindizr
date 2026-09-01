@@ -12,9 +12,10 @@ use bindizr_service::{
         MessageResponse, RolloverDnssecRequest,
     },
 };
-use serde::Deserialize;
 
-use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
+use crate::api::{
+    RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody,
+};
 
 /// Route group for zone DNSSEC endpoints.
 pub(crate) struct DnssecApi;
@@ -40,11 +41,6 @@ impl DnssecApi {
                 routing::post(ds_seen_dnssec_rollover),
             )
     }
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ZoneNameParam {
-    pub(crate) name: String,
 }
 
 #[utoipa::path(

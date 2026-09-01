@@ -12,9 +12,11 @@ use bindizr_service::{
     },
     zone::token_policy::ZoneTokenPolicyService,
 };
-use serde::Deserialize;
 
-use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
+use crate::api::{
+    RequestCaller, ZoneNameParam, ZonePolicyParam, error::ApiError,
+    middleware::body_parser::JsonBody,
+};
 
 /// Route group for zone token-policy endpoints.
 pub(crate) struct TokenPolicyApi;
@@ -36,17 +38,6 @@ impl TokenPolicyApi {
                 routing::delete(delete_zone_token_policy),
             )
     }
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ZoneNameParam {
-    pub(crate) name: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ZoneTokenPolicyParam {
-    pub(crate) name: String,
-    pub(crate) id: i32,
 }
 
 #[utoipa::path(
@@ -141,7 +132,7 @@ pub(crate) async fn create_zone_token_policy(
 /// Remove one token policy of a zone by policy id.
 pub(crate) async fn delete_zone_token_policy(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneTokenPolicyParam>,
+    Path(params): Path<ZonePolicyParam>,
 ) -> Result<Response, ApiError> {
     ZoneTokenPolicyService::remove(&caller, &params.name, params.id).await?;
     let response = MessageResponse {

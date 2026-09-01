@@ -19,7 +19,7 @@ use serde::Deserialize;
 
 use crate::{
     api::{
-        RequestCaller,
+        RequestCaller, ZoneNameParam,
         error::ApiError,
         middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     },
@@ -446,12 +446,6 @@ pub(crate) async fn import_zone(
 ) -> Result<Response, ApiError> {
     let response = RecordService::import_zone_file(&caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
-}
-
-/// Path parameters addressing a zone by name.
-#[derive(Debug, Deserialize)]
-pub(crate) struct ZoneNameParam {
-    name: String,
 }
 
 /// Query parameters for fetching a zone.
