@@ -1097,7 +1097,7 @@ paths:
       tags:
       - DNSSEC
       summary: Enable DNSSEC for a zone
-      description: Generates the zone's signing key — an ECDSA P-256 CSK by default (`algorithm` also accepts `ed25519`; `split_keys` generates a KSK/ZSK pair instead; `nsec3` selects NSEC3 denial of existence) — and signs the whole zone. The response includes the DS records to register in the parent zone.
+      description: Generates the zone's signing key — an ECDSA P-256 CSK by default (`algorithm` also accepts `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, and `rsasha512`; `split_keys` generates a KSK/ZSK pair instead; `nsec3` selects NSEC3 denial of existence) — and signs the whole zone. The response includes the DS records to register in the parent zone.
       operationId: enable_dnssec
       parameters:
       - name: name
@@ -1341,7 +1341,7 @@ paths:
           type: string
       - name: force
         in: query
-        description: Skip the parent DS verification against dnssec.ds_probe_resolver.
+        description: Skip the parent DS verification against dnssec.parent_ds_resolver.
         required: false
         schema:
           type: boolean
@@ -1439,12 +1439,69 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/dnssec/timing:
+    put:
+      tags:
+      - DNSSEC
+      summary: Replace a zone's DNSSEC timing overrides
+      description: Replaces the zone's signing-timing overrides (signature validity, re-sign threshold, scheduled ZSK lifetime). An omitted field reverts that knob to the global `[dnssec]` config. Takes effect on the next signing pass or maintenance scan.
+      operationId: set_dnssec_timing
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetDnssecTimingRequest'
+        required: true
+      responses:
+        '200':
+          description: Timing overrides replaced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecStatusResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}/dnssec/verify:
     get:
       tags:
       - DNSSEC
       summary: Verify a zone's DNSSEC state
-      description: Runs self-checks on the stored state — key inventory, signature freshness, per-algorithm signature coverage (RFC 6840, Section 5.11), and the denial chain — and, with `dnssec.ds_probe_resolver` configured, compares the DS the parent serves against the zone's keys. Each aspect reports as a named check; `ok` is the conjunction.
+      description: Runs self-checks on the stored state — key inventory, signature freshness, per-algorithm signature coverage (RFC 6840, Section 5.11), and the denial chain — and, with `dnssec.parent_ds_resolver` configured, compares the DS the parent serves against the zone's keys. Each aspect reports as a named check; `ok` is the conjunction.
       operationId: verify_dnssec
       parameters:
       - name: name
@@ -1653,7 +1710,7 @@ paths:
       tags:
       - Zone
       summary: Import a BIND zone file into a zone
-      description: Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.
+      description: Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. Passing `from_server` instead of `content` pulls the records over AXFR from that server first (its SOA and DNSSEC-derived records are dropped). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.
       operationId: import_zone
       parameters:
       - name: name
@@ -2646,6 +2703,14 @@ components:
           type: string
           description: 'Apex DNSKEY RDATA in presentation form: `257 3 <alg> <public key>`.'
           example: 257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==
+        ds_seen_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: |-
+            When the DS poll first saw this key's DS at the parent; only pending
+            SEP keys carry it.
         eligible_at:
           type:
           - string
@@ -2681,6 +2746,47 @@ components:
       properties:
         dnssec:
           $ref: '#/components/schemas/GetDnssecStatusResponse'
+    DnssecTimingInfo:
+      type: object
+      description: |-
+        Per-zone signing timing: the values in effect after applying any zone
+        override to the global `[dnssec]` config, plus the stored overrides.
+      required:
+      - signature_validity_days
+      - signature_refresh_days
+      - zsk_lifetime_days
+      properties:
+        signature_refresh_days:
+          type: integer
+          format: int32
+          example: 7
+          minimum: 0
+        signature_refresh_days_override:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        signature_validity_days:
+          type: integer
+          format: int32
+          example: 30
+          minimum: 0
+        signature_validity_days_override:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        zsk_lifetime_days:
+          type: integer
+          format: int32
+          description: 0 disables scheduled ZSK rollovers.
+          example: 90
+          minimum: 0
+        zsk_lifetime_days_override:
+          type:
+          - integer
+          - 'null'
+          format: int32
     EnableDnssecRequest:
       type: object
       description: Request body for enabling DNSSEC on a zone.
@@ -2689,7 +2795,7 @@ components:
           type:
           - string
           - 'null'
-          description: Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384` and `ed25519`.
+          description: Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, and `rsasha512`.
           example: ecdsap256sha256
         denial:
           type:
@@ -2875,6 +2981,7 @@ components:
       - keys
       - ds_records
       - serial
+      - timing
       properties:
         denial:
           type: string
@@ -2902,6 +3009,8 @@ components:
           type: integer
           format: int32
           example: 7
+        timing:
+          $ref: '#/components/schemas/DnssecTimingInfo'
         withdrawing:
           type: boolean
           description: |-
@@ -3152,18 +3261,26 @@ components:
     ImportZoneFileRequest:
       type: object
       description: Request body for importing a BIND zone file into a zone.
-      required:
-      - content
       properties:
         content:
-          type: string
-          description: Raw BIND zone file text.
+          type:
+          - string
+          - 'null'
+          description: Raw BIND zone file text; exactly one of this and `from_server`.
           example: |
             www IN A 192.0.2.1
             mail IN A 192.0.2.2
         dry_run:
           type: boolean
           description: When true, parse and validate without applying any change.
+        from_server:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Pull the records over AXFR from this server (`host[:port]`, port 53
+            default) instead of `content`; the source's SOA and DNSSEC-derived
+            records are dropped.
         mode:
           $ref: '#/components/schemas/ImportMode'
     ImportZoneFileResponse:
@@ -3668,6 +3785,38 @@ components:
           - 'null'
           format: int64
           example: 42
+    SetDnssecTimingRequest:
+      type: object
+      description: |-
+        Request body replacing a zone's timing overrides: an omitted field reverts
+        that knob to the global `[dnssec]` config.
+      properties:
+        signature_refresh_days:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Re-sign when a signature has fewer than this many days left.
+          example: 7
+          minimum: 0
+        signature_validity_days:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Days a new signature stays valid.
+          example: 30
+          minimum: 0
+        zsk_lifetime_days:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            Days an active ZSK may sign before the scheduler rolls it; 0 disables
+            scheduled rolls for this zone.
+          example: 90
+          minimum: 0
     TsigKeyListResponse:
       type: object
       description: List of TSIG keys (secrets omitted).

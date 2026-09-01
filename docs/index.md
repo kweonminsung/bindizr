@@ -63,6 +63,8 @@ DNS Synchronization Service for BIND9
 
 - **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests, managed TSIG keys, and per-zone update policies.
 
+- **DNSSEC**: Automatic signing and re-signing, key rollovers (scheduled ZSK rolls, unattended CSK/KSK promotion once the parent DS is seen), per-zone timing overrides, BIND-format key import/export, and RFC 8078 DS withdrawal — see [DNSSEC](dnssec.md).
+
 - **Zone Versions**: A version per serial, with diffs between serials and rollback to a previous serial.
 
 - **Observability**: Health probe endpoint, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
