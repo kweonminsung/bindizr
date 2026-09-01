@@ -9,7 +9,7 @@ use bindizr_service::{
     dnssec::DnssecService,
     types::{
         DnssecDsListResponse, DnssecStatusResponse, EnableDnssecRequest, ErrorResponse,
-        MessageResponse, RolloverDnssecRequest, VerifyDnssecResponse,
+        MessageResponse, RolloverDnssecRequest, SetDnssecTimingRequest, VerifyDnssecResponse,
     },
 };
 use serde::Deserialize;
@@ -45,6 +45,10 @@ impl DnssecApi {
             .route(
                 "/zones/{name}/dnssec/withdraw",
                 routing::post(withdraw_dnssec).delete(cancel_dnssec_withdrawal),
+            )
+            .route(
+                "/zones/{name}/dnssec/timing",
+                routing::put(set_dnssec_timing),
             )
             .route("/zones/{name}/dnssec/verify", routing::get(verify_dnssec))
     }
@@ -306,6 +310,36 @@ pub(crate) async fn withdraw_dnssec(
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::withdraw(&caller, &params.name).await?;
+    let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        put,
+        path = "/zones/{name}/dnssec/timing",
+        tag = "DNSSEC",
+        summary = "Replace a zone's DNSSEC timing overrides",
+        description = "Replaces the zone's signing-timing overrides (signature validity, re-sign threshold, scheduled ZSK lifetime). An omitted field reverts that knob to the global `[dnssec]` config. Takes effect on the next signing pass or maintenance scan.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        request_body = SetDnssecTimingRequest,
+        responses(
+            (status = 200, description = "Timing overrides replaced", body = DnssecStatusResponse),
+            (status = 400, description = "Bad request", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Replace the zone's DNSSEC timing overrides.
+pub(crate) async fn set_dnssec_timing(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+    JsonBody(body): JsonBody<SetDnssecTimingRequest>,
+) -> Result<Response, ApiError> {
+    let status = DnssecService::set_timing(&caller, &params.name, body).await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

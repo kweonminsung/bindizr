@@ -4,7 +4,7 @@ use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
         DaemonResponse, DsSeenZoneDnssecParams, EnableZoneDnssecParams, RolloverZoneDnssecParams,
-        ZoneNameParams,
+        TimingZoneDnssecParams, ZoneNameParams,
     },
 };
 
@@ -118,6 +118,22 @@ pub(crate) async fn withdraw_dnssec(
 
     Ok(DaemonResponse {
         message: "DS withdrawal published successfully".to_string(),
+        data: to_response_data(status)?,
+    })
+}
+
+/// Handle the `ZoneDnssecTiming` command by replacing the zone's timing
+/// overrides.
+pub(crate) async fn set_dnssec_timing(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: TimingZoneDnssecParams = parse_params(data)?;
+
+    let status =
+        DnssecService::set_timing(&Caller::Global, &params.zone_name, params.request).await?;
+
+    Ok(DaemonResponse {
+        message: "DNSSEC timing updated successfully".to_string(),
         data: to_response_data(status)?,
     })
 }

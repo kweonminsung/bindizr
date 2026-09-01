@@ -111,6 +111,23 @@ the hourly scheduler handles this with no operator action. `bindizr zone
 dnssec sign example.com` forces a full re-sign if stored signatures are ever
 doubted.
 
+### Per-zone timing
+
+The three day-scale knobs — signature validity, the re-sign threshold, and
+the scheduled ZSK lifetime — can be overridden per zone:
+
+```bash
+$ bindizr zone dnssec timing example.com \
+    --signature-validity-days 30 --zsk-lifetime-days 90
+```
+
+Also `PUT /zones/{name}/dnssec/timing`. The call **replaces** the zone's
+overrides: a knob whose flag is omitted reverts to the global `[dnssec]`
+config. `--zsk-lifetime-days 0` turns scheduled ZSK rolls off for one zone
+while others keep rolling. `zone dnssec status` reports the effective values
+and which are overridden; changes take effect on the next signing pass or
+maintenance scan.
+
 ## Disabling DNSSEC
 
 Dropping signatures while the parent still publishes your DS makes the zone

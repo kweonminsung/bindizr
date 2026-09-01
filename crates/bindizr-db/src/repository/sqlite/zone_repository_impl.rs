@@ -57,7 +57,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE id = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones WHERE id = ?")
             .bind(id)
             .fetch_optional(&mut **sqlite_tx)
             .await?;
@@ -68,7 +68,7 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE name = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones WHERE name = ?")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await?;
@@ -84,7 +84,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE name = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones WHERE name = ?")
             .bind(name)
             .fetch_optional(&mut **sqlite_tx)
             .await?;
@@ -95,7 +95,7 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await?;
 
@@ -109,7 +109,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Vec<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones ORDER BY name")
             .fetch_all(&mut **sqlite_tx)
             .await?;
 
@@ -122,7 +122,7 @@ impl ZoneRepository for SqliteZoneRepository {
 
         let zones = sqlx::query_as::<_, Zone>(
             r#"
-            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at
+            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at
             FROM zones
             WHERE (? IS NULL OR LOWER(name) = LOWER(?))
               AND (? IS NULL OR id = ?)
@@ -291,6 +291,28 @@ impl ZoneRepository for SqliteZoneRepository {
             .bind(zone_id)
             .execute(&mut **sqlite_tx)
             .await?;
+
+        Ok(())
+    }
+
+    async fn update_dnssec_timing(
+        &self,
+        zone_id: i32,
+        signature_validity_days: Option<i32>,
+        signature_refresh_days: Option<i32>,
+        zsk_lifetime_days: Option<i32>,
+    ) -> Result<(), DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        sqlx::query(
+            "UPDATE zones SET dnssec_signature_validity_days = ?, dnssec_signature_refresh_days = ?, dnssec_zsk_lifetime_days = ? WHERE id = ?",
+        )
+        .bind(signature_validity_days)
+        .bind(signature_refresh_days)
+        .bind(zsk_lifetime_days)
+        .bind(zone_id)
+        .execute(&mut *conn)
+        .await?;
 
         Ok(())
     }

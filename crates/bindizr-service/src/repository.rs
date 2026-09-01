@@ -438,13 +438,19 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
     }
 
-    pub(crate) async fn list_dnssec_key_zone_ids_by_role_and_state_entered_before(
+    pub(crate) async fn list_dnssec_key_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         role: DnssecKeyRole,
         state: DnssecKeyState,
-        cutoff: DateTime<Utc>,
+        now: DateTime<Utc>,
+        default_zsk_lifetime_days: u32,
     ) -> Result<Vec<i32>, ServiceError> {
         get_dnssec_key_repository()
-            .list_zone_ids_by_role_and_state_entered_before(role, state, cutoff)
+            .list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
+                role,
+                state,
+                now,
+                default_zsk_lifetime_days,
+            )
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
     }
@@ -465,11 +471,12 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC keys: {}", e)))
     }
 
-    pub(crate) async fn count_rrsig_dnssec_records_expiring_before(
-        cutoff: DateTime<Utc>,
+    pub(crate) async fn count_rrsig_dnssec_records_expiring_within_refresh(
+        now: DateTime<Utc>,
+        default_refresh_days: u32,
     ) -> Result<u64, ServiceError> {
         get_dnssec_record_repository()
-            .count_expiring_before(cutoff)
+            .count_expiring_within_refresh(now, default_refresh_days)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
@@ -571,11 +578,12 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
 
-    pub(crate) async fn list_rrsig_zone_ids_expiring_before(
-        cutoff: DateTime<Utc>,
+    pub(crate) async fn list_rrsig_zone_ids_expiring_within_refresh(
+        now: DateTime<Utc>,
+        default_refresh_days: u32,
     ) -> Result<Vec<i32>, ServiceError> {
         get_dnssec_record_repository()
-            .list_zone_ids_expiring_before(cutoff)
+            .list_zone_ids_expiring_within_refresh(now, default_refresh_days)
             .await
             .map_err(|e| {
                 ServiceError::internal(format!("failed to find zones needing re-signing: {}", e))
@@ -602,6 +610,27 @@ impl RepositoryService {
             .update_tx(tx, zone)
             .await
             .map_err(|e| zone_name_race_error(name.as_str(), "update", &e))
+    }
+
+    /// Replace the zone's three DNSSEC timing overrides; `None` reverts a
+    /// knob to the global config.
+    pub(crate) async fn update_zone_dnssec_timing(
+        zone_id: i32,
+        signature_validity_days: Option<i32>,
+        signature_refresh_days: Option<i32>,
+        zsk_lifetime_days: Option<i32>,
+    ) -> Result<(), ServiceError> {
+        get_zone_repository()
+            .update_dnssec_timing(
+                zone_id,
+                signature_validity_days,
+                signature_refresh_days,
+                zsk_lifetime_days,
+            )
+            .await
+            .map_err(|e| {
+                ServiceError::internal(format!("failed to update zone DNSSEC timing: {}", e))
+            })
     }
 
     /// Set only the zone's `dnssec_denial` mode, leaving other columns untouched.

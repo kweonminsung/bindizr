@@ -233,6 +233,9 @@ fn restored_zone_from_version(
         retry: version.retry,
         expire: version.expire,
         dnssec_denial: zone.dnssec_denial,
+        dnssec_signature_validity_days: zone.dnssec_signature_validity_days,
+        dnssec_signature_refresh_days: zone.dnssec_signature_refresh_days,
+        dnssec_zsk_lifetime_days: zone.dnssec_zsk_lifetime_days,
         minimum_ttl: version.minimum_ttl,
         created_at: zone.created_at,
     })

@@ -98,26 +98,33 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(keys)
     }
 
-    async fn list_zone_ids_by_role_and_state_entered_before(
+    async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         &self,
         role: DnssecKeyRole,
         state: DnssecKeyState,
-        cutoff: DateTime<Utc>,
+        now: DateTime<Utc>,
+        default_zsk_lifetime_days: u32,
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        // datetime(?) normalizes the bound value to the column's stored format.
+        // datetime() normalizes both sides to one stored format.
         let zone_ids = sqlx::query_scalar::<_, i32>(
             r#"
-            SELECT DISTINCT zone_id
-            FROM dnssec_keys
-            WHERE role = ? AND state = ? AND state_changed_at < datetime(?)
-            ORDER BY zone_id
+            SELECT DISTINCT k.zone_id
+            FROM dnssec_keys k
+            JOIN zones z ON z.id = k.zone_id
+            WHERE k.role = ? AND k.state = ?
+              AND COALESCE(z.dnssec_zsk_lifetime_days, ?) > 0
+              AND datetime(k.state_changed_at)
+                  < datetime(?, '-' || COALESCE(z.dnssec_zsk_lifetime_days, ?) || ' days')
+            ORDER BY k.zone_id
             "#,
         )
         .bind(role.as_str())
         .bind(state.as_str())
-        .bind(cutoff)
+        .bind(default_zsk_lifetime_days as i32)
+        .bind(now)
+        .bind(default_zsk_lifetime_days as i32)
         .fetch_all(&mut *conn)
         .await?;
 

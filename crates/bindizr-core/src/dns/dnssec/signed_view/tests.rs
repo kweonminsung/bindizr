@@ -29,6 +29,9 @@ fn test_zone() -> Zone {
         expire: 3600000,
         minimum_ttl: 900,
         dnssec_denial: DnssecDenial::Nsec,
+        dnssec_signature_validity_days: None,
+        dnssec_signature_refresh_days: None,
+        dnssec_zsk_lifetime_days: None,
         created_at: Utc::now(),
     }
 }

@@ -30,6 +30,9 @@ fn test_zone(id: i32, name: &str) -> Zone {
         expire: 604800,
         minimum_ttl: 86400,
         dnssec_denial: DnssecDenial::Nsec,
+        dnssec_signature_validity_days: None,
+        dnssec_signature_refresh_days: None,
+        dnssec_zsk_lifetime_days: None,
         created_at: Utc::now(),
     }
 }

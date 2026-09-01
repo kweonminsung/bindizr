@@ -1,6 +1,6 @@
 //! Turning signing on and off, and the operator's force re-sign.
 
-use bindizr_core::dns::dnssec::generate_key;
+use bindizr_core::{config::bindizr_config, dns::dnssec::generate_key};
 use chrono::Utc;
 
 use super::{DnssecService, notify_zone, status::build_status};
@@ -15,7 +15,7 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::GetDnssecStatusResponse,
+    types::{GetDnssecStatusResponse, SetDnssecTimingRequest},
     zone::ZoneService,
 };
 
@@ -236,5 +236,65 @@ impl DnssecService {
 
         notify_zone(&zone_name).await;
         Ok(())
+    }
+
+    /// Replace the zone's timing overrides; omitted fields revert to the
+    /// global config. Takes effect on the next maintenance pass or re-sign.
+    pub async fn set_timing(
+        caller: &Caller,
+        zone_name: &str,
+        request: SetDnssecTimingRequest,
+    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+        caller.require_global("manage DNSSEC signing")?;
+
+        for (field, value) in [
+            ("signature_validity_days", request.signature_validity_days),
+            ("signature_refresh_days", request.signature_refresh_days),
+        ] {
+            if value == Some(0) {
+                return Err(ServiceError::invalid_input(format!(
+                    "{} must be positive",
+                    field
+                )));
+            }
+        }
+        for (field, value) in [
+            ("signature_validity_days", request.signature_validity_days),
+            ("signature_refresh_days", request.signature_refresh_days),
+            ("zsk_lifetime_days", request.zsk_lifetime_days),
+        ] {
+            if value.is_some_and(|days| days > 3650) {
+                return Err(ServiceError::invalid_input(format!(
+                    "{} must be at most 3650",
+                    field
+                )));
+            }
+        }
+        // A validity inside the re-sign window would re-sign on every pass.
+        let defaults = &bindizr_config().dnssec;
+        let validity = request
+            .signature_validity_days
+            .unwrap_or(defaults.signature_validity_days);
+        let refresh = request
+            .signature_refresh_days
+            .unwrap_or(defaults.signature_refresh_days);
+        if validity <= refresh {
+            return Err(ServiceError::invalid_input(format!(
+                "effective signature_validity_days ({}) must exceed signature_refresh_days ({})",
+                validity, refresh
+            )));
+        }
+
+        // Non-locking pre-read only to learn the update target.
+        let zone = ZoneService::get_by_name(caller, zone_name).await?;
+        RepositoryService::update_zone_dnssec_timing(
+            zone.id,
+            request.signature_validity_days.map(|days| days as i32),
+            request.signature_refresh_days.map(|days| days as i32),
+            request.zsk_lifetime_days.map(|days| days as i32),
+        )
+        .await?;
+
+        Self::get_status(caller, zone_name).await
     }
 }

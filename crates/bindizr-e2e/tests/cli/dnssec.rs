@@ -34,6 +34,31 @@ async fn zone_dnssec_lifecycle_via_cli() {
         .await;
     assert!(ds.contains(&format!("IN DS {key_tag} ")), "{ds}");
 
+    let timing = app
+        .run_cli_success(&[
+            "zone",
+            "dnssec",
+            "timing",
+            &zone_name,
+            "--signature-validity-days",
+            "30",
+            "--zsk-lifetime-days",
+            "90",
+        ])
+        .await;
+    assert!(timing.contains("DNSSEC timing updated successfully"));
+    assert!(
+        timing.contains("validity 30d") && timing.contains("zsk-lifetime 90d"),
+        "{timing}"
+    );
+    assert!(timing.contains("overridden"), "{timing}");
+
+    // The call replaces the overrides, so an omitted knob reverts.
+    let reverted = app
+        .run_cli_success(&["zone", "dnssec", "timing", &zone_name])
+        .await;
+    assert!(!reverted.contains("overridden"), "{reverted}");
+
     let signed_export = app
         .run_cli_success(&["zone", "export", &zone_name, "--signed"])
         .await;

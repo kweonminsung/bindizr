@@ -253,8 +253,8 @@ pub trait ZoneRepository: Send + Sync {
     /// Limit-1 probe of the zones table; health checks must stay cheap on
     /// large tables.
     async fn ping(&self) -> Result<(), DatabaseError>;
-    /// Full-row update, except `dnssec_denial`: that column is owned by
-    /// DNSSEC enable/disable, so ordinary zone updates cannot clobber it.
+    /// Full-row update, except the DNSSEC-owned columns (`dnssec_denial`,
+    /// the timing overrides): ordinary zone updates cannot clobber them.
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
     /// Set only `dnssec_denial`, leaving the zone's other columns untouched.
@@ -263,6 +263,15 @@ pub trait ZoneRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         denial: DnssecDenial,
+    ) -> Result<(), DatabaseError>;
+    /// Replace all three per-zone DNSSEC timing overrides, leaving the zone's
+    /// other columns untouched; `None` reverts a knob to the global config.
+    async fn update_dnssec_timing(
+        &self,
+        zone_id: i32,
+        signature_validity_days: Option<i32>,
+        signature_refresh_days: Option<i32>,
+        zsk_lifetime_days: Option<i32>,
     ) -> Result<(), DatabaseError>;
     /// Bump only the serial, leaving the zone's other columns untouched.
     async fn update_serial_tx(
@@ -510,13 +519,16 @@ pub trait DnssecKeyRepository: Send + Sync {
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<DnssecKey>, DatabaseError>;
-    /// Zone ids holding a key of `role` sitting in `state` since before
-    /// `cutoff`: the scheduled-rollover work list.
-    async fn list_zone_ids_by_role_and_state_entered_before(
+    /// Zone ids holding a key of `role` sitting in `state` longer than the
+    /// zone's ZSK lifetime (`dnssec_zsk_lifetime_days`, or
+    /// `default_zsk_lifetime_days` when unset; an effective 0 exempts the
+    /// zone): the scheduled-rollover work list.
+    async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         &self,
         role: DnssecKeyRole,
         state: DnssecKeyState,
-        cutoff: DateTime<Utc>,
+        now: DateTime<Utc>,
+        default_zsk_lifetime_days: u32,
     ) -> Result<Vec<i32>, DatabaseError>;
     /// Zones holding at least one key: the signed-zone count.
     async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
@@ -571,13 +583,21 @@ pub trait DnssecRecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<(), DatabaseError>;
-    /// Zones holding an RRSIG that expires before `cutoff`: the re-sign work list.
-    async fn list_zone_ids_expiring_before(
+    /// Zones holding an RRSIG that expires within the zone's re-sign window
+    /// after `now` (`dnssec_signature_refresh_days`, or `default_refresh_days`
+    /// when unset): the re-sign work list.
+    async fn list_zone_ids_expiring_within_refresh(
         &self,
-        cutoff: DateTime<Utc>,
+        now: DateTime<Utc>,
+        default_refresh_days: u32,
     ) -> Result<Vec<i32>, DatabaseError>;
-    /// Rows expiring before `cutoff`; only RRSIG rows carry `expires_at`.
-    async fn count_expiring_before(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
+    /// Rows expiring within the zone's re-sign window after `now`; only RRSIG
+    /// rows carry `expires_at`.
+    async fn count_expiring_within_refresh(
+        &self,
+        now: DateTime<Utc>,
+        default_refresh_days: u32,
+    ) -> Result<u64, DatabaseError>;
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,

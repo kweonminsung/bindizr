@@ -14,7 +14,7 @@ use crate::{
         zone::{DnssecDenial, Zone},
     },
     repository::{RepositoryService, RepositoryTx},
-    types::{DnssecDsInfo, DnssecKeyInfo, GetDnssecStatusResponse},
+    types::{DnssecDsInfo, DnssecKeyInfo, DnssecTimingInfo, GetDnssecStatusResponse},
     zone::ZoneService,
 };
 
@@ -89,13 +89,18 @@ impl DnssecService {
         RepositoryService::count_dnssec_keys_by_state(state).await
     }
 
-    /// Count signatures expiring before `cutoff` across every zone.
-    pub async fn count_rrsigs_expiring_before(
+    /// Count signatures inside each zone's re-sign window across every zone.
+    pub async fn count_rrsigs_expiring_within_refresh(
         caller: &Caller,
-        cutoff: DateTime<Utc>,
+        now: DateTime<Utc>,
+        default_refresh_days: u32,
     ) -> Result<u64, ServiceError> {
         caller.require_global("read DNSSEC metrics")?;
-        RepositoryService::count_rrsig_dnssec_records_expiring_before(cutoff).await
+        RepositoryService::count_rrsig_dnssec_records_expiring_within_refresh(
+            now,
+            default_refresh_days,
+        )
+        .await
     }
 
     pub(crate) async fn earliest_expiry_tx(
@@ -151,6 +156,7 @@ pub(crate) fn build_status(
         earliest_signature_expires_at,
         serial,
         withdrawing,
+        timing: DnssecTimingInfo::from_zone(zone),
     })
 }
 

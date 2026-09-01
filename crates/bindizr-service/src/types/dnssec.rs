@@ -1,8 +1,11 @@
 //! DNSSEC management payloads.
 
+use bindizr_core::config::bindizr_config;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::model::zone::Zone;
 
 /// Request body for enabling DNSSEC on a zone.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
@@ -104,6 +107,59 @@ pub struct GetDnssecStatusResponse {
     pub earliest_signature_expires_at: Option<DateTime<Utc>>,
     #[schema(example = 7)]
     pub serial: i32,
+    pub timing: DnssecTimingInfo,
+}
+
+/// Per-zone signing timing: the values in effect after applying any zone
+/// override to the global `[dnssec]` config, plus the stored overrides.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct DnssecTimingInfo {
+    #[schema(example = 30)]
+    pub signature_validity_days: u32,
+    #[schema(example = 7)]
+    pub signature_refresh_days: u32,
+    /// 0 disables scheduled ZSK rollovers.
+    #[schema(example = 90)]
+    pub zsk_lifetime_days: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature_validity_days_override: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature_refresh_days_override: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zsk_lifetime_days_override: Option<i32>,
+}
+
+impl DnssecTimingInfo {
+    pub fn from_zone(zone: &Zone) -> Self {
+        let dnssec = &bindizr_config().dnssec;
+        DnssecTimingInfo {
+            signature_validity_days: zone.signature_validity_days(dnssec.signature_validity_days),
+            signature_refresh_days: zone.signature_refresh_days(dnssec.signature_refresh_days),
+            zsk_lifetime_days: zone.zsk_lifetime_days(dnssec.zsk_lifetime_days),
+            signature_validity_days_override: zone.dnssec_signature_validity_days,
+            signature_refresh_days_override: zone.dnssec_signature_refresh_days,
+            zsk_lifetime_days_override: zone.dnssec_zsk_lifetime_days,
+        }
+    }
+}
+
+/// Request body replacing a zone's timing overrides: an omitted field reverts
+/// that knob to the global `[dnssec]` config.
+#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+pub struct SetDnssecTimingRequest {
+    /// Days a new signature stays valid.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = 30)]
+    pub signature_validity_days: Option<u32>,
+    /// Re-sign when a signature has fewer than this many days left.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = 7)]
+    pub signature_refresh_days: Option<u32>,
+    /// Days an active ZSK may sign before the scheduler rolls it; 0 disables
+    /// scheduled rolls for this zone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = 90)]
+    pub zsk_lifetime_days: Option<u32>,
 }
 
 /// One verification check's outcome.

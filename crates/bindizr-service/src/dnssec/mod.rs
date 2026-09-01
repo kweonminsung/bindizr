@@ -100,9 +100,13 @@ impl DnssecService {
             denial: zone.dnssec_denial,
             now,
             inception: now - Duration::seconds(SIGNATURE_INCEPTION_OFFSET_SECS),
-            expiration: now + Duration::days(i64::from(dnssec.signature_validity_days)),
+            expiration: now
+                + Duration::days(i64::from(
+                    zone.signature_validity_days(dnssec.signature_validity_days),
+                )),
             expiration_jitter_secs: MAX_EXPIRATION_JITTER_SECS as i64,
-            refresh_secs: i64::from(dnssec.signature_refresh_days) * 86_400,
+            refresh_secs: i64::from(zone.signature_refresh_days(dnssec.signature_refresh_days))
+                * 86_400,
             force,
             withdraw_parent_ds,
         }

@@ -130,37 +130,50 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
         Ok(())
     }
 
-    async fn list_zone_ids_expiring_before(
+    async fn list_zone_ids_expiring_within_refresh(
         &self,
-        cutoff: DateTime<Utc>,
+        now: DateTime<Utc>,
+        default_refresh_days: u32,
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zone_ids = sqlx::query_scalar::<_, i32>(
             r#"
-            SELECT DISTINCT zone_id
-            FROM dnssec_records
-            WHERE expires_at IS NOT NULL AND expires_at < $1
+            SELECT DISTINCT r.zone_id
+            FROM dnssec_records r
+            JOIN zones z ON z.id = r.zone_id
+            WHERE r.expires_at IS NOT NULL
+              AND r.expires_at
+                  < $1 + make_interval(days => COALESCE(z.dnssec_signature_refresh_days, $2))
             "#,
         )
-        .bind(cutoff)
+        .bind(now)
+        .bind(default_refresh_days as i32)
         .fetch_all(&mut *conn)
         .await?;
 
         Ok(zone_ids)
     }
 
-    async fn count_expiring_before(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError> {
+    async fn count_expiring_within_refresh(
+        &self,
+        now: DateTime<Utc>,
+        default_refresh_days: u32,
+    ) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let count = sqlx::query_scalar::<_, i64>(
             r#"
             SELECT COUNT(*)
-            FROM dnssec_records
-            WHERE expires_at IS NOT NULL AND expires_at < $1
+            FROM dnssec_records r
+            JOIN zones z ON z.id = r.zone_id
+            WHERE r.expires_at IS NOT NULL
+              AND r.expires_at
+                  < $1 + make_interval(days => COALESCE(z.dnssec_signature_refresh_days, $2))
             "#,
         )
-        .bind(cutoff)
+        .bind(now)
+        .bind(default_refresh_days as i32)
         .fetch_one(&mut *conn)
         .await?;
 

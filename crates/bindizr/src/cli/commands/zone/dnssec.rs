@@ -1,7 +1,8 @@
 //! The `zone dnssec` subcommands.
 
 use bindizr_service::types::{
-    EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest, VerifyDnssecResponse,
+    EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest, SetDnssecTimingRequest,
+    VerifyDnssecResponse,
 };
 use clap::Subcommand;
 
@@ -16,7 +17,7 @@ use crate::{
         client::DaemonSocketClient,
         types::{
             DaemonCommandKind, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
-            RolloverZoneDnssecParams, ZoneNameParams,
+            RolloverZoneDnssecParams, TimingZoneDnssecParams, ZoneNameParams,
         },
     },
 };
@@ -93,6 +94,25 @@ pub(crate) enum ZoneDnssecCommand {
     Rollover {
         #[command(subcommand)]
         subcommand: ZoneDnssecRolloverCommand,
+    },
+    /// Replace the zone's timing overrides; an omitted flag reverts that
+    /// knob to the global [dnssec] config
+    Timing {
+        /// The name of the zone
+        name: String,
+        /// Days a new signature stays valid
+        #[arg(long, value_name = "DAYS")]
+        signature_validity_days: Option<u32>,
+        /// Re-sign when a signature has fewer than this many days left
+        #[arg(long, value_name = "DAYS")]
+        signature_refresh_days: Option<u32>,
+        /// Days an active ZSK may sign before the scheduler rolls it
+        /// (0 disables scheduled rolls for this zone)
+        #[arg(long, value_name = "DAYS")]
+        zsk_lifetime_days: Option<u32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 }
 
@@ -172,6 +192,31 @@ pub(crate) async fn handle_command(
                 DaemonCommandKind::ZoneDnssecWithdraw
             };
             let response = client.send_command(kind, ZoneNameParams { name }).await?;
+            if output == OutputFormat::Table {
+                println!("{}", response.message);
+            }
+            print_status(&response.data, output)?;
+        }
+        ZoneDnssecCommand::Timing {
+            name,
+            signature_validity_days,
+            signature_refresh_days,
+            zsk_lifetime_days,
+            output,
+        } => {
+            let response = client
+                .send_command(
+                    DaemonCommandKind::ZoneDnssecTiming,
+                    TimingZoneDnssecParams {
+                        zone_name: name,
+                        request: SetDnssecTimingRequest {
+                            signature_validity_days,
+                            signature_refresh_days,
+                            zsk_lifetime_days,
+                        },
+                    },
+                )
+                .await?;
             if output == OutputFormat::Table {
                 println!("{}", response.message);
             }
@@ -308,6 +353,27 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
             expires_at.format("%Y-%m-%d %H:%M:%S")
         );
     }
+    let timing = &status.timing;
+    let overridden = [
+        ("validity", timing.signature_validity_days_override),
+        ("refresh", timing.signature_refresh_days_override),
+        ("zsk-lifetime", timing.zsk_lifetime_days_override),
+    ]
+    .iter()
+    .filter(|(_, value)| value.is_some())
+    .map(|(label, _)| *label)
+    .collect::<Vec<_>>();
+    println!(
+        "Timing: validity {}d, refresh {}d, zsk-lifetime {}d{}",
+        timing.signature_validity_days,
+        timing.signature_refresh_days,
+        timing.zsk_lifetime_days,
+        if overridden.is_empty() {
+            String::new()
+        } else {
+            format!(" ({} overridden)", overridden.join(", "))
+        }
+    );
     print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
     if !status.ds_records.is_empty() {
         println!("DS records (register in the parent zone):");

@@ -65,9 +65,12 @@ async fn run_maintenance_pass() {
         }
     }
 
-    let refresh_cutoff =
-        Utc::now() + Duration::days(i64::from(config.dnssec.signature_refresh_days));
-    match RepositoryService::list_rrsig_zone_ids_expiring_before(refresh_cutoff).await {
+    match RepositoryService::list_rrsig_zone_ids_expiring_within_refresh(
+        Utc::now(),
+        config.dnssec.signature_refresh_days,
+    )
+    .await
+    {
         Ok(zone_ids) => {
             for zone_id in zone_ids {
                 match sign_zone_by_id(zone_id).await {
@@ -91,39 +94,36 @@ async fn run_maintenance_pass() {
 
     // ZSK rollover needs no parent interaction, so a configured lifetime lets
     // the scheduler start it too; CSK rollover stays the operator's.
-    let zsk_lifetime_days = config.dnssec.zsk_lifetime_days;
-    if zsk_lifetime_days > 0 {
-        let cutoff = Utc::now() - Duration::days(i64::from(zsk_lifetime_days));
-        match RepositoryService::list_dnssec_key_zone_ids_by_role_and_state_entered_before(
-            DnssecKeyRole::Zsk,
-            DnssecKeyState::Active,
-            cutoff,
-        )
-        .await
-        {
-            Ok(zone_ids) => {
-                for zone_id in zone_ids {
-                    match start_zsk_rollover_by_zone_id(zone_id, cutoff).await {
-                        Ok(Some(zone_name)) => {
-                            log_info!("Started scheduled ZSK rollover for zone {}", zone_name);
-                            notify_zone(&zone_name).await;
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            failed = true;
-                            log_error!(
-                                "Scheduled ZSK rollover for zone id {} failed: {}",
-                                zone_id,
-                                e
-                            )
-                        }
+    match RepositoryService::list_dnssec_key_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
+        DnssecKeyRole::Zsk,
+        DnssecKeyState::Active,
+        Utc::now(),
+        config.dnssec.zsk_lifetime_days,
+    )
+    .await
+    {
+        Ok(zone_ids) => {
+            for zone_id in zone_ids {
+                match start_zsk_rollover_by_zone_id(zone_id).await {
+                    Ok(Some(zone_name)) => {
+                        log_info!("Started scheduled ZSK rollover for zone {}", zone_name);
+                        notify_zone(&zone_name).await;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        failed = true;
+                        log_error!(
+                            "Scheduled ZSK rollover for zone id {} failed: {}",
+                            zone_id,
+                            e
+                        )
                     }
                 }
             }
-            Err(e) => {
-                failed = true;
-                log_error!("ZSK lifetime scan failed: {}", e)
-            }
+        }
+        Err(e) => {
+            failed = true;
+            log_error!("ZSK lifetime scan failed: {}", e)
         }
     }
 
@@ -243,10 +243,7 @@ async fn sign_zone_by_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
 
 /// Pre-publish a replacement for a zone's lifetime-expired ZSK in its own
 /// transaction. `None` when the state moved on concurrently.
-async fn start_zsk_rollover_by_zone_id(
-    zone_id: i32,
-    cutoff: DateTime<Utc>,
-) -> Result<Option<String>, ServiceError> {
+async fn start_zsk_rollover_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to start key rollover").await?;
     let result = async {
         let Some(zone) =
@@ -254,6 +251,11 @@ async fn start_zsk_rollover_by_zone_id(
         else {
             return Ok(None);
         };
+        let lifetime_days = zone.zsk_lifetime_days(bindizr_config().dnssec.zsk_lifetime_days);
+        if lifetime_days == 0 {
+            return Ok(None);
+        }
+        let cutoff = Utc::now() - Duration::days(i64::from(lifetime_days));
         let keys =
             RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
         if keys.is_empty() || keys.iter().any(|key| key.state != DnssecKeyState::Active) {

@@ -18,6 +18,9 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             expire INT NOT NULL DEFAULT 3600000,
             minimum_ttl INT NOT NULL DEFAULT 86400,
             dnssec_denial VARCHAR(8) NOT NULL DEFAULT 'nsec',
+            dnssec_signature_validity_days INT NULL,
+            dnssec_signature_refresh_days INT NULL,
+            dnssec_zsk_lifetime_days INT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
@@ -189,6 +192,9 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             expire INTEGER NOT NULL DEFAULT 3600000,
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
             dnssec_denial VARCHAR(8) NOT NULL DEFAULT 'nsec',
+            dnssec_signature_validity_days INTEGER NULL,
+            dnssec_signature_refresh_days INTEGER NULL,
+            dnssec_zsk_lifetime_days INTEGER NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
@@ -380,6 +386,9 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             expire INTEGER NOT NULL DEFAULT 3600000,
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
             dnssec_denial TEXT NOT NULL DEFAULT 'nsec',
+            dnssec_signature_validity_days INTEGER NULL,
+            dnssec_signature_refresh_days INTEGER NULL,
+            dnssec_zsk_lifetime_days INTEGER NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,

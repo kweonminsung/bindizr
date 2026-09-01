@@ -76,6 +76,11 @@ pub struct Zone {
     /// enable/disable, untouched by ordinary zone updates.
     #[sqlx(try_from = "String")]
     pub dnssec_denial: DnssecDenial,
+    /// Timing overrides owned by the DNSSEC timing endpoint; `None`
+    /// inherits the global config.
+    pub dnssec_signature_validity_days: Option<i32>,
+    pub dnssec_signature_refresh_days: Option<i32>,
+    pub dnssec_zsk_lifetime_days: Option<i32>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -88,6 +93,25 @@ impl Zone {
     /// SOA RNAME (mailbox) in presentation form, e.g. `admin.example.com`.
     pub fn soa_mailbox(&self) -> Result<SoaMailbox, String> {
         SoaMailbox::from_email(&self.rname)
+    }
+
+    /// Effective signature validity window: the zone override or `default`.
+    pub fn signature_validity_days(&self, default: u32) -> u32 {
+        self.dnssec_signature_validity_days
+            .map_or(default, |days| days as u32)
+    }
+
+    /// Effective re-sign threshold: the zone override or `default`.
+    pub fn signature_refresh_days(&self, default: u32) -> u32 {
+        self.dnssec_signature_refresh_days
+            .map_or(default, |days| days as u32)
+    }
+
+    /// Effective ZSK lifetime (0 disables auto-roll): the zone override or
+    /// `default`.
+    pub fn zsk_lifetime_days(&self, default: u32) -> u32 {
+        self.dnssec_zsk_lifetime_days
+            .map_or(default, |days| days as u32)
     }
 
     /// Whether the record is the apex NS this zone's `mname` names. One

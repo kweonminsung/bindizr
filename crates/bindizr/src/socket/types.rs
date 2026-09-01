@@ -2,7 +2,7 @@ use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
     EnableDnssecRequest, ImportZoneFileRequest, RollbackZoneRequest, RolloverDnssecRequest,
-    UpdateRecordPatch, UpdateZonePatch,
+    SetDnssecTimingRequest, UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +51,7 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecRolloverDsSeen,
     ZoneDnssecWithdraw,
     ZoneDnssecWithdrawCancel,
+    ZoneDnssecTiming,
     ZoneDnssecVerify,
     Doctor,
     Shutdown,
@@ -215,6 +216,14 @@ pub(crate) struct RolloverZoneDnssecParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
     pub(crate) request: RolloverDnssecRequest,
+}
+
+/// Payload for replacing a zone's DNSSEC timing overrides.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct TimingZoneDnssecParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: SetDnssecTimingRequest,
 }
 
 /// Payload for confirming a rollover's parent DS.

@@ -61,7 +61,7 @@ impl ZoneRepository for PostgresZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE id = $1{}",lock_clause(lock_level))))
+        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones WHERE id = $1{}",lock_clause(lock_level))))
             .bind(id)
             .fetch_optional(&mut **postgres_tx)
             .await?;
@@ -72,7 +72,7 @@ impl ZoneRepository for PostgresZoneRepository {
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE name = $1")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones WHERE name = $1")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await?;
@@ -89,7 +89,7 @@ impl ZoneRepository for PostgresZoneRepository {
         let postgres_tx = tx.as_postgres()?;
 
         let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(
-            format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE name = $1{}",
+            format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones WHERE name = $1{}",
             lock_clause(lock_level),
         )))
         .bind(name)
@@ -102,7 +102,7 @@ impl ZoneRepository for PostgresZoneRepository {
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await?;
 
@@ -116,7 +116,7 @@ impl ZoneRepository for PostgresZoneRepository {
     ) -> Result<Vec<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
             .fetch_all(&mut **postgres_tx)
             .await?;
 
@@ -129,7 +129,7 @@ impl ZoneRepository for PostgresZoneRepository {
 
         let zones = sqlx::query_as::<_, Zone>(
             r#"
-            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at
+            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, dnssec_signature_validity_days, dnssec_signature_refresh_days, dnssec_zsk_lifetime_days, created_at
             FROM zones
             WHERE ($1::TEXT IS NULL OR LOWER(name) = LOWER($2))
               AND ($3::INT4 IS NULL OR id = $4)
@@ -296,6 +296,28 @@ impl ZoneRepository for PostgresZoneRepository {
             .bind(zone_id)
             .execute(&mut **postgres_tx)
             .await?;
+
+        Ok(())
+    }
+
+    async fn update_dnssec_timing(
+        &self,
+        zone_id: i32,
+        signature_validity_days: Option<i32>,
+        signature_refresh_days: Option<i32>,
+        zsk_lifetime_days: Option<i32>,
+    ) -> Result<(), DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        sqlx::query(
+            "UPDATE zones SET dnssec_signature_validity_days = $1, dnssec_signature_refresh_days = $2, dnssec_zsk_lifetime_days = $3 WHERE id = $4",
+        )
+        .bind(signature_validity_days)
+        .bind(signature_refresh_days)
+        .bind(zsk_lifetime_days)
+        .bind(zone_id)
+        .execute(&mut *conn)
+        .await?;
 
         Ok(())
     }
