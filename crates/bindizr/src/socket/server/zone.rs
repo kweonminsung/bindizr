@@ -206,7 +206,7 @@ pub(crate) async fn zone_status(data: &serde_json::Value) -> Result<DaemonRespon
     let in_sync = response
         .secondaries
         .iter()
-        .filter(|s| s.status == "in_sync")
+        .filter(|s| s.is_in_sync())
         .count();
     let message = if response.secondaries.is_empty() {
         "No secondaries configured".to_string()

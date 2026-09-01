@@ -178,6 +178,19 @@ pub struct SecondaryStatusResponse {
     pub error: Option<String>,
 }
 
+impl SecondaryStatusResponse {
+    /// The wire status strings are minted only in
+    /// [`ZoneStatusResponse::from_probes`]; consumers test them through these
+    /// predicates so a renamed state cannot silently stop matching.
+    pub fn is_in_sync(&self) -> bool {
+        self.status == "in_sync"
+    }
+
+    pub fn is_unreachable(&self) -> bool {
+        self.status == "unreachable"
+    }
+}
+
 /// A zone's serial and the sync state of every configured secondary, probed
 /// live via SOA queries.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]

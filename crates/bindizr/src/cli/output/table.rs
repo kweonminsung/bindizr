@@ -230,8 +230,10 @@ impl SecondaryStatusRow {
     }
 
     fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: i32) -> Self {
-        let detail = match (secondary.status.as_str(), secondary.error.as_deref()) {
-            ("unreachable", Some(error)) => format!("unreachable ({})", error),
+        let detail = match secondary.error.as_deref() {
+            Some(error) if secondary.is_unreachable() => {
+                format!("{} ({})", secondary.status, error)
+            }
             _ => secondary.status.clone(),
         };
         SecondaryStatusRow {
