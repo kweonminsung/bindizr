@@ -845,3 +845,25 @@ fn withdrawal_publishes_the_delete_cds_pair() {
     assert_eq!(cdnskey.len(), 1);
     assert_eq!(cdnskey[0].rdata.as_bytes(), &[0, 0, 3, 0, 0]);
 }
+
+#[test]
+fn p384_keys_advertise_a_sha384_ds_digest() {
+    use crate::dns::dnssec::{ds_rdata_for, to_wire_name};
+
+    let zone = test_zone();
+    let key = generate_key(
+        &zone,
+        DnssecAlgorithm::EcdsaP384Sha384,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+
+    let apex = to_wire_name(zone.name.to_wire()).unwrap();
+    let rdata = ds_rdata_for(&key, &apex).unwrap();
+    // RFC 6605, Section 4 pairs P-384 with a SHA-384 (type 4) DS digest.
+    assert_eq!(rdata.as_bytes()[3], 4);
+    assert_eq!(rdata.as_bytes().len(), 4 + 48);
+}

@@ -22,7 +22,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 ```
 
 This generates a single CSK (ECDSA P-256/SHA-256 by default; `--algorithm
-ed25519` for Ed25519), signs the whole zone, and notifies the secondaries.
+ecdsap384sha384` or `--algorithm ed25519` for ECDSA P-384 or Ed25519), signs
+the whole zone, and notifies the secondaries. P-384 keys advertise a SHA-384
+DS digest (type 4); the others SHA-256 (type 2).
 The private key never leaves bindizr.
 
 Two options are fixed at enable time:

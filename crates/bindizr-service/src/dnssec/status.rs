@@ -1,7 +1,7 @@
 //! Assembling the status a signed zone reports: key inventory and the DS
 //! records the parent needs.
 
-use bindizr_core::dns::dnssec::{DS_DIGEST_TYPE_SHA256, ds_rdata_for, to_wire_name};
+use bindizr_core::dns::dnssec::{ds_rdata_for, to_wire_name};
 use chrono::{DateTime, Utc};
 
 use super::DnssecService;
@@ -164,14 +164,14 @@ fn ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
     Ok(DnssecDsInfo {
         key_tag: key.key_tag,
         algorithm: key.algorithm.to_int() as u8,
-        digest_type: DS_DIGEST_TYPE_SHA256,
+        digest_type: key.algorithm.ds_digest_type(),
         digest: digest.clone(),
         presentation: format!(
             "{} IN DS {} {} {} {}",
             zone.name.to_fqdn(),
             key.key_tag,
             key.algorithm.to_int(),
-            DS_DIGEST_TYPE_SHA256,
+            key.algorithm.ds_digest_type(),
             digest
         ),
     })

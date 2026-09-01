@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 /// Request body for enabling DNSSEC on a zone.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct EnableDnssecRequest {
-    /// Defaults to `ecdsap256sha256`; also accepts `ed25519`.
+    /// Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384` and `ed25519`.
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: Option<String>,
     /// Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276
@@ -58,14 +58,14 @@ pub struct DnssecKeyInfo {
     pub created_at: DateTime<Utc>,
 }
 
-/// A key's DS form for parent-zone registration (SHA-256, RFC 4509).
+/// A key's DS form for parent-zone registration.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecDsInfo {
     #[schema(example = 34217)]
     pub key_tag: i32,
     #[schema(example = 13)]
     pub algorithm: u8,
-    /// DS digest type; always 2 (SHA-256).
+    /// DS digest type: 4 (SHA-384) for P-384 keys, otherwise 2 (SHA-256).
     #[schema(example = 2)]
     pub digest_type: u8,
     #[schema(example = "4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383")]

@@ -7,7 +7,7 @@ mod signed_view;
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use domain::base::{Name, iana::SecurityAlgorithm, rdata::ComposeRecordData};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha384};
 pub use signed_view::{SignedViewDiff, SignedViewParams};
 
 use crate::{
@@ -18,9 +18,6 @@ use crate::{
         zone::Zone,
     },
 };
-
-/// DS digest type 2 = SHA-256 (RFC 4509), the one digest bindizr emits.
-pub const DS_DIGEST_TYPE_SHA256: u8 = 2;
 
 /// The name form the `domain` crate's DNSSEC machinery takes.
 pub type WireName = Name<Vec<u8>>;
@@ -67,7 +64,8 @@ fn dnskey_for(key: &DnssecKey) -> Result<domain::rdata::Dnskey<Vec<u8>>, String>
 }
 
 /// The key's DS RDATA (RFC 4034, Section 5.1.4): tag, algorithm, digest type,
-/// then SHA-256 over the canonical apex name and the DNSKEY RDATA.
+/// then the digest the algorithm pairs with over the canonical apex name and
+/// the DNSKEY RDATA.
 pub fn ds_rdata_for(key: &DnssecKey, apex: &WireName) -> Result<Rdata, String> {
     let dnskey = dnskey_for(key)?;
     let mut dnskey_rdata = Vec::new();
@@ -75,15 +73,24 @@ pub fn ds_rdata_for(key: &DnssecKey, apex: &WireName) -> Result<Rdata, String> {
         .compose_rdata(&mut dnskey_rdata)
         .expect("composing into a Vec cannot run out of space");
 
-    let mut hasher = Sha256::new();
-    hasher.update(apex.as_slice());
-    hasher.update(&dnskey_rdata);
+    let digest_type = key.algorithm.ds_digest_type();
+    let digest: Vec<u8> = if digest_type == 4 {
+        let mut hasher = Sha384::new();
+        hasher.update(apex.as_slice());
+        hasher.update(&dnskey_rdata);
+        hasher.finalize().to_vec()
+    } else {
+        let mut hasher = Sha256::new();
+        hasher.update(apex.as_slice());
+        hasher.update(&dnskey_rdata);
+        hasher.finalize().to_vec()
+    };
 
-    let mut rdata = Vec::with_capacity(4 + 32);
+    let mut rdata = Vec::with_capacity(4 + digest.len());
     rdata.extend_from_slice(&(key.key_tag as u16).to_be_bytes());
     rdata.push(key.algorithm.to_int() as u8);
-    rdata.push(DS_DIGEST_TYPE_SHA256);
-    rdata.extend_from_slice(&hasher.finalize());
+    rdata.push(digest_type);
+    rdata.extend_from_slice(&digest);
     Rdata::new(rdata)
 }
 
@@ -97,6 +104,7 @@ pub fn generate_key(
 ) -> Result<DnssecKey, String> {
     let params = match algorithm {
         DnssecAlgorithm::EcdsaP256Sha256 => domain::crypto::sign::GenerateParams::EcdsaP256Sha256,
+        DnssecAlgorithm::EcdsaP384Sha384 => domain::crypto::sign::GenerateParams::EcdsaP384Sha384,
         DnssecAlgorithm::Ed25519 => domain::crypto::sign::GenerateParams::Ed25519,
     };
     let (secret, dnskey) = domain::crypto::sign::generate(&params, role.flags())
