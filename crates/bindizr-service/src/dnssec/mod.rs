@@ -121,7 +121,7 @@ impl DnssecService {
             .max()
             .unwrap_or(zone.default_ttl);
         for key in keys {
-            let signed_ttl = if key.signs_zone_data() {
+            let signed_ttl = if key.signs_zone_data(keys) {
                 data_ttl
             } else if key.signs_key_rrsets() {
                 zone.default_ttl

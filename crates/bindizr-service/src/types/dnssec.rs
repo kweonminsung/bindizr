@@ -25,9 +25,13 @@ pub struct EnableDnssecRequest {
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct RolloverDnssecRequest {
     /// Which key to roll: required for split-key zones (`ksk` or `zsk`),
-    /// omitted for CSK zones.
+    /// omitted for CSK zones and algorithm rollovers.
     #[schema(example = "zsk")]
     pub role: Option<String>,
+    /// Roll to this algorithm instead (RFC 6840, Section 5.11): replaces
+    /// every key, double-signing the zone until the old keys leave.
+    #[schema(example = "ed25519")]
+    pub algorithm: Option<String>,
 }
 
 /// A signing key's public half; the private key never leaves the server.

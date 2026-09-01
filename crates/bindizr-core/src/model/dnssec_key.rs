@@ -231,10 +231,22 @@ pub struct DnssecKey {
 }
 
 impl DnssecKey {
-    /// Whether the key currently signs zone data.
-    pub fn signs_zone_data(&self) -> bool {
-        matches!(self.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk)
-            && self.state == DnssecKeyState::Active
+    /// Whether the key signs zone data among `keys`, the zone's key set:
+    /// Active always does; published/retired ones do while their algorithm
+    /// has no active data signer (RFC 6840, Section 5.11).
+    pub fn signs_zone_data(&self, keys: &[DnssecKey]) -> bool {
+        if !matches!(self.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk) {
+            return false;
+        }
+        if self.state == DnssecKeyState::Active {
+            return true;
+        }
+        !keys.iter().any(|key| {
+            key.id != self.id
+                && matches!(key.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk)
+                && key.state == DnssecKeyState::Active
+                && key.algorithm == self.algorithm
+        })
     }
 
     /// Whether the key co-signs the apex key RRsets. Every SEP key does, in

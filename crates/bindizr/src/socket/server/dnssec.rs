@@ -81,6 +81,7 @@ pub(crate) async fn rollover_start(
         &Caller::Global,
         &params.zone_name,
         params.request.role.as_deref(),
+        params.request.algorithm.as_deref(),
     )
     .await?;
 

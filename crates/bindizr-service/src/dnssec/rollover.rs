@@ -12,7 +12,7 @@ use crate::{
     error::ServiceError,
     log_info,
     model::{
-        dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
+        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
@@ -22,12 +22,14 @@ use crate::{
 };
 
 impl DnssecService {
-    /// Start a key rollover: pre-publish a replacement that signs no zone
-    /// data until [`Self::rollover_ds_seen`].
+    /// Start a key rollover: pre-publish same-algorithm replacements, or —
+    /// with `algorithm` — replacements for every key, double-signing the zone
+    /// through the transition (RFC 6840, Section 5.11).
     pub async fn rollover_start(
         caller: &Caller,
         zone_name: &str,
         role: Option<&str>,
+        algorithm: Option<&str>,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
@@ -41,41 +43,66 @@ impl DnssecService {
                 ));
             }
 
-            let target_role = match role {
-                Some(name) => {
-                    let parsed = name
-                        .parse::<DnssecKeyRole>()
-                        .map_err(ServiceError::invalid_input)?;
-                    if !keys.iter().any(|key| key.role == parsed) {
-                        return Err(ServiceError::invalid_input(format!(
-                            "zone '{}' has no {} key to roll",
-                            zone.name, parsed
-                        )));
-                    }
-                    parsed
-                }
-                None => {
-                    if keys.iter().all(|key| key.role == DnssecKeyRole::Csk) {
-                        DnssecKeyRole::Csk
-                    } else {
-                        return Err(ServiceError::invalid_input(
-                            "this zone uses split keys; pass the role to roll (ksk or zsk)",
-                        ));
-                    }
-                }
-            };
-
-            // The replacement keeps the algorithm: an algorithm change is a
-            // different, stricter procedure (RFC 6840, Section 5.11) and is not
-            // supported.
-            let template = keys
-                .iter()
-                .find(|key| key.role == target_role)
-                .expect("validated above that the role exists");
-            let new_key = Self::publish_replacement_key_tx(&mut tx, &zone, template).await?;
-
             let mut keys = keys;
-            keys.push(new_key);
+            if let Some(name) = algorithm {
+                let target = name
+                    .parse::<DnssecAlgorithm>()
+                    .map_err(ServiceError::invalid_input)?;
+                if role.is_some() {
+                    return Err(ServiceError::invalid_input(
+                        "an algorithm rollover replaces every key; omit the role",
+                    ));
+                }
+                if keys.iter().all(|key| key.algorithm == target) {
+                    return Err(ServiceError::invalid_input(format!(
+                        "the zone already signs with {}; roll without an algorithm to \
+                         replace keys",
+                        target
+                    )));
+                }
+
+                // One replacement per key, so both algorithms carry a full
+                // signer set through the transition.
+                let templates = keys.clone();
+                for template in &templates {
+                    let new_key =
+                        Self::publish_replacement_key_tx(&mut tx, &zone, template, target).await?;
+                    keys.push(new_key);
+                }
+            } else {
+                let target_role = match role {
+                    Some(name) => {
+                        let parsed = name
+                            .parse::<DnssecKeyRole>()
+                            .map_err(ServiceError::invalid_input)?;
+                        if !keys.iter().any(|key| key.role == parsed) {
+                            return Err(ServiceError::invalid_input(format!(
+                                "zone '{}' has no {} key to roll",
+                                zone.name, parsed
+                            )));
+                        }
+                        parsed
+                    }
+                    None => {
+                        if keys.iter().all(|key| key.role == DnssecKeyRole::Csk) {
+                            DnssecKeyRole::Csk
+                        } else {
+                            return Err(ServiceError::invalid_input(
+                                "this zone uses split keys; pass the role to roll (ksk or zsk)",
+                            ));
+                        }
+                    }
+                };
+
+                let template = keys
+                    .iter()
+                    .find(|key| key.role == target_role)
+                    .expect("validated above that the role exists");
+                let new_key =
+                    Self::publish_replacement_key_tx(&mut tx, &zone, template, template.algorithm)
+                        .await?;
+                keys.push(new_key);
+            }
             let new_serial = generate_serial(Some(zone.serial))?;
             Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
@@ -187,12 +214,14 @@ impl DnssecService {
         Ok(response)
     }
 
-    /// Generate and persist a pre-published replacement for `template`; the
-    /// hold-down covers the served DNSKEY TTL (RFC 7583, Section 3.3.1).
+    /// Generate and persist a pre-published replacement for `template` with
+    /// `algorithm`; the hold-down covers the served DNSKEY TTL (RFC 7583,
+    /// Section 3.3.1).
     pub(crate) async fn publish_replacement_key_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         template: &DnssecKey,
+        algorithm: DnssecAlgorithm,
     ) -> Result<DnssecKey, ServiceError> {
         let now = Utc::now();
         let publish_wait = Duration::seconds(
@@ -201,7 +230,7 @@ impl DnssecService {
         );
         let new_key = generate_key(
             zone,
-            template.algorithm,
+            algorithm,
             template.role,
             DnssecKeyState::Published,
             now,
@@ -228,6 +257,14 @@ impl DnssecService {
             .filter(|key| promoted.contains(&key.id))
             .map(|key| key.role)
             .collect();
+        // One deadline for the whole retiring batch: an algorithm rollover
+        // must drop the old DNSKEYs and their signatures together.
+        let retire_wait = keys
+            .iter()
+            .filter(|key| key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role))
+            .map(|key| retire_wait_floor.max(key.max_signed_ttl as i64))
+            .max()
+            .unwrap_or(retire_wait_floor);
 
         let mut updated = Vec::with_capacity(keys.len());
         for mut key in keys {
@@ -244,8 +281,7 @@ impl DnssecService {
                 key.state_changed_at = now;
                 key.eligible_at = now;
             } else if key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role) {
-                let eligible_at =
-                    now + Duration::seconds(retire_wait_floor.max(key.max_signed_ttl as i64));
+                let eligible_at = now + Duration::seconds(retire_wait);
                 RepositoryService::update_dnssec_key_state_tx(
                     tx,
                     key.id,

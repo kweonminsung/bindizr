@@ -106,8 +106,10 @@ impl SignedViewParams<'_> {
             .iter()
             .filter(|s| s.key.signs_key_rrsets())
             .collect();
-        let data_signers: Vec<&Signer<'_>> =
-            signers.iter().filter(|s| s.key.signs_zone_data()).collect();
+        let data_signers: Vec<&Signer<'_>> = signers
+            .iter()
+            .filter(|s| s.key.signs_zone_data(self.keys))
+            .collect();
         if !signers.is_empty() && (key_signers.is_empty() || data_signers.is_empty()) {
             return Err(
                 "zone has keys but no usable signer for the key RRsets or the zone data"

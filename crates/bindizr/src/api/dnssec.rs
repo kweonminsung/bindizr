@@ -209,7 +209,7 @@ pub(crate) async fn sign_zone(
         path = "/zones/{name}/dnssec/rollover",
         tag = "DNSSEC",
         summary = "Start a key rollover for a zone",
-        description = "Pre-publishes a replacement key with the same algorithm (RFC 7583): the new key joins the DNSKEY RRset — and, for SEP keys, the CDS/CDNSKEY set — but signs no zone data until the ds-seen call promotes it. For split-key zones `role` selects which key to roll (`ksk` or `zsk`); for CSK zones it is omitted.",
+        description = "Pre-publishes replacement keys (RFC 7583). Without `algorithm` the replacement keeps the current one and signs no zone data until promoted; `role` selects the key for split-key zones. With `algorithm` every key is replaced and the zone is double-signed through the transition (RFC 6840, Section 5.11) until the old keys leave after ds-seen.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -231,7 +231,13 @@ pub(crate) async fn start_dnssec_rollover(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<RolloverDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::rollover_start(&caller, &params.name, body.role.as_deref()).await?;
+    let status = DnssecService::rollover_start(
+        &caller,
+        &params.name,
+        body.role.as_deref(),
+        body.algorithm.as_deref(),
+    )
+    .await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

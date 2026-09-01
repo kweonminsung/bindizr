@@ -266,7 +266,9 @@ async fn start_zsk_rollover_by_zone_id(
             return Ok(None);
         };
 
-        let new_key = DnssecService::publish_replacement_key_tx(&mut tx, &zone, template).await?;
+        let new_key =
+            DnssecService::publish_replacement_key_tx(&mut tx, &zone, template, template.algorithm)
+                .await?;
         let mut keys = keys;
         keys.push(new_key);
         let new_serial = generate_serial(Some(zone.serial))?;
@@ -329,10 +331,34 @@ async fn remove_retired_keys_by_zone_id(zone_id: i32) -> Result<Option<String>, 
             RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
 
         let now = Utc::now();
+        // An algorithm's keys leave together: dropping its signatures while
+        // its DNSKEYs remain would break RFC 6840, Section 5.11.
+        let removable: Vec<i32> = keys
+            .iter()
+            .filter(|key| {
+                if key.state != DnssecKeyState::Retired || key.eligible_at > now {
+                    return false;
+                }
+                let same_algorithm_active_data = keys.iter().any(|other| {
+                    matches!(other.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk)
+                        && other.state == DnssecKeyState::Active
+                        && other.algorithm == key.algorithm
+                });
+                same_algorithm_active_data
+                    || keys
+                        .iter()
+                        .filter(|other| other.algorithm == key.algorithm)
+                        .all(|other| {
+                            other.state == DnssecKeyState::Retired && other.eligible_at <= now
+                        })
+            })
+            .map(|key| key.id)
+            .collect();
+
         let mut remaining = Vec::with_capacity(keys.len());
         let mut removed = 0usize;
         for key in keys {
-            if key.state == DnssecKeyState::Retired && key.eligible_at <= now {
+            if removable.contains(&key.id) {
                 RepositoryService::delete_dnssec_key_tx(&mut tx, key.id).await?;
                 removed += 1;
             } else {

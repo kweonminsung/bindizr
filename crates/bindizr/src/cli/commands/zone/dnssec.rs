@@ -92,9 +92,13 @@ pub(crate) enum ZoneDnssecRolloverCommand {
         /// The name of the zone
         name: String,
         /// Which key to roll: required for split-key zones (ksk or zsk),
-        /// omitted for CSK zones
+        /// omitted for CSK zones and algorithm rollovers
         #[arg(long, value_name = "ksk|zsk")]
         role: Option<String>,
+        /// Roll to this algorithm instead (replaces every key; the zone is
+        /// double-signed until the old keys leave)
+        #[arg(long, value_name = "ALG")]
+        algorithm: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -188,13 +192,18 @@ pub(crate) async fn handle_command(
             println!("{}", response.message);
         }
         ZoneDnssecCommand::Rollover { subcommand } => match subcommand {
-            ZoneDnssecRolloverCommand::Start { name, role, output } => {
+            ZoneDnssecRolloverCommand::Start {
+                name,
+                role,
+                algorithm,
+                output,
+            } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverStart,
                         RolloverZoneDnssecParams {
                             zone_name: name,
-                            request: RolloverDnssecRequest { role },
+                            request: RolloverDnssecRequest { role, algorithm },
                         },
                     )
                     .await?;

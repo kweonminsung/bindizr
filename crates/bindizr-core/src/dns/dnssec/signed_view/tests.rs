@@ -867,3 +867,79 @@ fn p384_keys_advertise_a_sha384_ds_digest() {
     assert_eq!(rdata.as_bytes()[3], 4);
     assert_eq!(rdata.as_bytes().len(), 4 + 48);
 }
+
+#[test]
+fn algorithm_rollover_double_signs_zone_data_while_published() {
+    let zone = test_zone();
+    let old = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let mut new = generate_key(
+        &zone,
+        DnssecAlgorithm::Ed25519,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Published,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+    new.id = 2;
+    let keys = [old, new];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let diff = compute(ComputeArgs {
+        zone: &zone,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        new_serial: 2,
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        force: false,
+    });
+
+    // RFC 6840, Section 5.11: every algorithm in the DNSKEY RRset must sign
+    // all data, so the pre-published new-algorithm key signs immediately.
+    let apex = OwnerName::apex();
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32).len(),
+        2
+    );
+}
+
+#[test]
+fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
+    let zone = test_zone();
+    let old = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Retired);
+    let mut new = generate_key(
+        &zone,
+        DnssecAlgorithm::Ed25519,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+    new.id = 2;
+    let keys = [old, new];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let diff = compute(ComputeArgs {
+        zone: &zone,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        new_serial: 2,
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        force: false,
+    });
+
+    // The old DNSKEY is still served, so the old algorithm must keep covering
+    // all data until the key is removed (RFC 6840, Section 5.11).
+    let apex = OwnerName::apex();
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32).len(),
+        2
+    );
+}
