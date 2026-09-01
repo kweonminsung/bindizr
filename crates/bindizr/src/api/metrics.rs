@@ -42,34 +42,35 @@ async fn refresh_db_gauges() -> Result<(), ServiceError> {
     let metrics = metrics();
     let caller = Caller::Global;
 
-    metrics
-        .zones_total
-        .set(ZoneService::count(&caller).await? as i64);
-    metrics
-        .records_total
-        .set(RecordService::count(&caller).await? as i64);
+    // The same cutoff as the scheduler's re-sign scan, so a persistent
+    // nonzero value means that scan is not keeping up.
+    let cutoff = Utc::now()
+        + chrono::Duration::days(i64::from(bindizr_config().dnssec.signature_refresh_days));
+    // Concurrent, so the probe timeout budgets one round trip, not seven.
+    let (zones, records, dnssec_zones, published, active, retired, expiring) = tokio::try_join!(
+        ZoneService::count(&caller),
+        RecordService::count(&caller),
+        DnssecService::count_signed_zones(&caller),
+        DnssecService::count_keys_by_state(&caller, DnssecKeyState::Published),
+        DnssecService::count_keys_by_state(&caller, DnssecKeyState::Active),
+        DnssecService::count_keys_by_state(&caller, DnssecKeyState::Retired),
+        DnssecService::count_rrsigs_expiring_before(&caller, cutoff),
+    )?;
 
-    metrics
-        .dnssec_zones_total
-        .set(DnssecService::count_signed_zones(&caller).await? as i64);
-    for state in [
-        DnssecKeyState::Published,
-        DnssecKeyState::Active,
-        DnssecKeyState::Retired,
+    metrics.zones_total.set(zones as i64);
+    metrics.records_total.set(records as i64);
+    metrics.dnssec_zones_total.set(dnssec_zones as i64);
+    for (state, count) in [
+        (DnssecKeyState::Published, published),
+        (DnssecKeyState::Active, active),
+        (DnssecKeyState::Retired, retired),
     ] {
-        let count = DnssecService::count_keys_by_state(&caller, state).await?;
         metrics
             .dnssec_keys_total
             .with_label_values(&[state.as_str()])
             .set(count as i64);
     }
-    // The same cutoff as the scheduler's re-sign scan, so a persistent
-    // nonzero value means that scan is not keeping up.
-    let cutoff = Utc::now()
-        + chrono::Duration::days(i64::from(bindizr_config().dnssec.signature_refresh_days));
-    metrics
-        .dnssec_rrsigs_expiring_total
-        .set(DnssecService::count_rrsigs_expiring_before(&caller, cutoff).await? as i64);
+    metrics.dnssec_rrsigs_expiring_total.set(expiring as i64);
 
     Ok(())
 }
