@@ -61,7 +61,7 @@ fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_routes_are_not_registered_when_disabled() {
-    let app = TestApp::start_with_options(TestAppOptions::default()).await;
+    let app = TestApp::start_local().await;
 
     let (status, _) = app.request(Method::GET, "/external-dns/zones", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);

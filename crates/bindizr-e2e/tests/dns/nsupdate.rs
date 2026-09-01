@@ -249,7 +249,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
 /// A signed update carries a key, so the zone's TSIG policies decide what it
 /// may touch — the leg the unsigned tests above skip entirely.
 async fn signed_nsupdate_app() -> TestApp {
-    TestApp::start_with_options(TestAppOptions::default()).await
+    TestApp::start_local().await
 }
 
 async fn create_key(app: &TestApp, name: &str) -> SigningKey {

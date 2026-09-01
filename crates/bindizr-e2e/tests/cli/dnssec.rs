@@ -122,7 +122,7 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_key_export_import_round_trip_via_cli() {
-    let app = TestApp::start().await;
+    let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-keys.example");
     app.create_zone_cli(&zone_name, "3600").await;
     app.run_cli_success(&["zone", "dnssec", "enable", &zone_name])

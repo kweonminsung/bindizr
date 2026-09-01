@@ -82,17 +82,23 @@ impl TestApp {
         if dns_verification_enabled() {
             Self::start_compose().await
         } else {
-            Self::start_local(TestAppOptions::default()).await
+            Self::start_local_with(TestAppOptions::default()).await
         }
+    }
+
+    /// A locally spawned daemon with the default config, even in compose
+    /// mode — for tests bound to this host's filesystem or default config.
+    pub(crate) async fn start_local() -> Self {
+        Self::start_local_with(TestAppOptions::default()).await
     }
 
     /// Start with non-default config; always the local runtime, because the
     /// compose stack's config is fixed.
     pub(crate) async fn start_with_options(options: TestAppOptions) -> Self {
-        Self::start_local(options).await
+        Self::start_local_with(options).await
     }
 
-    async fn start_local(options: TestAppOptions) -> Self {
+    async fn start_local_with(options: TestAppOptions) -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let api_port = reserve_tcp_port();
         let dns_port = reserve_dns_port();
