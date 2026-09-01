@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use bindizr_core::dns::name::OwnerName;
 use chrono::Utc;
 
 use super::DnssecService;
@@ -10,7 +11,7 @@ use crate::{
     authorization::Caller,
     database::repository::LockLevel,
     error::ServiceError,
-    model::{dnssec_record::DnssecRecordType, zone::DnssecDenial},
+    model::{dnssec_record::DnssecRecordType, record::RecordType, zone::DnssecDenial},
     repository::RepositoryService,
     types::{DnssecCheckInfo, VerifyDnssecResponse},
 };
@@ -31,6 +32,8 @@ impl DnssecService {
             let derived =
                 RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
                     .await?;
+            let records =
+                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
 
             let mut checks = Vec::new();
 
@@ -90,19 +93,56 @@ impl DnssecService {
             let offender = covered
                 .iter()
                 .find(|(_, algorithms)| **algorithms != zone_algorithms);
+
+            // An unsigned RRset never reaches `covered`; completeness checks
+            // what the signer must sign: user RRsets outside delegations
+            // (only DS at a cut, RFC 4035, Section 2.2), SOA, derived rows.
+            let delegations: Vec<&OwnerName> = records
+                .iter()
+                .filter(|record| record.record_type == RecordType::NS && !record.name.is_apex())
+                .map(|record| &record.name)
+                .collect();
+            let mut expected: BTreeSet<(String, Option<i32>)> = BTreeSet::new();
+            for record in &records {
+                let at_cut = delegations.iter().any(|cut| record.name == **cut);
+                let below_cut = delegations
+                    .iter()
+                    .any(|cut| record.name.is_same_or_under(cut) && record.name != **cut);
+                if below_cut || (at_cut && record.record_type != RecordType::DS) {
+                    continue;
+                }
+                expected.insert((
+                    record.name.to_stored(),
+                    Some(record.record_type.wire_type() as i32),
+                ));
+            }
+            expected.insert((OwnerName::apex().to_stored(), Some(6)));
+            for row in &derived {
+                if row.record_type != DnssecRecordType::Rrsig {
+                    expected.insert((
+                        row.name.to_stored(),
+                        Some(row.record_type.wire_type() as i32),
+                    ));
+                }
+            }
+            let missing = expected.iter().find(|key| !covered.contains_key(key));
+
             checks.push(DnssecCheckInfo {
                 check: "algorithm-coverage".to_string(),
-                ok: offender.is_none(),
-                detail: match offender {
-                    None => format!(
+                ok: offender.is_none() && missing.is_none(),
+                detail: if let Some((name, covered_type)) = missing {
+                    format!("RRset '{}' (type {:?}) has no RRSIG", name, covered_type)
+                } else if let Some(((name, covered_type), algorithms)) = offender {
+                    format!(
+                        "RRset '{}' (type {:?}) signed by {:?}, zone algorithms {:?}",
+                        name, covered_type, algorithms, zone_algorithms
+                    )
+                } else {
+                    format!(
                         "{} RRsets signed by algorithm(s) {:?}",
                         covered.len(),
                         zone_algorithms
-                    ),
-                    Some(((name, covered_type), algorithms)) => format!(
-                        "RRset '{}' (type {:?}) signed by {:?}, zone algorithms {:?}",
-                        name, covered_type, algorithms, zone_algorithms
-                    ),
+                    )
                 },
             });
 
