@@ -102,6 +102,7 @@ pub(crate) fn build_status(
                 role: key.role.to_string(),
                 state: key.state.to_string(),
                 state_changed_at: key.state_changed_at,
+                eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
                 algorithm: key.algorithm.to_string(),
                 key_tag: key.key_tag,
                 dnskey: format!(

@@ -42,6 +42,10 @@ pub struct DnssecKeyInfo {
     #[schema(example = "active")]
     pub state: String,
     pub state_changed_at: DateTime<Utc>,
+    /// Next allowed transition: promotion for `published`, removal for
+    /// `retired`; absent for `active`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eligible_at: Option<DateTime<Utc>>,
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: String,
     #[schema(example = 34217)]

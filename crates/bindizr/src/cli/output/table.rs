@@ -102,6 +102,8 @@ pub(crate) struct DnssecKeyRow {
     pub(crate) role: String,
     #[tabled(rename = "STATE")]
     pub(crate) state: String,
+    #[tabled(rename = "ELIGIBLE-AT")]
+    pub(crate) eligible_at: String,
     #[tabled(rename = "ALGORITHM")]
     pub(crate) algorithm: String,
     #[tabled(rename = "KEY-TAG")]
@@ -116,6 +118,9 @@ impl From<&DnssecKeyInfo> for DnssecKeyRow {
             id: key.id,
             role: key.role.clone(),
             state: key.state.clone(),
+            eligible_at: key
+                .eligible_at
+                .map_or_else(|| "-".to_string(), |at| at.to_rfc3339()),
             algorithm: key.algorithm.clone(),
             key_tag: key.key_tag,
             dnskey: key.dnskey.clone(),
