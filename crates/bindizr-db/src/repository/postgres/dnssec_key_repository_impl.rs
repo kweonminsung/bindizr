@@ -125,6 +125,28 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         Ok(zone_ids)
     }
 
+    async fn count_zone_ids(&self) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(DISTINCT zone_id) FROM dnssec_keys")
+            .fetch_one(&mut *conn)
+            .await?;
+
+        Ok(count as u64)
+    }
+
+    async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM dnssec_keys WHERE state = $1")
+                .bind(state.as_str())
+                .fetch_one(&mut *conn)
+                .await?;
+
+        Ok(count as u64)
+    }
+
     async fn update_state_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

@@ -3,7 +3,7 @@
 
 use std::sync::OnceLock;
 
-use bindizr_core::config::bindizr_config;
+use bindizr_core::{config::bindizr_config, metrics::metrics};
 use chrono::{DateTime, Duration, Utc};
 
 use super::{DnssecService, notify_zone};
@@ -44,6 +44,7 @@ pub fn init_maintenance_scheduler() {
 /// advancement. Failures are logged, never fatal.
 async fn run_maintenance_pass() {
     let config = bindizr_config();
+    let mut failed = false;
 
     let retention_days = config.dns.journal_retention_days;
     if retention_days > 0 {
@@ -57,7 +58,10 @@ async fn run_maintenance_pass() {
                 )
             }
             Ok(_) => {}
-            Err(e) => log_error!("Zone history pruning failed: {}", e),
+            Err(e) => {
+                failed = true;
+                log_error!("Zone history pruning failed: {}", e)
+            }
         }
     }
 
@@ -72,11 +76,17 @@ async fn run_maintenance_pass() {
                         notify_zone(&zone_name).await;
                     }
                     Ok(None) => {}
-                    Err(e) => log_error!("Re-signing zone id {} failed: {}", zone_id, e),
+                    Err(e) => {
+                        failed = true;
+                        log_error!("Re-signing zone id {} failed: {}", zone_id, e)
+                    }
                 }
             }
         }
-        Err(e) => log_error!("Re-signing scan failed: {}", e),
+        Err(e) => {
+            failed = true;
+            log_error!("Re-signing scan failed: {}", e)
+        }
     }
 
     // ZSK rollover needs no parent interaction, so a configured lifetime lets
@@ -99,15 +109,21 @@ async fn run_maintenance_pass() {
                             notify_zone(&zone_name).await;
                         }
                         Ok(None) => {}
-                        Err(e) => log_error!(
-                            "Scheduled ZSK rollover for zone id {} failed: {}",
-                            zone_id,
-                            e
-                        ),
+                        Err(e) => {
+                            failed = true;
+                            log_error!(
+                                "Scheduled ZSK rollover for zone id {} failed: {}",
+                                zone_id,
+                                e
+                            )
+                        }
                     }
                 }
             }
-            Err(e) => log_error!("ZSK lifetime scan failed: {}", e),
+            Err(e) => {
+                failed = true;
+                log_error!("ZSK lifetime scan failed: {}", e)
+            }
         }
     }
 
@@ -133,11 +149,17 @@ async fn run_maintenance_pass() {
                         notify_zone(&zone_name).await;
                     }
                     Ok(None) => {}
-                    Err(e) => log_error!("ZSK promotion for zone id {} failed: {}", zone_id, e),
+                    Err(e) => {
+                        failed = true;
+                        log_error!("ZSK promotion for zone id {} failed: {}", zone_id, e)
+                    }
                 }
             }
         }
-        Err(e) => log_error!("Rollover promotion scan failed: {}", e),
+        Err(e) => {
+            failed = true;
+            log_error!("Rollover promotion scan failed: {}", e)
+        }
     }
 
     match RepositoryService::list_dnssec_keys_by_state_eligible_before(
@@ -157,13 +179,22 @@ async fn run_maintenance_pass() {
                     }
                     Ok(None) => {}
                     Err(e) => {
+                        failed = true;
                         log_error!("Retired-key removal for zone id {} failed: {}", zone_id, e)
                     }
                 }
             }
         }
-        Err(e) => log_error!("Retired-key scan failed: {}", e),
+        Err(e) => {
+            failed = true;
+            log_error!("Retired-key scan failed: {}", e)
+        }
     }
+
+    metrics()
+        .dnssec_maintenance_runs_total
+        .with_label_values(&[if failed { "error" } else { "ok" }])
+        .inc();
 }
 
 /// Prune journal and version rows older than `cutoff` in one transaction: a

@@ -10,7 +10,7 @@ use crate::{
     database::repository::LockLevel,
     error::ServiceError,
     model::{
-        dnssec_key::DnssecKey,
+        dnssec_key::{DnssecKey, DnssecKeyState},
         zone::{DnssecDenial, Zone},
     },
     repository::{RepositoryService, RepositoryTx},
@@ -40,6 +40,30 @@ impl DnssecService {
         }
         .await;
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
+    }
+
+    /// Count the zones that are signed (hold at least one key).
+    pub async fn count_signed_zones(caller: &Caller) -> Result<u64, ServiceError> {
+        caller.require_global("read DNSSEC metrics")?;
+        RepositoryService::count_dnssec_key_zone_ids().await
+    }
+
+    /// Count keys in `state` across every zone.
+    pub async fn count_keys_by_state(
+        caller: &Caller,
+        state: DnssecKeyState,
+    ) -> Result<u64, ServiceError> {
+        caller.require_global("read DNSSEC metrics")?;
+        RepositoryService::count_dnssec_keys_by_state(state).await
+    }
+
+    /// Count signatures expiring before `cutoff` across every zone.
+    pub async fn count_rrsigs_expiring_before(
+        caller: &Caller,
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, ServiceError> {
+        caller.require_global("read DNSSEC metrics")?;
+        RepositoryService::count_rrsig_dnssec_records_expiring_before(cutoff).await
     }
 
     pub(crate) async fn earliest_expiry_tx(

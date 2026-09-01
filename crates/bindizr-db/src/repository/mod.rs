@@ -518,6 +518,9 @@ pub trait DnssecKeyRepository: Send + Sync {
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError>;
+    /// Zones holding at least one key: the signed-zone count.
+    async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
+    async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError>;
     async fn update_state_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -573,6 +576,8 @@ pub trait DnssecRecordRepository: Send + Sync {
         &self,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError>;
+    /// Rows expiring before `cutoff`; only RRSIG rows carry `expires_at`.
+    async fn count_expiring_before(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,

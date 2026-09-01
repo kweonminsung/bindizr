@@ -419,6 +419,31 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
     }
 
+    pub(crate) async fn count_dnssec_key_zone_ids() -> Result<u64, ServiceError> {
+        get_dnssec_key_repository()
+            .count_zone_ids()
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC keys: {}", e)))
+    }
+
+    pub(crate) async fn count_dnssec_keys_by_state(
+        state: DnssecKeyState,
+    ) -> Result<u64, ServiceError> {
+        get_dnssec_key_repository()
+            .count_by_state(state)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC keys: {}", e)))
+    }
+
+    pub(crate) async fn count_rrsig_dnssec_records_expiring_before(
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, ServiceError> {
+        get_dnssec_record_repository()
+            .count_expiring_before(cutoff)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
+    }
+
     pub(crate) async fn update_dnssec_key_state_tx(
         tx: &mut RepositoryTx<'_>,
         id: i32,
