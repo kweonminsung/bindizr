@@ -28,7 +28,7 @@ pub(crate) enum ZoneDnssecCommand {
     Enable {
         /// The name of the zone
         name: String,
-        /// Signing algorithm: ecdsap256sha256 (default), ecdsap384sha384, or ed25519
+        /// Signing algorithm: ecdsap256sha256 (default), ecdsap384sha384, ed25519, ed448, rsasha256, or rsasha512
         #[arg(long, value_name = "ALG")]
         algorithm: Option<String>,
         /// Denial-of-existence mode: nsec (default) or nsec3 (fixed at

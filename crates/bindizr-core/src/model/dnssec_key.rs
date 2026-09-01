@@ -5,29 +5,41 @@ use sqlx::FromRow;
 /// (RFC 8624 recommends both; 13 is the interoperability default).
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DnssecAlgorithm {
+    /// RSA with SHA-256, algorithm 8 (RFC 5702).
+    RsaSha256,
+    /// RSA with SHA-512, algorithm 10 (RFC 5702).
+    RsaSha512,
     /// ECDSA Curve P-256 with SHA-256, algorithm 13 (RFC 6605).
     EcdsaP256Sha256,
     /// ECDSA Curve P-384 with SHA-384, algorithm 14 (RFC 6605).
     EcdsaP384Sha384,
     /// Ed25519, algorithm 15 (RFC 8080).
     Ed25519,
+    /// Ed448, algorithm 16 (RFC 8080).
+    Ed448,
 }
 
 impl DnssecAlgorithm {
     /// IANA algorithm number, the storage form.
     pub fn to_int(self) -> i32 {
         match self {
+            DnssecAlgorithm::RsaSha256 => 8,
+            DnssecAlgorithm::RsaSha512 => 10,
             DnssecAlgorithm::EcdsaP256Sha256 => 13,
             DnssecAlgorithm::EcdsaP384Sha384 => 14,
             DnssecAlgorithm::Ed25519 => 15,
+            DnssecAlgorithm::Ed448 => 16,
         }
     }
 
     pub fn from_int(value: i32) -> Option<Self> {
         match value {
+            8 => Some(DnssecAlgorithm::RsaSha256),
+            10 => Some(DnssecAlgorithm::RsaSha512),
             13 => Some(DnssecAlgorithm::EcdsaP256Sha256),
             14 => Some(DnssecAlgorithm::EcdsaP384Sha384),
             15 => Some(DnssecAlgorithm::Ed25519),
+            16 => Some(DnssecAlgorithm::Ed448),
             _ => None,
         }
     }
@@ -35,9 +47,12 @@ impl DnssecAlgorithm {
     /// IANA mnemonic in lowercase, the presentation/input form.
     pub fn as_str(&self) -> &'static str {
         match self {
+            DnssecAlgorithm::RsaSha256 => "rsasha256",
+            DnssecAlgorithm::RsaSha512 => "rsasha512",
             DnssecAlgorithm::EcdsaP256Sha256 => "ecdsap256sha256",
             DnssecAlgorithm::EcdsaP384Sha384 => "ecdsap384sha384",
             DnssecAlgorithm::Ed25519 => "ed25519",
+            DnssecAlgorithm::Ed448 => "ed448",
         }
     }
 
@@ -52,7 +67,14 @@ impl DnssecAlgorithm {
 
     /// All supported algorithm names, for error messages and CLI help.
     pub fn supported_names() -> &'static [&'static str] {
-        &["ecdsap256sha256", "ecdsap384sha384", "ed25519"]
+        &[
+            "rsasha256",
+            "rsasha512",
+            "ecdsap256sha256",
+            "ecdsap384sha384",
+            "ed25519",
+            "ed448",
+        ]
     }
 }
 
@@ -67,9 +89,12 @@ impl std::str::FromStr for DnssecAlgorithm {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
+            "rsasha256" => Ok(DnssecAlgorithm::RsaSha256),
+            "rsasha512" => Ok(DnssecAlgorithm::RsaSha512),
             "ecdsap256sha256" => Ok(DnssecAlgorithm::EcdsaP256Sha256),
             "ecdsap384sha384" => Ok(DnssecAlgorithm::EcdsaP384Sha384),
             "ed25519" => Ok(DnssecAlgorithm::Ed25519),
+            "ed448" => Ok(DnssecAlgorithm::Ed448),
             _ => Err(format!(
                 "unsupported DNSSEC algorithm '{}' (supported: {})",
                 s,

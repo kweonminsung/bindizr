@@ -16,7 +16,7 @@ categories.workspace = true
 [dependencies]
 base64.workspace = true
 chrono.workspace = true
-domain = { workspace = true, features = ["tsig", "zonefile", "unstable-sign", "ring"] }
+domain = { workspace = true, features = ["tsig", "zonefile", "unstable-sign", "ring", "openssl"] }
 hex.workspace = true
 config.workspace = true
 log.workspace = true

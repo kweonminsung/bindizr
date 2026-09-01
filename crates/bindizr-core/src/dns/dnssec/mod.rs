@@ -103,9 +103,17 @@ pub fn generate_key(
     eligible_at: DateTime<Utc>,
 ) -> Result<DnssecKey, String> {
     let params = match algorithm {
+        // 2048 bits is the interoperable RSA size (RFC 8624 requires >= 2048).
+        DnssecAlgorithm::RsaSha256 => {
+            domain::crypto::sign::GenerateParams::RsaSha256 { bits: 2048 }
+        }
+        DnssecAlgorithm::RsaSha512 => {
+            domain::crypto::sign::GenerateParams::RsaSha512 { bits: 2048 }
+        }
         DnssecAlgorithm::EcdsaP256Sha256 => domain::crypto::sign::GenerateParams::EcdsaP256Sha256,
         DnssecAlgorithm::EcdsaP384Sha384 => domain::crypto::sign::GenerateParams::EcdsaP384Sha384,
         DnssecAlgorithm::Ed25519 => domain::crypto::sign::GenerateParams::Ed25519,
+        DnssecAlgorithm::Ed448 => domain::crypto::sign::GenerateParams::Ed448,
     };
     let (secret, dnskey) = domain::crypto::sign::generate(&params, role.flags())
         .map_err(|e| format!("failed to generate DNSSEC key: {}", e))?;

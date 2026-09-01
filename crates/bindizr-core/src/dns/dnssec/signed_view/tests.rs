@@ -869,6 +869,77 @@ fn p384_keys_advertise_a_sha384_ds_digest() {
 }
 
 #[test]
+fn ed448_keys_generate_and_sign() {
+    let zone = test_zone();
+    let mut key = generate_key(
+        &zone,
+        DnssecAlgorithm::Ed448,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+    key.id = 1;
+    let keys = [key];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let diff = compute(ComputeArgs {
+        zone: &zone,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        new_serial: 2,
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        force: false,
+    });
+
+    // Algorithm 16 only signs through the OpenSSL backend; this guards the
+    // ring-to-OpenSSL fallback staying wired up.
+    let apex = OwnerName::apex();
+    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32);
+    assert_eq!(rrsigs.len(), 1);
+    assert_eq!(rrsigs[0].rdata.as_bytes()[2], 16);
+}
+
+#[test]
+fn rsa_keys_generate_and_sign() {
+    let zone = test_zone();
+    let mut key = generate_key(
+        &zone,
+        DnssecAlgorithm::RsaSha256,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+    key.id = 1;
+    let keys = [key];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let diff = compute(ComputeArgs {
+        zone: &zone,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        new_serial: 2,
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        force: false,
+    });
+
+    // RSA key generation also runs on the OpenSSL backend (ring only signs).
+    let apex = OwnerName::apex();
+    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32);
+    assert_eq!(rrsigs.len(), 1);
+    assert_eq!(rrsigs[0].rdata.as_bytes()[2], 8);
+}
+
+#[test]
 fn algorithm_rollover_double_signs_zone_data_while_published() {
     let zone = test_zone();
     let old = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);

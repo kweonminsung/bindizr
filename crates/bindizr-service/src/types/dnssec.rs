@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 /// Request body for enabling DNSSEC on a zone.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct EnableDnssecRequest {
-    /// Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384` and `ed25519`.
+    /// Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, and `rsasha512`.
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: Option<String>,
     /// Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276

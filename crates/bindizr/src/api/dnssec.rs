@@ -82,7 +82,7 @@ pub(crate) async fn get_dnssec_status(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Enable DNSSEC for a zone",
-        description = "Generates the zone's signing key — an ECDSA P-256 CSK by default (`algorithm` also accepts `ed25519`; `split_keys` generates a KSK/ZSK pair instead; `nsec3` selects NSEC3 denial of existence) — and signs the whole zone. The response includes the DS records to register in the parent zone.",
+        description = "Generates the zone's signing key — an ECDSA P-256 CSK by default (`algorithm` also accepts `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, and `rsasha512`; `split_keys` generates a KSK/ZSK pair instead; `nsec3` selects NSEC3 denial of existence) — and signs the whole zone. The response includes the DS records to register in the parent zone.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
