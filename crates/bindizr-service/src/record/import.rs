@@ -331,13 +331,18 @@ impl RecordService {
                     add.prepared.priority,
                     None,
                 ) {
-                    Ok(()) => same_name.push(synthetic_record(
-                        &add.stored_name,
-                        &add.prepared.record_type,
-                        &add.prepared.value,
-                        effective_ttl(add.prepared.ttl),
-                        add.prepared.priority,
-                    )),
+                    // In-memory comparison only; the negative id keeps the
+                    // placeholder distinct from persisted rows.
+                    Ok(()) => same_name.push(Record {
+                        id: -1,
+                        name: add.stored_name.clone(),
+                        record_type: add.prepared.record_type.clone(),
+                        value: add.prepared.value.clone(),
+                        ttl: effective_ttl(add.prepared.ttl),
+                        priority: add.prepared.priority,
+                        zone_id: 0,
+                        created_at: Utc::now(),
+                    }),
                     Err(e) if e.code.http_status() < 500 => {
                         errors.push(format!("{}: {}", add.prepared.owner_name, e.message))
                     }
@@ -520,25 +525,4 @@ fn import_diff(
     }));
 
     build_record_diff(zone, &before, &after)
-}
-
-/// A placeholder record for in-memory comparison only; the negative id keeps it
-/// distinct from persisted rows.
-fn synthetic_record(
-    stored_name: &OwnerName,
-    record_type: &RecordType,
-    value: &str,
-    ttl: i32,
-    priority: Option<i32>,
-) -> Record {
-    Record {
-        id: -1,
-        name: stored_name.clone(),
-        record_type: record_type.clone(),
-        value: value.to_string(),
-        ttl,
-        priority,
-        zone_id: 0,
-        created_at: Utc::now(),
-    }
 }

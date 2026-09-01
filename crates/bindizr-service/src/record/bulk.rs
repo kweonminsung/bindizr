@@ -71,29 +71,6 @@ pub(crate) fn prepare_record(
     })
 }
 
-pub(crate) fn zone_journal_changes(
-    zone_id: i32,
-    new_serial: i32,
-    operation: ChangeOperation,
-    records: &[Record],
-) -> Vec<ZoneChange> {
-    records
-        .iter()
-        .map(|record| ZoneChange {
-            zone_id,
-            serial: new_serial,
-            operation,
-            record_name: record.name.clone(),
-            record_type: JournalRecordType::User(record.record_type.clone()),
-            record_value: Some(record.value.clone()),
-            record_rdata: None,
-            record_ttl: record.ttl,
-            record_priority: record.priority,
-            derived: false,
-        })
-        .collect()
-}
-
 impl RecordService {
     /// Insert records with their ADD zone changes for IXFR. The caller has
     /// already validated the rows.
@@ -108,8 +85,21 @@ impl RecordService {
         }
 
         let created_records = RepositoryService::create_records_tx(tx, records).await?;
-        let changes =
-            zone_journal_changes(zone_id, new_serial, ChangeOperation::Add, &created_records);
+        let changes: Vec<ZoneChange> = created_records
+            .iter()
+            .map(|record| ZoneChange {
+                zone_id,
+                serial: new_serial,
+                operation: ChangeOperation::Add,
+                record_name: record.name.clone(),
+                record_type: JournalRecordType::User(record.record_type.clone()),
+                record_value: Some(record.value.clone()),
+                record_rdata: None,
+                record_ttl: record.ttl,
+                record_priority: record.priority,
+                derived: false,
+            })
+            .collect();
         RepositoryService::create_zone_journal_tx(tx, &changes).await?;
         Ok(created_records)
     }
@@ -127,7 +117,21 @@ impl RecordService {
 
         let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
         RepositoryService::delete_records_tx(tx, &ids).await?;
-        let changes = zone_journal_changes(zone_id, new_serial, ChangeOperation::Del, records);
+        let changes: Vec<ZoneChange> = records
+            .iter()
+            .map(|record| ZoneChange {
+                zone_id,
+                serial: new_serial,
+                operation: ChangeOperation::Del,
+                record_name: record.name.clone(),
+                record_type: JournalRecordType::User(record.record_type.clone()),
+                record_value: Some(record.value.clone()),
+                record_rdata: None,
+                record_ttl: record.ttl,
+                record_priority: record.priority,
+                derived: false,
+            })
+            .collect();
         RepositoryService::create_zone_journal_tx(tx, &changes).await?;
         Ok(())
     }

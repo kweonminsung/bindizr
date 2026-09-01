@@ -3,7 +3,7 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
-use super::{DnssecService, derived_changes, notify_zone, status::build_status};
+use super::{DnssecService, notify_zone, status::build_status};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -11,6 +11,7 @@ use crate::{
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKeyRole, DnssecKeyState},
         zone::{DnssecDenial, Zone},
+        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -102,7 +103,23 @@ impl DnssecService {
                     .await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
-            let changes = derived_changes(zone.id, new_serial, &derived, &[]);
+            // Journal a DEL for every derived row; they carry wire RDATA, not
+            // a value.
+            let changes: Vec<ZoneChange> = derived
+                .iter()
+                .map(|row| ZoneChange {
+                    zone_id: zone.id,
+                    serial: new_serial,
+                    operation: ChangeOperation::Del,
+                    record_name: row.name.clone(),
+                    record_type: JournalRecordType::Derived(row.record_type),
+                    record_value: None,
+                    record_rdata: Some(row.rdata.clone()),
+                    record_ttl: row.ttl,
+                    record_priority: None,
+                    derived: true,
+                })
+                .collect();
             RepositoryService::create_zone_journal_tx(&mut tx, &changes).await?;
             RepositoryService::delete_dnssec_records_by_zone_id_tx(&mut tx, zone.id).await?;
             RepositoryService::delete_dnssec_keys_by_zone_id_tx(&mut tx, zone.id).await?;

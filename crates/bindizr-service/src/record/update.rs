@@ -3,7 +3,7 @@ use bindizr_db::repository::LockLevel;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, prepare_record, zone_journal_changes},
+    bulk::{PreparedRecord, prepare_record},
     validation::{
         normalize_record_owner_name, parse_record_type,
         validate_record_update_constraints_normalized,
@@ -17,7 +17,7 @@ use crate::{
     model::{
         record::{Record, RecordType, RecordWithZone},
         zone::Zone,
-        zone_change::ChangeOperation,
+        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -239,18 +239,32 @@ impl RecordService {
                 })?;
 
             // Record DEL(old)+ADD(new) zone changes for IXFR in one batch.
-            let mut changes = zone_journal_changes(
-                zone.id,
-                new_serial,
-                ChangeOperation::Del,
-                std::slice::from_ref(&existing_record),
-            );
-            changes.extend(zone_journal_changes(
-                zone.id,
-                new_serial,
-                ChangeOperation::Add,
-                std::slice::from_ref(&updated_record),
-            ));
+            let changes = vec![
+                ZoneChange {
+                    zone_id: zone.id,
+                    serial: new_serial,
+                    operation: ChangeOperation::Del,
+                    record_name: existing_record.name.clone(),
+                    record_type: JournalRecordType::User(existing_record.record_type.clone()),
+                    record_value: Some(existing_record.value.clone()),
+                    record_rdata: None,
+                    record_ttl: existing_record.ttl,
+                    record_priority: existing_record.priority,
+                    derived: false,
+                },
+                ZoneChange {
+                    zone_id: zone.id,
+                    serial: new_serial,
+                    operation: ChangeOperation::Add,
+                    record_name: updated_record.name.clone(),
+                    record_type: JournalRecordType::User(updated_record.record_type.clone()),
+                    record_value: Some(updated_record.value.clone()),
+                    record_rdata: None,
+                    record_ttl: updated_record.ttl,
+                    record_priority: updated_record.priority,
+                    derived: false,
+                },
+            ];
             RepositoryService::create_zone_journal_tx(&mut tx, &changes)
                 .await
                 .map_err(|e| {
