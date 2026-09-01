@@ -1,12 +1,12 @@
 use bindizr_core::log_debug;
-use bindizr_service::types::GetTokenResponse;
+use bindizr_service::types::{CreateTokenRequest, GetTokenResponse};
 use clap::Subcommand;
 
 use crate::{
     cli::error::CliError,
     socket::{
         client::DaemonSocketClient,
-        types::{CreateTokenParams, DaemonCommandKind, TokenNameParams},
+        types::{DaemonCommandKind, TokenNameParams},
     },
 };
 
@@ -65,7 +65,7 @@ async fn create_token(
     let res = client
         .send_command(
             DaemonCommandKind::TokenCreate,
-            CreateTokenParams {
+            CreateTokenRequest {
                 name,
                 description,
                 expires_in_days,

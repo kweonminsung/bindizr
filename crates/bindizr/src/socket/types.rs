@@ -96,16 +96,6 @@ pub(crate) struct TokenNameParams {
     pub(crate) name: String,
 }
 
-/// Payload for creating an API token.
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct CreateTokenParams {
-    pub(crate) name: String,
-    pub(crate) description: Option<String>,
-    pub(crate) expires_in_days: Option<i64>,
-    #[serde(default)]
-    pub(crate) global: bool,
-}
-
 /// Payload addressing a zone's policies.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ZonePolicyListParams {

@@ -5,6 +5,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::api_token::ApiToken;
 
+/// Request body for creating an API token.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CreateTokenRequest {
+    pub name: String,
+    pub description: Option<String>,
+    /// Days until expiry; omit for a token that never expires.
+    pub expires_in_days: Option<i64>,
+    /// Make the token global: it may manage every zone and the zone plane.
+    /// Fixed at creation.
+    #[serde(default)]
+    pub global: bool,
+}
+
 /// API representation of an API token. `token` carries the raw secret and is
 /// only present in the create response — the one time it is shown.
 #[derive(Serialize, Deserialize, Debug)]

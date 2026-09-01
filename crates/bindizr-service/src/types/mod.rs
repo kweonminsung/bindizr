@@ -34,7 +34,7 @@ pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
     GetRecordsFilter, RecordItem, RecordResponse, RecordValueRequest, UpdateRecordPatch,
 };
-pub use token::GetTokenResponse;
+pub use token::{CreateTokenRequest, GetTokenResponse};
 pub use token_policy::{
     CreateZoneTokenPolicyRequest, GetZoneTokenPolicyResponse, ZoneTokenPolicyListResponse,
     ZoneTokenPolicyResponse,
