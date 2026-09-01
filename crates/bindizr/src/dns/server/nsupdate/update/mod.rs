@@ -8,10 +8,10 @@ use bindizr_core::{
         message::{Class, Rtype},
         nsupdate::{
             auth::{ResponseSigner, TsigError},
-            parser::{UpdateRecord, UpdateRequest, rr_to_record_value, rr_type_to_record_type},
+            parser::{UpdateRecord, UpdateRequest, rr_to_record_value},
         },
     },
-    model::tsig_key::TsigKey,
+    model::{record::RecordType, tsig_key::TsigKey},
 };
 use bindizr_service::{
     dynamic_update::{
@@ -184,11 +184,11 @@ fn decode_prerequisite(rr: &UpdateRecord, query_data: &[u8]) -> Result<Prerequis
                 (false, Rtype::ANY) => Prerequisite::NameNotInUse { name },
                 (true, rr_type) => Prerequisite::RrsetInUse {
                     name,
-                    record_type: rr_type_to_record_type(rr_type)?,
+                    record_type: RecordType::from_rtype(rr_type)?,
                 },
                 (false, rr_type) => Prerequisite::RrsetNotInUse {
                     name,
-                    record_type: rr_type_to_record_type(rr_type)?,
+                    record_type: RecordType::from_rtype(rr_type)?,
                 },
             })
         }
@@ -249,7 +249,7 @@ fn decode_update(rr: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, Updat
             Ok(UpdateOp::DeleteRrset {
                 name,
                 record_type: (rr.rr_type != Rtype::ANY)
-                    .then(|| rr_type_to_record_type(rr.rr_type))
+                    .then(|| RecordType::from_rtype(rr.rr_type))
                     .transpose()?,
             })
         }
