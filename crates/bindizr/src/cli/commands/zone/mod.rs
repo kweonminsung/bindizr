@@ -140,6 +140,7 @@ pub(crate) enum ZoneCommand {
     },
 
     /// Delete a zone
+    #[command(alias = "rm")]
     Delete {
         /// The name of the zone
         name: String,

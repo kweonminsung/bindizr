@@ -15,6 +15,7 @@ pub(crate) enum ConfigCommand {
         file: Option<String>,
     },
     /// Show the configuration loaded by the running daemon
+    #[command(alias = "ls")]
     List,
     /// Show a single configuration value by dotted key (e.g. api.listen_port)
     Get {

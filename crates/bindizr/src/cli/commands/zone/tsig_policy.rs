@@ -44,6 +44,7 @@ pub(crate) enum ZoneTsigPolicyCommand {
         name: String,
     },
     /// Remove a TSIG policy from a zone by policy ID
+    #[command(alias = "rm")]
     Remove {
         /// The name of the zone
         name: String,

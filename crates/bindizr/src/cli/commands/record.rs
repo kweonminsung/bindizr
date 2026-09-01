@@ -164,6 +164,7 @@ YAML example:
     },
 
     /// Delete a record
+    #[command(alias = "rm")]
     Delete {
         /// The record ID
         record_id: i32,

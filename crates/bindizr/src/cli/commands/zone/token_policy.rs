@@ -41,6 +41,7 @@ pub(crate) enum ZoneTokenPolicyCommand {
         name: String,
     },
     /// Remove a token policy from a zone by policy ID
+    #[command(alias = "rm")]
     Remove {
         /// The name of the zone
         name: String,
