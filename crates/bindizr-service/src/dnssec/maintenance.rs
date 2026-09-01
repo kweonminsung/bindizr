@@ -94,7 +94,7 @@ async fn run_maintenance_pass() {
     let zsk_lifetime_days = config.dnssec.zsk_lifetime_days;
     if zsk_lifetime_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(zsk_lifetime_days));
-        match RepositoryService::list_dnssec_key_zone_ids_by_role_and_state_older_than(
+        match RepositoryService::list_dnssec_key_zone_ids_by_role_and_state_entered_before(
             DnssecKeyRole::Zsk,
             DnssecKeyState::Active,
             cutoff,
@@ -261,7 +261,7 @@ async fn start_zsk_rollover_by_zone_id(
         }
         let Some(template) = keys
             .iter()
-            .find(|key| key.role == DnssecKeyRole::Zsk && key.created_at < cutoff)
+            .find(|key| key.role == DnssecKeyRole::Zsk && key.state_changed_at < cutoff)
         else {
             return Ok(None);
         };

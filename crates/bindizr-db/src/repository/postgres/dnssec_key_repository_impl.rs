@@ -100,7 +100,7 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         Ok(keys)
     }
 
-    async fn list_zone_ids_by_role_and_state_older_than(
+    async fn list_zone_ids_by_role_and_state_entered_before(
         &self,
         role: DnssecKeyRole,
         state: DnssecKeyState,
@@ -112,7 +112,7 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
             r#"
             SELECT DISTINCT zone_id
             FROM dnssec_keys
-            WHERE role = $1 AND state = $2 AND created_at < $3
+            WHERE role = $1 AND state = $2 AND state_changed_at < $3
             ORDER BY zone_id
             "#,
         )

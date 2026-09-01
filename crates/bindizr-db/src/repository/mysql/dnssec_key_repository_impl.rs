@@ -99,7 +99,7 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         Ok(keys)
     }
 
-    async fn list_zone_ids_by_role_and_state_older_than(
+    async fn list_zone_ids_by_role_and_state_entered_before(
         &self,
         role: DnssecKeyRole,
         state: DnssecKeyState,
@@ -111,7 +111,7 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
             r#"
             SELECT DISTINCT zone_id
             FROM dnssec_keys
-            WHERE role = ? AND state = ? AND created_at < ?
+            WHERE role = ? AND state = ? AND state_changed_at < ?
             ORDER BY zone_id
             "#,
         )

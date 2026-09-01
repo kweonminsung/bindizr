@@ -59,7 +59,7 @@ signature_validity_days = 14  # RRSIG validity period
 signature_refresh_days = 5    # Re-sign when a signature has fewer than this many days left (must be < validity)
 rollover_publish_holddown_secs = 86400 # Wait before a pre-published key may start signing (ZSKs auto-advance)
 rollover_retire_holddown_secs = 172800 # Wait before a retired key is removed from the zone
-zsk_lifetime_days = 0         # Roll active ZSKs older than this automatically (0 = disabled)
+zsk_lifetime_days = 0         # Roll ZSKs active longer than this automatically (0 = disabled)
 ds_probe_resolver = ""        # Resolver (host[:port]) asked for the parent DS before ds-seen; empty skips the check
 
 [logging]

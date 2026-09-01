@@ -510,9 +510,9 @@ pub trait DnssecKeyRepository: Send + Sync {
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<DnssecKey>, DatabaseError>;
-    /// Zone ids holding a key of `role` in `state` created before `cutoff`:
-    /// the scheduled-rollover work list.
-    async fn list_zone_ids_by_role_and_state_older_than(
+    /// Zone ids holding a key of `role` sitting in `state` since before
+    /// `cutoff`: the scheduled-rollover work list.
+    async fn list_zone_ids_by_role_and_state_entered_before(
         &self,
         role: DnssecKeyRole,
         state: DnssecKeyState,

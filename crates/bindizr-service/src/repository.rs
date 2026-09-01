@@ -438,13 +438,13 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
     }
 
-    pub(crate) async fn list_dnssec_key_zone_ids_by_role_and_state_older_than(
+    pub(crate) async fn list_dnssec_key_zone_ids_by_role_and_state_entered_before(
         role: DnssecKeyRole,
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, ServiceError> {
         get_dnssec_key_repository()
-            .list_zone_ids_by_role_and_state_older_than(role, state, cutoff)
+            .list_zone_ids_by_role_and_state_entered_before(role, state, cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
     }

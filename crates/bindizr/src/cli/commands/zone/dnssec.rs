@@ -208,12 +208,12 @@ pub(crate) async fn handle_command(
             let response = client
                 .send_command(DaemonCommandKind::ZoneDnssecVerify, ZoneNameParams { name })
                 .await?;
+            let report: VerifyDnssecResponse = parse_response(&response.data)?;
             if output != OutputFormat::Table {
                 print_response(&response.data, output, |report: &VerifyDnssecResponse| {
                     report.checks.iter().map(DnssecCheckRow::from).collect()
                 })?;
             } else {
-                let report: VerifyDnssecResponse = parse_response(&response.data)?;
                 println!(
                     "Zone {}: {}",
                     report.zone_name,
@@ -224,6 +224,12 @@ pub(crate) async fn handle_command(
                     }
                 );
                 print_table(report.checks.iter().map(DnssecCheckRow::from).collect());
+            }
+            // Scripts read the exit status, so a failed report must not exit 0.
+            if !report.ok {
+                return Err(
+                    format!("DNSSEC verification failed for zone {}", report.zone_name).into(),
+                );
             }
         }
         ZoneDnssecCommand::Rollover { subcommand } => match subcommand {
@@ -291,6 +297,11 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
         status.serial,
         status.denial.to_uppercase()
     );
+    if status.withdrawing {
+        println!(
+            "DS withdrawal published (RFC 8078): the parent should drop this zone's DS records."
+        );
+    }
     if let Some(expires_at) = status.earliest_signature_expires_at {
         println!(
             "Earliest signature expiry: {}",
@@ -316,6 +327,9 @@ fn print_ds_records(data: &serde_json::Value) -> Result<(), String> {
         return Ok(());
     }
 
+    if status.withdrawing {
+        println!("# DS withdrawal published: do not register these at the parent.");
+    }
     // Plain presentation lines only, so the output pastes into a parent zone.
     for ds in &status.ds_records {
         println!("{}", ds.presentation);

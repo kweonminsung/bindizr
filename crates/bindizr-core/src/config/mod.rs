@@ -221,7 +221,7 @@ pub struct DnssecConfig {
     /// have drained its signatures and the parent its DS).
     #[serde(default = "default_rollover_retire_holddown_secs")]
     pub rollover_retire_holddown_secs: u64,
-    /// Active ZSKs older than this are rolled by the scheduler (0 disables).
+    /// ZSKs active longer than this are rolled by the scheduler (0 disables).
     /// CSKs need a parent DS swap, so they are never auto-rolled.
     #[serde(default = "default_zsk_lifetime_days")]
     pub zsk_lifetime_days: u32,
