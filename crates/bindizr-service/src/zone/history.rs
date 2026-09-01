@@ -283,16 +283,12 @@ impl ZoneService {
         zone_name: &str,
         serial: i32,
     ) -> Result<VersionDetailResponse, ServiceError> {
-        let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_read_tx("Failed to load version").await?;
 
         let result = async {
             let zone =
-                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Shared)
+                ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
-            if !caller.zone_visible(zone.id) {
-                return Err(ServiceError::zone_not_found(zone_name));
-            }
             let version = RepositoryService::get_zone_version_by_serial_tx(
                 &mut tx,
                 zone.id,
@@ -330,16 +326,12 @@ impl ZoneService {
         from_serial: i32,
         to_serial: Option<i32>,
     ) -> Result<VersionDiffResponse, ServiceError> {
-        let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_read_tx("Failed to diff versions").await?;
 
         let result = async {
             let zone =
-                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Shared)
+                ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
-            if !caller.zone_visible(zone.id) {
-                return Err(ServiceError::zone_not_found(zone_name));
-            }
             let to_serial = to_serial.unwrap_or(zone.serial);
 
             require_serial(&mut tx, &zone, from_serial).await?;

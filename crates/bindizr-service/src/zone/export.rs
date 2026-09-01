@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use bindizr_core::dns::{dnssec::rdata_presentation, name::to_fqdn};
 use bindizr_db::repository::LockLevel;
 
-use super::{ZoneService, validation::normalize_zone_name};
+use super::ZoneService;
 use crate::{
     authorization::Caller,
     error::ServiceError,
@@ -27,20 +27,11 @@ impl ZoneService {
     ) -> Result<String, ServiceError> {
         // Read the zone and records in one locked transaction so the export is a
         // single consistent view, not stale SOA metadata with newer records.
-        let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_read_tx("Failed to export zone").await?;
         let load_result = async {
-            let zone = RepositoryService::get_zone_by_name_tx(
-                &mut tx,
-                lookup_name.as_str(),
-                LockLevel::Shared,
-            )
-            .await?
-            .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
-            // Invisible zones read as 404 so scoped tokens cannot probe them.
-            if !caller.zone_visible(zone.id) {
-                return Err(ServiceError::zone_not_found(zone_name));
-            }
+            let zone =
+                ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
+                    .await?;
             let records =
                 RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
             let derived = if signed {

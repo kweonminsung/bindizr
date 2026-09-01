@@ -108,6 +108,23 @@ impl ZoneService {
             .ok_or_else(|| ServiceError::zone_not_found(zone_name))
     }
 
+    /// Fetch a zone by name for `caller` within the caller's transaction at
+    /// `lock_level`; a zone it cannot see reads as `NotFound`, so grants
+    /// cannot be probed. Visibility is decided on the row this tx locked, so
+    /// a same-name recreation cannot swap the zone in.
+    pub(crate) async fn get_visible_by_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        caller: &Caller,
+        zone_name: &str,
+        lock_level: LockLevel,
+    ) -> Result<Zone, ServiceError> {
+        let zone = Self::get_by_name_tx(tx, zone_name, lock_level).await?;
+        if !caller.zone_visible(zone.id) {
+            return Err(ServiceError::zone_not_found(zone_name));
+        }
+        Ok(zone)
+    }
+
     /// Fetch a zone by name within the caller's transaction at `lock_level`,
     /// returning `NotFound` if it does not exist.
     pub(crate) async fn get_by_name_tx(
