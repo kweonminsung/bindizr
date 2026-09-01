@@ -22,7 +22,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 ```
 
 This generates a single CSK (ECDSA P-256/SHA-256 by default; `--algorithm
-ed25519` for Ed25519), signs the whole zone, and notifies the secondaries.
+ecdsap384sha384` or `--algorithm ed25519` for ECDSA P-384 or Ed25519), signs
+the whole zone, and notifies the secondaries. P-384 keys advertise a SHA-384
+DS digest (type 4); the others SHA-256 (type 2).
 The private key never leaves bindizr.
 
 Two options are fixed at enable time:
@@ -70,8 +72,17 @@ advertised) but signs nothing yet. The publication wait —
 zone's `DNSKEY` TTL, fixed when the key is published — gives resolver caches
 time to learn the new key. Then:
 
+`--algorithm <alg>` starts an algorithm rollover (RFC 6840, Section 5.11)
+instead: every key is replaced with one of the new algorithm and the zone is
+double-signed — both algorithms cover all data — until the old keys leave
+together after `ds-seen`.
+
 - **ZSK** — no parent involvement: the scheduler promotes it automatically
-  after the wait.
+  after the wait. With `dnssec.zsk_lifetime_days` set (0, the default,
+  disables it), the scheduler also *starts* ZSK rollovers on its own once the
+  active ZSK outlives that many days, making split-key ZSK rotation fully
+  hands-off. CSKs are never auto-rolled — their rollover needs the parent DS
+  swap below.
 - **CSK / KSK** — publish the new DS at the parent (or let it consume the
   CDS), wait out the parent's DS TTL, then confirm; an early confirmation is
   refused:
@@ -79,6 +90,11 @@ time to learn the new key. Then:
   ```sh
   bindizr zone dnssec rollover ds-seen example.com
   ```
+
+  With `dnssec.ds_probe_resolver` set, `ds-seen` first asks that resolver for
+  the zone's DS RRset and refuses unless the new key's DS is actually
+  visible — the guard against confirming a DS the parent never published.
+  `--force` (API: `?force=true`) skips the check.
 
 A retired key stays published until its own wait passes —
 `rollover_retire_holddown_secs` (default two days), never less than the
@@ -99,16 +115,32 @@ doubted.
 Dropping signatures while the parent still publishes your DS makes the zone
 **bogus**. Go insecure in order:
 
-1. Remove the DS record at the parent.
-2. Wait out the DS TTL.
+1. Ask the parent to remove the DS. If the parent consumes CDS,
+   `bindizr zone dnssec withdraw example.com` publishes the RFC 8078 delete
+   pair (`CDS 0 0 0 00`) and the parent drops the DS on its own; otherwise
+   remove it at the registrar. `--cancel` takes a withdrawal back.
+2. Wait until the DS is gone and its TTL has passed.
 3. `bindizr zone dnssec disable example.com`
+
+## Verifying
+
+```sh
+bindizr zone dnssec verify example.com
+```
+
+Runs self-checks on the stored state — key inventory, signature freshness,
+per-algorithm signature coverage, and the denial chain — and, with
+`dnssec.ds_probe_resolver` configured, compares the DS records the parent
+actually serves against the zone's keys. Also available as
+`GET /zones/{name}/dnssec/verify`.
 
 ## Behavior notes
 
 - Denial mode and key layout are fixed at enable time; to change them,
   disable and re-enable (going insecure in between).
-- Rollovers keep the key's algorithm; algorithm changes (RFC 6840,
-  Section 5.11) are not supported.
+- An algorithm change is a rollover of every key:
+  `rollover start --algorithm <alg>` double-signs the zone through the
+  transition (RFC 6840, Section 5.11).
 - At a delegation only the child's `DS` RRset is signed; the `NS` beside it
   and glue at or below the cut are served unsigned (RFC 4035).
 - The derived records are system-owned: never edited, diffed, or rolled

@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 /// Request body for enabling DNSSEC on a zone.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct EnableDnssecRequest {
-    /// Defaults to `ecdsap256sha256`; also accepts `ed25519`.
+    /// Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384` and `ed25519`.
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: Option<String>,
     /// Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276
@@ -25,9 +25,13 @@ pub struct EnableDnssecRequest {
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct RolloverDnssecRequest {
     /// Which key to roll: required for split-key zones (`ksk` or `zsk`),
-    /// omitted for CSK zones.
+    /// omitted for CSK zones and algorithm rollovers.
     #[schema(example = "zsk")]
     pub role: Option<String>,
+    /// Roll to this algorithm instead (RFC 6840, Section 5.11): replaces
+    /// every key, double-signing the zone until the old keys leave.
+    #[schema(example = "ed25519")]
+    pub algorithm: Option<String>,
 }
 
 /// A signing key's public half; the private key never leaves the server.
@@ -42,6 +46,10 @@ pub struct DnssecKeyInfo {
     #[schema(example = "active")]
     pub state: String,
     pub state_changed_at: DateTime<Utc>,
+    /// Next allowed transition: promotion for `published`, removal for
+    /// `retired`; absent for `active`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eligible_at: Option<DateTime<Utc>>,
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: String,
     #[schema(example = 34217)]
@@ -54,14 +62,14 @@ pub struct DnssecKeyInfo {
     pub created_at: DateTime<Utc>,
 }
 
-/// A key's DS form for parent-zone registration (SHA-256, RFC 4509).
+/// A key's DS form for parent-zone registration.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecDsInfo {
     #[schema(example = 34217)]
     pub key_tag: i32,
     #[schema(example = 13)]
     pub algorithm: u8,
-    /// DS digest type; always 2 (SHA-256).
+    /// DS digest type: 4 (SHA-384) for P-384 keys, otherwise 2 (SHA-256).
     #[schema(example = 2)]
     pub digest_type: u8,
     #[schema(example = "4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383")]
@@ -86,11 +94,38 @@ pub struct GetDnssecStatusResponse {
     pub keys: Vec<DnssecKeyInfo>,
     /// DS forms of the keys, to be registered in the parent zone.
     pub ds_records: Vec<DnssecDsInfo>,
+    /// Whether the RFC 8078 delete CDS/CDNSKEY pair is published, asking the
+    /// parent to drop the zone's DS.
+    #[serde(default)]
+    #[schema(example = false)]
+    pub withdrawing: bool,
     /// Earliest stored signature expiration; the re-signer renews before it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub earliest_signature_expires_at: Option<DateTime<Utc>>,
     #[schema(example = 7)]
     pub serial: i32,
+}
+
+/// One verification check's outcome.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct DnssecCheckInfo {
+    #[schema(example = "signatures")]
+    pub check: String,
+    #[schema(example = true)]
+    pub ok: bool,
+    #[schema(example = "142 RRSIGs, earliest expiry 2026-09-12T00:00:00Z")]
+    pub detail: String,
+}
+
+/// Result of verifying a zone's DNSSEC state.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct VerifyDnssecResponse {
+    #[schema(example = "example.com")]
+    pub zone_name: String,
+    /// Whether every check passed.
+    #[schema(example = true)]
+    pub ok: bool,
+    pub checks: Vec<DnssecCheckInfo>,
 }
 
 /// A zone's DNSSEC status wrapped in a response envelope.

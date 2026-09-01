@@ -1,7 +1,7 @@
 //! Assembling the status a signed zone reports: key inventory and the DS
 //! records the parent needs.
 
-use bindizr_core::dns::dnssec::{DS_DIGEST_TYPE_SHA256, ds_rdata_for, to_wire_name};
+use bindizr_core::dns::dnssec::{ds_rdata_for, to_wire_name};
 use chrono::{DateTime, Utc};
 
 use super::DnssecService;
@@ -10,7 +10,7 @@ use crate::{
     database::repository::LockLevel,
     error::ServiceError,
     model::{
-        dnssec_key::DnssecKey,
+        dnssec_key::{DnssecKey, DnssecKeyState},
         zone::{DnssecDenial, Zone},
     },
     repository::{RepositoryService, RepositoryTx},
@@ -35,11 +35,67 @@ impl DnssecService {
             let keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
             let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
+            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+                .await?
+                .is_some();
 
-            build_status(&zone, zone.dnssec_denial, &keys, earliest, zone.serial)
+            build_status(
+                &zone,
+                zone.dnssec_denial,
+                &keys,
+                earliest,
+                zone.serial,
+                withdrawing,
+            )
         }
         .await;
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
+    }
+
+    /// DS records the parent must publish before [`Self::rollover_ds_seen`]:
+    /// those of the pre-published SEP keys.
+    pub async fn list_pending_parent_ds(
+        caller: &Caller,
+        zone_name: &str,
+    ) -> Result<Vec<DnssecDsInfo>, ServiceError> {
+        caller.require_global("manage DNSSEC signing")?;
+
+        let mut tx = RepositoryService::begin_read_tx("failed to read DNSSEC status").await?;
+        let result = async {
+            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
+            keys.iter()
+                .filter(|key| key.role.is_sep() && key.state == DnssecKeyState::Published)
+                .map(|key| ds_info(&zone, key))
+                .collect()
+        }
+        .await;
+        RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
+    }
+
+    /// Count the zones that are signed (hold at least one key).
+    pub async fn count_signed_zones(caller: &Caller) -> Result<u64, ServiceError> {
+        caller.require_global("read DNSSEC metrics")?;
+        RepositoryService::count_dnssec_key_zone_ids().await
+    }
+
+    /// Count keys in `state` across every zone.
+    pub async fn count_keys_by_state(
+        caller: &Caller,
+        state: DnssecKeyState,
+    ) -> Result<u64, ServiceError> {
+        caller.require_global("read DNSSEC metrics")?;
+        RepositoryService::count_dnssec_keys_by_state(state).await
+    }
+
+    /// Count signatures expiring before `cutoff` across every zone.
+    pub async fn count_rrsigs_expiring_before(
+        caller: &Caller,
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, ServiceError> {
+        caller.require_global("read DNSSEC metrics")?;
+        RepositoryService::count_rrsig_dnssec_records_expiring_before(cutoff).await
     }
 
     pub(crate) async fn earliest_expiry_tx(
@@ -58,6 +114,7 @@ pub(crate) fn build_status(
     keys: &[DnssecKey],
     earliest_signature_expires_at: Option<DateTime<Utc>>,
     serial: i32,
+    withdrawing: bool,
 ) -> Result<GetDnssecStatusResponse, ServiceError> {
     // The parent needs DS records only for the SEP keys the zone still wants
     // delegated trust for.
@@ -78,6 +135,7 @@ pub(crate) fn build_status(
                 role: key.role.to_string(),
                 state: key.state.to_string(),
                 state_changed_at: key.state_changed_at,
+                eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
                 algorithm: key.algorithm.to_string(),
                 key_tag: key.key_tag,
                 dnskey: format!(
@@ -92,6 +150,7 @@ pub(crate) fn build_status(
         ds_records,
         earliest_signature_expires_at,
         serial,
+        withdrawing,
     })
 }
 
@@ -105,14 +164,14 @@ fn ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
     Ok(DnssecDsInfo {
         key_tag: key.key_tag,
         algorithm: key.algorithm.to_int() as u8,
-        digest_type: DS_DIGEST_TYPE_SHA256,
+        digest_type: key.algorithm.ds_digest_type(),
         digest: digest.clone(),
         presentation: format!(
             "{} IN DS {} {} {} {}",
             zone.name.to_fqdn(),
             key.key_tag,
             key.algorithm.to_int(),
-            DS_DIGEST_TYPE_SHA256,
+            key.algorithm.ds_digest_type(),
             digest
         ),
     })

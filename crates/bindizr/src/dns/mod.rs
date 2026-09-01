@@ -4,8 +4,10 @@
 pub(crate) mod address;
 pub(crate) mod client;
 pub(crate) mod error;
+pub(crate) mod rollover;
 pub(crate) mod server;
 pub(crate) mod status;
+pub(crate) mod verify;
 pub(crate) mod wire;
 
 use std::{io::ErrorKind, net::SocketAddr, time::Duration};

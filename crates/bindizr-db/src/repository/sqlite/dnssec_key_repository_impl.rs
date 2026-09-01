@@ -4,7 +4,7 @@ use sqlx::{Pool, Sqlite};
 
 use crate::{
     error::DatabaseError,
-    model::dnssec_key::{DnssecKey, DnssecKeyState},
+    model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
     repository::{DnssecKeyRepository, LockLevel, RepositoryTx},
 };
 
@@ -96,6 +96,54 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         .await?;
 
         Ok(keys)
+    }
+
+    async fn list_zone_ids_by_role_and_state_entered_before(
+        &self,
+        role: DnssecKeyRole,
+        state: DnssecKeyState,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<i32>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        // datetime(?) normalizes the bound value to the column's stored format.
+        let zone_ids = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT DISTINCT zone_id
+            FROM dnssec_keys
+            WHERE role = ? AND state = ? AND state_changed_at < datetime(?)
+            ORDER BY zone_id
+            "#,
+        )
+        .bind(role.as_str())
+        .bind(state.as_str())
+        .bind(cutoff)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        Ok(zone_ids)
+    }
+
+    async fn count_zone_ids(&self) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(DISTINCT zone_id) FROM dnssec_keys")
+            .fetch_one(&mut *conn)
+            .await?;
+
+        Ok(count as u64)
+    }
+
+    async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM dnssec_keys WHERE state = ?")
+                .bind(state.as_str())
+                .fetch_one(&mut *conn)
+                .await?;
+
+        Ok(count as u64)
     }
 
     async fn update_state_tx(

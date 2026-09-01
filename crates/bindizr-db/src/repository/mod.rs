@@ -13,7 +13,7 @@ use sqlx::{MySql, Postgres, Sqlite};
 
 use super::model::{
     api_token::ApiToken,
-    dnssec_key::{DnssecKey, DnssecKeyState},
+    dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
     dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     record::{Record, RecordType, RecordWithZone},
     tsig_key::TsigKey,
@@ -510,6 +510,17 @@ pub trait DnssecKeyRepository: Send + Sync {
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<DnssecKey>, DatabaseError>;
+    /// Zone ids holding a key of `role` sitting in `state` since before
+    /// `cutoff`: the scheduled-rollover work list.
+    async fn list_zone_ids_by_role_and_state_entered_before(
+        &self,
+        role: DnssecKeyRole,
+        state: DnssecKeyState,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<i32>, DatabaseError>;
+    /// Zones holding at least one key: the signed-zone count.
+    async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
+    async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError>;
     async fn update_state_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -565,6 +576,8 @@ pub trait DnssecRecordRepository: Send + Sync {
         &self,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError>;
+    /// Rows expiring before `cutoff`; only RRSIG rows carry `expires_at`.
+    async fn count_expiring_before(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,
@@ -585,6 +598,21 @@ pub trait ApiTokenRepository: Send + Sync {
     /// truthful.
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
+/// Persistence for the per-zone DS-withdrawal flag: a row means the zone
+/// publishes the RFC 8078 delete CDS/CDNSKEY pair instead of per-key ones.
+#[async_trait]
+pub trait DnssecWithdrawalRepository: Send + Sync {
+    async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone_id: i32)
+    -> Result<(), DatabaseError>;
+    async fn get_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<Option<i32>, DatabaseError>;
+    async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, zone_id: i32)
+    -> Result<(), DatabaseError>;
 }
 
 /// Persistence operations for catalog zone state.
@@ -740,6 +768,16 @@ impl RepositoryFactory {
             DatabasePool::MySQL(_) => Box::new(mysql::MySqlCatalogZoneStateRepository),
             DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresCatalogZoneStateRepository),
             DatabasePool::SQLite(_) => Box::new(sqlite::SqliteCatalogZoneStateRepository),
+        }
+    }
+
+    pub(crate) fn create_dnssec_withdrawal_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn DnssecWithdrawalRepository> {
+        match pool {
+            DatabasePool::MySQL(_) => Box::new(mysql::MySqlDnssecWithdrawalRepository),
+            DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresDnssecWithdrawalRepository),
+            DatabasePool::SQLite(_) => Box::new(sqlite::SqliteDnssecWithdrawalRepository),
         }
     }
 

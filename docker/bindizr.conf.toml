@@ -37,6 +37,8 @@ signature_validity_days = 14
 signature_refresh_days = 5
 rollover_publish_holddown_secs = 86400
 rollover_retire_holddown_secs = 172800
+zsk_lifetime_days = 0
+ds_probe_resolver = ""
 
 [logging]
 log_level = "info"

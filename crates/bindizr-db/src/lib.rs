@@ -302,6 +302,11 @@ pub fn get_catalog_zone_state_repository() -> Box<dyn repository::CatalogZoneSta
     repository::RepositoryFactory::create_catalog_zone_state_repository(pool)
 }
 
+pub fn get_dnssec_withdrawal_repository() -> Box<dyn repository::DnssecWithdrawalRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_dnssec_withdrawal_repository(pool)
+}
+
 /// Return a DNSSEC key repository backed by the global pool.
 pub fn get_dnssec_key_repository() -> Box<dyn repository::DnssecKeyRepository> {
     let pool = get_pool();

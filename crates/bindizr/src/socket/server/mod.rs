@@ -94,6 +94,11 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ZoneDnssecRolloverStart => {
                     dnssec::rollover_start(&cmd.data).await
                 }
+                DaemonCommandKind::ZoneDnssecVerify => dnssec::verify_dnssec(&cmd.data).await,
+                DaemonCommandKind::ZoneDnssecWithdraw => dnssec::withdraw_dnssec(&cmd.data).await,
+                DaemonCommandKind::ZoneDnssecWithdrawCancel => {
+                    dnssec::cancel_dnssec_withdrawal(&cmd.data).await
+                }
                 DaemonCommandKind::ZoneDnssecRolloverDsSeen => {
                     dnssec::rollover_ds_seen(&cmd.data).await
                 }

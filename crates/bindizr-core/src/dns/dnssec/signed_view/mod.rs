@@ -66,6 +66,9 @@ pub struct SignedViewParams<'a> {
     pub refresh_secs: i64,
     /// Ignore stored signatures entirely (manual re-sign).
     pub force: bool,
+    /// Publish the RFC 8078 delete CDS/CDNSKEY pair instead of per-key ones,
+    /// asking the parent to drop the zone's DS RRset.
+    pub withdraw_parent_ds: bool,
 }
 
 impl SignedViewParams<'_> {
@@ -103,8 +106,10 @@ impl SignedViewParams<'_> {
             .iter()
             .filter(|s| s.key.signs_key_rrsets())
             .collect();
-        let data_signers: Vec<&Signer<'_>> =
-            signers.iter().filter(|s| s.key.signs_zone_data()).collect();
+        let data_signers: Vec<&Signer<'_>> = signers
+            .iter()
+            .filter(|s| s.key.signs_zone_data(self.keys))
+            .collect();
         if !signers.is_empty() && (key_signers.is_empty() || data_signers.is_empty()) {
             return Err(
                 "zone has keys but no usable signer for the key RRsets or the zone data"
@@ -423,7 +428,7 @@ fn build_signing_input(
             Ttl::from_secs(zone.default_ttl as u32),
             ZoneRecordData::Dnskey(signer.dnskey.clone()),
         ));
-        if signer.key.wants_parent_ds() {
+        if signer.key.wants_parent_ds() && !params.withdraw_parent_ds {
             let cds = UnknownRecordData::from_octets(
                 Rtype::CDS,
                 ds_rdata_for(signer.key, apex)?.into_bytes(),
@@ -447,6 +452,27 @@ fn build_signing_input(
                 ZoneRecordData::Unknown(cdnskey),
             ));
         }
+    }
+
+    // RFC 8078, Section 4: the 0-algorithm pair asks the parent to delete
+    // the DS RRset entirely.
+    if params.withdraw_parent_ds && !signers.is_empty() {
+        let cds = UnknownRecordData::from_octets(Rtype::CDS, vec![0, 0, 0, 0, 0])
+            .map_err(|e| format!("invalid CDS rdata: {}", e))?;
+        input.push(WireRecord::new(
+            apex.clone(),
+            Class::IN,
+            Ttl::from_secs(zone.default_ttl as u32),
+            ZoneRecordData::Unknown(cds),
+        ));
+        let cdnskey = UnknownRecordData::from_octets(Rtype::CDNSKEY, vec![0, 0, 3, 0, 0])
+            .map_err(|e| format!("invalid CDNSKEY rdata: {}", e))?;
+        input.push(WireRecord::new(
+            apex.clone(),
+            Class::IN,
+            Ttl::from_secs(zone.default_ttl as u32),
+            ZoneRecordData::Unknown(cdnskey),
+        ));
     }
 
     for record in params.records {

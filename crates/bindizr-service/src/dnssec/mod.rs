@@ -11,6 +11,7 @@ mod lifecycle;
 mod maintenance;
 mod rollover;
 mod status;
+mod verify;
 
 use bindizr_core::{config::bindizr_config, dns::dnssec::SignedViewParams};
 use chrono::{Duration, Utc};
@@ -84,6 +85,9 @@ impl DnssecService {
     ) -> Result<bool, ServiceError> {
         let records = RepositoryService::list_records_tx(tx, zone.id, LockLevel::None).await?;
         let prev = RepositoryService::list_dnssec_records_tx(tx, zone.id, LockLevel::None).await?;
+        let withdraw_parent_ds = RepositoryService::get_dnssec_withdrawal_tx(tx, zone.id)
+            .await?
+            .is_some();
 
         let dnssec = &bindizr_config().dnssec;
         let now = Utc::now();
@@ -100,6 +104,7 @@ impl DnssecService {
             expiration_jitter_secs: MAX_EXPIRATION_JITTER_SECS as i64,
             refresh_secs: i64::from(dnssec.signature_refresh_days) * 86_400,
             force,
+            withdraw_parent_ds,
         }
         .compute()
         .map_err(ServiceError::dnssec_signing_failed)?;
@@ -117,7 +122,7 @@ impl DnssecService {
             .max()
             .unwrap_or(zone.default_ttl);
         for key in keys {
-            let signed_ttl = if key.signs_zone_data() {
+            let signed_ttl = if key.signs_zone_data(keys) {
                 data_ttl
             } else if key.signs_key_rrsets() {
                 zone.default_ttl

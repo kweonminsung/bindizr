@@ -24,6 +24,10 @@ pub struct Metrics {
     pub notify_sent_total: IntCounterVec,
     pub nsupdate_requests_total: IntCounterVec,
     pub zone_serial_bumps_total: IntCounter,
+    pub dnssec_zones_total: IntGauge,
+    pub dnssec_keys_total: IntGaugeVec,
+    pub dnssec_rrsigs_expiring_total: IntGauge,
+    pub dnssec_maintenance_runs_total: IntCounterVec,
 }
 
 static METRICS: OnceLock<Metrics> = OnceLock::new();
@@ -145,6 +149,41 @@ impl Metrics {
         .expect("valid metric definition");
         register(&registry, &zone_serial_bumps_total);
 
+        let dnssec_zones_total = IntGauge::new(
+            "bindizr_dnssec_zones_total",
+            "Number of DNSSEC-signed zones, refreshed at scrape time.",
+        )
+        .expect("valid metric definition");
+        register(&registry, &dnssec_zones_total);
+
+        let dnssec_keys_total = IntGaugeVec::new(
+            Opts::new(
+                "bindizr_dnssec_keys_total",
+                "Number of DNSSEC keys by state, refreshed at scrape time.",
+            ),
+            &["state"],
+        )
+        .expect("valid metric definition");
+        register(&registry, &dnssec_keys_total);
+
+        let dnssec_rrsigs_expiring_total = IntGauge::new(
+            "bindizr_dnssec_rrsigs_expiring_total",
+            "Signatures inside the refresh window at scrape time; a value that \
+             persists across scrapes means re-signing is falling behind.",
+        )
+        .expect("valid metric definition");
+        register(&registry, &dnssec_rrsigs_expiring_total);
+
+        let dnssec_maintenance_runs_total = IntCounterVec::new(
+            Opts::new(
+                "bindizr_dnssec_maintenance_runs_total",
+                "Hourly DNSSEC maintenance passes, by outcome.",
+            ),
+            &["result"],
+        )
+        .expect("valid metric definition");
+        register(&registry, &dnssec_maintenance_runs_total);
+
         Self {
             registry,
             database_up,
@@ -156,6 +195,10 @@ impl Metrics {
             notify_sent_total,
             nsupdate_requests_total,
             zone_serial_bumps_total,
+            dnssec_zones_total,
+            dnssec_keys_total,
+            dnssec_rrsigs_expiring_total,
+            dnssec_maintenance_runs_total,
         }
     }
 

@@ -1261,7 +1261,7 @@ paths:
       tags:
       - DNSSEC
       summary: Start a key rollover for a zone
-      description: 'Pre-publishes a replacement key with the same algorithm (RFC 7583): the new key joins the DNSKEY RRset — and, for SEP keys, the CDS/CDNSKEY set — but signs no zone data until the ds-seen call promotes it. For split-key zones `role` selects which key to roll (`ksk` or `zsk`); for CSK zones it is omitted.'
+      description: Pre-publishes replacement keys (RFC 7583). Without `algorithm` the replacement keeps the current one and signs no zone data until promoted; `role` selects the key for split-key zones. With `algorithm` every key is replaced and the zone is double-signed through the transition (RFC 6840, Section 5.11) until the old keys leave after ds-seen.
       operationId: start_dnssec_rollover
       parameters:
       - name: name
@@ -1339,6 +1339,12 @@ paths:
         required: true
         schema:
           type: string
+      - name: force
+        in: query
+        description: Skip the parent DS verification against dnssec.ds_probe_resolver.
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
           description: Rollover advanced, new key promoted
@@ -1347,7 +1353,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DnssecStatusResponse'
         '400':
-          description: Bad request, the rollover is ZSK-only (no DS to confirm) or the publish hold-down has not passed
+          description: 'Bad request: the rollover is ZSK-only (no DS to confirm), the publish hold-down has not passed, or the parent DS is not visible at the configured resolver'
           content:
             application/json:
               schema:
@@ -1403,6 +1409,170 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: DNSSEC is not enabled for the zone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/dnssec/verify:
+    get:
+      tags:
+      - DNSSEC
+      summary: Verify a zone's DNSSEC state
+      description: Runs self-checks on the stored state — key inventory, signature freshness, per-algorithm signature coverage (RFC 6840, Section 5.11), and the denial chain — and, with `dnssec.ds_probe_resolver` configured, compares the DS the parent serves against the zone's keys. Each aspect reports as a named check; `ok` is the conjunction.
+      operationId: verify_dnssec
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Verification report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyDnssecResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: DNSSEC is not enabled for the zone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/dnssec/withdraw:
+    post:
+      tags:
+      - DNSSEC
+      summary: Publish the DS withdrawal (RFC 8078 delete CDS/CDNSKEY)
+      description: Replaces the zone's CDS/CDNSKEY set with the RFC 8078 delete pair (`CDS 0 0 0 00`), asking a CDS-consuming parent to remove the zone's DS records — the first step of going insecure. Once the parent DS is gone and its TTL has passed, disable DNSSEC.
+      operationId: withdraw_dnssec
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Withdrawal published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecStatusResponse'
+        '400':
+          description: Bad request, the withdrawal is already published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: DNSSEC is not enabled for the zone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - DNSSEC
+      summary: Cancel a published DS withdrawal
+      description: Removes the RFC 8078 delete pair; the per-key CDS/CDNSKEY set returns with this signing pass.
+      operationId: cancel_dnssec_withdrawal
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Withdrawal cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecStatusResponse'
+        '400':
+          description: Bad request, no withdrawal is published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
           content:
@@ -2394,9 +2564,26 @@ components:
           type: string
           description: Name of an existing TSIG key.
           example: update-key
+    DnssecCheckInfo:
+      type: object
+      description: One verification check's outcome.
+      required:
+      - check
+      - ok
+      - detail
+      properties:
+        check:
+          type: string
+          example: signatures
+        detail:
+          type: string
+          example: 142 RRSIGs, earliest expiry 2026-09-12T00:00:00Z
+        ok:
+          type: boolean
+          example: true
     DnssecDsInfo:
       type: object
-      description: A key's DS form for parent-zone registration (SHA-256, RFC 4509).
+      description: A key's DS form for parent-zone registration.
       required:
       - key_tag
       - algorithm
@@ -2415,7 +2602,7 @@ components:
         digest_type:
           type: integer
           format: int32
-          description: DS digest type; always 2 (SHA-256).
+          description: 'DS digest type: 4 (SHA-384) for P-384 keys, otherwise 2 (SHA-256).'
           example: 2
           minimum: 0
         key_tag:
@@ -2459,6 +2646,14 @@ components:
           type: string
           description: 'Apex DNSKEY RDATA in presentation form: `257 3 <alg> <public key>`.'
           example: 257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==
+        eligible_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: |-
+            Next allowed transition: promotion for `published`, removal for
+            `retired`; absent for `active`.
         id:
           type: integer
           format: int32
@@ -2494,7 +2689,7 @@ components:
           type:
           - string
           - 'null'
-          description: Defaults to `ecdsap256sha256`; also accepts `ed25519`.
+          description: Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384` and `ed25519`.
           example: ecdsap256sha256
         denial:
           type:
@@ -2707,6 +2902,12 @@ components:
           type: integer
           format: int32
           example: 7
+        withdrawing:
+          type: boolean
+          description: |-
+            Whether the RFC 8078 delete CDS/CDNSKEY pair is published, asking the
+            parent to drop the zone's DS.
+          example: false
         zone_name:
           type: string
           example: example.com
@@ -3427,13 +3628,21 @@ components:
       type: object
       description: Request body for starting a key rollover.
       properties:
+        algorithm:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Roll to this algorithm instead (RFC 6840, Section 5.11): replaces
+            every key, double-signing the zone until the old keys leave.
+          example: ed25519
         role:
           type:
           - string
           - 'null'
           description: |-
             Which key to roll: required for split-key zones (`ksk` or `zsk`),
-            omitted for CSK zones.
+            omitted for CSK zones and algorithm rollovers.
           example: zsk
     SecondaryStatusResponse:
       type: object
@@ -3477,6 +3686,25 @@ components:
       properties:
         tsig_key:
           $ref: '#/components/schemas/GetTsigKeyResponse'
+    VerifyDnssecResponse:
+      type: object
+      description: Result of verifying a zone's DNSSEC state.
+      required:
+      - zone_name
+      - ok
+      - checks
+      properties:
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DnssecCheckInfo'
+        ok:
+          type: boolean
+          description: Whether every check passed.
+          example: true
+        zone_name:
+          type: string
+          example: example.com
     VersionDetailResponse:
       type: object
       description: One version plus the reconstructed record set at that serial.

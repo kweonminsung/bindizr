@@ -7,6 +7,8 @@ use sqlx::FromRow;
 pub enum DnssecAlgorithm {
     /// ECDSA Curve P-256 with SHA-256, algorithm 13 (RFC 6605).
     EcdsaP256Sha256,
+    /// ECDSA Curve P-384 with SHA-384, algorithm 14 (RFC 6605).
+    EcdsaP384Sha384,
     /// Ed25519, algorithm 15 (RFC 8080).
     Ed25519,
 }
@@ -16,6 +18,7 @@ impl DnssecAlgorithm {
     pub fn to_int(self) -> i32 {
         match self {
             DnssecAlgorithm::EcdsaP256Sha256 => 13,
+            DnssecAlgorithm::EcdsaP384Sha384 => 14,
             DnssecAlgorithm::Ed25519 => 15,
         }
     }
@@ -23,6 +26,7 @@ impl DnssecAlgorithm {
     pub fn from_int(value: i32) -> Option<Self> {
         match value {
             13 => Some(DnssecAlgorithm::EcdsaP256Sha256),
+            14 => Some(DnssecAlgorithm::EcdsaP384Sha384),
             15 => Some(DnssecAlgorithm::Ed25519),
             _ => None,
         }
@@ -32,13 +36,23 @@ impl DnssecAlgorithm {
     pub fn as_str(&self) -> &'static str {
         match self {
             DnssecAlgorithm::EcdsaP256Sha256 => "ecdsap256sha256",
+            DnssecAlgorithm::EcdsaP384Sha384 => "ecdsap384sha384",
             DnssecAlgorithm::Ed25519 => "ed25519",
+        }
+    }
+
+    /// DS digest type the algorithm's DS pairs with: 4 = SHA-384 for P-384
+    /// (RFC 6605, Section 4), otherwise 2 = SHA-256 (RFC 4509).
+    pub fn ds_digest_type(self) -> u8 {
+        match self {
+            DnssecAlgorithm::EcdsaP384Sha384 => 4,
+            _ => 2,
         }
     }
 
     /// All supported algorithm names, for error messages and CLI help.
     pub fn supported_names() -> &'static [&'static str] {
-        &["ecdsap256sha256", "ed25519"]
+        &["ecdsap256sha256", "ecdsap384sha384", "ed25519"]
     }
 }
 
@@ -54,6 +68,7 @@ impl std::str::FromStr for DnssecAlgorithm {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "ecdsap256sha256" => Ok(DnssecAlgorithm::EcdsaP256Sha256),
+            "ecdsap384sha384" => Ok(DnssecAlgorithm::EcdsaP384Sha384),
             "ed25519" => Ok(DnssecAlgorithm::Ed25519),
             _ => Err(format!(
                 "unsupported DNSSEC algorithm '{}' (supported: {})",
@@ -216,10 +231,22 @@ pub struct DnssecKey {
 }
 
 impl DnssecKey {
-    /// Whether the key currently signs zone data.
-    pub fn signs_zone_data(&self) -> bool {
-        matches!(self.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk)
-            && self.state == DnssecKeyState::Active
+    /// Whether the key signs zone data among `keys`, the zone's key set:
+    /// Active always does; published/retired ones do while their algorithm
+    /// has no active data signer (RFC 6840, Section 5.11).
+    pub fn signs_zone_data(&self, keys: &[DnssecKey]) -> bool {
+        if !matches!(self.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk) {
+            return false;
+        }
+        if self.state == DnssecKeyState::Active {
+            return true;
+        }
+        !keys.iter().any(|key| {
+            key.id != self.id
+                && matches!(key.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk)
+                && key.state == DnssecKeyState::Active
+                && key.algorithm == self.algorithm
+        })
     }
 
     /// Whether the key co-signs the apex key RRsets. Every SEP key does, in

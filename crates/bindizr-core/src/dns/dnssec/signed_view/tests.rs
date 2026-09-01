@@ -99,6 +99,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
         expiration_jitter_secs: args.expiration_jitter_secs,
         refresh_secs: 5 * 86_400,
         force: args.force,
+        withdraw_parent_ds: false,
     }
     .compute()
     .unwrap()
@@ -803,4 +804,142 @@ fn mixed_ttl_rrset_signs_at_the_minimum() {
     let rrsig = rrsigs_covering(&diff.added, &www, RECORD_TYPE_A);
     assert_eq!(rrsig.len(), 1);
     assert_eq!(rrsig[0].ttl, 300);
+}
+
+#[test]
+fn withdrawal_publishes_the_delete_cds_pair() {
+    let zone = test_zone();
+    let keys = [test_key(
+        &zone,
+        1,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+    )];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let now = fixed_now();
+    let diff = SignedViewParams {
+        zone: &zone,
+        new_serial: 2,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        now,
+        inception: now - Duration::hours(1),
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        refresh_secs: 5 * 86_400,
+        force: false,
+        withdraw_parent_ds: true,
+    }
+    .compute()
+    .unwrap();
+
+    // RFC 8078, Section 4: a single 0-algorithm CDS/CDNSKEY pair replaces the
+    // per-key set and asks the parent to delete the DS RRset.
+    let cds = rows_of_type(&diff.added, DnssecRecordType::Cds);
+    assert_eq!(cds.len(), 1);
+    assert_eq!(cds[0].rdata.as_bytes(), &[0, 0, 0, 0, 0]);
+    let cdnskey = rows_of_type(&diff.added, DnssecRecordType::Cdnskey);
+    assert_eq!(cdnskey.len(), 1);
+    assert_eq!(cdnskey[0].rdata.as_bytes(), &[0, 0, 3, 0, 0]);
+}
+
+#[test]
+fn p384_keys_advertise_a_sha384_ds_digest() {
+    use crate::dns::dnssec::{ds_rdata_for, to_wire_name};
+
+    let zone = test_zone();
+    let key = generate_key(
+        &zone,
+        DnssecAlgorithm::EcdsaP384Sha384,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+
+    let apex = to_wire_name(zone.name.to_wire()).unwrap();
+    let rdata = ds_rdata_for(&key, &apex).unwrap();
+    // RFC 6605, Section 4 pairs P-384 with a SHA-384 (type 4) DS digest.
+    assert_eq!(rdata.as_bytes()[3], 4);
+    assert_eq!(rdata.as_bytes().len(), 4 + 48);
+}
+
+#[test]
+fn algorithm_rollover_double_signs_zone_data_while_published() {
+    let zone = test_zone();
+    let old = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let mut new = generate_key(
+        &zone,
+        DnssecAlgorithm::Ed25519,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Published,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+    new.id = 2;
+    let keys = [old, new];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let diff = compute(ComputeArgs {
+        zone: &zone,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        new_serial: 2,
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        force: false,
+    });
+
+    // RFC 6840, Section 5.11: every algorithm in the DNSKEY RRset must sign
+    // all data, so the pre-published new-algorithm key signs immediately.
+    let apex = OwnerName::apex();
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32).len(),
+        2
+    );
+}
+
+#[test]
+fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
+    let zone = test_zone();
+    let old = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Retired);
+    let mut new = generate_key(
+        &zone,
+        DnssecAlgorithm::Ed25519,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+    new.id = 2;
+    let keys = [old, new];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let diff = compute(ComputeArgs {
+        zone: &zone,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        new_serial: 2,
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        force: false,
+    });
+
+    // The old DNSKEY is still served, so the old algorithm must keep covering
+    // all data until the key is removed (RFC 6840, Section 5.11).
+    let apex = OwnerName::apex();
+    assert_eq!(
+        rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32).len(),
+        2
+    );
 }

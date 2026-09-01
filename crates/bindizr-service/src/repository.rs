@@ -12,7 +12,7 @@ use crate::{
         get_zone_tsig_policy_repository, get_zone_version_repository,
         model::{
             api_token::ApiToken,
-            dnssec_key::{DnssecKey, DnssecKeyState},
+            dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
             dnssec_record::{DnssecRecord, DnssecRecordWithZone},
             record::{Record, RecordWithZone},
             tsig_key::TsigKey,
@@ -158,6 +158,36 @@ impl RepositoryService {
             .ping()
             .await
             .map_err(|e| ServiceError::internal(format!("failed to reach the zones table: {}", e)))
+    }
+
+    pub(crate) async fn create_dnssec_withdrawal_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), ServiceError> {
+        crate::database::get_dnssec_withdrawal_repository()
+            .create_tx(tx, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to record DS withdrawal: {}", e)))
+    }
+
+    pub(crate) async fn get_dnssec_withdrawal_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<Option<i32>, ServiceError> {
+        crate::database::get_dnssec_withdrawal_repository()
+            .get_tx(tx, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DS withdrawal: {}", e)))
+    }
+
+    pub(crate) async fn delete_dnssec_withdrawal_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), ServiceError> {
+        crate::database::get_dnssec_withdrawal_repository()
+            .delete_tx(tx, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to clear DS withdrawal: {}", e)))
     }
 
     pub(crate) async fn upsert_catalog_zone_state_tx(
@@ -406,6 +436,42 @@ impl RepositoryService {
             .list_by_state_eligible_before(state, cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
+    }
+
+    pub(crate) async fn list_dnssec_key_zone_ids_by_role_and_state_entered_before(
+        role: DnssecKeyRole,
+        state: DnssecKeyState,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<i32>, ServiceError> {
+        get_dnssec_key_repository()
+            .list_zone_ids_by_role_and_state_entered_before(role, state, cutoff)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
+    }
+
+    pub(crate) async fn count_dnssec_key_zone_ids() -> Result<u64, ServiceError> {
+        get_dnssec_key_repository()
+            .count_zone_ids()
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC keys: {}", e)))
+    }
+
+    pub(crate) async fn count_dnssec_keys_by_state(
+        state: DnssecKeyState,
+    ) -> Result<u64, ServiceError> {
+        get_dnssec_key_repository()
+            .count_by_state(state)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC keys: {}", e)))
+    }
+
+    pub(crate) async fn count_rrsig_dnssec_records_expiring_before(
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, ServiceError> {
+        get_dnssec_record_repository()
+            .count_expiring_before(cutoff)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
 
     pub(crate) async fn update_dnssec_key_state_tx(

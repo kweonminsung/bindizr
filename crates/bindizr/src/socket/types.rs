@@ -49,6 +49,9 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecSign,
     ZoneDnssecRolloverStart,
     ZoneDnssecRolloverDsSeen,
+    ZoneDnssecWithdraw,
+    ZoneDnssecWithdrawCancel,
+    ZoneDnssecVerify,
     Doctor,
     Shutdown,
     Restart,
@@ -212,6 +215,15 @@ pub(crate) struct RolloverZoneDnssecParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
     pub(crate) request: RolloverDnssecRequest,
+}
+
+/// Payload for confirming a rollover's parent DS.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct DsSeenZoneDnssecParams {
+    pub(crate) name: String,
+    /// Skip the parent DS verification.
+    #[serde(default)]
+    pub(crate) force: bool,
 }
 
 /// Daemon status details returned by the `Status` command.
