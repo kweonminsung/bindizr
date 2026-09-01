@@ -8,3 +8,5 @@
 *.rpm
 .cr-release-packages
 .DS_Store
+*.db-shm
+*.db-wal
