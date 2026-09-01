@@ -6,7 +6,7 @@ use axum::{
     routing,
 };
 use bindizr_service::{
-    record::{ListedRecord, RecordService},
+    record::RecordService,
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
         GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse, RecordItem,
@@ -74,18 +74,7 @@ pub(crate) async fn get_records(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<GetRecordsFilter>,
 ) -> Result<Response, ApiError> {
-    let raw_records = RecordService::list_with_zone_by_filter(&caller, query).await?;
-
-    let records = raw_records
-        .items
-        .iter()
-        .map(ListedRecord::to_response)
-        .collect::<Vec<_>>();
-
-    let response = PaginatedResponse {
-        items: records,
-        pagination: raw_records.pagination,
-    };
+    let response = RecordService::list_with_zone_by_filter(&caller, query).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

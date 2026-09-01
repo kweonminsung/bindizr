@@ -17,9 +17,7 @@ use crate::dns::error::XfrError;
 pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
     log_info!("Generating catalog zone: {}", CATALOG_ZONE_NAME);
 
-    let all_zones = ZoneService::list()
-        .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))?;
+    let all_zones = ZoneService::list().await?;
 
     // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = all_zones
@@ -55,9 +53,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
 async fn generate_catalog_serial(member_zones: &[String], zones: &[Zone]) -> Result<i32, XfrError> {
     let digest = catalog_digest(member_zones, zones);
     let base_serial = zones.iter().map(|z| z.serial).max().unwrap_or(1);
-    ZoneService::advance_catalog_serial(CATALOG_ZONE_NAME, &digest, base_serial)
-        .await
-        .map_err(|e| XfrError::DatabaseError(e.to_string()))
+    Ok(ZoneService::advance_catalog_serial(CATALOG_ZONE_NAME, &digest, base_serial).await?)
 }
 
 fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {

@@ -2,7 +2,8 @@
 //! the column set is all this module decides.
 
 use bindizr_service::types::{
-    DnssecKeyInfo, GetRecordResponse, GetZoneResponse, ImportSummary, RecordValueRequest,
+    DnssecKeyInfo, GetRecordResponse, GetTokenResponse, GetTsigKeyResponse, GetZoneResponse,
+    GetZoneTokenPolicyResponse, GetZoneTsigPolicyResponse, ImportSummary, RecordValueRequest,
     RollbackZoneResponse, SecondaryStatusResponse, VersionRecordResponse, ZoneStatusResponse,
     ZoneVersionResponse,
 };
@@ -14,6 +15,10 @@ fn display_option_i32(opt: &Option<i32>) -> String {
         Some(val) => val.to_string(),
         None => "-".to_string(),
     }
+}
+
+fn yes_no(value: bool) -> String {
+    if value { "yes" } else { "no" }.to_string()
 }
 
 /// A record value as one table cell; TXT segments concatenate into the string
@@ -230,8 +235,10 @@ impl SecondaryStatusRow {
     }
 
     fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: i32) -> Self {
-        let detail = match (secondary.status.as_str(), secondary.error.as_deref()) {
-            ("unreachable", Some(error)) => format!("unreachable ({})", error),
+        let detail = match secondary.error.as_deref() {
+            Some(error) if secondary.is_unreachable() => {
+                format!("{} ({})", secondary.status, error)
+            }
             _ => secondary.status.clone(),
         };
         SecondaryStatusRow {
@@ -274,6 +281,108 @@ impl From<&ImportSummary> for ImportSummaryRow {
             updated: summary.updated,
             unchanged: summary.unchanged,
             skipped: summary.skipped,
+        }
+    }
+}
+
+/// Table row for API token display.
+#[derive(Debug, Tabled)]
+pub(crate) struct TokenRow {
+    #[tabled(rename = "NAME")]
+    pub(crate) name: String,
+    #[tabled(rename = "GLOBAL")]
+    pub(crate) global: String,
+    #[tabled(rename = "DESCRIPTION")]
+    pub(crate) description: String,
+    #[tabled(rename = "EXPIRES-AT")]
+    pub(crate) expires_at: String,
+}
+
+impl From<&GetTokenResponse> for TokenRow {
+    fn from(token: &GetTokenResponse) -> Self {
+        TokenRow {
+            name: token.name.clone(),
+            global: yes_no(token.global),
+            description: token.description.clone().unwrap_or_else(|| "-".to_string()),
+            expires_at: token
+                .expires_at
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_else(|| "Never".to_string()),
+        }
+    }
+}
+
+/// Table row for TSIG key display.
+#[derive(Debug, Tabled)]
+pub(crate) struct TsigKeyRow {
+    #[tabled(rename = "ID")]
+    pub(crate) id: i32,
+    #[tabled(rename = "NAME")]
+    pub(crate) name: String,
+    #[tabled(rename = "ALGORITHM")]
+    pub(crate) algorithm: String,
+    #[tabled(rename = "GLOBAL")]
+    pub(crate) global: String,
+    #[tabled(rename = "CREATED-AT")]
+    pub(crate) created_at: String,
+}
+
+impl From<&GetTsigKeyResponse> for TsigKeyRow {
+    fn from(key: &GetTsigKeyResponse) -> Self {
+        TsigKeyRow {
+            id: key.id,
+            name: key.name.clone(),
+            algorithm: key.algorithm.clone(),
+            global: yes_no(key.global),
+            created_at: key.created_at.to_rfc3339(),
+        }
+    }
+}
+
+/// Table row for zone token policy display.
+#[derive(Debug, Tabled)]
+pub(crate) struct ZoneTokenPolicyRow {
+    #[tabled(rename = "ID")]
+    pub(crate) id: i32,
+    #[tabled(rename = "TOKEN")]
+    pub(crate) api_token: String,
+    #[tabled(rename = "NAME-PATTERN")]
+    pub(crate) record_name_pattern: String,
+    #[tabled(rename = "RECORD-TYPES")]
+    pub(crate) record_types: String,
+}
+
+impl From<&GetZoneTokenPolicyResponse> for ZoneTokenPolicyRow {
+    fn from(policy: &GetZoneTokenPolicyResponse) -> Self {
+        ZoneTokenPolicyRow {
+            id: policy.id,
+            api_token: policy.api_token.clone(),
+            record_name_pattern: policy.record_name_pattern.clone(),
+            record_types: policy.record_types.clone(),
+        }
+    }
+}
+
+/// Table row for zone TSIG policy display.
+#[derive(Debug, Tabled)]
+pub(crate) struct ZoneTsigPolicyRow {
+    #[tabled(rename = "ID")]
+    pub(crate) id: i32,
+    #[tabled(rename = "TSIG-KEY")]
+    pub(crate) tsig_key: String,
+    #[tabled(rename = "NAME-PATTERN")]
+    pub(crate) record_name_pattern: String,
+    #[tabled(rename = "RECORD-TYPES")]
+    pub(crate) record_types: String,
+}
+
+impl From<&GetZoneTsigPolicyResponse> for ZoneTsigPolicyRow {
+    fn from(policy: &GetZoneTsigPolicyResponse) -> Self {
+        ZoneTsigPolicyRow {
+            id: policy.id,
+            tsig_key: policy.tsig_key.clone(),
+            record_name_pattern: policy.record_name_pattern.clone(),
+            record_types: policy.record_types.clone(),
         }
     }
 }

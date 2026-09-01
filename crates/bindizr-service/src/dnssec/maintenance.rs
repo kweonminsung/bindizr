@@ -95,7 +95,7 @@ async fn run_maintenance_pass() {
                 .collect();
             zone_ids.dedup();
             for zone_id in zone_ids {
-                match promote_zsks_for_zone(zone_id).await {
+                match promote_zsks_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log_info!("Promoted pre-published ZSK for zone {}", zone_name);
                         notify_zone(&zone_name).await;
@@ -118,7 +118,7 @@ async fn run_maintenance_pass() {
             let mut zone_ids: Vec<i32> = keys.iter().map(|key| key.zone_id).collect();
             zone_ids.dedup();
             for zone_id in zone_ids {
-                match remove_retired_keys_for_zone(zone_id).await {
+                match remove_retired_keys_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log_info!("Removed retired DNSSEC key(s) for zone {}", zone_name);
                         notify_zone(&zone_name).await;
@@ -180,7 +180,7 @@ async fn sign_zone_by_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
 
 /// Promote a zone's hold-down-expired pre-published ZSKs in its own
 /// transaction. `None` when the state moved on concurrently.
-async fn promote_zsks_for_zone(zone_id: i32) -> Result<Option<String>, ServiceError> {
+async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
     let result = async {
         let Some(zone) =
@@ -217,7 +217,7 @@ async fn promote_zsks_for_zone(zone_id: i32) -> Result<Option<String>, ServiceEr
 }
 
 /// Remove a zone's hold-down-expired retired keys in its own transaction.
-async fn remove_retired_keys_for_zone(zone_id: i32) -> Result<Option<String>, ServiceError> {
+async fn remove_retired_keys_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to remove retired keys").await?;
     let result = async {
         let Some(zone) =

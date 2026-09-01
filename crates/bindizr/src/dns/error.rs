@@ -1,3 +1,4 @@
+use bindizr_service::error::ServiceError;
 use thiserror::Error;
 
 /// Errors produced while handling zone transfers, NOTIFY, and DNS wire I/O.
@@ -29,5 +30,20 @@ pub(crate) enum XfrError {
 impl From<String> for XfrError {
     fn from(message: String) -> Self {
         XfrError::ProtocolError(message)
+    }
+}
+
+/// The DNS plane passes no caller, so a service failure here is never a
+/// client fault — it surfaces as an infrastructure error.
+impl From<ServiceError> for XfrError {
+    fn from(e: ServiceError) -> Self {
+        XfrError::DatabaseError(e.to_string())
+    }
+}
+
+/// DNS-plane failures reaching a service-facing surface (status, doctor).
+impl From<XfrError> for ServiceError {
+    fn from(e: XfrError) -> Self {
+        ServiceError::internal(e.to_string())
     }
 }

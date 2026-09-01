@@ -250,7 +250,7 @@ pub fn rr_to_record_value(
     update: &UpdateRecord,
     message: &[u8],
 ) -> Result<(RecordType, String, Option<i32>), String> {
-    match rr_type_to_record_type(update.rr_type)? {
+    match RecordType::from_rtype(update.rr_type)? {
         RecordType::A => {
             let data = parse_rdata(message, update, "A", |parser| A::parse(parser).ok())?;
             Ok((RecordType::A, data.addr().to_string(), None))
@@ -326,24 +326,5 @@ pub fn rr_to_record_value(
     }
 }
 
-/// Record types updatable via nsupdate. SOA is excluded because it is managed
-/// through the zone's own fields.
-pub fn rr_type_to_record_type(rr_type: Rtype) -> Result<RecordType, String> {
-    match rr_type {
-        Rtype::A => Ok(RecordType::A),
-        Rtype::NS => Ok(RecordType::NS),
-        Rtype::CNAME => Ok(RecordType::CNAME),
-        Rtype::PTR => Ok(RecordType::PTR),
-        Rtype::CAA => Ok(RecordType::CAA),
-        Rtype::DS => Ok(RecordType::DS),
-        Rtype::SSHFP => Ok(RecordType::SSHFP),
-        Rtype::TLSA => Ok(RecordType::TLSA),
-        Rtype::MX => Ok(RecordType::MX),
-        Rtype::TXT => Ok(RecordType::TXT),
-        Rtype::AAAA => Ok(RecordType::AAAA),
-        Rtype::SRV => Ok(RecordType::SRV),
-        _ => Err(format!("unsupported rr type: {}", rr_type)),
-    }
-}
 #[cfg(test)]
 pub mod tests;

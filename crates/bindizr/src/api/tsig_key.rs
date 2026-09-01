@@ -16,7 +16,10 @@ use bindizr_service::{
 };
 use serde::Deserialize;
 
-use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
+use crate::api::{
+    RequestCaller, ZoneNameParam, ZonePolicyParam, error::ApiError,
+    middleware::body_parser::JsonBody,
+};
 
 /// Route group for TSIG key and zone TSIG policy endpoints.
 pub(crate) struct TsigKeyApi;
@@ -47,17 +50,6 @@ impl TsigKeyApi {
 #[derive(Deserialize)]
 pub(crate) struct TsigKeyNameParam {
     pub(crate) name: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ZoneNameParam {
-    pub(crate) name: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ZoneTsigPolicyParam {
-    pub(crate) name: String,
-    pub(crate) id: i32,
 }
 
 #[utoipa::path(
@@ -271,7 +263,7 @@ pub(crate) async fn create_zone_tsig_policy(
 /// Delete one TSIG policy of a zone.
 pub(crate) async fn delete_zone_tsig_policy(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneTsigPolicyParam>,
+    Path(params): Path<ZonePolicyParam>,
 ) -> Result<Response, ApiError> {
     ZoneTsigPolicyService::remove(&caller, &params.name, params.id).await?;
     let response = MessageResponse {

@@ -4,7 +4,10 @@ use bindizr_service::types::{CreateZoneTsigPolicyRequest, GetZoneTsigPolicyRespo
 use clap::Subcommand;
 
 use crate::{
-    cli::{error::CliError, output::parse_response},
+    cli::{
+        error::CliError,
+        output::{ZoneTsigPolicyRow, parse_response, print_table},
+    },
     socket::{
         client::DaemonSocketClient,
         types::{
@@ -104,24 +107,7 @@ pub(crate) async fn handle_command(
 fn print_tsig_policies(data: &serde_json::Value) -> Result<(), String> {
     let policies: Vec<GetZoneTsigPolicyResponse> = parse_response(data)?;
 
-    if policies.is_empty() {
-        println!("No TSIG policies found");
-        return Ok(());
-    }
-
-    println!("TSIG Policies:");
-    println!(
-        "{:<5} {:<30} {:<20} {:<20}",
-        "ID", "TSIG KEY", "NAME PATTERN", "RECORD TYPES"
-    );
-    println!("{}", "-".repeat(80));
-
-    for policy in policies {
-        println!(
-            "{:<5} {:<30} {:<20} {:<20}",
-            policy.id, policy.tsig_key, policy.record_name_pattern, policy.record_types
-        );
-    }
+    print_table(policies.iter().map(ZoneTsigPolicyRow::from).collect());
 
     Ok(())
 }

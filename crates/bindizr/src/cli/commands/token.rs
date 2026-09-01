@@ -1,12 +1,15 @@
 use bindizr_core::log_debug;
-use bindizr_service::types::GetTokenResponse;
+use bindizr_service::types::{CreateTokenRequest, GetTokenResponse};
 use clap::Subcommand;
 
 use crate::{
-    cli::error::CliError,
+    cli::{
+        error::CliError,
+        output::{TokenRow, print_table},
+    },
     socket::{
         client::DaemonSocketClient,
-        types::{CreateTokenParams, DaemonCommandKind, TokenNameParams},
+        types::{DaemonCommandKind, TokenNameParams},
     },
 };
 
@@ -65,7 +68,7 @@ async fn create_token(
     let res = client
         .send_command(
             DaemonCommandKind::TokenCreate,
-            CreateTokenParams {
+            CreateTokenRequest {
                 name,
                 description,
                 expires_in_days,
@@ -111,33 +114,7 @@ async fn print_tokens(client: &DaemonSocketClient) -> Result<(), CliError> {
     let tokens: Vec<GetTokenResponse> = serde_json::from_value(res.data)
         .map_err(|e| format!("Failed to parse token list response: {}", e))?;
 
-    if tokens.is_empty() {
-        println!("No API tokens found");
-        return Ok(());
-    }
-
-    println!("API Tokens:");
-    println!(
-        "{:<25} {:<8} {:<20} {:<20}",
-        "NAME", "GLOBAL", "DESCRIPTION", "EXPIRES AT"
-    );
-    println!("{}", "-".repeat(75));
-
-    for token in tokens {
-        let desc = token.description.unwrap_or_else(|| "-".to_string());
-        let expires = token
-            .expires_at
-            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-            .unwrap_or_else(|| "Never".to_string());
-
-        println!(
-            "{:<25} {:<8} {:<20} {:<20}",
-            token.name,
-            if token.global { "yes" } else { "no" },
-            desc,
-            expires
-        );
-    }
+    print_table(tokens.iter().map(TokenRow::from).collect());
 
     Ok(())
 }

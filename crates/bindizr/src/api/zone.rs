@@ -11,8 +11,7 @@ use bindizr_service::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
         ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, PaginatedResponse,
         RollbackZoneRequest, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
-        VersionRecordResponse, ZoneDetailResponse, ZoneResponse, ZoneStatusResponse,
-        ZoneVersionResponse,
+        ZoneDetailResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
     },
     zone::ZoneService,
 };
@@ -20,7 +19,7 @@ use serde::Deserialize;
 
 use crate::{
     api::{
-        RequestCaller,
+        RequestCaller, ZoneNameParam,
         error::ApiError,
         middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
     },
@@ -150,14 +149,6 @@ pub(crate) async fn list_zone_versions(
     let response =
         ZoneService::list_versions(&caller, &params.name, query.limit, query.offset, query.all)
             .await?;
-    let mut items = Vec::with_capacity(response.items.len());
-    for version in &response.items {
-        items.push(ZoneVersionResponse::from_version(version)?);
-    }
-    let response = PaginatedResponse {
-        items,
-        pagination: response.pagination,
-    };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -183,13 +174,7 @@ pub(crate) async fn get_zone_version(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneVersionParam>,
 ) -> Result<Response, ApiError> {
-    let (version, records) = ZoneService::get_version(&caller, &params.name, params.serial).await?;
-    let version = ZoneVersionResponse::from_version(&version)?;
-    let records = records
-        .into_iter()
-        .map(VersionRecordResponse::from)
-        .collect::<Vec<_>>();
-    let response = VersionDetailResponse { version, records };
+    let response = ZoneService::get_version(&caller, &params.name, params.serial).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -305,15 +290,6 @@ pub(crate) async fn get_zones(
     Query(query): Query<GetZonesFilter>,
 ) -> Result<Response, ApiError> {
     let response = ZoneService::list_by_filter(&caller, query).await?;
-    let zones = response
-        .items
-        .iter()
-        .map(GetZoneResponse::from_zone)
-        .collect::<Vec<GetZoneResponse>>();
-    let response = PaginatedResponse {
-        items: zones,
-        pagination: response.pagination,
-    };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -470,12 +446,6 @@ pub(crate) async fn import_zone(
 ) -> Result<Response, ApiError> {
     let response = RecordService::import_zone_file(&caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
-}
-
-/// Path parameters addressing a zone by name.
-#[derive(Debug, Deserialize)]
-pub(crate) struct ZoneNameParam {
-    name: String,
 }
 
 /// Query parameters for fetching a zone.

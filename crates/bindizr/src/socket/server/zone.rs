@@ -2,10 +2,7 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     record::RecordService,
-    types::{
-        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-        PaginatedResponse, VersionDetailResponse, VersionRecordResponse, ZoneVersionResponse,
-    },
+    types::{CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter},
     zone::ZoneService,
 };
 use serde_json::json;
@@ -38,15 +35,7 @@ pub(crate) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
         parse_params(data)?
     };
 
-    let zones = ZoneService::list_by_filter(&Caller::Global, filter).await?;
-    let response = PaginatedResponse {
-        items: zones
-            .items
-            .iter()
-            .map(GetZoneResponse::from_zone)
-            .collect::<Vec<_>>(),
-        pagination: zones.pagination,
-    };
+    let response = ZoneService::list_by_filter(&Caller::Global, filter).await?;
     Ok(DaemonResponse {
         message: format!("Found {} zone(s)", response.items.len()),
         data: to_response_data(response)?,
@@ -125,15 +114,6 @@ pub(crate) async fn list_zone_versions(
         params.all,
     )
     .await?;
-    let items = response
-        .items
-        .iter()
-        .map(ZoneVersionResponse::from_version)
-        .collect::<Result<Vec<_>, _>>()?;
-    let response = PaginatedResponse {
-        items,
-        pagination: response.pagination,
-    };
 
     Ok(DaemonResponse {
         message: format!("Found {} version(s)", response.items.len()),
@@ -148,15 +128,7 @@ pub(crate) async fn get_zone_version(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneVersionParams = parse_params(data)?;
 
-    let (version, records) =
-        ZoneService::get_version(&Caller::Global, &params.name, params.serial).await?;
-    let response = VersionDetailResponse {
-        version: ZoneVersionResponse::from_version(&version)?,
-        records: records
-            .into_iter()
-            .map(VersionRecordResponse::from)
-            .collect(),
-    };
+    let response = ZoneService::get_version(&Caller::Global, &params.name, params.serial).await?;
 
     Ok(DaemonResponse {
         message: format!("Version '{}' retrieved successfully", params.serial),
@@ -234,7 +206,7 @@ pub(crate) async fn zone_status(data: &serde_json::Value) -> Result<DaemonRespon
     let in_sync = response
         .secondaries
         .iter()
-        .filter(|s| s.status == "in_sync")
+        .filter(|s| s.is_in_sync())
         .count();
     let message = if response.secondaries.is_empty() {
         "No secondaries configured".to_string()

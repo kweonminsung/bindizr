@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use chrono::{DateTime, Utc};
+use domain::base::iana::Rtype;
 use sqlx::FromRow;
 
 use crate::dns::{
@@ -169,6 +170,26 @@ impl RecordType {
             RecordType::PTR => "PTR",
             RecordType::SSHFP => "SSHFP",
             RecordType::TLSA => "TLSA",
+        }
+    }
+
+    /// The RR types bindizr stores as user records, keyed by wire RR type.
+    /// SOA is excluded because it is managed through the zone's own fields.
+    pub fn from_rtype(rtype: Rtype) -> Result<RecordType, String> {
+        match rtype {
+            Rtype::A => Ok(RecordType::A),
+            Rtype::NS => Ok(RecordType::NS),
+            Rtype::CNAME => Ok(RecordType::CNAME),
+            Rtype::PTR => Ok(RecordType::PTR),
+            Rtype::CAA => Ok(RecordType::CAA),
+            Rtype::DS => Ok(RecordType::DS),
+            Rtype::SSHFP => Ok(RecordType::SSHFP),
+            Rtype::TLSA => Ok(RecordType::TLSA),
+            Rtype::MX => Ok(RecordType::MX),
+            Rtype::TXT => Ok(RecordType::TXT),
+            Rtype::AAAA => Ok(RecordType::AAAA),
+            Rtype::SRV => Ok(RecordType::SRV),
+            _ => Err(format!("unsupported rr type: {}", rtype)),
         }
     }
 

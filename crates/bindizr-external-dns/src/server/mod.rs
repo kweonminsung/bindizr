@@ -4,8 +4,9 @@ use std::{sync::Arc, time::Instant};
 
 use axum::{
     Router,
-    extract::{DefaultBodyLimit, State},
-    http::{HeaderMap, StatusCode, header},
+    extract::{DefaultBodyLimit, MatchedPath, Request, State},
+    http::{HeaderMap, Method, StatusCode, header},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing,
 };
@@ -34,6 +35,7 @@ pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
         .route("/", routing::get(negotiate))
         .route("/records", routing::get(get_records).post(apply_changes))
         .route("/adjustendpoints", routing::post(adjust_endpoints_handler))
+        .route_layer(middleware::from_fn(track_webhook_metrics))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state)
 }
@@ -95,35 +97,54 @@ fn result_label(response: &Response) -> &'static str {
     }
 }
 
-fn track(endpoint: &'static str, started: Instant, response: Response) -> Response {
-    metrics()
-        .requests_total
-        .with_label_values(&[endpoint, result_label(&response)])
-        .inc();
-    metrics()
-        .request_duration_seconds
-        .with_label_values(&[endpoint])
-        .observe(started.elapsed().as_secs_f64());
+/// The endpoint label a route reports under (`metrics()` pre-registers these).
+/// HEAD serves through `routing::get`; an unrouted method 405s, so `None`.
+fn endpoint_label(method: &Method, route: &str) -> Option<&'static str> {
+    match (method.as_str(), route) {
+        ("GET" | "HEAD", "/") => Some("negotiate"),
+        ("GET" | "HEAD", "/records") => Some("records_get"),
+        ("POST", "/records") => Some("records_apply"),
+        ("POST", "/adjustendpoints") => Some("adjustendpoints"),
+        _ => None,
+    }
+}
+
+/// Record request count and latency for the matched webhook route.
+async fn track_webhook_metrics(request: Request, next: Next) -> Response {
+    let route = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|path| path.as_str().to_owned())
+        .unwrap_or_default();
+    let endpoint = endpoint_label(request.method(), &route);
+    let started = Instant::now();
+
+    let response = next.run(request).await;
+
+    if let Some(endpoint) = endpoint {
+        metrics()
+            .requests_total
+            .with_label_values(&[endpoint, result_label(&response)])
+            .inc();
+        metrics()
+            .request_duration_seconds
+            .with_label_values(&[endpoint])
+            .observe(started.elapsed().as_secs_f64());
+    }
     response
 }
 
 /// `GET /` — negotiation: return the DomainFilter of manageable zones.
 async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let started = Instant::now();
-
     if !accept_is_supported(&headers) {
-        return track(
-            "negotiate",
-            started,
-            (
-                StatusCode::NOT_ACCEPTABLE,
-                format!("supported media type: {}", MEDIA_TYPE),
-            )
-                .into_response(),
-        );
+        return (
+            StatusCode::NOT_ACCEPTABLE,
+            format!("supported media type: {}", MEDIA_TYPE),
+        )
+            .into_response();
     }
 
-    let response = match state.upstream.get_zones().await {
+    match state.upstream.get_zones().await {
         // An empty DomainFilter reads as "manage everything" to external-dns;
         // refuse retryably so a new grant heals negotiation without a restart.
         Ok(zones) if zones.is_empty() => (
@@ -137,35 +158,27 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
             json_response(&DomainFilter { include: zones })
         }
         Err(e) => upstream_error_response(e),
-    };
-    track("negotiate", started, response)
+    }
 }
 
 /// `GET /records` — all managed records as grouped endpoints.
 async fn get_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let started = Instant::now();
-
     if !accept_is_supported(&headers) {
-        return track(
-            "records_get",
-            started,
-            (
-                StatusCode::NOT_ACCEPTABLE,
-                format!("supported media type: {}", MEDIA_TYPE),
-            )
-                .into_response(),
-        );
+        return (
+            StatusCode::NOT_ACCEPTABLE,
+            format!("supported media type: {}", MEDIA_TYPE),
+        )
+            .into_response();
     }
 
-    let response = match state.upstream.get_records().await {
+    match state.upstream.get_records().await {
         Ok(records) => {
             let endpoints = group_records_into_endpoints(records);
             log_info!("event=records_get endpoints={}", endpoints.len());
             json_response(&endpoints)
         }
         Err(e) => upstream_error_response(e),
-    };
-    track("records_get", started, response)
+    }
 }
 
 /// `POST /records` — apply a plan.Changes set as one bindizr change set.
@@ -175,15 +188,11 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
     let changes: Changes = match serde_json::from_str(&body) {
         Ok(changes) => changes,
         Err(e) => {
-            return track(
-                "records_apply",
-                started,
-                (
-                    StatusCode::BAD_REQUEST,
-                    format!("invalid changes body: {}", e),
-                )
-                    .into_response(),
-            );
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("invalid changes body: {}", e),
+            )
+                .into_response();
         }
     };
 
@@ -191,15 +200,11 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
         Ok(converted) => converted,
         Err(message) => {
             log_warn!("event=records_apply rejected={}", message);
-            return track(
-                "records_apply",
-                started,
-                (StatusCode::BAD_REQUEST, message).into_response(),
-            );
+            return (StatusCode::BAD_REQUEST, message).into_response();
         }
     };
 
-    let response = match state.upstream.apply_changes(&bindizr_changes).await {
+    match state.upstream.apply_changes(&bindizr_changes).await {
         Ok(()) => {
             log_info!(
                 "event=records_apply create={} update={} delete={} ms={:.1}",
@@ -211,27 +216,20 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
             StatusCode::NO_CONTENT.into_response()
         }
         Err(e) => upstream_error_response(e),
-    };
-    track("records_apply", started, response)
+    }
 }
 
 /// `POST /adjustendpoints` — validate locally, canonicalize on the bindizr
 /// server so this answer cannot drift from the stored form.
 async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: String) -> Response {
-    let started = Instant::now();
-
     let endpoints: Vec<Endpoint> = match serde_json::from_str(&body) {
         Ok(endpoints) => endpoints,
         Err(e) => {
-            return track(
-                "adjustendpoints",
-                started,
-                (
-                    StatusCode::BAD_REQUEST,
-                    format!("invalid endpoints body: {}", e),
-                )
-                    .into_response(),
-            );
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("invalid endpoints body: {}", e),
+            )
+                .into_response();
         }
     };
 
@@ -239,15 +237,11 @@ async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: Stri
         Ok(rrsets) => rrsets,
         Err(message) => {
             log_warn!("event=adjustendpoints rejected={}", message);
-            return track(
-                "adjustendpoints",
-                started,
-                (StatusCode::BAD_REQUEST, message).into_response(),
-            );
+            return (StatusCode::BAD_REQUEST, message).into_response();
         }
     };
 
-    let response = match state.upstream.adjust_rrsets(&rrsets).await {
+    match state.upstream.adjust_rrsets(&rrsets).await {
         // A short answer would silently drop endpoints in the zip below.
         Ok(adjusted) if adjusted.len() != endpoints.len() => (
             StatusCode::BAD_GATEWAY,
@@ -263,8 +257,7 @@ async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: Stri
             json_response(&merge_adjusted_endpoints(endpoints, adjusted))
         }
         Err(e) => upstream_error_response(e),
-    };
-    track("adjustendpoints", started, response)
+    }
 }
 
 /// `GET /healthz` — this process is up and bindizr answers its

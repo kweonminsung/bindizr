@@ -6,7 +6,6 @@ use bindizr_core::dns::message;
 pub(crate) mod acl;
 pub(crate) mod axfr;
 pub(crate) mod catalog;
-pub(crate) mod delta;
 pub(crate) mod ixfr;
 pub(crate) mod nsupdate;
 pub(crate) mod soa;

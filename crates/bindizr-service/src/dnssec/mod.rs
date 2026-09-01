@@ -22,11 +22,11 @@ use crate::{
     log_warn,
     model::{
         dnssec_key::DnssecKey,
-        dnssec_record::DnssecRecord,
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::{RepositoryService, RepositoryTx},
+    zone::ZoneService,
 };
 
 /// Window the per-RRset expirations spread over, so one re-signing pass does
@@ -56,6 +56,21 @@ impl DnssecService {
         }
         Self::sign_zone_locked(tx, zone, new_serial, &keys, false).await?;
         Ok(())
+    }
+
+    /// Load the zone (locked at `lock_level`) together with its signing keys;
+    /// a zone with no keys reads as not DNSSEC-enabled.
+    pub(crate) async fn get_signed_zone_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_name: &str,
+        lock_level: LockLevel,
+    ) -> Result<(Zone, Vec<DnssecKey>), ServiceError> {
+        let zone = ZoneService::get_by_name_tx(tx, zone_name, lock_level).await?;
+        let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
+        if keys.is_empty() {
+            return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
+        }
+        Ok((zone, keys))
     }
 
     /// Returns whether anything changed; with `force`, stored signatures are
@@ -115,44 +130,42 @@ impl DnssecService {
             }
         }
 
-        let changes = derived_changes(zone.id, new_serial, &diff.removed, &diff.added);
+        // DELs before ADDs; derived rows journal their wire RDATA, not a value.
+        let mut changes = Vec::with_capacity(diff.removed.len() + diff.added.len());
+        for row in &diff.removed {
+            changes.push(ZoneChange {
+                zone_id: zone.id,
+                serial: new_serial,
+                operation: ChangeOperation::Del,
+                record_name: row.name.clone(),
+                record_type: JournalRecordType::Derived(row.record_type),
+                record_value: None,
+                record_rdata: Some(row.rdata.clone()),
+                record_ttl: row.ttl,
+                record_priority: None,
+                derived: true,
+            });
+        }
+        for row in &diff.added {
+            changes.push(ZoneChange {
+                zone_id: zone.id,
+                serial: new_serial,
+                operation: ChangeOperation::Add,
+                record_name: row.name.clone(),
+                record_type: JournalRecordType::Derived(row.record_type),
+                record_value: None,
+                record_rdata: Some(row.rdata.clone()),
+                record_ttl: row.ttl,
+                record_priority: None,
+                derived: true,
+            });
+        }
         RepositoryService::create_zone_journal_tx(tx, &changes).await?;
         let removed_ids: Vec<i32> = diff.removed.iter().map(|row| row.id).collect();
         RepositoryService::delete_dnssec_records_tx(tx, &removed_ids).await?;
         RepositoryService::create_dnssec_records_tx(tx, &diff.added).await?;
         Ok(true)
     }
-}
-
-/// Journal rows for a derived-plane delta: DELs for `removed`, ADDs for
-/// `added`, all flagged `derived` and carrying their wire RDATA.
-fn derived_changes(
-    zone_id: i32,
-    new_serial: i32,
-    removed: &[DnssecRecord],
-    added: &[DnssecRecord],
-) -> Vec<ZoneChange> {
-    let change = |operation: ChangeOperation, row: &DnssecRecord| ZoneChange {
-        zone_id,
-        serial: new_serial,
-        operation,
-        record_name: row.name.clone(),
-        record_type: JournalRecordType::Derived(row.record_type),
-        record_value: None,
-        record_rdata: Some(row.rdata.clone()),
-        record_ttl: row.ttl,
-        record_priority: None,
-        derived: true,
-    };
-
-    let mut changes = Vec::with_capacity(removed.len() + added.len());
-    for row in removed {
-        changes.push(change(ChangeOperation::Del, row));
-    }
-    for row in added {
-        changes.push(change(ChangeOperation::Add, row));
-    }
-    changes
 }
 
 async fn notify_zone(zone_name: &str) {

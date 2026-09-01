@@ -28,7 +28,10 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{PaginatedResponse, RollbackSummary, RollbackZoneResponse, VersionDiffResponse},
+    types::{
+        PaginatedResponse, RollbackSummary, RollbackZoneResponse, VersionDetailResponse,
+        VersionDiffResponse, VersionRecordResponse, ZoneVersionResponse,
+    },
 };
 
 /// A record as it existed at a past serial, rebuilt from the journal;
@@ -247,18 +250,22 @@ impl ZoneService {
         limit: Option<u32>,
         offset: Option<u64>,
         all: bool,
-    ) -> Result<PaginatedResponse<ZoneVersion>, ServiceError> {
+    ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
         let zone = Self::get_by_name(caller, zone_name).await?;
 
         let total = RepositoryService::count_zone_versions(zone.id, !all).await?;
         let effective_limit = limit.unwrap_or(50);
-        let items = RepositoryService::list_zone_versions(
+        let versions = RepositoryService::list_zone_versions(
             zone.id,
             !all,
             effective_limit,
             offset.unwrap_or(0),
         )
         .await?;
+        let items = versions
+            .iter()
+            .map(ZoneVersionResponse::from_version)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(crate::pagination::paginated_response(
             items,
@@ -275,17 +282,13 @@ impl ZoneService {
         caller: &Caller,
         zone_name: &str,
         serial: i32,
-    ) -> Result<(ZoneVersion, Vec<ReconstructedRecord>), ServiceError> {
-        let lookup_name = normalize_zone_name(zone_name)?;
+    ) -> Result<VersionDetailResponse, ServiceError> {
         let mut tx = RepositoryService::begin_read_tx("Failed to load version").await?;
 
         let result = async {
             let zone =
-                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Shared)
+                ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
-            if !caller.zone_visible(zone.id) {
-                return Err(ServiceError::zone_not_found(zone_name));
-            }
             let version = RepositoryService::get_zone_version_by_serial_tx(
                 &mut tx,
                 zone.id,
@@ -301,7 +304,15 @@ impl ZoneService {
         }
         .await;
 
-        RepositoryService::finish_tx(tx, result, "Failed to load version").await
+        let (version, records) =
+            RepositoryService::finish_tx(tx, result, "Failed to load version").await?;
+        Ok(VersionDetailResponse {
+            version: ZoneVersionResponse::from_version(&version)?,
+            records: records
+                .into_iter()
+                .map(VersionRecordResponse::from)
+                .collect(),
+        })
     }
 
     /// Compute the record-level difference between two of a zone's serials.
@@ -315,16 +326,12 @@ impl ZoneService {
         from_serial: i32,
         to_serial: Option<i32>,
     ) -> Result<VersionDiffResponse, ServiceError> {
-        let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_read_tx("Failed to diff versions").await?;
 
         let result = async {
             let zone =
-                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Shared)
+                ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
-            if !caller.zone_visible(zone.id) {
-                return Err(ServiceError::zone_not_found(zone_name));
-            }
             let to_serial = to_serial.unwrap_or(zone.serial);
 
             require_serial(&mut tx, &zone, from_serial).await?;

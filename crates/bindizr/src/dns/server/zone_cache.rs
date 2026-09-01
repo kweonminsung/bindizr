@@ -79,7 +79,8 @@ pub(crate) async fn list_zone_content(
 }
 
 async fn load_content(zone: Zone) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
-    let Some((loaded, records, dnssec_records)) = ZoneService::transfer_content(zone.id).await?
+    let Some((loaded, records, dnssec_records)) =
+        ZoneService::find_transfer_content(zone.id).await?
     else {
         return Ok(None);
     };

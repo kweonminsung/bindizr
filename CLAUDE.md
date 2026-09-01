@@ -356,6 +356,17 @@ narrow signature must let the caller be read without opening the body
 a body correct only next to that caller's invariants, belongs inlined — long
 sequenced bodies (`apply_changes`) stay whole rather than fragmented.
 
+### Struct literals stay at the use site
+
+A struct literal is never the body a helper is extracted for. A function that
+only assembles `SomeStruct { field: arg, … }` from its parameters hides which
+fields are set without shortening anything — spell the literal at each site,
+even when several sites fill the same fields and even though that duplicates
+them. The exceptions are type-owned conversions deriving a value from one
+source (`From` impls, `from_<source>` constructors like
+`GetZoneResponse::from_zone`) and constructors guarding an invariant behind
+private fields (`OwnerName`); a bag of loose parameters is neither.
+
 ### Test helpers — extraction and visibility
 
 Test code optimizes for standalone readability, not DRY. Extract a helper only

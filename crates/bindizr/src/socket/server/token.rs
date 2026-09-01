@@ -2,28 +2,28 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     token::TokenService,
-    types::{GetTokenResponse, GetZoneTokenPolicyResponse},
+    types::{CreateTokenRequest, GetTokenResponse, GetZoneTokenPolicyResponse},
     zone::token_policy::ZoneTokenPolicyService,
 };
 
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        AddZoneTokenPolicyParams, CreateTokenParams, DaemonResponse, RemoveZonePolicyParams,
-        TokenNameParams, ZonePolicyListParams,
+        AddZoneTokenPolicyParams, DaemonResponse, RemoveZonePolicyParams, TokenNameParams,
+        ZonePolicyListParams,
     },
 };
 
 /// Handle the `TokenCreate` command by creating a new API token.
 pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: CreateTokenParams = parse_params(data)?;
+    let request: CreateTokenRequest = parse_params(data)?;
 
     let created_token = TokenService::create(
         &Caller::Global,
-        &params.name,
-        params.description.as_deref(),
-        params.expires_in_days,
-        params.global,
+        &request.name,
+        request.description.as_deref(),
+        request.expires_in_days,
+        request.global,
     )
     .await?;
 

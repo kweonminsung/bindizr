@@ -31,7 +31,7 @@ impl TxtRecordValue {
 
     /// Wrap raw RDATA bytes, validating the character-string chain.
     pub fn from_rdata(rdata: &[u8]) -> Result<Self, String> {
-        if rdata.is_empty() || !is_valid_txt_rdata(rdata) {
+        if rdata.is_empty() || char_strings(rdata).is_none() {
             return Err("TXT RDATA is not a valid character-string sequence".to_string());
         }
         Ok(Self(rdata.to_vec()))
@@ -109,15 +109,9 @@ impl TxtRecordValue {
             return None;
         }
 
-        let mut pos = 0usize;
         let mut segments = Vec::new();
-
-        while pos < self.0.len() {
-            let chunk_len = self.0[pos] as usize;
-            pos += 1;
-            let chunk = std::str::from_utf8(&self.0[pos..pos + chunk_len]).ok()?;
-            segments.push(chunk.to_string());
-            pos += chunk_len;
+        for chunk in char_strings(&self.0)? {
+            segments.push(std::str::from_utf8(chunk).ok()?.to_string());
         }
 
         match segments.as_slice() {
@@ -129,15 +123,13 @@ impl TxtRecordValue {
     /// The row form: each character-string quoted, space-separated, escaped
     /// per RFC 1035, Section 5.1; canonical, so rows compare as text.
     pub fn to_presentation(&self) -> String {
-        let mut segments = Vec::new();
-        let mut pos = 0usize;
-        while pos < self.0.len() {
-            let len = self.0[pos] as usize;
-            pos += 1;
-            segments.push(Self::to_quoted_charstr(&self.0[pos..pos + len]));
-            pos += len;
-        }
-        segments.join(" ")
+        // Every constructor validated the chain, so the walk cannot fail.
+        let chunks = char_strings(&self.0).expect("TXT RDATA validated at construction");
+        chunks
+            .iter()
+            .map(|chunk| Self::to_quoted_charstr(chunk))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     /// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any
@@ -226,17 +218,19 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, String> {
     Ok(segments)
 }
 
-fn is_valid_txt_rdata(rdata: &[u8]) -> bool {
+/// Split RDATA into its length-prefixed character-strings, or `None` when a
+/// length octet overruns the buffer. The one place the prefix is interpreted;
+/// the accessors above slice only what this returns.
+fn char_strings(rdata: &[u8]) -> Option<Vec<&[u8]>> {
+    let mut segments = Vec::new();
     let mut pos = 0usize;
     while pos < rdata.len() {
-        let chunk_len = rdata[pos] as usize;
+        let len = rdata[pos] as usize;
         pos += 1;
-        if pos + chunk_len > rdata.len() {
-            return false;
-        }
-        pos += chunk_len;
+        segments.push(rdata.get(pos..pos + len)?);
+        pos += len;
     }
-    true
+    Some(segments)
 }
 
 #[cfg(test)]

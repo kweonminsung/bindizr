@@ -4,7 +4,10 @@ use bindizr_service::types::{CreateZoneTokenPolicyRequest, GetZoneTokenPolicyRes
 use clap::Subcommand;
 
 use crate::{
-    cli::{error::CliError, output::parse_response},
+    cli::{
+        error::CliError,
+        output::{ZoneTokenPolicyRow, parse_response, print_table},
+    },
     socket::{
         client::DaemonSocketClient,
         types::{
@@ -101,24 +104,7 @@ pub(crate) async fn handle_command(
 fn print_token_policies(data: &serde_json::Value) -> Result<(), String> {
     let policies: Vec<GetZoneTokenPolicyResponse> = parse_response(data)?;
 
-    if policies.is_empty() {
-        println!("No token policies found");
-        return Ok(());
-    }
-
-    println!("Token Policies:");
-    println!(
-        "{:<5} {:<25} {:<20} {:<20}",
-        "ID", "TOKEN", "NAME PATTERN", "RECORD TYPES"
-    );
-    println!("{}", "-".repeat(75));
-
-    for policy in policies {
-        println!(
-            "{:<5} {:<25} {:<20} {:<20}",
-            policy.id, policy.api_token, policy.record_name_pattern, policy.record_types
-        );
-    }
+    print_table(policies.iter().map(ZoneTokenPolicyRow::from).collect());
 
     Ok(())
 }

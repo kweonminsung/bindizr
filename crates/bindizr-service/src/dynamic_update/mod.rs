@@ -365,14 +365,13 @@ async fn delete_matching(
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
     let owner = owner_in_zone(name, &zone.name)?;
-    let zone_records = RecordService::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    // Only records at the owner name can match, so lock just those.
+    let owner_records =
+        RepositoryService::list_records_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive)
+            .await?;
 
     let mut matched: Vec<Record> = Vec::new();
-    for record in &zone_records {
-        if record.name != owner {
-            continue;
-        }
-
+    for record in &owner_records {
         if let Some(record_type) = record_type
             && &record.record_type != record_type
         {

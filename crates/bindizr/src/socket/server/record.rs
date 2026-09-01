@@ -1,8 +1,8 @@
 use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
-    record::{ListedRecord, RecordService},
-    types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter, PaginatedResponse},
+    record::RecordService,
+    types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
 };
 use serde_json::json;
 
@@ -30,15 +30,7 @@ pub(crate) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
         parse_params(data)?
     };
 
-    let records = RecordService::list_with_zone_by_filter(&Caller::Global, filter).await?;
-    let response = PaginatedResponse {
-        items: records
-            .items
-            .iter()
-            .map(ListedRecord::to_response)
-            .collect::<Vec<_>>(),
-        pagination: records.pagination,
-    };
+    let response = RecordService::list_with_zone_by_filter(&Caller::Global, filter).await?;
 
     Ok(DaemonResponse {
         message: format!("Found {} record(s)", response.items.len()),

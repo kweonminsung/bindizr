@@ -84,7 +84,10 @@ impl TsigKeyService {
     /// Look up the key an incoming TSIG record names. The nsupdate path
     /// authenticates before it opens its transaction, so this is a plain read.
     pub async fn find_by_wire_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
-        let name = name.trim().trim_end_matches('.').to_ascii_lowercase();
+        // Canonicalize like storage does; an unparseable name matches no key.
+        let Ok(name) = normalize_key_name(name) else {
+            return Ok(None);
+        };
         RepositoryService::get_tsig_key_by_name(&name).await
     }
 
