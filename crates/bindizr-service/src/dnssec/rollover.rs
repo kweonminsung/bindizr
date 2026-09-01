@@ -33,13 +33,8 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to start key rollover").await?;
         let result = async {
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            if keys.is_empty() {
-                return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
-            }
+            let (zone, keys) =
+                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             if keys.iter().any(|key| key.state != DnssecKeyState::Active) {
                 return Err(ServiceError::dnssec_rollover_in_progress(
                     zone.name.as_str(),
@@ -123,13 +118,8 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
         let result = async {
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            if keys.is_empty() {
-                return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
-            }
+            let (zone, keys) =
+                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
             if !keys
                 .iter()

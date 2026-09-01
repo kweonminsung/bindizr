@@ -94,13 +94,8 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            if keys.is_empty() {
-                return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
-            }
+            let (zone, _) =
+                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
             let derived =
                 RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
@@ -132,13 +127,8 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to sign zone").await?;
         let result = async {
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            if keys.is_empty() {
-                return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
-            }
+            let (zone, keys) =
+                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             let new_serial = generate_serial(Some(zone.serial))?;
             Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, true).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;

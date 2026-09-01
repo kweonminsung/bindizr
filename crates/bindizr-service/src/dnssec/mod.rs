@@ -27,6 +27,7 @@ use crate::{
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::{RepositoryService, RepositoryTx},
+    zone::ZoneService,
 };
 
 /// Window the per-RRset expirations spread over, so one re-signing pass does
@@ -56,6 +57,21 @@ impl DnssecService {
         }
         Self::sign_zone_locked(tx, zone, new_serial, &keys, false).await?;
         Ok(())
+    }
+
+    /// Load the zone (locked at `lock_level`) together with its signing keys;
+    /// a zone with no keys reads as not DNSSEC-enabled.
+    pub(crate) async fn get_signed_zone_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_name: &str,
+        lock_level: LockLevel,
+    ) -> Result<(Zone, Vec<DnssecKey>), ServiceError> {
+        let zone = ZoneService::get_by_name_tx(tx, zone_name, lock_level).await?;
+        let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
+        if keys.is_empty() {
+            return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
+        }
+        Ok((zone, keys))
     }
 
     /// Returns whether anything changed; with `force`, stored signatures are

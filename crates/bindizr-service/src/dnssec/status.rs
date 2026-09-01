@@ -34,10 +34,7 @@ impl DnssecService {
             let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
             let keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            let derived =
-                RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
-                    .await?;
-            let earliest = derived.iter().filter_map(|row| row.expires_at).min();
+            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
 
             build_status(&zone, zone.dnssec_denial, &keys, earliest, zone.serial)
         }
