@@ -99,6 +99,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
         expiration_jitter_secs: args.expiration_jitter_secs,
         refresh_secs: 5 * 86_400,
         force: args.force,
+        withdraw_parent_ds: false,
     }
     .compute()
     .unwrap()
@@ -803,4 +804,44 @@ fn mixed_ttl_rrset_signs_at_the_minimum() {
     let rrsig = rrsigs_covering(&diff.added, &www, RECORD_TYPE_A);
     assert_eq!(rrsig.len(), 1);
     assert_eq!(rrsig[0].ttl, 300);
+}
+
+#[test]
+fn withdrawal_publishes_the_delete_cds_pair() {
+    let zone = test_zone();
+    let keys = [test_key(
+        &zone,
+        1,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+    )];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let now = fixed_now();
+    let diff = SignedViewParams {
+        zone: &zone,
+        new_serial: 2,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        now,
+        inception: now - Duration::hours(1),
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        refresh_secs: 5 * 86_400,
+        force: false,
+        withdraw_parent_ds: true,
+    }
+    .compute()
+    .unwrap();
+
+    // RFC 8078, Section 4: a single 0-algorithm CDS/CDNSKEY pair replaces the
+    // per-key set and asks the parent to delete the DS RRset.
+    let cds = rows_of_type(&diff.added, DnssecRecordType::Cds);
+    assert_eq!(cds.len(), 1);
+    assert_eq!(cds[0].rdata.as_bytes(), &[0, 0, 0, 0, 0]);
+    let cdnskey = rows_of_type(&diff.added, DnssecRecordType::Cdnskey);
+    assert_eq!(cdnskey.len(), 1);
+    assert_eq!(cdnskey[0].rdata.as_bytes(), &[0, 0, 3, 0, 0]);
 }

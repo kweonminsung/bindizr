@@ -49,6 +49,8 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecSign,
     ZoneDnssecRolloverStart,
     ZoneDnssecRolloverDsSeen,
+    ZoneDnssecWithdraw,
+    ZoneDnssecWithdrawCancel,
     Doctor,
     Shutdown,
     Restart,

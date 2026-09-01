@@ -94,6 +94,12 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS dnssec_withdrawals (
+            zone_id INT PRIMARY KEY,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS tsig_keys (
             id INT PRIMARY KEY AUTO_INCREMENT,
             name VARCHAR(255) UNIQUE NOT NULL,
@@ -262,6 +268,12 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             name VARCHAR(255) PRIMARY KEY,
             digest VARCHAR(64) NOT NULL,
             serial INTEGER NOT NULL
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dnssec_withdrawals (
+            zone_id INTEGER PRIMARY KEY,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
         r#"
@@ -447,6 +459,12 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             name TEXT PRIMARY KEY,
             digest TEXT NOT NULL,
             serial INTEGER NOT NULL
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dnssec_withdrawals (
+            zone_id INTEGER PRIMARY KEY,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
         r#"

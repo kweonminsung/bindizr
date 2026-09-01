@@ -42,6 +42,10 @@ impl DnssecApi {
                 "/zones/{name}/dnssec/rollover/ds-seen",
                 routing::post(ds_seen_dnssec_rollover),
             )
+            .route(
+                "/zones/{name}/dnssec/withdraw",
+                routing::post(withdraw_dnssec).delete(cancel_dnssec_withdrawal),
+            )
     }
 }
 
@@ -266,6 +270,64 @@ pub(crate) async fn ds_seen_dnssec_rollover(
 ) -> Result<Response, ApiError> {
     let status =
         dns::rollover::confirm_ds_seen(&caller, &params.name, query.force.unwrap_or(false)).await?;
+    let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        post,
+        path = "/zones/{name}/dnssec/withdraw",
+        tag = "DNSSEC",
+        summary = "Publish the DS withdrawal (RFC 8078 delete CDS/CDNSKEY)",
+        description = "Replaces the zone's CDS/CDNSKEY set with the RFC 8078 delete pair (`CDS 0 0 0 00`), asking a CDS-consuming parent to remove the zone's DS records — the first step of going insecure. Once the parent DS is gone and its TTL has passed, disable DNSSEC.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        responses(
+            (status = 200, description = "Withdrawal published", body = DnssecStatusResponse),
+            (status = 400, description = "Bad request, the withdrawal is already published", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 409, description = "DNSSEC is not enabled for the zone", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Publish the RFC 8078 delete CDS/CDNSKEY pair.
+pub(crate) async fn withdraw_dnssec(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    let status = DnssecService::withdraw(&caller, &params.name).await?;
+    let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        delete,
+        path = "/zones/{name}/dnssec/withdraw",
+        tag = "DNSSEC",
+        summary = "Cancel a published DS withdrawal",
+        description = "Removes the RFC 8078 delete pair; the per-key CDS/CDNSKEY set returns with this signing pass.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        responses(
+            (status = 200, description = "Withdrawal cancelled", body = DnssecStatusResponse),
+            (status = 400, description = "Bad request, no withdrawal is published", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 409, description = "DNSSEC is not enabled for the zone", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Cancel a published DS withdrawal.
+pub(crate) async fn cancel_dnssec_withdrawal(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    let status = DnssecService::withdraw_cancel(&caller, &params.name).await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

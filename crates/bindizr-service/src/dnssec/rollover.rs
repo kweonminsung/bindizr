@@ -81,7 +81,17 @@ impl DnssecService {
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            build_status(&zone, zone.dnssec_denial, &keys, earliest, new_serial)
+            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+                .await?
+                .is_some();
+            build_status(
+                &zone,
+                zone.dnssec_denial,
+                &keys,
+                earliest,
+                new_serial,
+                withdrawing,
+            )
         }
         .await;
         let response =
@@ -157,7 +167,17 @@ impl DnssecService {
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            build_status(&zone, zone.dnssec_denial, &keys, earliest, new_serial)
+            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+                .await?
+                .is_some();
+            build_status(
+                &zone,
+                zone.dnssec_denial,
+                &keys,
+                earliest,
+                new_serial,
+                withdrawing,
+            )
         }
         .await;
         let response =

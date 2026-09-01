@@ -105,3 +105,32 @@ pub(crate) async fn rollover_ds_seen(
         data: to_response_data(status)?,
     })
 }
+
+/// Handle the `ZoneDnssecWithdraw` command by publishing the RFC 8078 delete
+/// CDS/CDNSKEY pair.
+pub(crate) async fn withdraw_dnssec(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: ZoneNameParams = parse_params(data)?;
+
+    let status = DnssecService::withdraw(&Caller::Global, &params.name).await?;
+
+    Ok(DaemonResponse {
+        message: "DS withdrawal published successfully".to_string(),
+        data: to_response_data(status)?,
+    })
+}
+
+/// Handle the `ZoneDnssecWithdrawCancel` command by removing the delete pair.
+pub(crate) async fn cancel_dnssec_withdrawal(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: ZoneNameParams = parse_params(data)?;
+
+    let status = DnssecService::withdraw_cancel(&Caller::Global, &params.name).await?;
+
+    Ok(DaemonResponse {
+        message: "DS withdrawal cancelled successfully".to_string(),
+        data: to_response_data(status)?,
+    })
+}

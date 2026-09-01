@@ -61,6 +61,8 @@ use utoipa::{
         super::dnssec::sign_zone,
         super::dnssec::start_dnssec_rollover,
         super::dnssec::ds_seen_dnssec_rollover,
+        super::dnssec::withdraw_dnssec,
+        super::dnssec::cancel_dnssec_withdrawal,
         super::external_dns::get_external_dns_zones,
         super::external_dns::get_external_dns_records,
         super::external_dns::apply_external_dns_changes,

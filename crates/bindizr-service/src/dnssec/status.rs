@@ -35,8 +35,18 @@ impl DnssecService {
             let keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
             let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
+            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+                .await?
+                .is_some();
 
-            build_status(&zone, zone.dnssec_denial, &keys, earliest, zone.serial)
+            build_status(
+                &zone,
+                zone.dnssec_denial,
+                &keys,
+                earliest,
+                zone.serial,
+                withdrawing,
+            )
         }
         .await;
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
@@ -104,6 +114,7 @@ pub(crate) fn build_status(
     keys: &[DnssecKey],
     earliest_signature_expires_at: Option<DateTime<Utc>>,
     serial: i32,
+    withdrawing: bool,
 ) -> Result<GetDnssecStatusResponse, ServiceError> {
     // The parent needs DS records only for the SEP keys the zone still wants
     // delegated trust for.
@@ -139,6 +150,7 @@ pub(crate) fn build_status(
         ds_records,
         earliest_signature_expires_at,
         serial,
+        withdrawing,
     })
 }
 

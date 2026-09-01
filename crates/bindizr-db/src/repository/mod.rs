@@ -600,6 +600,21 @@ pub trait ApiTokenRepository: Send + Sync {
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
+/// Persistence for the per-zone DS-withdrawal flag: a row means the zone
+/// publishes the RFC 8078 delete CDS/CDNSKEY pair instead of per-key ones.
+#[async_trait]
+pub trait DnssecWithdrawalRepository: Send + Sync {
+    async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone_id: i32)
+    -> Result<(), DatabaseError>;
+    async fn get_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<Option<i32>, DatabaseError>;
+    async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, zone_id: i32)
+    -> Result<(), DatabaseError>;
+}
+
 /// Persistence operations for catalog zone state.
 #[async_trait]
 pub trait CatalogZoneStateRepository: Send + Sync {
@@ -753,6 +768,16 @@ impl RepositoryFactory {
             DatabasePool::MySQL(_) => Box::new(mysql::MySqlCatalogZoneStateRepository),
             DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresCatalogZoneStateRepository),
             DatabasePool::SQLite(_) => Box::new(sqlite::SqliteCatalogZoneStateRepository),
+        }
+    }
+
+    pub(crate) fn create_dnssec_withdrawal_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn DnssecWithdrawalRepository> {
+        match pool {
+            DatabasePool::MySQL(_) => Box::new(mysql::MySqlDnssecWithdrawalRepository),
+            DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresDnssecWithdrawalRepository),
+            DatabasePool::SQLite(_) => Box::new(sqlite::SqliteDnssecWithdrawalRepository),
         }
     }
 

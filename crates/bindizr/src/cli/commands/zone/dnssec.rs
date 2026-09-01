@@ -39,6 +39,18 @@ pub(crate) enum ZoneDnssecCommand {
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
+    /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
+    /// parent to drop the zone's DS: the first step of going insecure
+    Withdraw {
+        /// The name of the zone
+        name: String,
+        /// Cancel a published withdrawal instead
+        #[arg(long)]
+        cancel: bool,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
     /// Disable DNSSEC: delete the zone's keys and signatures. Remove the DS
     /// record from the parent zone and wait out its TTL first, or validating
     /// resolvers will treat the zone as bogus
@@ -127,6 +139,22 @@ pub(crate) async fn handle_command(
                     },
                 )
                 .await?;
+            if output == OutputFormat::Table {
+                println!("{}", response.message);
+            }
+            print_status(&response.data, output)?;
+        }
+        ZoneDnssecCommand::Withdraw {
+            name,
+            cancel,
+            output,
+        } => {
+            let kind = if cancel {
+                DaemonCommandKind::ZoneDnssecWithdrawCancel
+            } else {
+                DaemonCommandKind::ZoneDnssecWithdraw
+            };
+            let response = client.send_command(kind, ZoneNameParams { name }).await?;
             if output == OutputFormat::Table {
                 println!("{}", response.message);
             }

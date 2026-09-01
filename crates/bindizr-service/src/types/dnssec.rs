@@ -90,6 +90,11 @@ pub struct GetDnssecStatusResponse {
     pub keys: Vec<DnssecKeyInfo>,
     /// DS forms of the keys, to be registered in the parent zone.
     pub ds_records: Vec<DnssecDsInfo>,
+    /// Whether the RFC 8078 delete CDS/CDNSKEY pair is published, asking the
+    /// parent to drop the zone's DS.
+    #[serde(default)]
+    #[schema(example = false)]
+    pub withdrawing: bool,
     /// Earliest stored signature expiration; the re-signer renews before it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub earliest_signature_expires_at: Option<DateTime<Utc>>,

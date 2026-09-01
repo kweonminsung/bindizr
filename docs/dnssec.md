@@ -108,8 +108,11 @@ doubted.
 Dropping signatures while the parent still publishes your DS makes the zone
 **bogus**. Go insecure in order:
 
-1. Remove the DS record at the parent.
-2. Wait out the DS TTL.
+1. Ask the parent to remove the DS. If the parent consumes CDS,
+   `bindizr zone dnssec withdraw example.com` publishes the RFC 8078 delete
+   pair (`CDS 0 0 0 00`) and the parent drops the DS on its own; otherwise
+   remove it at the registrar. `--cancel` takes a withdrawal back.
+2. Wait until the DS is gone and its TTL has passed.
 3. `bindizr zone dnssec disable example.com`
 
 ## Behavior notes

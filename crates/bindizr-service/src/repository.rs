@@ -160,6 +160,36 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to reach the zones table: {}", e)))
     }
 
+    pub(crate) async fn create_dnssec_withdrawal_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), ServiceError> {
+        crate::database::get_dnssec_withdrawal_repository()
+            .create_tx(tx, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to record DS withdrawal: {}", e)))
+    }
+
+    pub(crate) async fn get_dnssec_withdrawal_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<Option<i32>, ServiceError> {
+        crate::database::get_dnssec_withdrawal_repository()
+            .get_tx(tx, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DS withdrawal: {}", e)))
+    }
+
+    pub(crate) async fn delete_dnssec_withdrawal_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+    ) -> Result<(), ServiceError> {
+        crate::database::get_dnssec_withdrawal_repository()
+            .delete_tx(tx, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to clear DS withdrawal: {}", e)))
+    }
+
     pub(crate) async fn upsert_catalog_zone_state_tx(
         tx: &mut RepositoryTx<'_>,
         name: &str,

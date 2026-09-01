@@ -78,7 +78,7 @@ impl DnssecService {
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            build_status(&zone, denial, &keys, earliest, new_serial)
+            build_status(&zone, denial, &keys, earliest, new_serial, false)
         }
         .await;
         let response = RepositoryService::finish_tx(tx, result, "failed to enable DNSSEC").await?;
@@ -123,6 +123,7 @@ impl DnssecService {
             RepositoryService::create_zone_journal_tx(&mut tx, &changes).await?;
             RepositoryService::delete_dnssec_records_by_zone_id_tx(&mut tx, zone.id).await?;
             RepositoryService::delete_dnssec_keys_by_zone_id_tx(&mut tx, zone.id).await?;
+            RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
             RepositoryService::update_zone_dnssec_denial_tx(&mut tx, zone.id, DnssecDenial::Nsec)
                 .await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
@@ -135,6 +136,85 @@ impl DnssecService {
 
         notify_zone(&zone_name).await;
         Ok(())
+    }
+
+    /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
+    /// parent to drop the zone's DS: the first step of going insecure.
+    pub async fn withdraw(
+        caller: &Caller,
+        zone_name: &str,
+    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+        caller.require_global("manage DNSSEC signing")?;
+
+        let mut tx = RepositoryService::begin_tx("failed to withdraw the parent DS").await?;
+        let result = async {
+            let (zone, keys) =
+                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+                .await?
+                .is_some()
+            {
+                return Err(ServiceError::invalid_input(
+                    "the DS withdrawal is already published",
+                ));
+            }
+            RepositoryService::create_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
+
+            let new_serial = generate_serial(Some(zone.serial))?;
+            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+
+            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
+            build_status(&zone, zone.dnssec_denial, &keys, earliest, new_serial, true)
+        }
+        .await;
+        let response =
+            RepositoryService::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
+
+        notify_zone(&response.zone_name).await;
+        Ok(response)
+    }
+
+    /// Take back a published DS withdrawal: the per-key CDS/CDNSKEY set
+    /// returns on the next signing pass.
+    pub async fn withdraw_cancel(
+        caller: &Caller,
+        zone_name: &str,
+    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+        caller.require_global("manage DNSSEC signing")?;
+
+        let mut tx = RepositoryService::begin_tx("failed to cancel the DS withdrawal").await?;
+        let result = async {
+            let (zone, keys) =
+                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+                .await?
+                .is_none()
+            {
+                return Err(ServiceError::invalid_input("no DS withdrawal is published"));
+            }
+            RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
+
+            let new_serial = generate_serial(Some(zone.serial))?;
+            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+
+            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
+            build_status(
+                &zone,
+                zone.dnssec_denial,
+                &keys,
+                earliest,
+                new_serial,
+                false,
+            )
+        }
+        .await;
+        let response =
+            RepositoryService::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
+
+        notify_zone(&response.zone_name).await;
+        Ok(response)
     }
 
     /// Re-sign a zone from scratch, discarding stored signatures (recovery
