@@ -135,3 +135,21 @@ pub(crate) async fn cancel_dnssec_withdrawal(
         data: to_response_data(status)?,
     })
 }
+
+/// Handle the `ZoneDnssecVerify` command by running the DNSSEC self-checks.
+pub(crate) async fn verify_dnssec(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: ZoneNameParams = parse_params(data)?;
+
+    let response = crate::dns::verify::verify(&Caller::Global, &params.name).await?;
+
+    Ok(DaemonResponse {
+        message: if response.ok {
+            "All DNSSEC checks passed".to_string()
+        } else {
+            "Some DNSSEC checks failed".to_string()
+        },
+        data: to_response_data(response)?,
+    })
+}

@@ -11,6 +11,7 @@ mod lifecycle;
 mod maintenance;
 mod rollover;
 mod status;
+mod verify;
 
 use bindizr_core::{config::bindizr_config, dns::dnssec::SignedViewParams};
 use chrono::{Duration, Utc};

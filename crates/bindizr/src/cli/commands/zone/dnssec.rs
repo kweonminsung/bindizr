@@ -1,12 +1,16 @@
 //! The `zone dnssec` subcommands.
 
-use bindizr_service::types::{EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest};
+use bindizr_service::types::{
+    EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest, VerifyDnssecResponse,
+};
 use clap::Subcommand;
 
 use crate::{
     cli::{
         error::CliError,
-        output::{DnssecKeyRow, OutputFormat, parse_response, print_response, print_table},
+        output::{
+            DnssecCheckRow, DnssecKeyRow, OutputFormat, parse_response, print_response, print_table,
+        },
     },
     socket::{
         client::DaemonSocketClient,
@@ -75,6 +79,15 @@ pub(crate) enum ZoneDnssecCommand {
     Sign {
         /// The name of the zone
         name: String,
+    },
+    /// Verify the zone's DNSSEC state (keys, signatures, denial chain, and
+    /// the parent DS when dnssec.ds_probe_resolver is set)
+    Verify {
+        /// The name of the zone
+        name: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
     /// Roll a zone's signing key: pre-publish a replacement, then promote it
     Rollover {
@@ -190,6 +203,28 @@ pub(crate) async fn handle_command(
                 .send_command(DaemonCommandKind::ZoneDnssecSign, ZoneNameParams { name })
                 .await?;
             println!("{}", response.message);
+        }
+        ZoneDnssecCommand::Verify { name, output } => {
+            let response = client
+                .send_command(DaemonCommandKind::ZoneDnssecVerify, ZoneNameParams { name })
+                .await?;
+            if output != OutputFormat::Table {
+                print_response(&response.data, output, |report: &VerifyDnssecResponse| {
+                    report.checks.iter().map(DnssecCheckRow::from).collect()
+                })?;
+            } else {
+                let report: VerifyDnssecResponse = parse_response(&response.data)?;
+                println!(
+                    "Zone {}: {}",
+                    report.zone_name,
+                    if report.ok {
+                        "all checks passed"
+                    } else {
+                        "checks FAILED"
+                    }
+                );
+                print_table(report.checks.iter().map(DnssecCheckRow::from).collect());
+            }
         }
         ZoneDnssecCommand::Rollover { subcommand } => match subcommand {
             ZoneDnssecRolloverCommand::Start {

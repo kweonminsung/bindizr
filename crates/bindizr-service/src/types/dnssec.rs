@@ -106,6 +106,28 @@ pub struct GetDnssecStatusResponse {
     pub serial: i32,
 }
 
+/// One verification check's outcome.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct DnssecCheckInfo {
+    #[schema(example = "signatures")]
+    pub check: String,
+    #[schema(example = true)]
+    pub ok: bool,
+    #[schema(example = "142 RRSIGs, earliest expiry 2026-09-12T00:00:00Z")]
+    pub detail: String,
+}
+
+/// Result of verifying a zone's DNSSEC state.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct VerifyDnssecResponse {
+    #[schema(example = "example.com")]
+    pub zone_name: String,
+    /// Whether every check passed.
+    #[schema(example = true)]
+    pub ok: bool,
+    pub checks: Vec<DnssecCheckInfo>,
+}
+
 /// A zone's DNSSEC status wrapped in a response envelope.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct DnssecStatusResponse {

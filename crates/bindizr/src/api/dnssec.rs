@@ -9,7 +9,7 @@ use bindizr_service::{
     dnssec::DnssecService,
     types::{
         DnssecDsListResponse, DnssecStatusResponse, EnableDnssecRequest, ErrorResponse,
-        MessageResponse, RolloverDnssecRequest,
+        MessageResponse, RolloverDnssecRequest, VerifyDnssecResponse,
     },
 };
 use serde::Deserialize;
@@ -46,6 +46,7 @@ impl DnssecApi {
                 "/zones/{name}/dnssec/withdraw",
                 routing::post(withdraw_dnssec).delete(cancel_dnssec_withdrawal),
             )
+            .route("/zones/{name}/dnssec/verify", routing::get(verify_dnssec))
     }
 }
 
@@ -335,5 +336,32 @@ pub(crate) async fn cancel_dnssec_withdrawal(
 ) -> Result<Response, ApiError> {
     let status = DnssecService::withdraw_cancel(&caller, &params.name).await?;
     let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/dnssec/verify",
+        tag = "DNSSEC",
+        summary = "Verify a zone's DNSSEC state",
+        description = "Runs self-checks on the stored state — key inventory, signature freshness, per-algorithm signature coverage (RFC 6840, Section 5.11), and the denial chain — and, with `dnssec.ds_probe_resolver` configured, compares the DS the parent serves against the zone's keys. Each aspect reports as a named check; `ok` is the conjunction.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        responses(
+            (status = 200, description = "Verification report", body = VerifyDnssecResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 409, description = "DNSSEC is not enabled for the zone", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Verify a zone's DNSSEC state.
+pub(crate) async fn verify_dnssec(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    let response = dns::verify::verify(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

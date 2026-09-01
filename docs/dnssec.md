@@ -122,6 +122,18 @@ Dropping signatures while the parent still publishes your DS makes the zone
 2. Wait until the DS is gone and its TTL has passed.
 3. `bindizr zone dnssec disable example.com`
 
+## Verifying
+
+```sh
+bindizr zone dnssec verify example.com
+```
+
+Runs self-checks on the stored state — key inventory, signature freshness,
+per-algorithm signature coverage, and the denial chain — and, with
+`dnssec.ds_probe_resolver` configured, compares the DS records the parent
+actually serves against the zone's keys. Also available as
+`GET /zones/{name}/dnssec/verify`.
+
 ## Behavior notes
 
 - Denial mode and key layout are fixed at enable time; to change them,

@@ -2,10 +2,10 @@
 //! the column set is all this module decides.
 
 use bindizr_service::types::{
-    DnssecKeyInfo, GetRecordResponse, GetTokenResponse, GetTsigKeyResponse, GetZoneResponse,
-    GetZoneTokenPolicyResponse, GetZoneTsigPolicyResponse, ImportSummary, RecordValueRequest,
-    RollbackZoneResponse, SecondaryStatusResponse, VersionRecordResponse, ZoneStatusResponse,
-    ZoneVersionResponse,
+    DnssecCheckInfo, DnssecKeyInfo, GetRecordResponse, GetTokenResponse, GetTsigKeyResponse,
+    GetZoneResponse, GetZoneTokenPolicyResponse, GetZoneTsigPolicyResponse, ImportSummary,
+    RecordValueRequest, RollbackZoneResponse, SecondaryStatusResponse, VersionRecordResponse,
+    ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -388,6 +388,27 @@ impl From<&GetZoneTsigPolicyResponse> for ZoneTsigPolicyRow {
             tsig_key: policy.tsig_key.clone(),
             record_name_pattern: policy.record_name_pattern.clone(),
             record_types: policy.record_types.clone(),
+        }
+    }
+}
+
+/// Table row for DNSSEC verification checks.
+#[derive(Debug, Tabled)]
+pub(crate) struct DnssecCheckRow {
+    #[tabled(rename = "CHECK")]
+    pub(crate) check: String,
+    #[tabled(rename = "OK")]
+    pub(crate) ok: String,
+    #[tabled(rename = "DETAIL")]
+    pub(crate) detail: String,
+}
+
+impl From<&DnssecCheckInfo> for DnssecCheckRow {
+    fn from(check: &DnssecCheckInfo) -> Self {
+        DnssecCheckRow {
+            check: check.check.clone(),
+            ok: yes_no(check.ok),
+            detail: check.detail.clone(),
         }
     }
 }
