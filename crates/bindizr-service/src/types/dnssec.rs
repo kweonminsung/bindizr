@@ -133,9 +133,11 @@ impl DnssecTimingInfo {
     pub fn from_zone(zone: &Zone) -> Self {
         let dnssec = &bindizr_config().dnssec;
         DnssecTimingInfo {
-            signature_validity_days: zone.signature_validity_days(dnssec.signature_validity_days),
-            signature_refresh_days: zone.signature_refresh_days(dnssec.signature_refresh_days),
-            zsk_lifetime_days: zone.zsk_lifetime_days(dnssec.zsk_lifetime_days),
+            signature_validity_days: zone
+                .signature_validity_days(dnssec.default_signature_validity_days),
+            signature_refresh_days: zone
+                .signature_refresh_days(dnssec.default_signature_refresh_days),
+            zsk_lifetime_days: zone.zsk_lifetime_days(dnssec.default_zsk_lifetime_days),
             signature_validity_days_override: zone.dnssec_signature_validity_days,
             signature_refresh_days_override: zone.dnssec_signature_refresh_days,
             zsk_lifetime_days_override: zone.dnssec_zsk_lifetime_days,

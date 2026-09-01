@@ -67,7 +67,7 @@ async fn run_maintenance_pass() {
 
     match RepositoryService::list_rrsig_zone_ids_expiring_within_refresh(
         Utc::now(),
-        config.dnssec.signature_refresh_days,
+        config.dnssec.default_signature_refresh_days,
     )
     .await
     {
@@ -98,7 +98,7 @@ async fn run_maintenance_pass() {
         DnssecKeyRole::Zsk,
         DnssecKeyState::Active,
         Utc::now(),
-        config.dnssec.zsk_lifetime_days,
+        config.dnssec.default_zsk_lifetime_days,
     )
     .await
     {
@@ -251,7 +251,8 @@ async fn start_zsk_rollover_by_zone_id(zone_id: i32) -> Result<Option<String>, S
         else {
             return Ok(None);
         };
-        let lifetime_days = zone.zsk_lifetime_days(bindizr_config().dnssec.zsk_lifetime_days);
+        let lifetime_days =
+            zone.zsk_lifetime_days(bindizr_config().dnssec.default_zsk_lifetime_days);
         if lifetime_days == 0 {
             return Ok(None);
         }

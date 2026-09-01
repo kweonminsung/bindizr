@@ -274,10 +274,10 @@ impl DnssecService {
         let defaults = &bindizr_config().dnssec;
         let validity = request
             .signature_validity_days
-            .unwrap_or(defaults.signature_validity_days);
+            .unwrap_or(defaults.default_signature_validity_days);
         let refresh = request
             .signature_refresh_days
-            .unwrap_or(defaults.signature_refresh_days);
+            .unwrap_or(defaults.default_signature_refresh_days);
         if validity <= refresh {
             return Err(ServiceError::invalid_input(format!(
                 "effective signature_validity_days ({}) must exceed signature_refresh_days ({})",

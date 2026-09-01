@@ -55,13 +55,13 @@ nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests (not recomme
 journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
 
 [dnssec]
-signature_validity_days = 14  # RRSIG validity period
-signature_refresh_days = 5    # Re-sign when a signature has fewer than this many days left (must be < validity)
+default_signature_validity_days = 14  # RRSIG validity period
+default_signature_refresh_days = 5    # Re-sign when a signature has fewer than this many days left (must be < validity)
 rollover_publish_holddown_secs = 86400 # Wait before a pre-published key may start signing (ZSKs auto-advance)
 rollover_retire_holddown_secs = 172800 # Wait before a retired key is removed from the zone
-zsk_lifetime_days = 0         # Roll ZSKs active longer than this automatically (0 = disabled)
+default_zsk_lifetime_days = 0         # Roll ZSKs active longer than this automatically (0 = disabled)
 ds_probe_resolver = ""        # Resolver (host[:port]) asked for the parent DS before ds-seen; empty skips the check
-# The three *_days knobs above are defaults; `bindizr zone dnssec timing` overrides them per zone.
+# The three default_*_days knobs are per-zone-overridable via `bindizr zone dnssec timing`.
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace
@@ -98,11 +98,11 @@ the API or CLI — see [DNSSEC](dnssec.md).
 | `BINDIZR_ZONE_CACHE` | `dns.zone_cache` | |
 | `BINDIZR_NSUPDATE_ALLOW_UNSIGNED` | `dns.nsupdate_allow_unsigned` | |
 | `BINDIZR_JOURNAL_RETENTION_DAYS` | `dns.journal_retention_days` | `0` keeps history forever |
-| `BINDIZR_DNSSEC_SIGNATURE_VALIDITY_DAYS` | `dnssec.signature_validity_days` | |
-| `BINDIZR_DNSSEC_SIGNATURE_REFRESH_DAYS` | `dnssec.signature_refresh_days` | |
+| `BINDIZR_DNSSEC_DEFAULT_SIGNATURE_VALIDITY_DAYS` | `dnssec.default_signature_validity_days` | |
+| `BINDIZR_DNSSEC_DEFAULT_SIGNATURE_REFRESH_DAYS` | `dnssec.default_signature_refresh_days` | |
 | `BINDIZR_DNSSEC_ROLLOVER_PUBLISH_HOLDDOWN_SECS` | `dnssec.rollover_publish_holddown_secs` | |
 | `BINDIZR_DNSSEC_ROLLOVER_RETIRE_HOLDDOWN_SECS` | `dnssec.rollover_retire_holddown_secs` | |
-| `BINDIZR_DNSSEC_ZSK_LIFETIME_DAYS` | `dnssec.zsk_lifetime_days` | |
+| `BINDIZR_DNSSEC_DEFAULT_ZSK_LIFETIME_DAYS` | `dnssec.default_zsk_lifetime_days` | |
 | `BINDIZR_DNSSEC_DS_PROBE_RESOLVER` | `dnssec.ds_probe_resolver` | |
 | `BINDIZR_LOG_LEVEL` | `logging.log_level` | |
 

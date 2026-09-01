@@ -79,7 +79,7 @@ double-signed — both algorithms cover all data — until the old keys leave
 together after `ds-seen`.
 
 - **ZSK** — no parent involvement: the scheduler promotes it automatically
-  after the wait. With `dnssec.zsk_lifetime_days` set (0, the default,
+  after the wait. With `dnssec.default_zsk_lifetime_days` set (0, the default,
   disables it), the scheduler also *starts* ZSK rollovers on its own once the
   active ZSK outlives that many days, making split-key ZSK rotation fully
   hands-off. CSKs are never auto-rolled — their rollover needs the parent DS
@@ -105,8 +105,8 @@ throughout.
 
 ## Signature maintenance
 
-Signatures are valid for `dnssec.signature_validity_days` (default 14) and
-renewed once fewer than `dnssec.signature_refresh_days` (default 5) remain;
+Signatures are valid for `dnssec.default_signature_validity_days` (default 14) and
+renewed once fewer than `dnssec.default_signature_refresh_days` (default 5) remain;
 the hourly scheduler handles this with no operator action. `bindizr zone
 dnssec sign example.com` forces a full re-sign if stored signatures are ever
 doubted.

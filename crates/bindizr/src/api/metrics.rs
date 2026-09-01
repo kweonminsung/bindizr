@@ -44,7 +44,7 @@ async fn refresh_db_gauges() -> Result<(), ServiceError> {
 
     // The same per-zone window as the scheduler's re-sign scan, so a
     // persistent nonzero value means that scan is not keeping up.
-    let refresh_days = bindizr_config().dnssec.signature_refresh_days;
+    let refresh_days = bindizr_config().dnssec.default_signature_refresh_days;
     // Concurrent, so the probe timeout budgets one round trip, not seven.
     let (zones, records, dnssec_zones, published, active, retired, expiring) = tokio::try_join!(
         ZoneService::count(&caller),

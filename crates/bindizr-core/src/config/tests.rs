@@ -131,8 +131,8 @@ fn parse_bindizr_config_defaults_missing_optional_dns_fields() {
 fn parse_bindizr_config_defaults_dnssec_and_journal_retention() {
     let parsed = parse_config(&TestConfigToml::default()).unwrap();
 
-    assert_eq!(parsed.dnssec.signature_validity_days, 14);
-    assert_eq!(parsed.dnssec.signature_refresh_days, 5);
+    assert_eq!(parsed.dnssec.default_signature_validity_days, 14);
+    assert_eq!(parsed.dnssec.default_signature_refresh_days, 5);
     assert_eq!(parsed.dnssec.rollover_publish_holddown_secs, 86_400);
     assert_eq!(parsed.dnssec.rollover_retire_holddown_secs, 172_800);
     assert_eq!(parsed.dns.journal_retention_days, 365);
@@ -141,40 +141,43 @@ fn parse_bindizr_config_defaults_dnssec_and_journal_retention() {
 #[test]
 fn parse_bindizr_config_accepts_custom_dnssec_section() {
     let parsed = parse_config(&TestConfigToml {
-        dnssec: "signature_validity_days = 30\nsignature_refresh_days = 10",
+        dnssec: "default_signature_validity_days = 30\ndefault_signature_refresh_days = 10",
         ..Default::default()
     })
     .unwrap();
 
-    assert_eq!(parsed.dnssec.signature_validity_days, 30);
-    assert_eq!(parsed.dnssec.signature_refresh_days, 10);
+    assert_eq!(parsed.dnssec.default_signature_validity_days, 30);
+    assert_eq!(parsed.dnssec.default_signature_refresh_days, 10);
 }
 
 #[test]
 fn parse_bindizr_config_rejects_refresh_not_below_validity() {
     let err = parse_config(&TestConfigToml {
-        dnssec: "signature_validity_days = 5\nsignature_refresh_days = 5",
+        dnssec: "default_signature_validity_days = 5\ndefault_default_signature_refresh_days = 5",
         ..Default::default()
     })
     .unwrap_err();
 
-    assert!(err.contains("signature_refresh_days"), "got: {err}");
+    assert!(err.contains("default_signature_refresh_days"), "got: {err}");
 }
 
 #[test]
 fn parse_bindizr_config_rejects_validity_beyond_serial_arithmetic_range() {
     // RFC 4034, Section 3.1.5: serial arithmetic wraps at 2^31 seconds.
     let err = parse_config(&TestConfigToml {
-        dnssec: "signature_validity_days = 24856
-signature_refresh_days = 5",
+        dnssec: "default_signature_validity_days = 24856
+default_default_signature_refresh_days = 5",
         ..Default::default()
     })
     .unwrap_err();
-    assert!(err.contains("signature_validity_days"), "got: {err}");
+    assert!(
+        err.contains("default_signature_validity_days"),
+        "got: {err}"
+    );
 
     parse_config(&TestConfigToml {
-        dnssec: "signature_validity_days = 24855
-signature_refresh_days = 5",
+        dnssec: "default_signature_validity_days = 24855
+default_default_signature_refresh_days = 5",
         ..Default::default()
     })
     .unwrap();
@@ -190,15 +193,15 @@ fn apply_env_overrides_covers_dnssec_and_journal_retention() {
         .build()
         .unwrap();
     let parsed = parse_bindizr_config_with_env(config, |name| match name {
-        "BINDIZR_DNSSEC_SIGNATURE_VALIDITY_DAYS" => Some("21".to_string()),
-        "BINDIZR_DNSSEC_SIGNATURE_REFRESH_DAYS" => Some("7".to_string()),
+        "BINDIZR_DNSSEC_DEFAULT_SIGNATURE_VALIDITY_DAYS" => Some("21".to_string()),
+        "BINDIZR_DNSSEC_DEFAULT_SIGNATURE_REFRESH_DAYS" => Some("7".to_string()),
         "BINDIZR_JOURNAL_RETENTION_DAYS" => Some("0".to_string()),
         _ => None,
     })
     .unwrap();
 
-    assert_eq!(parsed.dnssec.signature_validity_days, 21);
-    assert_eq!(parsed.dnssec.signature_refresh_days, 7);
+    assert_eq!(parsed.dnssec.default_signature_validity_days, 21);
+    assert_eq!(parsed.dnssec.default_signature_refresh_days, 7);
     assert_eq!(parsed.dns.journal_retention_days, 0);
 }
 
