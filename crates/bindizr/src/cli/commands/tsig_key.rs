@@ -3,7 +3,10 @@ use bindizr_service::types::{CreateTsigKeyRequest, GetTsigKeyResponse};
 use clap::Subcommand;
 
 use crate::{
-    cli::{error::CliError, output::parse_response},
+    cli::{
+        error::CliError,
+        output::{TsigKeyRow, parse_response, print_table},
+    },
     socket::{
         client::DaemonSocketClient,
         types::{DaemonCommandKind, TsigKeyNameParams},
@@ -103,28 +106,7 @@ async fn print_tsig_keys(client: &DaemonSocketClient) -> Result<(), CliError> {
 
     let keys: Vec<GetTsigKeyResponse> = parse_response(&res.data)?;
 
-    if keys.is_empty() {
-        println!("No TSIG keys found");
-        return Ok(());
-    }
-
-    println!("TSIG Keys:");
-    println!(
-        "{:<5} {:<30} {:<15} {:<8} {:<20}",
-        "ID", "NAME", "ALGORITHM", "GLOBAL", "CREATED AT"
-    );
-    println!("{}", "-".repeat(84));
-
-    for key in keys {
-        println!(
-            "{:<5} {:<30} {:<15} {:<8} {:<20}",
-            key.id,
-            key.name,
-            key.algorithm,
-            if key.global { "yes" } else { "no" },
-            key.created_at.format("%Y-%m-%d %H:%M:%S")
-        );
-    }
+    print_table(keys.iter().map(TsigKeyRow::from).collect());
 
     Ok(())
 }
