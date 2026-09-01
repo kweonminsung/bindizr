@@ -3,7 +3,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 use bindizr_core::{
     config,
     dns::{
-        message::{Name, Opcode},
+        message::{Name, Opcode, Rtype},
         query::validate_notify_response,
     },
     log_error, log_info,
@@ -190,7 +190,7 @@ async fn send_notify_to_server_once(
     timeout: Duration,
 ) -> Result<(), XfrError> {
     let (query_id, notify_message) =
-        bindizr_core::dns::query::build_question(Opcode::NOTIFY, true, qname);
+        bindizr_core::dns::query::build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA);
 
     let (received, response) =
         super::udp_exchange(server_addr, timeout, &notify_message, "NOTIFY").await?;

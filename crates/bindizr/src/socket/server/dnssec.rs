@@ -2,7 +2,10 @@ use bindizr_service::{authorization::Caller, dnssec::DnssecService, error::Servi
 
 use crate::socket::{
     server::{parse_params, to_response_data},
-    types::{DaemonResponse, EnableZoneDnssecParams, RolloverZoneDnssecParams, ZoneNameParams},
+    types::{
+        DaemonResponse, DsSeenZoneDnssecParams, EnableZoneDnssecParams, RolloverZoneDnssecParams,
+        ZoneNameParams,
+    },
 };
 
 /// Handle the `ZoneDnssecEnable` command by generating a key and signing the zone.
@@ -92,9 +95,10 @@ pub(crate) async fn rollover_start(
 pub(crate) async fn rollover_ds_seen(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: DsSeenZoneDnssecParams = parse_params(data)?;
 
-    let status = DnssecService::rollover_ds_seen(&Caller::Global, &params.name).await?;
+    let status =
+        crate::dns::rollover::confirm_ds_seen(&Caller::Global, &params.name, params.force).await?;
 
     Ok(DaemonResponse {
         message: "Key rollover advanced successfully".to_string(),

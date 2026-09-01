@@ -4,6 +4,7 @@
 pub(crate) mod address;
 pub(crate) mod client;
 pub(crate) mod error;
+pub(crate) mod rollover;
 pub(crate) mod server;
 pub(crate) mod status;
 pub(crate) mod wire;

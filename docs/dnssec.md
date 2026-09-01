@@ -84,6 +84,11 @@ time to learn the new key. Then:
   bindizr zone dnssec rollover ds-seen example.com
   ```
 
+  With `dnssec.ds_probe_resolver` set, `ds-seen` first asks that resolver for
+  the zone's DS RRset and refuses unless the new key's DS is actually
+  visible — the guard against confirming a DS the parent never published.
+  `--force` (API: `?force=true`) skips the check.
+
 A retired key stays published until its own wait passes —
 `rollover_retire_holddown_secs` (default two days), never less than the
 largest TTL among the RRsets it signed — then the scheduler removes it.

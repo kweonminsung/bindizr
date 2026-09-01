@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::Path,
+    extract::{Path, Query},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
@@ -12,9 +12,11 @@ use bindizr_service::{
         MessageResponse, RolloverDnssecRequest,
     },
 };
+use serde::Deserialize;
 
-use crate::api::{
-    RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody,
+use crate::{
+    api::{RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody},
+    dns,
 };
 
 /// Route group for zone DNSSEC endpoints.
@@ -230,6 +232,12 @@ pub(crate) async fn start_dnssec_rollover(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Query parameters for the ds-seen confirmation.
+#[derive(Deserialize)]
+pub(crate) struct DsSeenQuery {
+    pub(crate) force: Option<bool>,
+}
+
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/rollover/ds-seen",
@@ -237,11 +245,12 @@ pub(crate) async fn start_dnssec_rollover(
         summary = "Confirm the new DS is at the parent (ds-seen)",
         description = "The operator's confirmation that the new DS record has been seen at the parent zone and its TTL has passed (the `ds-seen` step, as in OpenDNSSEC/BIND). Promotes the pre-published key to active and retires the key it replaces; retired keys are removed automatically once caches drain. ZSK rollovers involve no DS and are promoted automatically after a hold-down.",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone.")
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("force" = Option<bool>, Query, description = "Skip the parent DS verification against dnssec.ds_probe_resolver.")
         ),
         responses(
             (status = 200, description = "Rollover advanced, new key promoted", body = DnssecStatusResponse),
-            (status = 400, description = "Bad request, the rollover is ZSK-only (no DS to confirm) or the publish hold-down has not passed", body = ErrorResponse),
+            (status = 400, description = "Bad request: the rollover is ZSK-only (no DS to confirm), the publish hold-down has not passed, or the parent DS is not visible at the configured resolver", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
@@ -253,8 +262,10 @@ pub(crate) async fn start_dnssec_rollover(
 pub(crate) async fn ds_seen_dnssec_rollover(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
+    Query(query): Query<DsSeenQuery>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::rollover_ds_seen(&caller, &params.name).await?;
+    let status =
+        dns::rollover::confirm_ds_seen(&caller, &params.name, query.force.unwrap_or(false)).await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

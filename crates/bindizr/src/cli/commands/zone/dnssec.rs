@@ -11,7 +11,8 @@ use crate::{
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, EnableZoneDnssecParams, RolloverZoneDnssecParams, ZoneNameParams,
+            DaemonCommandKind, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
+            RolloverZoneDnssecParams, ZoneNameParams,
         },
     },
 };
@@ -92,6 +93,9 @@ pub(crate) enum ZoneDnssecRolloverCommand {
     DsSeen {
         /// The name of the zone
         name: String,
+        /// Skip the parent DS verification against dnssec.ds_probe_resolver
+        #[arg(long)]
+        force: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -171,11 +175,15 @@ pub(crate) async fn handle_command(
                 }
                 print_status(&response.data, output)?;
             }
-            ZoneDnssecRolloverCommand::DsSeen { name, output } => {
+            ZoneDnssecRolloverCommand::DsSeen {
+                name,
+                force,
+                output,
+            } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverDsSeen,
-                        ZoneNameParams { name },
+                        DsSeenZoneDnssecParams { name, force },
                     )
                     .await?;
                 if output == OutputFormat::Table {

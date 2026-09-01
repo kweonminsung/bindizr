@@ -6,12 +6,18 @@ use domain::{
         Message, MessageBuilder, Name,
         iana::{Opcode, Rcode, Rtype},
     },
-    rdata::Soa,
+    rdata::{Ds, Soa},
 };
 
-/// Build a single-SOA-question DNS message with a random id, returning
-/// `(query_id, wire bytes)`.
-pub fn build_question(opcode: Opcode, aa: bool, qname: &Name<Vec<u8>>) -> (u16, Vec<u8>) {
+/// Build a single-question DNS message with a random id, returning
+/// `(query_id, wire bytes)`. `rd` asks a resolver to recurse.
+pub fn build_question(
+    opcode: Opcode,
+    aa: bool,
+    rd: bool,
+    qname: &Name<Vec<u8>>,
+    rtype: Rtype,
+) -> (u16, Vec<u8>) {
     let query_id = rand::random::<u16>();
 
     let mut builder = MessageBuilder::new_vec();
@@ -19,14 +25,64 @@ pub fn build_question(opcode: Opcode, aa: bool, qname: &Name<Vec<u8>>) -> (u16, 
     header.set_id(query_id);
     header.set_opcode(opcode);
     header.set_aa(aa);
+    header.set_rd(rd);
 
     let mut question = builder.question();
     // Composing one question into a Vec cannot fail.
     question
-        .push((qname, Rtype::SOA))
+        .push((qname, rtype))
         .expect("composing into a Vec cannot run out of space");
 
     (query_id, question.finish())
+}
+
+/// One DS record from a response's answer section; digest in uppercase hex.
+pub struct DsAnswer {
+    pub key_tag: u16,
+    pub algorithm: u8,
+    pub digest_type: u8,
+    pub digest: String,
+}
+
+/// Validate a DS query response and collect every DS record in its answer
+/// section; empty when the delegation carries no DS.
+pub fn extract_ds_answers(query_id: u16, response: &[u8]) -> Result<Vec<DsAnswer>, String> {
+    let message =
+        Message::from_octets(response).map_err(|e| format!("malformed response: {}", e))?;
+
+    let header = message.header();
+    if header.id() != query_id {
+        return Err(format!(
+            "response ID mismatch: expected {}, got {}",
+            query_id,
+            header.id()
+        ));
+    }
+    if !header.qr() {
+        return Err("response does not have QR bit set".to_string());
+    }
+    if header.tc() {
+        return Err("truncated response".to_string());
+    }
+    if header.rcode() != Rcode::NOERROR {
+        return Err(format!("RCODE {}", header.rcode().to_int()));
+    }
+
+    let answer = message
+        .answer()
+        .map_err(|e| format!("malformed answer section: {}", e))?;
+    let mut records = Vec::new();
+    for record in answer.limit_to::<Ds<_>>() {
+        let record = record.map_err(|e| format!("malformed DS record: {}", e))?;
+        let data = record.data();
+        records.push(DsAnswer {
+            key_tag: data.key_tag(),
+            algorithm: data.algorithm().to_int(),
+            digest_type: data.digest_type().to_int(),
+            digest: hex::encode_upper(data.digest()),
+        });
+    }
+    Ok(records)
 }
 
 /// Check that a NOTIFY was acknowledged by the server we asked.

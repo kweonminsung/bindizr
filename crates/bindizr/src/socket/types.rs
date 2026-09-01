@@ -214,6 +214,15 @@ pub(crate) struct RolloverZoneDnssecParams {
     pub(crate) request: RolloverDnssecRequest,
 }
 
+/// Payload for confirming a rollover's parent DS.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct DsSeenZoneDnssecParams {
+    pub(crate) name: String,
+    /// Skip the parent DS verification.
+    #[serde(default)]
+    pub(crate) force: bool,
+}
+
 /// Daemon status details returned by the `Status` command.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DaemonStatusResponse {
