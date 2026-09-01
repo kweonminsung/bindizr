@@ -423,7 +423,7 @@ pub(crate) async fn delete_zone(
         path = "/zones/{name}/imports",
         tag = "Zone",
         summary = "Import a BIND zone file into a zone",
-        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.",
+        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. Passing `from_server` instead of `content` pulls the records over AXFR from that server first (its SOA and DNSSEC-derived records are dropped). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to import records into.")
         ),
@@ -444,7 +444,7 @@ pub(crate) async fn import_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<ImportZoneFileRequest>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::import_zone_file(&caller, &params.name, &body).await?;
+    let response = dns::transfer::import_zone(&caller, &params.name, body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

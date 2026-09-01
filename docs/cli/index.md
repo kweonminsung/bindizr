@@ -50,6 +50,15 @@ $ bindizr record bulk-create records.json --zone <ZONE_NAME> --preview
 $ bindizr zone import <ZONE_NAME> zone.txt --preview
 ```
 
+A zone served elsewhere imports without exporting a file first —
+`--from-server` pulls the records over AXFR (the source must allow the
+transfer; its SOA and DNSSEC records are dropped since the zone keeps its
+own SOA fields and signs itself):
+
+```bash
+$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --preview
+```
+
 ## Zone history
 
 Every SOA serial has a version behind it, so a zone can be diffed and rolled

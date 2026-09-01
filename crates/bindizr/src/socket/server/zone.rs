@@ -1,7 +1,6 @@
 use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
-    record::RecordService,
     types::{CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter},
     zone::ZoneService,
 };
@@ -70,7 +69,7 @@ pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
     let params: ImportZoneFileParams = parse_params(data)?;
 
     let response =
-        RecordService::import_zone_file(&Caller::Global, &params.zone_name, &params.request)
+        crate::dns::transfer::import_zone(&Caller::Global, &params.zone_name, params.request)
             .await?;
     let message = if !response.errors.is_empty() {
         format!(

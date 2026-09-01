@@ -30,10 +30,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     timing::elapsed_ms,
-    types::{
-        ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff,
-        RecordValueRequest,
-    },
+    types::{ImportMode, ImportSummary, ImportZoneFileResponse, RecordDiff, RecordValueRequest},
     zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
 
@@ -91,12 +88,11 @@ impl RecordService {
     pub async fn import_zone_file(
         caller: &Caller,
         zone_name: &str,
-        request: &ImportZoneFileRequest,
+        content: &str,
+        mode: ImportMode,
+        dry_run: bool,
     ) -> Result<ImportZoneFileResponse, ServiceError> {
         caller.require_global("import zone files")?;
-
-        let mode = request.mode;
-        let dry_run = request.dry_run;
 
         let t_total = Instant::now();
 
@@ -111,7 +107,7 @@ impl RecordService {
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let parsed = parse_zone_file(&request.content, zone.name.as_str(), zone.default_ttl);
+            let parsed = parse_zone_file(content, zone.name.as_str(), zone.default_ttl);
             timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
             let mut skipped = 0usize;

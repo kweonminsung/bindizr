@@ -88,6 +88,61 @@ pub fn extract_ds_answers(query_id: u16, response: &[u8]) -> Result<Vec<DsAnswer
     Ok(records)
 }
 
+/// One answer record from a zone-transfer response, in presentation form.
+#[derive(Debug)]
+pub struct TransferRecord {
+    /// Owner name as an absolute presentation name (trailing dot).
+    pub name: String,
+    pub rtype: Rtype,
+    pub ttl: u32,
+    /// RDATA in standard presentation form.
+    pub rdata: String,
+}
+
+/// Validate one AXFR response message and collect every answer record; the
+/// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
+pub fn extract_transfer_records(
+    query_id: u16,
+    response: &[u8],
+) -> Result<Vec<TransferRecord>, String> {
+    use domain::rdata::AllRecordData;
+
+    let message =
+        Message::from_octets(response).map_err(|e| format!("malformed response: {}", e))?;
+
+    let header = message.header();
+    if header.id() != query_id {
+        return Err(format!(
+            "response ID mismatch: expected {}, got {}",
+            query_id,
+            header.id()
+        ));
+    }
+    if !header.qr() {
+        return Err("response does not have QR bit set".to_string());
+    }
+    if header.rcode() != Rcode::NOERROR {
+        return Err(format!("RCODE {}", header.rcode().to_int()));
+    }
+
+    let answer = message
+        .answer()
+        .map_err(|e| format!("malformed answer section: {}", e))?;
+    let mut records = Vec::new();
+    for record in answer.limit_to::<AllRecordData<_, _>>() {
+        let record = record.map_err(|e| format!("malformed answer record: {}", e))?;
+        records.push(TransferRecord {
+            // Display omits the root dot; the absolute form keeps the
+            // import parser from re-qualifying the name.
+            name: format!("{}.", record.owner()),
+            rtype: record.rtype(),
+            ttl: record.ttl().as_secs(),
+            rdata: record.data().to_string(),
+        });
+    }
+    Ok(records)
+}
+
 /// Check that a NOTIFY was acknowledged by the server we asked.
 pub fn validate_notify_response(query_id: u16, response: &[u8]) -> Result<(), String> {
     let message = Message::from_octets(response)

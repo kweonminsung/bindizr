@@ -55,6 +55,8 @@ pub(crate) struct TestAppOptions {
     /// `0` lets a rollover be confirmed as soon as the zone's DNSKEY TTL
     /// allows, instead of waiting out the one-day default.
     pub rollover_publish_holddown_secs: u64,
+    /// Also the zone-transfer ACL; NOTIFY stays off in tests.
+    pub secondary_addrs: String,
 }
 
 impl Default for TestAppOptions {
@@ -65,6 +67,7 @@ impl Default for TestAppOptions {
             nsupdate_allow_unsigned: false,
             openapi_enabled: false,
             rollover_publish_holddown_secs: 86400,
+            secondary_addrs: String::new(),
         }
     }
 }
@@ -673,7 +676,7 @@ server_url = ""
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
-secondary_addrs = ""
+secondary_addrs = "{secondary_addrs}"
 notify_after_update = false
 notify_on_startup = false
 notify_retries = 0
@@ -692,6 +695,7 @@ log_level = "error"
         nsupdate_allow_unsigned = options.nsupdate_allow_unsigned,
         openapi_enabled = options.openapi_enabled,
         rollover_publish_holddown_secs = options.rollover_publish_holddown_secs,
+        secondary_addrs = options.secondary_addrs,
     );
 
     fs::write(config_path, config).expect("failed to write bindizr config");

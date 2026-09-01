@@ -2,6 +2,7 @@
 //! the UDP exchange, message-build, and secondary-resolution helpers they
 //! share.
 
+pub(crate) mod axfr;
 pub(crate) mod notify;
 pub(crate) mod probe;
 
