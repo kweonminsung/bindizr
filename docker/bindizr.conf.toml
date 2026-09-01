@@ -38,7 +38,8 @@ default_signature_refresh_days = 5
 rollover_publish_holddown_secs = 86400
 rollover_retire_holddown_secs = 172800
 default_zsk_lifetime_days = 0
-ds_probe_resolver = ""
+parent_ds_resolver = ""
+parent_ds_auto_promote = false
 
 [logging]
 log_level = "info"

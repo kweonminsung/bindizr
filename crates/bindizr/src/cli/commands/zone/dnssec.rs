@@ -83,7 +83,7 @@ pub(crate) enum ZoneDnssecCommand {
         name: String,
     },
     /// Verify the zone's DNSSEC state (keys, signatures, denial chain, and
-    /// the parent DS when dnssec.ds_probe_resolver is set)
+    /// the parent DS when dnssec.parent_ds_resolver is set)
     Verify {
         /// The name of the zone
         name: String,
@@ -148,7 +148,7 @@ pub(crate) enum ZoneDnssecRolloverCommand {
     DsSeen {
         /// The name of the zone
         name: String,
-        /// Skip the parent DS verification against dnssec.ds_probe_resolver
+        /// Skip the parent DS verification against dnssec.parent_ds_resolver
         #[arg(long)]
         force: bool,
         /// Output format (json, yaml, table)

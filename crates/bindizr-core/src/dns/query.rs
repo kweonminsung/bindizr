@@ -42,6 +42,8 @@ pub struct DsAnswer {
     pub algorithm: u8,
     pub digest_type: u8,
     pub digest: String,
+    /// Answer TTL: how long resolvers may still serve the previous DS set.
+    pub ttl: u32,
 }
 
 /// Validate a DS query response and collect every DS record in its answer
@@ -80,6 +82,7 @@ pub fn extract_ds_answers(query_id: u16, response: &[u8]) -> Result<Vec<DsAnswer
             algorithm: data.algorithm().to_int(),
             digest_type: data.digest_type().to_int(),
             digest: hex::encode_upper(data.digest()),
+            ttl: record.ttl().as_secs(),
         });
     }
     Ok(records)

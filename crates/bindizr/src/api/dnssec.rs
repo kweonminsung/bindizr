@@ -261,7 +261,7 @@ pub(crate) struct DsSeenQuery {
         description = "The operator's confirmation that the new DS record has been seen at the parent zone and its TTL has passed (the `ds-seen` step, as in OpenDNSSEC/BIND). Promotes the pre-published key to active and retires the key it replaces; retired keys are removed automatically once caches drain. ZSK rollovers involve no DS and are promoted automatically after a hold-down.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("force" = Option<bool>, Query, description = "Skip the parent DS verification against dnssec.ds_probe_resolver.")
+            ("force" = Option<bool>, Query, description = "Skip the parent DS verification against dnssec.parent_ds_resolver.")
         ),
         responses(
             (status = 200, description = "Rollover advanced, new key promoted", body = DnssecStatusResponse),
@@ -378,7 +378,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
         path = "/zones/{name}/dnssec/verify",
         tag = "DNSSEC",
         summary = "Verify a zone's DNSSEC state",
-        description = "Runs self-checks on the stored state — key inventory, signature freshness, per-algorithm signature coverage (RFC 6840, Section 5.11), and the denial chain — and, with `dnssec.ds_probe_resolver` configured, compares the DS the parent serves against the zone's keys. Each aspect reports as a named check; `ok` is the conjunction.",
+        description = "Runs self-checks on the stored state — key inventory, signature freshness, per-algorithm signature coverage (RFC 6840, Section 5.11), and the denial chain — and, with `dnssec.parent_ds_resolver` configured, compares the DS the parent serves against the zone's keys. Each aspect reports as a named check; `ok` is the conjunction.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),

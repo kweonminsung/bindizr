@@ -62,7 +62,7 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         let keys = sqlx::query_as::<_, DnssecKey>(AssertSqlSafe(format!(
             "{}{}",
             r#"
-            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
+            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, ds_seen_at, max_signed_ttl, created_at
             FROM dnssec_keys
             WHERE zone_id = ?
             ORDER BY id
@@ -85,7 +85,7 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
 
         let keys = sqlx::query_as::<_, DnssecKey>(
             r#"
-            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
+            SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, ds_seen_at, max_signed_ttl, created_at
             FROM dnssec_keys
             WHERE state = ? AND eligible_at <= ?
             ORDER BY zone_id, id
@@ -129,6 +129,38 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         .await?;
 
         Ok(zone_ids)
+    }
+
+    async fn list_by_state(&self, state: DnssecKeyState) -> Result<Vec<DnssecKey>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let keys = sqlx::query_as::<_, DnssecKey>(
+            "SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, ds_seen_at, max_signed_ttl, created_at FROM dnssec_keys WHERE state = ? ORDER BY id",
+        )
+        .bind(state.as_str())
+        .fetch_all(&mut *conn)
+        .await?;
+
+        Ok(keys)
+    }
+
+    async fn update_ds_seen_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        ds_seen_at: DateTime<Utc>,
+        eligible_at: DateTime<Utc>,
+    ) -> Result<(), DatabaseError> {
+        let mysql_tx = tx.as_mysql()?;
+
+        sqlx::query("UPDATE dnssec_keys SET ds_seen_at = ?, eligible_at = ? WHERE id = ?")
+            .bind(ds_seen_at)
+            .bind(eligible_at)
+            .bind(id)
+            .execute(&mut **mysql_tx)
+            .await?;
+
+        Ok(())
     }
 
     async fn count_zone_ids(&self) -> Result<u64, DatabaseError> {

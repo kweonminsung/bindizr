@@ -2,10 +2,16 @@
 //! promote it once the parent DS is confirmed. ZSK promotion, which needs no
 //! parent interaction, is the scheduler's.
 
-use bindizr_core::{config::bindizr_config, dns::dnssec::generate_key};
+use bindizr_core::{
+    config::bindizr_config,
+    dns::{dnssec::generate_key, query::DsAnswer},
+};
 use chrono::{Duration, Utc};
 
-use super::{DnssecService, notify_zone, status::build_status};
+use super::{
+    DnssecService, notify_zone,
+    status::{build_status, ds_info},
+};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -236,6 +242,126 @@ impl DnssecService {
 
     /// Promote the published keys named by `promoted` — drawn from this
     /// transaction's key list — and retire the active keys of the same roles.
+    /// Zone names holding a pre-published SEP key: the DS poll's work list.
+    pub async fn list_zone_names_with_pending_parent_ds(
+        caller: &Caller,
+    ) -> Result<Vec<String>, ServiceError> {
+        caller.require_global("manage DNSSEC signing")?;
+
+        let keys = RepositoryService::list_dnssec_keys_by_state(DnssecKeyState::Published).await?;
+        let mut zone_ids: Vec<i32> = keys
+            .iter()
+            .filter(|key| key.role.is_sep())
+            .map(|key| key.zone_id)
+            .collect();
+        zone_ids.sort_unstable();
+        zone_ids.dedup();
+        if zone_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut tx = RepositoryService::begin_read_tx("failed to list rollover zones").await?;
+        let result = async {
+            let mut names = Vec::with_capacity(zone_ids.len());
+            for zone_id in zone_ids {
+                if let Some(zone) =
+                    RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::None).await?
+                {
+                    names.push(zone.name.as_str().to_string());
+                }
+            }
+            Ok(names)
+        }
+        .await;
+        RepositoryService::finish_tx(tx, result, "failed to list rollover zones").await
+    }
+
+    /// Stamp first parent-DS observations for the zone's pending SEP keys and
+    /// promote once every pending DS has been seen and every deadline has
+    /// passed. `Ok(None)` while the rollover is not ready.
+    pub async fn note_parent_ds_observed(
+        caller: &Caller,
+        zone_name: &str,
+        seen: &[DsAnswer],
+    ) -> Result<Option<GetDnssecStatusResponse>, ServiceError> {
+        caller.require_global("manage DNSSEC signing")?;
+
+        let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
+        let result = async {
+            let (zone, mut keys) =
+                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            let now = Utc::now();
+
+            let mut ds_published = Vec::new();
+            let mut waiting = 0usize;
+            for key in keys.iter_mut() {
+                if key.state != DnssecKeyState::Published || key.role == DnssecKeyRole::Zsk {
+                    continue;
+                }
+                ds_published.push(key.id);
+                if key.ds_seen_at.is_none() {
+                    let ds = ds_info(&zone, key)?;
+                    if let Some(answer) = seen.iter().find(|answer| ds.matches(answer)) {
+                        // Resolvers may miss the DS for its TTL after it
+                        // appeared, so the deadline extends by it (RFC 7583).
+                        let eligible_at = key
+                            .eligible_at
+                            .max(now + Duration::seconds(i64::from(answer.ttl)));
+                        RepositoryService::update_dnssec_key_ds_seen_tx(
+                            &mut tx,
+                            key.id,
+                            now,
+                            eligible_at,
+                        )
+                        .await?;
+                        key.ds_seen_at = Some(now);
+                        key.eligible_at = eligible_at;
+                        log_info!(
+                            "Parent DS for zone {} key tag {} first seen; promotable at {}",
+                            zone.name.as_str(),
+                            key.key_tag,
+                            eligible_at.format("%Y-%m-%dT%H:%M:%SZ")
+                        );
+                    }
+                }
+                if key.ds_seen_at.is_none() || key.eligible_at > now {
+                    waiting += 1;
+                }
+            }
+            if ds_published.is_empty() || waiting > 0 {
+                return Ok(None);
+            }
+
+            let keys = Self::promote_published_keys_tx(&mut tx, &zone, keys, &ds_published).await?;
+
+            let new_serial = generate_serial(Some(zone.serial))?;
+            DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+
+            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
+            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+                .await?
+                .is_some();
+            build_status(
+                &zone,
+                zone.dnssec_denial,
+                &keys,
+                earliest,
+                new_serial,
+                withdrawing,
+            )
+            .map(Some)
+        }
+        .await;
+        let response =
+            RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await?;
+
+        if let Some(status) = &response {
+            notify_zone(&status.zone_name).await;
+        }
+        Ok(response)
+    }
+
     pub(crate) async fn promote_published_keys_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,

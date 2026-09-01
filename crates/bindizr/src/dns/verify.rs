@@ -18,7 +18,11 @@ pub(crate) async fn verify(
 ) -> Result<VerifyDnssecResponse, ServiceError> {
     let mut response = DnssecService::verify(caller, zone_name).await?;
 
-    let resolver = bindizr_config().dnssec.ds_probe_resolver.trim().to_string();
+    let resolver = bindizr_config()
+        .dnssec
+        .parent_ds_resolver
+        .trim()
+        .to_string();
     if !resolver.is_empty() {
         let status = DnssecService::get_status(caller, zone_name).await?;
         let expected = status.ds_records;
@@ -44,14 +48,7 @@ pub(crate) async fn verify(
             Ok(seen) => {
                 let matched = seen
                     .iter()
-                    .filter(|answer| {
-                        expected.iter().any(|ds| {
-                            i32::from(answer.key_tag) == ds.key_tag
-                                && answer.algorithm == ds.algorithm
-                                && answer.digest_type == ds.digest_type
-                                && answer.digest == ds.digest
-                        })
-                    })
+                    .filter(|answer| expected.iter().any(|ds| ds.matches(answer)))
                     .count();
                 (
                     matched > 0,

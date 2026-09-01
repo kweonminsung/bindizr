@@ -228,7 +228,11 @@ pub struct DnssecConfig {
     /// Resolver (`host[:port]`, port 53 default) asked for the parent DS
     /// RRset before `rollover ds-seen` may promote; empty skips the check.
     #[serde(default)]
-    pub ds_probe_resolver: String,
+    pub parent_ds_resolver: String,
+    /// Poll `parent_ds_resolver` and promote CSK/KSK rollovers unattended,
+    /// one observed-DS-TTL after the pending DS first appears.
+    #[serde(default)]
+    pub parent_ds_auto_promote: bool,
 }
 
 impl Default for DnssecConfig {
@@ -239,7 +243,8 @@ impl Default for DnssecConfig {
             rollover_publish_holddown_secs: default_rollover_publish_holddown_secs(),
             rollover_retire_holddown_secs: default_rollover_retire_holddown_secs(),
             default_zsk_lifetime_days: default_zsk_lifetime_days(),
-            ds_probe_resolver: String::new(),
+            parent_ds_resolver: String::new(),
+            parent_ds_auto_promote: false,
         }
     }
 }
@@ -482,8 +487,12 @@ fn apply_env_overrides_from(
         config.dnssec.default_zsk_lifetime_days =
             parse_env_value("BINDIZR_DNSSEC_DEFAULT_ZSK_LIFETIME_DAYS", &value)?;
     }
-    if let Some(value) = get_env("BINDIZR_DNSSEC_DS_PROBE_RESOLVER") {
-        config.dnssec.ds_probe_resolver = value;
+    if let Some(value) = get_env("BINDIZR_DNSSEC_PARENT_DS_RESOLVER") {
+        config.dnssec.parent_ds_resolver = value;
+    }
+    if let Some(value) = get_env("BINDIZR_DNSSEC_PARENT_DS_AUTO_PROMOTE") {
+        config.dnssec.parent_ds_auto_promote =
+            parse_env_value("BINDIZR_DNSSEC_PARENT_DS_AUTO_PROMOTE", &value)?;
     }
     if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
         config.logging.log_level = parse_env_value("BINDIZR_LOG_LEVEL", &value)?;
@@ -552,6 +561,12 @@ impl DnssecConfig {
         if self.default_signature_refresh_days >= self.default_signature_validity_days {
             return Err(
                 "dnssec.default_signature_refresh_days must be less than dnssec.default_signature_validity_days"
+                    .to_string(),
+            );
+        }
+        if self.parent_ds_auto_promote && self.parent_ds_resolver.trim().is_empty() {
+            return Err(
+                "dnssec.parent_ds_auto_promote requires dnssec.parent_ds_resolver to be set"
                     .to_string(),
             );
         }

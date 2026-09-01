@@ -141,6 +141,7 @@ pub(crate) fn build_status(
                 state: key.state.to_string(),
                 state_changed_at: key.state_changed_at,
                 eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
+                ds_seen_at: key.ds_seen_at,
                 algorithm: key.algorithm.to_string(),
                 key_tag: key.key_tag,
                 dnskey: format!(
@@ -161,7 +162,7 @@ pub(crate) fn build_status(
 }
 
 /// The key's DS form, decoded from the same RDATA the CDS records carry.
-fn ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
+pub(crate) fn ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
     let apex = to_wire_name(zone.name.to_wire())
         .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
     let rdata = ds_rdata_for(key, &apex).map_err(ServiceError::dnssec_signing_failed)?;

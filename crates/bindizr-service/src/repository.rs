@@ -455,6 +455,27 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
     }
 
+    pub(crate) async fn list_dnssec_keys_by_state(
+        state: DnssecKeyState,
+    ) -> Result<Vec<DnssecKey>, ServiceError> {
+        get_dnssec_key_repository()
+            .list_by_state(state)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
+    }
+
+    pub(crate) async fn update_dnssec_key_ds_seen_tx(
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        ds_seen_at: DateTime<Utc>,
+        eligible_at: DateTime<Utc>,
+    ) -> Result<(), ServiceError> {
+        get_dnssec_key_repository()
+            .update_ds_seen_tx(tx, id, ds_seen_at, eligible_at)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to update DNSSEC key: {}", e)))
+    }
+
     pub(crate) async fn count_dnssec_key_zone_ids() -> Result<u64, ServiceError> {
         get_dnssec_key_repository()
             .count_zone_ids()

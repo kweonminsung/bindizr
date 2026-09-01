@@ -114,13 +114,13 @@ async fn probe_one(
     extract_soa_serial(query_id, &response[..received])
 }
 
-/// The zone's DS RRset as `dnssec.ds_probe_resolver` sees it; errors when no
+/// The zone's DS RRset as `dnssec.parent_ds_resolver` sees it; errors when no
 /// resolver is configured.
 pub(crate) async fn probe_parent_ds(zone_name: &str) -> Result<Vec<DsAnswer>, String> {
     let config = config::bindizr_config();
-    let raw = config.dnssec.ds_probe_resolver.trim();
+    let raw = config.dnssec.parent_ds_resolver.trim();
     if raw.is_empty() {
-        return Err("dnssec.ds_probe_resolver is not configured".to_string());
+        return Err("dnssec.parent_ds_resolver is not configured".to_string());
     }
     let timeout = Duration::from_secs(config.dns.notify_timeout_secs);
 

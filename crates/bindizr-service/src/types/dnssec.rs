@@ -1,6 +1,6 @@
 //! DNSSEC management payloads.
 
-use bindizr_core::config::bindizr_config;
+use bindizr_core::{config::bindizr_config, dns::query::DsAnswer};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -53,6 +53,10 @@ pub struct DnssecKeyInfo {
     /// `retired`; absent for `active`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eligible_at: Option<DateTime<Utc>>,
+    /// When the DS poll first saw this key's DS at the parent; only pending
+    /// SEP keys carry it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ds_seen_at: Option<DateTime<Utc>>,
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: String,
     #[schema(example = 34217)]
@@ -82,6 +86,16 @@ pub struct DnssecDsInfo {
         example = "example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383"
     )]
     pub presentation: String,
+}
+
+impl DnssecDsInfo {
+    /// Whether `answer`, a DS record served by a resolver, is this DS.
+    pub fn matches(&self, answer: &DsAnswer) -> bool {
+        i32::from(answer.key_tag) == self.key_tag
+            && answer.algorithm == self.algorithm
+            && answer.digest_type == self.digest_type
+            && answer.digest == self.digest
+    }
 }
 
 /// DNSSEC signing state of a zone.

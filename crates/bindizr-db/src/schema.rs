@@ -152,6 +152,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             state VARCHAR(16) NOT NULL,
             state_changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             eligible_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            ds_seen_at DATETIME NULL,
             max_signed_ttl INT NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
@@ -340,6 +341,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             state VARCHAR(16) NOT NULL,
             state_changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             eligible_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            ds_seen_at TIMESTAMPTZ NULL,
             max_signed_ttl INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
@@ -534,6 +536,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             state TEXT NOT NULL,
             state_changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             eligible_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            ds_seen_at DATETIME NULL,
             max_signed_ttl INTEGER NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE

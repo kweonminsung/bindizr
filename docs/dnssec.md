@@ -92,10 +92,17 @@ together after `ds-seen`.
   bindizr zone dnssec rollover ds-seen example.com
   ```
 
-  With `dnssec.ds_probe_resolver` set, `ds-seen` first asks that resolver for
+  With `dnssec.parent_ds_resolver` set, `ds-seen` first asks that resolver for
   the zone's DS RRset and refuses unless the new key's DS is actually
   visible — the guard against confirming a DS the parent never published.
   `--force` (API: `?force=true`) skips the check.
+
+  With `dnssec.parent_ds_auto_promote = true` as well, no manual `ds-seen` is needed:
+  an hourly poll asks the resolver for each rolling zone's DS RRset, records
+  when the new DS first appears, and promotes one observed-DS-TTL later
+  (once the publish hold-down has also passed) — the full CSK/KSK rollover
+  then runs unattended after the DS is registered at the parent. `status`
+  reports the first-seen time per key.
 
 A retired key stays published until its own wait passes —
 `rollover_retire_holddown_secs` (default two days), never less than the
@@ -167,7 +174,7 @@ bindizr zone dnssec verify example.com
 
 Runs self-checks on the stored state — key inventory, signature freshness,
 per-algorithm signature coverage, and the denial chain — and, with
-`dnssec.ds_probe_resolver` configured, compares the DS records the parent
+`dnssec.parent_ds_resolver` configured, compares the DS records the parent
 actually serves against the zone's keys. Also available as
 `GET /zones/{name}/dnssec/verify`.
 

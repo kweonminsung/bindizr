@@ -530,6 +530,16 @@ pub trait DnssecKeyRepository: Send + Sync {
         now: DateTime<Utc>,
         default_zsk_lifetime_days: u32,
     ) -> Result<Vec<i32>, DatabaseError>;
+    async fn list_by_state(&self, state: DnssecKeyState) -> Result<Vec<DnssecKey>, DatabaseError>;
+    /// Stamp the first parent-DS observation together with the deadline it
+    /// extends, leaving the key's other columns untouched.
+    async fn update_ds_seen_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        ds_seen_at: DateTime<Utc>,
+        eligible_at: DateTime<Utc>,
+    ) -> Result<(), DatabaseError>;
     /// Zones holding at least one key: the signed-zone count.
     async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
     async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError>;

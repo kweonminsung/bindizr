@@ -60,7 +60,8 @@ default_signature_refresh_days = 5    # Re-sign when a signature has fewer than 
 rollover_publish_holddown_secs = 86400 # Wait before a pre-published key may start signing (ZSKs auto-advance)
 rollover_retire_holddown_secs = 172800 # Wait before a retired key is removed from the zone
 default_zsk_lifetime_days = 0         # Roll ZSKs active longer than this automatically (0 = disabled)
-ds_probe_resolver = ""        # Resolver (host[:port]) asked for the parent DS before ds-seen; empty skips the check
+parent_ds_resolver = ""        # Resolver (host[:port]) asked for the parent DS before ds-seen; empty skips the check
+parent_ds_auto_promote = false          # Poll the resolver for pending DS records and promote CSK/KSK rollovers unattended
 # The three default_*_days knobs are per-zone-overridable via `bindizr zone dnssec timing`.
 
 [logging]
@@ -103,7 +104,8 @@ the API or CLI — see [DNSSEC](dnssec.md).
 | `BINDIZR_DNSSEC_ROLLOVER_PUBLISH_HOLDDOWN_SECS` | `dnssec.rollover_publish_holddown_secs` | |
 | `BINDIZR_DNSSEC_ROLLOVER_RETIRE_HOLDDOWN_SECS` | `dnssec.rollover_retire_holddown_secs` | |
 | `BINDIZR_DNSSEC_DEFAULT_ZSK_LIFETIME_DAYS` | `dnssec.default_zsk_lifetime_days` | |
-| `BINDIZR_DNSSEC_DS_PROBE_RESOLVER` | `dnssec.ds_probe_resolver` | |
+| `BINDIZR_DNSSEC_PARENT_DS_RESOLVER` | `dnssec.parent_ds_resolver` | |
+| `BINDIZR_DNSSEC_PARENT_DS_AUTO_PROMOTE` | `dnssec.parent_ds_auto_promote` | Needs `parent_ds_resolver`; see [DNSSEC](dnssec.md) |
 | `BINDIZR_LOG_LEVEL` | `logging.log_level` | |
 
 `BINDIZR_DATABASE_URL` is a convenience for container deployments where the URL

@@ -46,6 +46,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     database::initialize().await.map_err(|e| e.to_string())?;
 
     service::dnssec::init_maintenance_scheduler();
+    dns::rollover::init_ds_poll_scheduler();
 
     dns::initialize().await;
 
