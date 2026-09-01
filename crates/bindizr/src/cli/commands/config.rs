@@ -1,7 +1,10 @@
 use bindizr_core::{config, config::BindizrConfig};
 use clap::Subcommand;
 
-use crate::{cli::error::CliError, socket::client::DaemonSocketClient};
+use crate::{
+    cli::{error::CliError, output::color},
+    socket::client::DaemonSocketClient,
+};
 
 /// Subcommands for inspecting and validating configuration.
 #[derive(Subcommand, Debug)]
@@ -35,7 +38,7 @@ fn check_config(file: Option<&str>) -> Result<(), CliError> {
 
     config::load_config_file(&path)?;
 
-    println!("Configuration is \x1b[32mvalid\x1b[0m.");
+    println!("Configuration is {}.", color::green("valid"));
     Ok(())
 }
 
@@ -121,9 +124,9 @@ fn print_config(config: &BindizrConfig) {
 }
 
 fn print_section(name: &str) {
-    println!("\x1b[36m[{}]\x1b[0m", name);
+    println!("{}", color::cyan(&format!("[{}]", name)));
 }
 
 fn print_value(key: &str, value: impl std::fmt::Display) {
-    println!("  \x1b[33m{:<24}\x1b[0m = {}", key, value);
+    println!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
 }

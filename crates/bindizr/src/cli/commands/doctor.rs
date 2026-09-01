@@ -7,7 +7,7 @@ use tokio::{
 };
 
 use crate::{
-    cli::error::CliError,
+    cli::{error::CliError, output::color},
     net::loopback_if_unspecified,
     socket::{
         client::DaemonSocketClient,
@@ -24,16 +24,16 @@ struct Report {
 
 impl Report {
     fn ok(&mut self, message: impl fmt::Display) {
-        println!("[\x1b[32mOK\x1b[0m] {}", message);
+        println!("[{}] {}", color::green("OK"), message);
     }
 
     fn fail(&mut self, message: impl fmt::Display) {
         self.failures += 1;
-        println!("[\x1b[31mFAIL\x1b[0m] {}", message);
+        println!("[{}] {}", color::red("FAIL"), message);
     }
 
     fn skip(&mut self, message: impl fmt::Display) {
-        println!("[\x1b[33mSKIP\x1b[0m] {}", message);
+        println!("[{}] {}", color::yellow("SKIP"), message);
     }
 }
 
@@ -63,7 +63,7 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
 
     println!();
     if report.failures == 0 {
-        println!("Result: installation looks \x1b[32mhealthy\x1b[0m");
+        println!("Result: installation looks {}", color::green("healthy"));
         Ok(())
     } else {
         Err(CliError::from(format!(

@@ -1,3 +1,4 @@
+pub(crate) mod color;
 pub(crate) mod diff;
 pub(crate) mod format;
 pub(crate) mod table;
