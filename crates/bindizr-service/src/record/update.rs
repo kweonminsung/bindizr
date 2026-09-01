@@ -3,7 +3,7 @@ use bindizr_db::repository::LockLevel;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, prepare_record, zone_journal_for},
+    bulk::{PreparedRecord, prepare_record, zone_journal_changes},
     validation::{
         normalize_record_owner_name, parse_record_type,
         validate_record_update_constraints_normalized,
@@ -239,13 +239,13 @@ impl RecordService {
                 })?;
 
             // Record DEL(old)+ADD(new) zone changes for IXFR in one batch.
-            let mut changes = zone_journal_for(
+            let mut changes = zone_journal_changes(
                 zone.id,
                 new_serial,
                 ChangeOperation::Del,
                 std::slice::from_ref(&existing_record),
             );
-            changes.extend(zone_journal_for(
+            changes.extend(zone_journal_changes(
                 zone.id,
                 new_serial,
                 ChangeOperation::Add,

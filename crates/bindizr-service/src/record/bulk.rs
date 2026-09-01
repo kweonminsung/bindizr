@@ -71,7 +71,7 @@ pub(crate) fn prepare_record(
     })
 }
 
-pub(crate) fn zone_journal_for(
+pub(crate) fn zone_journal_changes(
     zone_id: i32,
     new_serial: i32,
     operation: ChangeOperation,
@@ -108,7 +108,8 @@ impl RecordService {
         }
 
         let created_records = RepositoryService::create_records_tx(tx, records).await?;
-        let changes = zone_journal_for(zone_id, new_serial, ChangeOperation::Add, &created_records);
+        let changes =
+            zone_journal_changes(zone_id, new_serial, ChangeOperation::Add, &created_records);
         RepositoryService::create_zone_journal_tx(tx, &changes).await?;
         Ok(created_records)
     }
@@ -126,7 +127,7 @@ impl RecordService {
 
         let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
         RepositoryService::delete_records_tx(tx, &ids).await?;
-        let changes = zone_journal_for(zone_id, new_serial, ChangeOperation::Del, records);
+        let changes = zone_journal_changes(zone_id, new_serial, ChangeOperation::Del, records);
         RepositoryService::create_zone_journal_tx(tx, &changes).await?;
         Ok(())
     }

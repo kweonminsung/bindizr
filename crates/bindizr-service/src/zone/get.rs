@@ -122,7 +122,7 @@ impl ZoneService {
     /// A zone row and both record planes read under one shared zone lock, so
     /// a transfer never serves records and signatures from different serials.
     /// Takes no caller: DNS-plane reads are authorized by the transfer ACL.
-    pub async fn transfer_content(
+    pub async fn find_transfer_content(
         zone_id: i32,
     ) -> Result<Option<(Zone, Vec<Record>, Vec<DnssecRecord>)>, ServiceError> {
         let mut tx = RepositoryService::begin_read_tx("failed to load transfer content").await?;
