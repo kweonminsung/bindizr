@@ -151,9 +151,7 @@ impl DnssecService {
             // after the publish hold-down.
             let ds_published: Vec<i32> = keys
                 .iter()
-                .filter(|key| {
-                    key.state == DnssecKeyState::Published && key.role != DnssecKeyRole::Zsk
-                })
+                .filter(|key| key.awaits_parent_ds())
                 .map(|key| key.id)
                 .collect();
             if ds_published.is_empty() {
@@ -229,7 +227,7 @@ impl DnssecService {
         let keys = RepositoryService::list_dnssec_keys_by_state(DnssecKeyState::Published).await?;
         let mut zone_ids: Vec<i32> = keys
             .iter()
-            .filter(|key| key.role.is_sep())
+            .filter(|key| key.awaits_parent_ds())
             .map(|key| key.zone_id)
             .collect();
         zone_ids.sort_unstable();
@@ -273,7 +271,7 @@ impl DnssecService {
             let mut ds_published = Vec::new();
             let mut waiting = 0usize;
             for key in keys.iter_mut() {
-                if key.state != DnssecKeyState::Published || key.role == DnssecKeyRole::Zsk {
+                if !key.awaits_parent_ds() {
                     continue;
                 }
                 ds_published.push(key.id);

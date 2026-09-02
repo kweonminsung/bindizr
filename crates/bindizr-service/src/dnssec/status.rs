@@ -54,7 +54,7 @@ impl DnssecService {
             let keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
             keys.iter()
-                .filter(|key| key.role.is_sep() && key.state == DnssecKeyState::Published)
+                .filter(|key| key.awaits_parent_ds())
                 .map(|key| ds_info(&zone, key))
                 .collect()
         }

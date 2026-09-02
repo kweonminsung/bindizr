@@ -283,6 +283,12 @@ impl DnssecKey {
         self.role.is_sep()
     }
 
+    /// Whether the key waits for its DS at the parent before promotion:
+    /// pre-published SEP keys (ZSKs promote without parent interaction).
+    pub fn awaits_parent_ds(&self) -> bool {
+        self.role.is_sep() && self.state == DnssecKeyState::Published
+    }
+
     /// Whether the key belongs in the CDS/CDNSKEY set; excluding retired keys
     /// tells the parent to drop their DS (RFC 7344).
     pub fn wants_parent_ds(&self) -> bool {
