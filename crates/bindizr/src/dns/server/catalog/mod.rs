@@ -29,7 +29,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
 
     log_info!("Catalog zone contains {} member zones", member_zones.len());
 
-    // The catalog zone is virtual (no DB row); build its metadata in memory.
+    // The catalog zone is virtual (no DB row).
     let serial = generate_catalog_serial(&member_zones, &all_zones).await?;
 
     let catalog_zone = Zone {

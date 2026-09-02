@@ -67,11 +67,11 @@ pub struct Zone {
     /// RNAME mailbox form only when served. `ZoneVersion.rname` differs.
     pub rname: String,
     pub default_ttl: i32,
-    pub serial: i32,      // SOA serial number
-    pub refresh: i32,     // SOA refresh period in seconds
-    pub retry: i32,       // SOA retry period in seconds
-    pub expire: i32,      // SOA expire period in seconds
-    pub minimum_ttl: i32, // SOA minimum TTL in seconds
+    pub serial: i32,
+    pub refresh: i32,
+    pub retry: i32,
+    pub expire: i32,
+    pub minimum_ttl: i32,
     /// Denial-of-existence mode when the zone is signed; owned by DNSSEC
     /// enable/disable, untouched by ordinary zone updates.
     #[sqlx(try_from = "String")]

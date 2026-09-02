@@ -127,8 +127,6 @@ pub(crate) async fn handle_command(
                 .await?
                 .data;
 
-            // Table output shows two tables (version, then its records);
-            // json/yaml print the whole payload once.
             if output == OutputFormat::Table {
                 let detail: VersionDetailResponse = parse_response(&data)?;
                 print_table(vec![VersionRow::from(&detail.version)]);

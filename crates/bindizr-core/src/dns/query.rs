@@ -28,7 +28,6 @@ pub fn build_question(
     header.set_rd(rd);
 
     let mut question = builder.question();
-    // Composing one question into a Vec cannot fail.
     question
         .push((qname, rtype))
         .expect("composing into a Vec cannot run out of space");

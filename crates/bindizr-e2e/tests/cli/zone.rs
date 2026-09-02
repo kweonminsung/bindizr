@@ -54,7 +54,6 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     assert_eq!(updated["refresh"], 300);
     assert_eq!(updated["retry"], 60);
-    // Omitted fields keep their current values.
     assert_eq!(updated["default_ttl"], 3600);
     assert_eq!(updated["mname"], format!("ns1.{zone_name}"));
 }
@@ -329,7 +328,7 @@ async fn zone_import_preview_via_cli() {
         .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    // Only the apex NS seeded at creation exists; the preview applied nothing.
+    // Only the apex NS seeded at creation exists.
     let names: Vec<&str> = records["items"]
         .as_array()
         .unwrap()

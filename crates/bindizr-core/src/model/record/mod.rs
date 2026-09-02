@@ -22,8 +22,8 @@ pub struct Record {
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
     pub value: String,
-    pub ttl: i32,              // TTL in seconds
-    pub priority: Option<i32>, // Priority (MX and SRV records)
+    pub ttl: i32,
+    pub priority: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub zone_id: i32,
 }

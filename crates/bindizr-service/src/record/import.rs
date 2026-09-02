@@ -280,7 +280,6 @@ impl RecordService {
                 })
             };
 
-            // Deletions implied by the mode.
             let dels: Vec<Record> = match mode {
                 ImportMode::Append => Vec::new(),
                 ImportMode::Replace => existing_records
@@ -299,7 +298,6 @@ impl RecordService {
                     .collect(),
             };
 
-            // Reconcile TTL only for upsert/replace.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
             let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.default_ttl);
 

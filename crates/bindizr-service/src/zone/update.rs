@@ -130,11 +130,9 @@ impl ZoneService {
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             let zone_id = existing_zone.id;
 
-            // Merge against the locked row, then validate.
             let request = build(&existing_zone);
             let validated = validate_create_zone_request(&request)?;
 
-            // Preserve the zone's current SOA timers when the request omits them.
             let timers = resolve_soa_timers(
                 &request,
                 ResolvedSoaTimers {

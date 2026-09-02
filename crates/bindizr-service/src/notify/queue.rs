@@ -25,7 +25,7 @@ static APPLY_QUEUE: OnceLock<UnboundedSender<ApplyJob>> = OnceLock::new();
 pub fn init_notify_worker() {
     let (tx, mut rx) = unbounded_channel::<ApplyJob>();
     if APPLY_QUEUE.set(tx).is_err() {
-        return; // already initialized
+        return;
     }
 
     tokio::spawn(async move {

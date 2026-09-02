@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::wire::{BindizrChanges, BindizrRecordItem, BindizrRrset};
 
-/// A bindizr API failure, split for the webhook error mapping in `server.rs`.
+/// A bindizr API failure, split for the webhook error mapping in `server`.
 #[derive(Debug)]
 pub(crate) enum UpstreamError {
     Status {

@@ -664,7 +664,6 @@ pub trait CatalogZoneStateRepository: Send + Sync {
 pub(crate) struct RepositoryFactory;
 
 impl RepositoryFactory {
-    /// Create a zone repository for the given pool's backend.
     pub(crate) fn create_zone_repository(pool: &DatabasePool) -> Box<dyn ZoneRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -679,7 +678,6 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create a record repository for the given pool's backend.
     pub(crate) fn create_record_repository(pool: &DatabasePool) -> Box<dyn RecordRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -694,7 +692,6 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create a TSIG key repository for the given pool's backend.
     pub(crate) fn create_tsig_key_repository(pool: &DatabasePool) -> Box<dyn TsigKeyRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -709,7 +706,6 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create a zone TSIG policy repository for the given pool's backend.
     pub(crate) fn create_zone_tsig_policy_repository(
         pool: &DatabasePool,
     ) -> Box<dyn ZoneTsigPolicyRepository> {
@@ -742,7 +738,6 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create an API token repository for the given pool's backend.
     pub(crate) fn create_api_token_repository(pool: &DatabasePool) -> Box<dyn ApiTokenRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -757,7 +752,6 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create a zone change repository for the given pool's backend.
     pub(crate) fn create_zone_change_repository(
         pool: &DatabasePool,
     ) -> Box<dyn ZoneChangeRepository> {
@@ -774,7 +768,6 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create a zone version repository for the given pool's backend.
     pub(crate) fn create_zone_version_repository(
         pool: &DatabasePool,
     ) -> Box<dyn ZoneVersionRepository> {
@@ -791,7 +784,6 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create a catalog zone state repository for the given pool's backend.
     pub(crate) fn create_catalog_zone_state_repository(
         pool: &DatabasePool,
     ) -> Box<dyn CatalogZoneStateRepository> {
@@ -812,7 +804,6 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create a DNSSEC key repository for the given pool's backend.
     pub(crate) fn create_dnssec_key_repository(
         pool: &DatabasePool,
     ) -> Box<dyn DnssecKeyRepository> {
@@ -829,7 +820,6 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create a DNSSEC record repository for the given pool's backend.
     pub(crate) fn create_dnssec_record_repository(
         pool: &DatabasePool,
     ) -> Box<dyn DnssecRecordRepository> {

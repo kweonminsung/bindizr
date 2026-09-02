@@ -249,25 +249,21 @@ impl DatabasePool {
     }
 }
 
-/// Return a zone repository backed by the global pool.
 pub fn get_zone_repository() -> Box<dyn repository::ZoneRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_repository(pool)
 }
 
-/// Return a record repository backed by the global pool.
 pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_record_repository(pool)
 }
 
-/// Return a TSIG key repository backed by the global pool.
 pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_tsig_key_repository(pool)
 }
 
-/// Return a zone TSIG policy repository backed by the global pool.
 pub fn get_zone_tsig_policy_repository() -> Box<dyn repository::ZoneTsigPolicyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_tsig_policy_repository(pool)
@@ -278,25 +274,21 @@ pub fn get_zone_token_policy_repository() -> Box<dyn repository::ZoneTokenPolicy
     repository::RepositoryFactory::create_zone_token_policy_repository(pool)
 }
 
-/// Return an API token repository backed by the global pool.
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_api_token_repository(pool)
 }
 
-/// Return a zone change repository backed by the global pool.
 pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_change_repository(pool)
 }
 
-/// Return a zone version repository backed by the global pool.
 pub fn get_zone_version_repository() -> Box<dyn repository::ZoneVersionRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_version_repository(pool)
 }
 
-/// Return a catalog zone state repository backed by the global pool.
 pub fn get_catalog_zone_state_repository() -> Box<dyn repository::CatalogZoneStateRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_catalog_zone_state_repository(pool)
@@ -307,13 +299,11 @@ pub fn get_dnssec_withdrawal_repository() -> Box<dyn repository::DnssecWithdrawa
     repository::RepositoryFactory::create_dnssec_withdrawal_repository(pool)
 }
 
-/// Return a DNSSEC key repository backed by the global pool.
 pub fn get_dnssec_key_repository() -> Box<dyn repository::DnssecKeyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_key_repository(pool)
 }
 
-/// Return a DNSSEC record repository backed by the global pool.
 pub fn get_dnssec_record_repository() -> Box<dyn repository::DnssecRecordRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_record_repository(pool)

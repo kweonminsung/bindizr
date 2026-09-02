@@ -9,7 +9,6 @@ use bindizr_service::types::{
 };
 use tabled::Tabled;
 
-// Display Option<i32> in tables, using "-" for None.
 fn display_option_i32(opt: &Option<i32>) -> String {
     match opt {
         Some(val) => val.to_string(),
