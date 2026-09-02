@@ -11,7 +11,6 @@ use crate::{
     error::ServiceError,
     model::dnssec_key::DnssecKeyRole,
     repository::RepositoryService,
-    serial::generate_serial,
     types::{
         DnssecKeyMaterial, ExportDnssecKeysResponse, GetDnssecStatusResponse,
         ImportDnssecKeyRequest,
@@ -109,10 +108,9 @@ impl DnssecService {
             let signable = keys.iter().any(|key| key.signs_key_rrsets())
                 && keys.iter().any(|key| key.signs_zone_data(&keys));
             let serial = if signable {
-                let new_serial = generate_serial(Some(zone.serial))?;
-                Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
-                new_serial
+                Self::resign_zone_tx(&mut tx, &zone, &keys, false)
+                    .await?
+                    .unwrap_or(zone.serial)
             } else {
                 zone.serial
             };

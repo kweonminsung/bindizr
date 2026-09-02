@@ -60,6 +60,23 @@ impl DnssecService {
         Ok(())
     }
 
+    /// Re-sign the locked zone under a freshly advanced serial, riding the
+    /// same serial/IXFR mechanics as any record change; `None` (serial kept)
+    /// when nothing needed replacing.
+    async fn resign_zone_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        keys: &[DnssecKey],
+        force: bool,
+    ) -> Result<Option<i32>, ServiceError> {
+        let new_serial = crate::serial::generate_serial(Some(zone.serial))?;
+        if !Self::sign_zone_locked(tx, zone, new_serial, keys, force).await? {
+            return Ok(None);
+        }
+        ZoneService::advance_serial_tx(tx, zone, new_serial).await?;
+        Ok(Some(new_serial))
+    }
+
     /// Load the zone (locked at `lock_level`) together with its signing keys;
     /// a zone with no keys reads as not DNSSEC-enabled.
     pub(crate) async fn get_signed_zone_tx(

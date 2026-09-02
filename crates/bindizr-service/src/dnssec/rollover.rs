@@ -22,9 +22,7 @@ use crate::{
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    serial::generate_serial,
     types::GetDnssecStatusResponse,
-    zone::ZoneService,
 };
 
 /// Floor on the post-sighting wait: a recursive resolver's answer may carry
@@ -113,9 +111,9 @@ impl DnssecService {
                         .await?;
                 keys.push(new_key);
             }
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
@@ -182,9 +180,9 @@ impl DnssecService {
             }
             let keys = Self::promote_published_keys_tx(&mut tx, &zone, keys, &ds_published).await?;
 
-            let new_serial = generate_serial(Some(zone.serial))?;
-            DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            let new_serial = DnssecService::resign_zone_tx(&mut tx, &zone, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
@@ -334,9 +332,9 @@ impl DnssecService {
 
             let keys = Self::promote_published_keys_tx(&mut tx, &zone, keys, &ds_published).await?;
 
-            let new_serial = generate_serial(Some(zone.serial))?;
-            DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            let new_serial = DnssecService::resign_zone_tx(&mut tx, &zone, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, &keys, new_serial)
                 .await

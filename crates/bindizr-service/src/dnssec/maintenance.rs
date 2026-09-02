@@ -13,8 +13,6 @@ use crate::{
     log_error, log_info,
     model::dnssec_key::{DnssecKeyRole, DnssecKeyState},
     repository::RepositoryService,
-    serial::generate_serial,
-    zone::ZoneService,
 };
 
 /// Scheduler tick; plenty next to the day-scale windows it enforces.
@@ -230,11 +228,12 @@ async fn sign_zone_by_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
             return Ok(None);
         }
 
-        let new_serial = generate_serial(Some(zone.serial))?;
-        if !DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await? {
+        if DnssecService::resign_zone_tx(&mut tx, &zone, &keys, false)
+            .await?
+            .is_none()
+        {
             return Ok(None);
         }
-        ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;
@@ -274,9 +273,7 @@ async fn start_zsk_rollover_by_zone_id(zone_id: i32) -> Result<Option<String>, S
                 .await?;
         let mut keys = keys;
         keys.push(new_key);
-        let new_serial = generate_serial(Some(zone.serial))?;
-        DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-        ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+        DnssecService::resign_zone_tx(&mut tx, &zone, &keys, false).await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;
@@ -312,9 +309,7 @@ async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<String>, Service
 
         let keys = DnssecService::promote_published_keys_tx(&mut tx, &zone, keys, &due).await?;
 
-        let new_serial = generate_serial(Some(zone.serial))?;
-        DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-        ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+        DnssecService::resign_zone_tx(&mut tx, &zone, &keys, false).await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;
@@ -372,9 +367,7 @@ async fn remove_retired_keys_by_zone_id(zone_id: i32) -> Result<Option<String>, 
             return Ok(None);
         }
 
-        let new_serial = generate_serial(Some(zone.serial))?;
-        DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &remaining, false).await?;
-        ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+        DnssecService::resign_zone_tx(&mut tx, &zone, &remaining, false).await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;

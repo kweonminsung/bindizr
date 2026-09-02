@@ -71,11 +71,9 @@ impl DnssecService {
                 keys.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
 
-            // Signing changes the zone content secondaries hold, so it rides the
-            // same serial/IXFR mechanics as any record change.
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
@@ -159,9 +157,9 @@ impl DnssecService {
             }
             RepositoryService::create_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
 
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
@@ -193,9 +191,9 @@ impl DnssecService {
             }
             RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
 
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
@@ -216,9 +214,7 @@ impl DnssecService {
         let result = async {
             let (zone, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, true).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            Self::resign_zone_tx(&mut tx, &zone, &keys, true).await?;
             Ok(zone.name.as_str().to_string())
         }
         .await;
