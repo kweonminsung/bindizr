@@ -41,6 +41,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     bindizr_core::metrics::metrics();
 
     service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
+    service::transfer::set_zone_transfer_client(Arc::new(dns::client::axfr::AxfrTransferClient))
+        .map_err(String::from)?;
     service::notify::init_notify_worker();
 
     database::initialize().await.map_err(|e| e.to_string())?;

@@ -14,6 +14,7 @@ mod repository;
 pub(crate) mod serial;
 pub(crate) mod timing;
 pub mod token;
+pub mod transfer;
 pub mod tsig_key;
 pub mod types;
 pub mod zone;

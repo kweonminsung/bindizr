@@ -3,11 +3,27 @@
 
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use bindizr_core::dns::{
-    message::{Name, Opcode, Rtype},
-    query::{TransferRecord, build_question, extract_transfer_records},
+use async_trait::async_trait;
+use bindizr_core::{
+    dns::{
+        message::{Name, Opcode, Rtype},
+        query::{TransferRecord, build_question, extract_transfer_records},
+    },
+    model::record::RecordType,
 };
+use bindizr_service::transfer::ZoneTransferClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+/// The service's transfer seam, backed by this module's AXFR client.
+pub(crate) struct AxfrTransferClient;
+
+#[async_trait]
+impl ZoneTransferClient for AxfrTransferClient {
+    async fn fetch_zone_file(&self, server: &str, zone_name: &str) -> Result<String, String> {
+        let records = transfer_zone(server, zone_name).await?;
+        render_zone_file(&records)
+    }
+}
 
 /// Bounds on one inbound transfer, guarding against a runaway server.
 const MAX_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
@@ -108,4 +124,38 @@ async fn transfer_from(
             }
         }
     }
+}
+
+/// Render transferred records as zone-file lines. SOA and DNSSEC-derived
+/// rows are dropped (the zone keeps its own SOA fields and signs itself);
+/// any other unsupported type fails the import rather than thinning the
+/// zone silently.
+fn render_zone_file(records: &[TransferRecord]) -> Result<String, String> {
+    let mut lines = String::new();
+    for record in records {
+        if matches!(
+            record.rtype,
+            Rtype::SOA
+                | Rtype::RRSIG
+                | Rtype::NSEC
+                | Rtype::NSEC3
+                | Rtype::NSEC3PARAM
+                | Rtype::DNSKEY
+                | Rtype::CDS
+                | Rtype::CDNSKEY
+        ) {
+            continue;
+        }
+        RecordType::from_rtype(record.rtype).map_err(|_| {
+            format!(
+                "the source zone carries a record type bindizr does not store: {} {}",
+                record.name, record.rtype
+            )
+        })?;
+        lines.push_str(&format!(
+            "{} {} IN {} {}\n",
+            record.name, record.ttl, record.rtype, record.rdata
+        ));
+    }
+    Ok(lines)
 }

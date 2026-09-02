@@ -444,7 +444,7 @@ pub(crate) async fn import_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<ImportZoneFileRequest>,
 ) -> Result<Response, ApiError> {
-    let response = dns::transfer::import_zone(&caller, &params.name, body).await?;
+    let response = RecordService::import_zone_file(&caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

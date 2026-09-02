@@ -30,7 +30,10 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     timing::elapsed_ms,
-    types::{ImportMode, ImportSummary, ImportZoneFileResponse, RecordDiff, RecordValueRequest},
+    types::{
+        ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff,
+        RecordValueRequest,
+    },
     zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
 
@@ -82,25 +85,49 @@ struct ImportTimings {
 }
 
 impl RecordService {
-    /// Gate an import before its inputs are fetched: the authorization
-    /// [`Self::import_zone_file`] enforces, plus the zone's existence.
-    pub async fn authorize_import(caller: &Caller, zone_name: &str) -> Result<(), ServiceError> {
-        caller.require_global("import zone files")?;
-        ZoneService::lookup_by_name(zone_name).await?;
-        Ok(())
-    }
-
-    /// Import a BIND zone file into an existing zone, reconciling it by mode. On
-    /// apply the zone serial is incremented once and a single NOTIFY is sent. If
-    /// any record fails validation nothing is applied and the errors are returned.
+    /// Import a BIND zone file into an existing zone, reconciling it by mode —
+    /// the text carried by the request, or the zone fetched over AXFR from its
+    /// `from_server`. On apply the zone serial is incremented once and a single
+    /// NOTIFY is sent. If any record fails validation nothing is applied and
+    /// the errors are returned.
     pub async fn import_zone_file(
         caller: &Caller,
         zone_name: &str,
-        content: &str,
-        mode: ImportMode,
-        dry_run: bool,
+        request: &ImportZoneFileRequest,
     ) -> Result<ImportZoneFileResponse, ServiceError> {
         caller.require_global("import zone files")?;
+
+        let server = request
+            .from_server
+            .as_deref()
+            .map(str::trim)
+            .filter(|server| !server.is_empty());
+        let content = match (request.content.as_deref(), server) {
+            (Some(_), Some(_)) => {
+                return Err(ServiceError::invalid_input(
+                    "pass either content or from_server, not both",
+                ));
+            }
+            (None, None) => {
+                return Err(ServiceError::invalid_input(
+                    "either content or from_server is required",
+                ));
+            }
+            (Some(content), None) => content.to_string(),
+            (None, Some(server)) => {
+                // The zone's existence precedes the outbound fetch, so a
+                // mistyped name cannot start a transfer.
+                ZoneService::lookup_by_name(zone_name).await?;
+                crate::transfer::fetch_zone_file(server, zone_name)
+                    .await
+                    .map_err(|e| {
+                        ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))
+                    })?
+            }
+        };
+        let content = content.as_str();
+        let mode = request.mode;
+        let dry_run = request.dry_run;
 
         let t_total = Instant::now();
 
