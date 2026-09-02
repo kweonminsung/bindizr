@@ -98,20 +98,20 @@ impl Zone {
     /// Effective signature validity window: the zone override or `default`.
     pub fn signature_validity_days(&self, default: u32) -> u32 {
         self.dnssec_signature_validity_days
-            .map_or(default, |days| days as u32)
+            .map_or(default, |days| days.max(0) as u32)
     }
 
     /// Effective re-sign threshold: the zone override or `default`.
     pub fn signature_refresh_days(&self, default: u32) -> u32 {
         self.dnssec_signature_refresh_days
-            .map_or(default, |days| days as u32)
+            .map_or(default, |days| days.max(0) as u32)
     }
 
     /// Effective ZSK lifetime (0 disables auto-roll): the zone override or
     /// `default`.
     pub fn zsk_lifetime_days(&self, default: u32) -> u32 {
         self.dnssec_zsk_lifetime_days
-            .map_or(default, |days| days as u32)
+            .map_or(default, |days| days.max(0) as u32)
     }
 
     /// Whether the record is the apex NS this zone's `mname` names. One

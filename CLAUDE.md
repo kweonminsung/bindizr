@@ -17,8 +17,9 @@ cargo clippy --workspace                                  # lint
 cargo +nightly fmt                                         # format (needs nightly)
 ```
 
-- Tests **must** run single-threaded (`--test-threads=1`); they share process
-  state and will race otherwise.
+- Tests run single-threaded: `.cargo/config.toml` sets `RUST_TEST_THREADS=1`,
+  so plain `cargo test` complies; the explicit `--test-threads=1` in the CI
+  command is the same guarantee spelled out.
 - `rustfmt.toml` enables unstable features (`imports_granularity`,
   `group_imports`), so formatting requires the **nightly** toolchain. On stable
   `cargo fmt` runs but silently ignores those options.

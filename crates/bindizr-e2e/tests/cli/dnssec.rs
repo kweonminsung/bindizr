@@ -138,23 +138,37 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
         .expect("status lists the signing key")
         .to_string();
 
-    let dir = std::env::temp_dir().join(format!("bindizr-e2e-keys-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("create export dir");
-    let dir_arg = dir.to_str().expect("utf-8 temp dir");
     let exported = app
-        .run_cli_success(&[
-            "zone", "dnssec", "keys", "export", &zone_name, "--dir", dir_arg,
-        ])
+        .run_cli_success(&["zone", "dnssec", "keys", "export", &zone_name])
         .await;
-    assert!(exported.contains(".private"), "{exported}");
+    let base = format!("K{zone_name}.+013+{:05}", key_tag.parse::<u32>().unwrap());
+    assert!(
+        exported.contains(&format!("; {base}.private")),
+        "{exported}"
+    );
+    let dnskey_line = exported
+        .lines()
+        .find(|line| line.contains(" IN DNSKEY "))
+        .expect("export prints the DNSKEY record");
+    let private_block: String = exported
+        .lines()
+        .skip_while(|line| *line != format!("; {base}.private"))
+        .skip(1)
+        .take_while(|line| !line.starts_with("; "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        private_block.starts_with("Private-key-format:"),
+        "{exported}"
+    );
 
-    let base = dir.join(format!(
-        "K{zone_name}.+013+{:05}",
-        key_tag.parse::<u32>().unwrap()
-    ));
-    let key_file = format!("{}.key", base.display());
-    let private_file = format!("{}.private", base.display());
-    assert!(std::path::Path::new(&key_file).exists(), "{key_file}");
+    let dir = tempfile::tempdir().expect("create key dir");
+    let key_file = dir.path().join(format!("{base}.key"));
+    let private_file = dir.path().join(format!("{base}.private"));
+    std::fs::write(&key_file, format!("{dnskey_line}\n")).expect("write .key");
+    std::fs::write(&private_file, private_block).expect("write .private");
+    let key_file = key_file.to_str().expect("utf-8 temp dir").to_string();
+    let private_file = private_file.to_str().expect("utf-8 temp dir").to_string();
 
     // Disable drops the keys; the import must restore the same key.
     app.run_cli_success(&["zone", "dnssec", "disable", &zone_name])
@@ -177,6 +191,4 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
         "{imported}"
     );
     assert!(imported.contains(&key_tag), "{imported}");
-
-    std::fs::remove_dir_all(&dir).ok();
 }

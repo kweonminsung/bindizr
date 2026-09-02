@@ -59,6 +59,7 @@ async fn transfer_from(
         .await
         .map_err(|e| format!("send failed: {}", e))?;
 
+    let expected_owner = format!("{}.", qname);
     let mut records: Vec<TransferRecord> = Vec::new();
     let mut total_bytes = 0usize;
     loop {
@@ -81,16 +82,29 @@ async fn transfer_from(
 
         let batch = extract_transfer_records(query_id, &response)?;
         for record in batch {
-            if records.is_empty() && record.rtype != Rtype::SOA {
-                return Err("transfer does not start with the zone's SOA".to_string());
+            if records.is_empty() {
+                if record.rtype != Rtype::SOA {
+                    return Err("transfer does not start with the zone's SOA".to_string());
+                }
+                if !record.name.eq_ignore_ascii_case(&expected_owner) {
+                    return Err(format!(
+                        "transfer opens with the SOA of {}, not {}",
+                        record.name, expected_owner
+                    ));
+                }
+            } else if record.rtype == Rtype::SOA {
+                // The stream ends by repeating the opening SOA (RFC 5936, Section 2.2).
+                let opening = &records[0];
+                if !record.name.eq_ignore_ascii_case(&opening.name) || record.rdata != opening.rdata
+                {
+                    return Err("transfer carries a SOA that is not the opening one".to_string());
+                }
+                records.push(record);
+                return Ok(records);
             }
-            let closes = record.rtype == Rtype::SOA && !records.is_empty();
             records.push(record);
             if records.len() > MAX_TRANSFER_RECORDS {
                 return Err(format!("transfer exceeds {} records", MAX_TRANSFER_RECORDS));
-            }
-            if closes {
-                return Ok(records);
             }
         }
     }
