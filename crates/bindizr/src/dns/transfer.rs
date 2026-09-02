@@ -10,7 +10,6 @@ use bindizr_service::{
     error::ServiceError,
     record::RecordService,
     types::{ImportZoneFileRequest, ImportZoneFileResponse},
-    zone::ZoneService,
 };
 
 use crate::dns::client::axfr;
@@ -40,8 +39,9 @@ pub(crate) async fn import_zone(
         }
         (Some(content), None) => content,
         (None, Some(server)) => {
-            // Authorize and resolve the zone before any outbound connection.
-            ZoneService::get_by_name(caller, zone_name).await?;
+            // The import's own gate (not mere zone visibility) runs
+            // before any outbound connection.
+            RecordService::authorize_import(caller, zone_name).await?;
             let records = axfr::transfer_zone(server, zone_name).await.map_err(|e| {
                 ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))
             })?;

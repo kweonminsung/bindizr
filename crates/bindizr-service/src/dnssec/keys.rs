@@ -88,12 +88,14 @@ impl DnssecService {
                 Utc::now(),
             )
             .map_err(ServiceError::invalid_input)?;
+            // Distinct keys may share a tag (RFC 4034, Appendix B); only a
+            // byte-identical public key is a duplicate.
             if keys
                 .iter()
-                .any(|other| other.key_tag == key.key_tag && other.algorithm == key.algorithm)
+                .any(|other| other.algorithm == key.algorithm && other.public_key == key.public_key)
             {
                 return Err(ServiceError::invalid_input(format!(
-                    "key tag {} ({}) is already present in zone {}",
+                    "this key (tag {}, {}) is already present in zone {}",
                     key.key_tag,
                     key.algorithm,
                     zone.name.as_str()

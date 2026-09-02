@@ -82,6 +82,14 @@ struct ImportTimings {
 }
 
 impl RecordService {
+    /// Gate an import before its inputs are fetched: the authorization
+    /// [`Self::import_zone_file`] enforces, plus the zone's existence.
+    pub async fn authorize_import(caller: &Caller, zone_name: &str) -> Result<(), ServiceError> {
+        caller.require_global("import zone files")?;
+        ZoneService::lookup_by_name(zone_name).await?;
+        Ok(())
+    }
+
     /// Import a BIND zone file into an existing zone, reconciling it by mode. On
     /// apply the zone serial is incremented once and a single NOTIFY is sent. If
     /// any record fails validation nothing is applied and the errors are returned.
