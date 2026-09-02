@@ -635,14 +635,16 @@ impl RepositoryService {
 
     /// Replace the zone's three DNSSEC timing overrides; `None` reverts a
     /// knob to the global config.
-    pub(crate) async fn update_zone_dnssec_timing(
+    pub(crate) async fn update_zone_dnssec_timing_tx(
+        tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         signature_validity_days: Option<i32>,
         signature_refresh_days: Option<i32>,
         zsk_lifetime_days: Option<i32>,
     ) -> Result<(), ServiceError> {
         get_zone_repository()
-            .update_dnssec_timing(
+            .update_dnssec_timing_tx(
+                tx,
                 zone_id,
                 signature_validity_days,
                 signature_refresh_days,

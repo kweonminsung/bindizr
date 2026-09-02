@@ -285,16 +285,47 @@ impl DnssecService {
             )));
         }
 
-        // Non-locking pre-read only to learn the update target.
-        let zone = ZoneService::get_by_name(caller, zone_name).await?;
-        RepositoryService::update_zone_dnssec_timing(
-            zone.id,
-            request.signature_validity_days.map(|days| days as i32),
-            request.signature_refresh_days.map(|days| days as i32),
-            request.zsk_lifetime_days.map(|days| days as i32),
-        )
-        .await?;
+        // Lookup and update share the zone lock so a concurrent rename or
+        // delete/recreate cannot slip between them.
+        let mut tx = RepositoryService::begin_tx("failed to update DNSSEC timing").await?;
+        let result = async {
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            RepositoryService::update_zone_dnssec_timing_tx(
+                &mut tx,
+                zone.id,
+                request.signature_validity_days.map(|days| days as i32),
+                request.signature_refresh_days.map(|days| days as i32),
+                request.zsk_lifetime_days.map(|days| days as i32),
+            )
+            .await?;
+            let zone = Zone {
+                dnssec_signature_validity_days: request
+                    .signature_validity_days
+                    .map(|days| days as i32),
+                dnssec_signature_refresh_days: request
+                    .signature_refresh_days
+                    .map(|days| days as i32),
+                dnssec_zsk_lifetime_days: request.zsk_lifetime_days.map(|days| days as i32),
+                ..zone
+            };
 
-        Self::get_status(caller, zone_name).await
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
+            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
+            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+                .await?
+                .is_some();
+            build_status(
+                &zone,
+                zone.dnssec_denial,
+                &keys,
+                earliest,
+                zone.serial,
+                withdrawing,
+            )
+        }
+        .await;
+        RepositoryService::finish_tx(tx, result, "failed to update DNSSEC timing").await
     }
 }

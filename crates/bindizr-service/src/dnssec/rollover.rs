@@ -244,8 +244,6 @@ impl DnssecService {
         RepositoryService::create_dnssec_key_tx(tx, new_key).await
     }
 
-    /// Promote the published keys named by `promoted` — drawn from this
-    /// transaction's key list — and retire the active keys of the same roles.
     /// Zone names holding a pre-published SEP key: the DS poll's work list.
     pub async fn list_zone_names_with_pending_parent_ds(
         caller: &Caller,
@@ -386,6 +384,8 @@ impl DnssecService {
         Ok(response)
     }
 
+    /// Promote the published keys named by `promoted` — drawn from this
+    /// transaction's key list — and retire the active keys of the same roles.
     pub(crate) async fn promote_published_keys_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,

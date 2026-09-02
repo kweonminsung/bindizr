@@ -266,8 +266,9 @@ pub trait ZoneRepository: Send + Sync {
     ) -> Result<(), DatabaseError>;
     /// Replace all three per-zone DNSSEC timing overrides, leaving the zone's
     /// other columns untouched; `None` reverts a knob to the global config.
-    async fn update_dnssec_timing(
+    async fn update_dnssec_timing_tx(
         &self,
+        tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         signature_validity_days: Option<i32>,
         signature_refresh_days: Option<i32>,

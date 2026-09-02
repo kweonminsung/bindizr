@@ -295,14 +295,15 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(())
     }
 
-    async fn update_dnssec_timing(
+    async fn update_dnssec_timing_tx(
         &self,
+        tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         signature_validity_days: Option<i32>,
         signature_refresh_days: Option<i32>,
         zsk_lifetime_days: Option<i32>,
     ) -> Result<(), DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query(
             "UPDATE zones SET dnssec_signature_validity_days = ?, dnssec_signature_refresh_days = ?, dnssec_zsk_lifetime_days = ? WHERE id = ?",
@@ -311,7 +312,7 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(signature_refresh_days)
         .bind(zsk_lifetime_days)
         .bind(zone_id)
-        .execute(&mut *conn)
+        .execute(&mut **sqlite_tx)
         .await?;
 
         Ok(())

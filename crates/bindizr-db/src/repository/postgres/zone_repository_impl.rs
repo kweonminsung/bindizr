@@ -300,14 +300,15 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(())
     }
 
-    async fn update_dnssec_timing(
+    async fn update_dnssec_timing_tx(
         &self,
+        tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         signature_validity_days: Option<i32>,
         signature_refresh_days: Option<i32>,
         zsk_lifetime_days: Option<i32>,
     ) -> Result<(), DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+        let postgres_tx = tx.as_postgres()?;
 
         sqlx::query(
             "UPDATE zones SET dnssec_signature_validity_days = $1, dnssec_signature_refresh_days = $2, dnssec_zsk_lifetime_days = $3 WHERE id = $4",
@@ -316,7 +317,7 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(signature_refresh_days)
         .bind(zsk_lifetime_days)
         .bind(zone_id)
-        .execute(&mut *conn)
+        .execute(&mut **postgres_tx)
         .await?;
 
         Ok(())
