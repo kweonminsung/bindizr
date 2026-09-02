@@ -160,13 +160,11 @@ pub(crate) enum ZoneDnssecRolloverCommand {
 /// Subcommands for moving raw key material in and out of bindizr.
 #[derive(Subcommand, Debug)]
 pub(crate) enum ZoneDnssecKeysCommand {
-    /// Write the zone's keys as BIND key files (the .private files are 0600)
+    /// Print the zone's keys in BIND key-file form, private halves
+    /// included — redirect somewhere with tight permissions
     Export {
         /// The name of the zone
         name: String,
-        /// Directory to write the K*.key/K*.private files into
-        #[arg(long, default_value = ".")]
-        dir: String,
     },
     /// Import a BIND key pair as an active key and re-sign the zone: the
     /// migration path for a zone already signed elsewhere
@@ -235,7 +233,7 @@ pub(crate) async fn handle_command(
             print_status(&response.data, output)?;
         }
         ZoneDnssecCommand::Keys { subcommand } => match subcommand {
-            ZoneDnssecKeysCommand::Export { name, dir } => {
+            ZoneDnssecKeysCommand::Export { name } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecKeysExport,
@@ -244,7 +242,7 @@ pub(crate) async fn handle_command(
                     .await?;
                 let exported: ExportDnssecKeysResponse =
                     parse_response(&response.data).map_err(CliError::from)?;
-                write_key_files(&exported, &dir).map_err(CliError::from)?;
+                print_key_material(&exported);
             }
             ZoneDnssecKeysCommand::Import {
                 name,
@@ -483,38 +481,17 @@ fn print_ds_records(data: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
-/// Write one `K<zone>.+AAA+TTTTT.key`/`.private` pair per key; the
-/// `.private` file is written 0600.
-fn write_key_files(exported: &ExportDnssecKeysResponse, dir: &str) -> Result<(), String> {
-    use std::io::Write;
-
+/// Print each key as its BIND file pair, headed by the file name BIND
+/// tooling expects, so the stream splits cleanly into `K*.key`/`K*.private`.
+fn print_key_material(exported: &ExportDnssecKeysResponse) {
     for key in &exported.keys {
         let base = format!(
             "K{}.+{:03}+{:05}",
             exported.zone_name, key.algorithm, key.key_tag
         );
-        let key_path = std::path::Path::new(dir).join(format!("{}.key", base));
-        let private_path = std::path::Path::new(dir).join(format!("{}.private", base));
-
-        std::fs::write(&key_path, format!("{}\n", key.dnskey_record))
-            .map_err(|e| format!("Failed to write '{}': {}", key_path.display(), e))?;
-
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true);
-        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-        let mut file = options
-            .open(&private_path)
-            .map_err(|e| format!("Failed to write '{}': {}", private_path.display(), e))?;
-        file.write_all(key.private_key.as_bytes())
-            .map_err(|e| format!("Failed to write '{}': {}", private_path.display(), e))?;
-
-        println!(
-            "{} ({} key, tag {})",
-            key_path.display(),
-            key.role,
-            key.key_tag
-        );
-        println!("{}", private_path.display());
+        println!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
+        println!("{}", key.dnskey_record);
+        println!("; {}.private", base);
+        println!("{}", key.private_key.trim_end());
     }
-    Ok(())
 }

@@ -141,13 +141,17 @@ Keys move in and out as BIND key files, so a zone signed by BIND (or any
 signer using that format) migrates without breaking its chain of trust:
 
 ```sh
-# Write K<zone>.+<alg>+<tag>.key/.private files (the .private files are 0600)
-bindizr zone dnssec keys export example.com --dir /etc/bindizr/keys
+# Print every key in BIND key-file form, split by `; K*.key` / `; K*.private`
+# headers naming the file each block belongs in
+bindizr zone dnssec keys export example.com
 
 # Bring an existing pair in as an active key and re-sign with it
 bindizr zone dnssec keys import example.com \
     --key Kexample.com.+013+12345.key --private Kexample.com.+013+12345.private
 ```
+
+The export stream contains the private keys — redirect it only somewhere
+with tight permissions.
 
 An imported key joins the signing set immediately; its role comes from the
 SEP flag (`--role` overrides, e.g. `ksk` for split-key zones). Both commands
