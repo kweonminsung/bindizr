@@ -32,3 +32,8 @@ hmac.workspace = true
 
 [lints]
 workspace = true
+
+# musl (the release targets) has no system OpenSSL for the `domain` openssl
+# backend; vendoring builds it from source for that target only.
+[target.'cfg(target_env = "musl")'.dependencies]
+openssl = { workspace = true, features = ["vendored"] }
