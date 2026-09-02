@@ -2,10 +2,7 @@
 //! promote it once the parent DS is confirmed. ZSK promotion, which needs no
 //! parent interaction, is the scheduler's.
 
-use bindizr_core::{
-    config::bindizr_config,
-    dns::{dnssec::generate_key, query::DsAnswer},
-};
+use bindizr_core::{config::bindizr_config, dns::dnssec::generate_key};
 use chrono::{Duration, Utc};
 
 use super::{
@@ -272,11 +269,8 @@ impl DnssecService {
     }
 
     /// Zone names holding a pre-published SEP key: the DS poll's work list.
-    pub async fn list_zone_names_with_pending_parent_ds(
-        caller: &Caller,
-    ) -> Result<Vec<String>, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
-
+    pub(crate) async fn list_zone_names_with_pending_parent_ds() -> Result<Vec<String>, ServiceError>
+    {
         let keys = RepositoryService::list_dnssec_keys_by_state(DnssecKeyState::Published).await?;
         let mut zone_ids: Vec<i32> = keys
             .iter()
@@ -305,15 +299,17 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to list rollover zones").await
     }
 
-    /// Stamp first parent-DS observations for the zone's pending SEP keys and
-    /// promote once every pending DS has been seen and every deadline has
-    /// passed. `Ok(None)` while the rollover is not ready.
-    pub async fn note_parent_ds_observed(
-        caller: &Caller,
+    /// Probe the resolver, stamp first observations for the zone's pending
+    /// SEP keys, and promote once every DS is seen with its deadline passed;
+    /// `Ok(None)` while the rollover is not ready.
+    pub(crate) async fn note_parent_ds_observed(
         zone_name: &str,
-        seen: &[DsAnswer],
     ) -> Result<Option<GetDnssecStatusResponse>, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        // The probe precedes the transaction so the zone lock never spans
+        // network I/O.
+        let seen = crate::probe::probe_parent_ds(zone_name)
+            .await
+            .map_err(|e| ServiceError::internal(format!("parent-DS probe failed: {}", e)))?;
 
         let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
         let result = async {

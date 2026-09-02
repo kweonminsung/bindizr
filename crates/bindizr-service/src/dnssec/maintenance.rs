@@ -125,6 +125,34 @@ async fn run_maintenance_pass() {
         }
     }
 
+    // CSK/KSK promotion waits on the parent DS; with the poll enabled the
+    // pass asks the resolver itself and promotes what is ready.
+    if config.dnssec.parent_ds_auto_promote {
+        match DnssecService::list_zone_names_with_pending_parent_ds().await {
+            Ok(zone_names) => {
+                for zone_name in zone_names {
+                    match DnssecService::note_parent_ds_observed(&zone_name).await {
+                        Ok(Some(_)) => {
+                            log_info!(
+                                "Promoted zone {} rollover after its parent DS was seen",
+                                zone_name
+                            )
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            failed = true;
+                            log_error!("Parent-DS poll for zone {} failed: {}", zone_name, e)
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                failed = true;
+                log_error!("Parent-DS poll scan failed: {}", e)
+            }
+        }
+    }
+
     // ZSK promotion needs no parent interaction, so it advances on its own
     // once the deadline stamped at publication has passed.
     match RepositoryService::list_dnssec_keys_by_state_eligible_before(
