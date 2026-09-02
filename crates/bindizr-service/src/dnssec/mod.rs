@@ -91,6 +91,14 @@ impl DnssecService {
             .is_some();
 
         let dnssec = &bindizr_config().dnssec;
+        let validity_days = zone.signature_validity_days(dnssec.default_signature_validity_days);
+        // A config change after an override was stored can leave the pair at
+        // refresh >= validity, which would re-sign on every maintenance pass;
+        // the refresh window yields.
+        let refresh_days = zone
+            .signature_refresh_days(dnssec.default_signature_refresh_days)
+            .min(validity_days.saturating_sub(1))
+            .max(1);
         let now = Utc::now();
         let diff = SignedViewParams {
             zone,
@@ -101,14 +109,9 @@ impl DnssecService {
             denial: zone.dnssec_denial,
             now,
             inception: now - Duration::seconds(SIGNATURE_INCEPTION_OFFSET_SECS),
-            expiration: now
-                + Duration::days(i64::from(
-                    zone.signature_validity_days(dnssec.default_signature_validity_days),
-                )),
+            expiration: now + Duration::days(i64::from(validity_days)),
             expiration_jitter_secs: MAX_EXPIRATION_JITTER_SECS as i64,
-            refresh_secs: i64::from(
-                zone.signature_refresh_days(dnssec.default_signature_refresh_days),
-            ) * 86_400,
+            refresh_secs: i64::from(refresh_days) * 86_400,
             force,
             withdraw_parent_ds,
         }
