@@ -2,27 +2,11 @@
 //! stop, and re-executing itself on restart. The CLI only decides when to
 //! start it.
 
-use std::sync::Arc;
-
-use async_trait::async_trait;
 use bindizr_core::{config, log_error, log_info, logger};
 use bindizr_db as database;
 use bindizr_service as service;
 
 use crate::{api, dns, socket};
-
-/// Binds the service layer's NOTIFY port to the DNS client, so the service can
-/// trigger propagation without depending on this crate's DNS front end.
-struct DnsNotifySender;
-
-#[async_trait]
-impl service::notify::NotifySender for DnsNotifySender {
-    async fn send_notify(&self, zone_name: Option<&str>) -> Result<(), String> {
-        dns::client::notify::send_notify(zone_name)
-            .await
-            .map_err(|e| e.to_string())
-    }
-}
 
 /// Re-exec path captured at startup: after a package upgrade /proc/self/exe
 /// reads as a "(deleted)" path, while this path points at the replacement.
@@ -40,11 +24,6 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     // Touch the metrics registry so bindizr_started_at_seconds reflects process start.
     bindizr_core::metrics::metrics();
 
-    service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
-    service::transfer::set_zone_transfer_client(Arc::new(dns::client::axfr::AxfrTransferClient))
-        .map_err(String::from)?;
-    service::probe::set_parent_ds_probe(Arc::new(dns::client::probe::ResolverParentDsProbe))
-        .map_err(String::from)?;
     service::notify::init_notify_worker();
 
     database::initialize().await.map_err(|e| e.to_string())?;
@@ -54,7 +33,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     dns::initialize().await;
 
     if config::bindizr_config().dns.notify_on_startup {
-        match dns::client::notify::send_notify(None).await {
+        match service::dns_client::notify::send_notify(None).await {
             Ok(()) => log_info!("Startup DNS NOTIFY completed."),
             Err(e) => log_error!("Startup DNS NOTIFY failed: {}", e),
         }

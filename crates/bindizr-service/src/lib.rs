@@ -2,6 +2,7 @@
 //! workflows built on the repository layer.
 
 pub mod authorization;
+pub mod dns_client;
 pub mod dnssec;
 pub mod dynamic_update;
 pub mod error;
@@ -9,13 +10,11 @@ pub mod external_dns;
 pub mod notify;
 mod pagination;
 pub(crate) mod policy_pattern;
-pub mod probe;
 pub mod record;
 mod repository;
 pub(crate) mod serial;
 pub(crate) mod timing;
 pub mod token;
-pub mod transfer;
 pub mod tsig_key;
 pub mod types;
 pub mod zone;

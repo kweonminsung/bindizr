@@ -230,7 +230,7 @@ async fn parent_ds_check(
     withdrawing: bool,
     zone_name: &str,
 ) -> (bool, String) {
-    match crate::probe::probe_parent_ds(zone_name).await {
+    match crate::dns_client::probe::probe_parent_ds(zone_name).await {
         Ok(seen) if withdrawing => (
             seen.is_empty(),
             if seen.is_empty() {

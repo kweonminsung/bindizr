@@ -201,7 +201,7 @@ pub(crate) async fn rollback_zone(
 pub(crate) async fn zone_status(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let response = crate::dns::status::zone_status(&Caller::Global, &params.name).await?;
+    let response = ZoneService::get_status(&Caller::Global, &params.name).await?;
 
     let in_sync = response
         .secondaries

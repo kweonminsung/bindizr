@@ -17,13 +17,10 @@ use bindizr_service::{
 };
 use serde::Deserialize;
 
-use crate::{
-    api::{
-        RequestCaller, ZoneNameParam,
-        error::ApiError,
-        middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
-    },
-    dns,
+use crate::api::{
+    RequestCaller, ZoneNameParam,
+    error::ApiError,
+    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
 
 /// Route group for zone endpoints.
@@ -78,7 +75,7 @@ pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    let status = dns::status::zone_status(&caller, &params.name).await?;
+    let status = ZoneService::get_status(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 

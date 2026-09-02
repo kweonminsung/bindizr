@@ -118,7 +118,7 @@ impl RecordService {
                 // The zone's existence precedes the outbound fetch, so a
                 // mistyped name cannot start a transfer.
                 ZoneService::lookup_by_name(zone_name).await?;
-                crate::transfer::fetch_zone_file(server, zone_name)
+                crate::dns_client::axfr::fetch_zone_file(server, zone_name)
                     .await
                     .map_err(|e| {
                         ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))

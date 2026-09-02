@@ -3,7 +3,6 @@
 
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use async_trait::async_trait;
 use bindizr_core::{
     dns::{
         message::{Name, Opcode, Rtype},
@@ -11,18 +10,13 @@ use bindizr_core::{
     },
     model::record::RecordType,
 };
-use bindizr_service::transfer::ZoneTransferClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// The service's transfer seam, backed by this module's AXFR client.
-pub(crate) struct AxfrTransferClient;
-
-#[async_trait]
-impl ZoneTransferClient for AxfrTransferClient {
-    async fn fetch_zone_file(&self, server: &str, zone_name: &str) -> Result<String, String> {
-        let records = transfer_zone(server, zone_name).await?;
-        render_zone_file(&records)
-    }
+/// Transfer the zone from `server` and render it as zone-file text ready
+/// for the import parser.
+pub(crate) async fn fetch_zone_file(server: &str, zone_name: &str) -> Result<String, String> {
+    let records = transfer_zone(server, zone_name).await?;
+    render_zone_file(&records)
 }
 
 /// Bounds on one inbound transfer, guarding against a runaway server.
@@ -33,10 +27,7 @@ const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Transfer the zone from `server` (`host[:port]`, port 53 default) and
 /// return its records, the delimiting SOAs included (RFC 5936, Section 2.2).
-pub(crate) async fn transfer_zone(
-    server: &str,
-    zone_name: &str,
-) -> Result<Vec<TransferRecord>, String> {
+async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferRecord>, String> {
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
 

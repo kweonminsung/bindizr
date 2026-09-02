@@ -1,20 +1,18 @@
-//! Outbound DNS client paths: NOTIFY fan-out and secondary SOA probing, plus
-//! the UDP exchange, message-build, and secondary-resolution helpers they
-//! share.
+//! Outbound DNS client paths — NOTIFY fan-out, SOA/DS probing, and inbound
+//! zone transfers — plus the UDP exchange and secondary-resolution helpers
+//! they share. The wire format itself stays in core.
 
 pub(crate) mod axfr;
-pub(crate) mod notify;
-pub(crate) mod probe;
+pub mod notify;
+pub mod probe;
 
 use std::{net::SocketAddr, time::Duration};
 
-use bindizr_core::log_error;
-use tokio::net::{UdpSocket, lookup_host};
-
-use crate::dns::{
-    address::{ParsedAddress, parse_address_target},
-    error::XfrError,
+use bindizr_core::{
+    dns::address::{ParsedAddress, parse_address_target},
+    log_error,
 };
+use tokio::net::{UdpSocket, lookup_host};
 
 /// Maximum size of a UDP DNS response we accept.
 const UDP_RESPONSE_BUF: usize = 512;
@@ -27,7 +25,7 @@ pub(crate) async fn udp_exchange(
     timeout: Duration,
     request: &[u8],
     what: &str,
-) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), XfrError> {
+) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), String> {
     let bind_addr = if server_addr.is_ipv4() {
         "0.0.0.0:0"
     } else {
@@ -36,33 +34,31 @@ pub(crate) async fn udp_exchange(
 
     let socket = UdpSocket::bind(bind_addr)
         .await
-        .map_err(XfrError::IoError)?;
+        .map_err(|e| e.to_string())?;
     socket
         .connect(server_addr)
         .await
-        .map_err(XfrError::IoError)?;
+        .map_err(|e| e.to_string())?;
 
     let sent = tokio::time::timeout(timeout, socket.send(request))
         .await
-        .map_err(|_| XfrError::ProtocolError(format!("{} send timeout", what)))?
-        .map_err(XfrError::IoError)?;
+        .map_err(|_| format!("{} send timeout", what))?
+        .map_err(|e| e.to_string())?;
     if sent != request.len() {
-        return Err(XfrError::ProtocolError(format!(
+        return Err(format!(
             "Incomplete {} send to {}: sent {} of {} bytes",
             what,
             server_addr,
             sent,
             request.len()
-        )));
+        ));
     }
 
     let mut response = [0u8; UDP_RESPONSE_BUF];
     let received = tokio::time::timeout(timeout, socket.recv(&mut response))
         .await
-        .map_err(|_| {
-            XfrError::ProtocolError(format!("{} response timeout from {}", what, server_addr))
-        })?
-        .map_err(XfrError::IoError)?;
+        .map_err(|_| format!("{} response timeout from {}", what, server_addr))?
+        .map_err(|e| e.to_string())?;
 
     Ok((received, response))
 }

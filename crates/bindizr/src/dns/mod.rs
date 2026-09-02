@@ -1,11 +1,8 @@
 //! DNS front end: the authoritative TCP/UDP server plus zone transfer
 //! (AXFR/IXFR), NOTIFY, SOA queries, RFC 2136 nsupdate, and secondary ACLs.
 
-pub(crate) mod address;
-pub(crate) mod client;
 pub(crate) mod error;
 pub(crate) mod server;
-pub(crate) mod status;
 pub(crate) mod wire;
 
 use std::{io::ErrorKind, net::SocketAddr, time::Duration};

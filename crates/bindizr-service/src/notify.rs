@@ -1,10 +1,5 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, OnceLock},
-    time::Duration,
-};
+use std::{collections::HashSet, sync::OnceLock, time::Duration};
 
-use async_trait::async_trait;
 use bindizr_core::config::{self, NotifyMode};
 use tokio::{
     sync::mpsc::{UnboundedSender, unbounded_channel},
@@ -13,26 +8,9 @@ use tokio::{
 
 use crate::log_warn;
 
-#[async_trait]
-pub trait NotifySender: Send + Sync {
-    async fn send_notify(&self, zone_name: Option<&str>) -> Result<(), String>;
-}
-
-static NOTIFY_SENDER: OnceLock<Arc<dyn NotifySender>> = OnceLock::new();
-
-/// Register the global NOTIFY sender; fails if one is already registered.
-pub fn set_notify_sender(sender: Arc<dyn NotifySender>) -> Result<(), &'static str> {
-    NOTIFY_SENDER
-        .set(sender)
-        .map_err(|_| "notify sender is already registered")
-}
-
-/// Send a DNS NOTIFY for `zone_name` (or all zones) via the registered sender.
+/// Send a DNS NOTIFY for `zone_name` (or all zones).
 pub(crate) async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
-    match NOTIFY_SENDER.get() {
-        Some(sender) => sender.send_notify(zone_name).await,
-        None => Err("notify sender is not registered".to_string()),
-    }
+    crate::dns_client::notify::send_notify(zone_name).await
 }
 
 // --- Async apply queue --------------------------------------------------------

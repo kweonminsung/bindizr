@@ -3,10 +3,12 @@
 
 use std::net::IpAddr;
 
-use bindizr_core::{config, log_warn};
+use bindizr_core::{
+    config,
+    dns::address::{ParsedAddress, parse_address_target},
+    log_warn,
+};
 use tokio::net::lookup_host;
-
-use crate::dns::address::{ParsedAddress, parse_address_target};
 
 #[derive(Clone)]
 pub(crate) struct SecondaryAcl {

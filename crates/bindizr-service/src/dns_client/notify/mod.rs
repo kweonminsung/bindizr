@@ -9,14 +9,13 @@ use bindizr_core::{
     log_error, log_info,
     metrics::metrics,
 };
-use bindizr_service::zone::ZoneService;
 
-use crate::dns::error::XfrError;
+use crate::zone::ZoneService;
 
 /// Sends DNS NOTIFY to all configured secondary servers; a `None` zone_name
 /// notifies all zones. Existence checks and forced bumps live in
 /// `ZoneService::notify_for`.
-pub(crate) async fn send_notify(zone_name: Option<&str>) -> Result<(), XfrError> {
+pub async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
     match zone_name {
         Some(name) => send_notify_for_zone(name).await,
         None => send_notify_for_all_zones().await,
@@ -24,10 +23,10 @@ pub(crate) async fn send_notify(zone_name: Option<&str>) -> Result<(), XfrError>
 }
 
 /// Sends DNS NOTIFY for every zone.
-async fn send_notify_for_all_zones() -> Result<(), XfrError> {
+async fn send_notify_for_all_zones() -> Result<(), String> {
     log_info!("Sending NOTIFY for all zones");
 
-    let zones = ZoneService::list().await?;
+    let zones = ZoneService::list().await.map_err(|e| e.to_string())?;
 
     if zones.is_empty() {
         log_info!("No zones found");
@@ -49,12 +48,12 @@ async fn send_notify_for_all_zones() -> Result<(), XfrError> {
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(XfrError::NotifyFailed(failures.join("; ")))
+        Err(format!("NOTIFY failed for {}", failures.join("; ")))
     }
 }
 
 /// Sends DNS NOTIFY to all configured secondary servers for one zone.
-async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
+async fn send_notify_for_zone(zone_name: &str) -> Result<(), String> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
 
     let reports = notify_secondaries(zone_name).await?;
@@ -77,16 +76,16 @@ async fn send_notify_for_zone(zone_name: &str) -> Result<(), XfrError> {
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(XfrError::NotifyFailed(format!(
-            "zone {} ({})",
+        Err(format!(
+            "NOTIFY failed for zone {} ({})",
             zone_name,
             failures.join("; ")
-        )))
+        ))
     }
 }
 
 /// One configured secondary's NOTIFY outcome.
-pub(crate) struct SecondaryNotify {
+pub struct NotifyReport {
     pub address: String,
     pub result: Result<(), String>,
 }
@@ -94,7 +93,7 @@ pub(crate) struct SecondaryNotify {
 /// Send NOTIFY for a zone to every resolved secondary address (the transfer
 /// ACL admits each one, so every replica must hear the change). An empty
 /// `secondary_addrs` yields an empty list.
-pub(crate) async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryNotify>, XfrError> {
+pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, String> {
     let dns_config = &config::bindizr_config().dns;
     let raw = dns_config.secondary_addrs.as_str();
     if raw.trim().is_empty() {
@@ -103,8 +102,8 @@ pub(crate) async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryN
     let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
     let retries = dns_config.notify_retries;
 
-    let qname = Name::<Vec<u8>>::from_str(zone_name)
-        .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
+    let qname =
+        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
 
     let mut reports = Vec::new();
     for (entry, result) in super::resolve_secondary_entries(raw, timeout).await {
@@ -117,7 +116,7 @@ pub(crate) async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryN
                     .notify_sent_total
                     .with_label_values(&["resolve_error"])
                     .inc();
-                reports.push(SecondaryNotify {
+                reports.push(NotifyReport {
                     address: entry,
                     result: Err(format!("failed to resolve: {}", e)),
                 });
@@ -138,10 +137,10 @@ pub(crate) async fn notify_secondaries(zone_name: &str) -> Result<Vec<SecondaryN
                         .notify_sent_total
                         .with_label_values(&["error"])
                         .inc();
-                    Err(e.to_string())
+                    Err(e)
                 }
             };
-            reports.push(SecondaryNotify {
+            reports.push(NotifyReport {
                 address: addr.to_string(),
                 result,
             });
@@ -157,7 +156,7 @@ async fn send_notify_to_server(
     server_addr: SocketAddr,
     timeout: Duration,
     retries: u32,
-) -> Result<(), XfrError> {
+) -> Result<(), String> {
     let attempts = retries.saturating_add(1);
     let mut last_error = None;
 
@@ -179,16 +178,14 @@ async fn send_notify_to_server(
         }
     }
 
-    Err(last_error.unwrap_or_else(|| {
-        XfrError::ProtocolError(format!("NOTIFY to {} was not attempted", server_addr))
-    }))
+    Err(last_error.unwrap_or_else(|| format!("NOTIFY to {} was not attempted", server_addr)))
 }
 
 async fn send_notify_to_server_once(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
-) -> Result<(), XfrError> {
+) -> Result<(), String> {
     let (query_id, notify_message) =
         bindizr_core::dns::query::build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA);
 

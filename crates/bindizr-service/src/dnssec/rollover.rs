@@ -248,7 +248,7 @@ impl DnssecService {
             return Ok(());
         }
 
-        let seen = crate::probe::probe_parent_ds(zone_name)
+        let seen = crate::dns_client::probe::probe_parent_ds(zone_name)
             .await
             .map_err(|e| {
                 ServiceError::invalid_input(format!(
@@ -307,7 +307,7 @@ impl DnssecService {
     ) -> Result<Option<GetDnssecStatusResponse>, ServiceError> {
         // The probe precedes the transaction so the zone lock never spans
         // network I/O.
-        let seen = crate::probe::probe_parent_ds(zone_name)
+        let seen = crate::dns_client::probe::probe_parent_ds(zone_name)
             .await
             .map_err(|e| ServiceError::internal(format!("parent-DS probe failed: {}", e)))?;
 

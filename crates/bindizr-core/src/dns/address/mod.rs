@@ -3,12 +3,12 @@
 
 use std::net::{IpAddr, SocketAddr};
 
-pub(crate) enum ParsedAddress {
+pub enum ParsedAddress {
     SocketAddr(SocketAddr),
     HostPort(String),
 }
 
-pub(crate) fn parse_address_target(value: &str, default_port: u16) -> ParsedAddress {
+pub fn parse_address_target(value: &str, default_port: u16) -> ParsedAddress {
     if let Ok(addr) = value.parse::<SocketAddr>() {
         return ParsedAddress::SocketAddr(addr);
     }
