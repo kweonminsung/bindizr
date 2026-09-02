@@ -4,7 +4,7 @@
 use bindizr_core::dns::dnssec::import_key;
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status};
+use super::{DnssecService, notify_zone, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -117,19 +117,9 @@ impl DnssecService {
                 zone.serial
             };
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_some();
-            build_status(
-                &zone,
-                zone.dnssec_denial,
-                &keys,
-                earliest,
-                serial,
-                withdrawing,
-            )
-            .map(|status| (status, signable))
+            build_status_tx(&mut tx, &zone, &keys, serial)
+                .await
+                .map(|status| (status, signable))
         }
         .await;
         let (response, signed) =

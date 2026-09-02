@@ -3,7 +3,7 @@
 use bindizr_core::{config::bindizr_config, dns::dnssec::generate_key};
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status};
+use super::{DnssecService, notify_zone, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -77,8 +77,7 @@ impl DnssecService {
             Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            build_status(&zone, denial, &keys, earliest, new_serial, false)
+            build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
         .await;
         let response = RepositoryService::finish_tx(tx, result, "failed to enable DNSSEC").await?;
@@ -164,8 +163,7 @@ impl DnssecService {
             Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            build_status(&zone, zone.dnssec_denial, &keys, earliest, new_serial, true)
+            build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
         .await;
         let response =
@@ -199,15 +197,7 @@ impl DnssecService {
             Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            build_status(
-                &zone,
-                zone.dnssec_denial,
-                &keys,
-                earliest,
-                new_serial,
-                false,
-            )
+            build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
         .await;
         let response =
@@ -312,18 +302,7 @@ impl DnssecService {
 
             let keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_some();
-            build_status(
-                &zone,
-                zone.dnssec_denial,
-                &keys,
-                earliest,
-                zone.serial,
-                withdrawing,
-            )
+            build_status_tx(&mut tx, &zone, &keys, zone.serial).await
         }
         .await;
         RepositoryService::finish_tx(tx, result, "failed to update DNSSEC timing").await

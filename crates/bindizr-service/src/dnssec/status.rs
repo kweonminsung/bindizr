@@ -34,19 +34,7 @@ impl DnssecService {
             let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
             let keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_some();
-
-            build_status(
-                &zone,
-                zone.dnssec_denial,
-                &keys,
-                earliest,
-                zone.serial,
-                withdrawing,
-            )
+            build_status_tx(&mut tx, &zone, &keys, zone.serial).await
         }
         .await;
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
@@ -113,7 +101,29 @@ impl DnssecService {
     }
 }
 
-pub(crate) fn build_status(
+/// Assemble the zone's status on the caller's transaction: the earliest
+/// signature expiry and any pending withdrawal join the rows already loaded.
+pub(crate) async fn build_status_tx(
+    tx: &mut RepositoryTx<'_>,
+    zone: &Zone,
+    keys: &[DnssecKey],
+    serial: i32,
+) -> Result<GetDnssecStatusResponse, ServiceError> {
+    let earliest = DnssecService::earliest_expiry_tx(tx, zone.id).await?;
+    let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(tx, zone.id)
+        .await?
+        .is_some();
+    build_status(
+        zone,
+        zone.dnssec_denial,
+        keys,
+        earliest,
+        serial,
+        withdrawing,
+    )
+}
+
+fn build_status(
     zone: &Zone,
     denial: DnssecDenial,
     keys: &[DnssecKey],

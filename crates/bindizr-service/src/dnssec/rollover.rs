@@ -10,7 +10,7 @@ use chrono::{Duration, Utc};
 
 use super::{
     DnssecService, notify_zone,
-    status::{build_status, ds_info},
+    status::{build_status_tx, ds_info},
 };
 use crate::{
     authorization::Caller,
@@ -117,18 +117,7 @@ impl DnssecService {
             Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_some();
-            build_status(
-                &zone,
-                zone.dnssec_denial,
-                &keys,
-                earliest,
-                new_serial,
-                withdrawing,
-            )
+            build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
         .await;
         let response =
@@ -197,18 +186,7 @@ impl DnssecService {
             DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_some();
-            build_status(
-                &zone,
-                zone.dnssec_denial,
-                &keys,
-                earliest,
-                new_serial,
-                withdrawing,
-            )
+            build_status_tx(&mut tx, &zone, &keys, new_serial).await
         }
         .await;
         let response =
@@ -360,19 +338,9 @@ impl DnssecService {
             DnssecService::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_some();
-            build_status(
-                &zone,
-                zone.dnssec_denial,
-                &keys,
-                earliest,
-                new_serial,
-                withdrawing,
-            )
-            .map(Some)
+            build_status_tx(&mut tx, &zone, &keys, new_serial)
+                .await
+                .map(Some)
         }
         .await;
         let response =
