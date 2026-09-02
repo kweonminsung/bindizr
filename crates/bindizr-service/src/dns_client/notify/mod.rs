@@ -10,50 +10,9 @@ use bindizr_core::{
     metrics::metrics,
 };
 
-use crate::zone::ZoneService;
-
-/// Sends DNS NOTIFY to all configured secondary servers; a `None` zone_name
-/// notifies all zones. Existence checks and forced bumps live in
-/// `ZoneService::notify_for`.
-pub async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
-    match zone_name {
-        Some(name) => send_notify_for_zone(name).await,
-        None => send_notify_for_all_zones().await,
-    }
-}
-
-/// Sends DNS NOTIFY for every zone.
-async fn send_notify_for_all_zones() -> Result<(), String> {
-    log_info!("Sending NOTIFY for all zones");
-
-    let zones = ZoneService::list().await.map_err(|e| e.to_string())?;
-
-    if zones.is_empty() {
-        log_info!("No zones found");
-        return Ok(());
-    }
-
-    log_info!("Found {} zone(s) to notify", zones.len());
-
-    let mut failures = Vec::new();
-
-    for zone in zones {
-        log_info!("Processing NOTIFY for zone: {}", zone.name);
-        if let Err(e) = send_notify_for_zone(zone.name.as_str()).await {
-            log_error!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
-            failures.push(format!("{}: {}", zone.name, e));
-        }
-    }
-
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        Err(format!("NOTIFY failed for {}", failures.join("; ")))
-    }
-}
-
-/// Sends DNS NOTIFY to all configured secondary servers for one zone.
-async fn send_notify_for_zone(zone_name: &str) -> Result<(), String> {
+/// Sends DNS NOTIFY to all configured secondary servers for one zone. Which
+/// zones to notify is the caller's decision.
+pub async fn send_notify(zone_name: &str) -> Result<(), String> {
     log_info!("Sending NOTIFY for zone: {}", zone_name);
 
     let reports = notify_secondaries(zone_name).await?;

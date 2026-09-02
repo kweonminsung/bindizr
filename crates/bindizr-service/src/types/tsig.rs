@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{model::tsig_key::TsigKey, zone::tsig_policy::ZoneTsigPolicyWithKey};
+use crate::model::{tsig_key::TsigKey, zone_tsig_policy::ZoneTsigPolicyWithKey};
 
 /// Request body for creating a TSIG key. Omitting `secret` generates one.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]

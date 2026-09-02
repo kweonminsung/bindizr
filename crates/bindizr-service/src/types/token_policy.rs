@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::zone::token_policy::ZoneTokenPolicyWithToken;
+use crate::model::zone_token_policy::ZoneTokenPolicyWithToken;
 
 /// Request body for granting an API token record rights in a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]

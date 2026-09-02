@@ -1,7 +1,10 @@
 //! Assembling the status a signed zone reports: key inventory and the DS
 //! records the parent needs.
 
-use bindizr_core::dns::dnssec::{ds_rdata_for, to_wire_name};
+use bindizr_core::{
+    config::bindizr_config,
+    dns::dnssec::{ds_rdata_for, to_wire_name},
+};
 use chrono::{DateTime, Utc};
 
 use super::DnssecService;
@@ -145,7 +148,7 @@ fn build_status(
         earliest_signature_expires_at,
         serial,
         withdrawing,
-        timing: DnssecTimingInfo::from_zone(zone),
+        timing: DnssecTimingInfo::from_zone(zone, &bindizr_config().dnssec),
     })
 }
 

@@ -33,7 +33,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     dns::initialize().await;
 
     if config::bindizr_config().dns.notify_on_startup {
-        match service::dns_client::notify::send_notify(None).await {
+        match service::notify::send_notify(None).await {
             Ok(()) => log_info!("Startup DNS NOTIFY completed."),
             Err(e) => log_error!("Startup DNS NOTIFY failed: {}", e),
         }

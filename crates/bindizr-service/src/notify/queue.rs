@@ -1,19 +1,16 @@
+//! The async apply queue: committed writes enqueue a NOTIFY here and return,
+//! and the worker batches a burst into one NOTIFY per zone.
+
 use std::{collections::HashSet, sync::OnceLock, time::Duration};
 
-use bindizr_core::config::{self, NotifyMode};
+use bindizr_core::config;
 use tokio::{
     sync::mpsc::{UnboundedSender, unbounded_channel},
     time::{Instant, timeout},
 };
 
+use super::send_notify;
 use crate::log_warn;
-
-/// Send a DNS NOTIFY for `zone_name` (or all zones).
-pub(crate) async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
-    crate::dns_client::notify::send_notify(zone_name).await
-}
-
-// --- Async apply queue --------------------------------------------------------
 
 /// A queued propagation job: send NOTIFY for one zone, or for all zones (`None`).
 #[derive(Debug)]
@@ -99,7 +96,7 @@ impl NotifyBatch {
 
 /// Queue a NOTIFY for later delivery. Returns `false` if the worker was never
 /// started, so the caller can fall back to sending inline.
-fn enqueue_notify(zone_name: Option<&str>) -> bool {
+pub(crate) fn enqueue_notify(zone_name: Option<&str>) -> bool {
     match APPLY_QUEUE.get() {
         Some(tx) => tx
             .send(ApplyJob {
@@ -108,19 +105,4 @@ fn enqueue_notify(zone_name: Option<&str>) -> bool {
             .is_ok(),
         None => false,
     }
-}
-
-/// Send a NOTIFY after a zone update, unless disabled by `notify_after_update`.
-/// In async mode it is queued and this returns at once; otherwise sent inline.
-pub(crate) async fn send_notify_after_update(zone_name: Option<&str>) -> Result<(), String> {
-    let dns = &config::bindizr_config().dns;
-    if !dns.notify_after_update {
-        return Ok(());
-    }
-
-    if dns.notify_mode == NotifyMode::Async && enqueue_notify(zone_name) {
-        return Ok(());
-    }
-
-    send_notify(zone_name).await
 }

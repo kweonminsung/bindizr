@@ -1,6 +1,6 @@
 //! DNSSEC management payloads.
 
-use bindizr_core::{config::bindizr_config, dns::query::DsAnswer};
+use bindizr_core::{config::DnssecConfig, dns::query::DsAnswer};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -144,8 +144,7 @@ pub struct DnssecTimingInfo {
 }
 
 impl DnssecTimingInfo {
-    pub fn from_zone(zone: &Zone) -> Self {
-        let dnssec = &bindizr_config().dnssec;
+    pub fn from_zone(zone: &Zone, dnssec: &DnssecConfig) -> Self {
         DnssecTimingInfo {
             signature_validity_days: zone
                 .signature_validity_days(dnssec.default_signature_validity_days),
