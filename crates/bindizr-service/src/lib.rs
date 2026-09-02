@@ -9,6 +9,7 @@ pub mod external_dns;
 pub mod notify;
 mod pagination;
 pub(crate) mod policy_pattern;
+pub mod probe;
 pub mod record;
 mod repository;
 pub(crate) mod serial;

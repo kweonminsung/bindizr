@@ -23,6 +23,7 @@ use crate::{
     },
     repository::{RepositoryService, RepositoryTx},
     types::GetDnssecStatusResponse,
+    zone::ZoneService,
 };
 
 /// Floor on the post-sighting wait: a recursive resolver's answer may carry
@@ -131,8 +132,18 @@ impl DnssecService {
     pub async fn rollover_ds_seen(
         caller: &Caller,
         zone_name: &str,
+        force: bool,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
+
+        let resolver = bindizr_config()
+            .dnssec
+            .parent_ds_resolver
+            .trim()
+            .to_string();
+        if !force && !resolver.is_empty() {
+            Self::verify_pending_parent_ds(zone_name, &resolver).await?;
+        }
 
         let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
         let result = async {
@@ -216,6 +227,48 @@ impl DnssecService {
         )
         .map_err(ServiceError::dnssec_signing_failed)?;
         RepositoryService::create_dnssec_key_tx(tx, new_key).await
+    }
+
+    /// Every DS the pending keys need must be visible at the resolver; an
+    /// absent one would make the zone bogus for validators once the key
+    /// signs. Runs before the confirmation, outside its zone lock.
+    async fn verify_pending_parent_ds(zone_name: &str, resolver: &str) -> Result<(), ServiceError> {
+        let mut tx = RepositoryService::begin_read_tx("failed to read DNSSEC status").await?;
+        let result = async {
+            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
+            keys.iter()
+                .filter(|key| key.awaits_parent_ds())
+                .map(|key| ds_info(&zone, key))
+                .collect::<Result<Vec<_>, _>>()
+        }
+        .await;
+        let expected =
+            RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await?;
+        if expected.is_empty() {
+            // No pending SEP key; the confirmation reports the precise state.
+            return Ok(());
+        }
+
+        let seen = crate::probe::probe_parent_ds(zone_name)
+            .await
+            .map_err(|e| {
+                ServiceError::invalid_input(format!(
+                    "could not verify the parent DS at {}: {}; pass force to skip this check",
+                    resolver, e
+                ))
+            })?;
+        for ds in &expected {
+            if !seen.iter().any(|answer| ds.matches(answer)) {
+                return Err(ServiceError::invalid_input(format!(
+                    "DS for key tag {} is not visible at {}; publish it at the parent and wait \
+                     out the parent DS TTL, or pass force to skip this check",
+                    ds.key_tag, resolver
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Zone names holding a pre-published SEP key: the DS poll's work list.

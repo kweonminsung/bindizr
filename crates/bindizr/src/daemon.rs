@@ -43,6 +43,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     service::notify::set_notify_sender(Arc::new(DnsNotifySender)).map_err(String::from)?;
     service::transfer::set_zone_transfer_client(Arc::new(dns::client::axfr::AxfrTransferClient))
         .map_err(String::from)?;
+    service::probe::set_parent_ds_probe(Arc::new(dns::client::probe::ResolverParentDsProbe))
+        .map_err(String::from)?;
     service::notify::init_notify_worker();
 
     database::initialize().await.map_err(|e| e.to_string())?;

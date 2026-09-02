@@ -99,7 +99,7 @@ pub(crate) async fn rollover_ds_seen(
     let params: DsSeenZoneDnssecParams = parse_params(data)?;
 
     let status =
-        crate::dns::rollover::confirm_ds_seen(&Caller::Global, &params.name, params.force).await?;
+        DnssecService::rollover_ds_seen(&Caller::Global, &params.name, params.force).await?;
 
     Ok(DaemonResponse {
         message: "Key rollover advanced successfully".to_string(),

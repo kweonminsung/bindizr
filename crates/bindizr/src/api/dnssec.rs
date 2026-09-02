@@ -280,7 +280,8 @@ pub(crate) async fn ds_seen_dnssec_rollover(
     Query(query): Query<DsSeenQuery>,
 ) -> Result<Response, ApiError> {
     let status =
-        dns::rollover::confirm_ds_seen(&caller, &params.name, query.force.unwrap_or(false)).await?;
+        DnssecService::rollover_ds_seen(&caller, &params.name, query.force.unwrap_or(false))
+            .await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

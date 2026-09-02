@@ -114,6 +114,16 @@ async fn probe_one(
     extract_soa_serial(query_id, &response[..received])
 }
 
+/// The service's parent-DS seam, backed by [`probe_parent_ds`].
+pub(crate) struct ResolverParentDsProbe;
+
+#[async_trait::async_trait]
+impl bindizr_service::probe::ParentDsProbe for ResolverParentDsProbe {
+    async fn probe_parent_ds(&self, zone_name: &str) -> Result<Vec<DsAnswer>, String> {
+        probe_parent_ds(zone_name).await
+    }
+}
+
 /// The zone's DS RRset as `dnssec.parent_ds_resolver` sees it; errors when no
 /// resolver is configured.
 pub(crate) async fn probe_parent_ds(zone_name: &str) -> Result<Vec<DsAnswer>, String> {

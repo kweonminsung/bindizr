@@ -40,28 +40,6 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
     }
 
-    /// DS records the parent must publish before [`Self::rollover_ds_seen`]:
-    /// those of the pre-published SEP keys.
-    pub async fn list_pending_parent_ds(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<Vec<DnssecDsInfo>, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
-
-        let mut tx = RepositoryService::begin_read_tx("failed to read DNSSEC status").await?;
-        let result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            keys.iter()
-                .filter(|key| key.awaits_parent_ds())
-                .map(|key| ds_info(&zone, key))
-                .collect()
-        }
-        .await;
-        RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
-    }
-
     /// Count the zones that are signed (hold at least one key).
     pub async fn count_signed_zones(caller: &Caller) -> Result<u64, ServiceError> {
         caller.require_global("read DNSSEC metrics")?;
