@@ -189,7 +189,7 @@ pub(crate) async fn verify_dnssec(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let response = crate::dns::verify::verify(&Caller::Global, &params.name).await?;
+    let response = DnssecService::verify(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: if response.ok {

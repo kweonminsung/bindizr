@@ -14,9 +14,8 @@ use bindizr_service::{
 };
 use serde::Deserialize;
 
-use crate::{
-    api::{RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody},
-    dns,
+use crate::api::{
+    RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody,
 };
 
 /// Route group for zone DNSSEC endpoints.
@@ -397,6 +396,6 @@ pub(crate) async fn verify_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    let response = dns::verify::verify(&caller, &params.name).await?;
+    let response = DnssecService::verify(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

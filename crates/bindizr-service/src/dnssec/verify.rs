@@ -1,19 +1,20 @@
-//! Self-checks of a signed zone's stored state: key inventory, signature
-//! freshness, per-algorithm coverage, and the denial chain.
+//! Self-checks of a signed zone's stored state — key inventory, signature
+//! freshness, per-algorithm coverage, the denial chain — plus, with a
+//! resolver configured, the DS the parent actually serves.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{config::bindizr_config, dns::name::OwnerName};
 use chrono::Utc;
 
-use super::DnssecService;
+use super::{DnssecService, status::ds_info};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
     error::ServiceError,
     model::{dnssec_record::DnssecRecordType, record::RecordType, zone::DnssecDenial},
     repository::RepositoryService,
-    types::{DnssecCheckInfo, VerifyDnssecResponse},
+    types::{DnssecCheckInfo, DnssecDsInfo, VerifyDnssecResponse},
 };
 
 impl DnssecService {
@@ -177,13 +178,90 @@ impl DnssecService {
                 detail: denial_detail,
             });
 
-            Ok::<_, ServiceError>(VerifyDnssecResponse {
-                zone_name: zone.name.as_str().to_string(),
-                ok: checks.iter().all(|check| check.ok),
-                checks,
-            })
+            let expected = keys
+                .iter()
+                .filter(|key| key.wants_parent_ds())
+                .map(|key| ds_info(&zone, key))
+                .collect::<Result<Vec<_>, _>>()?;
+            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+                .await?
+                .is_some();
+
+            Ok::<_, ServiceError>((
+                VerifyDnssecResponse {
+                    zone_name: zone.name.as_str().to_string(),
+                    ok: checks.iter().all(|check| check.ok),
+                    checks,
+                },
+                expected,
+                withdrawing,
+            ))
         }
         .await;
-        RepositoryService::finish_tx(tx, result, "failed to verify DNSSEC state").await
+        let (mut response, expected, withdrawing) =
+            RepositoryService::finish_tx(tx, result, "failed to verify DNSSEC state").await?;
+
+        // The parent check probes the network, so it runs after the read
+        // transaction ends.
+        let resolver = bindizr_config()
+            .dnssec
+            .parent_ds_resolver
+            .trim()
+            .to_string();
+        if !resolver.is_empty() {
+            let (ok, detail) = parent_ds_check(&resolver, &expected, withdrawing, zone_name).await;
+            response.ok &= ok;
+            response.checks.push(DnssecCheckInfo {
+                check: "parent-ds".to_string(),
+                ok,
+                detail,
+            });
+        }
+        Ok(response)
+    }
+}
+
+/// Compare the DS RRset the resolver serves against the zone's keys; a
+/// published withdrawal inverts the expectation — done once the parent
+/// serves no DS (RFC 8078).
+async fn parent_ds_check(
+    resolver: &str,
+    expected: &[DnssecDsInfo],
+    withdrawing: bool,
+    zone_name: &str,
+) -> (bool, String) {
+    match crate::probe::probe_parent_ds(zone_name).await {
+        Ok(seen) if withdrawing => (
+            seen.is_empty(),
+            if seen.is_empty() {
+                format!("withdrawal complete: no DS at {}", resolver)
+            } else {
+                format!(
+                    "{} DS record(s) still published at {}",
+                    seen.len(),
+                    resolver
+                )
+            },
+        ),
+        Ok(seen) if seen.is_empty() => (
+            false,
+            format!("no DS at {} (delegation is insecure)", resolver),
+        ),
+        Ok(seen) => {
+            let matched = seen
+                .iter()
+                .filter(|answer| expected.iter().any(|ds| ds.matches(answer)))
+                .count();
+            (
+                matched > 0,
+                format!(
+                    "{} of {} DS records at {} match this zone's keys",
+                    matched,
+                    seen.len(),
+                    resolver
+                ),
+            )
+        }
+        Err(e) => (false, format!("probe at {} failed: {}", resolver, e)),
     }
 }
