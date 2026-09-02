@@ -467,7 +467,7 @@ impl RepositoryService {
     pub(crate) async fn update_dnssec_key_ds_seen_tx(
         tx: &mut RepositoryTx<'_>,
         id: i32,
-        ds_seen_at: DateTime<Utc>,
+        ds_seen_at: Option<DateTime<Utc>>,
         eligible_at: DateTime<Utc>,
     ) -> Result<(), ServiceError> {
         get_dnssec_key_repository()

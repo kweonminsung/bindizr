@@ -524,7 +524,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
     // presentation round trip.
     app.run_cli_success_with_input(
         &["zone", "import", &zone_name, "-"],
-        "www IN A 192.0.2.30\nmail 300 IN MX 10 mx.example.com.\n@ IN TXT \"v=spf1 -all\"\n",
+        "www IN A 192.0.2.30\nmail 300 IN MX 10 mx.example.com.\n@ IN TXT \"v=spf1 -all\"\n_sip._udp 300 IN SRV 10 5 5060 sip.example.com.\n",
     )
     .await;
 
@@ -549,7 +549,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
     assert_eq!(preview["summary"]["added"], 0, "{preview}");
     assert_eq!(preview["summary"]["deleted"], 0, "{preview}");
     assert_eq!(preview["summary"]["updated"], 0, "{preview}");
-    assert_eq!(preview["summary"]["parsed"], 4, "{preview}");
+    assert_eq!(preview["summary"]["parsed"], 5, "{preview}");
 
     let applied = app
         .run_cli_success(&[
@@ -567,5 +567,5 @@ async fn zone_import_from_server_round_trips_over_axfr() {
     let applied: Value = serde_json::from_str(&applied).expect("CLI did not return valid JSON");
     assert_eq!(applied["applied"], true, "{applied}");
     assert_eq!(applied["summary"]["deleted"], 0, "{applied}");
-    assert_eq!(applied["summary"]["unchanged"], 4, "{applied}");
+    assert_eq!(applied["summary"]["unchanged"], 5, "{applied}");
 }

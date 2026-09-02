@@ -121,6 +121,9 @@ pub fn extract_transfer_records(
     if !header.qr() {
         return Err("response does not have QR bit set".to_string());
     }
+    if header.tc() {
+        return Err("truncated response".to_string());
+    }
     if header.rcode() != Rcode::NOERROR {
         return Err(format!("RCODE {}", header.rcode().to_int()));
     }
@@ -131,13 +134,33 @@ pub fn extract_transfer_records(
     let mut records = Vec::new();
     for record in answer.limit_to::<AllRecordData<_, _>>() {
         let record = record.map_err(|e| format!("malformed answer record: {}", e))?;
+        // Every embedded rdata name renders absolute except the SRV
+        // target; left bare, re-parsing would requalify it.
+        let rdata = match record.data() {
+            AllRecordData::Srv(srv) => {
+                let target = srv.target().to_string();
+                let target = if target == "." {
+                    target
+                } else {
+                    format!("{}.", target)
+                };
+                format!(
+                    "{} {} {} {}",
+                    srv.priority(),
+                    srv.weight(),
+                    srv.port(),
+                    target
+                )
+            }
+            data => data.to_string(),
+        };
         records.push(TransferRecord {
             // Display omits the root dot; the absolute form keeps the
             // import parser from re-qualifying the name.
             name: format!("{}.", record.owner()),
             rtype: record.rtype(),
             ttl: record.ttl().as_secs(),
-            rdata: record.data().to_string(),
+            rdata,
         });
     }
     Ok(records)

@@ -148,7 +148,7 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
-        ds_seen_at: DateTime<Utc>,
+        ds_seen_at: Option<DateTime<Utc>>,
         eligible_at: DateTime<Utc>,
     ) -> Result<(), DatabaseError> {
         let postgres_tx = tx.as_postgres()?;

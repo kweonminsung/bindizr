@@ -192,3 +192,105 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     );
     assert!(imported.contains(&key_tag), "{imported}");
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_dnssec_split_key_import_restores_both_roles() {
+    let app = TestApp::start_local().await;
+    let zone_name = app.zone_name("dnssec-split.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    app.run_cli_success(&["zone", "dnssec", "enable", &zone_name, "--split-keys"])
+        .await;
+
+    let exported = app
+        .run_cli_success(&["zone", "dnssec", "keys", "export", &zone_name])
+        .await;
+    // The stream alternates `; K*.key (role, tag N)` and `; K*.private`
+    // headers; carve it into per-header blocks.
+    let mut sections: Vec<(String, String)> = Vec::new();
+    for line in exported.lines() {
+        if line.starts_with("; K") {
+            sections.push((line.to_string(), String::new()));
+        } else if let Some((_, body)) = sections.last_mut() {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    assert_eq!(sections.len(), 4, "{exported}");
+
+    let dir = tempfile::tempdir().expect("create key dir");
+    let mut pairs: Vec<(String, String, String)> = Vec::new();
+    for chunk in sections.chunks(2) {
+        let (key_header, key_body) = &chunk[0];
+        let (_, private_body) = &chunk[1];
+        let role = if key_header.contains("(ksk,") {
+            "ksk"
+        } else {
+            "zsk"
+        };
+        let key_file = dir.path().join(format!("{role}.key"));
+        let private_file = dir.path().join(format!("{role}.private"));
+        std::fs::write(&key_file, key_body).expect("write .key");
+        std::fs::write(&private_file, private_body).expect("write .private");
+        pairs.push((
+            role.to_string(),
+            key_file.to_str().expect("utf-8 temp dir").to_string(),
+            private_file.to_str().expect("utf-8 temp dir").to_string(),
+        ));
+    }
+    pairs.sort(); // ksk before zsk
+
+    app.run_cli_success(&["zone", "dnssec", "disable", &zone_name])
+        .await;
+
+    // The lone KSK cannot sign the zone yet; the import must stage it.
+    let (role, key_file, private_file) = &pairs[0];
+    assert_eq!(role, "ksk");
+    let staged = app
+        .run_cli_success(&[
+            "zone",
+            "dnssec",
+            "keys",
+            "import",
+            &zone_name,
+            "--key",
+            key_file,
+            "--private",
+            private_file,
+            "--role",
+            "ksk",
+        ])
+        .await;
+    assert!(
+        staged.contains("DNSSEC key imported successfully"),
+        "{staged}"
+    );
+
+    // The ZSK completes the pair and the zone signs.
+    let (_, key_file, private_file) = &pairs[1];
+    app.run_cli_success(&[
+        "zone",
+        "dnssec",
+        "keys",
+        "import",
+        &zone_name,
+        "--key",
+        key_file,
+        "--private",
+        private_file,
+    ])
+    .await;
+
+    let signed_export = app
+        .run_cli_success(&["zone", "export", &zone_name, "--signed"])
+        .await;
+    assert!(
+        signed_export.contains("\tIN\tRRSIG\tSOA "),
+        "{signed_export}"
+    );
+    assert!(
+        signed_export.contains("\tIN\tDNSKEY\t257 3 ")
+            && signed_export.contains("\tIN\tDNSKEY\t256 3 "),
+        "{signed_export}"
+    );
+}

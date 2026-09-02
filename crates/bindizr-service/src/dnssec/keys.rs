@@ -104,9 +104,18 @@ impl DnssecService {
             let mut keys = keys;
             keys.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
 
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            // A split pair arrives one key at a time: signing waits until
+            // the set carries both a key-RRset signer and a data signer.
+            let signable = keys.iter().any(|key| key.signs_key_rrsets())
+                && keys.iter().any(|key| key.signs_zone_data(&keys));
+            let serial = if signable {
+                let new_serial = generate_serial(Some(zone.serial))?;
+                Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
+                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+                new_serial
+            } else {
+                zone.serial
+            };
 
             let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
             let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
@@ -117,15 +126,18 @@ impl DnssecService {
                 zone.dnssec_denial,
                 &keys,
                 earliest,
-                new_serial,
+                serial,
                 withdrawing,
             )
+            .map(|status| (status, signable))
         }
         .await;
-        let response =
+        let (response, signed) =
             RepositoryService::finish_tx(tx, result, "failed to import DNSSEC key").await?;
 
-        notify_zone(&response.zone_name).await;
+        if signed {
+            notify_zone(&response.zone_name).await;
+        }
         Ok(response)
     }
 }

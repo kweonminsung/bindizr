@@ -27,6 +27,10 @@ use crate::{
     zone::ZoneService,
 };
 
+/// Floor on the post-sighting wait: a recursive resolver's answer may carry
+/// a nearly drained cached TTL rather than the parent's original one.
+const MIN_DS_TTL_WAIT_SECS: i64 = 3600;
+
 impl DnssecService {
     /// Start a key rollover: pre-publish same-algorithm replacements, or —
     /// with `algorithm` — replacements for every key, double-signing the zone
@@ -299,18 +303,19 @@ impl DnssecService {
                     continue;
                 }
                 ds_published.push(key.id);
-                if key.ds_seen_at.is_none() {
-                    let ds = ds_info(&zone, key)?;
-                    if let Some(answer) = seen.iter().find(|answer| ds.matches(answer)) {
+                let ds = ds_info(&zone, key)?;
+                let visible = seen.iter().find(|answer| ds.matches(answer));
+                match (visible, key.ds_seen_at) {
+                    (Some(answer), None) => {
                         // Resolvers may miss the DS for its TTL after it
-                        // appeared, so the deadline extends by it (RFC 7583).
-                        let eligible_at = key
-                            .eligible_at
-                            .max(now + Duration::seconds(i64::from(answer.ttl)));
+                        // appeared, so the deadline extends by it, floored
+                        // (RFC 7583).
+                        let wait = i64::from(answer.ttl).max(MIN_DS_TTL_WAIT_SECS);
+                        let eligible_at = key.eligible_at.max(now + Duration::seconds(wait));
                         RepositoryService::update_dnssec_key_ds_seen_tx(
                             &mut tx,
                             key.id,
-                            now,
+                            Some(now),
                             eligible_at,
                         )
                         .await?;
@@ -323,8 +328,27 @@ impl DnssecService {
                             eligible_at.format("%Y-%m-%dT%H:%M:%SZ")
                         );
                     }
+                    (None, Some(_)) => {
+                        // Gone again — a parent rollback, or the sighting was
+                        // a stale cache; a fresh one restarts the TTL wait.
+                        RepositoryService::update_dnssec_key_ds_seen_tx(
+                            &mut tx,
+                            key.id,
+                            None,
+                            key.eligible_at,
+                        )
+                        .await?;
+                        key.ds_seen_at = None;
+                        log_info!(
+                            "Parent DS for zone {} key tag {} no longer visible; observation reset",
+                            zone.name.as_str(),
+                            key.key_tag
+                        );
+                    }
+                    _ => {}
                 }
-                if key.ds_seen_at.is_none() || key.eligible_at > now {
+                // Promotion needs the DS visible right now with its wait over.
+                if visible.is_none() || key.ds_seen_at.is_none() || key.eligible_at > now {
                     waiting += 1;
                 }
             }
