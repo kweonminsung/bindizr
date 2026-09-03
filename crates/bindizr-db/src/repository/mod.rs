@@ -595,19 +595,22 @@ pub trait DnssecRecordRepository: Send + Sync {
         zone_id: i32,
     ) -> Result<(), DatabaseError>;
     /// Zones holding an RRSIG that expires within the zone's re-sign window
-    /// after `now` (`dnssec_signature_refresh_days`, or `default_refresh_days`
-    /// when unset): the re-sign work list.
+    /// after `now`: the re-sign work list. The window is the zone's refresh
+    /// (or `default_refresh_days`) clamped into `[1, validity - 1]`, matching
+    /// the signing clamp.
     async fn list_zone_ids_expiring_within_refresh(
         &self,
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<Vec<i32>, DatabaseError>;
-    /// Rows expiring within the zone's re-sign window after `now`; only RRSIG
-    /// rows carry `expires_at`.
+    /// Rows expiring within the zone's re-sign window (clamped as above)
+    /// after `now`; only RRSIG rows carry `expires_at`.
     async fn count_expiring_within_refresh(
         &self,
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<u64, DatabaseError>;
     async fn list_by_filter_with_zone(
         &self,

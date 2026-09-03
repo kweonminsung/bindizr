@@ -132,6 +132,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
         &self,
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -142,11 +143,14 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
             JOIN zones z ON z.id = r.zone_id
             WHERE r.expires_at IS NOT NULL
               AND datetime(r.expires_at)
-                  < datetime(?, '+' || COALESCE(z.dnssec_signature_refresh_days, ?) || ' days')
+                  < datetime(?, '+' || MAX(1, MIN(
+                        COALESCE(z.dnssec_signature_refresh_days, ?),
+                        COALESCE(z.dnssec_signature_validity_days, ?) - 1)) || ' days')
             "#,
         )
         .bind(now)
         .bind(default_refresh_days as i32)
+        .bind(default_validity_days as i32)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -157,6 +161,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
         &self,
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -167,11 +172,14 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
             JOIN zones z ON z.id = r.zone_id
             WHERE r.expires_at IS NOT NULL
               AND datetime(r.expires_at)
-                  < datetime(?, '+' || COALESCE(z.dnssec_signature_refresh_days, ?) || ' days')
+                  < datetime(?, '+' || MAX(1, MIN(
+                        COALESCE(z.dnssec_signature_refresh_days, ?),
+                        COALESCE(z.dnssec_signature_validity_days, ?) - 1)) || ' days')
             "#,
         )
         .bind(now)
         .bind(default_refresh_days as i32)
+        .bind(default_validity_days as i32)
         .fetch_one(&mut *conn)
         .await?;
 

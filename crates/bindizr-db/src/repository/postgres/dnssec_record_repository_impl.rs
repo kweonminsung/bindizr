@@ -134,6 +134,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
         &self,
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -144,11 +145,14 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
             JOIN zones z ON z.id = r.zone_id
             WHERE r.expires_at IS NOT NULL
               AND r.expires_at
-                  < $1 + make_interval(days => COALESCE(z.dnssec_signature_refresh_days, $2))
+                  < $1 + make_interval(days => GREATEST(1, LEAST(
+                        COALESCE(z.dnssec_signature_refresh_days, $2),
+                        COALESCE(z.dnssec_signature_validity_days, $3) - 1)))
             "#,
         )
         .bind(now)
         .bind(default_refresh_days as i32)
+        .bind(default_validity_days as i32)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -159,6 +163,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
         &self,
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -169,11 +174,14 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
             JOIN zones z ON z.id = r.zone_id
             WHERE r.expires_at IS NOT NULL
               AND r.expires_at
-                  < $1 + make_interval(days => COALESCE(z.dnssec_signature_refresh_days, $2))
+                  < $1 + make_interval(days => GREATEST(1, LEAST(
+                        COALESCE(z.dnssec_signature_refresh_days, $2),
+                        COALESCE(z.dnssec_signature_validity_days, $3) - 1)))
             "#,
         )
         .bind(now)
         .bind(default_refresh_days as i32)
+        .bind(default_validity_days as i32)
         .fetch_one(&mut *conn)
         .await?;
 

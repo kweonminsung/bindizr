@@ -495,9 +495,10 @@ impl RepositoryService {
     pub(crate) async fn count_rrsig_dnssec_records_expiring_within_refresh(
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<u64, ServiceError> {
         get_dnssec_record_repository()
-            .count_expiring_within_refresh(now, default_refresh_days)
+            .count_expiring_within_refresh(now, default_refresh_days, default_validity_days)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
@@ -602,9 +603,10 @@ impl RepositoryService {
     pub(crate) async fn list_rrsig_zone_ids_expiring_within_refresh(
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<Vec<i32>, ServiceError> {
         get_dnssec_record_repository()
-            .list_zone_ids_expiring_within_refresh(now, default_refresh_days)
+            .list_zone_ids_expiring_within_refresh(now, default_refresh_days, default_validity_days)
             .await
             .map_err(|e| {
                 ServiceError::internal(format!("failed to find zones needing re-signing: {}", e))

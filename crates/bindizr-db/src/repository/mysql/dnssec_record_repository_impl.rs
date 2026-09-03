@@ -133,6 +133,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         &self,
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -143,11 +144,14 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
             JOIN zones z ON z.id = r.zone_id
             WHERE r.expires_at IS NOT NULL
               AND r.expires_at
-                  < DATE_ADD(?, INTERVAL COALESCE(z.dnssec_signature_refresh_days, ?) DAY)
+                  < DATE_ADD(?, INTERVAL GREATEST(1, LEAST(
+                        COALESCE(z.dnssec_signature_refresh_days, ?),
+                        COALESCE(z.dnssec_signature_validity_days, ?) - 1)) DAY)
             "#,
         )
         .bind(now)
         .bind(default_refresh_days as i32)
+        .bind(default_validity_days as i32)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -158,6 +162,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         &self,
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -168,11 +173,14 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
             JOIN zones z ON z.id = r.zone_id
             WHERE r.expires_at IS NOT NULL
               AND r.expires_at
-                  < DATE_ADD(?, INTERVAL COALESCE(z.dnssec_signature_refresh_days, ?) DAY)
+                  < DATE_ADD(?, INTERVAL GREATEST(1, LEAST(
+                        COALESCE(z.dnssec_signature_refresh_days, ?),
+                        COALESCE(z.dnssec_signature_validity_days, ?) - 1)) DAY)
             "#,
         )
         .bind(now)
         .bind(default_refresh_days as i32)
+        .bind(default_validity_days as i32)
         .fetch_one(&mut *conn)
         .await?;
 

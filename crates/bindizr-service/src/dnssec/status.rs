@@ -63,11 +63,13 @@ impl DnssecService {
         caller: &Caller,
         now: DateTime<Utc>,
         default_refresh_days: u32,
+        default_validity_days: u32,
     ) -> Result<u64, ServiceError> {
         caller.require_global("read DNSSEC metrics")?;
         RepositoryService::count_rrsig_dnssec_records_expiring_within_refresh(
             now,
             default_refresh_days,
+            default_validity_days,
         )
         .await
     }

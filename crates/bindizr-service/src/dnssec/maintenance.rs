@@ -66,6 +66,7 @@ async fn run_maintenance_pass() {
     match RepositoryService::list_rrsig_zone_ids_expiring_within_refresh(
         Utc::now(),
         config.dnssec.default_signature_refresh_days,
+        config.dnssec.default_signature_validity_days,
     )
     .await
     {
