@@ -11,7 +11,12 @@ mod token;
 mod tsig_key;
 mod zone;
 
-use std::{io, os::unix::fs::FileTypeExt, path::Path};
+use std::{
+    fs::Permissions,
+    io,
+    os::unix::fs::{FileTypeExt, PermissionsExt},
+    path::Path,
+};
 
 use bindizr_core::{log_error, log_info, log_warn};
 use bindizr_service::{error::ServiceError, types::ErrorResponse};
@@ -195,12 +200,18 @@ async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
 
 async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {
     prepare_socket_path(socket_path).await?;
-    UnixListener::bind(socket_path)
+    let listener = UnixListener::bind(socket_path)?;
+    // Connecting grants global access; the file mode is the auth boundary.
+    fs::set_permissions(socket_path, Permissions::from_mode(0o600)).await?;
+    Ok(listener)
 }
 
 async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     if let Some(parent) = Path::new(socket_path).parent() {
         fs::create_dir_all(parent).await?;
+        // 0700 before the socket exists: the directory gates access, so the
+        // bind-then-chmod window cannot leak a umask-permissive socket.
+        fs::set_permissions(parent, Permissions::from_mode(0o700)).await?;
     }
 
     match fs::symlink_metadata(socket_path).await {
