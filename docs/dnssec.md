@@ -146,7 +146,7 @@ signer using that format) migrates without breaking its chain of trust:
 bindizr zone dnssec keys export example.com
 
 # Bring an existing pair in as an active key and re-sign with it
-bindizr zone dnssec keys import example.com \
+bindizr zone dnssec keys import example.com --role csk \
     --key Kexample.com.+013+12345.key --private Kexample.com.+013+12345.private
 ```
 
