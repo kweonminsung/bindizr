@@ -485,11 +485,19 @@ fn print_ds_records(data: &serde_json::Value) -> Result<(), String> {
 /// Print each key as its BIND file pair, headed by the file name BIND
 /// tooling expects, so the stream splits cleanly into `K*.key`/`K*.private`.
 fn print_key_material(exported: &ExportDnssecKeysResponse) {
-    for key in &exported.keys {
-        let base = format!(
+    for (i, key) in exported.keys.iter().enumerate() {
+        let mut base = format!(
             "K{}.+{:03}+{:05}",
             exported.zone_name, key.algorithm, key.key_tag
         );
+        // Distinct keys may share (algorithm, tag); the suffix keeps names unique.
+        let dup = exported.keys[..i]
+            .iter()
+            .filter(|k| k.algorithm == key.algorithm && k.key_tag == key.key_tag)
+            .count();
+        if dup > 0 {
+            base.push_str(&format!(".{}", dup + 1));
+        }
         println!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
         println!("{}", key.dnskey_record);
         println!("; {}.private", base);
