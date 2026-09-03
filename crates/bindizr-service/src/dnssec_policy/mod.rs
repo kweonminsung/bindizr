@@ -10,7 +10,7 @@ use crate::{
     error::ServiceError,
     model::{
         dnssec_key::DnssecAlgorithm,
-        dnssec_policy::{DnssecDenial, DnssecPolicy},
+        dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
     },
     repository::RepositoryService,
     types::{CreateDnssecPolicyRequest, UpdateDnssecPolicyRequest},
@@ -162,11 +162,19 @@ impl DnssecPolicyService {
         RepositoryService::finish_tx(tx, result, "failed to update DNSSEC policy").await
     }
 
-    /// Delete a policy by name; refused while any zone signs under it.
+    /// Delete a policy by name; refused for the built-in `default` and while
+    /// any zone signs under it.
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
         caller.require_global("manage DNSSEC policies")?;
 
         let policy = Self::lookup_by_name(name).await?;
+        // `enable` and `keys import` fall back to it by name.
+        if policy.name == DEFAULT_DNSSEC_POLICY_NAME {
+            return Err(ServiceError::invalid_input(format!(
+                "the built-in '{}' policy cannot be deleted; edit it instead",
+                DEFAULT_DNSSEC_POLICY_NAME
+            )));
+        }
 
         let zone_count = RepositoryService::count_zones_by_dnssec_policy_id(policy.id).await?;
         if zone_count > 0 {

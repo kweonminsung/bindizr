@@ -113,6 +113,22 @@ async fn dnssec_policy_create_read_update_delete() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "DNSSEC_POLICY_NOT_FOUND");
+
+    // `default` is the by-name fallback of enable and import: editable, never deleted.
+    let (status, body) = app
+        .request(Method::DELETE, "/dnssec-policies/default", None)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "INVALID_INPUT");
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            "/dnssec-policies/default",
+            Some(json!({ "signature_validity_days": 14 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["dnssec_policy"]["name"], "default");
 }
 
 #[tokio::test]

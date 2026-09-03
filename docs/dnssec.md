@@ -60,7 +60,8 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
 The algorithm, denial mode, and key layout are fixed once a policy exists;
 the timing fields can be edited in place and apply to every zone under the
 policy from its next signing pass or maintenance scan. A policy in use
-cannot be deleted.
+cannot be deleted, and neither can `default`: edit it to change the
+installation's defaults.
 
 ## Enabling DNSSEC for a zone
 

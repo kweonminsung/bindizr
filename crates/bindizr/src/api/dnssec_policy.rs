@@ -164,12 +164,13 @@ pub(crate) async fn update_dnssec_policy(
         path = "/dnssec-policies/{name}",
         tag = "DNSSEC",
         summary = "Delete a DNSSEC policy",
-        description = "Deletes a DNSSEC policy. Refused while any zone signs under it.",
+        description = "Deletes a DNSSEC policy. Refused for the built-in `default` policy and while any zone signs under it.",
         params(
             ("name" = String, Path, description = "The name of the DNSSEC policy.")
         ),
         responses(
             (status = 200, description = "DNSSEC policy deleted successfully", body = MessageResponse),
+            (status = 400, description = "The built-in default policy cannot be deleted", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "DNSSEC policy not found", body = ErrorResponse),

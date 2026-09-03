@@ -81,7 +81,8 @@ pub(crate) enum DnssecPolicyCommand {
         #[arg(long, value_name = "SECS")]
         rollover_retire_holddown_secs: Option<u32>,
     },
-    /// Delete a DNSSEC policy (refused while any zone signs under it)
+    /// Delete a DNSSEC policy (refused for the built-in "default" and while
+    /// any zone signs under it)
     #[command(alias = "rm")]
     Delete {
         /// Name of the policy

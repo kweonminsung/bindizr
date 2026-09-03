@@ -206,7 +206,7 @@ paths:
       tags:
       - DNSSEC
       summary: Delete a DNSSEC policy
-      description: Deletes a DNSSEC policy. Refused while any zone signs under it.
+      description: Deletes a DNSSEC policy. Refused for the built-in `default` policy and while any zone signs under it.
       operationId: delete_dnssec_policy
       parameters:
       - name: name
@@ -222,6 +222,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: The built-in default policy cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
           content:
