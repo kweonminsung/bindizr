@@ -26,14 +26,12 @@ impl DnssecService {
     ) -> Result<ExportDnssecKeysResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
-        let zone = ZoneService::get_by_name(caller, zone_name).await?;
+        // One locked transaction: a rename cannot split the rendered name
+        // from the keys.
         let mut tx = RepositoryService::begin_read_tx("failed to export DNSSEC keys").await?;
         let result = async {
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            if keys.is_empty() {
-                return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
-            }
+            let (zone, keys) =
+                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
             Ok(ExportDnssecKeysResponse {
                 zone_name: zone.name.as_str().to_string(),
                 keys: keys
