@@ -153,8 +153,9 @@ bindizr zone dnssec keys import example.com \
 The export stream contains the private keys — redirect it only somewhere
 with tight permissions.
 
-An imported key joins the signing set immediately; its role comes from the
-SEP flag (`--role` overrides, e.g. `ksk` for split-key zones). A split pair
+An imported key joins the signing set immediately. A 256-flag key imports as
+a ZSK; a SEP key (flags 257) may be a KSK or a CSK, so `--role` is required
+for it. A split pair
 imports in either order — the zone stays unsigned until both halves are
 present, then signs on the second import. Both commands
 run only over the CLI/daemon socket — private keys never transit the HTTP

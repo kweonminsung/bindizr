@@ -205,7 +205,8 @@ pub struct ImportDnssecKeyRequest {
     pub dnskey: String,
     /// `K*.private` contents.
     pub private_key: String,
-    /// `csk`/`ksk`/`zsk`; inferred from the SEP flag when omitted.
+    /// `csk`/`ksk`/`zsk`; required for a SEP key (flags 257), a 256 key
+    /// imports as `zsk`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
 }

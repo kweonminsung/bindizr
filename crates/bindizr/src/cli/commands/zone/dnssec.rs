@@ -177,7 +177,8 @@ pub(crate) enum ZoneDnssecKeysCommand {
         /// Path to the matching K*.private file
         #[arg(long, value_name = "FILE")]
         private: String,
-        /// csk, ksk, or zsk; inferred from the SEP flag when omitted
+        /// csk, ksk, or zsk; required for a SEP key (flags 257), a 256 key
+        /// imports as zsk
         #[arg(long, value_name = "ROLE")]
         role: Option<String>,
         /// Output format (json, yaml, table)

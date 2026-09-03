@@ -184,6 +184,8 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
             &key_file,
             "--private",
             &private_file,
+            "--role",
+            "csk",
         ])
         .await;
     assert!(

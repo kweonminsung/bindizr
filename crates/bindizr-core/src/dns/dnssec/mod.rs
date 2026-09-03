@@ -179,7 +179,13 @@ pub fn import_key(
 
     let role = match role_override {
         Some(role) => role,
-        None if flags == 257 => DnssecKeyRole::Csk,
+        // The SEP flag cannot say KSK vs CSK, and a wrong guess silently
+        // changes what the key signs.
+        None if flags == 257 => {
+            return Err(
+                "a SEP key (flags 257) may be a KSK or a CSK; specify the role".to_string(),
+            );
+        }
         None => DnssecKeyRole::Zsk,
     };
     if flags != role.flags() {

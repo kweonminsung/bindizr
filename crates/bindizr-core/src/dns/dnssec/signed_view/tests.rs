@@ -916,12 +916,35 @@ fn imported_bind_key_pair_round_trips() {
         generated.public_key
     );
 
-    let imported = import_key(&zone, None, &record, &generated.private_key, fixed_now()).unwrap();
+    let imported = import_key(
+        &zone,
+        Some(DnssecKeyRole::Csk),
+        &record,
+        &generated.private_key,
+        fixed_now(),
+    )
+    .unwrap();
 
     assert_eq!(imported.role, DnssecKeyRole::Csk);
     assert_eq!(imported.key_tag, generated.key_tag);
     assert_eq!(imported.public_key, generated.public_key);
     assert_eq!(imported.state, DnssecKeyState::Active);
+}
+
+#[test]
+fn import_requires_a_role_for_sep_keys() {
+    let zone = test_zone();
+    let key = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let record = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", key.public_key);
+
+    let err = import_key(&zone, None, &record, &key.private_key, fixed_now()).unwrap_err();
+    assert!(err.contains("specify the role"), "{err}");
+
+    // A 256 key is unambiguous: it imports as a ZSK without a role.
+    let zsk = test_key(&zone, 2, DnssecKeyRole::Zsk, DnssecKeyState::Active);
+    let record = format!("example.com. 3600 IN DNSKEY 256 3 13 {}", zsk.public_key);
+    let imported = import_key(&zone, None, &record, &zsk.private_key, fixed_now()).unwrap();
+    assert_eq!(imported.role, DnssecKeyRole::Zsk);
 }
 
 #[test]
@@ -931,7 +954,16 @@ fn import_rejects_a_mismatched_key_pair() {
     let other = test_key(&zone, 2, DnssecKeyRole::Csk, DnssecKeyState::Active);
     let record = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", one.public_key);
 
-    assert!(import_key(&zone, None, &record, &other.private_key, fixed_now()).is_err());
+    assert!(
+        import_key(
+            &zone,
+            Some(DnssecKeyRole::Csk),
+            &record,
+            &other.private_key,
+            fixed_now()
+        )
+        .is_err()
+    );
 }
 
 #[test]
