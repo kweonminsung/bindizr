@@ -4,7 +4,7 @@
 use domain::{
     base::{
         Message, MessageBuilder, Name,
-        iana::{Opcode, Rcode, Rtype},
+        iana::{Class, Opcode, Rcode, Rtype},
     },
     rdata::{Ds, Soa},
 };
@@ -133,6 +133,15 @@ pub fn extract_transfer_records(
     let mut records = Vec::new();
     for record in answer.limit_to::<AllRecordData<_, _>>() {
         let record = record.map_err(|e| format!("malformed answer record: {}", e))?;
+        // A zone transfer is single-class; rendering would rewrite any other
+        // class as IN.
+        if record.class() != Class::IN {
+            return Err(format!(
+                "transfer carries a class {} record for {}",
+                record.class(),
+                record.owner()
+            ));
+        }
         // Every embedded rdata name renders absolute except the SRV
         // target; left bare, re-parsing would requalify it.
         let rdata = match record.data() {
@@ -233,4 +242,34 @@ pub fn extract_soa_serial(query_id: u16, response: &[u8]) -> Result<u32, String>
         .find_map(|record| record.ok())
         .map(|record| record.data().serial().into_int())
         .ok_or_else(|| "no SOA record in answer".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use domain::{base::Ttl, rdata::A};
+
+    use super::*;
+
+    #[test]
+    fn transfer_rejects_a_non_in_record() {
+        let name: Name<Vec<u8>> = Name::from_str("example.com").unwrap();
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(7);
+        builder.header_mut().set_qr(true);
+        let mut answer = builder.answer();
+        answer
+            .push((
+                &name,
+                Class::CH,
+                Ttl::from_secs(300),
+                A::new("192.0.2.1".parse().unwrap()),
+            ))
+            .unwrap();
+        let wire = answer.finish();
+
+        let err = extract_transfer_records(7, &wire).unwrap_err();
+        assert!(err.contains("class"), "{err}");
+    }
 }
