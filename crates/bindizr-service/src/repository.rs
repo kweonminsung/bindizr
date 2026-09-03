@@ -776,11 +776,12 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC policies: {}", e)))
     }
 
-    pub(crate) async fn update_dnssec_policy(
+    pub(crate) async fn update_dnssec_policy_tx(
+        tx: &mut RepositoryTx<'_>,
         policy: DnssecPolicy,
     ) -> Result<DnssecPolicy, ServiceError> {
         get_dnssec_policy_repository()
-            .update(policy)
+            .update_tx(tx, policy)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to update DNSSEC policy: {}", e)))
     }

@@ -54,7 +54,9 @@ impl DnssecService {
         new_serial: i32,
     ) -> Result<(), ServiceError> {
         let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
-        if keys.is_empty() {
+        // A staged half of an imported split pair leaves the zone unsigned
+        // until its partner arrives.
+        if !DnssecKey::is_signable_set(&keys) {
             return Ok(());
         }
         let policy = Self::get_zone_policy_tx(tx, zone).await?;
@@ -132,7 +134,8 @@ impl DnssecService {
     }
 
     /// The scheduler's form of [`Self::get_signed_zone_tx`]: `None` when the
-    /// zone was deleted or unsigned since its id was listed.
+    /// zone was deleted or unsigned since its id was listed, or holds only a
+    /// staged half of an imported split pair.
     pub(crate) async fn find_signed_zone_by_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -142,7 +145,7 @@ impl DnssecService {
             return Ok(None);
         };
         let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
-        if keys.is_empty() {
+        if !DnssecKey::is_signable_set(&keys) {
             return Ok(None);
         }
         let policy = Self::get_zone_policy_tx(tx, &zone).await?;
@@ -245,6 +248,14 @@ impl DnssecService {
         RepositoryService::delete_dnssec_records_tx(tx, &removed_ids).await?;
         RepositoryService::create_dnssec_records_tx(tx, &diff.added).await?;
         Ok(true)
+    }
+}
+
+fn key_layout(split_keys: bool) -> &'static str {
+    if split_keys {
+        "split KSK/ZSK keys"
+    } else {
+        "a single CSK"
     }
 }
 

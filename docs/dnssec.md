@@ -193,10 +193,12 @@ with tight permissions.
 An imported key joins the signing set immediately. A 256-flag key imports as
 a ZSK; a SEP key (flags 257) may be a KSK or a CSK, so `--role` is required
 for it. The first import into an unsigned zone fixes the zone's policy
-(`--policy`, or `default`), whose algorithm the key must use — keys of
-another algorithm need a policy of that algorithm. A split pair imports in
-either order — the zone stays unsigned until both halves are present, then
-signs on the second import. Both commands run only over the CLI/daemon
+(`--policy`, or `default`), whose algorithm and key layout the key must
+match: a CSK under a CSK policy, KSK/ZSK halves under a split-key policy,
+and keys of another algorithm need a policy of that algorithm. A split pair
+imports in either order — the zone stays unsigned (and keeps accepting
+record changes) until both halves are present, then signs on the second
+import. Both commands run only over the CLI/daemon
 socket — private keys never transit the HTTP API.
 
 ## Disabling DNSSEC

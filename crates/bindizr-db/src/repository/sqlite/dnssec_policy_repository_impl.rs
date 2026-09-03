@@ -106,8 +106,12 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         Ok(policies)
     }
 
-    async fn update(&self, policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+    async fn update_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        policy: DnssecPolicy,
+    ) -> Result<DnssecPolicy, DatabaseError> {
+        let sqlite_tx = tx.as_sqlite()?;
 
         sqlx::query(
             r#"
@@ -123,7 +127,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         .bind(policy.rollover_publish_holddown_secs)
         .bind(policy.rollover_retire_holddown_secs)
         .bind(policy.id)
-        .execute(&mut *conn)
+        .execute(&mut **sqlite_tx)
         .await?;
 
         Ok(policy)

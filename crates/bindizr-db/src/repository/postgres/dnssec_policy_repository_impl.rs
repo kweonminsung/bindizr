@@ -109,8 +109,12 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         Ok(policies)
     }
 
-    async fn update(&self, policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+    async fn update_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        policy: DnssecPolicy,
+    ) -> Result<DnssecPolicy, DatabaseError> {
+        let postgres_tx = tx.as_postgres()?;
 
         sqlx::query(
             r#"
@@ -126,7 +130,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         .bind(policy.rollover_publish_holddown_secs)
         .bind(policy.rollover_retire_holddown_secs)
         .bind(policy.id)
-        .execute(&mut *conn)
+        .execute(&mut **postgres_tx)
         .await?;
 
         Ok(policy)

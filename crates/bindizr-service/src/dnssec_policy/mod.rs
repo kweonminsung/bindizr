@@ -6,6 +6,7 @@ use chrono::Utc;
 
 use crate::{
     authorization::Caller,
+    database::repository::LockLevel,
     error::ServiceError,
     model::{
         dnssec_key::DnssecAlgorithm,
@@ -112,36 +113,53 @@ impl DnssecPolicyService {
         request: UpdateDnssecPolicyRequest,
     ) -> Result<DnssecPolicy, ServiceError> {
         caller.require_global("manage DNSSEC policies")?;
+        let name = normalize_policy_name(name)?;
 
-        let policy = Self::lookup_by_name(name).await?;
-        let signature_validity_days = request
-            .signature_validity_days
-            .unwrap_or(policy.signature_validity_days as u32);
-        let signature_refresh_days = request
-            .signature_refresh_days
-            .unwrap_or(policy.signature_refresh_days as u32);
-        let zsk_lifetime_days = request
-            .zsk_lifetime_days
-            .unwrap_or(policy.zsk_lifetime_days as u32);
-        validate_timing(
-            signature_validity_days,
-            signature_refresh_days,
-            zsk_lifetime_days,
-        )?;
+        // Read and write under the row lock, or two partial updates would
+        // each restore the fields the other changed.
+        let mut tx = RepositoryService::begin_tx("failed to update DNSSEC policy").await?;
+        let result = async {
+            let policy = RepositoryService::get_dnssec_policy_by_name_tx(
+                &mut tx,
+                &name,
+                LockLevel::Exclusive,
+            )
+            .await?
+            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))?;
+            let signature_validity_days = request
+                .signature_validity_days
+                .unwrap_or(policy.signature_validity_days as u32);
+            let signature_refresh_days = request
+                .signature_refresh_days
+                .unwrap_or(policy.signature_refresh_days as u32);
+            let zsk_lifetime_days = request
+                .zsk_lifetime_days
+                .unwrap_or(policy.zsk_lifetime_days as u32);
+            validate_timing(
+                signature_validity_days,
+                signature_refresh_days,
+                zsk_lifetime_days,
+            )?;
 
-        RepositoryService::update_dnssec_policy(DnssecPolicy {
-            signature_validity_days: signature_validity_days as i32,
-            signature_refresh_days: signature_refresh_days as i32,
-            zsk_lifetime_days: zsk_lifetime_days as i32,
-            rollover_publish_holddown_secs: request
-                .rollover_publish_holddown_secs
-                .map_or(policy.rollover_publish_holddown_secs, i64::from),
-            rollover_retire_holddown_secs: request
-                .rollover_retire_holddown_secs
-                .map_or(policy.rollover_retire_holddown_secs, i64::from),
-            ..policy
-        })
-        .await
+            RepositoryService::update_dnssec_policy_tx(
+                &mut tx,
+                DnssecPolicy {
+                    signature_validity_days: signature_validity_days as i32,
+                    signature_refresh_days: signature_refresh_days as i32,
+                    zsk_lifetime_days: zsk_lifetime_days as i32,
+                    rollover_publish_holddown_secs: request
+                        .rollover_publish_holddown_secs
+                        .map_or(policy.rollover_publish_holddown_secs, i64::from),
+                    rollover_retire_holddown_secs: request
+                        .rollover_retire_holddown_secs
+                        .map_or(policy.rollover_retire_holddown_secs, i64::from),
+                    ..policy
+                },
+            )
+            .await
+        }
+        .await;
+        RepositoryService::finish_tx(tx, result, "failed to update DNSSEC policy").await
     }
 
     /// Delete a policy by name; refused while any zone signs under it.

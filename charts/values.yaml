@@ -45,21 +45,6 @@ bindizr:
     service:
       port: 53
 
-  # Whether a zone is signed is runtime state (bindizr zone dnssec ...), not
-  # Helm values; the *Days knobs are defaults, per-zone overridable via
-  # `bindizr zone dnssec timing`.
-  dnssec:
-    defaultSignatureValidityDays: 14
-    defaultSignatureRefreshDays: 5
-    rolloverPublishHolddownSecs: 86400
-    rolloverRetireHolddownSecs: 172800
-    defaultZskLifetimeDays: 0
-    # Resolver (host[:port]) asked for the parent DS before ds-seen; empty
-    # skips the check.
-    parentDsResolver: ""
-    # Poll the resolver and promote CSK/KSK rollovers unattended.
-    parentDsAutoPromote: false
-
   logging:
     level: info
 

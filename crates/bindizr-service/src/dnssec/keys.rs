@@ -4,13 +4,17 @@
 use bindizr_core::dns::dnssec::import_key;
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status_tx};
+use super::{DnssecService, key_layout, notify_zone, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
     dnssec_policy::normalize_policy_name,
     error::ServiceError,
-    model::{dnssec_key::DnssecKeyRole, dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME, zone::Zone},
+    model::{
+        dnssec_key::{DnssecKey, DnssecKeyRole},
+        dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME,
+        zone::Zone,
+    },
     repository::RepositoryService,
     types::{
         DnssecKeyMaterial, ExportDnssecKeysResponse, GetDnssecStatusResponse,
@@ -148,7 +152,21 @@ impl DnssecService {
                     key.algorithm, policy.name, policy.algorithm
                 )));
             }
+            // The policy fixes the key layout: status and set-policy read it
+
+            // from the policy, and a CSK cannot share a zone with a pair.
+
+            if (key.role == DnssecKeyRole::Csk) == policy.split_keys {
+                return Err(ServiceError::invalid_input(format!(
+                    "key role {} does not match policy '{}', which uses {}",
+                    key.role,
+                    policy.name,
+                    key_layout(policy.split_keys)
+                )));
+            }
+
             // Distinct keys may share a tag (RFC 4034, Appendix B); only a
+
             // byte-identical public key is a duplicate.
             if keys
                 .iter()
@@ -167,8 +185,7 @@ impl DnssecService {
 
             // A split pair arrives one key at a time: signing waits until
             // the set carries both a key-RRset signer and a data signer.
-            let signable = keys.iter().any(|key| key.signs_key_rrsets())
-                && keys.iter().any(|key| key.signs_zone_data(&keys));
+            let signable = DnssecKey::is_signable_set(&keys);
             let serial = if signable {
                 Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
                     .await?

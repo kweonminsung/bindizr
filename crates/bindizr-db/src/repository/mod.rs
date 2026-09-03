@@ -298,7 +298,11 @@ pub trait DnssecPolicyRepository: Send + Sync {
     async fn list_all(&self) -> Result<Vec<DnssecPolicy>, DatabaseError>;
     /// Write the editable columns (the timing and hold-down fields); the
     /// key layout, algorithm, and denial mode are fixed at creation.
-    async fn update(&self, policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError>;
+    async fn update_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        policy: DnssecPolicy,
+    ) -> Result<DnssecPolicy, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 

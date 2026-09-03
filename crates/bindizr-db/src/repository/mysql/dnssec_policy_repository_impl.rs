@@ -108,8 +108,12 @@ impl DnssecPolicyRepository for MySqlDnssecPolicyRepository {
         Ok(policies)
     }
 
-    async fn update(&self, policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
+    async fn update_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        policy: DnssecPolicy,
+    ) -> Result<DnssecPolicy, DatabaseError> {
+        let mysql_tx = tx.as_mysql()?;
 
         sqlx::query(
             r#"
@@ -125,7 +129,7 @@ impl DnssecPolicyRepository for MySqlDnssecPolicyRepository {
         .bind(policy.rollover_publish_holddown_secs)
         .bind(policy.rollover_retire_holddown_secs)
         .bind(policy.id)
-        .execute(&mut *conn)
+        .execute(&mut **mysql_tx)
         .await?;
 
         Ok(policy)

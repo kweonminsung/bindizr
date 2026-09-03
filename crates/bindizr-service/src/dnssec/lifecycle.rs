@@ -4,7 +4,7 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status_tx};
+use super::{DnssecService, key_layout, notify_zone, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -303,13 +303,5 @@ impl DnssecService {
 
         notify_zone(&zone_name).await;
         Ok(())
-    }
-}
-
-fn key_layout(split_keys: bool) -> &'static str {
-    if split_keys {
-        "split KSK/ZSK keys"
-    } else {
-        "a single CSK"
     }
 }
