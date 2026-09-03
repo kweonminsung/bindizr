@@ -1,8 +1,9 @@
 use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
-    EnableDnssecRequest, ImportDnssecKeyRequest, ImportZoneFileRequest, RollbackZoneRequest,
-    RolloverDnssecRequest, SetDnssecTimingRequest, UpdateRecordPatch, UpdateZonePatch,
+    EnableDnssecRequest, ImportDnssecKeyRequest, ImportZoneFileRequest,
+    ImportZoneFromServerRequest, RollbackZoneRequest, RolloverDnssecRequest,
+    SetDnssecTimingRequest, UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +38,7 @@ pub(crate) enum DaemonCommandKind {
     DeleteRecord,
     NotifyZone,
     ImportZoneFile,
+    ImportZoneFromServer,
     ExportZoneFile,
     ListZoneVersions,
     GetZoneVersion,
@@ -144,6 +146,13 @@ pub(crate) struct ImportZoneFileParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
     pub(crate) request: ImportZoneFileRequest,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct ImportZoneFromServerParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: ImportZoneFromServerRequest,
 }
 
 /// Payload for inserting records into a zone in one transaction.

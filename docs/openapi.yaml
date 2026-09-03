@@ -1710,7 +1710,7 @@ paths:
       tags:
       - Zone
       summary: Import a BIND zone file into a zone
-      description: Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. Passing `from_server` instead of `content` pulls the records over AXFR from that server first (its SOA and DNSSEC-derived records are dropped). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.
+      description: Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. Importing a zone over AXFR is available only through the CLI (`zone import --from-server`).
       operationId: import_zone
       parameters:
       - name: name
@@ -3261,26 +3261,18 @@ components:
     ImportZoneFileRequest:
       type: object
       description: Request body for importing a BIND zone file into a zone.
+      required:
+      - content
       properties:
         content:
-          type:
-          - string
-          - 'null'
-          description: Raw BIND zone file text; exactly one of this and `from_server`.
+          type: string
+          description: Raw BIND zone file text.
           example: |
             www IN A 192.0.2.1
             mail IN A 192.0.2.2
         dry_run:
           type: boolean
           description: When true, parse and validate without applying any change.
-        from_server:
-          type:
-          - string
-          - 'null'
-          description: |-
-            Pull the records over AXFR from this server (`host[:port]`, port 53
-            default) instead of `content`; the source's SOA and DNSSEC-derived
-            records are dropped.
         mode:
           $ref: '#/components/schemas/ImportMode'
     ImportZoneFileResponse:

@@ -22,15 +22,23 @@ pub enum ImportMode {
 /// Request body for importing a BIND zone file into a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ImportZoneFileRequest {
-    /// Raw BIND zone file text; exactly one of this and `from_server`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Raw BIND zone file text.
     #[schema(example = "www IN A 192.0.2.1\nmail IN A 192.0.2.2\n")]
-    pub content: Option<String>,
-    /// Pull the records over AXFR from this server (`host[:port]`, port 53
-    /// default) instead of `content`; the source's SOA and DNSSEC-derived
-    /// records are dropped.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from_server: Option<String>,
+    pub content: String,
+    #[serde(default)]
+    pub mode: ImportMode,
+    /// When true, parse and validate without applying any change.
+    #[serde(default, alias = "dryRun")]
+    pub dry_run: bool,
+}
+
+/// Import request pulling the zone over AXFR instead of carrying text;
+/// daemon-socket only — the HTTP API cannot start an outbound transfer.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ImportZoneFromServerRequest {
+    /// Transfer source (`host[:port]`, port 53 default); the source's SOA and
+    /// DNSSEC-derived records are dropped.
+    pub from_server: String,
     #[serde(default)]
     pub mode: ImportMode,
     /// When true, parse and validate without applying any change.

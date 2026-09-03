@@ -420,7 +420,7 @@ pub(crate) async fn delete_zone(
         path = "/zones/{name}/imports",
         tag = "Zone",
         summary = "Import a BIND zone file into a zone",
-        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. Passing `from_server` instead of `content` pulls the records over AXFR from that server first (its SOA and DNSSEC-derived records are dropped). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.",
+        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. Importing a zone over AXFR is available only through the CLI (`zone import --from-server`).",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to import records into.")
         ),

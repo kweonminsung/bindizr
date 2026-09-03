@@ -29,7 +29,10 @@ pub use external_dns::{
     ExternalDnsChangesResponse, ExternalDnsRecordItem, ExternalDnsRecordsResponse,
     ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse,
 };
-pub use import::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse};
+pub use import::{
+    ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
+    ImportZoneFromServerRequest,
+};
 pub use pagination::{PaginatedResponse, Pagination};
 pub(crate) use record::display_record_value_request;
 pub use record::{
