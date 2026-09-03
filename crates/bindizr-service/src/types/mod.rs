@@ -21,8 +21,8 @@ mod zone;
 pub use common::{ErrorResponse, HealthResponse, MessageResponse};
 pub use dnssec::{
     DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecKeyMaterial, DnssecStatusResponse,
-    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyRequest,
-    RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
+    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyPair,
+    ImportDnssecKeyRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
 };
 pub use dnssec_policy::{
     CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,

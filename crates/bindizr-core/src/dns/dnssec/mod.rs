@@ -134,12 +134,12 @@ pub fn generate_key(
     })
 }
 
-/// Rebuild a key from its BIND key files: the DNSKEY record (`K*.key`) and
-/// the matching private key (`K*.private`). The pair is validated by
-/// reconstructing the signer from it; the key imports as `active`.
+/// Rebuild a key from its BIND key files (`K*.key` and `K*.private`),
+/// validating the pair by reconstructing the signer; it imports as `active`.
+/// The zone's key layout types a SEP key as the CSK or the KSK.
 pub fn import_key(
     zone: &Zone,
-    role_override: Option<DnssecKeyRole>,
+    split_keys: bool,
     dnskey_record: &str,
     private_key: &str,
     now: DateTime<Utc>,
@@ -176,25 +176,22 @@ pub fn import_key(
         .decode(&public)
         .map_err(|e| format!("DNSKEY public key is not base64: {}", e))?;
 
-    let role = match role_override {
-        Some(role) => role,
-        // The SEP flag cannot say KSK vs CSK, and a wrong guess silently
-        // changes what the key signs.
-        None if flags == 257 => {
+    let role = match (flags, split_keys) {
+        (257, false) => DnssecKeyRole::Csk,
+        (257, true) => DnssecKeyRole::Ksk,
+        (256, true) => DnssecKeyRole::Zsk,
+        (256, false) => {
             return Err(
-                "a SEP key (flags 257) may be a KSK or a CSK; specify the role".to_string(),
+                "a 256-flag key is a ZSK, which a single-CSK layout does not use".to_string(),
             );
         }
-        None => DnssecKeyRole::Zsk,
+        _ => {
+            return Err(format!(
+                "unsupported DNSKEY flags {} (expected 256 or 257)",
+                flags
+            ));
+        }
     };
-    if flags != role.flags() {
-        return Err(format!(
-            "DNSKEY flags {} do not match role {} (expected {})",
-            flags,
-            role,
-            role.flags()
-        ));
-    }
 
     let dnskey = domain::rdata::Dnskey::new(
         flags,

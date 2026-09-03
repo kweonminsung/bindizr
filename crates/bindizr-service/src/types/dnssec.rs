@@ -126,19 +126,21 @@ pub struct ExportDnssecKeysResponse {
     pub keys: Vec<DnssecKeyMaterial>,
 }
 
-/// Request body importing one BIND key pair; daemon-socket only.
+/// One BIND key pair: `K*.key` contents (or the bare DNSKEY RDATA) and the
+/// matching `K*.private` contents.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ImportDnssecKeyPair {
+    pub dnskey: String,
+    pub private_key: String,
+}
+
+/// Request body importing a zone's complete key set; daemon-socket only.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ImportDnssecKeyRequest {
-    /// `K*.key` contents, or the bare DNSKEY RDATA.
-    pub dnskey: String,
-    /// `K*.private` contents.
-    pub private_key: String,
-    /// `csk`/`ksk`/`zsk`; required for a SEP key (flags 257), a 256 key
-    /// imports as `zsk`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub role: Option<String>,
-    /// Policy an unsigned zone signs under once its keys are complete;
-    /// defaults to `default`. A zone that already has a policy keeps it.
+    /// One CSK pair, or a KSK pair and a ZSK pair under a split-key policy.
+    /// The policy's layout decides the role of a SEP key.
+    pub keys: Vec<ImportDnssecKeyPair>,
+    /// Policy the zone signs under; defaults to `default`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy: Option<String>,
 }

@@ -183,25 +183,22 @@ signer using that format) migrates without breaking its chain of trust:
 # headers naming the file each block belongs in
 bindizr zone dnssec keys export example.com
 
-# Bring an existing pair in as an active key and re-sign with it
-bindizr zone dnssec keys import example.com --role csk \
+# Bring an existing key set in as active keys and sign with it
+bindizr zone dnssec keys import example.com \
     --key Kexample.com.+013+12345.key --private Kexample.com.+013+12345.private
 ```
 
 The export stream contains the private keys — redirect it only somewhere
 with tight permissions.
 
-An imported key joins the signing set immediately. A 256-flag key imports as
-a ZSK; a SEP key (flags 257) may be a KSK or a CSK, so `--role` is required
-for it. The first import into an unsigned zone fixes the zone's policy
-(`--policy`, or `default`), whose algorithm and key layout the key must
-match: a CSK under a CSK policy, KSK/ZSK halves under a split-key policy,
-and keys of another algorithm need a policy of that algorithm. A split pair
-imports in either order — the zone stays unsigned (and keeps accepting
-record changes) until both halves are present, then signs on the second
-import. Until then `status` reports the zone as not enabled and lists no DS
-record, since a DS at the parent would make the still-unsigned zone bogus. Both commands run only over the CLI/daemon
-socket — private keys never transit the HTTP API.
+Import takes the zone's complete key set in one call and signs on the spot:
+one CSK pair, or a KSK pair and a ZSK pair (repeat `--key`/`--private`)
+under a split-key policy. The policy (`--policy`, or `default`) decides what
+the keys must be: its algorithm, and its key layout, which is what types a
+SEP key (flags 257) as the CSK or the KSK — a 256-flag key is always the
+ZSK. The zone must be unsigned; a signed zone changes keys through
+[rollover](#key-rollover) instead. Both commands run only over the
+CLI/daemon socket — private keys never transit the HTTP API.
 
 ## Disabling DNSSEC
 

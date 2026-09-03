@@ -1,8 +1,8 @@
 //! The `zone dnssec` subcommands.
 
 use bindizr_service::types::{
-    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyRequest,
-    RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
+    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyPair,
+    ImportDnssecKeyRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
 };
 use clap::Subcommand;
 
@@ -134,24 +134,21 @@ pub(crate) enum ZoneDnssecKeysCommand {
         /// The name of the zone
         name: String,
     },
-    /// Import a BIND key pair as an active key and re-sign the zone: the
-    /// migration path for a zone already signed elsewhere
+    /// Import the zone's key set as BIND key pairs and sign it: one CSK
+    /// pair, or a KSK pair and a ZSK pair for a split-key policy. The
+    /// migration path for a zone signed elsewhere; the zone must be unsigned
     Import {
         /// The name of the zone
         name: String,
-        /// Path to the K*.key file (the DNSKEY record)
-        #[arg(long, value_name = "FILE")]
-        key: String,
-        /// Path to the matching K*.private file
-        #[arg(long, value_name = "FILE")]
-        private: String,
-        /// csk, ksk, or zsk; required for a SEP key (flags 257), a 256 key
-        /// imports as zsk
-        #[arg(long, value_name = "ROLE")]
-        role: Option<String>,
-        /// Policy an unsigned zone signs under once its keys are complete
-        /// (default: "default"); its algorithm must match the key's. A zone
-        /// that already has a policy keeps it
+        /// Path to a K*.key file (the DNSKEY record); repeat with --private
+        /// for each pair
+        #[arg(long, value_name = "FILE", required = true)]
+        key: Vec<String>,
+        /// Path to the matching K*.private file, in the same order as --key
+        #[arg(long, value_name = "FILE", required = true)]
+        private: Vec<String>,
+        /// Policy the zone signs under (default: "default"); its algorithm
+        /// and key layout decide what the keys must be
         #[arg(long, value_name = "NAME")]
         policy: Option<String>,
         /// Output format (json, yaml, table)
@@ -235,25 +232,34 @@ pub(crate) async fn handle_command(
                 name,
                 key,
                 private,
-                role,
                 policy,
                 output,
             } => {
-                let dnskey = std::fs::read_to_string(&key)
-                    .map_err(|e| CliError::from(format!("Failed to read '{}': {}", key, e)))?;
-                let private_key = std::fs::read_to_string(&private)
-                    .map_err(|e| CliError::from(format!("Failed to read '{}': {}", private, e)))?;
+                if key.len() != private.len() {
+                    return Err(CliError::from(format!(
+                        "--key and --private must be given in pairs ({} and {})",
+                        key.len(),
+                        private.len()
+                    )));
+                }
+                let mut keys = Vec::with_capacity(key.len());
+                for (key, private) in key.iter().zip(&private) {
+                    let dnskey = std::fs::read_to_string(key)
+                        .map_err(|e| CliError::from(format!("Failed to read '{}': {}", key, e)))?;
+                    let private_key = std::fs::read_to_string(private).map_err(|e| {
+                        CliError::from(format!("Failed to read '{}': {}", private, e))
+                    })?;
+                    keys.push(ImportDnssecKeyPair {
+                        dnskey,
+                        private_key,
+                    });
+                }
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecKeysImport,
                         ImportZoneDnssecKeyParams {
                             zone_name: name,
-                            request: ImportDnssecKeyRequest {
-                                dnskey,
-                                private_key,
-                                role,
-                                policy,
-                            },
+                            request: ImportDnssecKeyRequest { keys, policy },
                         },
                     )
                     .await?;
@@ -332,26 +338,13 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
     }
 
     let status: GetDnssecStatusResponse = parse_response(data)?;
-    if !status.enabled {
-        if status.keys.is_empty() {
-            println!(
-                "Zone {} (serial {}): DNSSEC disabled",
-                status.zone_name, status.serial
-            );
-        } else {
-            println!(
-                "Zone {} (serial {}): DNSSEC keys staged, unsigned until the imported split \
-                 pair is complete",
-                status.zone_name, status.serial
-            );
-            print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
-        }
+    let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
+        println!(
+            "Zone {} (serial {}): DNSSEC disabled",
+            status.zone_name, status.serial
+        );
         return Ok(());
-    }
-    let policy = status
-        .policy
-        .as_ref()
-        .ok_or_else(|| "DNSSEC status of a signed zone carries no policy".to_string())?;
+    };
 
     println!(
         "Zone {} (serial {}): DNSSEC enabled, {} denial",

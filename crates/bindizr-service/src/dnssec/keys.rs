@@ -61,150 +61,106 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to export DNSSEC keys").await
     }
 
-    /// Import one BIND key pair as an active key and re-sign the zone: the
-    /// migration path for a zone already signed elsewhere. An unsigned zone
-    /// takes `request.policy` (the built-in `default` when omitted); a zone
-    /// that already signs keeps its policy.
-    pub async fn import_key(
+    /// Import an unsigned zone's complete key set from BIND key pairs and
+    /// sign it: one CSK pair, or a KSK pair and a ZSK pair under a split-key
+    /// policy. The migration path for a zone signed elsewhere.
+    pub async fn import_keys(
         caller: &Caller,
         zone_name: &str,
         request: ImportDnssecKeyRequest,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
-        let role_override = request
-            .role
-            .as_deref()
-            .map(str::parse::<DnssecKeyRole>)
-            .transpose()
-            .map_err(ServiceError::invalid_input)?;
-        let requested_policy = request
-            .policy
-            .as_deref()
-            .map(normalize_policy_name)
-            .transpose()?;
+        if request.keys.is_empty() {
+            return Err(ServiceError::invalid_input("no key pair to import"));
+        }
+        let policy_name = normalize_policy_name(
+            request
+                .policy
+                .as_deref()
+                .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME),
+        )?;
 
-        let mut tx = RepositoryService::begin_tx("failed to import DNSSEC key").await?;
+        let mut tx = RepositoryService::begin_tx("failed to import DNSSEC keys").await?;
         let result = async {
             let zone =
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-
-            let (zone, policy) = match Self::find_zone_policy_tx(&mut tx, &zone).await? {
-                Some(policy) => {
-                    if requested_policy
-                        .as_deref()
-                        .is_some_and(|name| name != policy.name)
-                    {
-                        return Err(ServiceError::invalid_input(format!(
-                            "zone '{}' already signs under policy '{}'; change it with \
-                             set-policy rather than on import",
-                            zone.name.as_str(),
-                            policy.name
-                        )));
-                    }
-                    (zone, policy)
-                }
-                None => {
-                    let name = requested_policy
-                        .as_deref()
-                        .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME);
-                    let policy = RepositoryService::get_dnssec_policy_by_name_tx(
-                        &mut tx,
-                        name,
-                        LockLevel::Shared,
-                    )
-                    .await?
-                    .ok_or_else(|| ServiceError::dnssec_policy_not_found(name))?;
-                    RepositoryService::update_zone_dnssec_policy_id_tx(
-                        &mut tx,
-                        zone.id,
-                        Some(policy.id),
-                    )
-                    .await?;
-                    (
-                        Zone {
-                            dnssec_policy_id: Some(policy.id),
-                            ..zone
-                        },
-                        policy,
-                    )
-                }
-            };
-
-            let key = import_key(
-                &zone,
-                role_override,
-                &request.dnskey,
-                &request.private_key,
-                Utc::now(),
+            if !RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None)
+                .await?
+                .is_empty()
+            {
+                return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
+            }
+            let policy = RepositoryService::get_dnssec_policy_by_name_tx(
+                &mut tx,
+                &policy_name,
+                LockLevel::Shared,
             )
-            .map_err(ServiceError::invalid_input)?;
-            // The policy names the algorithm the zone advertises; a second
-            // algorithm may only join through an algorithm rollover, whose
-            // keys are already in the set.
-            if key.algorithm != policy.algorithm
-                && !keys.iter().any(|other| other.algorithm == key.algorithm)
+            .await?
+            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
+
+            let now = Utc::now();
+            let mut keys: Vec<DnssecKey> = Vec::with_capacity(request.keys.len());
+            for pair in &request.keys {
+                let key = import_key(
+                    &zone,
+                    policy.split_keys,
+                    &pair.dnskey,
+                    &pair.private_key,
+                    now,
+                )
+                .map_err(ServiceError::invalid_input)?;
+                if key.algorithm != policy.algorithm {
+                    return Err(ServiceError::invalid_input(format!(
+                        "key algorithm {} does not match policy '{}' ({}); import it under a \
+                         policy of that algorithm",
+                        key.algorithm, policy.name, policy.algorithm
+                    )));
+                }
+                // Distinct keys may share a tag (RFC 4034, Appendix B); only
+                // a byte-identical public key is a duplicate.
+                if keys.iter().any(|other| other.public_key == key.public_key) {
+                    return Err(ServiceError::invalid_input(format!(
+                        "key tag {} is given twice",
+                        key.key_tag
+                    )));
+                }
+                keys.push(key);
+            }
+            // The layout typed each SEP key; a split set still needs both halves.
+            if policy.split_keys
+                && !(keys.iter().any(|key| key.role == DnssecKeyRole::Ksk)
+                    && keys.iter().any(|key| key.role == DnssecKeyRole::Zsk))
             {
                 return Err(ServiceError::invalid_input(format!(
-                    "key algorithm {} does not match policy '{}' ({}); import it under a \
-                     policy of that algorithm",
-                    key.algorithm, policy.name, policy.algorithm
-                )));
-            }
-            // The policy fixes the key layout: status and set-policy read it
-
-            // from the policy, and a CSK cannot share a zone with a pair.
-
-            if (key.role == DnssecKeyRole::Csk) == policy.split_keys {
-                return Err(ServiceError::invalid_input(format!(
-                    "key role {} does not match policy '{}', which uses {}",
-                    key.role,
+                    "key set does not match policy '{}' ({}); import a KSK pair and a ZSK \
+                     pair together",
                     policy.name,
                     key_layout(policy.split_keys)
                 )));
             }
 
-            // Distinct keys may share a tag (RFC 4034, Appendix B); only a
-
-            // byte-identical public key is a duplicate.
-            if keys
-                .iter()
-                .any(|other| other.algorithm == key.algorithm && other.public_key == key.public_key)
-            {
-                return Err(ServiceError::invalid_input(format!(
-                    "this key (tag {}, {}) is already present in zone {}",
-                    key.key_tag,
-                    key.algorithm,
-                    zone.name.as_str()
-                )));
+            RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id))
+                .await?;
+            let zone = Zone {
+                dnssec_policy_id: Some(policy.id),
+                ..zone
+            };
+            let mut stored = Vec::with_capacity(keys.len());
+            for key in keys {
+                stored.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
 
-            let mut keys = keys;
-            keys.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
+            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &stored, false)
+                .await?
+                .unwrap_or(zone.serial);
 
-            // A split pair arrives one key at a time: signing waits until
-            // the set carries both a key-RRset signer and a data signer.
-            let signable = DnssecKey::is_signable_set(&keys);
-            let serial = if signable {
-                Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                    .await?
-                    .unwrap_or(zone.serial)
-            } else {
-                zone.serial
-            };
-
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, serial)
-                .await
-                .map(|status| (status, signable))
+            build_status_tx(&mut tx, &zone, Some(&policy), &stored, new_serial).await
         }
         .await;
-        let (response, signed) =
-            RepositoryService::finish_tx(tx, result, "failed to import DNSSEC key").await?;
+        let response =
+            RepositoryService::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
 
-        if signed {
-            notify_zone(&response.zone_name).await;
-        }
+        notify_zone(&response.zone_name).await;
         Ok(response)
     }
 }

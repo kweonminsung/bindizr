@@ -150,15 +150,15 @@ pub(crate) async fn export_dnssec_keys(
     })
 }
 
-/// Handle the `ZoneDnssecKeysImport` command by adding a BIND key pair and
-/// re-signing.
+/// Handle the `ZoneDnssecKeysImport` command by importing a zone's key set
+/// and signing it.
 pub(crate) async fn import_dnssec_key(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ImportZoneDnssecKeyParams = parse_params(data)?;
 
     let status =
-        DnssecService::import_key(&Caller::Global, &params.zone_name, params.request).await?;
+        DnssecService::import_keys(&Caller::Global, &params.zone_name, params.request).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC key imported successfully".to_string(),

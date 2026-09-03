@@ -603,7 +603,6 @@ pub trait DnssecRecordRepository: Send + Sync {
         zone_id: i32,
     ) -> Result<(), DatabaseError>;
     /// Zones holding a signed view (any derived row): the signed-zone count.
-    /// A staged split-key half has keys but no rows.
     async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
     /// Zones holding an RRSIG that expires within their policy's re-sign
     /// window after `now`: the re-sign work list.

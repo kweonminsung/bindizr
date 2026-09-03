@@ -54,9 +54,7 @@ impl DnssecService {
         new_serial: i32,
     ) -> Result<(), ServiceError> {
         let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
-        // A staged half of an imported split pair leaves the zone unsigned
-        // until its partner arrives.
-        if !DnssecKey::is_signable_set(&keys) {
+        if keys.is_empty() {
             return Ok(());
         }
         let policy = Self::get_zone_policy_tx(tx, zone).await?;
@@ -134,8 +132,7 @@ impl DnssecService {
     }
 
     /// The scheduler's form of [`Self::get_signed_zone_tx`]: `None` when the
-    /// zone was deleted or unsigned since its id was listed, or holds only a
-    /// staged half of an imported split pair.
+    /// zone was deleted or unsigned since its id was listed.
     pub(crate) async fn find_signed_zone_by_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -145,7 +142,7 @@ impl DnssecService {
             return Ok(None);
         };
         let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
-        if !DnssecKey::is_signable_set(&keys) {
+        if keys.is_empty() {
             return Ok(None);
         }
         let policy = Self::get_zone_policy_tx(tx, &zone).await?;

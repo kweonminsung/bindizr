@@ -291,12 +291,4 @@ impl DnssecKey {
     pub fn wants_parent_ds(&self) -> bool {
         self.role.is_sep() && self.state != DnssecKeyState::Retired
     }
-
-    /// Whether `keys` can sign a zone: both a key-RRset signer and a data
-    /// signer are present. A split pair imported one half at a time fails
-    /// this until the second half arrives.
-    pub fn is_signable_set(keys: &[DnssecKey]) -> bool {
-        keys.iter().any(|key| key.signs_key_rrsets())
-            && keys.iter().any(|key| key.signs_zone_data(keys))
-    }
 }

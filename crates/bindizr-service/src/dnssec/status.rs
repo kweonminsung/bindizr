@@ -20,9 +20,8 @@ use crate::{
 };
 
 impl DnssecService {
-    /// DNSSEC signing state of a zone; `enabled: false` and no DS for an
-    /// unsigned zone, including one holding only a staged half of an
-    /// imported split pair.
+    /// DNSSEC signing state of a zone; `enabled: false` with no policy and
+    /// empty key and DS lists for an unsigned zone.
     pub async fn get_status(
         caller: &Caller,
         zone_name: &str,
@@ -43,8 +42,7 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
     }
 
-    /// Count the zones serving a signed view; a staged split-key half is not
-    /// one.
+    /// Count the zones serving a signed view.
     pub async fn count_signed_zones(caller: &Caller) -> Result<u64, ServiceError> {
         caller.require_global("read DNSSEC metrics")?;
         RepositoryService::count_dnssec_record_zone_ids().await
@@ -103,23 +101,17 @@ fn build_status(
     serial: i32,
     withdrawing: bool,
 ) -> Result<GetDnssecStatusResponse, ServiceError> {
-    // A staged half of an imported split pair signs nothing yet, so a DS
-    // would delegate trust to a zone serving no DNSKEY.
-    let signed = DnssecKey::is_signable_set(keys);
     // The parent needs DS records only for the SEP keys the zone still wants
     // delegated trust for.
-    let ds_records = if signed {
-        keys.iter()
-            .filter(|key| key.wants_parent_ds())
-            .map(|key| ds_info(zone, key))
-            .collect::<Result<Vec<_>, _>>()?
-    } else {
-        Vec::new()
-    };
+    let ds_records = keys
+        .iter()
+        .filter(|key| key.wants_parent_ds())
+        .map(|key| ds_info(zone, key))
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(GetDnssecStatusResponse {
         zone_name: zone.name.as_str().to_string(),
-        enabled: signed,
+        enabled: !keys.is_empty(),
         policy: policy.map(GetDnssecPolicyResponse::from_policy),
         keys: keys
             .iter()
