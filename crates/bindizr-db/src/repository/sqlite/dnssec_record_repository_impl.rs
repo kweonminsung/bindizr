@@ -131,8 +131,6 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
     async fn list_zone_ids_expiring_within_refresh(
         &self,
         now: DateTime<Utc>,
-        default_refresh_days: u32,
-        default_validity_days: u32,
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -141,16 +139,12 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
             SELECT DISTINCT r.zone_id
             FROM dnssec_records r
             JOIN zones z ON z.id = r.zone_id
+            JOIN dnssec_policies p ON p.id = z.dnssec_policy_id
             WHERE r.expires_at IS NOT NULL
-              AND datetime(r.expires_at)
-                  < datetime(?, '+' || MAX(1, MIN(
-                        COALESCE(z.dnssec_signature_refresh_days, ?),
-                        COALESCE(z.dnssec_signature_validity_days, ?) - 1)) || ' days')
+              AND datetime(r.expires_at) < datetime(?, '+' || p.signature_refresh_days || ' days')
             "#,
         )
         .bind(now)
-        .bind(default_refresh_days as i32)
-        .bind(default_validity_days as i32)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -160,8 +154,6 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
     async fn count_expiring_within_refresh(
         &self,
         now: DateTime<Utc>,
-        default_refresh_days: u32,
-        default_validity_days: u32,
     ) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -170,16 +162,12 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
             SELECT COUNT(*)
             FROM dnssec_records r
             JOIN zones z ON z.id = r.zone_id
+            JOIN dnssec_policies p ON p.id = z.dnssec_policy_id
             WHERE r.expires_at IS NOT NULL
-              AND datetime(r.expires_at)
-                  < datetime(?, '+' || MAX(1, MIN(
-                        COALESCE(z.dnssec_signature_refresh_days, ?),
-                        COALESCE(z.dnssec_signature_validity_days, ?) - 1)) || ' days')
+              AND datetime(r.expires_at) < datetime(?, '+' || p.signature_refresh_days || ' days')
             "#,
         )
         .bind(now)
-        .bind(default_refresh_days as i32)
-        .bind(default_validity_days as i32)
         .fetch_one(&mut *conn)
         .await?;
 

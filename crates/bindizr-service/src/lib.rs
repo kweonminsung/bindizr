@@ -4,6 +4,7 @@
 pub mod authorization;
 pub mod dns_client;
 pub mod dnssec;
+pub mod dnssec_policy;
 pub mod dynamic_update;
 pub mod error;
 pub mod external_dns;

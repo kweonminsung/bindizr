@@ -36,7 +36,7 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus a sync/async apply mode that batches NOTIFYs under load.
 - **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone update policies.
-- **DNSSEC** — automatic signing and re-signing, key rollovers up to unattended parent-DS promotion, per-zone timing, and BIND-format key import/export.
+- **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, and BIND-format key import/export.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
 - **Observability** — health probe, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.

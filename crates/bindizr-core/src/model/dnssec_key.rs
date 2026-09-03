@@ -249,9 +249,6 @@ pub struct DnssecKey {
     /// transition that started the wait — later TTL or hold-down changes
     /// cannot shorten it.
     pub eligible_at: DateTime<Utc>,
-    /// When the DS poll first saw this key's DS at the parent; stamping it
-    /// extends `eligible_at` by the observed DS TTL.
-    pub ds_seen_at: Option<DateTime<Utc>>,
     /// Largest TTL among the RRsets this key has signed, so retirement knows
     /// how long resolvers can keep validating with it.
     pub max_signed_ttl: i32,

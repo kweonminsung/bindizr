@@ -259,6 +259,11 @@ pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
     repository::RepositoryFactory::create_record_repository(pool)
 }
 
+pub fn get_dnssec_policy_repository() -> Box<dyn repository::DnssecPolicyRepository> {
+    let pool = get_pool();
+    repository::RepositoryFactory::create_dnssec_policy_repository(pool)
+}
+
 pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_tsig_key_repository(pool)

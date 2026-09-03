@@ -3,7 +3,7 @@ use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
     EnableDnssecRequest, ImportDnssecKeyRequest, ImportZoneFileRequest,
     ImportZoneFromServerRequest, RollbackZoneRequest, RolloverDnssecRequest,
-    SetDnssecTimingRequest, UpdateRecordPatch, UpdateZonePatch,
+    SetZoneDnssecPolicyRequest, UpdateDnssecPolicyRequest, UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,11 @@ pub(crate) enum DaemonCommandKind {
     TsigKeyList,
     TsigKeyGet,
     TsigKeyDelete,
+    DnssecPolicyCreate,
+    DnssecPolicyList,
+    DnssecPolicyGet,
+    DnssecPolicyUpdate,
+    DnssecPolicyDelete,
     ZoneTsigPolicyAdd,
     ZoneTsigPolicyList,
     ZoneTsigPolicyRemove,
@@ -53,10 +58,9 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecRolloverDsSeen,
     ZoneDnssecWithdraw,
     ZoneDnssecWithdrawCancel,
-    ZoneDnssecTiming,
+    ZoneDnssecSetPolicy,
     ZoneDnssecKeysExport,
     ZoneDnssecKeysImport,
-    ZoneDnssecVerify,
     Doctor,
     Shutdown,
     Restart,
@@ -96,6 +100,20 @@ pub(crate) struct RecordIdParams {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct TsigKeyNameParams {
     pub(crate) name: String,
+}
+
+/// Payload addressing a DNSSEC policy by name.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct DnssecPolicyNameParams {
+    pub(crate) name: String,
+}
+
+/// Payload for editing a DNSSEC policy's timing.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct UpdateDnssecPolicyParams {
+    pub(crate) name: String,
+    #[serde(flatten)]
+    pub(crate) request: UpdateDnssecPolicyRequest,
 }
 
 /// Payload addressing an API token by name.
@@ -237,21 +255,12 @@ pub(crate) struct ImportZoneDnssecKeyParams {
     pub(crate) request: ImportDnssecKeyRequest,
 }
 
-/// Payload for replacing a zone's DNSSEC timing overrides.
+/// Payload for moving a signed zone to another DNSSEC policy.
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct TimingZoneDnssecParams {
+pub(crate) struct SetZoneDnssecPolicyParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
-    pub(crate) request: SetDnssecTimingRequest,
-}
-
-/// Payload for confirming a rollover's parent DS.
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct DsSeenZoneDnssecParams {
-    pub(crate) name: String,
-    /// Skip the parent DS verification.
-    #[serde(default)]
-    pub(crate) force: bool,
+    pub(crate) request: SetZoneDnssecPolicyRequest,
 }
 
 /// Daemon status details returned by the `Status` command.

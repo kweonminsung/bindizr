@@ -14,10 +14,11 @@ use sqlx::{MySql, Postgres, Sqlite};
 use super::model::{
     api_token::ApiToken,
     dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
+    dnssec_policy::DnssecPolicy,
     dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     record::{Record, RecordType, RecordWithZone},
     tsig_key::TsigKey,
-    zone::{DnssecDenial, Zone},
+    zone::Zone,
     zone_change::ZoneChange,
     zone_token_policy::ZoneTokenPolicy,
     zone_tsig_policy::ZoneTsigPolicy,
@@ -253,27 +254,20 @@ pub trait ZoneRepository: Send + Sync {
     /// Limit-1 probe of the zones table; health checks must stay cheap on
     /// large tables.
     async fn ping(&self) -> Result<(), DatabaseError>;
-    /// Full-row update, except the DNSSEC-owned columns (`dnssec_denial`,
-    /// the timing overrides): ordinary zone updates cannot clobber them.
+    /// Full-row update, except the DNSSEC-owned `dnssec_policy_id`: ordinary
+    /// zone updates cannot clobber it.
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
-    /// Set only `dnssec_denial`, leaving the zone's other columns untouched.
-    async fn update_dnssec_denial_tx(
+    /// Set only `dnssec_policy_id`, leaving the zone's other columns
+    /// untouched; `None` marks the zone unsigned.
+    async fn update_dnssec_policy_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        denial: DnssecDenial,
+        dnssec_policy_id: Option<i32>,
     ) -> Result<(), DatabaseError>;
-    /// Replace all three per-zone DNSSEC timing overrides, leaving the zone's
-    /// other columns untouched; `None` reverts a knob to the global config.
-    async fn update_dnssec_timing_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        zone_id: i32,
-        signature_validity_days: Option<i32>,
-        signature_refresh_days: Option<i32>,
-        zsk_lifetime_days: Option<i32>,
-    ) -> Result<(), DatabaseError>;
+    /// Zones signed under the policy: the in-use check before a delete.
+    async fn count_by_dnssec_policy_id(&self, dnssec_policy_id: i32) -> Result<u64, DatabaseError>;
     /// Bump only the serial, leaving the zone's other columns untouched.
     async fn update_serial_tx(
         &self,
@@ -282,6 +276,30 @@ pub trait ZoneRepository: Send + Sync {
         serial: i32,
     ) -> Result<(), DatabaseError>;
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
+}
+
+/// Persistence operations for DNSSEC policies.
+#[async_trait]
+pub trait DnssecPolicyRepository: Send + Sync {
+    async fn create(&self, policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError>;
+    async fn get_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        lock_level: LockLevel,
+    ) -> Result<Option<DnssecPolicy>, DatabaseError>;
+    async fn get_by_name(&self, name: &str) -> Result<Option<DnssecPolicy>, DatabaseError>;
+    async fn get_by_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+        lock_level: LockLevel,
+    ) -> Result<Option<DnssecPolicy>, DatabaseError>;
+    async fn list_all(&self) -> Result<Vec<DnssecPolicy>, DatabaseError>;
+    /// Write the editable columns (the timing and hold-down fields); the
+    /// key layout, algorithm, and denial mode are fixed at creation.
+    async fn update(&self, policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError>;
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 /// Persistence operations for TSIG keys.
@@ -521,26 +539,14 @@ pub trait DnssecKeyRepository: Send + Sync {
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<DnssecKey>, DatabaseError>;
     /// Zone ids holding a key of `role` sitting in `state` longer than the
-    /// zone's ZSK lifetime (`dnssec_zsk_lifetime_days`, or
-    /// `default_zsk_lifetime_days` when unset; an effective 0 exempts the
-    /// zone): the scheduled-rollover work list.
+    /// zone's policy's ZSK lifetime (0 exempts the zone): the
+    /// scheduled-rollover work list.
     async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         &self,
         role: DnssecKeyRole,
         state: DnssecKeyState,
         now: DateTime<Utc>,
-        default_zsk_lifetime_days: u32,
     ) -> Result<Vec<i32>, DatabaseError>;
-    async fn list_by_state(&self, state: DnssecKeyState) -> Result<Vec<DnssecKey>, DatabaseError>;
-    /// Stamp (or clear with `None`) the parent-DS observation together with
-    /// the deadline it extends, leaving the key's other columns untouched.
-    async fn update_ds_seen_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        id: i32,
-        ds_seen_at: Option<DateTime<Utc>>,
-        eligible_at: DateTime<Utc>,
-    ) -> Result<(), DatabaseError>;
     /// Zones holding at least one key: the signed-zone count.
     async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
     async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError>;
@@ -594,24 +600,16 @@ pub trait DnssecRecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<(), DatabaseError>;
-    /// Zones holding an RRSIG that expires within the zone's re-sign window
-    /// after `now`: the re-sign work list. The window is the zone's refresh
-    /// (or `default_refresh_days`) clamped into `[1, validity - 1]`, matching
-    /// the signing clamp.
+    /// Zones holding an RRSIG that expires within their policy's re-sign
+    /// window after `now`: the re-sign work list.
     async fn list_zone_ids_expiring_within_refresh(
         &self,
         now: DateTime<Utc>,
-        default_refresh_days: u32,
-        default_validity_days: u32,
     ) -> Result<Vec<i32>, DatabaseError>;
-    /// Rows expiring within the zone's re-sign window (clamped as above)
-    /// after `now`; only RRSIG rows carry `expires_at`.
-    async fn count_expiring_within_refresh(
-        &self,
-        now: DateTime<Utc>,
-        default_refresh_days: u32,
-        default_validity_days: u32,
-    ) -> Result<u64, DatabaseError>;
+    /// Rows expiring within their zone's policy's re-sign window after
+    /// `now`; only RRSIG rows carry `expires_at`.
+    async fn count_expiring_within_refresh(&self, now: DateTime<Utc>)
+    -> Result<u64, DatabaseError>;
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,
@@ -692,6 +690,22 @@ impl RepositoryFactory {
             DatabasePool::SQLite(sqlite_pool) => {
                 Box::new(sqlite::SqliteRecordRepository::new(sqlite_pool.clone()))
             }
+        }
+    }
+
+    pub(crate) fn create_dnssec_policy_repository(
+        pool: &DatabasePool,
+    ) -> Box<dyn DnssecPolicyRepository> {
+        match pool {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlDnssecPolicyRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresDnssecPolicyRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => Box::new(
+                sqlite::SqliteDnssecPolicyRepository::new(sqlite_pool.clone()),
+            ),
         }
     }
 

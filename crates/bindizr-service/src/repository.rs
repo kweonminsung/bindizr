@@ -7,16 +7,18 @@ use crate::{
     database::{
         error::DatabaseError,
         get_api_token_repository, get_catalog_zone_state_repository, get_dnssec_key_repository,
-        get_dnssec_record_repository, get_record_repository, get_tsig_key_repository,
-        get_zone_change_repository, get_zone_repository, get_zone_token_policy_repository,
-        get_zone_tsig_policy_repository, get_zone_version_repository,
+        get_dnssec_policy_repository, get_dnssec_record_repository, get_record_repository,
+        get_tsig_key_repository, get_zone_change_repository, get_zone_repository,
+        get_zone_token_policy_repository, get_zone_tsig_policy_repository,
+        get_zone_version_repository,
         model::{
             api_token::ApiToken,
             dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
+            dnssec_policy::DnssecPolicy,
             dnssec_record::{DnssecRecord, DnssecRecordWithZone},
             record::{Record, RecordWithZone},
             tsig_key::TsigKey,
-            zone::{DnssecDenial, Zone},
+            zone::Zone,
             zone_change::ZoneChange,
             zone_token_policy::ZoneTokenPolicy,
             zone_tsig_policy::ZoneTsigPolicy,
@@ -442,38 +444,11 @@ impl RepositoryService {
         role: DnssecKeyRole,
         state: DnssecKeyState,
         now: DateTime<Utc>,
-        default_zsk_lifetime_days: u32,
     ) -> Result<Vec<i32>, ServiceError> {
         get_dnssec_key_repository()
-            .list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
-                role,
-                state,
-                now,
-                default_zsk_lifetime_days,
-            )
+            .list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(role, state, now)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
-    }
-
-    pub(crate) async fn list_dnssec_keys_by_state(
-        state: DnssecKeyState,
-    ) -> Result<Vec<DnssecKey>, ServiceError> {
-        get_dnssec_key_repository()
-            .list_by_state(state)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
-    }
-
-    pub(crate) async fn update_dnssec_key_ds_seen_tx(
-        tx: &mut RepositoryTx<'_>,
-        id: i32,
-        ds_seen_at: Option<DateTime<Utc>>,
-        eligible_at: DateTime<Utc>,
-    ) -> Result<(), ServiceError> {
-        get_dnssec_key_repository()
-            .update_ds_seen_tx(tx, id, ds_seen_at, eligible_at)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to update DNSSEC key: {}", e)))
     }
 
     pub(crate) async fn count_dnssec_key_zone_ids() -> Result<u64, ServiceError> {
@@ -494,11 +469,9 @@ impl RepositoryService {
 
     pub(crate) async fn count_rrsig_dnssec_records_expiring_within_refresh(
         now: DateTime<Utc>,
-        default_refresh_days: u32,
-        default_validity_days: u32,
     ) -> Result<u64, ServiceError> {
         get_dnssec_record_repository()
-            .count_expiring_within_refresh(now, default_refresh_days, default_validity_days)
+            .count_expiring_within_refresh(now)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
@@ -602,11 +575,9 @@ impl RepositoryService {
 
     pub(crate) async fn list_rrsig_zone_ids_expiring_within_refresh(
         now: DateTime<Utc>,
-        default_refresh_days: u32,
-        default_validity_days: u32,
     ) -> Result<Vec<i32>, ServiceError> {
         get_dnssec_record_repository()
-            .list_zone_ids_expiring_within_refresh(now, default_refresh_days, default_validity_days)
+            .list_zone_ids_expiring_within_refresh(now)
             .await
             .map_err(|e| {
                 ServiceError::internal(format!("failed to find zones needing re-signing: {}", e))
@@ -635,41 +606,28 @@ impl RepositoryService {
             .map_err(|e| zone_name_race_error(name.as_str(), "update", &e))
     }
 
-    /// Replace the zone's three DNSSEC timing overrides; `None` reverts a
-    /// knob to the global config.
-    pub(crate) async fn update_zone_dnssec_timing_tx(
+    /// Set only the zone's `dnssec_policy_id`, leaving other columns
+    /// untouched; `None` marks the zone unsigned.
+    pub(crate) async fn update_zone_dnssec_policy_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        signature_validity_days: Option<i32>,
-        signature_refresh_days: Option<i32>,
-        zsk_lifetime_days: Option<i32>,
+        dnssec_policy_id: Option<i32>,
     ) -> Result<(), ServiceError> {
         get_zone_repository()
-            .update_dnssec_timing_tx(
-                tx,
-                zone_id,
-                signature_validity_days,
-                signature_refresh_days,
-                zsk_lifetime_days,
-            )
+            .update_dnssec_policy_id_tx(tx, zone_id, dnssec_policy_id)
             .await
             .map_err(|e| {
-                ServiceError::internal(format!("failed to update zone DNSSEC timing: {}", e))
+                ServiceError::internal(format!("failed to update zone DNSSEC policy: {}", e))
             })
     }
 
-    /// Set only the zone's `dnssec_denial` mode, leaving other columns untouched.
-    pub(crate) async fn update_zone_dnssec_denial_tx(
-        tx: &mut RepositoryTx<'_>,
-        zone_id: i32,
-        denial: DnssecDenial,
-    ) -> Result<(), ServiceError> {
+    pub(crate) async fn count_zones_by_dnssec_policy_id(
+        dnssec_policy_id: i32,
+    ) -> Result<u64, ServiceError> {
         get_zone_repository()
-            .update_dnssec_denial_tx(tx, zone_id, denial)
+            .count_by_dnssec_policy_id(dnssec_policy_id)
             .await
-            .map_err(|e| {
-                ServiceError::internal(format!("failed to update zone DNSSEC options: {}", e))
-            })
+            .map_err(|e| ServiceError::internal(format!("failed to count zones: {}", e)))
     }
 
     /// Bump only the zone serial, leaving its other columns untouched.
@@ -760,6 +718,89 @@ impl RepositoryService {
             .list_between_serials_tx(tx, zone_id, from_serial, to_serial, lock_level)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
+    }
+
+    pub(crate) async fn create_dnssec_policy(
+        policy: DnssecPolicy,
+    ) -> Result<DnssecPolicy, ServiceError> {
+        let name = policy.name.clone();
+        get_dnssec_policy_repository()
+            .create(policy)
+            .await
+            .map_err(|e| {
+                // A concurrent create can slip past the service-level name
+                // check; surface the UNIQUE(name) backstop as the same conflict.
+                if e.is_unique_violation() {
+                    ServiceError::dnssec_policy_conflict(&name)
+                } else {
+                    ServiceError::internal(format!("failed to create DNSSEC policy: {}", e))
+                }
+            })
+    }
+
+    pub(crate) async fn get_dnssec_policy_tx(
+        tx: &mut RepositoryTx<'_>,
+        id: i32,
+        lock_level: LockLevel,
+    ) -> Result<Option<DnssecPolicy>, ServiceError> {
+        get_dnssec_policy_repository()
+            .get_tx(tx, id, lock_level)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC policy: {}", e)))
+    }
+
+    pub(crate) async fn get_dnssec_policy_by_name(
+        name: &str,
+    ) -> Result<Option<DnssecPolicy>, ServiceError> {
+        get_dnssec_policy_repository()
+            .get_by_name(name)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC policy: {}", e)))
+    }
+
+    pub(crate) async fn get_dnssec_policy_by_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+        lock_level: LockLevel,
+    ) -> Result<Option<DnssecPolicy>, ServiceError> {
+        get_dnssec_policy_repository()
+            .get_by_name_tx(tx, name, lock_level)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC policy: {}", e)))
+    }
+
+    pub(crate) async fn list_dnssec_policies() -> Result<Vec<DnssecPolicy>, ServiceError> {
+        get_dnssec_policy_repository()
+            .list_all()
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC policies: {}", e)))
+    }
+
+    pub(crate) async fn update_dnssec_policy(
+        policy: DnssecPolicy,
+    ) -> Result<DnssecPolicy, ServiceError> {
+        get_dnssec_policy_repository()
+            .update(policy)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to update DNSSEC policy: {}", e)))
+    }
+
+    pub(crate) async fn delete_dnssec_policy(id: i32) -> Result<(), ServiceError> {
+        get_dnssec_policy_repository()
+            .delete(id)
+            .await
+            .map_err(|e| {
+                // A zone enabled between the service-level count and this delete
+                // trips the FK; surface it as the in-use conflict.
+                if e.is_foreign_key_violation() {
+                    ServiceError::new(
+                        ErrorCode::DnssecPolicyInUse,
+                        "DNSSEC policy is still used by signed zones",
+                    )
+                } else {
+                    ServiceError::internal(format!("failed to delete DNSSEC policy: {}", e))
+                }
+            })
     }
 
     pub(crate) async fn create_tsig_key(key: TsigKey) -> Result<TsigKey, ServiceError> {

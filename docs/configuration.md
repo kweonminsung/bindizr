@@ -54,20 +54,12 @@ notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response
 nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests (not recommended in production; TSIG keys/policies are managed via CLI or HTTP API)
 journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
 
-[dnssec]
-default_signature_validity_days = 14  # RRSIG validity period; per-zone override via `zone dnssec timing`
-default_signature_refresh_days = 5    # Re-sign when a signature has fewer than this many days left (must be < validity); per-zone override via `zone dnssec timing`
-rollover_publish_holddown_secs = 86400 # Wait before a pre-published key may start signing (ZSKs auto-advance)
-rollover_retire_holddown_secs = 172800 # Wait before a retired key is removed from the zone
-default_zsk_lifetime_days = 0         # Roll ZSKs active longer than this automatically (0 = disabled); per-zone override via `zone dnssec timing`
-parent_ds_resolver = ""        # Resolver (host[:port]) asked for the parent DS before ds-seen; empty skips the check
-parent_ds_auto_promote = false # Poll the resolver for pending DS records and promote CSK/KSK rollovers unattended
-
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace
 ```
 
-Whether a zone is signed is not configuration: enable DNSSEC per zone through
+Whether a zone is signed, and the signing parameters it uses, are not
+configuration: enable DNSSEC per zone under a DNSSEC policy managed through
 the API or CLI — see [DNSSEC](dnssec.md).
 
 ## Environment variables
@@ -98,13 +90,6 @@ the API or CLI — see [DNSSEC](dnssec.md).
 | `BINDIZR_ZONE_CACHE` | `dns.zone_cache` | |
 | `BINDIZR_NSUPDATE_ALLOW_UNSIGNED` | `dns.nsupdate_allow_unsigned` | |
 | `BINDIZR_JOURNAL_RETENTION_DAYS` | `dns.journal_retention_days` | `0` keeps history forever |
-| `BINDIZR_DNSSEC_DEFAULT_SIGNATURE_VALIDITY_DAYS` | `dnssec.default_signature_validity_days` | |
-| `BINDIZR_DNSSEC_DEFAULT_SIGNATURE_REFRESH_DAYS` | `dnssec.default_signature_refresh_days` | |
-| `BINDIZR_DNSSEC_ROLLOVER_PUBLISH_HOLDDOWN_SECS` | `dnssec.rollover_publish_holddown_secs` | |
-| `BINDIZR_DNSSEC_ROLLOVER_RETIRE_HOLDDOWN_SECS` | `dnssec.rollover_retire_holddown_secs` | |
-| `BINDIZR_DNSSEC_DEFAULT_ZSK_LIFETIME_DAYS` | `dnssec.default_zsk_lifetime_days` | |
-| `BINDIZR_DNSSEC_PARENT_DS_RESOLVER` | `dnssec.parent_ds_resolver` | |
-| `BINDIZR_DNSSEC_PARENT_DS_AUTO_PROMOTE` | `dnssec.parent_ds_auto_promote` | Needs `parent_ds_resolver`; see [DNSSEC](dnssec.md) |
 | `BINDIZR_LOG_LEVEL` | `logging.log_level` | |
 
 `BINDIZR_DATABASE_URL` is a convenience for container deployments where the URL

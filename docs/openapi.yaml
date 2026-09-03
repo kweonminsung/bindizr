@@ -9,6 +9,249 @@ info:
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   version: 0.1.0-beta.7
 paths:
+  /dnssec-policies:
+    get:
+      tags:
+      - DNSSEC
+      summary: List all DNSSEC policies
+      description: 'Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.'
+      operationId: get_dnssec_policies
+      responses:
+        '200':
+          description: All DNSSEC policies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecPolicyListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - DNSSEC
+      summary: Create a DNSSEC policy
+      description: Creates a DNSSEC policy. The algorithm (`ecdsap256sha256` by default; also `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, `rsasha512`), denial mode (`nsec` or `nsec3`), and key layout (`split_keys`) are fixed once created; the timing fields can be edited later. Omitted fields take the built-in defaults.
+      operationId: create_dnssec_policy
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDnssecPolicyRequest'
+        required: true
+      responses:
+        '201':
+          description: DNSSEC policy created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecPolicyResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A DNSSEC policy with the same name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /dnssec-policies/{name}:
+    get:
+      tags:
+      - DNSSEC
+      summary: Get a specific DNSSEC policy
+      operationId: get_dnssec_policy
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNSSEC policy.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The DNSSEC policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecPolicyResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: DNSSEC policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+      - DNSSEC
+      summary: Edit a DNSSEC policy's timing
+      description: 'Edits the policy''s signature validity, re-sign threshold, scheduled ZSK lifetime, and rollover hold-downs; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or maintenance scan.'
+      operationId: update_dnssec_policy
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNSSEC policy.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDnssecPolicyRequest'
+        required: true
+      responses:
+        '200':
+          description: DNSSEC policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecPolicyResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: DNSSEC policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - DNSSEC
+      summary: Delete a DNSSEC policy
+      description: Deletes a DNSSEC policy. Refused while any zone signs under it.
+      operationId: delete_dnssec_policy
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNSSEC policy.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DNSSEC policy deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: DNSSEC policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: DNSSEC policy is still used by signed zones
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /external-dns/adjust:
     post:
       tags:
@@ -1053,7 +1296,7 @@ paths:
       tags:
       - DNSSEC
       summary: Get a zone's DNSSEC status
-      description: Returns whether the zone is signed, its signing keys, their DS forms for the parent zone, the earliest stored signature expiration, and the zone serial. For an unsigned zone `enabled` is false with empty key and DS lists.
+      description: Returns whether the zone is signed, the policy it signs under, its signing keys, their DS forms for the parent zone, the earliest stored signature expiration, and the zone serial. For an unsigned zone `enabled` is false with no policy and empty key and DS lists.
       operationId: get_dnssec_status
       parameters:
       - name: name
@@ -1097,7 +1340,7 @@ paths:
       tags:
       - DNSSEC
       summary: Enable DNSSEC for a zone
-      description: Generates the zone's signing key — an ECDSA P-256 CSK by default (`algorithm` also accepts `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, and `rsasha512`; `split_keys` generates a KSK/ZSK pair instead; `nsec3` selects NSEC3 denial of existence) — and signs the whole zone. The response includes the DS records to register in the parent zone.
+      description: Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone.
       operationId: enable_dnssec
       parameters:
       - name: name
@@ -1138,7 +1381,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: Zone not found
+          description: Zone or DNSSEC policy not found
           content:
             application/json:
               schema:
@@ -1256,12 +1499,81 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/dnssec/policy:
+    put:
+      tags:
+      - DNSSEC
+      summary: Move a signed zone to another DNSSEC policy
+      description: 'Points the zone at another policy. The denial mode and key layout must match the current policy''s (they are fixed while signed; disable and re-enable to change them). A different algorithm starts an algorithm rollover under the new policy: every key gets a pre-published replacement and the zone is double-signed until the old keys leave after ds-seen (RFC 6840, Section 5.11). Timing changes take effect on the next signing pass.'
+      operationId: set_zone_dnssec_policy
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetZoneDnssecPolicyRequest'
+        required: true
+      responses:
+        '200':
+          description: Policy changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecStatusResponse'
+        '400':
+          description: 'Bad request: the policy''s denial mode or key layout differs from the zone''s'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or DNSSEC policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: DNSSEC is not enabled for the zone, or a rollover is already in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}/dnssec/rollover:
     post:
       tags:
       - DNSSEC
       summary: Start a key rollover for a zone
-      description: Pre-publishes replacement keys (RFC 7583). Without `algorithm` the replacement keeps the current one and signs no zone data until promoted; `role` selects the key for split-key zones. With `algorithm` every key is replaced and the zone is double-signed through the transition (RFC 6840, Section 5.11) until the old keys leave after ds-seen.
+      description: Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`PUT /zones/{name}/dnssec/policy`), which double-signs the zone through the transition (RFC 6840, Section 5.11).
       operationId: start_dnssec_rollover
       parameters:
       - name: name
@@ -1330,7 +1642,7 @@ paths:
       tags:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
-      description: The operator's confirmation that the new DS record has been seen at the parent zone and its TTL has passed (the `ds-seen` step, as in OpenDNSSEC/BIND). Promotes the pre-published key to active and retires the key it replaces; retired keys are removed automatically once caches drain. ZSK rollovers involve no DS and are promoted automatically after a hold-down.
+      description: The operator's confirmation that the new DS record has been seen at the parent zone and its TTL has passed (the `ds-seen` step, as in OpenDNSSEC/BIND); bindizr does not check the parent itself. Promotes the pre-published key to active and retires the key it replaces; retired keys are removed automatically once caches drain. ZSK rollovers involve no DS and are promoted automatically after a hold-down.
       operationId: ds_seen_dnssec_rollover
       parameters:
       - name: name
@@ -1339,12 +1651,6 @@ paths:
         required: true
         schema:
           type: string
-      - name: force
-        in: query
-        description: Skip the parent DS verification against dnssec.parent_ds_resolver.
-        required: false
-        schema:
-          type: boolean
       responses:
         '200':
           description: Rollover advanced, new key promoted
@@ -1353,7 +1659,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DnssecStatusResponse'
         '400':
-          description: 'Bad request: the rollover is ZSK-only (no DS to confirm), the publish hold-down has not passed, or the parent DS is not visible at the configured resolver'
+          description: 'Bad request: the rollover is ZSK-only (no DS to confirm), or the publish hold-down has not passed'
           content:
             application/json:
               schema:
@@ -1409,114 +1715,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MessageResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: DNSSEC is not enabled for the zone
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/dnssec/timing:
-    put:
-      tags:
-      - DNSSEC
-      summary: Replace a zone's DNSSEC timing overrides
-      description: Replaces the zone's signing-timing overrides (signature validity, re-sign threshold, scheduled ZSK lifetime). An omitted field reverts that knob to the global `[dnssec]` config. Takes effect on the next signing pass or maintenance scan.
-      operationId: set_dnssec_timing
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SetDnssecTimingRequest'
-        required: true
-      responses:
-        '200':
-          description: Timing overrides replaced
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DnssecStatusResponse'
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/dnssec/verify:
-    get:
-      tags:
-      - DNSSEC
-      summary: Verify a zone's DNSSEC state
-      description: Runs self-checks on the stored state — key inventory, signature freshness, per-algorithm signature coverage (RFC 6840, Section 5.11), and the denial chain — and, with `dnssec.parent_ds_resolver` configured, compares the DS the parent serves against the zone's keys. Each aspect reports as a named check; `ok` is the conjunction.
-      operationId: verify_dnssec
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      responses:
-        '200':
-          description: Verification report
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VerifyDnssecResponse'
         '401':
           description: Unauthorized
           content:
@@ -2459,6 +2657,84 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RecordItem'
+    CreateDnssecPolicyRequest:
+      type: object
+      description: |-
+        Request body for creating a DNSSEC policy. The key layout, algorithm,
+        and denial mode are fixed once created; every omitted field takes the
+        built-in `default` policy's value.
+      required:
+      - name
+      properties:
+        algorithm:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384`,
+            `ed25519`, `ed448`, `rsasha256`, and `rsasha512`.
+          example: ecdsap256sha256
+        denial:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276
+            parameters).
+          example: nsec3
+        name:
+          type: string
+          example: strict
+        rollover_publish_holddown_secs:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Wait before a pre-published key may start signing (default one day).
+          example: 86400
+          minimum: 0
+        rollover_retire_holddown_secs:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Wait before a retired key is removed from the zone (default two days).
+          example: 172800
+          minimum: 0
+        signature_refresh_days:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            Re-sign when a signature has fewer than this many days left (default
+            5); must be below the validity.
+          example: 5
+          minimum: 0
+        signature_validity_days:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Days a new signature stays valid (default 14).
+          example: 14
+          minimum: 0
+        split_keys:
+          type: boolean
+          description: |-
+            A KSK/ZSK pair instead of one CSK, so the ZSK rolls without touching
+            the parent DS.
+          example: false
+        zsk_lifetime_days:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            Days an active ZSK may sign before the scheduler rolls it; 0 (the
+            default) disables scheduled rolls.
+          example: 90
+          minimum: 0
     CreateRecordRequest:
       type: object
       description: Request body for creating a record in a named zone.
@@ -2621,23 +2897,6 @@ components:
           type: string
           description: Name of an existing TSIG key.
           example: update-key
-    DnssecCheckInfo:
-      type: object
-      description: One verification check's outcome.
-      required:
-      - check
-      - ok
-      - detail
-      properties:
-        check:
-          type: string
-          example: signatures
-        detail:
-          type: string
-          example: 142 RRSIGs, earliest expiry 2026-09-12T00:00:00Z
-        ok:
-          type: boolean
-          example: true
     DnssecDsInfo:
       type: object
       description: A key's DS form for parent-zone registration.
@@ -2703,14 +2962,6 @@ components:
           type: string
           description: 'Apex DNSKEY RDATA in presentation form: `257 3 <alg> <public key>`.'
           example: 257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==
-        ds_seen_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-          description: |-
-            When the DS poll first saw this key's DS at the parent; only pending
-            SEP keys carry it.
         eligible_at:
           type:
           - string
@@ -2738,6 +2989,24 @@ components:
         state_changed_at:
           type: string
           format: date-time
+    DnssecPolicyListResponse:
+      type: object
+      description: Every DNSSEC policy.
+      required:
+      - dnssec_policies
+      properties:
+        dnssec_policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetDnssecPolicyResponse'
+    DnssecPolicyResponse:
+      type: object
+      description: A DNSSEC policy wrapped in a response envelope.
+      required:
+      - dnssec_policy
+      properties:
+        dnssec_policy:
+          $ref: '#/components/schemas/GetDnssecPolicyResponse'
     DnssecStatusResponse:
       type: object
       description: A zone's DNSSEC status wrapped in a response envelope.
@@ -2746,71 +3015,16 @@ components:
       properties:
         dnssec:
           $ref: '#/components/schemas/GetDnssecStatusResponse'
-    DnssecTimingInfo:
-      type: object
-      description: |-
-        Per-zone signing timing: the values in effect after applying any zone
-        override to the global `[dnssec]` config, plus the stored overrides.
-      required:
-      - signature_validity_days
-      - signature_refresh_days
-      - zsk_lifetime_days
-      properties:
-        signature_refresh_days:
-          type: integer
-          format: int32
-          example: 7
-          minimum: 0
-        signature_refresh_days_override:
-          type:
-          - integer
-          - 'null'
-          format: int32
-        signature_validity_days:
-          type: integer
-          format: int32
-          example: 30
-          minimum: 0
-        signature_validity_days_override:
-          type:
-          - integer
-          - 'null'
-          format: int32
-        zsk_lifetime_days:
-          type: integer
-          format: int32
-          description: 0 disables scheduled ZSK rollovers.
-          example: 90
-          minimum: 0
-        zsk_lifetime_days_override:
-          type:
-          - integer
-          - 'null'
-          format: int32
     EnableDnssecRequest:
       type: object
       description: Request body for enabling DNSSEC on a zone.
       properties:
-        algorithm:
+        policy:
           type:
           - string
           - 'null'
-          description: Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, and `rsasha512`.
-          example: ecdsap256sha256
-        denial:
-          type:
-          - string
-          - 'null'
-          description: |-
-            Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276
-            parameters). Fixed at enable time.
-          example: nsec3
-        split_keys:
-          type: boolean
-          description: |-
-            Split KSK/ZSK keys instead of one CSK, so the ZSK rolls without
-            touching the parent DS.
-          example: false
+          description: Name of the DNSSEC policy to sign under; defaults to `default`.
+          example: default
     ErrorResponse:
       type: object
       description: 'Generic error response: a plain description plus a machine-readable code.'
@@ -2971,22 +3185,78 @@ components:
             type: string
           example:
           - example.com
+    GetDnssecPolicyResponse:
+      type: object
+      description: API representation of a DNSSEC policy.
+      required:
+      - id
+      - name
+      - algorithm
+      - denial
+      - split_keys
+      - signature_validity_days
+      - signature_refresh_days
+      - zsk_lifetime_days
+      - rollover_publish_holddown_secs
+      - rollover_retire_holddown_secs
+      - created_at
+      properties:
+        algorithm:
+          type: string
+          example: ecdsap256sha256
+        created_at:
+          type: string
+          format: date-time
+        denial:
+          type: string
+          description: '`nsec` or `nsec3`.'
+          example: nsec
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: default
+        rollover_publish_holddown_secs:
+          type: integer
+          format: int32
+          example: 86400
+          minimum: 0
+        rollover_retire_holddown_secs:
+          type: integer
+          format: int32
+          example: 172800
+          minimum: 0
+        signature_refresh_days:
+          type: integer
+          format: int32
+          example: 5
+          minimum: 0
+        signature_validity_days:
+          type: integer
+          format: int32
+          example: 14
+          minimum: 0
+        split_keys:
+          type: boolean
+          example: false
+        zsk_lifetime_days:
+          type: integer
+          format: int32
+          description: 0 disables scheduled ZSK rollovers.
+          example: 0
+          minimum: 0
     GetDnssecStatusResponse:
       type: object
       description: DNSSEC signing state of a zone.
       required:
       - zone_name
       - enabled
-      - denial
       - keys
       - ds_records
       - serial
-      - timing
       properties:
-        denial:
-          type: string
-          description: 'Denial-of-existence mode: `nsec` or `nsec3`.'
-          example: nsec
         ds_records:
           type: array
           items:
@@ -3005,12 +3275,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DnssecKeyInfo'
+        policy:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/GetDnssecPolicyResponse'
+            description: The policy the zone signs under; absent for an unsigned zone.
         serial:
           type: integer
           format: int32
           example: 7
-        timing:
-          $ref: '#/components/schemas/DnssecTimingInfo'
         withdrawing:
           type: boolean
           description: |-
@@ -3737,21 +4010,13 @@ components:
       type: object
       description: Request body for starting a key rollover.
       properties:
-        algorithm:
-          type:
-          - string
-          - 'null'
-          description: |-
-            Roll to this algorithm instead (RFC 6840, Section 5.11): replaces
-            every key, double-signing the zone until the old keys leave.
-          example: ed25519
         role:
           type:
           - string
           - 'null'
           description: |-
             Which key to roll: required for split-key zones (`ksk` or `zsk`),
-            omitted for CSK zones and algorithm rollovers.
+            omitted for CSK zones.
           example: zsk
     SecondaryStatusResponse:
       type: object
@@ -3777,38 +4042,18 @@ components:
           - 'null'
           format: int64
           example: 42
-    SetDnssecTimingRequest:
+    SetZoneDnssecPolicyRequest:
       type: object
-      description: |-
-        Request body replacing a zone's timing overrides: an omitted field reverts
-        that knob to the global `[dnssec]` config.
+      description: Request body for moving a signed zone to another DNSSEC policy.
+      required:
+      - policy
       properties:
-        signature_refresh_days:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Re-sign when a signature has fewer than this many days left.
-          example: 7
-          minimum: 0
-        signature_validity_days:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Days a new signature stays valid.
-          example: 30
-          minimum: 0
-        zsk_lifetime_days:
-          type:
-          - integer
-          - 'null'
-          format: int32
+        policy:
+          type: string
           description: |-
-            Days an active ZSK may sign before the scheduler rolls it; 0 disables
-            scheduled rolls for this zone.
-          example: 90
-          minimum: 0
+            Name of an existing DNSSEC policy with the zone's denial mode and key
+            layout; a different algorithm starts an algorithm rollover.
+          example: strict
     TsigKeyListResponse:
       type: object
       description: List of TSIG keys (secrets omitted).
@@ -3827,25 +4072,47 @@ components:
       properties:
         tsig_key:
           $ref: '#/components/schemas/GetTsigKeyResponse'
-    VerifyDnssecResponse:
+    UpdateDnssecPolicyRequest:
       type: object
-      description: Result of verifying a zone's DNSSEC state.
-      required:
-      - zone_name
-      - ok
-      - checks
+      description: |-
+        Request body for editing a DNSSEC policy's timing; an omitted field keeps
+        its value. Takes effect on the next signing pass or maintenance scan.
       properties:
-        checks:
-          type: array
-          items:
-            $ref: '#/components/schemas/DnssecCheckInfo'
-        ok:
-          type: boolean
-          description: Whether every check passed.
-          example: true
-        zone_name:
-          type: string
-          example: example.com
+        rollover_publish_holddown_secs:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 86400
+          minimum: 0
+        rollover_retire_holddown_secs:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 172800
+          minimum: 0
+        signature_refresh_days:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 7
+          minimum: 0
+        signature_validity_days:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 30
+          minimum: 0
+        zsk_lifetime_days:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 90
+          minimum: 0
     VersionDetailResponse:
       type: object
       description: One version plus the reconstructed record set at that serial.
@@ -4053,6 +4320,6 @@ tags:
 - name: Token
   description: 'Per-zone API token policies: record-plane grants for scoped tokens.'
 - name: DNSSEC
-  description: 'Per-zone DNSSEC signing: enable, disable, status, DS records for the parent zone, key rollover, and re-signing.'
+  description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone, key rollover, and re-signing.'
 - name: ExternalDNS
   description: Provider endpoints for the ExternalDNS webhook adapter; registered only when api.external_dns_enabled is set.

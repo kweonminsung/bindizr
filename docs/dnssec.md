@@ -7,10 +7,66 @@ records, and serves them over the same AXFR/IXFR path — secondaries need
 changed in the same transaction, and a background scheduler renews
 signatures before they expire.
 
+How a zone is signed is described by a **DNSSEC policy**, a named bundle of
+signing parameters that zones reference — the same shape as BIND's
+`dnssec-policy` and Knot's `policy`. A `default` policy is seeded at
+startup; create others when zones need a different algorithm, denial mode,
+key layout, or timing.
+
+## Policies
+
+```sh
+bindizr dnssec-policy list
+bindizr dnssec-policy create --name strict --algorithm ed25519 --denial nsec3 \
+    --signature-validity-days 7 --signature-refresh-days 3
+bindizr dnssec-policy get strict
+bindizr dnssec-policy update strict --zsk-lifetime-days 90
+bindizr dnssec-policy delete strict
+```
+
+Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
+/dnssec-policies/{name}`. A policy carries:
+
+`algorithm`
+:   `ecdsap256sha256` (default), `ecdsap384sha384`, `ed25519`, `ed448`,
+    `rsasha256`, or `rsasha512` — every algorithm RFC 8624 permits for
+    signing; RSA keys are 2048-bit. P-384 keys advertise a SHA-384 DS digest
+    (type 4); the others SHA-256 (type 2).
+
+`denial`
+:   `nsec` (default) or `nsec3` (RFC 9276 parameters). NSEC lets anyone walk
+    the zone's names; NSEC3 hashes them.
+
+`split_keys`
+:   A KSK/ZSK pair instead of one CSK: the KSK is the only key the parent DS
+    names, so the ZSK rolls without touching the parent. A CSK is simpler
+    otherwise.
+
+`signature_validity_days` / `signature_refresh_days`
+:   How long a new signature stays valid (default 14) and how many days
+    before expiry it is renewed (default 5). The refresh window must be
+    shorter than the validity.
+
+`zsk_lifetime_days`
+:   Roll the ZSK of split-key zones automatically once it has signed this
+    long; 0 (the default) disables scheduled rolls.
+
+`rollover_publish_holddown_secs` / `rollover_retire_holddown_secs`
+:   How long a pre-published key stays visible before it may sign (default
+    one day) and how long a retired key stays published before removal
+    (default two days). Neither ever drops below the TTLs involved; see
+    [Key rollover](#key-rollover).
+
+The algorithm, denial mode, and key layout are fixed once a policy exists;
+the timing fields can be edited in place and apply to every zone under the
+policy from its next signing pass or maintenance scan. A policy in use
+cannot be deleted.
+
 ## Enabling DNSSEC for a zone
 
 ```sh
-bindizr zone dnssec enable example.com
+bindizr zone dnssec enable example.com                  # the default policy
+bindizr zone dnssec enable example.com --policy strict
 ```
 
 or over HTTP:
@@ -18,26 +74,25 @@ or over HTTP:
 ```sh
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:3000/zones/example.com/dnssec \
-  -H "Content-Type: application/json" -d '{}'
+  -H "Content-Type: application/json" -d '{"policy": "strict"}'
 ```
 
-This generates a single CSK (ECDSA P-256/SHA-256 by default; `--algorithm`
-selects `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, or `rsasha512`
-instead — every algorithm RFC 8624 permits for signing; RSA keys are
-2048-bit), signs the whole zone, and notifies the secondaries. P-384 keys
-advertise a SHA-384 DS digest (type 4); the others SHA-256 (type 2).
-The private key never leaves bindizr.
+This generates the key(s) the policy prescribes (under `default`, a single
+ECDSA P-256 CSK), signs the whole zone, and notifies the secondaries. The
+private key never leaves bindizr.
 
-Two options are fixed at enable time:
+A signed zone moves to another policy with:
 
-`--denial nsec3` (`"denial": "nsec3"`)
-:   `NSEC3` denial of existence (RFC 9276 parameters) instead of the default
-    `NSEC`. NSEC lets anyone walk the zone's names; NSEC3 hashes them.
+```sh
+bindizr zone dnssec set-policy example.com strict
+```
 
-`--split-keys` (`"split_keys": true`)
-:   A KSK/ZSK pair instead of one CSK: the KSK is the only key the parent DS
-    names, so the ZSK rolls without touching the parent. A CSK is simpler
-    otherwise.
+Also `PUT /zones/{name}/dnssec/policy`. The target must share the zone's
+denial mode and key layout — those have no safe in-place transition, so to
+change them disable DNSSEC and re-enable under the new policy, going
+insecure in between. A different algorithm starts an
+[algorithm rollover](#key-rollover); different timing simply applies from
+the next signing pass.
 
 ## Completing the chain of trust
 
@@ -68,18 +123,19 @@ bindizr zone dnssec rollover start example.com --role zsk # split-key zones
 
 `start` pre-publishes a replacement with the same algorithm: it joins the
 `DNSKEY` RRset (and, for CSK/KSK, the CDS/CDNSKEY set — both DS records
-advertised) but signs nothing yet. The publication wait —
+advertised) but signs nothing yet. The publication wait — the policy's
 `rollover_publish_holddown_secs` (default one day), never less than the
 zone's `DNSKEY` TTL, fixed when the key is published — gives resolver caches
 time to learn the new key. Then:
 
-`--algorithm <alg>` starts an algorithm rollover (RFC 6840, Section 5.11)
-instead: every key is replaced with one of the new algorithm and the zone is
-double-signed — both algorithms cover all data — until the old keys leave
-together after `ds-seen`.
+An **algorithm rollover** (RFC 6840, Section 5.11) is started by moving the
+zone to a policy of the new algorithm (`zone dnssec set-policy`): every key is
+replaced with one of the new algorithm and the zone is double-signed — both
+algorithms cover all data — until the old keys leave together after
+`ds-seen`.
 
 - **ZSK** — no parent involvement: the scheduler promotes it automatically
-  after the wait. With `dnssec.default_zsk_lifetime_days` set (0, the default,
+  after the wait. With the policy's `zsk_lifetime_days` set (0, the default,
   disables it), the scheduler also *starts* ZSK rollovers on its own once the
   active ZSK outlives that many days, making split-key ZSK rotation fully
   hands-off. CSKs are never auto-rolled — their rollover needs the parent DS
@@ -92,19 +148,11 @@ together after `ds-seen`.
   bindizr zone dnssec rollover ds-seen example.com
   ```
 
-  With `dnssec.parent_ds_resolver` set, `ds-seen` first asks that resolver for
-  the zone's DS RRset and refuses unless the new key's DS is actually
-  visible — the guard against confirming a DS the parent never published.
-  `--force` (API: `?force=true`) skips the check.
+  bindizr takes the confirmation at its word: check with `dig DS` that the
+  parent serves the new DS before giving it, since promoting a key whose DS
+  is not yet published makes the zone bogus for validating resolvers.
 
-  With `dnssec.parent_ds_auto_promote = true` as well, no manual `ds-seen` is needed:
-  an hourly poll asks the resolver for each rolling zone's DS RRset, records
-  when the new DS first appears, and promotes one observed-DS-TTL later
-  (once the publish hold-down has also passed) — the full CSK/KSK rollover
-  then runs unattended after the DS is registered at the parent. `status`
-  reports the first-seen time per key.
-
-A retired key stays published until its own wait passes —
+A retired key stays published until its own wait passes — the policy's
 `rollover_retire_holddown_secs` (default two days), never less than the
 largest TTL among the RRsets it signed — then the scheduler removes it.
 `status` shows every key's state (`published`/`active`/`retired`)
@@ -112,28 +160,17 @@ throughout.
 
 ## Signature maintenance
 
-Signatures are valid for `dnssec.default_signature_validity_days` (default 14) and
-renewed once fewer than `dnssec.default_signature_refresh_days` (default 5) remain;
-the hourly scheduler handles this with no operator action. `bindizr zone
-dnssec sign example.com` forces a full re-sign if stored signatures are ever
+Signatures are valid for the policy's `signature_validity_days` (default 14)
+and renewed once fewer than `signature_refresh_days` (default 5) remain; the
+hourly scheduler handles this with no operator action. `bindizr zone dnssec
+sign example.com` forces a full re-sign if stored signatures are ever
 doubted.
 
-### Per-zone timing
-
-The three day-scale knobs — signature validity, the re-sign threshold, and
-the scheduled ZSK lifetime — can be overridden per zone:
-
-```bash
-$ bindizr zone dnssec timing example.com \
-    --signature-validity-days 30 --zsk-lifetime-days 90
-```
-
-Also `PUT /zones/{name}/dnssec/timing`. The call **replaces** the zone's
-overrides: a knob whose flag is omitted reverts to the global `[dnssec]`
-config. `--zsk-lifetime-days 0` turns scheduled ZSK rolls off for one zone
-while others keep rolling. `zone dnssec status` reports the effective values
-and which are overridden; changes take effect on the next signing pass or
-maintenance scan.
+To give some zones different timing, create a policy with the values you
+want and move them to it with `zone dnssec set-policy`; editing a policy
+with `dnssec-policy update` changes every zone under it from the next
+signing pass or maintenance scan. `zone dnssec status` reports the zone's
+policy and its values.
 
 ## Key import and export
 
@@ -155,11 +192,12 @@ with tight permissions.
 
 An imported key joins the signing set immediately. A 256-flag key imports as
 a ZSK; a SEP key (flags 257) may be a KSK or a CSK, so `--role` is required
-for it. A split pair
-imports in either order — the zone stays unsigned until both halves are
-present, then signs on the second import. Both commands
-run only over the CLI/daemon socket — private keys never transit the HTTP
-API.
+for it. The first import into an unsigned zone fixes the zone's policy
+(`--policy`, or `default`), whose algorithm the key must use — keys of
+another algorithm need a policy of that algorithm. A split pair imports in
+either order — the zone stays unsigned until both halves are present, then
+signs on the second import. Both commands run only over the CLI/daemon
+socket — private keys never transit the HTTP API.
 
 ## Disabling DNSSEC
 
@@ -173,25 +211,14 @@ Dropping signatures while the parent still publishes your DS makes the zone
 2. Wait until the DS is gone and its TTL has passed.
 3. `bindizr zone dnssec disable example.com`
 
-## Verifying
-
-```sh
-bindizr zone dnssec verify example.com
-```
-
-Runs self-checks on the stored state — key inventory, signature freshness,
-per-algorithm signature coverage, and the denial chain — and, with
-`dnssec.parent_ds_resolver` configured, compares the DS records the parent
-actually serves against the zone's keys. Also available as
-`GET /zones/{name}/dnssec/verify`.
-
 ## Behavior notes
 
-- Denial mode and key layout are fixed at enable time; to change them,
-  disable and re-enable (going insecure in between).
-- An algorithm change is a rollover of every key:
-  `rollover start --algorithm <alg>` double-signs the zone through the
-  transition (RFC 6840, Section 5.11).
+- A zone's denial mode and key layout are those of its policy and have no
+  in-place transition; to change them, disable and re-enable under another
+  policy (going insecure in between).
+- An algorithm change is a rollover of every key: moving the zone to a
+  policy of another algorithm double-signs the zone through the transition
+  (RFC 6840, Section 5.11).
 - At a delegation only the child's `DS` RRset is signed; the `NS` beside it
   and glue at or below the cut are served unsigned (RFC 4035).
 - The derived records are system-owned: never edited, diffed, or rolled

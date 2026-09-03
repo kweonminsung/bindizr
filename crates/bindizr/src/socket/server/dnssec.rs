@@ -3,8 +3,8 @@ use bindizr_service::{authorization::Caller, dnssec::DnssecService, error::Servi
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DsSeenZoneDnssecParams, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
-        RolloverZoneDnssecParams, TimingZoneDnssecParams, ZoneNameParams,
+        DaemonResponse, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
+        RolloverZoneDnssecParams, SetZoneDnssecPolicyParams, ZoneNameParams,
     },
 };
 
@@ -17,9 +17,7 @@ pub(crate) async fn enable_dnssec(
     let status = DnssecService::enable(
         &Caller::Global,
         &params.zone_name,
-        params.request.algorithm.as_deref(),
-        params.request.denial.as_deref(),
-        params.request.split_keys,
+        params.request.policy.as_deref(),
     )
     .await?;
 
@@ -81,7 +79,6 @@ pub(crate) async fn rollover_start(
         &Caller::Global,
         &params.zone_name,
         params.request.role.as_deref(),
-        params.request.algorithm.as_deref(),
     )
     .await?;
 
@@ -96,10 +93,9 @@ pub(crate) async fn rollover_start(
 pub(crate) async fn rollover_ds_seen(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: DsSeenZoneDnssecParams = parse_params(data)?;
+    let params: ZoneNameParams = parse_params(data)?;
 
-    let status =
-        DnssecService::rollover_ds_seen(&Caller::Global, &params.name, params.force).await?;
+    let status = DnssecService::rollover_ds_seen(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: "Key rollover advanced successfully".to_string(),
@@ -122,18 +118,19 @@ pub(crate) async fn withdraw_dnssec(
     })
 }
 
-/// Handle the `ZoneDnssecTiming` command by replacing the zone's timing
-/// overrides.
-pub(crate) async fn set_dnssec_timing(
+/// Handle the `ZoneDnssecSetPolicy` command by moving the zone to another
+/// policy.
+pub(crate) async fn set_dnssec_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: TimingZoneDnssecParams = parse_params(data)?;
+    let params: SetZoneDnssecPolicyParams = parse_params(data)?;
 
     let status =
-        DnssecService::set_timing(&Caller::Global, &params.zone_name, params.request).await?;
+        DnssecService::set_policy(&Caller::Global, &params.zone_name, &params.request.policy)
+            .await?;
 
     Ok(DaemonResponse {
-        message: "DNSSEC timing updated successfully".to_string(),
+        message: "DNSSEC policy changed successfully".to_string(),
         data: to_response_data(status)?,
     })
 }
@@ -180,23 +177,5 @@ pub(crate) async fn cancel_dnssec_withdrawal(
     Ok(DaemonResponse {
         message: "DS withdrawal cancelled successfully".to_string(),
         data: to_response_data(status)?,
-    })
-}
-
-/// Handle the `ZoneDnssecVerify` command by running the DNSSEC self-checks.
-pub(crate) async fn verify_dnssec(
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
-
-    let response = DnssecService::verify(&Caller::Global, &params.name).await?;
-
-    Ok(DaemonResponse {
-        message: if response.ok {
-            "All DNSSEC checks passed".to_string()
-        } else {
-            "Some DNSSEC checks failed".to_string()
-        },
-        data: to_response_data(response)?,
     })
 }

@@ -10,9 +10,10 @@ use crate::{
     },
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
+        dnssec_policy::DnssecDenial,
         dnssec_record::{DnssecRecord, DnssecRecordType},
         record::{Record, RecordType},
-        zone::{DnssecDenial, Zone},
+        zone::Zone,
     },
 };
 
@@ -28,10 +29,7 @@ fn test_zone() -> Zone {
         retry: 60,
         expire: 3600000,
         minimum_ttl: 900,
-        dnssec_denial: DnssecDenial::Nsec,
-        dnssec_signature_validity_days: None,
-        dnssec_signature_refresh_days: None,
-        dnssec_zsk_lifetime_days: None,
+        dnssec_policy_id: None,
         created_at: Utc::now(),
     }
 }

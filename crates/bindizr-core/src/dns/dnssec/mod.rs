@@ -129,7 +129,6 @@ pub fn generate_key(
         state,
         state_changed_at: now,
         eligible_at,
-        ds_seen_at: None,
         max_signed_ttl: 0,
         created_at: now,
     })
@@ -220,7 +219,6 @@ pub fn import_key(
         state: DnssecKeyState::Active,
         state_changed_at: now,
         eligible_at: now,
-        ds_seen_at: None,
         max_signed_ttl: 0,
         created_at: now,
     })

@@ -5,7 +5,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bindizr_core::{
-    config::bindizr_config,
     metrics::{TEXT_CONTENT_TYPE, metrics},
     model::dnssec_key::DnssecKeyState,
 };
@@ -42,9 +41,8 @@ async fn refresh_db_gauges() -> Result<(), ServiceError> {
     let metrics = metrics();
     let caller = Caller::Global;
 
-    // The same per-zone window as the scheduler's re-sign scan, so a
+    // The same per-policy window as the scheduler's re-sign scan, so a
     // persistent nonzero value means that scan is not keeping up.
-    let dnssec_defaults = &bindizr_config().dnssec;
     // Concurrent, so the probe timeout budgets one round trip, not seven.
     let (zones, records, dnssec_zones, published, active, retired, expiring) = tokio::try_join!(
         ZoneService::count(&caller),
@@ -53,12 +51,7 @@ async fn refresh_db_gauges() -> Result<(), ServiceError> {
         DnssecService::count_keys_by_state(&caller, DnssecKeyState::Published),
         DnssecService::count_keys_by_state(&caller, DnssecKeyState::Active),
         DnssecService::count_keys_by_state(&caller, DnssecKeyState::Retired),
-        DnssecService::count_rrsigs_expiring_within_refresh(
-            &caller,
-            Utc::now(),
-            dnssec_defaults.default_signature_refresh_days,
-            dnssec_defaults.default_signature_validity_days,
-        ),
+        DnssecService::count_rrsigs_expiring_within_refresh(&caller, Utc::now()),
     )?;
 
     metrics.zones_total.set(zones as i64);

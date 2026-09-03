@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use super::{DnssecDenial, Zone};
+use super::Zone;
 use crate::{
     dns::name::{OwnerName, ZoneName},
     model::record::RecordType,
@@ -18,10 +18,7 @@ fn test_zone() -> Zone {
         retry: 3600,
         expire: 604800,
         minimum_ttl: 86400,
-        dnssec_denial: DnssecDenial::Nsec,
-        dnssec_signature_validity_days: None,
-        dnssec_signature_refresh_days: None,
-        dnssec_zsk_lifetime_days: None,
+        dnssec_policy_id: None,
         created_at: Utc::now(),
     }
 }

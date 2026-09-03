@@ -178,10 +178,7 @@ impl ZoneService {
                     retry: timers.retry,
                     expire: timers.expire,
                     minimum_ttl: timers.minimum_ttl,
-                    dnssec_denial: existing_zone.dnssec_denial,
-                    dnssec_signature_validity_days: existing_zone.dnssec_signature_validity_days,
-                    dnssec_signature_refresh_days: existing_zone.dnssec_signature_refresh_days,
-                    dnssec_zsk_lifetime_days: existing_zone.dnssec_zsk_lifetime_days,
+                    dnssec_policy_id: existing_zone.dnssec_policy_id,
                     created_at: existing_zone.created_at,
                 },
             )

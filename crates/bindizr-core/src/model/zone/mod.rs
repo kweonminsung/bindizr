@@ -1,53 +1,6 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-/// How a signed zone proves nonexistence (denial of existence).
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum DnssecDenial {
-    /// Plain NSEC chain over the zone's names.
-    Nsec,
-    /// Hashed NSEC3 chain (RFC 5155), with the RFC 9276 parameters.
-    Nsec3,
-}
-
-impl DnssecDenial {
-    /// Storage and presentation name.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            DnssecDenial::Nsec => "nsec",
-            DnssecDenial::Nsec3 => "nsec3",
-        }
-    }
-}
-
-impl std::fmt::Display for DnssecDenial {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl std::str::FromStr for DnssecDenial {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "nsec" => Ok(DnssecDenial::Nsec),
-            "nsec3" => Ok(DnssecDenial::Nsec3),
-            _ => Err(format!(
-                "unsupported denial mode '{}' (supported: nsec, nsec3)",
-                s
-            )),
-        }
-    }
-}
-
-impl TryFrom<String> for DnssecDenial {
-    type Error = String;
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        s.parse()
-    }
-}
-
 use crate::{
     dns::{
         name::{OwnerName, ZoneName, to_fqdn},
@@ -72,15 +25,9 @@ pub struct Zone {
     pub retry: i32,
     pub expire: i32,
     pub minimum_ttl: i32,
-    /// Denial-of-existence mode when the zone is signed; owned by DNSSEC
+    /// The DNSSEC policy a signed zone signs under; owned by DNSSEC
     /// enable/disable, untouched by ordinary zone updates.
-    #[sqlx(try_from = "String")]
-    pub dnssec_denial: DnssecDenial,
-    /// Timing overrides owned by the DNSSEC timing endpoint; `None`
-    /// inherits the global config.
-    pub dnssec_signature_validity_days: Option<i32>,
-    pub dnssec_signature_refresh_days: Option<i32>,
-    pub dnssec_zsk_lifetime_days: Option<i32>,
+    pub dnssec_policy_id: Option<i32>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -93,40 +40,6 @@ impl Zone {
     /// SOA RNAME (mailbox) in presentation form, e.g. `admin.example.com`.
     pub fn soa_mailbox(&self) -> Result<SoaMailbox, String> {
         SoaMailbox::from_email(&self.rname)
-    }
-
-    /// Effective signature validity window: the zone override or `default`.
-    pub fn signature_validity_days(&self, default: u32) -> u32 {
-        self.dnssec_signature_validity_days
-            .map_or(default, |days| days.max(0) as u32)
-    }
-
-    /// Effective re-sign threshold: the zone override or `default`.
-    pub fn signature_refresh_days(&self, default: u32) -> u32 {
-        self.dnssec_signature_refresh_days
-            .map_or(default, |days| days.max(0) as u32)
-    }
-
-    /// Effective re-sign threshold clamped into `[1, validity - 1]`, as
-    /// signing and the re-sign scan apply it.
-    pub fn clamped_signature_refresh_days(
-        &self,
-        default_refresh: u32,
-        default_validity: u32,
-    ) -> u32 {
-        self.signature_refresh_days(default_refresh)
-            .min(
-                self.signature_validity_days(default_validity)
-                    .saturating_sub(1),
-            )
-            .max(1)
-    }
-
-    /// Effective ZSK lifetime (0 disables auto-roll): the zone override or
-    /// `default`.
-    pub fn zsk_lifetime_days(&self, default: u32) -> u32 {
-        self.dnssec_zsk_lifetime_days
-            .map_or(default, |days| days.max(0) as u32)
     }
 
     /// Whether the record is the apex NS this zone's `mname` names. One

@@ -26,6 +26,9 @@ pub enum ErrorCode {
     DnssecNotEnabled,
     DnssecRolloverInProgress,
     DnssecNoRolloverInProgress,
+    DnssecPolicyNotFound,
+    DnssecPolicyConflict,
+    DnssecPolicyInUse,
     Unauthorized,
     InvalidToken,
     Forbidden,
@@ -58,6 +61,9 @@ impl ErrorCode {
             ErrorCode::DnssecNotEnabled => "DNSSEC_NOT_ENABLED",
             ErrorCode::DnssecRolloverInProgress => "DNSSEC_ROLLOVER_IN_PROGRESS",
             ErrorCode::DnssecNoRolloverInProgress => "DNSSEC_NO_ROLLOVER_IN_PROGRESS",
+            ErrorCode::DnssecPolicyNotFound => "DNSSEC_POLICY_NOT_FOUND",
+            ErrorCode::DnssecPolicyConflict => "DNSSEC_POLICY_CONFLICT",
+            ErrorCode::DnssecPolicyInUse => "DNSSEC_POLICY_IN_USE",
             ErrorCode::Unauthorized => "UNAUTHORIZED",
             ErrorCode::InvalidToken => "INVALID_TOKEN",
             ErrorCode::Forbidden => "FORBIDDEN",
@@ -92,6 +98,9 @@ impl ErrorCode {
             "DNSSEC_NOT_ENABLED" => ErrorCode::DnssecNotEnabled,
             "DNSSEC_ROLLOVER_IN_PROGRESS" => ErrorCode::DnssecRolloverInProgress,
             "DNSSEC_NO_ROLLOVER_IN_PROGRESS" => ErrorCode::DnssecNoRolloverInProgress,
+            "DNSSEC_POLICY_NOT_FOUND" => ErrorCode::DnssecPolicyNotFound,
+            "DNSSEC_POLICY_CONFLICT" => ErrorCode::DnssecPolicyConflict,
+            "DNSSEC_POLICY_IN_USE" => ErrorCode::DnssecPolicyInUse,
             "UNAUTHORIZED" => ErrorCode::Unauthorized,
             "INVALID_TOKEN" => ErrorCode::InvalidToken,
             "FORBIDDEN" => ErrorCode::Forbidden,
@@ -117,7 +126,8 @@ impl ErrorCode {
             | ErrorCode::VersionNotFound
             | ErrorCode::TsigKeyNotFound
             | ErrorCode::TsigPolicyNotFound
-            | ErrorCode::TokenPolicyNotFound => 404,
+            | ErrorCode::TokenPolicyNotFound
+            | ErrorCode::DnssecPolicyNotFound => 404,
             ErrorCode::ZoneConflict
             | ErrorCode::RecordConflict
             | ErrorCode::TokenConflict
@@ -126,7 +136,9 @@ impl ErrorCode {
             | ErrorCode::DnssecAlreadyEnabled
             | ErrorCode::DnssecNotEnabled
             | ErrorCode::DnssecRolloverInProgress
-            | ErrorCode::DnssecNoRolloverInProgress => 409,
+            | ErrorCode::DnssecNoRolloverInProgress
+            | ErrorCode::DnssecPolicyConflict
+            | ErrorCode::DnssecPolicyInUse => 409,
             ErrorCode::PayloadTooLarge => 413,
             ErrorCode::UnsupportedMediaType => 415,
             ErrorCode::Internal => 500,
@@ -304,6 +316,32 @@ impl ServiceError {
             format!(
                 "no key rollover is in progress for zone '{}'",
                 zone_name.into()
+            ),
+        )
+    }
+
+    pub(crate) fn dnssec_policy_not_found(name: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode::DnssecPolicyNotFound,
+            format!("DNSSEC policy with name '{}' not found", name.into()),
+        )
+    }
+
+    pub(crate) fn dnssec_policy_conflict(name: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode::DnssecPolicyConflict,
+            format!("DNSSEC policy with name '{}' already exists", name.into()),
+        )
+    }
+
+    pub(crate) fn dnssec_policy_in_use(name: impl Into<String>, zone_count: u64) -> Self {
+        Self::new(
+            ErrorCode::DnssecPolicyInUse,
+            format!(
+                "DNSSEC policy '{}' is used by {} signed zone{}",
+                name.into(),
+                zone_count,
+                if zone_count == 1 { "" } else { "s" }
             ),
         )
     }

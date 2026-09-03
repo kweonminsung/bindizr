@@ -32,14 +32,5 @@ notify_timeout_secs = 3
 nsupdate_allow_unsigned = false
 journal_retention_days = 365
 
-[dnssec]
-default_signature_validity_days = 14
-default_signature_refresh_days = 5
-rollover_publish_holddown_secs = 86400
-rollover_retire_holddown_secs = 172800
-default_zsk_lifetime_days = 0
-parent_ds_resolver = ""
-parent_ds_auto_promote = false
-
 [logging]
 log_level = "info"

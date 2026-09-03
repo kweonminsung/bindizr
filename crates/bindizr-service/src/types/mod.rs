@@ -7,6 +7,7 @@
 
 mod common;
 mod dnssec;
+mod dnssec_policy;
 mod external_dns;
 mod import;
 mod pagination;
@@ -19,10 +20,13 @@ mod zone;
 
 pub use common::{ErrorResponse, HealthResponse, MessageResponse};
 pub use dnssec::{
-    DnssecCheckInfo, DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecKeyMaterial,
-    DnssecStatusResponse, DnssecTimingInfo, EnableDnssecRequest, ExportDnssecKeysResponse,
-    GetDnssecStatusResponse, ImportDnssecKeyRequest, RolloverDnssecRequest, SetDnssecTimingRequest,
-    VerifyDnssecResponse,
+    DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecKeyMaterial, DnssecStatusResponse,
+    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyRequest,
+    RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
+};
+pub use dnssec_policy::{
+    CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,
+    GetDnssecPolicyResponse, UpdateDnssecPolicyRequest,
 };
 pub use external_dns::{
     ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,

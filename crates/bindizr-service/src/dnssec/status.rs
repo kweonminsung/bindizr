@@ -1,10 +1,7 @@
-//! Assembling the status a signed zone reports: key inventory and the DS
-//! records the parent needs.
+//! Assembling the status a signed zone reports: its policy, key inventory,
+//! and the DS records the parent needs.
 
-use bindizr_core::{
-    config::bindizr_config,
-    dns::dnssec::{ds_rdata_for, to_wire_name},
-};
+use bindizr_core::dns::dnssec::{ds_rdata_for, to_wire_name};
 use chrono::{DateTime, Utc};
 
 use super::DnssecService;
@@ -14,16 +11,17 @@ use crate::{
     error::ServiceError,
     model::{
         dnssec_key::{DnssecKey, DnssecKeyState},
-        zone::{DnssecDenial, Zone},
+        dnssec_policy::DnssecPolicy,
+        zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    types::{DnssecDsInfo, DnssecKeyInfo, DnssecTimingInfo, GetDnssecStatusResponse},
+    types::{DnssecDsInfo, DnssecKeyInfo, GetDnssecPolicyResponse, GetDnssecStatusResponse},
     zone::ZoneService,
 };
 
 impl DnssecService {
-    /// DNSSEC signing state of a zone; `enabled: false` with empty key and DS
-    /// lists for an unsigned zone.
+    /// DNSSEC signing state of a zone; `enabled: false` with no policy and
+    /// empty key and DS lists for an unsigned zone.
     pub async fn get_status(
         caller: &Caller,
         zone_name: &str,
@@ -37,7 +35,8 @@ impl DnssecService {
             let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
             let keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            build_status_tx(&mut tx, &zone, &keys, zone.serial).await
+            let policy = Self::find_zone_policy_tx(&mut tx, &zone).await?;
+            build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
         }
         .await;
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
@@ -58,20 +57,14 @@ impl DnssecService {
         RepositoryService::count_dnssec_keys_by_state(state).await
     }
 
-    /// Count signatures inside each zone's re-sign window across every zone.
+    /// Count signatures inside their policy's re-sign window across every
+    /// zone.
     pub async fn count_rrsigs_expiring_within_refresh(
         caller: &Caller,
         now: DateTime<Utc>,
-        default_refresh_days: u32,
-        default_validity_days: u32,
     ) -> Result<u64, ServiceError> {
         caller.require_global("read DNSSEC metrics")?;
-        RepositoryService::count_rrsig_dnssec_records_expiring_within_refresh(
-            now,
-            default_refresh_days,
-            default_validity_days,
-        )
-        .await
+        RepositoryService::count_rrsig_dnssec_records_expiring_within_refresh(now).await
     }
 
     pub(crate) async fn earliest_expiry_tx(
@@ -89,6 +82,7 @@ impl DnssecService {
 pub(crate) async fn build_status_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
+    policy: Option<&DnssecPolicy>,
     keys: &[DnssecKey],
     serial: i32,
 ) -> Result<GetDnssecStatusResponse, ServiceError> {
@@ -96,19 +90,12 @@ pub(crate) async fn build_status_tx(
     let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(tx, zone.id)
         .await?
         .is_some();
-    build_status(
-        zone,
-        zone.dnssec_denial,
-        keys,
-        earliest,
-        serial,
-        withdrawing,
-    )
+    build_status(zone, policy, keys, earliest, serial, withdrawing)
 }
 
 fn build_status(
     zone: &Zone,
-    denial: DnssecDenial,
+    policy: Option<&DnssecPolicy>,
     keys: &[DnssecKey],
     earliest_signature_expires_at: Option<DateTime<Utc>>,
     serial: i32,
@@ -125,7 +112,7 @@ fn build_status(
     Ok(GetDnssecStatusResponse {
         zone_name: zone.name.as_str().to_string(),
         enabled: !keys.is_empty(),
-        denial: denial.to_string(),
+        policy: policy.map(GetDnssecPolicyResponse::from_policy),
         keys: keys
             .iter()
             .map(|key| DnssecKeyInfo {
@@ -134,7 +121,6 @@ fn build_status(
                 state: key.state.to_string(),
                 state_changed_at: key.state_changed_at,
                 eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
-                ds_seen_at: key.ds_seen_at,
                 algorithm: key.algorithm.to_string(),
                 key_tag: key.key_tag,
                 dnskey: format!(
@@ -150,7 +136,6 @@ fn build_status(
         earliest_signature_expires_at,
         serial,
         withdrawing,
-        timing: DnssecTimingInfo::from_zone(zone, &bindizr_config().dnssec),
     })
 }
 

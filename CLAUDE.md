@@ -37,7 +37,7 @@ cargo +nightly fmt                                         # format (needs night
   duplicated** (per-backend SQL + error text); do not try to deduplicate them.
 - `bindizr-service` — business logic for zones/records (create/update/delete,
   bulk, zone-file import, tokens, serial bumping, RFC 2136 apply), plus the
-  outbound DNS clients its flows drive (`dns_client/`: NOTIFY fan-out, SOA/DS
+  outbound DNS clients its flows drive (`dns_client/`: NOTIFY fan-out, SOA
   probing, inbound AXFR) — the wire format stays core's.
 - `bindizr` — the binary: the daemon runtime (`daemon.rs`) and every front end
   it serves — HTTP API (axum), CLI (clap), Unix-socket daemon IPC, and the DNS

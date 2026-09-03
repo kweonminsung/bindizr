@@ -6,7 +6,7 @@ use domain::{
         Message, MessageBuilder, Name,
         iana::{Class, Opcode, Rcode, Rtype},
     },
-    rdata::{Ds, Soa},
+    rdata::Soa,
 };
 
 /// Build a single-question DNS message with a random id, returning
@@ -33,58 +33,6 @@ pub fn build_question(
         .expect("composing into a Vec cannot run out of space");
 
     (query_id, question.finish())
-}
-
-/// One DS record from a response's answer section; digest in uppercase hex.
-pub struct DsAnswer {
-    pub key_tag: u16,
-    pub algorithm: u8,
-    pub digest_type: u8,
-    pub digest: String,
-    /// Answer TTL: how long resolvers may still serve the previous DS set.
-    pub ttl: u32,
-}
-
-/// Validate a DS query response and collect every DS record in its answer
-/// section; empty when the delegation carries no DS.
-pub fn extract_ds_answers(query_id: u16, response: &[u8]) -> Result<Vec<DsAnswer>, String> {
-    let message =
-        Message::from_octets(response).map_err(|e| format!("malformed response: {}", e))?;
-
-    let header = message.header();
-    if header.id() != query_id {
-        return Err(format!(
-            "response ID mismatch: expected {}, got {}",
-            query_id,
-            header.id()
-        ));
-    }
-    if !header.qr() {
-        return Err("response does not have QR bit set".to_string());
-    }
-    if header.tc() {
-        return Err("truncated response".to_string());
-    }
-    if header.rcode() != Rcode::NOERROR {
-        return Err(format!("RCODE {}", header.rcode().to_int()));
-    }
-
-    let answer = message
-        .answer()
-        .map_err(|e| format!("malformed answer section: {}", e))?;
-    let mut records = Vec::new();
-    for record in answer.limit_to::<Ds<_>>() {
-        let record = record.map_err(|e| format!("malformed DS record: {}", e))?;
-        let data = record.data();
-        records.push(DsAnswer {
-            key_tag: data.key_tag(),
-            algorithm: data.algorithm().to_int(),
-            digest_type: data.digest_type().to_int(),
-            digest: hex::encode_upper(data.digest()),
-            ttl: record.ttl().as_secs(),
-        });
-    }
-    Ok(records)
 }
 
 /// One answer record from a zone-transfer response, in presentation form.

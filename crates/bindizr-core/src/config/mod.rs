@@ -18,8 +18,6 @@ pub struct BindizrConfig {
     pub api: ApiConfig,
     pub database: DatabaseConfig,
     pub dns: DnsConfig,
-    #[serde(default)]
-    pub dnssec: DnssecConfig,
     pub logging: LoggingConfig,
 }
 
@@ -203,72 +201,6 @@ fn default_notify_timeout_secs() -> u64 {
     5
 }
 
-/// DNSSEC signing parameters. Whether a zone is signed is runtime state
-/// managed through the API/CLI, not configuration.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DnssecConfig {
-    #[serde(default = "default_signature_validity_days")]
-    pub default_signature_validity_days: u32,
-    /// Re-sign when a signature has fewer than this many days left.
-    #[serde(default = "default_signature_refresh_days")]
-    pub default_signature_refresh_days: u32,
-    /// How long a pre-published key stays visible before it may start
-    /// signing (caches must have learned the DNSKEY). ZSKs auto-advance
-    /// after this; for CSK/KSK it is the least wait before `rollover ds-seen`.
-    #[serde(default = "default_rollover_publish_holddown_secs")]
-    pub rollover_publish_holddown_secs: u64,
-    /// How long a retired key stays published before removal (caches must
-    /// have drained its signatures and the parent its DS).
-    #[serde(default = "default_rollover_retire_holddown_secs")]
-    pub rollover_retire_holddown_secs: u64,
-    /// ZSKs active longer than this are rolled by the scheduler (0 disables).
-    /// CSKs need a parent DS swap, so they are never auto-rolled.
-    #[serde(default = "default_zsk_lifetime_days")]
-    pub default_zsk_lifetime_days: u32,
-    /// Resolver (`host[:port]`, port 53 default) asked for the parent DS
-    /// RRset before `rollover ds-seen` may promote; empty skips the check.
-    #[serde(default)]
-    pub parent_ds_resolver: String,
-    /// Poll `parent_ds_resolver` and promote CSK/KSK rollovers unattended,
-    /// one observed-DS-TTL after the pending DS first appears.
-    #[serde(default)]
-    pub parent_ds_auto_promote: bool,
-}
-
-impl Default for DnssecConfig {
-    fn default() -> Self {
-        Self {
-            default_signature_validity_days: default_signature_validity_days(),
-            default_signature_refresh_days: default_signature_refresh_days(),
-            rollover_publish_holddown_secs: default_rollover_publish_holddown_secs(),
-            rollover_retire_holddown_secs: default_rollover_retire_holddown_secs(),
-            default_zsk_lifetime_days: default_zsk_lifetime_days(),
-            parent_ds_resolver: String::new(),
-            parent_ds_auto_promote: false,
-        }
-    }
-}
-
-fn default_rollover_publish_holddown_secs() -> u64 {
-    86_400
-}
-
-fn default_rollover_retire_holddown_secs() -> u64 {
-    172_800
-}
-
-fn default_signature_validity_days() -> u32 {
-    14
-}
-
-fn default_signature_refresh_days() -> u32 {
-    5
-}
-
-fn default_zsk_lifetime_days() -> u32 {
-    0
-}
-
 /// Logging settings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LoggingConfig {
@@ -381,7 +313,6 @@ fn parse_bindizr_config_with_env(
     apply_env_overrides_from(&mut bindizr_config, get_env)?;
     bindizr_config.database.validate()?;
     bindizr_config.dns.validate()?;
-    bindizr_config.dnssec.validate()?;
 
     Ok(bindizr_config)
 }
@@ -467,33 +398,6 @@ fn apply_env_overrides_from(
         config.dns.journal_retention_days =
             parse_env_value("BINDIZR_JOURNAL_RETENTION_DAYS", &value)?;
     }
-    if let Some(value) = get_env("BINDIZR_DNSSEC_DEFAULT_SIGNATURE_VALIDITY_DAYS") {
-        config.dnssec.default_signature_validity_days =
-            parse_env_value("BINDIZR_DNSSEC_DEFAULT_SIGNATURE_VALIDITY_DAYS", &value)?;
-    }
-    if let Some(value) = get_env("BINDIZR_DNSSEC_DEFAULT_SIGNATURE_REFRESH_DAYS") {
-        config.dnssec.default_signature_refresh_days =
-            parse_env_value("BINDIZR_DNSSEC_DEFAULT_SIGNATURE_REFRESH_DAYS", &value)?;
-    }
-    if let Some(value) = get_env("BINDIZR_DNSSEC_ROLLOVER_PUBLISH_HOLDDOWN_SECS") {
-        config.dnssec.rollover_publish_holddown_secs =
-            parse_env_value("BINDIZR_DNSSEC_ROLLOVER_PUBLISH_HOLDDOWN_SECS", &value)?;
-    }
-    if let Some(value) = get_env("BINDIZR_DNSSEC_ROLLOVER_RETIRE_HOLDDOWN_SECS") {
-        config.dnssec.rollover_retire_holddown_secs =
-            parse_env_value("BINDIZR_DNSSEC_ROLLOVER_RETIRE_HOLDDOWN_SECS", &value)?;
-    }
-    if let Some(value) = get_env("BINDIZR_DNSSEC_DEFAULT_ZSK_LIFETIME_DAYS") {
-        config.dnssec.default_zsk_lifetime_days =
-            parse_env_value("BINDIZR_DNSSEC_DEFAULT_ZSK_LIFETIME_DAYS", &value)?;
-    }
-    if let Some(value) = get_env("BINDIZR_DNSSEC_PARENT_DS_RESOLVER") {
-        config.dnssec.parent_ds_resolver = value;
-    }
-    if let Some(value) = get_env("BINDIZR_DNSSEC_PARENT_DS_AUTO_PROMOTE") {
-        config.dnssec.parent_ds_auto_promote =
-            parse_env_value("BINDIZR_DNSSEC_PARENT_DS_AUTO_PROMOTE", &value)?;
-    }
     if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
         config.logging.log_level = parse_env_value("BINDIZR_LOG_LEVEL", &value)?;
     }
@@ -539,42 +443,6 @@ impl DnsConfig {
         if !raw.trim().is_empty() && raw.split(',').all(|entry| entry.trim().is_empty()) {
             return Err(
                 "dns.secondary_addrs contains no addresses; use \"\" when there are no secondaries"
-                    .to_string(),
-            );
-        }
-        Ok(())
-    }
-}
-
-impl DnssecConfig {
-    /// A refresh window at least as long as the validity would re-sign on every
-    /// pass; requiring headroom keeps re-signing periodic and expiry reachable.
-    fn validate(&self) -> Result<(), String> {
-        if self.default_signature_validity_days == 0 {
-            return Err(
-                "dnssec.default_signature_validity_days must be greater than 0".to_string(),
-            );
-        }
-        if self.default_signature_refresh_days == 0 {
-            return Err("dnssec.default_signature_refresh_days must be greater than 0".to_string());
-        }
-        if self.default_signature_refresh_days >= self.default_signature_validity_days {
-            return Err(
-                "dnssec.default_signature_refresh_days must be less than dnssec.default_signature_validity_days"
-                    .to_string(),
-            );
-        }
-        if self.parent_ds_auto_promote && self.parent_ds_resolver.trim().is_empty() {
-            return Err(
-                "dnssec.parent_ds_auto_promote requires dnssec.parent_ds_resolver to be set"
-                    .to_string(),
-            );
-        }
-        // RFC 1982 serial arithmetic is only unambiguous while expiration -
-        // inception stays under 2^31 seconds (RFC 4034, Section 3.1.5).
-        if i64::from(self.default_signature_validity_days) * 86_400 > i64::from(u32::MAX / 2) {
-            return Err(
-                "dnssec.default_signature_validity_days must be less than 24856 (2^31 seconds)"
                     .to_string(),
             );
         }

@@ -63,13 +63,7 @@ async fn run_maintenance_pass() {
         }
     }
 
-    match RepositoryService::list_rrsig_zone_ids_expiring_within_refresh(
-        Utc::now(),
-        config.dnssec.default_signature_refresh_days,
-        config.dnssec.default_signature_validity_days,
-    )
-    .await
-    {
+    match RepositoryService::list_rrsig_zone_ids_expiring_within_refresh(Utc::now()).await {
         Ok(zone_ids) => {
             for zone_id in zone_ids {
                 match sign_zone_by_id(zone_id).await {
@@ -91,13 +85,12 @@ async fn run_maintenance_pass() {
         }
     }
 
-    // ZSK rollover needs no parent interaction, so a configured lifetime lets
+    // ZSK rollover needs no parent interaction, so a policy lifetime lets
     // the scheduler start it too; CSK rollover stays the operator's.
     match RepositoryService::list_dnssec_key_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         DnssecKeyRole::Zsk,
         DnssecKeyState::Active,
         Utc::now(),
-        config.dnssec.default_zsk_lifetime_days,
     )
     .await
     {
@@ -123,34 +116,6 @@ async fn run_maintenance_pass() {
         Err(e) => {
             failed = true;
             log_error!("ZSK lifetime scan failed: {}", e)
-        }
-    }
-
-    // CSK/KSK promotion waits on the parent DS; with the poll enabled the
-    // pass asks the resolver itself and promotes what is ready.
-    if config.dnssec.parent_ds_auto_promote {
-        match DnssecService::list_zone_names_with_pending_parent_ds().await {
-            Ok(zone_names) => {
-                for zone_name in zone_names {
-                    match DnssecService::note_parent_ds_observed(&zone_name).await {
-                        Ok(Some(_)) => {
-                            log_info!(
-                                "Promoted zone {} rollover after its parent DS was seen",
-                                zone_name
-                            )
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            failed = true;
-                            log_error!("Parent-DS poll for zone {} failed: {}", zone_name, e)
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                failed = true;
-                log_error!("Parent-DS poll scan failed: {}", e)
-            }
         }
     }
 
@@ -246,18 +211,14 @@ async fn prune_zone_history(cutoff: DateTime<Utc>) -> Result<(u64, u64), Service
 async fn sign_zone_by_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to sign zone").await?;
     let result = async {
-        let Some(zone) =
-            RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
+        let Some((zone, policy, keys)) =
+            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
+                .await?
         else {
             return Ok(None);
         };
-        let keys =
-            RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-        if keys.is_empty() {
-            return Ok(None);
-        }
 
-        if DnssecService::resign_zone_tx(&mut tx, &zone, &keys, false)
+        if DnssecService::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
             .await?
             .is_none()
         {
@@ -274,20 +235,17 @@ async fn sign_zone_by_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
 async fn start_zsk_rollover_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to start key rollover").await?;
     let result = async {
-        let Some(zone) =
-            RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
+        let Some((zone, policy, keys)) =
+            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
+                .await?
         else {
             return Ok(None);
         };
-        let lifetime_days =
-            zone.zsk_lifetime_days(bindizr_config().dnssec.default_zsk_lifetime_days);
-        if lifetime_days == 0 {
+        if policy.zsk_lifetime_days <= 0 {
             return Ok(None);
         }
-        let cutoff = Utc::now() - Duration::days(i64::from(lifetime_days));
-        let keys =
-            RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-        if keys.is_empty() || keys.iter().any(|key| key.state != DnssecKeyState::Active) {
+        let cutoff = Utc::now() - Duration::days(i64::from(policy.zsk_lifetime_days));
+        if keys.iter().any(|key| key.state != DnssecKeyState::Active) {
             return Ok(None);
         }
         let Some(template) = keys
@@ -297,12 +255,17 @@ async fn start_zsk_rollover_by_zone_id(zone_id: i32) -> Result<Option<String>, S
             return Ok(None);
         };
 
-        let new_key =
-            DnssecService::publish_replacement_key_tx(&mut tx, &zone, template, template.algorithm)
-                .await?;
+        let new_key = DnssecService::publish_replacement_key_tx(
+            &mut tx,
+            &zone,
+            &policy,
+            template,
+            template.algorithm,
+        )
+        .await?;
         let mut keys = keys;
         keys.push(new_key);
-        DnssecService::resign_zone_tx(&mut tx, &zone, &keys, false).await?;
+        DnssecService::resign_zone_tx(&mut tx, &zone, &policy, &keys, false).await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;
@@ -314,13 +277,12 @@ async fn start_zsk_rollover_by_zone_id(zone_id: i32) -> Result<Option<String>, S
 async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
     let result = async {
-        let Some(zone) =
-            RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
+        let Some((zone, policy, keys)) =
+            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
+                .await?
         else {
             return Ok(None);
         };
-        let keys =
-            RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
 
         let now = Utc::now();
         let due: Vec<i32> = keys
@@ -336,9 +298,10 @@ async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<String>, Service
             return Ok(None);
         }
 
-        let keys = DnssecService::promote_published_keys_tx(&mut tx, &zone, keys, &due).await?;
+        let keys =
+            DnssecService::promote_published_keys_tx(&mut tx, &zone, &policy, keys, &due).await?;
 
-        DnssecService::resign_zone_tx(&mut tx, &zone, &keys, false).await?;
+        DnssecService::resign_zone_tx(&mut tx, &zone, &policy, &keys, false).await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;
@@ -349,13 +312,12 @@ async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<String>, Service
 async fn remove_retired_keys_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to remove retired keys").await?;
     let result = async {
-        let Some(zone) =
-            RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
+        let Some((zone, policy, keys)) =
+            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
+                .await?
         else {
             return Ok(None);
         };
-        let keys =
-            RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
 
         let now = Utc::now();
         // An algorithm's keys leave together: dropping its signatures while
@@ -396,7 +358,7 @@ async fn remove_retired_keys_by_zone_id(zone_id: i32) -> Result<Option<String>, 
             return Ok(None);
         }
 
-        DnssecService::resign_zone_tx(&mut tx, &zone, &remaining, false).await?;
+        DnssecService::resign_zone_tx(&mut tx, &zone, &policy, &remaining, false).await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;

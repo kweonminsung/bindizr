@@ -4,7 +4,7 @@ pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
 use bindizr_core::{
     dns::{message, message::Rtype, name::ZoneName},
     log_info,
-    model::zone::{DnssecDenial, Zone},
+    model::zone::Zone,
 };
 use bindizr_service::zone::ZoneService;
 use chrono::Utc;
@@ -43,10 +43,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
         retry: 600,
         expire: 86400,
         minimum_ttl: 60,
-        dnssec_denial: DnssecDenial::Nsec,
-        dnssec_signature_validity_days: None,
-        dnssec_signature_refresh_days: None,
-        dnssec_zsk_lifetime_days: None,
+        dnssec_policy_id: None,
         created_at: Utc::now(),
     };
 

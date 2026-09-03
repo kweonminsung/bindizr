@@ -1,4 +1,4 @@
-use bindizr_core::{dns::name::ZoneName, model::zone::DnssecDenial};
+use bindizr_core::dns::name::ZoneName;
 
 use super::*;
 
@@ -16,10 +16,7 @@ fn catalog_digest_changes_when_members_change() {
             retry: 3600,
             expire: 604800,
             minimum_ttl: 3600,
-            dnssec_denial: DnssecDenial::Nsec,
-            dnssec_signature_validity_days: None,
-            dnssec_signature_refresh_days: None,
-            dnssec_zsk_lifetime_days: None,
+            dnssec_policy_id: None,
             created_at: Utc::now(),
         },
         Zone {
@@ -33,10 +30,7 @@ fn catalog_digest_changes_when_members_change() {
             retry: 3600,
             expire: 604800,
             minimum_ttl: 3600,
-            dnssec_denial: DnssecDenial::Nsec,
-            dnssec_signature_validity_days: None,
-            dnssec_signature_refresh_days: None,
-            dnssec_zsk_lifetime_days: None,
+            dnssec_policy_id: None,
             created_at: Utc::now(),
         },
     ];

@@ -22,6 +22,9 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     let dnssec = &body["dnssec"];
     assert_eq!(dnssec["zone_name"], zone_name);
     assert_eq!(dnssec["enabled"], true);
+    // Enabling without a policy signs under the seeded `default` policy.
+    assert_eq!(dnssec["policy"]["name"], "default");
+    assert_eq!(dnssec["policy"]["denial"], "nsec");
 
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
@@ -197,6 +200,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["dnssec"]["enabled"], false);
+    assert!(body["dnssec"].get("policy").is_none());
     assert!(body["dnssec"]["keys"].as_array().unwrap().is_empty());
 
     let (status, body) = app
@@ -209,13 +213,19 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_csk_rollover_lifecycle() {
-    let app = TestApp::start_with_options(TestAppOptions {
-        rollover_publish_holddown_secs: 0,
-        ..TestAppOptions::default()
-    })
-    .await;
-    // The hold-down never drops below the zone's DNSKEY TTL, so the minimum
-    // TTL is the shortest wait that still reaches promotion.
+    let app = TestApp::start().await;
+    // A zero publish hold-down lets the rollover be confirmed as soon as the
+    // zone's DNSKEY TTL allows; the hold-down never drops below that TTL, so
+    // the minimum TTL is the shortest wait that still reaches promotion.
+    let policy_name = format!("{}-fast", app.namespace());
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/dnssec-policies",
+            Some(json!({ "name": policy_name, "rollover_publish_holddown_secs": 0 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
     let zone_name = app.zone_name("rollover.example");
     let (status, body) = app
         .request(
@@ -238,11 +248,12 @@ async fn dnssec_csk_rollover_lifecycle() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({})),
+            Some(json!({ "policy": policy_name })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let dnssec = &body["dnssec"];
+    assert_eq!(dnssec["policy"]["name"], policy_name);
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
     assert_eq!(keys[0]["role"], "csk");
@@ -352,16 +363,27 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
+    let policy_name = format!("{}-nsec3-split", app.namespace());
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/dnssec-policies",
+            Some(json!({ "name": policy_name, "denial": "nsec3", "split_keys": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
     let (status, body) = app
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "denial": "nsec3", "split_keys": true })),
+            Some(json!({ "policy": policy_name })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let dnssec = &body["dnssec"];
-    assert_eq!(dnssec["denial"], "nsec3");
+    assert_eq!(dnssec["policy"]["denial"], "nsec3");
+    assert_eq!(dnssec["policy"]["split_keys"], true);
 
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 2);

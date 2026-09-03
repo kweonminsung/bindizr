@@ -18,10 +18,11 @@ async fn zone_dnssec_lifecycle_via_cli() {
         .await;
     assert!(status.contains("DNSSEC enabled"));
     // The keys table row is `ID ROLE STATE ELIGIBLE-AT ALGORITHM KEY_TAG
-    // DNSKEY`; an active key's ELIGIBLE-AT renders as `-`.
+    // DNSKEY`; an active key's ELIGIBLE-AT renders as `-`. The policy line
+    // above the table names the algorithm too, so it is skipped.
     let key_row = status
         .lines()
-        .find(|line| line.contains("ecdsap256sha256"))
+        .find(|line| line.contains("ecdsap256sha256") && !line.starts_with("Policy:"))
         .expect("status lists the signing key");
     let key_tag = key_row
         .split_whitespace()
@@ -34,30 +35,31 @@ async fn zone_dnssec_lifecycle_via_cli() {
         .await;
     assert!(ds.contains(&format!("IN DS {key_tag} ")), "{ds}");
 
-    let timing = app
-        .run_cli_success(&[
-            "zone",
-            "dnssec",
-            "timing",
-            &zone_name,
-            "--signature-validity-days",
-            "30",
-            "--zsk-lifetime-days",
-            "90",
-        ])
+    // Same algorithm, denial, and key layout as `default`: the move only
+    // changes the timing, so no rollover starts.
+    let policy_name = format!("{}-long", app.namespace());
+    app.run_cli_success(&[
+        "dnssec-policy",
+        "create",
+        "--name",
+        &policy_name,
+        "--signature-validity-days",
+        "30",
+        "--zsk-lifetime-days",
+        "90",
+    ])
+    .await;
+    let moved = app
+        .run_cli_success(&["zone", "dnssec", "set-policy", &zone_name, &policy_name])
         .await;
-    assert!(timing.contains("DNSSEC timing updated successfully"));
+    assert!(moved.contains("DNSSEC policy changed successfully"));
     assert!(
-        timing.contains("validity 30d") && timing.contains("zsk-lifetime 90d"),
-        "{timing}"
+        moved.contains(&format!("Policy: {policy_name} ("))
+            && moved.contains("validity 30d")
+            && moved.contains("zsk-lifetime 90d"),
+        "{moved}"
     );
-    assert!(timing.contains("overridden"), "{timing}");
-
-    // The call replaces the overrides, so an omitted knob reverts.
-    let reverted = app
-        .run_cli_success(&["zone", "dnssec", "timing", &zone_name])
-        .await;
-    assert!(!reverted.contains("overridden"), "{reverted}");
+    assert!(!moved.contains("published"), "{moved}");
 
     let signed_export = app
         .run_cli_success(&["zone", "export", &zone_name, "--signed"])
@@ -94,8 +96,25 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     let zone_name = app.zone_name("dnssec-roll-cli.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
+    let policy_name = format!("{}-nsec3", app.namespace());
+    app.run_cli_success(&[
+        "dnssec-policy",
+        "create",
+        "--name",
+        &policy_name,
+        "--denial",
+        "nsec3",
+    ])
+    .await;
     let enabled = app
-        .run_cli_success(&["zone", "dnssec", "enable", &zone_name, "--denial", "nsec3"])
+        .run_cli_success(&[
+            "zone",
+            "dnssec",
+            "enable",
+            &zone_name,
+            "--policy",
+            &policy_name,
+        ])
         .await;
     assert!(enabled.contains("DNSSEC enabled successfully"));
     assert!(enabled.contains("NSEC3 denial"));
@@ -133,7 +152,7 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
         .await;
     let key_tag = status
         .lines()
-        .find(|line| line.contains("ecdsap256sha256"))
+        .find(|line| line.contains("ecdsap256sha256") && !line.starts_with("Policy:"))
         .and_then(|line| line.split_whitespace().nth(5))
         .expect("status lists the signing key")
         .to_string();
@@ -201,8 +220,24 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-split.example");
     app.create_zone_cli(&zone_name, "3600").await;
-    app.run_cli_success(&["zone", "dnssec", "enable", &zone_name, "--split-keys"])
-        .await;
+    let policy_name = format!("{}-split", app.namespace());
+    app.run_cli_success(&[
+        "dnssec-policy",
+        "create",
+        "--name",
+        &policy_name,
+        "--split-keys",
+    ])
+    .await;
+    app.run_cli_success(&[
+        "zone",
+        "dnssec",
+        "enable",
+        &zone_name,
+        "--policy",
+        &policy_name,
+    ])
+    .await;
 
     let exported = app
         .run_cli_success(&["zone", "dnssec", "keys", "export", &zone_name])
@@ -245,7 +280,8 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     app.run_cli_success(&["zone", "dnssec", "disable", &zone_name])
         .await;
 
-    // The lone KSK cannot sign the zone yet; the import must stage it.
+    // The lone KSK cannot sign the zone yet; the import must stage it. The
+    // first import into an unsigned zone also fixes the zone's policy.
     let (role, key_file, private_file) = &pairs[0];
     assert_eq!(role, "ksk");
     let staged = app
@@ -261,6 +297,8 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
             private_file,
             "--role",
             "ksk",
+            "--policy",
+            &policy_name,
         ])
         .await;
     assert!(

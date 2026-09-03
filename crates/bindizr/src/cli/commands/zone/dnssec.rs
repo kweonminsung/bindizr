@@ -2,23 +2,20 @@
 
 use bindizr_service::types::{
     EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyRequest,
-    RolloverDnssecRequest, SetDnssecTimingRequest, VerifyDnssecResponse,
+    RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
 };
 use clap::Subcommand;
 
 use crate::{
     cli::{
         error::CliError,
-        output::{
-            DnssecCheckRow, DnssecKeyRow, OutputFormat, parse_response, print_response, print_table,
-        },
+        output::{DnssecKeyRow, OutputFormat, parse_response, print_response, print_table},
     },
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
-            ImportZoneDnssecKeyParams, RolloverZoneDnssecParams, TimingZoneDnssecParams,
-            ZoneNameParams,
+            DaemonCommandKind, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
+            RolloverZoneDnssecParams, SetZoneDnssecPolicyParams, ZoneNameParams,
         },
     },
 };
@@ -26,21 +23,26 @@ use crate::{
 /// Subcommands for managing a zone's DNSSEC signing.
 #[derive(Subcommand, Debug)]
 pub(crate) enum ZoneDnssecCommand {
-    /// Enable DNSSEC: generate a signing key and sign the zone
+    /// Enable DNSSEC: generate the signing key(s) a policy prescribes and
+    /// sign the zone
     Enable {
         /// The name of the zone
         name: String,
-        /// Signing algorithm: ecdsap256sha256 (default), ecdsap384sha384, ed25519, ed448, rsasha256, or rsasha512
-        #[arg(long, value_name = "ALG")]
-        algorithm: Option<String>,
-        /// Denial-of-existence mode: nsec (default) or nsec3 (fixed at
-        /// enable time)
-        #[arg(long, value_name = "nsec|nsec3")]
-        denial: Option<String>,
-        /// Generate split KSK/ZSK keys instead of one CSK, so the ZSK rolls
-        /// without touching the parent zone's DS
-        #[arg(long)]
-        split_keys: bool,
+        /// DNSSEC policy to sign under (default: the built-in "default"
+        /// policy; see `bindizr dnssec-policy list`)
+        #[arg(long, value_name = "NAME")]
+        policy: Option<String>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+    /// Move a signed zone to another DNSSEC policy. The denial mode and key
+    /// layout must match; a different algorithm starts an algorithm rollover
+    SetPolicy {
+        /// The name of the zone
+        name: String,
+        /// Name of the target policy
+        policy: String,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -64,7 +66,7 @@ pub(crate) enum ZoneDnssecCommand {
         /// The name of the zone
         name: String,
     },
-    /// Show a zone's DNSSEC status (keys, DS records, signature expiry)
+    /// Show a zone's DNSSEC status (policy, keys, DS records, signature expiry)
     Status {
         /// The name of the zone
         name: String,
@@ -82,15 +84,6 @@ pub(crate) enum ZoneDnssecCommand {
         /// The name of the zone
         name: String,
     },
-    /// Verify the zone's DNSSEC state (keys, signatures, denial chain, and
-    /// the parent DS when dnssec.parent_ds_resolver is set)
-    Verify {
-        /// The name of the zone
-        name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
-    },
     /// Roll a zone's signing key: pre-publish a replacement, then promote it
     Rollover {
         #[command(subcommand)]
@@ -101,43 +94,21 @@ pub(crate) enum ZoneDnssecCommand {
         #[command(subcommand)]
         subcommand: ZoneDnssecKeysCommand,
     },
-    /// Replace the zone's timing overrides; an omitted flag reverts that
-    /// knob to the global [dnssec] config
-    Timing {
-        /// The name of the zone
-        name: String,
-        /// Days a new signature stays valid
-        #[arg(long, value_name = "DAYS")]
-        signature_validity_days: Option<u32>,
-        /// Re-sign when a signature has fewer than this many days left
-        #[arg(long, value_name = "DAYS")]
-        signature_refresh_days: Option<u32>,
-        /// Days an active ZSK may sign before the scheduler rolls it
-        /// (0 disables scheduled rolls for this zone)
-        #[arg(long, value_name = "DAYS")]
-        zsk_lifetime_days: Option<u32>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
-    },
 }
 
 /// Subcommands for rolling a zone's signing keys.
 #[derive(Subcommand, Debug)]
 pub(crate) enum ZoneDnssecRolloverCommand {
-    /// Pre-publish a replacement key: it joins the DNSKEY RRset and
-    /// CDS/CDNSKEY set but signs no zone data until `ds-seen` promotes it
+    /// Pre-publish a same-algorithm replacement key: it joins the DNSKEY
+    /// RRset and CDS/CDNSKEY set but signs no zone data until `ds-seen`
+    /// promotes it. To change the algorithm, use `zone dnssec set-policy`
     Start {
         /// The name of the zone
         name: String,
         /// Which key to roll: required for split-key zones (ksk or zsk),
-        /// omitted for CSK zones and algorithm rollovers
+        /// omitted for CSK zones
         #[arg(long, value_name = "ksk|zsk")]
         role: Option<String>,
-        /// Roll to this algorithm instead (replaces every key; the zone is
-        /// double-signed until the old keys leave)
-        #[arg(long, value_name = "ALG")]
-        algorithm: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -148,9 +119,6 @@ pub(crate) enum ZoneDnssecRolloverCommand {
     DsSeen {
         /// The name of the zone
         name: String,
-        /// Skip the parent DS verification against dnssec.parent_ds_resolver
-        #[arg(long)]
-        force: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -181,6 +149,11 @@ pub(crate) enum ZoneDnssecKeysCommand {
         /// imports as zsk
         #[arg(long, value_name = "ROLE")]
         role: Option<String>,
+        /// Policy an unsigned zone signs under once its keys are complete
+        /// (default: "default"); its algorithm must match the key's. A zone
+        /// that already has a policy keeps it
+        #[arg(long, value_name = "NAME")]
+        policy: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -194,9 +167,7 @@ pub(crate) async fn handle_command(
     match subcommand {
         ZoneDnssecCommand::Enable {
             name,
-            algorithm,
-            denial,
-            split_keys,
+            policy,
             output,
         } => {
             let response = client
@@ -204,11 +175,26 @@ pub(crate) async fn handle_command(
                     DaemonCommandKind::ZoneDnssecEnable,
                     EnableZoneDnssecParams {
                         zone_name: name,
-                        request: EnableDnssecRequest {
-                            algorithm,
-                            denial,
-                            split_keys,
-                        },
+                        request: EnableDnssecRequest { policy },
+                    },
+                )
+                .await?;
+            if output == OutputFormat::Table {
+                println!("{}", response.message);
+            }
+            print_status(&response.data, output)?;
+        }
+        ZoneDnssecCommand::SetPolicy {
+            name,
+            policy,
+            output,
+        } => {
+            let response = client
+                .send_command(
+                    DaemonCommandKind::ZoneDnssecSetPolicy,
+                    SetZoneDnssecPolicyParams {
+                        zone_name: name,
+                        request: SetZoneDnssecPolicyRequest { policy },
                     },
                 )
                 .await?;
@@ -250,6 +236,7 @@ pub(crate) async fn handle_command(
                 key,
                 private,
                 role,
+                policy,
                 output,
             } => {
                 let dnskey = std::fs::read_to_string(&key)
@@ -265,6 +252,7 @@ pub(crate) async fn handle_command(
                                 dnskey,
                                 private_key,
                                 role,
+                                policy,
                             },
                         },
                     )
@@ -275,31 +263,6 @@ pub(crate) async fn handle_command(
                 print_status(&response.data, output)?;
             }
         },
-        ZoneDnssecCommand::Timing {
-            name,
-            signature_validity_days,
-            signature_refresh_days,
-            zsk_lifetime_days,
-            output,
-        } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::ZoneDnssecTiming,
-                    TimingZoneDnssecParams {
-                        zone_name: name,
-                        request: SetDnssecTimingRequest {
-                            signature_validity_days,
-                            signature_refresh_days,
-                            zsk_lifetime_days,
-                        },
-                    },
-                )
-                .await?;
-            if output == OutputFormat::Table {
-                println!("{}", response.message);
-            }
-            print_status(&response.data, output)?;
-        }
         ZoneDnssecCommand::Disable { name } => {
             let response = client
                 .send_command(
@@ -327,47 +290,14 @@ pub(crate) async fn handle_command(
                 .await?;
             println!("{}", response.message);
         }
-        ZoneDnssecCommand::Verify { name, output } => {
-            let response = client
-                .send_command(DaemonCommandKind::ZoneDnssecVerify, ZoneNameParams { name })
-                .await?;
-            let report: VerifyDnssecResponse = parse_response(&response.data)?;
-            if output != OutputFormat::Table {
-                print_response(&response.data, output, |report: &VerifyDnssecResponse| {
-                    report.checks.iter().map(DnssecCheckRow::from).collect()
-                })?;
-            } else {
-                println!(
-                    "Zone {}: {}",
-                    report.zone_name,
-                    if report.ok {
-                        "all checks passed"
-                    } else {
-                        "checks FAILED"
-                    }
-                );
-                print_table(report.checks.iter().map(DnssecCheckRow::from).collect());
-            }
-            // Scripts read the exit status, so a failed report must not exit 0.
-            if !report.ok {
-                return Err(
-                    format!("DNSSEC verification failed for zone {}", report.zone_name).into(),
-                );
-            }
-        }
         ZoneDnssecCommand::Rollover { subcommand } => match subcommand {
-            ZoneDnssecRolloverCommand::Start {
-                name,
-                role,
-                algorithm,
-                output,
-            } => {
+            ZoneDnssecRolloverCommand::Start { name, role, output } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverStart,
                         RolloverZoneDnssecParams {
                             zone_name: name,
-                            request: RolloverDnssecRequest { role, algorithm },
+                            request: RolloverDnssecRequest { role },
                         },
                     )
                     .await?;
@@ -376,15 +306,11 @@ pub(crate) async fn handle_command(
                 }
                 print_status(&response.data, output)?;
             }
-            ZoneDnssecRolloverCommand::DsSeen {
-                name,
-                force,
-                output,
-            } => {
+            ZoneDnssecRolloverCommand::DsSeen { name, output } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverDsSeen,
-                        DsSeenZoneDnssecParams { name, force },
+                        ZoneNameParams { name },
                     )
                     .await?;
                 if output == OutputFormat::Table {
@@ -406,19 +332,28 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
     }
 
     let status: GetDnssecStatusResponse = parse_response(data)?;
-    if !status.enabled {
+    let Some(policy) = status.policy.filter(|_| status.enabled) else {
         println!(
             "Zone {} (serial {}): DNSSEC disabled",
             status.zone_name, status.serial
         );
         return Ok(());
-    }
+    };
 
     println!(
         "Zone {} (serial {}): DNSSEC enabled, {} denial",
         status.zone_name,
         status.serial,
-        status.denial.to_uppercase()
+        policy.denial.to_uppercase()
+    );
+    println!(
+        "Policy: {} ({}, {}; validity {}d, refresh {}d, zsk-lifetime {}d)",
+        policy.name,
+        policy.algorithm,
+        if policy.split_keys { "KSK/ZSK" } else { "CSK" },
+        policy.signature_validity_days,
+        policy.signature_refresh_days,
+        policy.zsk_lifetime_days
     );
     if status.withdrawing {
         println!(
@@ -431,27 +366,6 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
             expires_at.format("%Y-%m-%d %H:%M:%S")
         );
     }
-    let timing = &status.timing;
-    let overridden = [
-        ("validity", timing.signature_validity_days_override),
-        ("refresh", timing.signature_refresh_days_override),
-        ("zsk-lifetime", timing.zsk_lifetime_days_override),
-    ]
-    .iter()
-    .filter(|(_, value)| value.is_some())
-    .map(|(label, _)| *label)
-    .collect::<Vec<_>>();
-    println!(
-        "Timing: validity {}d, refresh {}d, zsk-lifetime {}d{}",
-        timing.signature_validity_days,
-        timing.signature_refresh_days,
-        timing.zsk_lifetime_days,
-        if overridden.is_empty() {
-            String::new()
-        } else {
-            format!(" ({} overridden)", overridden.join(", "))
-        }
-    );
     print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
     if !status.ds_records.is_empty() {
         println!("DS records (register in the parent zone):");

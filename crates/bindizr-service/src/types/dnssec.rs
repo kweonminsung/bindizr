@@ -1,40 +1,36 @@
 //! DNSSEC management payloads.
 
-use bindizr_core::{config::DnssecConfig, dns::query::DsAnswer};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::model::zone::Zone;
+use super::GetDnssecPolicyResponse;
 
 /// Request body for enabling DNSSEC on a zone.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct EnableDnssecRequest {
-    /// Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, and `rsasha512`.
-    #[schema(example = "ecdsap256sha256")]
-    pub algorithm: Option<String>,
-    /// Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276
-    /// parameters). Fixed at enable time.
-    #[schema(example = "nsec3")]
-    pub denial: Option<String>,
-    /// Split KSK/ZSK keys instead of one CSK, so the ZSK rolls without
-    /// touching the parent DS.
-    #[serde(default)]
-    #[schema(example = false)]
-    pub split_keys: bool,
+    /// Name of the DNSSEC policy to sign under; defaults to `default`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "default")]
+    pub policy: Option<String>,
+}
+
+/// Request body for moving a signed zone to another DNSSEC policy.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct SetZoneDnssecPolicyRequest {
+    /// Name of an existing DNSSEC policy with the zone's denial mode and key
+    /// layout; a different algorithm starts an algorithm rollover.
+    #[schema(example = "strict")]
+    pub policy: String,
 }
 
 /// Request body for starting a key rollover.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct RolloverDnssecRequest {
     /// Which key to roll: required for split-key zones (`ksk` or `zsk`),
-    /// omitted for CSK zones and algorithm rollovers.
+    /// omitted for CSK zones.
     #[schema(example = "zsk")]
     pub role: Option<String>,
-    /// Roll to this algorithm instead (RFC 6840, Section 5.11): replaces
-    /// every key, double-signing the zone until the old keys leave.
-    #[schema(example = "ed25519")]
-    pub algorithm: Option<String>,
 }
 
 /// A signing key's public half; the private key never leaves the server.
@@ -53,10 +49,6 @@ pub struct DnssecKeyInfo {
     /// `retired`; absent for `active`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eligible_at: Option<DateTime<Utc>>,
-    /// When the DS poll first saw this key's DS at the parent; only pending
-    /// SEP keys carry it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ds_seen_at: Option<DateTime<Utc>>,
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: String,
     #[schema(example = 34217)]
@@ -88,16 +80,6 @@ pub struct DnssecDsInfo {
     pub presentation: String,
 }
 
-impl DnssecDsInfo {
-    /// Whether `answer`, a DS record served by a resolver, is this DS.
-    pub fn matches(&self, answer: &DsAnswer) -> bool {
-        i32::from(answer.key_tag) == self.key_tag
-            && answer.algorithm == self.algorithm
-            && answer.digest_type == self.digest_type
-            && answer.digest == self.digest
-    }
-}
-
 /// DNSSEC signing state of a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetDnssecStatusResponse {
@@ -105,9 +87,9 @@ pub struct GetDnssecStatusResponse {
     pub zone_name: String,
     #[schema(example = true)]
     pub enabled: bool,
-    /// Denial-of-existence mode: `nsec` or `nsec3`.
-    #[schema(example = "nsec")]
-    pub denial: String,
+    /// The policy the zone signs under; absent for an unsigned zone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy: Option<GetDnssecPolicyResponse>,
     pub keys: Vec<DnssecKeyInfo>,
     /// DS forms of the keys, to be registered in the parent zone.
     pub ds_records: Vec<DnssecDsInfo>,
@@ -121,63 +103,6 @@ pub struct GetDnssecStatusResponse {
     pub earliest_signature_expires_at: Option<DateTime<Utc>>,
     #[schema(example = 7)]
     pub serial: i32,
-    pub timing: DnssecTimingInfo,
-}
-
-/// Per-zone signing timing: the values in effect after applying any zone
-/// override to the global `[dnssec]` config, plus the stored overrides.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct DnssecTimingInfo {
-    #[schema(example = 30)]
-    pub signature_validity_days: u32,
-    /// Clamped below `signature_validity_days`, as signing applies it.
-    #[schema(example = 7)]
-    pub signature_refresh_days: u32,
-    /// 0 disables scheduled ZSK rollovers.
-    #[schema(example = 90)]
-    pub zsk_lifetime_days: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature_validity_days_override: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature_refresh_days_override: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub zsk_lifetime_days_override: Option<i32>,
-}
-
-impl DnssecTimingInfo {
-    pub fn from_zone(zone: &Zone, dnssec: &DnssecConfig) -> Self {
-        DnssecTimingInfo {
-            signature_validity_days: zone
-                .signature_validity_days(dnssec.default_signature_validity_days),
-            signature_refresh_days: zone.clamped_signature_refresh_days(
-                dnssec.default_signature_refresh_days,
-                dnssec.default_signature_validity_days,
-            ),
-            zsk_lifetime_days: zone.zsk_lifetime_days(dnssec.default_zsk_lifetime_days),
-            signature_validity_days_override: zone.dnssec_signature_validity_days,
-            signature_refresh_days_override: zone.dnssec_signature_refresh_days,
-            zsk_lifetime_days_override: zone.dnssec_zsk_lifetime_days,
-        }
-    }
-}
-
-/// Request body replacing a zone's timing overrides: an omitted field reverts
-/// that knob to the global `[dnssec]` config.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
-pub struct SetDnssecTimingRequest {
-    /// Days a new signature stays valid.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = 30)]
-    pub signature_validity_days: Option<u32>,
-    /// Re-sign when a signature has fewer than this many days left.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = 7)]
-    pub signature_refresh_days: Option<u32>,
-    /// Days an active ZSK may sign before the scheduler rolls it; 0 disables
-    /// scheduled rolls for this zone.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = 90)]
-    pub zsk_lifetime_days: Option<u32>,
 }
 
 /// One key's BIND file contents. Served only over the daemon socket:
@@ -212,28 +137,10 @@ pub struct ImportDnssecKeyRequest {
     /// imports as `zsk`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
-}
-
-/// One verification check's outcome.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct DnssecCheckInfo {
-    #[schema(example = "signatures")]
-    pub check: String,
-    #[schema(example = true)]
-    pub ok: bool,
-    #[schema(example = "142 RRSIGs, earliest expiry 2026-09-12T00:00:00Z")]
-    pub detail: String,
-}
-
-/// Result of verifying a zone's DNSSEC state.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct VerifyDnssecResponse {
-    #[schema(example = "example.com")]
-    pub zone_name: String,
-    /// Whether every check passed.
-    #[schema(example = true)]
-    pub ok: bool,
-    pub checks: Vec<DnssecCheckInfo>,
+    /// Policy an unsigned zone signs under once its keys are complete;
+    /// defaults to `default`. A zone that already has a policy keeps it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
 }
 
 /// A zone's DNSSEC status wrapped in a response envelope.

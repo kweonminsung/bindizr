@@ -3,6 +3,7 @@
 
 pub(crate) mod control;
 mod dnssec;
+mod dnssec_policy;
 mod doctor;
 mod notify;
 mod record;
@@ -53,6 +54,19 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::TsigKeyList => tsig_key::list_tsig_keys().await,
                 DaemonCommandKind::TsigKeyGet => tsig_key::get_tsig_key(&cmd.data).await,
                 DaemonCommandKind::TsigKeyDelete => tsig_key::delete_tsig_key(&cmd.data).await,
+                DaemonCommandKind::DnssecPolicyCreate => {
+                    dnssec_policy::create_dnssec_policy(&cmd.data).await
+                }
+                DaemonCommandKind::DnssecPolicyList => dnssec_policy::list_dnssec_policies().await,
+                DaemonCommandKind::DnssecPolicyGet => {
+                    dnssec_policy::get_dnssec_policy(&cmd.data).await
+                }
+                DaemonCommandKind::DnssecPolicyUpdate => {
+                    dnssec_policy::update_dnssec_policy(&cmd.data).await
+                }
+                DaemonCommandKind::DnssecPolicyDelete => {
+                    dnssec_policy::delete_dnssec_policy(&cmd.data).await
+                }
                 DaemonCommandKind::ZoneTsigPolicyAdd => {
                     tsig_key::add_zone_tsig_policy(&cmd.data).await
                 }
@@ -102,12 +116,13 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ZoneDnssecRolloverStart => {
                     dnssec::rollover_start(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneDnssecVerify => dnssec::verify_dnssec(&cmd.data).await,
                 DaemonCommandKind::ZoneDnssecWithdraw => dnssec::withdraw_dnssec(&cmd.data).await,
                 DaemonCommandKind::ZoneDnssecWithdrawCancel => {
                     dnssec::cancel_dnssec_withdrawal(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneDnssecTiming => dnssec::set_dnssec_timing(&cmd.data).await,
+                DaemonCommandKind::ZoneDnssecSetPolicy => {
+                    dnssec::set_dnssec_policy(&cmd.data).await
+                }
                 DaemonCommandKind::ZoneDnssecKeysExport => {
                     dnssec::export_dnssec_keys(&cmd.data).await
                 }
