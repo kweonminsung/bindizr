@@ -156,12 +156,13 @@ environment.
 $ sudo systemctl enable bindizr
 $ sudo systemctl start bindizr
 
-# Create an admin API token for authentication
-$ bindizr token create --name admin --global
+# Create an admin API token for authentication. The daemon runs as root and
+# its control socket is owner-only, so the CLI needs sudo.
+$ sudo bindizr token create --name admin --global
 ```
 
 Then confirm the whole path works end to end:
 
 ```bash
-$ bindizr doctor
+$ sudo bindizr doctor
 ```

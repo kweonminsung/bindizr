@@ -84,14 +84,18 @@ $ sudo systemctl enable --now bindizr
 However you installed it, this checks the whole path end to end:
 
 ```bash
-$ bindizr doctor
+$ sudo bindizr doctor
 ```
+
+The daemon's control socket is owner-only, so the CLI runs as the user the
+daemon runs as: `sudo` for a package install, `docker exec` / `kubectl exec`
+into the container for Compose and Helm.
 
 API authentication is on by default for Helm and package installs — the Compose
 stack ships with it off. Create a token before calling the API:
 
 ```bash
-$ bindizr token create --name admin --global
+$ sudo bindizr token create --name admin --global
 ```
 
 ## Documentation
