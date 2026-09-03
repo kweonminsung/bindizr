@@ -551,8 +551,6 @@ pub trait DnssecKeyRepository: Send + Sync {
         state: DnssecKeyState,
         now: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError>;
-    /// Zones holding at least one key: the signed-zone count.
-    async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
     async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError>;
     async fn update_state_tx(
         &self,
@@ -604,6 +602,9 @@ pub trait DnssecRecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<(), DatabaseError>;
+    /// Zones holding a signed view (any derived row): the signed-zone count.
+    /// A staged split-key half has keys but no rows.
+    async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
     /// Zones holding an RRSIG that expires within their policy's re-sign
     /// window after `now`: the re-sign work list.
     async fn list_zone_ids_expiring_within_refresh(

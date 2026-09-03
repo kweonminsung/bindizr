@@ -43,10 +43,11 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
     }
 
-    /// Count the zones that are signed (hold at least one key).
+    /// Count the zones serving a signed view; a staged split-key half is not
+    /// one.
     pub async fn count_signed_zones(caller: &Caller) -> Result<u64, ServiceError> {
         caller.require_global("read DNSSEC metrics")?;
-        RepositoryService::count_dnssec_key_zone_ids().await
+        RepositoryService::count_dnssec_record_zone_ids().await
     }
 
     /// Count keys in `state` across every zone.

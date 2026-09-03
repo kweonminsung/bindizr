@@ -130,6 +130,17 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
         Ok(())
     }
 
+    async fn count_zone_ids(&self) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(DISTINCT zone_id) FROM dnssec_records")
+                .fetch_one(&mut *conn)
+                .await?;
+
+        Ok(count as u64)
+    }
+
     async fn list_zone_ids_expiring_within_refresh(
         &self,
         now: DateTime<Utc>,
