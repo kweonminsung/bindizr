@@ -56,7 +56,7 @@ impl DnssecApi {
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Get a zone's DNSSEC status",
-        description = "Returns whether the zone is signed, the policy it signs under, its signing keys, their DS forms for the parent zone, the earliest stored signature expiration, and the zone serial. For an unsigned zone `enabled` is false with no policy and empty key and DS lists.",
+        description = "Returns whether the zone is signed, the policy it signs under, its signing keys, their DS forms for the parent zone, the earliest stored signature expiration, and the zone serial. For an unsigned zone `enabled` is false with no policy and empty key and DS lists; a zone holding only a staged half of an imported split pair is also `enabled: false`, listing the key but no DS.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),

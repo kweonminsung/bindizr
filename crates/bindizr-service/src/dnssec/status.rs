@@ -20,8 +20,9 @@ use crate::{
 };
 
 impl DnssecService {
-    /// DNSSEC signing state of a zone; `enabled: false` with no policy and
-    /// empty key and DS lists for an unsigned zone.
+    /// DNSSEC signing state of a zone; `enabled: false` and no DS for an
+    /// unsigned zone, including one holding only a staged half of an
+    /// imported split pair.
     pub async fn get_status(
         caller: &Caller,
         zone_name: &str,
@@ -101,17 +102,23 @@ fn build_status(
     serial: i32,
     withdrawing: bool,
 ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    // A staged half of an imported split pair signs nothing yet, so a DS
+    // would delegate trust to a zone serving no DNSKEY.
+    let signed = DnssecKey::is_signable_set(keys);
     // The parent needs DS records only for the SEP keys the zone still wants
     // delegated trust for.
-    let ds_records = keys
-        .iter()
-        .filter(|key| key.wants_parent_ds())
-        .map(|key| ds_info(zone, key))
-        .collect::<Result<Vec<_>, _>>()?;
+    let ds_records = if signed {
+        keys.iter()
+            .filter(|key| key.wants_parent_ds())
+            .map(|key| ds_info(zone, key))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Vec::new()
+    };
 
     Ok(GetDnssecStatusResponse {
         zone_name: zone.name.as_str().to_string(),
-        enabled: !keys.is_empty(),
+        enabled: signed,
         policy: policy.map(GetDnssecPolicyResponse::from_policy),
         keys: keys
             .iter()

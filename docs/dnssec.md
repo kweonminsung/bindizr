@@ -198,7 +198,8 @@ match: a CSK under a CSK policy, KSK/ZSK halves under a split-key policy,
 and keys of another algorithm need a policy of that algorithm. A split pair
 imports in either order — the zone stays unsigned (and keeps accepting
 record changes) until both halves are present, then signs on the second
-import. Both commands run only over the CLI/daemon
+import. Until then `status` reports the zone as not enabled and lists no DS
+record, since a DS at the parent would make the still-unsigned zone bogus. Both commands run only over the CLI/daemon
 socket — private keys never transit the HTTP API.
 
 ## Disabling DNSSEC

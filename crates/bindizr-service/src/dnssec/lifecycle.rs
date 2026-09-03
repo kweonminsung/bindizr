@@ -11,7 +11,7 @@ use crate::{
     dnssec_policy::normalize_policy_name,
     error::ServiceError,
     model::{
-        dnssec_key::{DnssecKeyRole, DnssecKeyState},
+        dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
         dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME,
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
@@ -39,8 +39,15 @@ impl DnssecService {
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             let existing =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            if !existing.is_empty() {
+            if DnssecKey::is_signable_set(&existing) {
                 return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
+            }
+            if !existing.is_empty() {
+                return Err(ServiceError::invalid_input(format!(
+                    "zone '{}' holds a staged imported key; import the missing half of the \
+                     pair or disable DNSSEC first",
+                    zone.name.as_str()
+                )));
             }
             // Shared: a concurrent delete of the policy must wait for the FK
             // reference this transaction is about to write.

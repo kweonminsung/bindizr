@@ -332,13 +332,26 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
     }
 
     let status: GetDnssecStatusResponse = parse_response(data)?;
-    let Some(policy) = status.policy.filter(|_| status.enabled) else {
-        println!(
-            "Zone {} (serial {}): DNSSEC disabled",
-            status.zone_name, status.serial
-        );
+    if !status.enabled {
+        if status.keys.is_empty() {
+            println!(
+                "Zone {} (serial {}): DNSSEC disabled",
+                status.zone_name, status.serial
+            );
+        } else {
+            println!(
+                "Zone {} (serial {}): DNSSEC keys staged, unsigned until the imported split \
+                 pair is complete",
+                status.zone_name, status.serial
+            );
+            print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
+        }
         return Ok(());
-    };
+    }
+    let policy = status
+        .policy
+        .as_ref()
+        .ok_or_else(|| "DNSSEC status of a signed zone carries no policy".to_string())?;
 
     println!(
         "Zone {} (serial {}): DNSSEC enabled, {} denial",

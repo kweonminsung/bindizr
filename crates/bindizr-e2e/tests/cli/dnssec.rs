@@ -338,8 +338,12 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
         staged.contains("DNSSEC key imported successfully"),
         "{staged}"
     );
-    // A lone KSK signs nothing, so the zone must keep taking record changes
-    // as an unsigned zone while the ZSK is still on its way.
+    // A lone KSK signs nothing: the zone reads as staged, offers no DS for
+    // the parent, and keeps taking record changes as an unsigned zone.
+    assert!(staged.contains("DNSSEC keys staged"), "{staged}");
+    assert!(!staged.contains("IN DS"), "{staged}");
+    let enable_again = app.run_cli(&["zone", "dnssec", "enable", &zone_name]).await;
+    assert!(!enable_again.status.success());
     app.run_cli_success(&[
         "record",
         "create",
@@ -356,18 +360,21 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
 
     // The ZSK completes the pair and the zone signs.
     let (_, key_file, private_file) = &pairs[1];
-    app.run_cli_success(&[
-        "zone",
-        "dnssec",
-        "keys",
-        "import",
-        &zone_name,
-        "--key",
-        key_file,
-        "--private",
-        private_file,
-    ])
-    .await;
+    let completed = app
+        .run_cli_success(&[
+            "zone",
+            "dnssec",
+            "keys",
+            "import",
+            &zone_name,
+            "--key",
+            key_file,
+            "--private",
+            private_file,
+        ])
+        .await;
+    assert!(completed.contains("DNSSEC enabled"), "{completed}");
+    assert!(completed.contains("IN DS"), "{completed}");
 
     let signed_export = app
         .run_cli_success(&["zone", "export", &zone_name, "--signed"])
