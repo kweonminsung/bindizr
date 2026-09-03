@@ -107,6 +107,21 @@ impl Zone {
             .map_or(default, |days| days.max(0) as u32)
     }
 
+    /// Effective re-sign threshold clamped into `[1, validity - 1]`, as
+    /// signing and the re-sign scan apply it.
+    pub fn clamped_signature_refresh_days(
+        &self,
+        default_refresh: u32,
+        default_validity: u32,
+    ) -> u32 {
+        self.signature_refresh_days(default_refresh)
+            .min(
+                self.signature_validity_days(default_validity)
+                    .saturating_sub(1),
+            )
+            .max(1)
+    }
+
     /// Effective ZSK lifetime (0 disables auto-roll): the zone override or
     /// `default`.
     pub fn zsk_lifetime_days(&self, default: u32) -> u32 {

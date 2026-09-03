@@ -113,9 +113,10 @@ impl DnssecService {
         // refresh >= validity, which would re-sign on every maintenance pass;
         // the refresh window yields.
         let configured_refresh = zone.signature_refresh_days(dnssec.default_signature_refresh_days);
-        let refresh_days = configured_refresh
-            .min(validity_days.saturating_sub(1))
-            .max(1);
+        let refresh_days = zone.clamped_signature_refresh_days(
+            dnssec.default_signature_refresh_days,
+            dnssec.default_signature_validity_days,
+        );
         if refresh_days != configured_refresh {
             log_warn!(
                 "Zone {}: effective signature_refresh_days ({}) is not below \

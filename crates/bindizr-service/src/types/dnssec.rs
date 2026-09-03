@@ -130,6 +130,7 @@ pub struct GetDnssecStatusResponse {
 pub struct DnssecTimingInfo {
     #[schema(example = 30)]
     pub signature_validity_days: u32,
+    /// Clamped below `signature_validity_days`, as signing applies it.
     #[schema(example = 7)]
     pub signature_refresh_days: u32,
     /// 0 disables scheduled ZSK rollovers.
@@ -148,8 +149,10 @@ impl DnssecTimingInfo {
         DnssecTimingInfo {
             signature_validity_days: zone
                 .signature_validity_days(dnssec.default_signature_validity_days),
-            signature_refresh_days: zone
-                .signature_refresh_days(dnssec.default_signature_refresh_days),
+            signature_refresh_days: zone.clamped_signature_refresh_days(
+                dnssec.default_signature_refresh_days,
+                dnssec.default_signature_validity_days,
+            ),
             zsk_lifetime_days: zone.zsk_lifetime_days(dnssec.default_zsk_lifetime_days),
             signature_validity_days_override: zone.dnssec_signature_validity_days,
             signature_refresh_days_override: zone.dnssec_signature_refresh_days,
