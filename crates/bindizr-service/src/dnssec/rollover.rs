@@ -437,6 +437,11 @@ impl DnssecService {
                 key.state = DnssecKeyState::Active;
                 key.state_changed_at = now;
                 key.eligible_at = now;
+                // The status API promises only pending SEP keys carry ds_seen_at.
+                if key.ds_seen_at.is_some() {
+                    RepositoryService::update_dnssec_key_ds_seen_tx(tx, key.id, None, now).await?;
+                    key.ds_seen_at = None;
+                }
             } else if key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role) {
                 let eligible_at = now + Duration::seconds(retire_wait);
                 RepositoryService::update_dnssec_key_state_tx(
