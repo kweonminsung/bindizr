@@ -22,7 +22,7 @@ pub(crate) async fn fetch_zone_file(server: &str, zone_name: &str) -> Result<Str
 /// Bounds on one inbound transfer, guarding against a runaway server.
 const MAX_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
 const MAX_TRANSFER_RECORDS: usize = 200_000;
-/// Whole-transfer deadline: connect, query, and every response frame.
+/// Whole-transfer deadline: resolution and every address attempt share it.
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Transfer the zone from `server` (`host[:port]`, port 53 default) and
@@ -31,14 +31,16 @@ async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferReco
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
 
+    let deadline = tokio::time::Instant::now() + TRANSFER_TIMEOUT;
     let mut last = None;
     for (entry, result) in super::resolve_secondary_entries(server, TRANSFER_TIMEOUT).await {
         let addrs = result.map_err(|e| format!("failed to resolve {}: {}", entry, e))?;
         for addr in addrs {
-            match tokio::time::timeout(TRANSFER_TIMEOUT, transfer_from(addr, &qname)).await {
+            match tokio::time::timeout_at(deadline, transfer_from(addr, &qname)).await {
                 Ok(Ok(records)) => return Ok(records),
                 Ok(Err(e)) => last = Some(format!("{}: {}", addr, e)),
-                Err(_) => last = Some(format!("{}: transfer timed out", addr)),
+                // The deadline is absolute; later attempts would time out too.
+                Err(_) => return Err(format!("{}: transfer timed out", addr)),
             }
         }
     }
