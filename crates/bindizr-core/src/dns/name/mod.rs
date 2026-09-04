@@ -51,7 +51,7 @@ fn classify_domain_label(label: &str, allow_underscore: bool) -> Result<(), Pars
     Ok(())
 }
 
-/// [`classify_domain_label`] with the problem phrased against `field`.
+/// `classify_domain_label` with the problem phrased against `field`.
 pub fn validate_domain_label(
     label: &str,
     field: &str,

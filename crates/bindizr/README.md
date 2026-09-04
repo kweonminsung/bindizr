@@ -67,12 +67,6 @@ notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response
 nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests (not recommended in production; TSIG keys/grants are managed via CLI or HTTP API)
 journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
 
-[dnssec]
-signature_validity_days = 14  # RRSIG validity period
-signature_refresh_days = 5    # Re-sign when a signature has fewer than this many days left (must be < validity)
-rollover_publish_holddown_secs = 86400 # Wait before a pre-published key may start signing (ZSKs auto-advance)
-rollover_retire_holddown_secs = 172800 # Wait before a retired key is removed from the zone
-
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace
 ```
