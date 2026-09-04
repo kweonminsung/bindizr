@@ -66,8 +66,8 @@ installation's defaults.
 ## Enabling DNSSEC for a zone
 
 ```sh
-bindizr zone dnssec enable example.com                  # the default policy
-bindizr zone dnssec enable example.com --policy strict
+bindizr dnssec enable example.com                  # the default policy
+bindizr dnssec enable example.com --policy strict
 ```
 
 or over HTTP:
@@ -85,7 +85,7 @@ private key never leaves bindizr.
 A signed zone moves to another policy with:
 
 ```sh
-bindizr zone dnssec set-policy example.com strict
+bindizr dnssec set-policy example.com strict
 ```
 
 Also `PUT /zones/{name}/dnssec/policy`. The target must share the zone's
@@ -101,7 +101,7 @@ Signatures only validate once the parent delegates trust to your key. Fetch
 the DS record and register it at your parent (usually via your registrar):
 
 ```sh
-bindizr zone dnssec ds example.com
+bindizr dnssec ds example.com
 ```
 
 ```text
@@ -110,7 +110,7 @@ example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A2
 
 Signed zones also publish `CDS`/`CDNSKEY` (RFC 7344) for parents that scan
 for DS changes. Until the DS is published, resolvers simply treat the zone
-as insecure — safe to roll out gradually. `bindizr zone dnssec status
+as insecure — safe to roll out gradually. `bindizr dnssec status
 example.com` shows the signing state at any time.
 
 ## Key rollover
@@ -118,8 +118,8 @@ example.com` shows the signing state at any time.
 Rollover replaces a key without breaking validation (RFC 7583 pre-publish):
 
 ```sh
-bindizr zone dnssec rollover start example.com            # CSK zones
-bindizr zone dnssec rollover start example.com --role zsk # split-key zones
+bindizr dnssec rollover start example.com            # CSK zones
+bindizr dnssec rollover start example.com --role zsk # split-key zones
 ```
 
 `start` pre-publishes a replacement with the same algorithm: it joins the
@@ -130,7 +130,7 @@ zone's `DNSKEY` TTL, fixed when the key is published — gives resolver caches
 time to learn the new key. Then:
 
 An **algorithm rollover** (RFC 6840, Section 5.11) is started by moving the
-zone to a policy of the new algorithm (`zone dnssec set-policy`): every key is
+zone to a policy of the new algorithm (`dnssec set-policy`): every key is
 replaced with one of the new algorithm and the zone is double-signed — both
 algorithms cover all data — until the old keys leave together after
 `ds-seen`.
@@ -146,7 +146,7 @@ algorithms cover all data — until the old keys leave together after
   refused:
 
   ```sh
-  bindizr zone dnssec rollover ds-seen example.com
+  bindizr dnssec rollover ds-seen example.com
   ```
 
   bindizr takes the confirmation at its word: check with `dig DS` that the
@@ -163,14 +163,14 @@ throughout.
 
 Signatures are valid for the policy's `signature_validity_days` (default 14)
 and renewed once fewer than `signature_refresh_days` (default 5) remain; the
-hourly scheduler handles this with no operator action. `bindizr zone dnssec
+hourly scheduler handles this with no operator action. `bindizr dnssec
 sign example.com` forces a full re-sign if stored signatures are ever
 doubted.
 
 To give some zones different timing, create a policy with the values you
-want and move them to it with `zone dnssec set-policy`; editing a policy
+want and move them to it with `dnssec set-policy`; editing a policy
 with `dnssec-policy update` changes every zone under it from the next
-signing pass or maintenance scan. `zone dnssec status` reports the zone's
+signing pass or maintenance scan. `dnssec status` reports the zone's
 policy and its values.
 
 ## Key import and export
@@ -181,10 +181,10 @@ signer using that format) migrates without breaking its chain of trust:
 ```sh
 # Print every key in BIND key-file form, split by `; K*.key` / `; K*.private`
 # headers naming the file each block belongs in
-bindizr zone dnssec keys export example.com
+bindizr dnssec keys export example.com
 
 # Bring an existing key set in as active keys and sign with it
-bindizr zone dnssec keys import example.com \
+bindizr dnssec keys import example.com \
     --key Kexample.com.+013+12345.key --private Kexample.com.+013+12345.private
 ```
 
@@ -206,11 +206,11 @@ Dropping signatures while the parent still publishes your DS makes the zone
 **bogus**. Go insecure in order:
 
 1. Ask the parent to remove the DS. If the parent consumes CDS,
-   `bindizr zone dnssec withdraw example.com` publishes the RFC 8078 delete
+   `bindizr dnssec withdraw example.com` publishes the RFC 8078 delete
    pair (`CDS 0 0 0 00`) and the parent drops the DS on its own; otherwise
    remove it at the registrar. `--cancel` takes a withdrawal back.
 2. Wait until the DS is gone and its TTL has passed.
-3. `bindizr zone dnssec disable example.com`
+3. `bindizr dnssec disable example.com`
 
 ## Behavior notes
 

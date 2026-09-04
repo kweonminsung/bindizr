@@ -286,7 +286,6 @@ async fn signed_nsupdate_needs_a_policy_for_the_zone() {
 
     // Granting only `a` leaves every other owner name refused.
     app.run_cli_success(&[
-        "zone",
         "tsig-policy",
         "add",
         &zone_name,

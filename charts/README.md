@@ -71,6 +71,6 @@ helm install bindizr ./charts \
 
 - External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.serverUrl`.
 - SQLite is not supported by this Helm chart.
-- nsupdate TSIG keys and per-zone policies are managed at runtime (`bindizr tsig-key`, `bindizr zone tsig-policy`, or the HTTP API), not through Helm values; `bindizr.dns.nsupdateAllowUnsigned` (default `false`) accepts unsigned updates and is not recommended in production.
+- nsupdate TSIG keys and per-zone policies are managed at runtime (`bindizr tsig-key`, `bindizr tsig-policy`, or the HTTP API), not through Helm values; `bindizr.dns.nsupdateAllowUnsigned` (default `false`) accepts unsigned updates and is not recommended in production.
 - BIND9 accepts NOTIFY from any source by default through `allow-notify { any; }`.
 - Bundled MySQL/PostgreSQL are optional single-replica StatefulSets using the configured Docker images and controlled by `mysql.enabled` and `postgresql.enabled`.

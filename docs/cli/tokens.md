@@ -33,14 +33,14 @@ types (`*` or a comma-separated list):
 
 ```bash
 # Allow the token to manage any record in example.com
-$ bindizr zone token-policy add example.com --token external-dns
+$ bindizr token-policy add example.com --token external-dns
 
 # Allow only A/TXT records under *.dyn
-$ bindizr zone token-policy add example.com --token external-dns --pattern '*.dyn' --types A,TXT
+$ bindizr token-policy add example.com --token external-dns --pattern '*.dyn' --types A,TXT
 
 # Inspect and revoke
-$ bindizr zone token-policy list example.com
-$ bindizr zone token-policy remove example.com <POLICY_ID>
+$ bindizr token-policy list example.com
+$ bindizr token-policy remove example.com <POLICY_ID>
 ```
 
 A scoped token sees only its granted zones: other zones read as 404 and

@@ -37,15 +37,8 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
 }
 
 async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
-    app.run_cli_success(&[
-        "zone",
-        "token-policy",
-        "add",
-        zone_name,
-        "--token",
-        token_name,
-    ])
-    .await;
+    app.run_cli_success(&["token-policy", "add", zone_name, "--token", token_name])
+        .await;
 }
 
 fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {

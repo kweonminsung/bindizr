@@ -1,4 +1,4 @@
-//! The `zone token-policy` subcommands.
+//! The `token-policy` subcommands.
 
 use bindizr_service::types::{CreateZoneTokenPolicyRequest, GetZoneTokenPolicyResponse};
 use clap::Subcommand;
@@ -19,7 +19,7 @@ use crate::{
 
 /// Subcommands for managing a zone's API token policies.
 #[derive(Subcommand, Debug)]
-pub(crate) enum ZoneTokenPolicyCommand {
+pub(crate) enum TokenPolicyCommand {
     /// Grant an API token record rights in a zone
     Add {
         /// The name of the zone
@@ -45,17 +45,15 @@ pub(crate) enum ZoneTokenPolicyCommand {
     Remove {
         /// The name of the zone
         name: String,
-        /// ID of the policy to remove (see `zone token-policy list`)
+        /// ID of the policy to remove (see `token-policy list`)
         id: i32,
     },
 }
 
-pub(crate) async fn handle_command(
-    client: &DaemonSocketClient,
-    subcommand: ZoneTokenPolicyCommand,
-) -> Result<(), CliError> {
+pub(crate) async fn handle_command(subcommand: TokenPolicyCommand) -> Result<(), CliError> {
+    let client = DaemonSocketClient::new();
     match subcommand {
-        ZoneTokenPolicyCommand::Add {
+        TokenPolicyCommand::Add {
             name,
             token,
             pattern,
@@ -76,7 +74,7 @@ pub(crate) async fn handle_command(
                 .await?;
             println!("{}", response.message);
         }
-        ZoneTokenPolicyCommand::List { name } => {
+        TokenPolicyCommand::List { name } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneTokenPolicyList,
@@ -86,7 +84,7 @@ pub(crate) async fn handle_command(
             let policies: Vec<GetZoneTokenPolicyResponse> = parse_response(&response.data)?;
             print_table(policies.iter().map(ZoneTokenPolicyRow::from).collect());
         }
-        ZoneTokenPolicyCommand::Remove { name, id } => {
+        TokenPolicyCommand::Remove { name, id } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneTokenPolicyRemove,

@@ -1,9 +1,6 @@
-//! The `zone` subcommands. Each nested family owns its own grammar, dispatch,
-//! and output rendering in a sibling module.
+//! The `zone` subcommands; the `version` family owns its own grammar,
+//! dispatch, and output rendering in a sibling module.
 
-mod dnssec;
-mod token_policy;
-mod tsig_policy;
 mod version;
 
 use bindizr_service::types::{
@@ -12,9 +9,6 @@ use bindizr_service::types::{
     ImportZoneFromServerRequest, NotifyZoneRequest, UpdateZonePatch, ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
-pub(crate) use dnssec::ZoneDnssecCommand;
-pub(crate) use token_policy::ZoneTokenPolicyCommand;
-pub(crate) use tsig_policy::ZoneTsigPolicyCommand;
 pub(crate) use version::ZoneVersionCommand;
 
 use crate::{
@@ -54,39 +48,6 @@ pub(crate) enum ZoneCommand {
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<i32>,
-    },
-
-    /// Update a zone, changing only the fields you pass
-    Update {
-        /// The name of the zone to update
-        name: String,
-        /// Rename the zone to this name
-        #[arg(long)]
-        new_name: Option<String>,
-        /// SOA MNAME (primary name server)
-        #[arg(long)]
-        mname: Option<String>,
-        /// SOA RNAME, as an email address
-        #[arg(long)]
-        rname: Option<String>,
-        /// Default record TTL (seconds)
-        #[arg(long)]
-        default_ttl: Option<i32>,
-        /// SOA refresh interval (seconds)
-        #[arg(long)]
-        refresh: Option<i32>,
-        /// SOA retry interval (seconds)
-        #[arg(long)]
-        retry: Option<i32>,
-        /// SOA expire interval (seconds)
-        #[arg(long)]
-        expire: Option<i32>,
-        /// SOA minimum TTL (seconds)
-        #[arg(long)]
-        minimum_ttl: Option<i32>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
 
     /// List zones
@@ -134,6 +95,39 @@ pub(crate) enum ZoneCommand {
     Get {
         /// The name of the zone
         name: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
+    /// Update a zone, changing only the fields you pass
+    Update {
+        /// The name of the zone to update
+        name: String,
+        /// Rename the zone to this name
+        #[arg(long)]
+        new_name: Option<String>,
+        /// SOA MNAME (primary name server)
+        #[arg(long)]
+        mname: Option<String>,
+        /// SOA RNAME, as an email address
+        #[arg(long)]
+        rname: Option<String>,
+        /// Default record TTL (seconds)
+        #[arg(long)]
+        default_ttl: Option<i32>,
+        /// SOA refresh interval (seconds)
+        #[arg(long)]
+        refresh: Option<i32>,
+        /// SOA retry interval (seconds)
+        #[arg(long)]
+        retry: Option<i32>,
+        /// SOA expire interval (seconds)
+        #[arg(long)]
+        expire: Option<i32>,
+        /// SOA minimum TTL (seconds)
+        #[arg(long)]
+        minimum_ttl: Option<i32>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -192,12 +186,6 @@ $INCLUDE is not supported.")]
         signed: bool,
     },
 
-    /// Inspect or roll back a zone's versions (serial history)
-    Version {
-        #[command(subcommand)]
-        subcommand: ZoneVersionCommand,
-    },
-
     /// Show how far each secondary has caught up with a zone
     Status {
         /// The name of the zone
@@ -210,22 +198,10 @@ $INCLUDE is not supported.")]
     /// Send NOTIFY messages to secondary servers for a zone
     Notify(NotifyArgs),
 
-    /// Manage a zone's TSIG policies (which keys may nsupdate what)
-    TsigPolicy {
+    /// Inspect or roll back a zone's versions (serial history)
+    Version {
         #[command(subcommand)]
-        subcommand: ZoneTsigPolicyCommand,
-    },
-
-    /// Manage a zone's API token policies (which tokens may change what)
-    TokenPolicy {
-        #[command(subcommand)]
-        subcommand: ZoneTokenPolicyCommand,
-    },
-
-    /// Manage a zone's DNSSEC signing (keys, DS records, re-signing)
-    Dnssec {
-        #[command(subcommand)]
-        subcommand: ZoneDnssecCommand,
+        subcommand: ZoneVersionCommand,
     },
 }
 
@@ -498,13 +474,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .await?;
             println!("{}", response.message);
         }
-        ZoneCommand::TokenPolicy { subcommand } => {
-            token_policy::handle_command(&client, subcommand).await?
-        }
-        ZoneCommand::TsigPolicy { subcommand } => {
-            tsig_policy::handle_command(&client, subcommand).await?
-        }
-        ZoneCommand::Dnssec { subcommand } => dnssec::handle_command(&client, subcommand).await?,
     }
 
     Ok(())

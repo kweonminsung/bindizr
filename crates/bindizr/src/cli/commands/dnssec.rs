@@ -1,4 +1,4 @@
-//! The `zone dnssec` subcommands.
+//! The `dnssec` subcommands.
 
 use bindizr_service::types::{
     EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyPair,
@@ -22,7 +22,7 @@ use crate::{
 
 /// Subcommands for managing a zone's DNSSEC signing.
 #[derive(Subcommand, Debug)]
-pub(crate) enum ZoneDnssecCommand {
+pub(crate) enum DnssecCommand {
     /// Enable DNSSEC: generate the signing key(s) a policy prescribes and
     /// sign the zone
     Enable {
@@ -87,21 +87,21 @@ pub(crate) enum ZoneDnssecCommand {
     /// Roll a zone's signing key: pre-publish a replacement, then promote it
     Rollover {
         #[command(subcommand)]
-        subcommand: ZoneDnssecRolloverCommand,
+        subcommand: DnssecRolloverCommand,
     },
     /// Import or export the zone's raw keys (BIND `K*.key`/`K*.private` form)
     Keys {
         #[command(subcommand)]
-        subcommand: ZoneDnssecKeysCommand,
+        subcommand: DnssecKeysCommand,
     },
 }
 
 /// Subcommands for rolling a zone's signing keys.
 #[derive(Subcommand, Debug)]
-pub(crate) enum ZoneDnssecRolloverCommand {
+pub(crate) enum DnssecRolloverCommand {
     /// Pre-publish a same-algorithm replacement key: it joins the DNSKEY
     /// RRset and CDS/CDNSKEY set but signs no zone data until `ds-seen`
-    /// promotes it. To change the algorithm, use `zone dnssec set-policy`
+    /// promotes it. To change the algorithm, use `dnssec set-policy`
     Start {
         /// The name of the zone
         name: String,
@@ -127,7 +127,7 @@ pub(crate) enum ZoneDnssecRolloverCommand {
 
 /// Subcommands for moving raw key material in and out of bindizr.
 #[derive(Subcommand, Debug)]
-pub(crate) enum ZoneDnssecKeysCommand {
+pub(crate) enum DnssecKeysCommand {
     /// Print the zone's keys in BIND key-file form, private halves
     /// included — redirect somewhere with tight permissions
     Export {
@@ -157,12 +157,10 @@ pub(crate) enum ZoneDnssecKeysCommand {
     },
 }
 
-pub(crate) async fn handle_command(
-    client: &DaemonSocketClient,
-    subcommand: ZoneDnssecCommand,
-) -> Result<(), CliError> {
+pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliError> {
+    let client = DaemonSocketClient::new();
     match subcommand {
-        ZoneDnssecCommand::Enable {
+        DnssecCommand::Enable {
             name,
             policy,
             output,
@@ -181,7 +179,7 @@ pub(crate) async fn handle_command(
             }
             print_status(&response.data, output)?;
         }
-        ZoneDnssecCommand::SetPolicy {
+        DnssecCommand::SetPolicy {
             name,
             policy,
             output,
@@ -200,7 +198,7 @@ pub(crate) async fn handle_command(
             }
             print_status(&response.data, output)?;
         }
-        ZoneDnssecCommand::Withdraw {
+        DnssecCommand::Withdraw {
             name,
             cancel,
             output,
@@ -216,8 +214,8 @@ pub(crate) async fn handle_command(
             }
             print_status(&response.data, output)?;
         }
-        ZoneDnssecCommand::Keys { subcommand } => match subcommand {
-            ZoneDnssecKeysCommand::Export { name } => {
+        DnssecCommand::Keys { subcommand } => match subcommand {
+            DnssecKeysCommand::Export { name } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecKeysExport,
@@ -228,7 +226,7 @@ pub(crate) async fn handle_command(
                     parse_response(&response.data).map_err(CliError::from)?;
                 print_key_material(&exported);
             }
-            ZoneDnssecKeysCommand::Import {
+            DnssecKeysCommand::Import {
                 name,
                 key,
                 private,
@@ -269,7 +267,7 @@ pub(crate) async fn handle_command(
                 print_status(&response.data, output)?;
             }
         },
-        ZoneDnssecCommand::Disable { name } => {
+        DnssecCommand::Disable { name } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneDnssecDisable,
@@ -278,26 +276,26 @@ pub(crate) async fn handle_command(
                 .await?;
             println!("{}", response.message);
         }
-        ZoneDnssecCommand::Status { name, output } => {
+        DnssecCommand::Status { name, output } => {
             let response = client
                 .send_command(DaemonCommandKind::ZoneDnssecStatus, ZoneNameParams { name })
                 .await?;
             print_status(&response.data, output)?;
         }
-        ZoneDnssecCommand::Ds { name } => {
+        DnssecCommand::Ds { name } => {
             let response = client
                 .send_command(DaemonCommandKind::ZoneDnssecStatus, ZoneNameParams { name })
                 .await?;
             print_ds_records(&response.data)?;
         }
-        ZoneDnssecCommand::Sign { name } => {
+        DnssecCommand::Sign { name } => {
             let response = client
                 .send_command(DaemonCommandKind::ZoneDnssecSign, ZoneNameParams { name })
                 .await?;
             println!("{}", response.message);
         }
-        ZoneDnssecCommand::Rollover { subcommand } => match subcommand {
-            ZoneDnssecRolloverCommand::Start { name, role, output } => {
+        DnssecCommand::Rollover { subcommand } => match subcommand {
+            DnssecRolloverCommand::Start { name, role, output } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverStart,
@@ -312,7 +310,7 @@ pub(crate) async fn handle_command(
                 }
                 print_status(&response.data, output)?;
             }
-            ZoneDnssecRolloverCommand::DsSeen { name, output } => {
+            DnssecRolloverCommand::DsSeen { name, output } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverDsSeen,

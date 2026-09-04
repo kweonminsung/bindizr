@@ -61,7 +61,6 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(&[
-        "zone",
         "token-policy",
         "add",
         &granted_zone,
@@ -198,7 +197,6 @@ async fn token_policies_enforce_name_patterns_and_types() {
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(&[
-        "zone",
         "token-policy",
         "add",
         &zone_name,

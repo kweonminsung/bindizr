@@ -90,7 +90,7 @@ kubectl -n bindizr rollout restart deploy/bindizr
 kubectl -n bindizr exec deploy/bindizr -- bindizr zone create --name example.com \
   --mname ns.example.com --rname admin@example.com --default-ttl 3600
 kubectl -n bindizr exec deploy/bindizr -- bindizr token create --name external-dns
-kubectl -n bindizr exec deploy/bindizr -- bindizr zone token-policy add example.com --token external-dns
+kubectl -n bindizr exec deploy/bindizr -- bindizr token-policy add example.com --token external-dns
 kubectl -n bindizr create secret generic bindizr-external-dns --from-literal=api-token=<token>
 
 # 3. Deploy ExternalDNS + adapter sidecar and the annotated demo Service.

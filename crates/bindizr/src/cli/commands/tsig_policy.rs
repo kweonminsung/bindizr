@@ -1,4 +1,4 @@
-//! The `zone tsig-policy` subcommands.
+//! The `tsig-policy` subcommands.
 
 use bindizr_service::types::{CreateZoneTsigPolicyRequest, GetZoneTsigPolicyResponse};
 use clap::Subcommand;
@@ -19,7 +19,7 @@ use crate::{
 
 /// Subcommands for managing a zone's TSIG policies.
 #[derive(Subcommand, Debug)]
-pub(crate) enum ZoneTsigPolicyCommand {
+pub(crate) enum TsigPolicyCommand {
     /// Grant a TSIG key nsupdate rights in a zone
     Add {
         /// The name of the zone
@@ -48,17 +48,15 @@ pub(crate) enum ZoneTsigPolicyCommand {
     Remove {
         /// The name of the zone
         name: String,
-        /// ID of the policy to remove (see `zone tsig-policy list`)
+        /// ID of the policy to remove (see `tsig-policy list`)
         id: i32,
     },
 }
 
-pub(crate) async fn handle_command(
-    client: &DaemonSocketClient,
-    subcommand: ZoneTsigPolicyCommand,
-) -> Result<(), CliError> {
+pub(crate) async fn handle_command(subcommand: TsigPolicyCommand) -> Result<(), CliError> {
+    let client = DaemonSocketClient::new();
     match subcommand {
-        ZoneTsigPolicyCommand::Add {
+        TsigPolicyCommand::Add {
             name,
             key,
             pattern,
@@ -79,7 +77,7 @@ pub(crate) async fn handle_command(
                 .await?;
             println!("{}", response.message);
         }
-        ZoneTsigPolicyCommand::List { name } => {
+        TsigPolicyCommand::List { name } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneTsigPolicyList,
@@ -89,7 +87,7 @@ pub(crate) async fn handle_command(
             let policies: Vec<GetZoneTsigPolicyResponse> = parse_response(&response.data)?;
             print_table(policies.iter().map(ZoneTsigPolicyRow::from).collect());
         }
-        ZoneTsigPolicyCommand::Remove { name, id } => {
+        TsigPolicyCommand::Remove { name, id } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneTsigPolicyRemove,

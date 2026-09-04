@@ -43,6 +43,43 @@ pub(crate) enum RecordCommand {
         priority: Option<i32>,
     },
 
+    /// Bulk insert records into a zone from a JSON or YAML file
+    #[command(after_help = "\
+Input format (JSON or YAML): an array of records, or an object with a
+'records' array. Fields per record:
+  name         owner name relative to the zone, or '@' for the apex (required)
+  record_type  A, AAAA, CNAME, MX, NS, PTR, SRV, TXT (required)
+  value        record value; TXT also accepts an array of strings (required)
+  ttl          seconds (optional; defaults to the zone TTL)
+  priority     MX/SRV priority (optional)
+
+JSON example:
+  [{\"name\": \"www\", \"record_type\": \"A\", \"value\": \"192.0.2.1\", \"ttl\": 300},
+   {\"name\": \"@\", \"record_type\": \"MX\", \"value\": \"mail\", \"priority\": 10}]
+
+YAML example:
+  - name: www
+    record_type: A
+    value: 192.0.2.1
+    ttl: 300")]
+    BulkCreate {
+        /// Path to a JSON or YAML file (an array of records, or an object with
+        /// a 'records' array), or '-' to read from stdin
+        file: String,
+        /// Zone name
+        #[arg(short, long)]
+        zone: String,
+        /// Parse and validate without applying any change
+        #[arg(long)]
+        dry_run: bool,
+        /// Preview the inserts as a +/-/~ diff without applying them (implies --dry-run)
+        #[arg(long)]
+        preview: bool,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
     /// List records
     #[command(alias = "ls")]
     List {
@@ -88,43 +125,6 @@ pub(crate) enum RecordCommand {
         /// Number of records to skip
         #[arg(long)]
         offset: Option<u64>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
-    },
-
-    /// Bulk insert records into a zone from a JSON or YAML file
-    #[command(after_help = "\
-Input format (JSON or YAML): an array of records, or an object with a
-'records' array. Fields per record:
-  name         owner name relative to the zone, or '@' for the apex (required)
-  record_type  A, AAAA, CNAME, MX, NS, PTR, SRV, TXT (required)
-  value        record value; TXT also accepts an array of strings (required)
-  ttl          seconds (optional; defaults to the zone TTL)
-  priority     MX/SRV priority (optional)
-
-JSON example:
-  [{\"name\": \"www\", \"record_type\": \"A\", \"value\": \"192.0.2.1\", \"ttl\": 300},
-   {\"name\": \"@\", \"record_type\": \"MX\", \"value\": \"mail\", \"priority\": 10}]
-
-YAML example:
-  - name: www
-    record_type: A
-    value: 192.0.2.1
-    ttl: 300")]
-    BulkCreate {
-        /// Path to a JSON or YAML file (an array of records, or an object with
-        /// a 'records' array), or '-' to read from stdin
-        file: String,
-        /// Zone name
-        #[arg(short, long)]
-        zone: String,
-        /// Parse and validate without applying any change
-        #[arg(long)]
-        dry_run: bool,
-        /// Preview the inserts as a +/-/~ diff without applying them (implies --dry-run)
-        #[arg(long)]
-        preview: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,

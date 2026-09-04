@@ -43,7 +43,6 @@ async fn zone_tsig_policy_add_list_remove() {
 
     let added = app
         .run_cli_success(&[
-            "zone",
             "tsig-policy",
             "add",
             &zone_name,
@@ -58,7 +57,7 @@ async fn zone_tsig_policy_add_list_remove() {
     assert!(added.contains("TSIG policy created successfully"));
 
     let listed = app
-        .run_cli_success(&["zone", "tsig-policy", "list", &zone_name])
+        .run_cli_success(&["tsig-policy", "list", &zone_name])
         .await;
     assert!(listed.contains("cli-policy-key"));
     assert!(listed.contains("*.dyn"));
@@ -78,7 +77,7 @@ async fn zone_tsig_policy_add_list_remove() {
         .to_string();
 
     let removed = app
-        .run_cli_success(&["zone", "tsig-policy", "remove", &zone_name, &policy_id])
+        .run_cli_success(&["tsig-policy", "remove", &zone_name, &policy_id])
         .await;
     assert!(removed.contains("TSIG policy deleted successfully"));
 

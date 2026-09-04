@@ -33,8 +33,8 @@ $ bindizr tsig-key create --name legacy-key --algorithm hmac-sha512 --secret "bX
 $ bindizr tsig-key create --name admin-key --global
 
 # Grant a (non-global) key update rights in a zone (pattern/types default to '*')
-$ bindizr zone tsig-policy add example.com --key update-key
-$ bindizr zone tsig-policy add example.com --key acme-key --pattern "*" --types "TXT"
+$ bindizr tsig-policy add example.com --key update-key
+$ bindizr tsig-policy add example.com --key acme-key --pattern "*" --types "TXT"
 
 # Send a signed update (hmac-sha256 by default)
 $ nsupdate -y "hmac-sha256:update-key:<BASE64_SECRET>" <<EOF

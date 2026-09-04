@@ -8,7 +8,7 @@ own; bindizr's `/external-dns` endpoints do the work (enable them with
 `api.external_dns_enabled`).
 
 The API token's zone grants are the domain filter: ExternalDNS may only touch zones the token has
-been granted with `bindizr zone token-policy add`.
+been granted with `bindizr token-policy add`.
 
 ```bash
 bindizr-external-dns --bindizr-url http://bindizr:8000 --token-file /run/secrets/bindizr-token
