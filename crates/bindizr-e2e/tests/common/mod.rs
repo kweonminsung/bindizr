@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     env, fs,
-    io::Write,
+    io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -85,37 +85,55 @@ impl TestApp {
 
     async fn start_local_with(options: TestAppOptions) -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
-        let api_port = reserve_tcp_port();
-        let dns_port = reserve_dns_port();
         let db_path = temp_dir.path().join("bindizr.sqlite");
         fs::File::create(&db_path).expect("failed to create sqlite file");
-
         let config_path = temp_dir.path().join("bindizr.conf.toml");
-        write_config(&config_path, api_port, dns_port, &db_path, &options);
-
-        let mut child = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server"))
-            .arg("start")
-            .arg("-c")
-            .arg(&config_path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("failed to start bindizr binary");
-
         let client = Client::new();
-        let base_url = format!("http://127.0.0.1:{api_port}");
-        wait_for_api(&client, &base_url, &mut child).await;
 
-        Self {
-            runtime: Some(TestRuntime::Local { temp_dir, child }),
-            client,
-            base_url,
-            dns_port: Some(dns_port),
-            dns_secondary_ports: Vec::new(),
-            namespace: test_namespace(),
-            auth_token: None,
+        // A reserved port is released before the daemon binds it, so another
+        // socket can take it in between; fresh ports and a retry cover that.
+        let mut failures = Vec::new();
+        for _ in 0..3 {
+            let api_port = reserve_tcp_port();
+            let dns_port = reserve_dns_port();
+            write_config(&config_path, api_port, dns_port, &db_path, &options);
+
+            let mut child = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-server"))
+                .arg("start")
+                .arg("-c")
+                .arg(&config_path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("failed to start bindizr binary");
+
+            let base_url = format!("http://127.0.0.1:{api_port}");
+            match wait_for_api(&client, &base_url, &mut child).await {
+                Ok(()) => {
+                    return Self {
+                        runtime: Some(TestRuntime::Local { temp_dir, child }),
+                        client,
+                        base_url,
+                        dns_port: Some(dns_port),
+                        dns_secondary_ports: Vec::new(),
+                        namespace: test_namespace(),
+                        auth_token: None,
+                    };
+                }
+                Err(failure) => failures.push(failure),
+            }
         }
+
+        panic!(
+            "bindizr did not start:
+{}",
+            failures.join(
+                "
+---
+"
+            )
+        );
     }
 
     async fn start_compose() -> Self {
@@ -688,25 +706,38 @@ log_level = "error"
     fs::write(config_path, config).expect("failed to write bindizr config");
 }
 
-async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) {
+/// Poll `/health` until the daemon answers; a failure carries the daemon's
+/// stderr, the only place a daemon that dies before listening says why.
+async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Result<(), String> {
     // /health sits outside the auth layer, so readiness ignores
     // require_authentication.
     let health_url = format!("{base_url}/health");
-    for _ in 0..100 {
+    let mut attempts = 0;
+    let failure = loop {
         if let Some(status) = child.try_wait().expect("failed to check child status") {
-            panic!("bindizr exited before API was ready: {status}");
+            break format!("bindizr exited before API was ready: {status}");
         }
 
         if let Ok(response) = client.get(&health_url).send().await
             && response.status() == StatusCode::OK
         {
-            return;
+            return Ok(());
         }
 
+        attempts += 1;
+        if attempts == 100 {
+            let _ = child.kill();
+            let _ = child.wait();
+            break "bindizr API did not become ready".to_string();
+        }
         tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    };
 
-    panic!("bindizr API did not become ready");
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = pipe.read_to_string(&mut stderr);
+    }
+    Err(format!("{failure}\n{stderr}"))
 }
 
 /// A spawned bindizr-external-dns adapter process, killed on drop.
