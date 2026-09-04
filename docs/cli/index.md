@@ -23,11 +23,9 @@ commands take the zone name as their first argument.
 | `tsig-key`, `tsig-policy` | TSIG keys and the zones each may update with nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec.md) |
 
-Every `create`, `list`, `get`, and `update` command prints the object(s) it
-handled as a table and takes `-o json` or `-o yaml`, which is the HTTP API's
-response payload verbatim. `delete` and the one-shot actions print a message.
-`zone export`, `dnssec ds`, and `dnssec keys export` print paste-ready text
-instead; `dnssec status -o json` carries the DS records as data.
+Every `create`, `list`, `get`, and `update` command prints a table and takes
+`-o json` or `-o yaml`; `delete` and the one-shot actions print a message.
+`zone export`, `dnssec ds`, and `dnssec keys export` print paste-ready text.
 
 ## Service
 
@@ -99,8 +97,7 @@ $ bindizr zone import <ZONE_NAME> zone.txt --preview
 
 A zone served elsewhere imports without exporting a file first —
 `--from-server` pulls the records over AXFR (the source must allow the
-transfer; its SOA and DNSSEC records are dropped since the zone keeps its
-own SOA fields and signs itself):
+transfer):
 
 ```bash
 $ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --preview
@@ -124,7 +121,3 @@ $ bindizr zone version get <ZONE_NAME> <SERIAL>
 # Roll a zone back to a previous serial (the serial still advances)
 $ bindizr zone version rollback <ZONE_NAME> <SERIAL> [--dry-run]
 ```
-
-A rollback restores the records captured at that serial but still advances the
-serial forward, so secondaries see it as an ordinary change and pick it up over
-IXFR.

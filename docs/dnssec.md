@@ -30,8 +30,7 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
 `algorithm`
 :   `ecdsap256sha256` (default), `ecdsap384sha384`, `ed25519`, `ed448`,
     `rsasha256`, or `rsasha512` — every algorithm RFC 8624 permits for
-    signing; RSA keys are 2048-bit. P-384 keys advertise a SHA-384 DS digest
-    (type 4); the others SHA-256 (type 2).
+    signing.
 
 `denial`
 :   `nsec` (default) or `nsec3` (RFC 9276 parameters). NSEC lets anyone walk
@@ -123,17 +122,9 @@ bindizr dnssec rollover start example.com --role zsk # split-key zones
 ```
 
 `start` pre-publishes a replacement with the same algorithm: it joins the
-`DNSKEY` RRset (and, for CSK/KSK, the CDS/CDNSKEY set — both DS records
-advertised) but signs nothing yet. The publication wait — the policy's
-`rollover_publish_holddown_secs` (default one day), never less than the
-zone's `DNSKEY` TTL, fixed when the key is published — gives resolver caches
-time to learn the new key. Then:
-
-An **algorithm rollover** (RFC 6840, Section 5.11) is started by moving the
-zone to a policy of the new algorithm (`dnssec set-policy`): every key is
-replaced with one of the new algorithm and the zone is double-signed — both
-algorithms cover all data — until the old keys leave together after
-`ds-seen`.
+`DNSKEY` RRset (and, for CSK/KSK, the CDS/CDNSKEY set) but signs nothing
+yet, giving resolver caches the policy's `rollover_publish_holddown_secs`
+to learn it. Then:
 
 - **ZSK** — no parent involvement: the scheduler promotes it automatically
   after the wait. With the policy's `zsk_lifetime_days` set (0, the default,
@@ -153,11 +144,15 @@ algorithms cover all data — until the old keys leave together after
   parent serves the new DS before giving it, since promoting a key whose DS
   is not yet published makes the zone bogus for validating resolvers.
 
-A retired key stays published until its own wait passes — the policy's
-`rollover_retire_holddown_secs` (default two days), never less than the
-largest TTL among the RRsets it signed — then the scheduler removes it.
-`status` shows every key's state (`published`/`active`/`retired`)
-throughout.
+A retired key stays published for the policy's
+`rollover_retire_holddown_secs`, then the scheduler removes it. `status`
+shows every key's state (`published`/`active`/`retired`) throughout.
+
+An **algorithm rollover** (RFC 6840, Section 5.11) is started by moving the
+zone to a policy of the new algorithm (`dnssec set-policy`): every key is
+replaced with one of the new algorithm and the zone is double-signed — both
+algorithms cover all data — until the old keys leave together after
+`ds-seen`.
 
 ## Signature maintenance
 
@@ -179,8 +174,8 @@ Keys move in and out as BIND key files, so a zone signed by BIND (or any
 signer using that format) migrates without breaking its chain of trust:
 
 ```sh
-# Print every key in BIND key-file form, split by `; K*.key` / `; K*.private`
-# headers naming the file each block belongs in
+# Print every key in BIND key-file form, one `; K*.key` / `; K*.private`
+# block per file
 bindizr dnssec keys export example.com
 
 # Bring an existing key set in as active keys and sign with it
@@ -193,10 +188,9 @@ with tight permissions.
 
 Import takes the zone's complete key set in one call and signs on the spot:
 one CSK pair, or a KSK pair and a ZSK pair (repeat `--key`/`--private`)
-under a split-key policy. The policy (`--policy`, or `default`) decides what
-the keys must be: its algorithm, and its key layout, which is what types a
-SEP key (flags 257) as the CSK or the KSK — a 256-flag key is always the
-ZSK. The zone must be unsigned; a signed zone changes keys through
+under a split-key policy. The keys must match the policy's algorithm and key
+layout (`--policy`, or `default`), and the zone must be unsigned; a signed
+zone changes keys through
 [rollover](#key-rollover) instead. Both commands run only over the
 CLI/daemon socket — private keys never transit the HTTP API.
 
@@ -214,12 +208,6 @@ Dropping signatures while the parent still publishes your DS makes the zone
 
 ## Behavior notes
 
-- A zone's denial mode and key layout are those of its policy and have no
-  in-place transition; to change them, disable and re-enable under another
-  policy (going insecure in between).
-- An algorithm change is a rollover of every key: moving the zone to a
-  policy of another algorithm double-signs the zone through the transition
-  (RFC 6840, Section 5.11).
 - At a delegation only the child's `DS` RRset is signed; the `NS` beside it
   and glue at or below the cut are served unsigned (RFC 4035).
 - The derived records are system-owned: never edited, diffed, or rolled

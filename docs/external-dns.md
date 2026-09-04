@@ -120,8 +120,8 @@ Deployment with `--listen-addr 0.0.0.0:8888` and point
 `--webhook-provider-url` at its Service. The adapter→bindizr hop stays
 authenticated, but external-dns→adapter is then plain HTTP: keep the Service
 `ClusterIP`, never expose it through an Ingress, and restrict access to the
-external-dns pods with a NetworkPolicy (which limits reachability but does
-not authenticate the caller). The sidecar layout is the recommended default.
+external-dns pods with a NetworkPolicy. The sidecar layout is the
+recommended default.
 
 ## Troubleshooting
 
