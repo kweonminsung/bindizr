@@ -13,7 +13,6 @@ use crate::{
     },
 };
 
-/// PostgreSQL-backed implementation of `RecordRepository`.
 pub(crate) struct PostgresRecordRepository {
     pool: Pool<Postgres>,
 }

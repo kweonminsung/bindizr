@@ -7,7 +7,6 @@ use config::{Config, File, FileFormat};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
-/// Default path to the bindizr configuration file.
 pub(crate) const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
@@ -283,7 +282,7 @@ pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
     }
 
     let cfg = load_raw_config(conf_file_path)?;
-    parse_bindizr_config(cfg)
+    parse_bindizr_config_with_env(cfg, |name| env::var(name).ok())
 }
 
 fn load_raw_config(conf_file_path: &str) -> Result<Config, String> {
@@ -296,10 +295,6 @@ fn load_raw_config(conf_file_path: &str) -> Result<Config, String> {
                 conf_file_path, e
             )
         })
-}
-
-fn parse_bindizr_config(cfg: Config) -> Result<BindizrConfig, String> {
-    parse_bindizr_config_with_env(cfg, |name| env::var(name).ok())
 }
 
 fn parse_bindizr_config_with_env(

@@ -83,7 +83,8 @@ pub(crate) async fn handle_command(
                     ZonePolicyListParams { zone_name: name },
                 )
                 .await?;
-            print_token_policies(&response.data)?;
+            let policies: Vec<GetZoneTokenPolicyResponse> = parse_response(&response.data)?;
+            print_table(policies.iter().map(ZoneTokenPolicyRow::from).collect());
         }
         ZoneTokenPolicyCommand::Remove { name, id } => {
             let response = client
@@ -98,14 +99,6 @@ pub(crate) async fn handle_command(
             println!("{}", response.message);
         }
     }
-
-    Ok(())
-}
-
-fn print_token_policies(data: &serde_json::Value) -> Result<(), String> {
-    let policies: Vec<GetZoneTokenPolicyResponse> = parse_response(data)?;
-
-    print_table(policies.iter().map(ZoneTokenPolicyRow::from).collect());
 
     Ok(())
 }

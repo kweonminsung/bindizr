@@ -46,7 +46,6 @@ pub struct RecordWithZone {
 }
 
 impl RecordWithZone {
-    /// Create a [`RecordWithZone`] from a [`Record`] and its zone name.
     pub fn new(record: Record, zone_name: ZoneName) -> Self {
         Self {
             id: record.id,

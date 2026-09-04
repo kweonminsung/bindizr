@@ -19,7 +19,6 @@ impl ZoneService {
         RepositoryService::get_zone_by_name(lookup_name.as_str()).await
     }
 
-    /// Look up a zone by name within the caller's transaction.
     pub(crate) async fn find_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
@@ -43,7 +42,6 @@ impl ZoneService {
         RepositoryService::ping_zones().await
     }
 
-    /// List all zones.
     pub async fn list() -> Result<Vec<Zone>, ServiceError> {
         RepositoryService::list_zones().await.map_err(|e| {
             log_error!("Failed to fetch zones: {}", e);

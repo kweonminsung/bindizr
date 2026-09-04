@@ -3,7 +3,6 @@ use sqlx::{MySql, Pool};
 
 use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
 
-/// MySQL-backed implementation of `TsigKeyRepository`.
 pub(crate) struct MySqlTsigKeyRepository {
     pool: Pool<MySql>,
 }

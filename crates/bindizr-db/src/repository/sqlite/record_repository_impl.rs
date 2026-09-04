@@ -11,7 +11,6 @@ use crate::{
     },
 };
 
-/// SQLite-backed implementation of `RecordRepository`.
 pub(crate) struct SqliteRecordRepository {
     pool: Pool<Sqlite>,
 }

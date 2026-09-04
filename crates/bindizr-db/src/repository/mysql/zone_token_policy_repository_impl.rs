@@ -7,7 +7,6 @@ use crate::{
     repository::{LockLevel, RepositoryTx, ZoneTokenPolicyRepository, sql::lock_clause},
 };
 
-/// MySQL-backed implementation of `ZoneTokenPolicyRepository`.
 pub(crate) struct MySqlZoneTokenPolicyRepository {
     pool: Pool<MySql>,
 }

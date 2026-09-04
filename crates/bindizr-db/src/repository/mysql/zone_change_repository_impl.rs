@@ -7,7 +7,6 @@ use crate::{
     repository::{LockLevel, RepositoryTx, ZoneChangeRepository, sql::lock_clause},
 };
 
-/// MySQL-backed implementation of `ZoneChangeRepository`.
 pub(crate) struct MySqlZoneChangeRepository {
     pool: Pool<MySql>,
 }

@@ -8,10 +8,7 @@ use chrono::Utc;
 use crate::{
     authorization::Caller,
     error::ServiceError,
-    model::{
-        api_token::ApiToken,
-        zone_token_policy::{ZoneTokenPolicy, ZoneTokenPolicyWithToken},
-    },
+    model::zone_token_policy::{ZoneTokenPolicy, ZoneTokenPolicyWithToken},
     policy_pattern::{normalize_pattern, normalize_types},
     repository::RepositoryService,
     token::normalize_token_name,
@@ -35,7 +32,9 @@ impl ZoneTokenPolicyService {
         caller.require_global("manage token policies")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
-        let token = lookup_token(token_name).await?;
+        let token = RepositoryService::get_api_token_by_name(&normalize_token_name(token_name)?)
+            .await?
+            .ok_or_else(|| ServiceError::token_not_found(token_name))?;
 
         if token.is_global {
             return Err(ServiceError::invalid_input(format!(
@@ -108,10 +107,4 @@ impl ZoneTokenPolicyService {
 
         RepositoryService::delete_zone_token_policy(policy.id).await
     }
-}
-
-async fn lookup_token(token_name: &str) -> Result<ApiToken, ServiceError> {
-    RepositoryService::get_api_token_by_name(&normalize_token_name(token_name)?)
-        .await?
-        .ok_or_else(|| ServiceError::token_not_found(token_name))
 }

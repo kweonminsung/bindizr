@@ -18,11 +18,9 @@ use crate::api::{
     middleware::body_parser::JsonBody,
 };
 
-/// Route group for zone token-policy endpoints.
 pub(crate) struct TokenPolicyApi;
 
 impl TokenPolicyApi {
-    /// Build the router for zone token-policy endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route(

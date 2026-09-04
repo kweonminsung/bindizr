@@ -8,7 +8,6 @@ use crate::{
     repository::{DnssecKeyRepository, LockLevel, RepositoryTx, sql::lock_clause},
 };
 
-/// MySQL-backed implementation of `DnssecKeyRepository`.
 pub(crate) struct MySqlDnssecKeyRepository {
     pool: Pool<MySql>,
 }

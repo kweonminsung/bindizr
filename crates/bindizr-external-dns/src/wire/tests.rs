@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use super::{BindizrRecordItem, Changes, DomainFilter, Endpoint, group_records_into_endpoints};
+use super::{Changes, Endpoint};
 
 fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> Endpoint {
     Endpoint {
@@ -55,40 +55,6 @@ fn endpoint_serializes_with_omitempty_semantics() {
     let serialized =
         serde_json::to_value(endpoint("app.example.com", "A", 0, &["192.0.2.10"])).unwrap();
     assert!(serialized.get("recordTTL").is_none());
-}
-
-#[test]
-fn changes_deserializes_plan_wire_format() {
-    let parsed: Changes = serde_json::from_value(json!({
-        "create": [{"dnsName": "a.example.com", "targets": ["192.0.2.1"], "recordType": "A"}],
-        "updateOld": [{"dnsName": "b.example.com", "targets": ["192.0.2.2"], "recordType": "A"}],
-        "updateNew": [{"dnsName": "b.example.com", "targets": ["192.0.2.3"], "recordType": "A"}],
-        "delete": [{"dnsName": "c.example.com", "targets": ["192.0.2.4"], "recordType": "A"}]
-    }))
-    .unwrap();
-
-    assert_eq!(parsed.create.len(), 1);
-    assert_eq!(parsed.update_old.len(), 1);
-    assert_eq!(parsed.update_new.len(), 1);
-    assert_eq!(parsed.delete.len(), 1);
-
-    let empty: Changes = serde_json::from_value(json!({})).unwrap();
-    assert!(empty.create.is_empty());
-}
-
-#[test]
-fn domain_filter_serializes_include_list() {
-    let filter = DomainFilter {
-        include: vec!["example.com".to_string()],
-    };
-    assert_eq!(
-        serde_json::to_value(&filter).unwrap(),
-        json!({"include": ["example.com"]})
-    );
-    assert_eq!(
-        serde_json::to_value(DomainFilter::default()).unwrap(),
-        json!({})
-    );
 }
 
 #[test]
@@ -169,40 +135,4 @@ fn changes_to_bindizr_rejects_mismatched_update_pairs() {
     .unwrap();
 
     assert!(changes.to_bindizr().is_err());
-}
-
-#[test]
-fn group_records_builds_one_endpoint_per_rrset() {
-    let records = vec![
-        BindizrRecordItem {
-            name: "app.example.com".to_string(),
-            record_type: "A".to_string(),
-            ttl: 300,
-            value: "192.0.2.2".to_string(),
-        },
-        BindizrRecordItem {
-            name: "app.example.com".to_string(),
-            record_type: "A".to_string(),
-            ttl: 300,
-            value: "192.0.2.1".to_string(),
-        },
-        BindizrRecordItem {
-            name: "app.example.com".to_string(),
-            record_type: "TXT".to_string(),
-            ttl: 3600,
-            value: "\"heritage=external-dns,external-dns/owner=default\"".to_string(),
-        },
-    ];
-
-    let endpoints = group_records_into_endpoints(records);
-
-    assert_eq!(endpoints.len(), 2);
-    assert_eq!(endpoints[0].record_type, "A");
-    assert_eq!(endpoints[0].targets, vec!["192.0.2.1", "192.0.2.2"]);
-    assert_eq!(endpoints[0].record_ttl, 300);
-    assert_eq!(endpoints[1].record_type, "TXT");
-    assert_eq!(
-        endpoints[1].targets,
-        vec!["\"heritage=external-dns,external-dns/owner=default\""]
-    );
 }

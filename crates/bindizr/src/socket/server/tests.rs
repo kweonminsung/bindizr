@@ -13,30 +13,22 @@ fn try_bind_test_socket(socket_path: &str) -> Option<UnixListener> {
 
 #[test]
 fn parse_params_rejects_wrongly_typed_fields() {
-    use bindizr_service::types::CreateTsigKeyRequest;
+    use bindizr_service::types::{CreateTsigKeyRequest, RollbackZoneRequest};
 
     // Absent/null optional fields deserialize as their defaults...
     let ok: CreateTsigKeyRequest =
         parse_params(&json!({ "name": "k", "algorithm": null, "secret": null })).unwrap();
     assert!(!ok.global);
-
-    // ...but a present field of the wrong type is rejected instead of being
-    // silently dropped (which would e.g. generate a secret instead of
-    // importing one).
-    let err =
-        parse_params::<CreateTsigKeyRequest>(&json!({ "name": "k", "secret": 123 })).unwrap_err();
-    assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
-}
-
-#[test]
-fn parse_params_rejects_a_wrongly_typed_rollback_dry_run() {
-    use bindizr_service::types::RollbackZoneRequest;
-
     let ok: RollbackZoneRequest = parse_params(&json!({ "serial": 7 })).unwrap();
     assert!(!ok.dry_run);
 
-    // A wrongly typed dry_run once defaulted to false, applying a rollback the
-    // caller asked to preview.
+    // ...but a present field of the wrong type is rejected instead of being
+    // silently dropped, which would generate a secret instead of importing
+    // one, or apply a rollback the caller asked to preview (a wrongly typed
+    // dry_run once defaulted to false).
+    let err =
+        parse_params::<CreateTsigKeyRequest>(&json!({ "name": "k", "secret": 123 })).unwrap_err();
+    assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
     for dry_run in [json!("true"), json!(1)] {
         let err = parse_params::<RollbackZoneRequest>(&json!({ "serial": 7, "dry_run": dry_run }))
             .unwrap_err();

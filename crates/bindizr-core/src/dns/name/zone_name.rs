@@ -53,7 +53,6 @@ impl ZoneName {
         to_fqdn(&self.0)
     }
 
-    /// The wire form.
     pub fn to_wire(&self) -> Result<Vec<u8>, ParseNameError> {
         super::labels_to_wire(self.0.split('.'))
     }

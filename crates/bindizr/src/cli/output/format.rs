@@ -2,7 +2,6 @@ use bindizr_service::types::PaginatedResponse;
 use serde::{Deserialize, de::DeserializeOwned};
 use tabled::{Table, Tabled, settings::Style};
 
-/// Output format for CLI results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputFormat {
     Json,

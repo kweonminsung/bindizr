@@ -7,7 +7,6 @@ use crate::{
     repository::{DnssecPolicyRepository, LockLevel, RepositoryTx, sql::lock_clause},
 };
 
-/// Postgres-backed implementation of `DnssecPolicyRepository`.
 pub(crate) struct PostgresDnssecPolicyRepository {
     pool: Pool<Postgres>,
 }

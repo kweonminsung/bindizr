@@ -86,21 +86,11 @@ pub(crate) async fn build_status_tx(
     keys: &[DnssecKey],
     serial: i32,
 ) -> Result<GetDnssecStatusResponse, ServiceError> {
-    let earliest = DnssecService::earliest_expiry_tx(tx, zone.id).await?;
+    let earliest_signature_expires_at = DnssecService::earliest_expiry_tx(tx, zone.id).await?;
     let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(tx, zone.id)
         .await?
         .is_some();
-    build_status(zone, policy, keys, earliest, serial, withdrawing)
-}
 
-fn build_status(
-    zone: &Zone,
-    policy: Option<&DnssecPolicy>,
-    keys: &[DnssecKey],
-    earliest_signature_expires_at: Option<DateTime<Utc>>,
-    serial: i32,
-    withdrawing: bool,
-) -> Result<GetDnssecStatusResponse, ServiceError> {
     // The parent needs DS records only for the SEP keys the zone still wants
     // delegated trust for.
     let ds_records = keys

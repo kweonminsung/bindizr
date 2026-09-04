@@ -3,7 +3,6 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
-/// Create a zone under the given name with minimal fields.
 async fn create_named_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
         .request(

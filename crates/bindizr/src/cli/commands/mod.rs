@@ -3,7 +3,6 @@ pub(crate) mod dnssec_policy;
 pub(crate) mod doctor;
 pub(crate) mod record;
 pub(crate) mod restart;
-pub(crate) mod start;
 pub(crate) mod status;
 pub(crate) mod stop;
 pub(crate) mod token;

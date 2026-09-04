@@ -51,14 +51,9 @@ pub(crate) fn display_record_value_request(
     value: &str,
     record_type: &RecordType,
 ) -> RecordValueRequest {
-    if *record_type == RecordType::TXT {
-        decode_txt_value_request(value)
-    } else {
-        RecordValueRequest::String(record_type.display_value(value))
+    if *record_type != RecordType::TXT {
+        return RecordValueRequest::String(record_type.display_value(value));
     }
-}
-
-fn decode_txt_value_request(value: &str) -> RecordValueRequest {
     match TxtRecordValue::from_presentation(value).and_then(|rdata| rdata.to_content()) {
         Some(TxtContent::Single(value)) => RecordValueRequest::String(value),
         Some(TxtContent::Segments(segments)) => RecordValueRequest::Segments(segments),

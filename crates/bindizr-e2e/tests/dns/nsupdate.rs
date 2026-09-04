@@ -246,12 +246,6 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
     assert_eq!(app.zone_serial(&zone_name).await, before + 1);
 }
 
-/// A signed update carries a key, so the zone's TSIG policies decide what it
-/// may touch — the leg the unsigned tests above skip entirely.
-async fn signed_nsupdate_app() -> TestApp {
-    TestApp::start_local().await
-}
-
 async fn create_key(app: &TestApp, name: &str) -> SigningKey {
     app.run_cli_success(&["tsig-key", "create", "--name", name])
         .await;
@@ -268,10 +262,12 @@ async fn create_key(app: &TestApp, name: &str) -> SigningKey {
     }
 }
 
+// A signed update carries a key, so the zone's TSIG policies decide what it
+// may touch — the leg the unsigned tests above skip entirely.
 #[tokio::test]
 #[serial]
 async fn signed_nsupdate_needs_a_policy_for_the_zone() {
-    let app = signed_nsupdate_app().await;
+    let app = TestApp::start_local().await;
     let zone_name = app.zone_name("nsupdate-policy.example");
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();

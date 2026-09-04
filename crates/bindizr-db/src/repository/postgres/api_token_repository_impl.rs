@@ -3,7 +3,6 @@ use sqlx::{Pool, Postgres, Row};
 
 use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
 
-/// PostgreSQL-backed implementation of `ApiTokenRepository`.
 pub(crate) struct PostgresApiTokenRepository {
     pool: Pool<Postgres>,
 }

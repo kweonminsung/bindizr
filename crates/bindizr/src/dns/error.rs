@@ -37,10 +37,3 @@ impl From<ServiceError> for XfrError {
         XfrError::DatabaseError(e.to_string())
     }
 }
-
-/// DNS-plane failures reaching a service-facing surface (status, doctor).
-impl From<XfrError> for ServiceError {
-    fn from(e: XfrError) -> Self {
-        ServiceError::internal(e.to_string())
-    }
-}

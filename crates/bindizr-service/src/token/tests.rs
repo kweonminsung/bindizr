@@ -2,15 +2,11 @@ use super::{normalize_token_name, validate_expires_in_days};
 use crate::error::ErrorCode;
 
 #[test]
-fn normalize_token_name_trims_and_accepts_plain_names() {
+fn normalize_token_name_trims_and_folds_case() {
     assert_eq!(
         normalize_token_name(" external-dns ").unwrap(),
         "external-dns"
     );
-}
-
-#[test]
-fn normalize_token_name_folds_case() {
     assert_eq!(normalize_token_name("Deploy").unwrap(), "deploy");
     assert_eq!(
         normalize_token_name("DEPLOY").unwrap(),

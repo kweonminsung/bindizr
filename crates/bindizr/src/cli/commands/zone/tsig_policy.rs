@@ -86,7 +86,8 @@ pub(crate) async fn handle_command(
                     ZonePolicyListParams { zone_name: name },
                 )
                 .await?;
-            print_tsig_policies(&response.data)?;
+            let policies: Vec<GetZoneTsigPolicyResponse> = parse_response(&response.data)?;
+            print_table(policies.iter().map(ZoneTsigPolicyRow::from).collect());
         }
         ZoneTsigPolicyCommand::Remove { name, id } => {
             let response = client
@@ -101,14 +102,6 @@ pub(crate) async fn handle_command(
             println!("{}", response.message);
         }
     }
-
-    Ok(())
-}
-
-fn print_tsig_policies(data: &serde_json::Value) -> Result<(), String> {
-    let policies: Vec<GetZoneTsigPolicyResponse> = parse_response(data)?;
-
-    print_table(policies.iter().map(ZoneTsigPolicyRow::from).collect());
 
     Ok(())
 }

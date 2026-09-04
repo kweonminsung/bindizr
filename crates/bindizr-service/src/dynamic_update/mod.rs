@@ -265,17 +265,57 @@ async fn apply_op(
             ttl,
             priority,
         } => {
-            add_record(
+            let owner = owner_in_zone(name, &zone.name)?;
+
+            // Row-encode so nsupdate stores the same spelling as the other write
+            // paths; TXT arrives already encoded from the wire rdata.
+            let value = if *record_type == RecordType::TXT {
+                value.to_string()
+            } else {
+                record_type.encoded_value(value, *priority).map_err(|e| {
+                    DynamicUpdateError::Refused(format!(
+                        "invalid {} rdata: {}",
+                        record_type.as_str(),
+                        e
+                    ))
+                })?
+            };
+
+            let outcome = RecordService::validate_add_tx(
                 tx,
                 zone,
-                name,
+                &owner,
                 record_type,
-                value,
+                &value,
                 *ttl,
                 *priority,
-                new_serial,
             )
-            .await
+            .await?;
+
+            // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
+            // TTL-replace clause is not implemented; RRset TTLs change via the API.
+            if matches!(outcome, AddOutcome::Duplicate) {
+                return Ok(false);
+            }
+
+            RecordService::insert_records_with_changes_tx(
+                tx,
+                zone.id,
+                new_serial,
+                &[Record {
+                    id: 0,
+                    name: owner,
+                    record_type: record_type.clone(),
+                    value,
+                    ttl: *ttl,
+                    priority: *priority,
+                    zone_id: zone.id,
+                    created_at: Utc::now(),
+                }],
+            )
+            .await?;
+
+            Ok(true)
         }
         UpdateOp::DeleteRrset { name, record_type } => {
             delete_matching(tx, zone, name, record_type.as_ref(), None, None, new_serial).await
@@ -298,59 +338,6 @@ async fn apply_op(
             .await
         }
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn add_record(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
-    name: &str,
-    record_type: &RecordType,
-    value: &str,
-    ttl: i32,
-    priority: Option<i32>,
-    new_serial: i32,
-) -> Result<bool, DynamicUpdateError> {
-    let owner = owner_in_zone(name, &zone.name)?;
-
-    // Row-encode so nsupdate stores the same spelling as the other write
-    // paths; TXT arrives already encoded from the wire rdata.
-    let value = if *record_type == RecordType::TXT {
-        value.to_string()
-    } else {
-        record_type.encoded_value(value, priority).map_err(|e| {
-            DynamicUpdateError::Refused(format!("invalid {} rdata: {}", record_type.as_str(), e))
-        })?
-    };
-
-    let outcome =
-        RecordService::validate_add_tx(tx, zone, &owner, record_type, &value, ttl, priority)
-            .await?;
-
-    // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
-    // TTL-replace clause is not implemented; RRset TTLs change via the API.
-    if matches!(outcome, AddOutcome::Duplicate) {
-        return Ok(false);
-    }
-
-    RecordService::insert_records_with_changes_tx(
-        tx,
-        zone.id,
-        new_serial,
-        &[Record {
-            id: 0,
-            name: owner,
-            record_type: record_type.clone(),
-            value,
-            ttl,
-            priority,
-            zone_id: zone.id,
-            created_at: Utc::now(),
-        }],
-    )
-    .await?;
-
-    Ok(true)
 }
 
 /// Delete every record at `name` matching the given type and (optionally)

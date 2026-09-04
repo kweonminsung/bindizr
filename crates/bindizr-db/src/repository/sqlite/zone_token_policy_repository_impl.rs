@@ -7,7 +7,6 @@ use crate::{
     repository::{LockLevel, RepositoryTx, ZoneTokenPolicyRepository},
 };
 
-/// SQLite-backed implementation of `ZoneTokenPolicyRepository`.
 pub(crate) struct SqliteZoneTokenPolicyRepository {
     pool: Pool<Sqlite>,
 }

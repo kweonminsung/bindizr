@@ -7,7 +7,6 @@ use crate::{
     repository::{LockLevel, RepositoryTx, ZoneTsigPolicyRepository, sql::lock_clause},
 };
 
-/// MySQL-backed implementation of `ZoneTsigPolicyRepository`.
 pub(crate) struct MySqlZoneTsigPolicyRepository {
     pool: Pool<MySql>,
 }

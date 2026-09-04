@@ -9,7 +9,6 @@ use crate::socket::{server::parse_params, types::DaemonResponse};
 pub(crate) async fn notify_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let request: NotifyZoneRequest = parse_params(data)?;
 
-    // The daemon socket is root-local, so commands run as the global caller.
     ZoneService::notify(
         &Caller::Global,
         request.zone_name.as_deref(),

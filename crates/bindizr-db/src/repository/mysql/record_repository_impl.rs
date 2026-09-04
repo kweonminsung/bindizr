@@ -13,7 +13,6 @@ use crate::{
     },
 };
 
-/// MySQL-backed implementation of `RecordRepository`.
 pub(crate) struct MySqlRecordRepository {
     pool: Pool<MySql>,
 }

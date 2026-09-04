@@ -65,7 +65,7 @@ impl DnssecAlgorithm {
         }
     }
 
-    /// All supported algorithm names, for error messages and CLI help.
+    /// All supported algorithm names, for error messages.
     pub fn supported_names() -> &'static [&'static str] {
         &[
             "rsasha256",

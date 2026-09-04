@@ -15,7 +15,6 @@ use super::{
     token_policy::TokenPolicyApi, tsig_key::TsigKeyApi, zone::ZoneApi,
 };
 
-/// HTTP API router assembling all route groups.
 pub(crate) struct ApiRouter;
 
 impl ApiRouter {

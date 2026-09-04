@@ -29,7 +29,6 @@ const USER_CHANGES_FILTER: &str = r#"
                   )
               )"#;
 
-/// MySQL-backed implementation of `ZoneVersionRepository`.
 pub(crate) struct MySqlZoneVersionRepository {
     pool: Pool<MySql>,
 }

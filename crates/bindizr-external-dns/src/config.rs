@@ -54,7 +54,6 @@ pub(crate) struct Cli {
     pub(crate) log_level: String,
 }
 
-/// Resolved adapter configuration.
 #[derive(Debug)]
 pub(crate) struct AdapterConfig {
     /// Normalized base URL without a trailing slash.

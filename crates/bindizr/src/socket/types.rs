@@ -84,31 +84,26 @@ pub(crate) struct DaemonResponse {
 // a renamed field breaks at compile time. A payload that is exactly a service
 // request type is sent as that type.
 
-/// Payload addressing a zone by name.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ZoneNameParams {
     pub(crate) name: String,
 }
 
-/// Payload addressing a record by id.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RecordIdParams {
     pub(crate) id: i32,
 }
 
-/// Payload addressing a TSIG key by name.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct TsigKeyNameParams {
     pub(crate) name: String,
 }
 
-/// Payload addressing a DNSSEC policy by name.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DnssecPolicyNameParams {
     pub(crate) name: String,
 }
 
-/// Payload for editing a DNSSEC policy's timing.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct UpdateDnssecPolicyParams {
     pub(crate) name: String,
@@ -116,26 +111,22 @@ pub(crate) struct UpdateDnssecPolicyParams {
     pub(crate) request: UpdateDnssecPolicyRequest,
 }
 
-/// Payload addressing an API token by name.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct TokenNameParams {
     pub(crate) name: String,
 }
 
-/// Payload addressing a zone's policies.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ZonePolicyListParams {
     pub(crate) zone_name: String,
 }
 
-/// Payload addressing one policy row within a zone.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RemoveZonePolicyParams {
     pub(crate) zone_name: String,
     pub(crate) id: i32,
 }
 
-/// Payload for granting a TSIG key a policy on a zone.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct AddZoneTsigPolicyParams {
     pub(crate) zone_name: String,
@@ -143,7 +134,6 @@ pub(crate) struct AddZoneTsigPolicyParams {
     pub(crate) request: CreateZoneTsigPolicyRequest,
 }
 
-/// Payload for granting a token a policy on a zone.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct AddZoneTokenPolicyParams {
     pub(crate) zone_name: String,
@@ -151,7 +141,6 @@ pub(crate) struct AddZoneTokenPolicyParams {
     pub(crate) request: CreateZoneTokenPolicyRequest,
 }
 
-/// Payload for importing zone-file text into a zone.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ExportZoneFileParams {
     pub(crate) name: String,
@@ -173,7 +162,6 @@ pub(crate) struct ImportZoneFromServerParams {
     pub(crate) request: ImportZoneFromServerRequest,
 }
 
-/// Payload for inserting records into a zone in one transaction.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct BulkCreateRecordsParams {
     pub(crate) zone_name: String,
@@ -181,7 +169,6 @@ pub(crate) struct BulkCreateRecordsParams {
     pub(crate) request: CreateBulkRecordsRequest,
 }
 
-/// Payload for patching a zone.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct UpdateZoneParams {
     pub(crate) name: String,
@@ -189,7 +176,6 @@ pub(crate) struct UpdateZoneParams {
     pub(crate) patch: UpdateZonePatch,
 }
 
-/// Payload for patching a record.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct UpdateRecordParams {
     pub(crate) id: i32,
@@ -197,7 +183,6 @@ pub(crate) struct UpdateRecordParams {
     pub(crate) patch: UpdateRecordPatch,
 }
 
-/// Payload for rolling a zone back to a version serial.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RollbackZoneParams {
     pub(crate) name: String,
@@ -205,7 +190,6 @@ pub(crate) struct RollbackZoneParams {
     pub(crate) request: RollbackZoneRequest,
 }
 
-/// Payload for listing a zone's versions.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ListZoneVersionsParams {
     pub(crate) name: String,
@@ -215,7 +199,6 @@ pub(crate) struct ListZoneVersionsParams {
     pub(crate) all: bool,
 }
 
-/// Payload addressing one of a zone's versions.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ZoneVersionParams {
     pub(crate) name: String,
@@ -231,7 +214,6 @@ pub(crate) struct DiffZoneVersionsParams {
     pub(crate) to_serial: Option<i32>,
 }
 
-/// Payload for enabling DNSSEC on a zone.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct EnableZoneDnssecParams {
     pub(crate) zone_name: String,
@@ -239,7 +221,6 @@ pub(crate) struct EnableZoneDnssecParams {
     pub(crate) request: EnableDnssecRequest,
 }
 
-/// Payload for starting a DNSSEC key rollover on a zone.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RolloverZoneDnssecParams {
     pub(crate) zone_name: String,
@@ -247,7 +228,6 @@ pub(crate) struct RolloverZoneDnssecParams {
     pub(crate) request: RolloverDnssecRequest,
 }
 
-/// Payload for importing one BIND key pair into a zone.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ImportZoneDnssecKeyParams {
     pub(crate) zone_name: String,
@@ -255,7 +235,6 @@ pub(crate) struct ImportZoneDnssecKeyParams {
     pub(crate) request: ImportDnssecKeyRequest,
 }
 
-/// Payload for moving a signed zone to another DNSSEC policy.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct SetZoneDnssecPolicyParams {
     pub(crate) zone_name: String,

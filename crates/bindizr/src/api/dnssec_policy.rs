@@ -16,11 +16,9 @@ use serde::Deserialize;
 
 use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
-/// Route group for DNSSEC policy endpoints.
 pub(crate) struct DnssecPolicyApi;
 
 impl DnssecPolicyApi {
-    /// Build the router for DNSSEC policy endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/dnssec-policies", routing::get(get_dnssec_policies))
