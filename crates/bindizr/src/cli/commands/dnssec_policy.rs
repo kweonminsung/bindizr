@@ -7,7 +7,7 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{DnssecPolicyRow, parse_response, print_table},
+        output::{DnssecPolicyRow, OutputFormat, print_response},
     },
     socket::{
         client::DaemonSocketClient,
@@ -22,7 +22,7 @@ pub(crate) enum DnssecPolicyCommand {
     /// Create a DNSSEC policy (omitted options take the built-in defaults)
     Create {
         /// Policy name (letters, digits, '-', '_', '.')
-        #[arg(long)]
+        #[arg(long, value_name = "POLICY_NAME")]
         name: String,
         /// Signing algorithm: ecdsap256sha256 (default), ecdsap384sha384, ed25519, ed448, rsasha256, or rsasha512. Fixed at creation
         #[arg(long, value_name = "ALG")]
@@ -50,19 +50,31 @@ pub(crate) enum DnssecPolicyCommand {
         /// Wait before a retired key is removed from the zone (default 172800)
         #[arg(long, value_name = "SECS")]
         rollover_retire_holddown_secs: Option<u32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
     /// List all DNSSEC policies
     #[command(alias = "ls")]
-    List,
+    List {
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
     /// Show one DNSSEC policy
     Get {
         /// Name of the policy
+        #[arg(value_name = "POLICY_NAME")]
         name: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
     /// Edit a policy's timing; an omitted option keeps its value. The
     /// algorithm, denial mode, and key layout cannot change
     Update {
         /// Name of the policy
+        #[arg(value_name = "POLICY_NAME")]
         name: String,
         /// Days a new signature stays valid
         #[arg(long, value_name = "DAYS")]
@@ -80,12 +92,16 @@ pub(crate) enum DnssecPolicyCommand {
         /// Wait before a retired key is removed from the zone
         #[arg(long, value_name = "SECS")]
         rollover_retire_holddown_secs: Option<u32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
     /// Delete a DNSSEC policy (refused for the built-in "default" and while
     /// any zone signs under it)
     #[command(alias = "rm")]
     Delete {
         /// Name of the policy
+        #[arg(value_name = "POLICY_NAME")]
         name: String,
     },
 }
@@ -106,6 +122,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             zsk_lifetime_days,
             rollover_publish_holddown_secs,
             rollover_retire_holddown_secs,
+            output,
         } => {
             let res = client
                 .send_command(
@@ -126,21 +143,24 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             log_debug!("DNSSEC policy creation result: {:?}", res);
 
-            let policy: GetDnssecPolicyResponse = parse_response(&res.data)?;
-            println!("DNSSEC policy created successfully:");
-            print_policy(&policy);
+            print_policy(&res.data, output)?;
         }
-        DnssecPolicyCommand::List => {
+        DnssecPolicyCommand::List { output } => {
             let res = client
                 .send_command(DaemonCommandKind::DnssecPolicyList, ())
                 .await?;
 
             log_debug!("DNSSEC policy list result: {:?}", res);
 
-            let policies: Vec<GetDnssecPolicyResponse> = parse_response(&res.data)?;
-            print_table(policies.iter().map(DnssecPolicyRow::from).collect());
+            print_response(
+                &res.data,
+                output,
+                |policies: &Vec<GetDnssecPolicyResponse>| {
+                    policies.iter().map(DnssecPolicyRow::from).collect()
+                },
+            )?;
         }
-        DnssecPolicyCommand::Get { name } => {
+        DnssecPolicyCommand::Get { name, output } => {
             let res = client
                 .send_command(
                     DaemonCommandKind::DnssecPolicyGet,
@@ -150,8 +170,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             log_debug!("DNSSEC policy get result: {:?}", res);
 
-            let policy: GetDnssecPolicyResponse = parse_response(&res.data)?;
-            print_policy(&policy);
+            print_policy(&res.data, output)?;
         }
         DnssecPolicyCommand::Update {
             name,
@@ -160,6 +179,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             zsk_lifetime_days,
             rollover_publish_holddown_secs,
             rollover_retire_holddown_secs,
+            output,
         } => {
             let res = client
                 .send_command(
@@ -179,9 +199,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             log_debug!("DNSSEC policy update result: {:?}", res);
 
-            let policy: GetDnssecPolicyResponse = parse_response(&res.data)?;
-            println!("DNSSEC policy updated successfully:");
-            print_policy(&policy);
+            print_policy(&res.data, output)?;
         }
         DnssecPolicyCommand::Delete { name } => {
             let res = client
@@ -193,33 +211,15 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             log_debug!("DNSSEC policy deletion result: {:?}", res);
 
-            println!("DNSSEC policy deleted successfully");
+            println!("{}", res.message);
         }
     }
 
     Ok(())
 }
 
-fn print_policy(policy: &GetDnssecPolicyResponse) {
-    println!("ID: {}", policy.id);
-    println!("Name: {}", policy.name);
-    println!("Algorithm: {}", policy.algorithm);
-    println!("Denial: {}", policy.denial.to_uppercase());
-    println!(
-        "Keys: {}",
-        if policy.split_keys { "KSK/ZSK" } else { "CSK" }
-    );
-    println!(
-        "Signature validity: {}d (re-sign with {}d left)",
-        policy.signature_validity_days, policy.signature_refresh_days
-    );
-    println!("ZSK lifetime: {}d", policy.zsk_lifetime_days);
-    println!(
-        "Rollover hold-downs: publish {}s, retire {}s",
-        policy.rollover_publish_holddown_secs, policy.rollover_retire_holddown_secs
-    );
-    println!(
-        "Created at: {}",
-        policy.created_at.format("%Y-%m-%d %H:%M:%S")
-    );
+fn print_policy(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
+    print_response(data, output, |policy: &GetDnssecPolicyResponse| {
+        vec![DnssecPolicyRow::from(policy)]
+    })
 }

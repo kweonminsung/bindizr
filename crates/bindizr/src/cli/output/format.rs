@@ -61,18 +61,21 @@ where
     U: Tabled,
 {
     match format {
-        OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(data)
-                .map_err(|e| format!("Failed to serialize to JSON: {}", e))?;
-            println!("{}", json);
-        }
-        OutputFormat::Yaml => {
-            let yaml = serde_yaml::to_string(data)
-                .map_err(|e| format!("Failed to serialize to YAML: {}", e))?;
-            println!("{}", yaml);
-        }
         OutputFormat::Table => print_table(to_table_rows(&parse_response(data)?)),
+        _ => print_payload(data, format)?,
     }
+    Ok(())
+}
+
+/// Print the payload as JSON or YAML, for a command that renders its own table.
+pub(crate) fn print_payload(data: &serde_json::Value, format: OutputFormat) -> Result<(), String> {
+    let rendered = match format {
+        OutputFormat::Yaml => serde_yaml::to_string(data)
+            .map_err(|e| format!("Failed to serialize to YAML: {}", e))?,
+        OutputFormat::Json | OutputFormat::Table => serde_json::to_string_pretty(data)
+            .map_err(|e| format!("Failed to serialize to JSON: {}", e))?,
+    };
+    println!("{}", rendered);
     Ok(())
 }
 

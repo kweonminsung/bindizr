@@ -94,8 +94,8 @@ bindizr zone import example.com db.example.com --mode upsert
 bindizr zone version list example.com
 bindizr zone version diff example.com 7
 bindizr zone version rollback example.com 7 --dry-run
-bindizr zone dnssec enable example.com
-bindizr zone token-policy add example.com --token ci --types A,AAAA
+bindizr dnssec enable example.com
+bindizr token-policy add example.com --token ci --types A,AAAA
 bindizr zone status example.com
 bindizr record list --zone example.com
 bindizr record bulk-create records.json --zone example.com

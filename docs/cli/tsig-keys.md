@@ -14,8 +14,8 @@ $ bindizr tsig-key get update-key
 $ bindizr tsig-key delete update-key
 
 # Inspect or revoke a zone's policies
-$ bindizr zone tsig-policy list example.com
-$ bindizr zone tsig-policy remove example.com <POLICY_ID>
+$ bindizr tsig-policy list example.com
+$ bindizr tsig-policy remove example.com <POLICY_ID>
 ```
 
 TSIG keys and policies are also manageable over the HTTP API

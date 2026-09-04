@@ -25,7 +25,7 @@ DNS Synchronization Service for BIND9
 
 -   :material-console: **[Drive it](cli/index.md)**
 
-    Zones, records, versions, TSIG keys, and API tokens from the CLI.
+    Zones, records, versions, access control, and DNSSEC from the CLI.
 
 -   :material-api: **[Automate it](http-api/index.md)**
 

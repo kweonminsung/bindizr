@@ -563,15 +563,8 @@ async fn dnssec_enable_requires_a_global_token() {
     // Grant the zone to the scoped token so the 403 proves the global
     // requirement, not zone invisibility (which would read as 404).
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "zone",
-        "token-policy",
-        "add",
-        zone_name,
-        "--token",
-        &scoped_name,
-    ])
-    .await;
+    app.run_cli_success(&["token-policy", "add", zone_name, "--token", &scoped_name])
+        .await;
     app.set_auth_token(scoped_token);
 
     let (status, body) = app

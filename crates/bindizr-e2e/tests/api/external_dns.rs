@@ -5,21 +5,6 @@ use crate::common::{ExternalDnsAdapter, TestApp, TestAppOptions};
 
 const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
-fn enabled_options() -> TestAppOptions {
-    TestAppOptions {
-        external_dns_enabled: true,
-        ..TestAppOptions::default()
-    }
-}
-
-fn authed_enabled_options() -> TestAppOptions {
-    TestAppOptions {
-        require_authentication: true,
-        external_dns_enabled: true,
-        ..TestAppOptions::default()
-    }
-}
-
 async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
         .request(
@@ -37,15 +22,8 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
 }
 
 async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
-    app.run_cli_success(&[
-        "zone",
-        "token-policy",
-        "add",
-        zone_name,
-        "--token",
-        token_name,
-    ])
-    .await;
+    app.run_cli_success(&["token-policy", "add", zone_name, "--token", token_name])
+        .await;
 }
 
 fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
@@ -75,7 +53,12 @@ async fn external_dns_routes_are_not_registered_when_disabled() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_zone_listing_reflects_token_grants() {
-    let mut app = TestApp::start_with_options(authed_enabled_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
     let (_, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token);
 
@@ -104,7 +87,11 @@ async fn external_dns_zone_listing_reflects_token_grants() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_apply_and_stay_idempotent() {
-    let app = TestApp::start_with_options(enabled_options()).await;
+    let app = TestApp::start_with_options(TestAppOptions {
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
     let zone_name = app.zone_name("example.com");
     create_zone(&app, &zone_name).await;
     let base_serial = app.zone_serial(&zone_name).await;
@@ -192,7 +179,12 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_reject_ungranted_zones_atomically() {
-    let mut app = TestApp::start_with_options(authed_enabled_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
     let (_, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token.clone());
 
@@ -233,7 +225,12 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent() {
-    let mut app = TestApp::start_with_options(authed_enabled_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
     let (_, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token);
 
@@ -283,7 +280,11 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_enforce_record_validation() {
-    let app = TestApp::start_with_options(enabled_options()).await;
+    let app = TestApp::start_with_options(TestAppOptions {
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
     let zone_name = app.zone_name("example.com");
     create_zone(&app, &zone_name).await;
 
@@ -330,7 +331,12 @@ async fn external_dns_changes_enforce_record_validation() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn adapter_serves_webhook_protocol_with_scoped_token() {
-    let mut app = TestApp::start_with_options(authed_enabled_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
     let (_, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token);
 

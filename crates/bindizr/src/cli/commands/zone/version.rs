@@ -11,7 +11,7 @@ use crate::{
         error::CliError,
         output::{
             OutputFormat, RollbackSummaryRow, VersionRecordRow, VersionRow, parse_response,
-            print_response, print_table, render_diff_lines,
+            print_payload, print_response, print_table, render_diff_lines,
         },
     },
     socket::{
@@ -30,6 +30,7 @@ pub(crate) enum ZoneVersionCommand {
     #[command(alias = "ls")]
     List {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Maximum number of versions to return
         #[arg(long)]
@@ -47,6 +48,7 @@ pub(crate) enum ZoneVersionCommand {
     /// Show the zone state captured at one version serial
     Get {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Version serial to inspect
         serial: i32,
@@ -57,27 +59,23 @@ pub(crate) enum ZoneVersionCommand {
     /// Show the record differences between two serials
     Diff {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// The serial to diff from
         from_serial: i32,
         /// The serial to diff to (omit to compare against the current serial)
         to_serial: Option<i32>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
     /// Roll a zone back to the state captured at a version serial
     Rollback {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Target version serial (the zone serial still advances)
         serial: i32,
         /// Compute and report the rollback without applying any change
         #[arg(long)]
         dry_run: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
 }
 
@@ -127,21 +125,19 @@ pub(crate) async fn handle_command(
                 .await?
                 .data;
 
-            if output == OutputFormat::Table {
-                let detail: VersionDetailResponse = parse_response(&data)?;
-                print_table(vec![VersionRow::from(&detail.version)]);
-                print_table(detail.records.iter().map(VersionRecordRow::from).collect());
-            } else {
-                print_response(&data, output, |detail: &VersionDetailResponse| {
-                    vec![VersionRow::from(&detail.version)]
-                })?;
+            match output {
+                OutputFormat::Table => {
+                    let detail: VersionDetailResponse = parse_response(&data)?;
+                    print_table(vec![VersionRow::from(&detail.version)]);
+                    print_table(detail.records.iter().map(VersionRecordRow::from).collect());
+                }
+                _ => print_payload(&data, output)?,
             }
         }
         ZoneVersionCommand::Diff {
             name,
             from_serial,
             to_serial,
-            output,
         } => {
             let data = client
                 .send_command(
@@ -155,20 +151,12 @@ pub(crate) async fn handle_command(
                 .await?
                 .data;
 
-            match output {
-                OutputFormat::Table => {
-                    print!("{}", render_version_diff(&parse_response(&data)?))
-                }
-                _ => print_response(&data, output, |_: &VersionDiffResponse| {
-                    Vec::<VersionRow>::new()
-                })?,
-            }
+            print!("{}", render_version_diff(&parse_response(&data)?));
         }
         ZoneVersionCommand::Rollback {
             name,
             serial,
             dry_run,
-            output,
         } => {
             let response = client
                 .send_command(
@@ -180,12 +168,9 @@ pub(crate) async fn handle_command(
                 )
                 .await?;
 
-            if output == OutputFormat::Table {
-                println!("{}", response.message);
-            }
-            print_response(&response.data, output, |rollback: &RollbackZoneResponse| {
-                vec![RollbackSummaryRow::from(rollback)]
-            })?;
+            let rollback: RollbackZoneResponse = parse_response(&response.data)?;
+            println!("{}", response.message);
+            print_table(vec![RollbackSummaryRow::from(&rollback)]);
         }
     }
 

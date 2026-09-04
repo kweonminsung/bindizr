@@ -29,7 +29,7 @@ zones must already exist — ExternalDNS never creates or deletes zones:
 
 ```bash
 $ bindizr token create --name external-dns
-$ bindizr zone token-policy add example.com --token external-dns
+$ bindizr token-policy add example.com --token external-dns
 $ kubectl -n external-dns create secret generic bindizr-external-dns \
     --from-literal=api-token=<token>
 ```
@@ -120,18 +120,18 @@ Deployment with `--listen-addr 0.0.0.0:8888` and point
 `--webhook-provider-url` at its Service. The adapter→bindizr hop stays
 authenticated, but external-dns→adapter is then plain HTTP: keep the Service
 `ClusterIP`, never expose it through an Ingress, and restrict access to the
-external-dns pods with a NetworkPolicy (which limits reachability but does
-not authenticate the caller). The sidecar layout is the recommended default.
+external-dns pods with a NetworkPolicy. The sidecar layout is the
+recommended default.
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 | --- | --- |
 | `401` in the adapter log | Token missing, expired, or wrong |
-| `403 API token is not allowed to manage ...` | Grant the zone: `bindizr zone token-policy add <zone> --token <NAME>` |
+| `403 API token is not allowed to manage ...` | Grant the zone: `bindizr token-policy add <zone> --token <TOKEN_NAME>` |
 | `403` every sync; allowed changes never apply | The grant is restricted by name pattern or type, which ExternalDNS cannot see, and a sync is all-or-nothing. Grant the whole zone (the `token-policy add` default), or narrow external-dns's `--domain-filter` to the granted names |
 | `404 No zone is authoritative for '<name>'` | Create the zone first; ExternalDNS never creates zones |
 | `502` from the adapter | Bindizr unreachable or 5xx; external-dns retries automatically |
-| `503 no manageable zones` at startup | The token has no zone grants (or no zones exist yet). Grant one: `bindizr zone token-policy add <zone> --token <NAME>`; negotiation recovers on its own |
+| `503 no manageable zones` at startup | The token has no zone grants (or no zones exist yet). Grant one: `bindizr token-policy add <zone> --token <TOKEN_NAME>`; negotiation recovers on its own |
 | `502` although the records were applied | With `notify_mode = "sync"`, NOTIFY retries to an unreachable secondary can outlast the adapter's timeout after the change already committed. Set `[dns] notify_mode = "async"` or raise `--timeout-secs`; the retried sync is a no-op |
 | external-dns exits over a content-type error | The webhook URL does not point at the adapter |

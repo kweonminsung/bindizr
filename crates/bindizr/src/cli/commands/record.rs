@@ -8,7 +8,7 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ItemOrPage, OutputFormat, RecordRow, parse_response, print_response,
+            ItemOrPage, OutputFormat, RecordRow, parse_response, print_response, print_table,
             render_change_preview,
         },
     },
@@ -24,7 +24,7 @@ pub(crate) enum RecordCommand {
     /// Create a record
     Create {
         /// Record name
-        #[arg(long)]
+        #[arg(long, value_name = "RECORD_NAME")]
         name: String,
         /// Record type (A, AAAA, CNAME, MX, etc.)
         #[arg(long = "type", alias = "record-type")]
@@ -33,7 +33,7 @@ pub(crate) enum RecordCommand {
         #[arg(long)]
         value: String,
         /// Zone name
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "ZONE_NAME")]
         zone: String,
         /// TTL in seconds, defaulting to the zone TTL (records of one RRset share a TTL)
         #[arg(long)]
@@ -41,16 +41,53 @@ pub(crate) enum RecordCommand {
         /// Priority (MX and SRV only)
         #[arg(long)]
         priority: Option<i32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
+    /// Bulk insert records into a zone from a JSON or YAML file
+    #[command(after_help = "\
+Input format (JSON or YAML): an array of records, or an object with a
+'records' array. Fields per record:
+  name         owner name relative to the zone, or '@' for the apex (required)
+  record_type  A, AAAA, CNAME, MX, NS, PTR, SRV, TXT (required)
+  value        record value; TXT also accepts an array of strings (required)
+  ttl          seconds (optional; defaults to the zone TTL)
+  priority     MX/SRV priority (optional)
+
+JSON example:
+  [{\"name\": \"www\", \"record_type\": \"A\", \"value\": \"192.0.2.1\", \"ttl\": 300},
+   {\"name\": \"@\", \"record_type\": \"MX\", \"value\": \"mail\", \"priority\": 10}]
+
+YAML example:
+  - name: www
+    record_type: A
+    value: 192.0.2.1
+    ttl: 300")]
+    BulkCreate {
+        /// Path to a JSON or YAML file (an array of records, or an object with
+        /// a 'records' array), or '-' to read from stdin
+        file: String,
+        /// Zone name
+        #[arg(short, long, value_name = "ZONE_NAME")]
+        zone: String,
+        /// Parse and validate without applying any change
+        #[arg(long)]
+        dry_run: bool,
+        /// Preview the inserts as a +/-/~ diff without applying them (implies --dry-run)
+        #[arg(long)]
+        preview: bool,
     },
 
     /// List records
     #[command(alias = "ls")]
     List {
         /// Filter by zone name
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "ZONE_NAME")]
         zone: Option<String>,
         /// Filter by record name
-        #[arg(long)]
+        #[arg(long, value_name = "RECORD_NAME")]
         name: Option<String>,
         /// Filter by record type
         #[arg(long = "type", alias = "record-type")]
@@ -93,46 +130,10 @@ pub(crate) enum RecordCommand {
         output: OutputFormat,
     },
 
-    /// Bulk insert records into a zone from a JSON or YAML file
-    #[command(after_help = "\
-Input format (JSON or YAML): an array of records, or an object with a
-'records' array. Fields per record:
-  name         owner name relative to the zone, or '@' for the apex (required)
-  record_type  A, AAAA, CNAME, MX, NS, PTR, SRV, TXT (required)
-  value        record value; TXT also accepts an array of strings (required)
-  ttl          seconds (optional; defaults to the zone TTL)
-  priority     MX/SRV priority (optional)
-
-JSON example:
-  [{\"name\": \"www\", \"record_type\": \"A\", \"value\": \"192.0.2.1\", \"ttl\": 300},
-   {\"name\": \"@\", \"record_type\": \"MX\", \"value\": \"mail\", \"priority\": 10}]
-
-YAML example:
-  - name: www
-    record_type: A
-    value: 192.0.2.1
-    ttl: 300")]
-    BulkCreate {
-        /// Path to a JSON or YAML file (an array of records, or an object with
-        /// a 'records' array), or '-' to read from stdin
-        file: String,
-        /// Zone name
-        #[arg(short, long)]
-        zone: String,
-        /// Parse and validate without applying any change
-        #[arg(long)]
-        dry_run: bool,
-        /// Preview the inserts as a +/-/~ diff without applying them (implies --dry-run)
-        #[arg(long)]
-        preview: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
-    },
-
     /// Get a record by ID
     Get {
         /// The record ID
+        #[arg(value_name = "RECORD_ID")]
         id: i32,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
@@ -142,9 +143,10 @@ YAML example:
     /// Update a record, changing only the fields you pass
     Update {
         /// The record ID
+        #[arg(value_name = "RECORD_ID")]
         id: i32,
         /// Record name
-        #[arg(long)]
+        #[arg(long, value_name = "RECORD_NAME")]
         name: Option<String>,
         /// Record type (A, AAAA, CNAME, MX, etc.)
         #[arg(long = "type", alias = "record-type")]
@@ -183,8 +185,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             zone,
             ttl,
             priority,
+            output,
         } => {
-            let response = client
+            let data = client
                 .send_command(
                     DaemonCommandKind::CreateRecord,
                     CreateRecordRequest {
@@ -196,8 +199,10 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                         priority,
                     },
                 )
-                .await?;
-            println!("{}", response.message);
+                .await?
+                .data;
+
+            print_records(&data, output)?;
         }
         RecordCommand::List {
             zone,
@@ -258,7 +263,6 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             zone,
             dry_run,
             preview,
-            output,
         } => {
             let content = super::read_input(&file)?;
             // YAML is a superset of JSON, so one parse accepts both formats.
@@ -292,18 +296,14 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 )
                 .await?;
 
-            if preview && output == OutputFormat::Table {
-                let bulk: BulkRecordsResponse = parse_response(&response.data)?;
+            let bulk: BulkRecordsResponse = parse_response(&response.data)?;
+            if preview {
                 print!("{}", render_change_preview(&bulk.diff.entries));
                 return Ok(());
             }
 
-            if output == OutputFormat::Table {
-                println!("{}", response.message);
-            }
-            print_response(&response.data, output, |bulk: &BulkRecordsResponse| {
-                bulk.records.iter().map(RecordRow::from).collect()
-            })?;
+            println!("{}", response.message);
+            print_table(bulk.records.iter().map(RecordRow::from).collect());
         }
         RecordCommand::Get { id, output } => {
             let data = client

@@ -10,8 +10,9 @@ use clap::{Parser, Subcommand};
 
 use crate::{
     cli::commands::{
-        config::ConfigCommand, dnssec_policy::DnssecPolicyCommand, record::RecordCommand,
-        token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+        config::ConfigCommand, dnssec::DnssecCommand, dnssec_policy::DnssecPolicyCommand,
+        record::RecordCommand, token::TokenCommand, token_policy::TokenPolicyCommand,
+        tsig_key::TsigKeyCommand, tsig_policy::TsigPolicyCommand, zone::ZoneCommand,
     },
     daemon,
 };
@@ -24,7 +25,9 @@ pub(crate) struct Args {
     pub(crate) command: Command,
 }
 
-/// Top-level CLI subcommands.
+/// Top-level CLI subcommands. Declaration order is `--help` order: each
+/// global object is followed by its per-zone counterpart (token /
+/// token-policy, tsig-key / tsig-policy, dnssec-policy / dnssec).
 #[derive(Subcommand, Debug)]
 pub(crate) enum Command {
     /// Start bindizr on foreground
@@ -33,12 +36,12 @@ pub(crate) enum Command {
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
     },
-    /// Show the status of the bindizr service
-    Status,
     /// Stop the running bindizr daemon
     Stop,
     /// Restart the running bindizr daemon in place
     Restart,
+    /// Show the status of the bindizr service
+    Status,
     /// Check that the bindizr installation is healthy
     Doctor {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
@@ -50,21 +53,6 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: ConfigCommand,
     },
-    /// Manage API tokens
-    Token {
-        #[command(subcommand)]
-        subcommand: TokenCommand,
-    },
-    /// Manage TSIG keys for nsupdate authentication
-    TsigKey {
-        #[command(subcommand)]
-        subcommand: TsigKeyCommand,
-    },
-    /// Manage DNSSEC policies, the signing-parameter bundles zones sign under
-    DnssecPolicy {
-        #[command(subcommand)]
-        subcommand: DnssecPolicyCommand,
-    },
     /// Manage zones
     Zone {
         #[command(subcommand)]
@@ -74,6 +62,36 @@ pub(crate) enum Command {
     Record {
         #[command(subcommand)]
         subcommand: RecordCommand,
+    },
+    /// Manage API tokens
+    Token {
+        #[command(subcommand)]
+        subcommand: TokenCommand,
+    },
+    /// Manage which API tokens may change what in a zone
+    TokenPolicy {
+        #[command(subcommand)]
+        subcommand: TokenPolicyCommand,
+    },
+    /// Manage TSIG keys for nsupdate authentication
+    TsigKey {
+        #[command(subcommand)]
+        subcommand: TsigKeyCommand,
+    },
+    /// Manage which TSIG keys may nsupdate what in a zone
+    TsigPolicy {
+        #[command(subcommand)]
+        subcommand: TsigPolicyCommand,
+    },
+    /// Manage DNSSEC policies, the signing-parameter bundles zones sign under
+    DnssecPolicy {
+        #[command(subcommand)]
+        subcommand: DnssecPolicyCommand,
+    },
+    /// Manage a zone's DNSSEC signing (keys, DS records, re-signing)
+    Dnssec {
+        #[command(subcommand)]
+        subcommand: DnssecCommand,
     },
 }
 
@@ -85,18 +103,25 @@ pub async fn execute() {
         Command::Start { config } => daemon::bootstrap(config.as_deref())
             .await
             .map_err(error::CliError::from),
-        Command::Status => commands::status::handle_command().await,
         Command::Stop => commands::stop::handle_command().await,
         Command::Restart => commands::restart::handle_command().await,
+        Command::Status => commands::status::handle_command().await,
         Command::Doctor { config } => commands::doctor::handle_command(config).await,
         Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
+        Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
+        Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
+        Command::TokenPolicy { subcommand } => {
+            commands::token_policy::handle_command(subcommand).await
+        }
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
+        Command::TsigPolicy { subcommand } => {
+            commands::tsig_policy::handle_command(subcommand).await
+        }
         Command::DnssecPolicy { subcommand } => {
             commands::dnssec_policy::handle_command(subcommand).await
         }
-        Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
-        Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
+        Command::Dnssec { subcommand } => commands::dnssec::handle_command(subcommand).await,
     } {
         eprintln!("Error: {}", e.message);
         if let Some(hint) = e.hint() {
