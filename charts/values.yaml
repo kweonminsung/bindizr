@@ -32,7 +32,7 @@ bindizr:
     notifyRetries: 3
     notifyTimeoutSecs: 3
     # Accept unsigned nsupdate requests (not recommended in production). TSIG
-    # keys and policies are managed at runtime via the bindizr CLI or HTTP API.
+    # keys and grants are managed at runtime via the bindizr CLI or HTTP API.
     nsupdateAllowUnsigned: false
     # "sync" runs the NOTIFY inline; "async" queues it to a background worker.
     notifyMode: sync
