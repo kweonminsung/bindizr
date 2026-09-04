@@ -11,7 +11,7 @@ pub(crate) mod notify;
 pub(crate) mod openapi;
 pub(crate) mod record;
 pub(crate) mod router;
-pub(crate) mod token_policy;
+pub(crate) mod token_grant;
 pub(crate) mod tsig_key;
 pub(crate) mod zone;
 
@@ -31,7 +31,7 @@ pub(crate) struct ZoneNameParam {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ZonePolicyParam {
+pub(crate) struct GrantIdParam {
     pub(crate) name: String,
     pub(crate) id: i32,
 }

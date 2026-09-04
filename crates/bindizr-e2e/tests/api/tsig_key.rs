@@ -156,20 +156,20 @@ async fn global_tsig_key_lifecycle() {
     let global = keys.iter().find(|k| k["name"] == "global-key").unwrap();
     assert_eq!(global["global"], true);
 
-    // A global key already covers every zone, so zone policies are rejected.
+    // A global key already covers every zone, so it cannot be granted one.
     let zone_name = app.zone_name("global-key.example");
     create_named_zone(&app, &zone_name).await;
 
     let (status, _) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/tsig-policies"),
-            Some(json!({ "tsig_key": "global-key" })),
+            "/tsig-keys/global-key/grants",
+            Some(json!({ "zone_name": zone_name })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // A global key holds no policies, so it deletes without a guard.
+    // A global key holds no grants, so it deletes without a guard.
     let (status, _) = app
         .request(Method::DELETE, "/tsig-keys/global-key", None)
         .await;
@@ -183,7 +183,7 @@ async fn global_tsig_key_lifecycle() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_tsig_policy_lifecycle_and_delete_guard() {
+async fn tsig_grant_lifecycle_and_delete_guard() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("tsig-zone.example");
     create_named_zone(&app, &zone_name).await;
@@ -192,7 +192,7 @@ async fn zone_tsig_policy_lifecycle_and_delete_guard() {
         .request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": "policy-key" })),
+            Some(json!({ "name": "grant-key" })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -200,46 +200,54 @@ async fn zone_tsig_policy_lifecycle_and_delete_guard() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/tsig-policies"),
+            "/tsig-keys/grant-key/grants",
             Some(json!({
-                "tsig_key": "policy-key",
+                "zone_name": zone_name,
                 "record_name_pattern": "*.dyn",
                 "record_types": "a,AAAA",
             })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["tsig_policy"]["tsig_key"], "policy-key");
-    assert_eq!(body["tsig_policy"]["record_name_pattern"], "*.dyn");
-    assert_eq!(body["tsig_policy"]["record_types"], "A,AAAA");
-    let policy_id = body["tsig_policy"]["id"].as_i64().unwrap();
+    assert_eq!(body["tsig_grant"]["tsig_key"], "grant-key");
+    assert_eq!(body["tsig_grant"]["zone_name"], json!(zone_name));
+    assert_eq!(body["tsig_grant"]["record_name_pattern"], "*.dyn");
+    assert_eq!(body["tsig_grant"]["record_types"], "A,AAAA");
+    let grant_id = body["tsig_grant"]["id"].as_i64().unwrap();
 
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/tsig-policies"),
-            Some(json!({ "tsig_key": "policy-key" })),
+            "/tsig-keys/grant-key/grants",
+            Some(json!({ "zone_name": zone_name })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["tsig_policy"]["record_name_pattern"], "*");
-    assert_eq!(body["tsig_policy"]["record_types"], "*");
+    assert_eq!(body["tsig_grant"]["record_name_pattern"], "*");
+    assert_eq!(body["tsig_grant"]["record_types"], "*");
+
+    // Both grants show from the key's side and from the zone's.
+    let (status, body) = app
+        .request(Method::GET, "/tsig-keys/grant-key/grants", None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["tsig_grants"].as_array().unwrap().len(), 2);
 
     let (status, body) = app
         .request(
             Method::GET,
-            &format!("/zones/{zone_name}/tsig-policies"),
+            &format!("/zones/{zone_name}/tsig-grants"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["tsig_policies"].as_array().unwrap().len(), 2);
+    assert_eq!(body["tsig_grants"].as_array().unwrap().len(), 2);
 
     let (status, _) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/tsig-policies"),
-            Some(json!({ "tsig_key": "no-such-key" })),
+            "/tsig-keys/no-such-key/grants",
+            Some(json!({ "zone_name": zone_name })),
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -247,8 +255,8 @@ async fn zone_tsig_policy_lifecycle_and_delete_guard() {
     let (status, _) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/tsig-policies"),
-            Some(json!({ "tsig_key": "policy-key", "record_name_pattern": "a*b" })),
+            "/tsig-keys/grant-key/grants",
+            Some(json!({ "zone_name": zone_name, "record_name_pattern": "a*b" })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -256,35 +264,35 @@ async fn zone_tsig_policy_lifecycle_and_delete_guard() {
     let (status, _) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/tsig-policies"),
-            Some(json!({ "tsig_key": "policy-key", "record_types": "A,BOGUS" })),
+            "/tsig-keys/grant-key/grants",
+            Some(json!({ "zone_name": zone_name, "record_types": "A,BOGUS" })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // The key cannot be deleted while policies reference it.
+    // The key cannot be deleted while it still holds grants.
     let (status, _) = app
-        .request(Method::DELETE, "/tsig-keys/policy-key", None)
+        .request(Method::DELETE, "/tsig-keys/grant-key", None)
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
 
     let (status, _) = app
         .request(
             Method::DELETE,
-            &format!("/zones/{zone_name}/tsig-policies/{policy_id}"),
+            &format!("/tsig-keys/grant-key/grants/{grant_id}"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
 
-    // Deleting the zone cascades its remaining policies, freeing the key.
+    // Deleting the zone cascades its remaining grants, freeing the key.
     let (status, _) = app
         .request(Method::DELETE, &format!("/zones/{zone_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .request(Method::DELETE, "/tsig-keys/policy-key", None)
+        .request(Method::DELETE, "/tsig-keys/grant-key", None)
         .await;
     assert_eq!(status, StatusCode::OK);
 }

@@ -51,7 +51,7 @@ zone_cache = true             # Cache each zone's records by serial so repeated 
 notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
 notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
-nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests (not recommended in production; TSIG keys/policies are managed via CLI or HTTP API)
+nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests (not recommended in production; TSIG keys/grants are managed via CLI or HTTP API)
 journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
 
 [logging]

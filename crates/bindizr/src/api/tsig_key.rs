@@ -6,19 +6,17 @@ use axum::{
     routing,
 };
 use bindizr_service::{
-    tsig_key::TsigKeyService,
+    tsig_key::{TsigKeyService, grant::TsigGrantService},
     types::{
-        CreateTsigKeyRequest, CreateZoneTsigPolicyRequest, ErrorResponse, GetTsigKeyResponse,
-        GetZoneTsigPolicyResponse, MessageResponse, TsigKeyListResponse, TsigKeyResponse,
-        ZoneTsigPolicyListResponse, ZoneTsigPolicyResponse,
+        CreateTsigGrantRequest, CreateTsigKeyRequest, ErrorResponse, GetTsigGrantResponse,
+        GetTsigKeyResponse, MessageResponse, TsigGrantListResponse, TsigGrantResponse,
+        TsigKeyListResponse, TsigKeyResponse,
     },
-    zone::tsig_policy::ZoneTsigPolicyService,
 };
 use serde::Deserialize;
 
 use crate::api::{
-    RequestCaller, ZoneNameParam, ZonePolicyParam, error::ApiError,
-    middleware::body_parser::JsonBody,
+    GrantIdParam, RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody,
 };
 
 pub(crate) struct TsigKeyApi;
@@ -30,17 +28,15 @@ impl TsigKeyApi {
             .route("/tsig-keys", routing::post(create_tsig_key))
             .route("/tsig-keys/{name}", routing::get(get_tsig_key))
             .route("/tsig-keys/{name}", routing::delete(delete_tsig_key))
+            .route("/tsig-keys/{name}/grants", routing::get(get_tsig_grants))
+            .route("/tsig-keys/{name}/grants", routing::post(create_tsig_grant))
             .route(
-                "/zones/{name}/tsig-policies",
-                routing::get(get_zone_tsig_policies),
+                "/tsig-keys/{name}/grants/{id}",
+                routing::delete(delete_tsig_grant),
             )
             .route(
-                "/zones/{name}/tsig-policies",
-                routing::post(create_zone_tsig_policy),
-            )
-            .route(
-                "/zones/{name}/tsig-policies/{id}",
-                routing::delete(delete_zone_tsig_policy),
+                "/zones/{name}/tsig-grants",
+                routing::get(get_zone_tsig_grants),
             )
     }
 }
@@ -78,7 +74,7 @@ pub(crate) async fn get_tsig_keys(
         path = "/tsig-keys",
         tag = "TSIG",
         summary = "Create a TSIG key",
-        description = "Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` makes the key able to update every zone (all names, all types) without any policy — effectively write access to all DNS data, so use it sparingly. The response includes the secret.",
+        description = "Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` makes the key able to update every zone (all names, all types) without any grant — effectively write access to all DNS data, so use it sparingly. The response includes the secret.",
         request_body = CreateTsigKeyRequest,
         responses(
             (status = 201, description = "TSIG key created successfully", body = TsigKeyResponse),
@@ -143,7 +139,7 @@ pub(crate) async fn get_tsig_key(
         path = "/tsig-keys/{name}",
         tag = "TSIG",
         summary = "Delete a TSIG key",
-        description = "Deletes a TSIG key. Refused while any zone TSIG policy still references it.",
+        description = "Deletes a TSIG key. Refused while it still holds grants.",
         params(
             ("name" = String, Path, description = "The name of the TSIG key.")
         ),
@@ -152,11 +148,11 @@ pub(crate) async fn get_tsig_key(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),
-            (status = 409, description = "TSIG key is still referenced by zone TSIG policies", body = ErrorResponse),
+            (status = 409, description = "TSIG key still holds grants", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Delete a TSIG key that is not referenced by any policy.
+/// Delete a TSIG key that holds no grants.
 pub(crate) async fn delete_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
@@ -170,102 +166,131 @@ pub(crate) async fn delete_tsig_key(
 
 #[utoipa::path(
         get,
-        path = "/zones/{name}/tsig-policies",
+        path = "/tsig-keys/{name}/grants",
         tag = "TSIG",
-        summary = "List a zone's TSIG policies",
-        description = "Lists every TSIG policy of a zone: which keys may update which record names and types via nsupdate.",
+        summary = "List a TSIG key's grants",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone.")
+            ("name" = String, Path, description = "The name of the TSIG key.")
         ),
         responses(
-            (status = 200, description = "The zone's TSIG policies", body = ZoneTsigPolicyListResponse),
+            (status = 200, description = "The key's grants", body = TsigGrantListResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
-            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 404, description = "TSIG key not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List all TSIG policies of a zone.
-pub(crate) async fn get_zone_tsig_policies(
+/// List a TSIG key's grants.
+pub(crate) async fn get_tsig_grants(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<TsigKeyNameParam>,
 ) -> Result<Response, ApiError> {
-    let policies = ZoneTsigPolicyService::list(&caller, &params.name).await?;
-    let policies: Vec<GetZoneTsigPolicyResponse> = policies
-        .iter()
-        .map(GetZoneTsigPolicyResponse::from_policy)
-        .collect();
-    let response = ZoneTsigPolicyListResponse {
-        tsig_policies: policies,
+    let grants = TsigGrantService::list_by_key(&caller, &params.name).await?;
+    let response = TsigGrantListResponse {
+        tsig_grants: grants
+            .iter()
+            .map(GetTsigGrantResponse::from_grant)
+            .collect(),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
         post,
-        path = "/zones/{name}/tsig-policies",
+        path = "/tsig-keys/{name}/grants",
         tag = "TSIG",
         summary = "Grant a TSIG key nsupdate rights in a zone",
-        description = "Creates a TSIG policy granting the named key nsupdate rights in the zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global keys are rejected: they already cover every zone and never carry policies.",
+        description = "Grants the key nsupdate rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global keys are rejected: they already cover every zone and never carry grants.",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone.")
+            ("name" = String, Path, description = "The name of the TSIG key.")
         ),
-        request_body = CreateZoneTsigPolicyRequest,
+        request_body = CreateTsigGrantRequest,
         responses(
-            (status = 201, description = "TSIG policy created successfully", body = ZoneTsigPolicyResponse),
+            (status = 201, description = "TSIG grant created", body = TsigGrantResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
-            (status = 404, description = "Zone or TSIG key not found", body = ErrorResponse),
+            (status = 404, description = "TSIG key or zone not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Create a TSIG policy for a zone.
-pub(crate) async fn create_zone_tsig_policy(
+/// Grant a TSIG key nsupdate rights in a zone.
+pub(crate) async fn create_tsig_grant(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<CreateZoneTsigPolicyRequest>,
+    Path(params): Path<TsigKeyNameParam>,
+    JsonBody(body): JsonBody<CreateTsigGrantRequest>,
 ) -> Result<Response, ApiError> {
-    let policy = ZoneTsigPolicyService::add(
+    let grant = TsigGrantService::grant(
         &caller,
         &params.name,
-        &body.tsig_key,
+        &body.zone_name,
         body.record_name_pattern.as_deref(),
         body.record_types.as_deref(),
     )
     .await?;
-    let response = ZoneTsigPolicyResponse {
-        tsig_policy: GetZoneTsigPolicyResponse::from_policy(&policy),
+    let response = TsigGrantResponse {
+        tsig_grant: GetTsigGrantResponse::from_grant(&grant),
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
 #[utoipa::path(
         delete,
-        path = "/zones/{name}/tsig-policies/{id}",
+        path = "/tsig-keys/{name}/grants/{id}",
         tag = "TSIG",
-        summary = "Remove a TSIG policy from a zone",
+        summary = "Revoke one of a TSIG key's grants",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone."),
-            ("id" = i32, Path, description = "The id of the TSIG policy.")
+            ("name" = String, Path, description = "The name of the TSIG key."),
+            ("id" = i32, Path, description = "The id of the grant to revoke.")
         ),
         responses(
-            (status = 200, description = "TSIG policy deleted successfully", body = MessageResponse),
+            (status = 200, description = "TSIG grant revoked", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
-            (status = 404, description = "Zone or TSIG policy not found", body = ErrorResponse),
+            (status = 404, description = "TSIG key or grant not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Delete one TSIG policy of a zone.
-pub(crate) async fn delete_zone_tsig_policy(
+/// Revoke one of a TSIG key's grants by grant id.
+pub(crate) async fn delete_tsig_grant(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZonePolicyParam>,
+    Path(params): Path<GrantIdParam>,
 ) -> Result<Response, ApiError> {
-    ZoneTsigPolicyService::remove(&caller, &params.name, params.id).await?;
+    TsigGrantService::revoke(&caller, &params.name, params.id).await?;
     let response = MessageResponse {
-        message: "TSIG policy deleted successfully".to_string(),
+        message: "TSIG grant revoked successfully".to_string(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        get,
+        path = "/zones/{name}/tsig-grants",
+        tag = "TSIG",
+        summary = "List the TSIG grants that apply to a zone",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        responses(
+            (status = 200, description = "Grants covering the zone", body = TsigGrantListResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// List the TSIG grants that apply to a zone.
+pub(crate) async fn get_zone_tsig_grants(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    let grants = TsigGrantService::list_by_zone(&caller, &params.name).await?;
+    let response = TsigGrantListResponse {
+        tsig_grants: grants
+            .iter()
+            .map(GetTsigGrantResponse::from_grant)
+            .collect(),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

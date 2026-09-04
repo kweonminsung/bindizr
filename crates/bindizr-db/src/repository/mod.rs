@@ -17,11 +17,11 @@ use super::model::{
     dnssec_policy::DnssecPolicy,
     dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     record::{Record, RecordType, RecordWithZone},
+    token_grant::TokenGrant,
+    tsig_grant::TsigGrant,
     tsig_key::TsigKey,
     zone::Zone,
     zone_change::ZoneChange,
-    zone_token_policy::ZoneTokenPolicy,
-    zone_tsig_policy::ZoneTsigPolicy,
     zone_version::ZoneVersion,
 };
 use crate::{DatabasePool, error::DatabaseError, get_pool};
@@ -54,7 +54,7 @@ pub struct ZoneFilter {
     pub serial: Option<i32>,
     pub search: Option<String>,
     /// Restrict to zones granted to this token, joined against
-    /// `zone_token_policies` in SQL so the bind count stays fixed; `None` is
+    /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
     pub scope_token_id: Option<i32>,
     pub limit: Option<u32>,
@@ -78,7 +78,7 @@ pub struct RecordFilter {
     pub max_priority: Option<i32>,
     pub search: Option<String>,
     /// Restrict to zones granted to this token, joined against
-    /// `zone_token_policies` in SQL so the bind count stays fixed; `None` is
+    /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
     pub scope_token_id: Option<i32>,
     pub limit: Option<u32>,
@@ -98,7 +98,7 @@ pub struct DnssecRecordFilter {
     pub min_ttl: Option<i32>,
     pub max_ttl: Option<i32>,
     /// Restrict to zones granted to this token, joined against
-    /// `zone_token_policies` in SQL so the bind count stays fixed; `None` is
+    /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
     pub scope_token_id: Option<i32>,
     pub limit: Option<u32>,
@@ -308,11 +308,12 @@ pub trait TsigKeyRepository: Send + Sync {
 }
 
 #[async_trait]
-pub trait ZoneTsigPolicyRepository: Send + Sync {
-    async fn create(&self, policy: ZoneTsigPolicy) -> Result<ZoneTsigPolicy, DatabaseError>;
-    async fn get(&self, id: i32) -> Result<Option<ZoneTsigPolicy>, DatabaseError>;
-    async fn list(&self, zone_id: i32) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
-    /// Policies granting `tsig_key_id` rights in `zone_id`, for nsupdate
+pub trait TsigGrantRepository: Send + Sync {
+    async fn create(&self, grant: TsigGrant) -> Result<TsigGrant, DatabaseError>;
+    async fn get(&self, id: i32) -> Result<Option<TsigGrant>, DatabaseError>;
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<TsigGrant>, DatabaseError>;
+    async fn list_by_key_id(&self, tsig_key_id: i32) -> Result<Vec<TsigGrant>, DatabaseError>;
+    /// Grants giving `tsig_key_id` rights in `zone_id`, for nsupdate
     /// authorization inside the update transaction.
     async fn list_by_zone_id_and_key_id_tx(
         &self,
@@ -320,19 +321,19 @@ pub trait ZoneTsigPolicyRepository: Send + Sync {
         zone_id: i32,
         tsig_key_id: i32,
         lock_level: LockLevel,
-    ) -> Result<Vec<ZoneTsigPolicy>, DatabaseError>;
+    ) -> Result<Vec<TsigGrant>, DatabaseError>;
     async fn count_by_key_id(&self, tsig_key_id: i32) -> Result<u64, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
-/// Persistence operations for zone token policies, the HTTP twin of
-/// [`ZoneTsigPolicyRepository`].
+/// Persistence operations for token grants, the HTTP twin of
+/// [`TsigGrantRepository`].
 #[async_trait]
-pub trait ZoneTokenPolicyRepository: Send + Sync {
-    async fn create(&self, policy: ZoneTokenPolicy) -> Result<ZoneTokenPolicy, DatabaseError>;
-    async fn get(&self, id: i32) -> Result<Option<ZoneTokenPolicy>, DatabaseError>;
-    async fn list(&self, zone_id: i32) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
-    /// Policies granting `api_token_id` rights in `zone_id`, for write
+pub trait TokenGrantRepository: Send + Sync {
+    async fn create(&self, grant: TokenGrant) -> Result<TokenGrant, DatabaseError>;
+    async fn get(&self, id: i32) -> Result<Option<TokenGrant>, DatabaseError>;
+    async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<TokenGrant>, DatabaseError>;
+    /// Grants giving `api_token_id` rights in `zone_id`, for write
     /// authorization inside the caller's transaction.
     async fn list_by_zone_id_and_token_id_tx(
         &self,
@@ -340,13 +341,10 @@ pub trait ZoneTokenPolicyRepository: Send + Sync {
         zone_id: i32,
         api_token_id: i32,
         lock_level: LockLevel,
-    ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
-    /// Every policy granted to `api_token_id`; drives what a scoped token can
-    /// see and NOTIFY.
-    async fn list_by_token_id(
-        &self,
-        api_token_id: i32,
-    ) -> Result<Vec<ZoneTokenPolicy>, DatabaseError>;
+    ) -> Result<Vec<TokenGrant>, DatabaseError>;
+    /// Every grant of `api_token_id`; drives what a scoped token can see and
+    /// NOTIFY.
+    async fn list_by_token_id(&self, api_token_id: i32) -> Result<Vec<TokenGrant>, DatabaseError>;
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
@@ -711,35 +709,35 @@ impl RepositoryFactory {
         }
     }
 
-    pub(crate) fn create_zone_tsig_policy_repository(
+    pub(crate) fn create_tsig_grant_repository(
         pool: &DatabasePool,
-    ) -> Box<dyn ZoneTsigPolicyRepository> {
+    ) -> Box<dyn TsigGrantRepository> {
         match pool {
-            DatabasePool::MySQL(mysql_pool) => Box::new(mysql::MySqlZoneTsigPolicyRepository::new(
-                mysql_pool.clone(),
-            )),
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlTsigGrantRepository::new(mysql_pool.clone()))
+            }
             DatabasePool::PostgreSQL(postgres_pool) => Box::new(
-                postgres::PostgresZoneTsigPolicyRepository::new(postgres_pool.clone()),
+                postgres::PostgresTsigGrantRepository::new(postgres_pool.clone()),
             ),
-            DatabasePool::SQLite(sqlite_pool) => Box::new(
-                sqlite::SqliteZoneTsigPolicyRepository::new(sqlite_pool.clone()),
-            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteTsigGrantRepository::new(sqlite_pool.clone()))
+            }
         }
     }
 
-    pub(crate) fn create_zone_token_policy_repository(
+    pub(crate) fn create_token_grant_repository(
         pool: &DatabasePool,
-    ) -> Box<dyn ZoneTokenPolicyRepository> {
+    ) -> Box<dyn TokenGrantRepository> {
         match pool {
-            DatabasePool::MySQL(mysql_pool) => Box::new(
-                mysql::MySqlZoneTokenPolicyRepository::new(mysql_pool.clone()),
-            ),
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlTokenGrantRepository::new(mysql_pool.clone()))
+            }
             DatabasePool::PostgreSQL(postgres_pool) => Box::new(
-                postgres::PostgresZoneTokenPolicyRepository::new(postgres_pool.clone()),
+                postgres::PostgresTokenGrantRepository::new(postgres_pool.clone()),
             ),
-            DatabasePool::SQLite(sqlite_pool) => Box::new(
-                sqlite::SqliteZoneTokenPolicyRepository::new(sqlite_pool.clone()),
-            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteTokenGrantRepository::new(sqlite_pool.clone()))
+            }
         }
     }
 

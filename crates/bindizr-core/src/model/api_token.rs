@@ -10,7 +10,7 @@ pub struct ApiToken {
     pub token: String,
     pub description: Option<String>,
     /// Global tokens may manage every zone and the zone plane; scoped tokens
-    /// are limited to their `zone_token_policies` grants. Fixed at creation.
+    /// are limited to their `token_grants` grants. Fixed at creation.
     pub is_global: bool,
     pub created_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>, // None means the token never expires

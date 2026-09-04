@@ -1,10 +1,10 @@
-//! TSIG key and zone TSIG policy payloads.
+//! TSIG key and TSIG grant payloads.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::model::{tsig_key::TsigKey, zone_tsig_policy::ZoneTsigPolicyWithKey};
+use crate::model::{tsig_grant::TsigGrantWithNames, tsig_key::TsigKey};
 
 /// Request body for creating a TSIG key. Omitting `secret` generates one.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
@@ -18,7 +18,7 @@ pub struct CreateTsigKeyRequest {
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: Option<String>,
     /// Make the key global: it may update every zone (all names, all types)
-    /// without any policy. Fixed at creation.
+    /// without any grant. Fixed at creation.
     #[serde(default)]
     #[schema(example = false)]
     pub global: bool,
@@ -37,7 +37,7 @@ pub struct GetTsigKeyResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: Option<String>,
-    /// Whether the key may update every zone without any policy.
+    /// Whether the key may update every zone without any grant.
     #[schema(example = false)]
     pub global: bool,
     pub created_at: DateTime<Utc>,
@@ -59,10 +59,10 @@ impl GetTsigKeyResponse {
 
 /// Request body for granting a TSIG key nsupdate rights in a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct CreateZoneTsigPolicyRequest {
-    /// Name of an existing TSIG key.
-    #[schema(example = "update-key")]
-    pub tsig_key: String,
+pub struct CreateTsigGrantRequest {
+    /// Name of an existing zone.
+    #[schema(example = "example.com")]
+    pub zone_name: String,
     /// `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
     /// Defaults to `*`.
     #[schema(example = "*.dyn")]
@@ -72,13 +72,15 @@ pub struct CreateZoneTsigPolicyRequest {
     pub record_types: Option<String>,
 }
 
-/// API representation of a zone TSIG policy.
+/// API representation of a TSIG grant.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct GetZoneTsigPolicyResponse {
+pub struct GetTsigGrantResponse {
     #[schema(example = 1)]
     pub id: i32,
     #[schema(example = "update-key")]
     pub tsig_key: String,
+    #[schema(example = "example.com")]
+    pub zone_name: String,
     #[schema(example = "*.dyn")]
     pub record_name_pattern: String,
     #[schema(example = "A,AAAA,TXT")]
@@ -86,14 +88,15 @@ pub struct GetZoneTsigPolicyResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl GetZoneTsigPolicyResponse {
-    pub fn from_policy(policy: &ZoneTsigPolicyWithKey) -> Self {
-        GetZoneTsigPolicyResponse {
-            id: policy.policy.id,
-            tsig_key: policy.tsig_key_name.clone(),
-            record_name_pattern: policy.policy.record_name_pattern.clone(),
-            record_types: policy.policy.record_types.clone(),
-            created_at: policy.policy.created_at,
+impl GetTsigGrantResponse {
+    pub fn from_grant(grant: &TsigGrantWithNames) -> Self {
+        GetTsigGrantResponse {
+            id: grant.grant.id,
+            tsig_key: grant.tsig_key_name.clone(),
+            zone_name: grant.zone_name.clone(),
+            record_name_pattern: grant.grant.record_name_pattern.clone(),
+            record_types: grant.grant.record_types.clone(),
+            created_at: grant.grant.created_at,
         }
     }
 }
@@ -110,14 +113,14 @@ pub struct TsigKeyListResponse {
     pub tsig_keys: Vec<GetTsigKeyResponse>,
 }
 
-/// A single zone TSIG policy wrapped in a response envelope.
+/// A single TSIG grant wrapped in a response envelope.
 #[derive(Serialize, Debug, ToSchema)]
-pub struct ZoneTsigPolicyResponse {
-    pub tsig_policy: GetZoneTsigPolicyResponse,
+pub struct TsigGrantResponse {
+    pub tsig_grant: GetTsigGrantResponse,
 }
 
-/// List of a zone's TSIG policies.
+/// Grants of one key, or every grant that applies to one zone.
 #[derive(Serialize, Debug, ToSchema)]
-pub struct ZoneTsigPolicyListResponse {
-    pub tsig_policies: Vec<GetZoneTsigPolicyResponse>,
+pub struct TsigGrantListResponse {
+    pub tsig_grants: Vec<GetTsigGrantResponse>,
 }

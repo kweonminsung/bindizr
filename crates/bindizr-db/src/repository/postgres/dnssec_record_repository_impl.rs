@@ -209,7 +209,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
               AND ($12::INT4 IS NULL OR d.ttl <= $13)
               AND (
                     $14::INT4 IS NULL
-                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                    OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = $14 AND p.zone_id = d.zone_id)
               )
             -- d.name ties across an RRset, so without d.id a plan change
@@ -265,7 +265,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
               AND ($12::INT4 IS NULL OR d.ttl <= $13)
               AND (
                     $14::INT4 IS NULL
-                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                    OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = $14 AND p.zone_id = d.zone_id)
               )
             "#

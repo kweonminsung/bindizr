@@ -134,7 +134,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS zone_tsig_policies (
+        CREATE TABLE IF NOT EXISTS tsig_grants (
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,
             tsig_key_id INT NOT NULL,
@@ -143,12 +143,12 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id),
-            INDEX idx_zone_tsig_policies_zone (zone_id),
-            INDEX idx_zone_tsig_policies_key (tsig_key_id)
+            INDEX idx_tsig_grants_zone (zone_id),
+            INDEX idx_tsig_grants_key (tsig_key_id)
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS zone_token_policies (
+        CREATE TABLE IF NOT EXISTS token_grants (
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,
             api_token_id INT NOT NULL,
@@ -157,8 +157,8 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE,
-            INDEX idx_zone_token_policies_zone (zone_id),
-            INDEX idx_zone_token_policies_token_zone (api_token_id, zone_id)
+            INDEX idx_token_grants_zone (zone_id),
+            INDEX idx_token_grants_token_zone (api_token_id, zone_id)
         );
         "#,
         r#"
@@ -337,7 +337,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS zone_tsig_policies (
+        CREATE TABLE IF NOT EXISTS tsig_grants (
             id SERIAL PRIMARY KEY,
             zone_id INTEGER NOT NULL,
             tsig_key_id INTEGER NOT NULL,
@@ -349,13 +349,13 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_zone ON zone_tsig_policies(zone_id);
+        CREATE INDEX IF NOT EXISTS idx_tsig_grants_zone ON tsig_grants(zone_id);
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_key ON zone_tsig_policies(tsig_key_id);
+        CREATE INDEX IF NOT EXISTS idx_tsig_grants_key ON tsig_grants(tsig_key_id);
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS zone_token_policies (
+        CREATE TABLE IF NOT EXISTS token_grants (
             id SERIAL PRIMARY KEY,
             zone_id INTEGER NOT NULL,
             api_token_id INTEGER NOT NULL,
@@ -367,10 +367,10 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_zone ON zone_token_policies(zone_id);
+        CREATE INDEX IF NOT EXISTS idx_token_grants_zone ON token_grants(zone_id);
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_token_zone ON zone_token_policies(api_token_id, zone_id);
+        CREATE INDEX IF NOT EXISTS idx_token_grants_token_zone ON token_grants(api_token_id, zone_id);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS dnssec_keys (
@@ -554,7 +554,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS zone_tsig_policies (
+        CREATE TABLE IF NOT EXISTS tsig_grants (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             zone_id INTEGER NOT NULL,
             tsig_key_id INTEGER NOT NULL,
@@ -566,13 +566,13 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_zone ON zone_tsig_policies(zone_id);
+        CREATE INDEX IF NOT EXISTS idx_tsig_grants_zone ON tsig_grants(zone_id);
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_tsig_policies_key ON zone_tsig_policies(tsig_key_id);
+        CREATE INDEX IF NOT EXISTS idx_tsig_grants_key ON tsig_grants(tsig_key_id);
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS zone_token_policies (
+        CREATE TABLE IF NOT EXISTS token_grants (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             zone_id INTEGER NOT NULL,
             api_token_id INTEGER NOT NULL,
@@ -584,10 +584,10 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_zone ON zone_token_policies(zone_id);
+        CREATE INDEX IF NOT EXISTS idx_token_grants_zone ON token_grants(zone_id);
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_zone_token_policies_token_zone ON zone_token_policies(api_token_id, zone_id);
+        CREATE INDEX IF NOT EXISTS idx_token_grants_token_zone ON token_grants(api_token_id, zone_id);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS dnssec_keys (

@@ -149,7 +149,7 @@ impl UpstreamClient {
 
         if status.as_u16() == 401 || status.as_u16() == 403 {
             log_error!(
-                "bindizr rejected the request with {} ({}); check the API token and zone policy",
+                "bindizr rejected the request with {} ({}); check the API token and its grants",
                 status.as_u16(),
                 message
             );

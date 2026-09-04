@@ -52,7 +52,7 @@ impl ExternalDnsApi {
         path = "/external-dns/zones",
         tag = "ExternalDNS",
         summary = "List the zones ExternalDNS may manage",
-        description = "Zones the calling token may manage: every zone for a global token, otherwise the zones granted through token policies.",
+        description = "Zones the calling token may manage: every zone for a global token, otherwise the zones its grants cover.",
         responses(
             (status = 200, description = "Allowed zones", body = ExternalDnsZonesResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),

@@ -9,7 +9,7 @@ mod api {
     mod notify;
     mod openapi;
     mod record;
-    mod token_policy;
+    mod token_grant;
     mod tsig_key;
     mod zone;
 }

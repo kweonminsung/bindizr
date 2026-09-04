@@ -61,7 +61,7 @@ DNS Synchronization Service for BIND9
 
 - **DNS NOTIFY**: Notify secondaries after each change, with configurable retries and timeouts, plus a sync/async apply mode that batches NOTIFYs under load.
 
-- **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests, managed TSIG keys, and per-zone update policies.
+- **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests, managed TSIG keys, and per-zone grants.
 
 - **DNSSEC**: Named signing policies (algorithm, NSEC/NSEC3, CSK or KSK/ZSK, timing), automatic signing and re-signing, key rollovers (ZSK rolls scheduled and promoted automatically, CSK/KSK rolls confirmed by the operator), BIND-format key import/export, and RFC 8078 DS withdrawal — see [DNSSEC](dnssec.md).
 

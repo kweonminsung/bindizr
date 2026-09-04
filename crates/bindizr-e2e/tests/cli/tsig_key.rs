@@ -40,22 +40,21 @@ async fn tsig_key_create_list_get_delete() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_tsig_policy_add_list_remove() {
+async fn tsig_key_grant_grants_revoke() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-tsig.example");
 
     app.create_zone_cli(&zone_name, "3600").await;
 
-    app.run_cli_success(&["tsig-key", "create", "--name", "cli-policy-key"])
+    app.run_cli_success(&["tsig-key", "create", "--name", "cli-grant-key"])
         .await;
 
-    let added = app
+    let granted = app
         .run_cli_success(&[
-            "tsig-policy",
-            "add",
+            "tsig-key",
+            "grant",
+            "cli-grant-key",
             &zone_name,
-            "--key",
-            "cli-policy-key",
             "--pattern",
             "*.dyn",
             "--types",
@@ -64,32 +63,41 @@ async fn zone_tsig_policy_add_list_remove() {
             "json",
         ])
         .await;
-    let added: Value = serde_json::from_str(&added).expect("CLI did not return valid JSON");
-    assert_eq!(added["tsig_key"], "cli-policy-key");
-    assert_eq!(added["record_name_pattern"], "*.dyn");
-    let policy_id = added["id"]
+    let granted: Value = serde_json::from_str(&granted).expect("CLI did not return valid JSON");
+    assert_eq!(granted["tsig_key"], "cli-grant-key");
+    assert_eq!(granted["zone_name"], zone_name);
+    assert_eq!(granted["record_name_pattern"], "*.dyn");
+    let grant_id = granted["id"]
         .as_i64()
-        .expect("created policy did not contain an ID")
+        .expect("created grant did not contain an ID")
         .to_string();
 
-    let listed = app
-        .run_cli_success(&["tsig-policy", "list", &zone_name])
+    let by_key = app
+        .run_cli_success(&["tsig-key", "grants", "cli-grant-key"])
         .await;
-    assert!(listed.contains("cli-policy-key"));
-    assert!(listed.contains("*.dyn"));
-    assert!(listed.contains("A,TXT"));
+    assert!(by_key.contains(&zone_name), "{by_key}");
+    assert!(by_key.contains("*.dyn"), "{by_key}");
+    assert!(by_key.contains("A,TXT"), "{by_key}");
 
-    // The key is in use, so deleting it is refused with a clear error.
-    let delete_args = ["tsig-key", "delete", "cli-policy-key"];
+    let by_zone = app
+        .run_cli_success(&["tsig-key", "grants", "--zone", &zone_name])
+        .await;
+    assert!(by_zone.contains("cli-grant-key"), "{by_zone}");
+
+    // The key still holds a grant, so deleting it is refused with a clear error.
+    let delete_args = ["tsig-key", "delete", "cli-grant-key"];
     let refused = app.run_cli(&delete_args).await;
-    assert_cli_failure_contains(&delete_args, &refused, "referenced by 1 TSIG policy");
+    assert_cli_failure_contains(&delete_args, &refused, "still holds 1 grant");
 
-    let removed = app
-        .run_cli_success(&["tsig-policy", "remove", &zone_name, &policy_id])
+    let revoked = app
+        .run_cli_success(&["tsig-key", "revoke", "cli-grant-key", &grant_id])
         .await;
-    assert!(removed.contains("TSIG policy deleted successfully"));
+    assert!(
+        revoked.contains("TSIG grant revoked successfully"),
+        "{revoked}"
+    );
 
-    app.run_cli_success(&["tsig-key", "delete", "cli-policy-key"])
+    app.run_cli_success(&["tsig-key", "delete", "cli-grant-key"])
         .await;
 }
 

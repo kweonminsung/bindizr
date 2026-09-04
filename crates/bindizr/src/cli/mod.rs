@@ -11,8 +11,7 @@ use clap::{Parser, Subcommand};
 use crate::{
     cli::commands::{
         config::ConfigCommand, dnssec::DnssecCommand, dnssec_policy::DnssecPolicyCommand,
-        record::RecordCommand, token::TokenCommand, token_policy::TokenPolicyCommand,
-        tsig_key::TsigKeyCommand, tsig_policy::TsigPolicyCommand, zone::ZoneCommand,
+        record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
     },
     daemon,
 };
@@ -25,9 +24,8 @@ pub(crate) struct Args {
     pub(crate) command: Command,
 }
 
-/// Top-level CLI subcommands. Declaration order is `--help` order: each
-/// global object is followed by its per-zone counterpart (token /
-/// token-policy, tsig-key / tsig-policy, dnssec-policy / dnssec).
+/// Top-level CLI subcommands. Declaration order is `--help` order, and it
+/// keeps `dnssec-policy` beside the `dnssec` commands that sign under it.
 #[derive(Subcommand, Debug)]
 pub(crate) enum Command {
     /// Start bindizr on foreground
@@ -63,25 +61,15 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: RecordCommand,
     },
-    /// Manage API tokens
+    /// Manage API tokens and the zones each may change over HTTP
     Token {
         #[command(subcommand)]
         subcommand: TokenCommand,
     },
-    /// Manage which API tokens may change what in a zone
-    TokenPolicy {
-        #[command(subcommand)]
-        subcommand: TokenPolicyCommand,
-    },
-    /// Manage TSIG keys for nsupdate authentication
+    /// Manage TSIG keys and the zones each may update with nsupdate
     TsigKey {
         #[command(subcommand)]
         subcommand: TsigKeyCommand,
-    },
-    /// Manage which TSIG keys may nsupdate what in a zone
-    TsigPolicy {
-        #[command(subcommand)]
-        subcommand: TsigPolicyCommand,
     },
     /// Manage DNSSEC policies, the signing-parameter bundles zones sign under
     DnssecPolicy {
@@ -111,13 +99,7 @@ pub async fn execute() {
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
         Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
-        Command::TokenPolicy { subcommand } => {
-            commands::token_policy::handle_command(subcommand).await
-        }
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
-        Command::TsigPolicy { subcommand } => {
-            commands::tsig_policy::handle_command(subcommand).await
-        }
         Command::DnssecPolicy { subcommand } => {
             commands::dnssec_policy::handle_command(subcommand).await
         }

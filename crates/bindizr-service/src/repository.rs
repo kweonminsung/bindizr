@@ -8,20 +8,19 @@ use crate::{
         error::DatabaseError,
         get_api_token_repository, get_catalog_zone_state_repository, get_dnssec_key_repository,
         get_dnssec_policy_repository, get_dnssec_record_repository, get_record_repository,
-        get_tsig_key_repository, get_zone_change_repository, get_zone_repository,
-        get_zone_token_policy_repository, get_zone_tsig_policy_repository,
-        get_zone_version_repository,
+        get_token_grant_repository, get_tsig_grant_repository, get_tsig_key_repository,
+        get_zone_change_repository, get_zone_repository, get_zone_version_repository,
         model::{
             api_token::ApiToken,
             dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
             dnssec_policy::DnssecPolicy,
             dnssec_record::{DnssecRecord, DnssecRecordWithZone},
             record::{Record, RecordWithZone},
+            token_grant::TokenGrant,
+            tsig_grant::TsigGrant,
             tsig_key::TsigKey,
             zone::Zone,
             zone_change::ZoneChange,
-            zone_token_policy::ZoneTokenPolicy,
-            zone_tsig_policy::ZoneTsigPolicy,
             zone_version::ZoneVersion,
         },
         repository as db_repository,
@@ -838,7 +837,7 @@ impl RepositoryService {
             if e.is_foreign_key_violation() {
                 ServiceError::new(
                     ErrorCode::TsigKeyInUse,
-                    "TSIG key is still referenced by zone TSIG policies",
+                    "TSIG key is still referenced by zone TSIG grants",
                 )
             } else {
                 ServiceError::internal(format!("failed to delete TSIG key: {}", e))
@@ -846,11 +845,9 @@ impl RepositoryService {
         })
     }
 
-    pub(crate) async fn create_zone_tsig_policy(
-        policy: ZoneTsigPolicy,
-    ) -> Result<ZoneTsigPolicy, ServiceError> {
-        get_zone_tsig_policy_repository()
-            .create(policy)
+    pub(crate) async fn create_tsig_grant(grant: TsigGrant) -> Result<TsigGrant, ServiceError> {
+        get_tsig_grant_repository()
+            .create(grant)
             .await
             .map_err(|e| {
                 // The zone or key can be deleted between the service-level
@@ -858,62 +855,65 @@ impl RepositoryService {
                 if e.is_foreign_key_violation() {
                     ServiceError::new(ErrorCode::ZoneNotFound, "Zone or TSIG key no longer exists")
                 } else {
-                    ServiceError::internal(format!("failed to create TSIG policy: {}", e))
+                    ServiceError::internal(format!("failed to create TSIG grant: {}", e))
                 }
             })
     }
 
-    pub(crate) async fn get_zone_tsig_policy(
-        id: i32,
-    ) -> Result<Option<ZoneTsigPolicy>, ServiceError> {
-        get_zone_tsig_policy_repository()
+    pub(crate) async fn get_tsig_grant(id: i32) -> Result<Option<TsigGrant>, ServiceError> {
+        get_tsig_grant_repository()
             .get(id)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load TSIG policy: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG grant: {}", e)))
     }
 
-    pub(crate) async fn list_zone_tsig_policies(
+    pub(crate) async fn list_tsig_grants_by_zone_id(
         zone_id: i32,
-    ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
-        get_zone_tsig_policy_repository()
-            .list(zone_id)
+    ) -> Result<Vec<TsigGrant>, ServiceError> {
+        get_tsig_grant_repository()
+            .list_by_zone_id(zone_id)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG grants: {}", e)))
     }
 
-    pub(crate) async fn list_zone_tsig_policies_by_zone_id_and_key_id_tx(
+    pub(crate) async fn list_tsig_grants_by_zone_id_and_key_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         tsig_key_id: i32,
         lock_level: LockLevel,
-    ) -> Result<Vec<ZoneTsigPolicy>, ServiceError> {
-        get_zone_tsig_policy_repository()
+    ) -> Result<Vec<TsigGrant>, ServiceError> {
+        get_tsig_grant_repository()
             .list_by_zone_id_and_key_id_tx(tx, zone_id, tsig_key_id, lock_level)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load TSIG policies: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG grants: {}", e)))
     }
 
-    pub(crate) async fn count_zone_tsig_policies_by_key_id(
+    pub(crate) async fn list_tsig_grants_by_key_id(
         tsig_key_id: i32,
-    ) -> Result<u64, ServiceError> {
-        get_zone_tsig_policy_repository()
+    ) -> Result<Vec<TsigGrant>, ServiceError> {
+        get_tsig_grant_repository()
+            .list_by_key_id(tsig_key_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG grants: {}", e)))
+    }
+
+    pub(crate) async fn count_tsig_grants_by_key_id(tsig_key_id: i32) -> Result<u64, ServiceError> {
+        get_tsig_grant_repository()
             .count_by_key_id(tsig_key_id)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to count TSIG policies: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to count TSIG grants: {}", e)))
     }
 
-    pub(crate) async fn delete_zone_tsig_policy(id: i32) -> Result<(), ServiceError> {
-        get_zone_tsig_policy_repository()
+    pub(crate) async fn delete_tsig_grant(id: i32) -> Result<(), ServiceError> {
+        get_tsig_grant_repository()
             .delete(id)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to delete TSIG policy: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to delete TSIG grant: {}", e)))
     }
 
-    pub(crate) async fn create_zone_token_policy(
-        policy: ZoneTokenPolicy,
-    ) -> Result<ZoneTokenPolicy, ServiceError> {
-        get_zone_token_policy_repository()
-            .create(policy)
+    pub(crate) async fn create_token_grant(grant: TokenGrant) -> Result<TokenGrant, ServiceError> {
+        get_token_grant_repository()
+            .create(grant)
             .await
             .map_err(|e| {
                 // The zone or token can be deleted between the service-level
@@ -921,55 +921,53 @@ impl RepositoryService {
                 if e.is_foreign_key_violation() {
                     ServiceError::new(ErrorCode::ZoneNotFound, "Zone or token no longer exists")
                 } else {
-                    ServiceError::internal(format!("failed to create token policy: {}", e))
+                    ServiceError::internal(format!("failed to create token grant: {}", e))
                 }
             })
     }
 
-    pub(crate) async fn get_zone_token_policy(
-        id: i32,
-    ) -> Result<Option<ZoneTokenPolicy>, ServiceError> {
-        get_zone_token_policy_repository()
+    pub(crate) async fn get_token_grant(id: i32) -> Result<Option<TokenGrant>, ServiceError> {
+        get_token_grant_repository()
             .get(id)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load token policy: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load token grant: {}", e)))
     }
 
-    pub(crate) async fn list_zone_token_policies(
+    pub(crate) async fn list_token_grants_by_zone_id(
         zone_id: i32,
-    ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
-        get_zone_token_policy_repository()
-            .list(zone_id)
+    ) -> Result<Vec<TokenGrant>, ServiceError> {
+        get_token_grant_repository()
+            .list_by_zone_id(zone_id)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load token grants: {}", e)))
     }
 
-    pub(crate) async fn list_zone_token_policies_by_token_id(
+    pub(crate) async fn list_token_grants_by_token_id(
         api_token_id: i32,
-    ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
-        get_zone_token_policy_repository()
+    ) -> Result<Vec<TokenGrant>, ServiceError> {
+        get_token_grant_repository()
             .list_by_token_id(api_token_id)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load token grants: {}", e)))
     }
 
-    pub(crate) async fn list_zone_token_policies_by_zone_id_and_token_id_tx(
+    pub(crate) async fn list_token_grants_by_zone_id_and_token_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         api_token_id: i32,
         lock_level: LockLevel,
-    ) -> Result<Vec<ZoneTokenPolicy>, ServiceError> {
-        get_zone_token_policy_repository()
+    ) -> Result<Vec<TokenGrant>, ServiceError> {
+        get_token_grant_repository()
             .list_by_zone_id_and_token_id_tx(tx, zone_id, api_token_id, lock_level)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to load token policies: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to load token grants: {}", e)))
     }
 
-    pub(crate) async fn delete_zone_token_policy(id: i32) -> Result<(), ServiceError> {
-        get_zone_token_policy_repository()
+    pub(crate) async fn delete_token_grant(id: i32) -> Result<(), ServiceError> {
+        get_token_grant_repository()
             .delete(id)
             .await
-            .map_err(|e| ServiceError::internal(format!("failed to delete token policy: {}", e)))
+            .map_err(|e| ServiceError::internal(format!("failed to delete token grant: {}", e)))
     }
 
     pub(crate) async fn create_api_token(token: ApiToken) -> Result<ApiToken, ServiceError> {

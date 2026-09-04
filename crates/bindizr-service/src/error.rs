@@ -20,8 +20,8 @@ pub enum ErrorCode {
     TsigKeyNotFound,
     TsigKeyConflict,
     TsigKeyInUse,
-    TsigPolicyNotFound,
-    TokenPolicyNotFound,
+    TsigGrantNotFound,
+    TokenGrantNotFound,
     DnssecAlreadyEnabled,
     DnssecNotEnabled,
     DnssecRolloverInProgress,
@@ -55,8 +55,8 @@ impl ErrorCode {
             ErrorCode::TsigKeyNotFound => "TSIG_KEY_NOT_FOUND",
             ErrorCode::TsigKeyConflict => "TSIG_KEY_CONFLICT",
             ErrorCode::TsigKeyInUse => "TSIG_KEY_IN_USE",
-            ErrorCode::TsigPolicyNotFound => "TSIG_POLICY_NOT_FOUND",
-            ErrorCode::TokenPolicyNotFound => "TOKEN_POLICY_NOT_FOUND",
+            ErrorCode::TsigGrantNotFound => "TSIG_GRANT_NOT_FOUND",
+            ErrorCode::TokenGrantNotFound => "TOKEN_GRANT_NOT_FOUND",
             ErrorCode::DnssecAlreadyEnabled => "DNSSEC_ALREADY_ENABLED",
             ErrorCode::DnssecNotEnabled => "DNSSEC_NOT_ENABLED",
             ErrorCode::DnssecRolloverInProgress => "DNSSEC_ROLLOVER_IN_PROGRESS",
@@ -92,8 +92,8 @@ impl ErrorCode {
             "TSIG_KEY_NOT_FOUND" => ErrorCode::TsigKeyNotFound,
             "TSIG_KEY_CONFLICT" => ErrorCode::TsigKeyConflict,
             "TSIG_KEY_IN_USE" => ErrorCode::TsigKeyInUse,
-            "TSIG_POLICY_NOT_FOUND" => ErrorCode::TsigPolicyNotFound,
-            "TOKEN_POLICY_NOT_FOUND" => ErrorCode::TokenPolicyNotFound,
+            "TSIG_GRANT_NOT_FOUND" => ErrorCode::TsigGrantNotFound,
+            "TOKEN_GRANT_NOT_FOUND" => ErrorCode::TokenGrantNotFound,
             "DNSSEC_ALREADY_ENABLED" => ErrorCode::DnssecAlreadyEnabled,
             "DNSSEC_NOT_ENABLED" => ErrorCode::DnssecNotEnabled,
             "DNSSEC_ROLLOVER_IN_PROGRESS" => ErrorCode::DnssecRolloverInProgress,
@@ -125,8 +125,8 @@ impl ErrorCode {
             | ErrorCode::TokenNotFound
             | ErrorCode::VersionNotFound
             | ErrorCode::TsigKeyNotFound
-            | ErrorCode::TsigPolicyNotFound
-            | ErrorCode::TokenPolicyNotFound
+            | ErrorCode::TsigGrantNotFound
+            | ErrorCode::TokenGrantNotFound
             | ErrorCode::DnssecPolicyNotFound => 404,
             ErrorCode::ZoneConflict
             | ErrorCode::RecordConflict
@@ -253,29 +253,29 @@ impl ServiceError {
         )
     }
 
-    pub(crate) fn tsig_key_in_use(name: impl Into<String>, policy_count: u64) -> Self {
+    pub(crate) fn tsig_key_in_use(name: impl Into<String>, grant_count: u64) -> Self {
         Self::new(
             ErrorCode::TsigKeyInUse,
             format!(
-                "TSIG key '{}' is referenced by {} TSIG polic{}",
+                "TSIG key '{}' still holds {} grant{}",
                 name.into(),
-                policy_count,
-                if policy_count == 1 { "y" } else { "ies" }
+                grant_count,
+                if grant_count == 1 { "" } else { "s" }
             ),
         )
     }
 
-    pub(crate) fn tsig_policy_not_found(id: i32) -> Self {
+    pub(crate) fn tsig_grant_not_found(id: i32) -> Self {
         Self::new(
-            ErrorCode::TsigPolicyNotFound,
-            format!("TSIG policy with id '{}' not found", id),
+            ErrorCode::TsigGrantNotFound,
+            format!("TSIG grant with id '{}' not found", id),
         )
     }
 
-    pub(crate) fn token_policy_not_found(id: i32) -> Self {
+    pub(crate) fn token_grant_not_found(id: i32) -> Self {
         Self::new(
-            ErrorCode::TokenPolicyNotFound,
-            format!("Token policy with id '{}' not found", id),
+            ErrorCode::TokenGrantNotFound,
+            format!("Token grant with id '{}' not found", id),
         )
     }
 

@@ -12,7 +12,7 @@ use utoipa::OpenApi;
 use super::{
     dnssec::DnssecApi, dnssec_policy::DnssecPolicyApi, error::ApiError,
     external_dns::ExternalDnsApi, notify::NotifyApi, openapi::ApiDoc, record::RecordApi,
-    token_policy::TokenPolicyApi, tsig_key::TsigKeyApi, zone::ZoneApi,
+    token_grant::TokenGrantApi, tsig_key::TsigKeyApi, zone::ZoneApi,
 };
 
 pub(crate) struct ApiRouter;
@@ -27,7 +27,7 @@ impl ApiRouter {
             .merge(RecordApi::routes().await)
             .merge(NotifyApi::routes().await)
             .merge(TsigKeyApi::routes().await)
-            .merge(TokenPolicyApi::routes().await)
+            .merge(TokenGrantApi::routes().await)
             .merge(DnssecApi::routes().await)
             .merge(DnssecPolicyApi::routes().await)
             .route("/", routing::get(ApiRouter::get_home));

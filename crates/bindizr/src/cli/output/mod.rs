@@ -9,6 +9,6 @@ pub(crate) use format::{
 };
 pub(crate) use table::{
     DnssecKeyRow, DnssecPolicyRow, ImportSummaryRow, RecordRow, RollbackSummaryRow,
-    SecondaryStatusRow, TokenRow, TsigKeyRow, VersionRecordRow, VersionRow, ZoneRow,
-    ZoneTokenPolicyRow, ZoneTsigPolicyRow,
+    SecondaryStatusRow, TokenGrantRow, TokenRow, TsigGrantRow, TsigKeyRow, VersionRecordRow,
+    VersionRow, ZoneRow,
 };

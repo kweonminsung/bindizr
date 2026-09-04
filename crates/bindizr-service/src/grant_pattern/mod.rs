@@ -1,5 +1,5 @@
-//! Record-name-pattern and record-type grant matching, shared by zone TSIG
-//! policies (nsupdate) and zone token policies (HTTP API).
+//! Record-name-pattern and record-type matching, shared by TSIG grants
+//! (nsupdate) and token grants (HTTP API).
 
 use bindizr_core::dns::name::{OwnerName, decode_name_labels, join_labels};
 
@@ -8,7 +8,7 @@ use crate::{error::ServiceError, model::record::RecordType};
 /// Pattern/type values granting unrestricted rights.
 const MATCH_ANY: &str = "*";
 
-/// Match a relative owner name (`@`, `www`, `a.b`, ...) against a policy
+/// Match a relative owner name (`@`, `www`, `a.b`, ...) against a grant
 /// pattern: `*` (any name), `@` (apex only), `*.sub` (sub and everything under
 /// it), or an exact relative name.
 pub(crate) fn pattern_matches_name(pattern: &str, name: &OwnerName) -> bool {
@@ -35,7 +35,7 @@ pub(crate) fn types_match(types: &str, record_type: Option<&RecordType>) -> bool
 
     match record_type {
         // A whole-name delete touches every type at the name, so a type-limited
-        // policy cannot cover it.
+        // grant cannot cover it.
         None => false,
         Some(record_type) => types.split(',').any(|t| t == record_type.as_str()),
     }

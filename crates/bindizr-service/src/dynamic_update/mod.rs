@@ -25,7 +25,8 @@ use crate::{
     record::{AddOutcome, RecordService, validate_delete_constraints},
     repository::RepositoryService,
     serial::generate_serial,
-    zone::{ZoneService, tsig_policy},
+    tsig_key::grant::authorize_update,
+    zone::ZoneService,
 };
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
@@ -204,7 +205,7 @@ impl DynamicUpdateService {
 }
 
 /// Authorize an authenticated request: global keys may update anything, other
-/// keys need a zone policy matching every update RR. `key` is `None` for an
+/// keys need a grant matching every update RR. `key` is `None` for an
 /// accepted unsigned request, which skips authorization entirely.
 async fn authorize_key(
     tx: &mut RepositoryTx<'_>,
@@ -220,7 +221,7 @@ async fn authorize_key(
 
     // Share-lock the grants so a concurrent revocation waits for this
     // transaction instead of racing it.
-    let policies = RepositoryService::list_zone_tsig_policies_by_zone_id_and_key_id_tx(
+    let grants = RepositoryService::list_tsig_grants_by_zone_id_and_key_id_tx(
         tx,
         zone.id,
         key.id,
@@ -228,7 +229,7 @@ async fn authorize_key(
     )
     .await?;
 
-    if policies.is_empty() {
+    if grants.is_empty() {
         return Err(DynamicUpdateError::Refused(format!(
             "TSIG key '{}' is not authorized for zone '{}'",
             key.name, zone.name
@@ -237,7 +238,7 @@ async fn authorize_key(
 
     for op in updates {
         let owner = owner_in_zone(op.name(), &zone.name)?;
-        if !tsig_policy::authorize_update(&policies, &owner, op.record_type()) {
+        if !authorize_update(&grants, &owner, op.record_type()) {
             return Err(DynamicUpdateError::Refused(format!(
                 "TSIG key '{}' is not authorized to update '{}' ({}) in zone '{}'",
                 key.name,
