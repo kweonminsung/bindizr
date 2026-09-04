@@ -1,5 +1,5 @@
 //! When a committed change is propagated: the NOTIFY entry points and the
-//! `notify_after_update` gate. The batching worker lives in [`queue`].
+//! `notify_after_update` gate. The batching worker lives in `queue`.
 
 mod queue;
 

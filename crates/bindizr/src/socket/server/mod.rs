@@ -73,24 +73,22 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::DnssecPolicyDelete => {
                     dnssec_policy::delete_dnssec_policy(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneTsigPolicyAdd => {
-                    tsig_key::add_zone_tsig_policy(&cmd.data).await
+                DaemonCommandKind::TsigGrantCreate => tsig_key::create_tsig_grant(&cmd.data).await,
+                DaemonCommandKind::TsigGrantListByKey => {
+                    tsig_key::list_tsig_grants_by_key(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneTsigPolicyList => {
-                    tsig_key::list_zone_tsig_policies(&cmd.data).await
+                DaemonCommandKind::TsigGrantListByZone => {
+                    tsig_key::list_tsig_grants_by_zone(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneTsigPolicyRemove => {
-                    tsig_key::remove_zone_tsig_policy(&cmd.data).await
+                DaemonCommandKind::TsigGrantDelete => tsig_key::delete_tsig_grant(&cmd.data).await,
+                DaemonCommandKind::TokenGrantCreate => token::create_token_grant(&cmd.data).await,
+                DaemonCommandKind::TokenGrantListByToken => {
+                    token::list_token_grants_by_token(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneTokenPolicyAdd => {
-                    token::add_zone_token_policy(&cmd.data).await
+                DaemonCommandKind::TokenGrantListByZone => {
+                    token::list_token_grants_by_zone(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneTokenPolicyList => {
-                    token::list_zone_token_policies(&cmd.data).await
-                }
-                DaemonCommandKind::ZoneTokenPolicyRemove => {
-                    token::remove_zone_token_policy(&cmd.data).await
-                }
+                DaemonCommandKind::TokenGrantDelete => token::delete_token_grant(&cmd.data).await,
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,

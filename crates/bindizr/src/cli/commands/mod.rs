@@ -7,9 +7,7 @@ pub(crate) mod restart;
 pub(crate) mod status;
 pub(crate) mod stop;
 pub(crate) mod token;
-pub(crate) mod token_policy;
 pub(crate) mod tsig_key;
-pub(crate) mod tsig_policy;
 pub(crate) mod zone;
 
 use std::time::Duration;

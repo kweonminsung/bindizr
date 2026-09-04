@@ -172,7 +172,7 @@ impl TestApp {
     }
 
     /// Create a scoped API token and return its `(name, plaintext token)`;
-    /// grant zones with `token-policy add`.
+    /// grant zones with `token grant`.
     pub(crate) async fn create_scoped_api_token(&self) -> (String, String) {
         let name = format!("{}-scoped", self.namespace);
         self.create_token_with(&["token", "create", "--name", &name])

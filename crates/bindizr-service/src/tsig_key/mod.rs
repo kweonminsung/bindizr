@@ -27,7 +27,7 @@ impl TsigKeyService {
         secret: Option<&str>,
         is_global: bool,
     ) -> Result<TsigKey, ServiceError> {
-        caller.require_global("manage TSIG keys and policies")?;
+        caller.require_global("manage TSIG keys and grants")?;
 
         let name = normalize_key_name(name)?;
         let algorithm = parse_algorithm(algorithm)?;
@@ -56,7 +56,7 @@ impl TsigKeyService {
 
     /// List all TSIG keys with their secrets cleared.
     pub async fn list(caller: &Caller) -> Result<Vec<TsigKey>, ServiceError> {
-        caller.require_global("manage TSIG keys and policies")?;
+        caller.require_global("manage TSIG keys and grants")?;
 
         let mut keys = RepositoryService::list_tsig_keys().await?;
         for key in &mut keys {
@@ -67,7 +67,7 @@ impl TsigKeyService {
 
     /// Fetch one TSIG key by name, including its secret.
     pub async fn get(caller: &Caller, name: &str) -> Result<TsigKey, ServiceError> {
-        caller.require_global("manage TSIG keys and policies")?;
+        caller.require_global("manage TSIG keys and grants")?;
 
         Self::lookup_by_name(name).await
     }
@@ -91,15 +91,15 @@ impl TsigKeyService {
         RepositoryService::get_tsig_key_by_name(&name).await
     }
 
-    /// Delete a TSIG key by name; refused while any zone TSIG policy uses it.
+    /// Delete a TSIG key by name; refused while it still holds grants.
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
-        caller.require_global("manage TSIG keys and policies")?;
+        caller.require_global("manage TSIG keys and grants")?;
 
         let key = Self::lookup_by_name(name).await?;
 
-        let policy_count = RepositoryService::count_zone_tsig_policies_by_key_id(key.id).await?;
-        if policy_count > 0 {
-            return Err(ServiceError::tsig_key_in_use(&key.name, policy_count));
+        let grant_count = RepositoryService::count_tsig_grants_by_key_id(key.id).await?;
+        if grant_count > 0 {
+            return Err(ServiceError::tsig_key_in_use(&key.name, grant_count));
         }
 
         RepositoryService::delete_tsig_key(key.id).await
@@ -155,6 +155,8 @@ fn generate_secret() -> String {
     let bytes: [u8; GENERATED_SECRET_LEN] = rand::rng().random();
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
+
+pub mod grant;
 
 #[cfg(test)]
 mod tests;

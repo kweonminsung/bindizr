@@ -8,8 +8,6 @@ mod get;
 pub(crate) mod history;
 mod notify;
 mod status;
-pub mod token_policy;
-pub mod tsig_policy;
 mod update;
 pub(crate) mod validation;
 mod version;

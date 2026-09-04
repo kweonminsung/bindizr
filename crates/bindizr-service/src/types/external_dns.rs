@@ -60,7 +60,7 @@ pub struct ExternalDnsChangesResponse {
     pub records_deleted: u32,
 }
 
-/// Zones the ExternalDNS caller may manage under the current policy.
+/// Zones the ExternalDNS caller may manage under its grants.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ExternalDnsZonesResponse {
     #[schema(example = json!(["example.com"]))]

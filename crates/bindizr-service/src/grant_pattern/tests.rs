@@ -92,7 +92,7 @@ fn a_subtree_grant_does_not_reach_a_label_that_merely_spells_it() {
     ));
 }
 
-// Canonicalizing `\042` to `*` would widen a policy meant for the wildcard
+// Canonicalizing `\042` to `*` would widen a grant meant for the wildcard
 // owner into the match-all or subtree grant.
 #[test]
 fn rejects_a_wildcard_label_however_it_is_spelled() {

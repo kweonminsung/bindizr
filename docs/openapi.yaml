@@ -395,7 +395,7 @@ paths:
       tags:
       - ExternalDNS
       summary: List the zones ExternalDNS may manage
-      description: 'Zones the calling token may manage: every zone for a global token, otherwise the zones granted through token policies.'
+      description: 'Zones the calling token may manage: every zone for a global token, otherwise the zones its grants cover.'
       operationId: get_external_dns_zones
       responses:
         '200':
@@ -595,7 +595,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The token's policies do not allow this record write
+          description: The token's grants do not allow this record write
           content:
             application/json:
               schema:
@@ -690,7 +690,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The token's policies do not allow this record write
+          description: The token's grants do not allow this record write
           content:
             application/json:
               schema:
@@ -740,13 +740,170 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The token's policies do not allow this record write
+          description: The token's grants do not allow this record write
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /tokens/{name}/grants:
+    get:
+      tags:
+      - Token
+      summary: List an API token's grants
+      operationId: get_token_grants
+      parameters:
+      - name: name
+        in: path
+        description: The name of the API token.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The token's grants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenGrantListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Token
+      summary: Grant an API token record rights in a zone
+      description: 'Grants the token record-plane rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global tokens are rejected: they already cover every zone and never carry grants.'
+      operationId: create_token_grant
+      parameters:
+      - name: name
+        in: path
+        description: The name of the API token.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTokenGrantRequest'
+        required: true
+      responses:
+        '201':
+          description: Token grant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenGrantResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Token or zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /tokens/{name}/grants/{id}:
+    delete:
+      tags:
+      - Token
+      summary: Revoke one of an API token's grants
+      operationId: delete_token_grant
+      parameters:
+      - name: name
+        in: path
+        description: The name of the API token.
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        description: The id of the grant to revoke.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: Token grant revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Token or grant not found
           content:
             application/json:
               schema:
@@ -793,7 +950,7 @@ paths:
       tags:
       - TSIG
       summary: Create a TSIG key
-      description: Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` makes the key able to update every zone (all names, all types) without any policy — effectively write access to all DNS data, so use it sparingly. The response includes the secret.
+      description: Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` makes the key able to update every zone (all names, all types) without any grant — effectively write access to all DNS data, so use it sparingly. The response includes the secret.
       operationId: create_tsig_key
       requestBody:
         content:
@@ -893,7 +1050,7 @@ paths:
       tags:
       - TSIG
       summary: Delete a TSIG key
-      description: Deletes a TSIG key. Refused while any zone TSIG policy still references it.
+      description: Deletes a TSIG key. Refused while it still holds grants.
       operationId: delete_tsig_key
       parameters:
       - name: name
@@ -928,7 +1085,164 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: TSIG key is still referenced by zone TSIG policies
+          description: TSIG key still holds grants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /tsig-keys/{name}/grants:
+    get:
+      tags:
+      - TSIG
+      summary: List a TSIG key's grants
+      operationId: get_tsig_grants
+      parameters:
+      - name: name
+        in: path
+        description: The name of the TSIG key.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The key's grants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TsigGrantListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: TSIG key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - TSIG
+      summary: Grant a TSIG key nsupdate rights in a zone
+      description: 'Grants the key nsupdate rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global keys are rejected: they already cover every zone and never carry grants.'
+      operationId: create_tsig_grant
+      parameters:
+      - name: name
+        in: path
+        description: The name of the TSIG key.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTsigGrantRequest'
+        required: true
+      responses:
+        '201':
+          description: TSIG grant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TsigGrantResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: TSIG key or zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /tsig-keys/{name}/grants/{id}:
+    delete:
+      tags:
+      - TSIG
+      summary: Revoke one of a TSIG key's grants
+      operationId: delete_tsig_grant
+      parameters:
+      - name: name
+        in: path
+        description: The name of the TSIG key.
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        description: The id of the grant to revoke.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: TSIG grant revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: TSIG key or grant not found
           content:
             application/json:
               schema:
@@ -2074,12 +2388,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/token-policies:
+  /zones/{name}/token-grants:
     get:
       tags:
       - Token
-      summary: List a zone's API token policies
-      operationId: get_zone_token_policies
+      summary: List the API token grants that apply to a zone
+      operationId: get_zone_token_grants
       parameters:
       - name: name
         in: path
@@ -2089,11 +2403,11 @@ paths:
           type: string
       responses:
         '200':
-          description: The zone's token policies
+          description: Grants covering the zone
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneTokenPolicyListResponse'
+                $ref: '#/components/schemas/TokenGrantListResponse'
         '401':
           description: Unauthorized
           content:
@@ -2118,126 +2432,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-    post:
-      tags:
-      - Token
-      summary: Grant an API token record rights in a zone
-      description: 'Creates a token policy granting the token record-plane rights in the zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global tokens are rejected: they already cover every zone and never carry policies.'
-      operationId: create_zone_token_policy
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateZoneTokenPolicyRequest'
-        required: true
-      responses:
-        '201':
-          description: Token policy created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ZoneTokenPolicyResponse'
-        '400':
-          description: Bad request, invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone or token not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/token-policies/{id}:
-    delete:
-      tags:
-      - Token
-      summary: Remove a token policy from a zone
-      operationId: delete_zone_token_policy
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      - name: id
-        in: path
-        description: The id of the token policy to remove.
-        required: true
-        schema:
-          type: integer
-          format: int32
-      responses:
-        '200':
-          description: Token policy deleted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone or policy not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/tsig-policies:
+  /zones/{name}/tsig-grants:
     get:
       tags:
       - TSIG
-      summary: List a zone's TSIG policies
-      description: 'Lists every TSIG policy of a zone: which keys may update which record names and types via nsupdate.'
-      operationId: get_zone_tsig_policies
+      summary: List the TSIG grants that apply to a zone
+      operationId: get_zone_tsig_grants
       parameters:
       - name: name
         in: path
@@ -2247,11 +2447,11 @@ paths:
           type: string
       responses:
         '200':
-          description: The zone's TSIG policies
+          description: Grants covering the zone
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneTsigPolicyListResponse'
+                $ref: '#/components/schemas/TsigGrantListResponse'
         '401':
           description: Unauthorized
           content:
@@ -2266,119 +2466,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    post:
-      tags:
-      - TSIG
-      summary: Grant a TSIG key nsupdate rights in a zone
-      description: 'Creates a TSIG policy granting the named key nsupdate rights in the zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global keys are rejected: they already cover every zone and never carry policies.'
-      operationId: create_zone_tsig_policy
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateZoneTsigPolicyRequest'
-        required: true
-      responses:
-        '201':
-          description: TSIG policy created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ZoneTsigPolicyResponse'
-        '400':
-          description: Bad request, invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone or TSIG key not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/tsig-policies/{id}:
-    delete:
-      tags:
-      - TSIG
-      summary: Remove a TSIG policy from a zone
-      operationId: delete_zone_tsig_policy
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      - name: id
-        in: path
-        description: The id of the TSIG policy.
-        required: true
-        schema:
-          type: integer
-          format: int32
-      responses:
-        '200':
-          description: TSIG policy deleted successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone or TSIG policy not found
           content:
             application/json:
               schema:
@@ -2595,7 +2682,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The token's policies do not allow this record write
+          description: The token's grants do not allow this record write
           content:
             application/json:
               schema:
@@ -2775,6 +2862,54 @@ components:
         zone_name:
           type: string
           example: example.com
+    CreateTokenGrantRequest:
+      type: object
+      description: Request body for granting an API token record rights in a zone.
+      required:
+      - zone_name
+      properties:
+        record_name_pattern:
+          type:
+          - string
+          - 'null'
+          description: |-
+            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
+            Defaults to `*`.
+          example: '*.dyn'
+        record_types:
+          type:
+          - string
+          - 'null'
+          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
+          example: A,AAAA,TXT
+        zone_name:
+          type: string
+          description: Name of an existing zone.
+          example: example.com
+    CreateTsigGrantRequest:
+      type: object
+      description: Request body for granting a TSIG key nsupdate rights in a zone.
+      required:
+      - zone_name
+      properties:
+        record_name_pattern:
+          type:
+          - string
+          - 'null'
+          description: |-
+            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
+            Defaults to `*`.
+          example: '*.dyn'
+        record_types:
+          type:
+          - string
+          - 'null'
+          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
+          example: A,AAAA,TXT
+        zone_name:
+          type: string
+          description: Name of an existing zone.
+          example: example.com
     CreateTsigKeyRequest:
       type: object
       description: Request body for creating a TSIG key. Omitting `secret` generates one.
@@ -2791,7 +2926,7 @@ components:
           type: boolean
           description: |-
             Make the key global: it may update every zone (all names, all types)
-            without any policy. Fixed at creation.
+            without any grant. Fixed at creation.
           example: false
         name:
           type: string
@@ -2855,54 +2990,6 @@ components:
           format: int32
           description: Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
           example: 42
-    CreateZoneTokenPolicyRequest:
-      type: object
-      description: Request body for granting an API token record rights in a zone.
-      required:
-      - api_token
-      properties:
-        api_token:
-          type: string
-          description: Name of an existing non-global API token.
-          example: external-dns
-        record_name_pattern:
-          type:
-          - string
-          - 'null'
-          description: |-
-            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
-            Defaults to `*`.
-          example: '*.dyn'
-        record_types:
-          type:
-          - string
-          - 'null'
-          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
-          example: A,AAAA,TXT
-    CreateZoneTsigPolicyRequest:
-      type: object
-      description: Request body for granting a TSIG key nsupdate rights in a zone.
-      required:
-      - tsig_key
-      properties:
-        record_name_pattern:
-          type:
-          - string
-          - 'null'
-          description: |-
-            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
-            Defaults to `*`.
-          example: '*.dyn'
-        record_types:
-          type:
-          - string
-          - 'null'
-          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
-          example: A,AAAA,TXT
-        tsig_key:
-          type: string
-          description: Name of an existing TSIG key.
-          example: update-key
     DnssecDsInfo:
       type: object
       description: A key's DS form for parent-zone registration.
@@ -3181,7 +3268,7 @@ components:
           $ref: '#/components/schemas/ExternalDnsRrset'
     ExternalDnsZonesResponse:
       type: object
-      description: Zones the ExternalDNS caller may manage under the current policy.
+      description: Zones the ExternalDNS caller may manage under its grants.
       required:
       - zones
       properties:
@@ -3345,6 +3432,66 @@ components:
           - string
           - 'null'
           example: example.com
+    GetTokenGrantResponse:
+      type: object
+      description: API representation of a token grant.
+      required:
+      - id
+      - api_token
+      - zone_name
+      - record_name_pattern
+      - record_types
+      - created_at
+      properties:
+        api_token:
+          type: string
+          example: external-dns
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: integer
+          format: int32
+          example: 1
+        record_name_pattern:
+          type: string
+          example: '*.dyn'
+        record_types:
+          type: string
+          example: A,AAAA,TXT
+        zone_name:
+          type: string
+          example: example.com
+    GetTsigGrantResponse:
+      type: object
+      description: API representation of a TSIG grant.
+      required:
+      - id
+      - tsig_key
+      - zone_name
+      - record_name_pattern
+      - record_types
+      - created_at
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: integer
+          format: int32
+          example: 1
+        record_name_pattern:
+          type: string
+          example: '*.dyn'
+        record_types:
+          type: string
+          example: A,AAAA,TXT
+        tsig_key:
+          type: string
+          example: update-key
+        zone_name:
+          type: string
+          example: example.com
     GetTsigKeyResponse:
       type: object
       description: |-
@@ -3365,7 +3512,7 @@ components:
           format: date-time
         global:
           type: boolean
-          description: Whether the key may update every zone without any policy.
+          description: Whether the key may update every zone without any grant.
           example: false
         id:
           type: integer
@@ -3431,58 +3578,6 @@ components:
           type: integer
           format: int32
           example: 42
-    GetZoneTokenPolicyResponse:
-      type: object
-      description: API representation of a zone token policy.
-      required:
-      - id
-      - api_token
-      - record_name_pattern
-      - record_types
-      - created_at
-      properties:
-        api_token:
-          type: string
-          example: external-dns
-        created_at:
-          type: string
-          format: date-time
-        id:
-          type: integer
-          format: int32
-          example: 1
-        record_name_pattern:
-          type: string
-          example: '*.dyn'
-        record_types:
-          type: string
-          example: A,AAAA,TXT
-    GetZoneTsigPolicyResponse:
-      type: object
-      description: API representation of a zone TSIG policy.
-      required:
-      - id
-      - tsig_key
-      - record_name_pattern
-      - record_types
-      - created_at
-      properties:
-        created_at:
-          type: string
-          format: date-time
-        id:
-          type: integer
-          format: int32
-          example: 1
-        record_name_pattern:
-          type: string
-          example: '*.dyn'
-        record_types:
-          type: string
-          example: A,AAAA,TXT
-        tsig_key:
-          type: string
-          example: update-key
     HealthResponse:
       type: object
       description: Health probe response.
@@ -4060,6 +4155,42 @@ components:
             Name of an existing DNSSEC policy with the zone's denial mode and key
             layout; a different algorithm starts an algorithm rollover.
           example: strict
+    TokenGrantListResponse:
+      type: object
+      description: Grants of one token, or every grant that applies to one zone.
+      required:
+      - token_grants
+      properties:
+        token_grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetTokenGrantResponse'
+    TokenGrantResponse:
+      type: object
+      description: A single token grant wrapped in a response envelope.
+      required:
+      - token_grant
+      properties:
+        token_grant:
+          $ref: '#/components/schemas/GetTokenGrantResponse'
+    TsigGrantListResponse:
+      type: object
+      description: Grants of one key, or every grant that applies to one zone.
+      required:
+      - tsig_grants
+      properties:
+        tsig_grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetTsigGrantResponse'
+    TsigGrantResponse:
+      type: object
+      description: A single TSIG grant wrapped in a response envelope.
+      required:
+      - tsig_grant
+      properties:
+        tsig_grant:
+          $ref: '#/components/schemas/GetTsigGrantResponse'
     TsigKeyListResponse:
       type: object
       description: List of TSIG keys (secrets omitted).
@@ -4221,42 +4352,6 @@ components:
         zone:
           type: string
           example: example.com
-    ZoneTokenPolicyListResponse:
-      type: object
-      description: List of a zone's token policies.
-      required:
-      - token_policies
-      properties:
-        token_policies:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetZoneTokenPolicyResponse'
-    ZoneTokenPolicyResponse:
-      type: object
-      description: A single zone token policy wrapped in a response envelope.
-      required:
-      - token_policy
-      properties:
-        token_policy:
-          $ref: '#/components/schemas/GetZoneTokenPolicyResponse'
-    ZoneTsigPolicyListResponse:
-      type: object
-      description: List of a zone's TSIG policies.
-      required:
-      - tsig_policies
-      properties:
-        tsig_policies:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetZoneTsigPolicyResponse'
-    ZoneTsigPolicyResponse:
-      type: object
-      description: A single zone TSIG policy wrapped in a response envelope.
-      required:
-      - tsig_policy
-      properties:
-        tsig_policy:
-          $ref: '#/components/schemas/GetZoneTsigPolicyResponse'
     ZoneVersionResponse:
       type: object
       description: |-
@@ -4322,9 +4417,9 @@ tags:
 - name: Notify
   description: Send DNS NOTIFY messages to secondary servers.
 - name: TSIG
-  description: Manage TSIG keys and per-zone TSIG policies for nsupdate authentication.
+  description: Manage TSIG keys and the zone grants each holds for nsupdate.
 - name: Token
-  description: 'Per-zone API token policies: record-plane grants for scoped tokens.'
+  description: The zone grants a scoped API token holds over the record plane.
 - name: DNSSEC
   description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone, key rollover, and re-signing.'
 - name: ExternalDNS

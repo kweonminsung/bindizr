@@ -114,7 +114,7 @@ pub(crate) async fn get_record(
             (status = 201, description = "DNS record created successfully", body = RecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "The token's policies do not allow this record write", body = ErrorResponse),
+            (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -145,7 +145,7 @@ pub(crate) async fn create_record(
             (status = 200, description = "DNS record updated successfully", body = RecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "The token's policies do not allow this record write", body = ErrorResponse),
+            (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -176,7 +176,7 @@ pub(crate) async fn update_record(
         responses(
             (status = 200, description = "DNS record deleted successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "The token's policies do not allow this record write", body = ErrorResponse),
+            (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -209,7 +209,7 @@ pub(crate) async fn delete_record(
             (status = 200, description = "Dry run validated successfully, nothing applied", body = BulkRecordsResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "The token's policies do not allow this record write", body = ErrorResponse),
+            (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)

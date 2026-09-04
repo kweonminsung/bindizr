@@ -57,14 +57,8 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     let ungranted_record_id = body["record"]["id"].as_i64().unwrap();
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&[
-        "token-policy",
-        "add",
-        &granted_zone,
-        "--token",
-        &scoped_name,
-    ])
-    .await;
+    app.run_cli_success(&["token", "grant", &scoped_name, &granted_zone])
+        .await;
 
     app.set_auth_token(scoped_token);
 
@@ -155,12 +149,12 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    // So does policy management (no self-escalation).
+    // So does grant management (no self-escalation).
     let (status, _) = app
         .request(
             Method::POST,
-            &format!("/zones/{granted_zone}/token-policies"),
-            Some(json!({ "api_token": scoped_name })),
+            &format!("/tokens/{scoped_name}/grants"),
+            Some(json!({ "zone_name": granted_zone })),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -184,7 +178,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn token_policies_enforce_name_patterns_and_types() {
+async fn token_grants_enforce_name_patterns_and_types() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         require_authentication: true,
         ..Default::default()
@@ -198,11 +192,10 @@ async fn token_policies_enforce_name_patterns_and_types() {
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(&[
-        "token-policy",
-        "add",
-        &zone_name,
-        "--token",
+        "token",
+        "grant",
         &scoped_name,
+        &zone_name,
         "--pattern",
         "*.dyn",
         "--types",
@@ -249,7 +242,7 @@ async fn token_policies_enforce_name_patterns_and_types() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn scoped_token_without_policies_sees_nothing() {
+async fn scoped_token_without_grants_sees_nothing() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         require_authentication: true,
         ..Default::default()
@@ -364,7 +357,7 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn global_token_policy_management_over_http() {
+async fn global_token_grant_management_over_http() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         require_authentication: true,
         ..Default::default()
@@ -380,51 +373,65 @@ async fn global_token_policy_management_over_http() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/token-policies"),
-            Some(json!({ "api_token": scoped_name, "record_types": "A,AAAA" })),
+            &format!("/tokens/{scoped_name}/grants"),
+            Some(json!({ "zone_name": zone_name, "record_types": "A,AAAA" })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let policy_id = body["token_policy"]["id"].as_i64().unwrap();
-    assert_eq!(body["token_policy"]["record_types"], "A,AAAA");
-    assert_eq!(body["token_policy"]["api_token"], json!(scoped_name));
+    let grant_id = body["token_grant"]["id"].as_i64().unwrap();
+    assert_eq!(body["token_grant"]["record_types"], "A,AAAA");
+    assert_eq!(body["token_grant"]["api_token"], json!(scoped_name));
+    assert_eq!(body["token_grant"]["zone_name"], json!(zone_name));
+
+    // The grant is visible from both ends: the token's list and the zone's.
+    let (status, body) = app
+        .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["token_grants"].as_array().unwrap().len(), 1);
 
     let (status, body) = app
         .request(
             Method::GET,
-            &format!("/zones/{zone_name}/token-policies"),
+            &format!("/zones/{zone_name}/token-grants"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["token_policies"].as_array().unwrap().len(), 1);
+    assert_eq!(body["token_grants"][0]["api_token"], json!(scoped_name));
 
-    // Policies cannot be attached to global tokens.
+    // A global token already covers every zone, so it cannot be granted one.
     let (status, _) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/token-policies"),
-            Some(json!({ "api_token": global_name })),
+            &format!("/tokens/{global_name}/grants"),
+            Some(json!({ "zone_name": zone_name })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
+    // A grant id is only reachable under the token that holds it.
     let (status, _) = app
         .request(
             Method::DELETE,
-            &format!("/zones/{zone_name}/token-policies/{policy_id}"),
+            &format!("/tokens/{global_name}/grants/{grant_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = app
+        .request(
+            Method::DELETE,
+            &format!("/tokens/{scoped_name}/grants/{grant_id}"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, body) = app
-        .request(
-            Method::GET,
-            &format!("/zones/{zone_name}/token-policies"),
-            None,
-        )
+        .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body["token_policies"].as_array().unwrap().is_empty());
+    assert!(body["token_grants"].as_array().unwrap().is_empty());
 }

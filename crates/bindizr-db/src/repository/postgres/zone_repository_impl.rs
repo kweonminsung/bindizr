@@ -146,7 +146,7 @@ impl ZoneRepository for PostgresZoneRepository {
               )
               AND (
                     $23::INT4 IS NULL
-                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                    OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = $23 AND p.zone_id = zones.id)
               )
             ORDER BY name
@@ -219,7 +219,7 @@ impl ZoneRepository for PostgresZoneRepository {
               )
               AND (
                     $21::INT4 IS NULL
-                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                    OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = $21 AND p.zone_id = zones.id)
               )
             "#,

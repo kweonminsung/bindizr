@@ -13,7 +13,7 @@ mod import;
 mod pagination;
 mod record;
 mod token;
-mod token_policy;
+mod token_grant;
 mod tsig;
 mod version;
 mod zone;
@@ -44,14 +44,12 @@ pub use record::{
     GetRecordsFilter, RecordItem, RecordResponse, RecordValueRequest, UpdateRecordPatch,
 };
 pub use token::{CreateTokenRequest, GetTokenResponse};
-pub use token_policy::{
-    CreateZoneTokenPolicyRequest, GetZoneTokenPolicyResponse, ZoneTokenPolicyListResponse,
-    ZoneTokenPolicyResponse,
+pub use token_grant::{
+    CreateTokenGrantRequest, GetTokenGrantResponse, TokenGrantListResponse, TokenGrantResponse,
 };
 pub use tsig::{
-    CreateTsigKeyRequest, CreateZoneTsigPolicyRequest, GetTsigKeyResponse,
-    GetZoneTsigPolicyResponse, TsigKeyListResponse, TsigKeyResponse, ZoneTsigPolicyListResponse,
-    ZoneTsigPolicyResponse,
+    CreateTsigGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
+    TsigGrantListResponse, TsigGrantResponse, TsigKeyListResponse, TsigKeyResponse,
 };
 pub use version::{
     RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,

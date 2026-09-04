@@ -22,7 +22,7 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
 }
 
 async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
-    app.run_cli_success(&["token-policy", "add", zone_name, "--token", token_name])
+    app.run_cli_success(&["token", "grant", token_name, zone_name])
         .await;
 }
 

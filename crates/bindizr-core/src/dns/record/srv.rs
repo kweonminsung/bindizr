@@ -15,7 +15,7 @@ pub struct SrvRecordValue<'a> {
 }
 
 impl<'a> SrvRecordValue<'a> {
-    /// The value is '<weight> <port> <target>'; the priority comes from the
+    /// The value is `<weight> <port> <target>`; the priority comes from the
     /// priority field (default 10), never inline.
     pub fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
         match value.split_whitespace().collect::<Vec<_>>().as_slice() {

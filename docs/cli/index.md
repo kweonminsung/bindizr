@@ -12,15 +12,12 @@ package install, or a shell inside the container for Compose and Helm.
 
 ## Command map
 
-Each global object is followed by its per-zone counterpart; the per-zone
-commands take the zone name as their first argument.
-
 | Commands | What they manage | Documented in |
 |---|---|---|
 | `start`, `stop`, `restart`, `status`, `doctor`, `config` | The daemon and its configuration | this page |
 | `zone`, `record` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | this page |
-| `token`, `token-policy` | API tokens and the zones each may change over HTTP | [API Tokens](tokens.md) |
-| `tsig-key`, `tsig-policy` | TSIG keys and the zones each may update with nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
+| `token` | API tokens and the zones each is granted over HTTP | [API Tokens](tokens.md) |
+| `tsig-key` | TSIG keys and the zones each is granted for nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec.md) |
 
 Every `create`, `list`, `get`, and `update` command prints a table and takes

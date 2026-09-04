@@ -340,7 +340,7 @@ impl RecordRepository for MySqlRecordRepository {
             )
               AND (
                     ? IS NULL
-                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                    OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = ? AND p.zone_id = r.zone_id)
               )
             -- r.name ties across an RRset, so without r.id a plan change
@@ -432,7 +432,7 @@ impl RecordRepository for MySqlRecordRepository {
             )
               AND (
                     ? IS NULL
-                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                    OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = ? AND p.zone_id = r.zone_id)
               )
             "#

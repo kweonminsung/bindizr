@@ -150,7 +150,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
         Ok(zones) if zones.is_empty() => (
             StatusCode::SERVICE_UNAVAILABLE,
             "no manageable zones: grant zones to the API token with \
-             'bindizr token-policy add', or create a zone first",
+             'bindizr token grant', or create a zone first",
         )
             .into_response(),
         Ok(zones) => {

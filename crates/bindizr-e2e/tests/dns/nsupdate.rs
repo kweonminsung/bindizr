@@ -264,11 +264,11 @@ async fn create_key(app: &TestApp, name: &str) -> SigningKey {
     }
 }
 
-// A signed update carries a key, so the zone's TSIG policies decide what it
+// A signed update carries a key, so the key's grants decide what it
 // may touch — the leg the unsigned tests above skip entirely.
 #[tokio::test]
 #[serial]
-async fn signed_nsupdate_needs_a_policy_for_the_zone() {
+async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("nsupdate-policy.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -281,22 +281,14 @@ async fn signed_nsupdate_needs_a_policy_for_the_zone() {
         addr: "192.0.2.60".to_string(),
     };
 
-    // No policy grants this key anything in the zone.
+    // No grant gives this key anything in the zone.
     let rcode = send_signed_update(port, &zone_name, &[add(format!("a.{zone_name}."))], &key)
         .expect("send");
     assert_eq!(rcode, Rcode::REFUSED);
 
     // Granting only `a` leaves every other owner name refused.
-    app.run_cli_success(&[
-        "tsig-policy",
-        "add",
-        &zone_name,
-        "--key",
-        &key.name,
-        "--pattern",
-        "a",
-    ])
-    .await;
+    app.run_cli_success(&["tsig-key", "grant", &key.name, &zone_name, "--pattern", "a"])
+        .await;
 
     let rcode = send_signed_update(port, &zone_name, &[add(format!("b.{zone_name}."))], &key)
         .expect("send");

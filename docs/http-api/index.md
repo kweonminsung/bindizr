@@ -17,8 +17,8 @@ Create a token with the CLI:
 $ bindizr token create --name admin --global
 ```
 
-Tokens are scoped by default and act only on zones granted through
-[token policies](../cli/tokens.md); `--global` covers every zone and the
+Tokens are scoped by default and act only on the zones they are
+[granted](../cli/tokens.md); `--global` covers every zone and the
 zone plane.
 
 Then include it in the `Authorization` header:

@@ -347,7 +347,7 @@ impl RecordRepository for PostgresRecordRepository {
             )
               AND (
                     $30::INT4 IS NULL
-                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                    OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = $30 AND p.zone_id = r.zone_id)
               )
             -- r.name ties across an RRset, so without r.id a plan change
@@ -438,7 +438,7 @@ impl RecordRepository for PostgresRecordRepository {
             )
               AND (
                     $28::INT4 IS NULL
-                    OR EXISTS (SELECT 1 FROM zone_token_policies p
+                    OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = $28 AND p.zone_id = r.zone_id)
               )
             "#

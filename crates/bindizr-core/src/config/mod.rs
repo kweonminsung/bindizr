@@ -30,7 +30,7 @@ pub struct ApiConfig {
     #[serde(default = "default_metrics_enabled")]
     pub metrics_enabled: bool,
     /// Register the `/external-dns` provider API endpoints. Which zones a
-    /// caller may manage is decided by its API token's zone policies.
+    /// caller may manage is decided by its API token's grants.
     #[serde(default)]
     pub external_dns_enabled: bool,
     /// Serve the OpenAPI document at GET /openapi.json and /openapi.yaml

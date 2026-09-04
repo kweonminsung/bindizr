@@ -267,14 +267,14 @@ pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
     repository::RepositoryFactory::create_tsig_key_repository(pool)
 }
 
-pub fn get_zone_tsig_policy_repository() -> Box<dyn repository::ZoneTsigPolicyRepository> {
+pub fn get_tsig_grant_repository() -> Box<dyn repository::TsigGrantRepository> {
     let pool = get_pool();
-    repository::RepositoryFactory::create_zone_tsig_policy_repository(pool)
+    repository::RepositoryFactory::create_tsig_grant_repository(pool)
 }
 
-pub fn get_zone_token_policy_repository() -> Box<dyn repository::ZoneTokenPolicyRepository> {
+pub fn get_token_grant_repository() -> Box<dyn repository::TokenGrantRepository> {
     let pool = get_pool();
-    repository::RepositoryFactory::create_zone_token_policy_repository(pool)
+    repository::RepositoryFactory::create_token_grant_repository(pool)
 }
 
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {

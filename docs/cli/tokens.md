@@ -2,14 +2,14 @@
 
 Bindizr uses API tokens for HTTP API authentication. A token is either
 **global** — it may manage every zone plus the zone plane (zone lifecycle,
-imports, key and policy management) — or **scoped** (the default), acting only
-on the record plane of zones granted through token policies, the HTTP twin of
-[TSIG policies](tsig-keys.md).
+imports, key and grant management) — or **scoped** (the default), acting only
+on the record plane of the zones it has been granted, the HTTP twin of
+[TSIG grants](tsig-keys.md).
 
 Tokens are identified by a unique name, fixed at creation.
 
 ```bash
-# Create a scoped API token (no access until policies grant zones); the
+# Create a scoped API token (no access until it is granted zones); the
 # plaintext token is shown once, here
 $ bindizr token create --name external-dns
 
@@ -26,29 +26,36 @@ $ bindizr token list
 $ bindizr token delete external-dns
 ```
 
-## Token policies
+## Grants
 
-Grant a scoped token record rights per zone, optionally restricted by a
-record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record
-types (`*` or a comma-separated list):
+A grant gives a scoped token record rights in one zone, optionally restricted
+by a record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and
+record types (`*` or a comma-separated list):
 
 ```bash
 # Allow the token to manage any record in example.com
-$ bindizr token-policy add example.com --token external-dns
+$ bindizr token grant external-dns example.com
 
 # Allow only A/TXT records under *.dyn
-$ bindizr token-policy add example.com --token external-dns --pattern '*.dyn' --types A,TXT
+$ bindizr token grant external-dns example.com --pattern '*.dyn' --types A,TXT
 
-# Inspect and revoke
-$ bindizr token-policy list example.com
-$ bindizr token-policy remove example.com <POLICY_ID>
+# List a token's grants, or every grant that applies to a zone
+$ bindizr token grants external-dns
+$ bindizr token grants --zone example.com
+
+# Revoke one grant by ID
+$ bindizr token revoke external-dns <GRANT_ID>
 ```
+
+Over HTTP the same grants live under the token: `GET`/`POST
+/tokens/{name}/grants`, `DELETE /tokens/{name}/grants/{id}`, and
+`GET /zones/{name}/token-grants` for the zone-side view.
 
 A scoped token sees only its granted zones: other zones read as 404 and
 writes outside its grants return 403. The name pattern and type list restrict
 **writes** only — within a granted zone the token reads every record.
 Creating, updating, or deleting zones —
-and managing tokens, keys, or policies over HTTP — always requires a global
+and managing tokens, keys, or grants over HTTP — always requires a global
 token. The CLI talks to the daemon over its local socket and is not subject
 to token scoping.
 

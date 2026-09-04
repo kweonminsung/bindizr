@@ -1,16 +1,15 @@
 use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
-    tsig_key::TsigKeyService,
-    types::{CreateTsigKeyRequest, GetTsigKeyResponse, GetZoneTsigPolicyResponse},
-    zone::tsig_policy::ZoneTsigPolicyService,
+    tsig_key::{TsigKeyService, grant::TsigGrantService},
+    types::{CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse},
 };
 
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        AddZoneTsigPolicyParams, DaemonResponse, RemoveZonePolicyParams, TsigKeyNameParams,
-        ZonePolicyListParams,
+        CreateTsigGrantParams, DaemonResponse, DeleteTsigGrantParams, TsigKeyNameParams,
+        ZoneNameParams,
     },
 };
 
@@ -72,55 +71,74 @@ pub(crate) async fn delete_tsig_key(
     })
 }
 
-/// Handle the `ZoneTsigPolicyAdd` command by granting a key rights in a zone.
-pub(crate) async fn add_zone_tsig_policy(
+/// Handle the `TsigGrantCreate` command by granting a key rights in a zone.
+pub(crate) async fn create_tsig_grant(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: AddZoneTsigPolicyParams = parse_params(data)?;
+    let params: CreateTsigGrantParams = parse_params(data)?;
 
-    let policy = ZoneTsigPolicyService::add(
+    let grant = TsigGrantService::grant(
         &Caller::Global,
-        &params.zone_name,
-        &params.request.tsig_key,
+        &params.key_name,
+        &params.request.zone_name,
         params.request.record_name_pattern.as_deref(),
         params.request.record_types.as_deref(),
     )
     .await?;
 
     Ok(DaemonResponse {
-        message: "TSIG policy created successfully".to_string(),
-        data: to_response_data(GetZoneTsigPolicyResponse::from_policy(&policy))?,
+        message: "TSIG grant created successfully".to_string(),
+        data: to_response_data(GetTsigGrantResponse::from_grant(&grant))?,
     })
 }
 
-/// Handle the `ZoneTsigPolicyList` command by returning a zone's policies.
-pub(crate) async fn list_zone_tsig_policies(
+/// Handle the `TsigGrantListByKey` command by returning a key's grants.
+pub(crate) async fn list_tsig_grants_by_key(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZonePolicyListParams = parse_params(data)?;
+    let params: TsigKeyNameParams = parse_params(data)?;
 
-    let policies = ZoneTsigPolicyService::list(&Caller::Global, &params.zone_name).await?;
-    let policies: Vec<GetZoneTsigPolicyResponse> = policies
+    let grants = TsigGrantService::list_by_key(&Caller::Global, &params.name).await?;
+    let grants: Vec<GetTsigGrantResponse> = grants
         .iter()
-        .map(GetZoneTsigPolicyResponse::from_policy)
+        .map(GetTsigGrantResponse::from_grant)
         .collect();
 
     Ok(DaemonResponse {
-        message: "TSIG policies retrieved successfully".to_string(),
-        data: to_response_data(policies)?,
+        message: "TSIG grants retrieved successfully".to_string(),
+        data: to_response_data(grants)?,
     })
 }
 
-/// Handle the `ZoneTsigPolicyRemove` command by removing one policy of a zone.
-pub(crate) async fn remove_zone_tsig_policy(
+/// Handle the `TsigGrantListByZone` command by returning the grants that
+/// apply to a zone.
+pub(crate) async fn list_tsig_grants_by_zone(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: RemoveZonePolicyParams = parse_params(data)?;
+    let params: ZoneNameParams = parse_params(data)?;
 
-    ZoneTsigPolicyService::remove(&Caller::Global, &params.zone_name, params.id).await?;
+    let grants = TsigGrantService::list_by_zone(&Caller::Global, &params.name).await?;
+    let grants: Vec<GetTsigGrantResponse> = grants
+        .iter()
+        .map(GetTsigGrantResponse::from_grant)
+        .collect();
 
     Ok(DaemonResponse {
-        message: "TSIG policy deleted successfully".to_string(),
+        message: "TSIG grants retrieved successfully".to_string(),
+        data: to_response_data(grants)?,
+    })
+}
+
+/// Handle the `TsigGrantDelete` command by revoking one of a key's grants.
+pub(crate) async fn delete_tsig_grant(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: DeleteTsigGrantParams = parse_params(data)?;
+
+    TsigGrantService::revoke(&Caller::Global, &params.key_name, params.id).await?;
+
+    Ok(DaemonResponse {
+        message: "TSIG grant revoked successfully".to_string(),
         data: serde_json::Value::Null,
     })
 }

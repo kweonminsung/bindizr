@@ -81,11 +81,15 @@ impl TokenService {
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
         caller.require_global("manage API tokens")?;
 
-        let token = RepositoryService::get_api_token_by_name(&normalize_token_name(name)?)
-            .await?
-            .ok_or_else(|| ServiceError::token_not_found(name))?;
+        let token = Self::lookup_by_name(name).await?;
 
         RepositoryService::delete_api_token(token.id).await
+    }
+
+    pub(crate) async fn lookup_by_name(name: &str) -> Result<ApiToken, ServiceError> {
+        RepositoryService::get_api_token_by_name(&normalize_token_name(name)?)
+            .await?
+            .ok_or_else(|| ServiceError::token_not_found(name))
     }
 }
 
@@ -122,6 +126,8 @@ fn validate_expires_in_days(expires_in_days: Option<i64>) -> Result<(), ServiceE
 
     Ok(())
 }
+
+pub mod grant;
 
 #[cfg(test)]
 mod tests;

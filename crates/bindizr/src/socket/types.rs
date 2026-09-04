@@ -1,9 +1,9 @@
 use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
-    CreateBulkRecordsRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
-    EnableDnssecRequest, ImportDnssecKeyRequest, ImportZoneFileRequest,
-    ImportZoneFromServerRequest, RollbackZoneRequest, RolloverDnssecRequest,
-    SetZoneDnssecPolicyRequest, UpdateDnssecPolicyRequest, UpdateRecordPatch, UpdateZonePatch,
+    CreateBulkRecordsRequest, CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest,
+    ImportDnssecKeyRequest, ImportZoneFileRequest, ImportZoneFromServerRequest,
+    RollbackZoneRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
+    UpdateDnssecPolicyRequest, UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -24,12 +24,14 @@ pub(crate) enum DaemonCommandKind {
     DnssecPolicyGet,
     DnssecPolicyUpdate,
     DnssecPolicyDelete,
-    ZoneTsigPolicyAdd,
-    ZoneTsigPolicyList,
-    ZoneTsigPolicyRemove,
-    ZoneTokenPolicyAdd,
-    ZoneTokenPolicyList,
-    ZoneTokenPolicyRemove,
+    TsigGrantCreate,
+    TsigGrantListByKey,
+    TsigGrantListByZone,
+    TsigGrantDelete,
+    TokenGrantCreate,
+    TokenGrantListByToken,
+    TokenGrantListByZone,
+    TokenGrantDelete,
     GetZone,
     ListZones,
     CreateZone,
@@ -117,28 +119,29 @@ pub(crate) struct TokenNameParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct ZonePolicyListParams {
-    pub(crate) zone_name: String,
+pub(crate) struct CreateTsigGrantParams {
+    pub(crate) key_name: String,
+    #[serde(flatten)]
+    pub(crate) request: CreateTsigGrantRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct RemoveZonePolicyParams {
-    pub(crate) zone_name: String,
+pub(crate) struct DeleteTsigGrantParams {
+    pub(crate) key_name: String,
     pub(crate) id: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct AddZoneTsigPolicyParams {
-    pub(crate) zone_name: String,
+pub(crate) struct CreateTokenGrantParams {
+    pub(crate) token_name: String,
     #[serde(flatten)]
-    pub(crate) request: CreateZoneTsigPolicyRequest,
+    pub(crate) request: CreateTokenGrantRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct AddZoneTokenPolicyParams {
-    pub(crate) zone_name: String,
-    #[serde(flatten)]
-    pub(crate) request: CreateZoneTokenPolicyRequest,
+pub(crate) struct DeleteTokenGrantParams {
+    pub(crate) token_name: String,
+    pub(crate) id: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

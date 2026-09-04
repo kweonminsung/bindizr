@@ -1,6 +1,6 @@
 //! Caller identity and zone-scope authorization. Scoped tokens are the HTTP
-//! twin of non-global TSIG keys: record-plane only, within
-//! `zone_token_policies` grants matched by the nsupdate pattern/type rules.
+//! twin of non-global TSIG keys: record-plane only, within their
+//! `token_grants` rows matched by the nsupdate pattern/type rules.
 //! Invisible zones read as 404, denied writes as 403.
 //!
 //! Every service operation a front end can reach takes a [`Caller`] and
@@ -18,11 +18,9 @@ use chrono::{Duration, Utc};
 use crate::{
     RepositoryTx,
     error::ServiceError,
+    grant_pattern::{pattern_matches_name, types_match},
     log_error,
-    model::{
-        api_token::ApiToken, record::RecordType, zone::Zone, zone_token_policy::ZoneTokenPolicy,
-    },
-    policy_pattern::{pattern_matches_name, types_match},
+    model::{api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone},
     repository::RepositoryService,
     token::hash_token,
 };
@@ -33,14 +31,11 @@ use crate::{
 #[derive(Debug, Clone)]
 pub enum Caller {
     Global,
-    Token {
-        id: i32,
-        grants: Arc<[ZoneTokenPolicy]>,
-    },
+    Token { id: i32, grants: Arc<[TokenGrant]> },
 }
 
 /// One record-plane write to authorize: the owner name relative to the zone
-/// (stored form) and its type. `None` types only match unrestricted policies.
+/// (stored form) and its type. `None` types only match unrestricted grants.
 pub(crate) struct RecordWrite<'a> {
     pub(crate) relative_name: OwnerName,
     pub(crate) record_type: Option<&'a RecordType>,
@@ -59,7 +54,7 @@ impl Caller {
         if token.is_global {
             return Ok(Caller::Global);
         }
-        let grants = RepositoryService::list_zone_token_policies_by_token_id(token.id).await?;
+        let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
         Ok(Caller::Token {
             id: token.id,
             grants: grants.into(),
@@ -86,7 +81,7 @@ impl Caller {
     }
 
     /// The token whose grants bound the caller's visibility; `None` means
-    /// unrestricted. List queries join it against the policies in SQL.
+    /// unrestricted. List queries join it against the grants in SQL.
     pub(crate) fn scope_token_id(&self) -> Option<i32> {
         match self {
             Caller::Global => None,
@@ -113,7 +108,7 @@ impl Caller {
     }
 
     /// Authorize record-plane writes in `zone`, share-locking the caller's
-    /// policies inside the transaction so a concurrent revocation waits for
+    /// grants inside the transaction so a concurrent revocation waits for
     /// this mutation instead of racing it.
     pub(crate) async fn authorize_record_writes_tx(
         &self,
@@ -124,37 +119,36 @@ impl Caller {
         match self {
             Caller::Global => Ok(()),
             Caller::Token { id, .. } => {
-                let policies =
-                    RepositoryService::list_zone_token_policies_by_zone_id_and_token_id_tx(
-                        tx,
-                        zone.id,
-                        *id,
-                        LockLevel::Shared,
-                    )
-                    .await?;
+                let grants = RepositoryService::list_token_grants_by_zone_id_and_token_id_tx(
+                    tx,
+                    zone.id,
+                    *id,
+                    LockLevel::Shared,
+                )
+                .await?;
                 // Ahead of the per-write loop, which a batch resolving to no
                 // writes would otherwise pass vacuously.
-                if policies.is_empty() {
+                if grants.is_empty() {
                     return Err(ServiceError::forbidden(format!(
                         "API token is not allowed to manage records in zone '{}'",
                         zone.name
                     )));
                 }
-                authorize_with_policies(&policies, zone, writes)
+                authorize_with_grants(&grants, zone, writes)
             }
         }
     }
 }
 
-fn authorize_with_policies(
-    policies: &[ZoneTokenPolicy],
+fn authorize_with_grants(
+    grants: &[TokenGrant],
     zone: &Zone,
     writes: &[RecordWrite<'_>],
 ) -> Result<(), ServiceError> {
     for write in writes {
-        let granted = policies.iter().any(|policy| {
-            pattern_matches_name(&policy.record_name_pattern, &write.relative_name)
-                && types_match(&policy.record_types, write.record_type)
+        let granted = grants.iter().any(|grant| {
+            pattern_matches_name(&grant.record_name_pattern, &write.relative_name)
+                && types_match(&grant.record_types, write.record_type)
         });
         if !granted {
             return Err(ServiceError::forbidden(format!(

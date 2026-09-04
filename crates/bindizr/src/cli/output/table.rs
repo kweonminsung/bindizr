@@ -2,10 +2,10 @@
 //! the column set is all this module decides.
 
 use bindizr_service::types::{
-    DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse, GetTokenResponse,
-    GetTsigKeyResponse, GetZoneResponse, GetZoneTokenPolicyResponse, GetZoneTsigPolicyResponse,
-    ImportSummary, RecordValueRequest, RollbackZoneResponse, SecondaryStatusResponse,
-    VersionRecordResponse, ZoneStatusResponse, ZoneVersionResponse,
+    DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse, GetTokenGrantResponse,
+    GetTokenResponse, GetTsigGrantResponse, GetTsigKeyResponse, GetZoneResponse, ImportSummary,
+    RecordValueRequest, RollbackZoneResponse, SecondaryStatusResponse, VersionRecordResponse,
+    ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -443,11 +443,13 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
 }
 
 #[derive(Debug, Tabled)]
-pub(crate) struct ZoneTokenPolicyRow {
+pub(crate) struct TokenGrantRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
     #[tabled(rename = "TOKEN")]
     pub(crate) api_token: String,
+    #[tabled(rename = "ZONE")]
+    pub(crate) zone_name: String,
     #[tabled(rename = "NAME-PATTERN")]
     pub(crate) record_name_pattern: String,
     #[tabled(rename = "RECORD-TYPES")]
@@ -456,24 +458,27 @@ pub(crate) struct ZoneTokenPolicyRow {
     pub(crate) created_at: String,
 }
 
-impl From<&GetZoneTokenPolicyResponse> for ZoneTokenPolicyRow {
-    fn from(policy: &GetZoneTokenPolicyResponse) -> Self {
-        ZoneTokenPolicyRow {
-            id: policy.id,
-            api_token: policy.api_token.clone(),
-            record_name_pattern: policy.record_name_pattern.clone(),
-            record_types: policy.record_types.clone(),
-            created_at: policy.created_at.to_rfc3339(),
+impl From<&GetTokenGrantResponse> for TokenGrantRow {
+    fn from(grant: &GetTokenGrantResponse) -> Self {
+        TokenGrantRow {
+            id: grant.id,
+            api_token: grant.api_token.clone(),
+            zone_name: grant.zone_name.clone(),
+            record_name_pattern: grant.record_name_pattern.clone(),
+            record_types: grant.record_types.clone(),
+            created_at: grant.created_at.to_rfc3339(),
         }
     }
 }
 
 #[derive(Debug, Tabled)]
-pub(crate) struct ZoneTsigPolicyRow {
+pub(crate) struct TsigGrantRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
     #[tabled(rename = "TSIG-KEY")]
     pub(crate) tsig_key: String,
+    #[tabled(rename = "ZONE")]
+    pub(crate) zone_name: String,
     #[tabled(rename = "NAME-PATTERN")]
     pub(crate) record_name_pattern: String,
     #[tabled(rename = "RECORD-TYPES")]
@@ -482,14 +487,15 @@ pub(crate) struct ZoneTsigPolicyRow {
     pub(crate) created_at: String,
 }
 
-impl From<&GetZoneTsigPolicyResponse> for ZoneTsigPolicyRow {
-    fn from(policy: &GetZoneTsigPolicyResponse) -> Self {
-        ZoneTsigPolicyRow {
-            id: policy.id,
-            tsig_key: policy.tsig_key.clone(),
-            record_name_pattern: policy.record_name_pattern.clone(),
-            record_types: policy.record_types.clone(),
-            created_at: policy.created_at.to_rfc3339(),
+impl From<&GetTsigGrantResponse> for TsigGrantRow {
+    fn from(grant: &GetTsigGrantResponse) -> Self {
+        TsigGrantRow {
+            id: grant.id,
+            tsig_key: grant.tsig_key.clone(),
+            zone_name: grant.zone_name.clone(),
+            record_name_pattern: grant.record_name_pattern.clone(),
+            record_types: grant.record_types.clone(),
+            created_at: grant.created_at.to_rfc3339(),
         }
     }
 }
