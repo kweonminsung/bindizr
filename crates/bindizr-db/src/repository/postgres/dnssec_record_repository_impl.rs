@@ -11,7 +11,6 @@ use crate::{
     },
 };
 
-/// PostgreSQL-backed implementation of `DnssecRecordRepository`.
 pub(crate) struct PostgresDnssecRecordRepository {
     pool: Pool<Postgres>,
 }

@@ -7,7 +7,6 @@ use crate::{
     repository::{LockLevel, RepositoryTx, ZoneTokenPolicyRepository, sql::lock_clause},
 };
 
-/// PostgreSQL-backed implementation of `ZoneTokenPolicyRepository`.
 pub(crate) struct PostgresZoneTokenPolicyRepository {
     pool: Pool<Postgres>,
 }

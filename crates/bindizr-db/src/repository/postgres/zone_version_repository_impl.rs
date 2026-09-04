@@ -29,7 +29,6 @@ const USER_CHANGES_FILTER: &str = r#"
                   )
               )"#;
 
-/// PostgreSQL-backed implementation of `ZoneVersionRepository`.
 pub(crate) struct PostgresZoneVersionRepository {
     pool: Pool<Postgres>,
 }

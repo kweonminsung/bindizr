@@ -10,7 +10,6 @@ use crate::{
     },
 };
 
-/// SQLite-backed implementation of `DnssecRecordRepository`.
 pub(crate) struct SqliteDnssecRecordRepository {
     pool: Pool<Sqlite>,
 }

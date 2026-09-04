@@ -47,7 +47,7 @@ pub(crate) struct ProviderSpecificProperty {
 }
 
 /// JSON shape of external-dns `plan.Changes` (`POST /records` body).
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Changes {
     #[serde(default)]
@@ -61,7 +61,7 @@ pub(crate) struct Changes {
 }
 
 /// JSON shape of external-dns `endpoint.DomainFilter` (negotiation response).
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 pub(crate) struct DomainFilter {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) include: Vec<String>,
@@ -78,7 +78,7 @@ pub(crate) struct BindizrRrset {
 }
 
 /// `POST /external-dns/changes` request body of the bindizr API.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 pub(crate) struct BindizrChanges {
     pub(crate) creates: Vec<BindizrRrset>,
     pub(crate) updates: Vec<BindizrRrsetUpdate>,
@@ -235,8 +235,7 @@ pub(crate) fn group_records_into_endpoints(records: Vec<BindizrRecordItem>) -> V
         .collect()
 }
 
-/// Validate desired endpoints and convert them for `POST /adjust`;
-/// validation is mirrored here so a bad plan fails without a round trip.
+/// Validate desired endpoints and convert them for `POST /adjust`.
 pub(crate) fn to_bindizr_rrsets(endpoints: &[Endpoint]) -> Result<Vec<BindizrRrset>, String> {
     for endpoint in endpoints {
         endpoint.validate()?;

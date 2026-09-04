@@ -25,14 +25,11 @@ use router::ApiRouter;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 
-/// Path parameters addressing a zone by name.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ZoneNameParam {
     pub(crate) name: String,
 }
 
-/// Path parameters addressing one of a zone's policies by zone name and
-/// policy id.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ZonePolicyParam {
     pub(crate) name: String,

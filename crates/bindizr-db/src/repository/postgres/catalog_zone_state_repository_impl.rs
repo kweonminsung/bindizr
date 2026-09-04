@@ -5,7 +5,6 @@ use crate::{
     repository::{CatalogZoneStateRepository, RepositoryTx},
 };
 
-/// Postgres-backed implementation of `CatalogZoneStateRepository`.
 /// Every method runs on the caller's transaction, so no pool is held.
 pub(crate) struct PostgresCatalogZoneStateRepository;
 

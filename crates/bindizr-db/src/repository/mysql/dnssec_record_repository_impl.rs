@@ -11,7 +11,6 @@ use crate::{
     },
 };
 
-/// MySQL-backed implementation of `DnssecRecordRepository`.
 pub(crate) struct MySqlDnssecRecordRepository {
     pool: Pool<MySql>,
 }

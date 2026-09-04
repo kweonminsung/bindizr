@@ -10,8 +10,6 @@ use crate::config::{
 struct TestConfigToml {
     api_listen_addr: &'static str,
     require_authentication: bool,
-    /// Renders `external_dns_enabled` in `[api]` when set; `None` omits it.
-    api_external_dns_enabled: Option<bool>,
     database_type: &'static str,
     /// Include the `[database.mysql]` / `[database.postgresql]` sections.
     unselected_databases: bool,
@@ -25,7 +23,6 @@ impl Default for TestConfigToml {
         Self {
             api_listen_addr: "127.0.0.1",
             require_authentication: false,
-            api_external_dns_enabled: None,
             database_type: "sqlite",
             unselected_databases: true,
             secondary_addrs: "",
@@ -41,17 +38,13 @@ impl TestConfigToml {
         } else {
             ""
         };
-        let api_external_dns = self
-            .api_external_dns_enabled
-            .map(|value| format!("external_dns_enabled = {}\n", value))
-            .unwrap_or_default();
         format!(
             r#"
 [api]
 listen_addr = "{api_listen_addr}"
 listen_port = 3000
 require_authentication = {require_authentication}
-{api_external_dns}
+
 [database]
 type = "{database_type}"
 
@@ -68,7 +61,6 @@ log_level = "debug"
 "#,
             api_listen_addr = self.api_listen_addr,
             require_authentication = self.require_authentication,
-            api_external_dns = api_external_dns,
             database_type = self.database_type,
             secondary_addrs = self.secondary_addrs,
             dns_notify = self.dns_notify,
@@ -108,64 +100,17 @@ fn parse_bindizr_config_accepts_valid_config() {
 }
 
 #[test]
-fn parse_bindizr_config_defaults_missing_optional_dns_fields() {
+fn parse_bindizr_config_defaults_missing_optional_fields() {
     let parsed = parse_config(&TestConfigToml::default()).unwrap();
 
+    assert!(parsed.api.metrics_enabled);
+    assert!(!parsed.api.external_dns_enabled);
     assert!(parsed.dns.notify_after_update);
     assert!(!parsed.dns.notify_on_startup);
     assert_eq!(parsed.dns.notify_retries, 3);
     assert_eq!(parsed.dns.notify_timeout_secs, 5);
     assert!(!parsed.dns.nsupdate_allow_unsigned);
-}
-
-#[test]
-fn parse_bindizr_config_defaults_journal_retention() {
-    let parsed = parse_config(&TestConfigToml::default()).unwrap();
-
     assert_eq!(parsed.dns.journal_retention_days, 365);
-}
-
-#[test]
-fn apply_env_overrides_covers_journal_retention() {
-    let config = Config::builder()
-        .add_source(File::from_str(
-            &TestConfigToml::default().render(),
-            FileFormat::Toml,
-        ))
-        .build()
-        .unwrap();
-    let parsed = parse_bindizr_config_with_env(config, |name| match name {
-        "BINDIZR_JOURNAL_RETENTION_DAYS" => Some("0".to_string()),
-        _ => None,
-    })
-    .unwrap();
-
-    assert_eq!(parsed.dns.journal_retention_days, 0);
-}
-
-#[test]
-fn parse_bindizr_config_defaults_metrics_enabled_to_true() {
-    let parsed = parse_config(&TestConfigToml::default()).unwrap();
-
-    assert!(parsed.api.metrics_enabled);
-}
-
-#[test]
-fn parse_bindizr_config_defaults_external_dns_to_disabled() {
-    let parsed = parse_config(&TestConfigToml::default()).unwrap();
-
-    assert!(!parsed.api.external_dns_enabled);
-}
-
-#[test]
-fn parse_bindizr_config_accepts_external_dns_enabled() {
-    let parsed = parse_config(&TestConfigToml {
-        api_external_dns_enabled: Some(true),
-        ..Default::default()
-    })
-    .unwrap();
-
-    assert!(parsed.api.external_dns_enabled);
 }
 
 #[test]
@@ -230,6 +175,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         "BINDIZR_NOTIFY_ON_STARTUP" => Some("true".to_string()),
         "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
         "BINDIZR_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
+        "BINDIZR_JOURNAL_RETENTION_DAYS" => Some("0".to_string()),
         "BINDIZR_LOG_LEVEL" => Some("info".to_string()),
         _ => None,
     })
@@ -259,6 +205,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert!(overridden.dns.notify_on_startup);
     assert_eq!(overridden.dns.notify_retries, 7);
     assert_eq!(overridden.dns.notify_timeout_secs, 11);
+    assert_eq!(overridden.dns.journal_retention_days, 0);
     assert!(matches!(overridden.logging.log_level, LogLevel::Info));
 }
 

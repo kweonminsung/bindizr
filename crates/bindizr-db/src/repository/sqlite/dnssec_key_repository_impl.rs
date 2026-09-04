@@ -8,7 +8,6 @@ use crate::{
     repository::{DnssecKeyRepository, LockLevel, RepositoryTx},
 };
 
-/// SQLite-backed implementation of `DnssecKeyRepository`.
 pub(crate) struct SqliteDnssecKeyRepository {
     pool: Pool<Sqlite>,
 }

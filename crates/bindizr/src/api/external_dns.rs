@@ -20,12 +20,10 @@ use crate::api::{
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
 
-/// Route group for the ExternalDNS provider endpoints, registered only when
-/// `api.external_dns_enabled` is set.
+/// Registered only when `api.external_dns_enabled` is set.
 pub(crate) struct ExternalDnsApi;
 
 impl ExternalDnsApi {
-    /// Build the router for ExternalDNS endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/external-dns/zones", routing::get(get_external_dns_zones))

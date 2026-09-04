@@ -11,7 +11,7 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    record::RecordService,
+    repository::RepositoryService,
 };
 
 pub(crate) async fn evaluate_prerequisites_tx(
@@ -23,7 +23,8 @@ pub(crate) async fn evaluate_prerequisites_tx(
         return Ok(());
     }
 
-    let zone_records = RecordService::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    let zone_records =
+        RepositoryService::list_records_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
     for prerequisite in prerequisites {
         match prerequisite {

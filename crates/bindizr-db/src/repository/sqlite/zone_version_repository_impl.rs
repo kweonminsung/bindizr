@@ -29,7 +29,6 @@ const USER_CHANGES_FILTER: &str = r#"
                   )
               )"#;
 
-/// SQLite-backed implementation of `ZoneVersionRepository`.
 pub(crate) struct SqliteZoneVersionRepository {
     pool: Pool<Sqlite>,
 }

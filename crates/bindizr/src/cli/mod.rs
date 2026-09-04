@@ -8,9 +8,12 @@ mod output;
 
 use clap::{Parser, Subcommand};
 
-use crate::cli::commands::{
-    config::ConfigCommand, dnssec_policy::DnssecPolicyCommand, record::RecordCommand,
-    token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+use crate::{
+    cli::commands::{
+        config::ConfigCommand, dnssec_policy::DnssecPolicyCommand, record::RecordCommand,
+        token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+    },
+    daemon,
 };
 
 /// Top-level CLI argument parser.
@@ -79,7 +82,7 @@ pub async fn execute() {
     let args = Args::parse();
 
     if let Err(e) = match args.command {
-        Command::Start { config } => commands::start::handle_command(config)
+        Command::Start { config } => daemon::bootstrap(config.as_deref())
             .await
             .map_err(error::CliError::from),
         Command::Status => commands::status::handle_command().await,

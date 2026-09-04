@@ -7,7 +7,6 @@ use crate::{
     repository::{LockLevel, RepositoryTx, ZoneFilter, ZoneRepository, sql::like_pattern},
 };
 
-/// SQLite-backed implementation of `ZoneRepository`.
 pub(crate) struct SqliteZoneRepository {
     pool: Pool<Sqlite>,
 }

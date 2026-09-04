@@ -100,8 +100,16 @@ pub(crate) async fn apply_update(
         let update = DynamicUpdate {
             zone_name: zone_name.to_string(),
             key,
-            prerequisites: decode_prerequisites(&request.prerequisites, query_data)?,
-            updates: decode_updates(&request.updates, query_data)?,
+            prerequisites: request
+                .prerequisites
+                .iter()
+                .map(|rr| decode_prerequisite(rr, query_data))
+                .collect::<Result<_, _>>()?,
+            updates: request
+                .updates
+                .iter()
+                .map(|rr| decode_update(rr, query_data))
+                .collect::<Result<_, _>>()?,
         };
 
         let changed = DynamicUpdateService::apply(update).await?;
@@ -147,16 +155,6 @@ async fn authenticate_request(
     )?);
 
     Ok(key)
-}
-
-fn decode_prerequisites(
-    prerequisites: &[UpdateRecord],
-    query_data: &[u8],
-) -> Result<Vec<Prerequisite>, UpdateError> {
-    prerequisites
-        .iter()
-        .map(|rr| decode_prerequisite(rr, query_data))
-        .collect()
 }
 
 /// One prerequisite RR, with the wire shapes of RFC 2136, Section 2.4 enforced:
@@ -212,16 +210,6 @@ fn decode_prerequisite(rr: &UpdateRecord, query_data: &[u8]) -> Result<Prerequis
             other
         ))),
     }
-}
-
-fn decode_updates(
-    updates: &[UpdateRecord],
-    query_data: &[u8],
-) -> Result<Vec<UpdateOp>, UpdateError> {
-    updates
-        .iter()
-        .map(|rr| decode_update(rr, query_data))
-        .collect()
 }
 
 fn decode_update(rr: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, UpdateError> {

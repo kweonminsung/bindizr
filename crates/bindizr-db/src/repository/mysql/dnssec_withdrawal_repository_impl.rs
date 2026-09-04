@@ -5,7 +5,6 @@ use crate::{
     repository::{DnssecWithdrawalRepository, RepositoryTx},
 };
 
-/// MySQL-backed implementation of `DnssecWithdrawalRepository`.
 /// Every method runs on the caller's transaction, so no pool is held.
 pub(crate) struct MySqlDnssecWithdrawalRepository;
 

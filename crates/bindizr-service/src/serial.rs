@@ -63,10 +63,8 @@ mod tests {
     fn increments_by_one() {
         assert_eq!(generate_serial(Some(1)).unwrap(), 2);
         assert_eq!(generate_serial(Some(41)).unwrap(), 42);
-    }
-
-    #[test]
-    fn continues_from_explicit_legacy_serials() {
+        // A datestamp serial carried over from another primary is only a
+        // larger starting point.
         assert_eq!(generate_serial(Some(2023010101)).unwrap(), 2023010102);
     }
 

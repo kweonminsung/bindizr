@@ -18,7 +18,6 @@ pub struct SoaRecordValue<'a> {
 }
 
 impl<'a> SoaRecordValue<'a> {
-    /// The wire-format RDATA of this SOA value.
     pub fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = encode_name(self.mname)?;
         rdata.extend_from_slice(&encode_name(self.rname)?);

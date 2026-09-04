@@ -1,9 +1,8 @@
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_db::repository::{DnssecRecordFilter, LockLevel, RecordFilter};
+use bindizr_db::repository::{DnssecRecordFilter, RecordFilter};
 
 use super::{ListedRecord, RecordService};
 use crate::{
-    RepositoryTx,
     authorization::Caller,
     error::ServiceError,
     log_error,
@@ -38,15 +37,6 @@ fn parse_type_filter(
 }
 
 impl RecordService {
-    /// List all records in a zone by zone id, within the caller's transaction.
-    pub(crate) async fn list_tx(
-        tx: &mut RepositoryTx<'_>,
-        zone_id: i32,
-        lock_level: LockLevel,
-    ) -> Result<Vec<Record>, ServiceError> {
-        RepositoryService::list_records_tx(tx, zone_id, lock_level).await
-    }
-
     /// List a zone's records for `caller`; a zone it cannot see reads as
     /// `NotFound`.
     pub async fn list_in_zone(

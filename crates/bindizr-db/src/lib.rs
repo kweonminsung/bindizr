@@ -20,7 +20,6 @@ use error::DatabaseError;
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
 static INITIALIZE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// A connection pool for one of the supported database backends.
 #[derive(Debug)]
 pub(crate) enum DatabasePool {
     MySQL(Pool<MySql>),
@@ -28,7 +27,6 @@ pub(crate) enum DatabasePool {
     SQLite(Pool<Sqlite>),
 }
 
-/// Supported database backend types.
 #[derive(Debug, Clone)]
 pub(crate) enum DatabaseType {
     MySQL,

@@ -46,10 +46,6 @@ struct CachedZone {
 static CACHE: OnceLock<Mutex<HashMap<i32, CachedZone>>> = OnceLock::new();
 static CLOCK: AtomicU64 = AtomicU64::new(0);
 
-fn cache() -> &'static Mutex<HashMap<i32, CachedZone>> {
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
 fn tick() -> u64 {
     CLOCK.fetch_add(1, Ordering::Relaxed)
 }
@@ -101,7 +97,8 @@ async fn load_content(zone: Zone) -> Result<Option<(Zone, ZoneContent)>, Service
 /// The cache holds no invariant a panicking thread could leave broken, so a
 /// poisoned lock is recovered rather than failing every later query.
 fn locked_cache() -> std::sync::MutexGuard<'static, HashMap<i32, CachedZone>> {
-    cache()
+    CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

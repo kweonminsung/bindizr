@@ -151,12 +151,9 @@ impl DnsMessageBuilder {
         value: &str,
         priority: Option<i32>,
     ) -> Result<(), String> {
-        match EncodedRdata::from_columns(record_type, value, priority) {
-            Ok(EncodedRdata { record_type, rdata }) => {
-                self.add_raw_rdata(parse_name(name)?, record_type, ttl, rdata)
-            }
-            Err(e) => Err(e),
-        }
+        let EncodedRdata { record_type, rdata } =
+            EncodedRdata::from_columns(record_type, value, priority)?;
+        self.add_raw_rdata(parse_name(name)?, record_type, ttl, rdata)
     }
 
     /// Adds the catalog-zone NS record, which is the placeholder "invalid".
@@ -184,7 +181,6 @@ impl DnsMessageBuilder {
         )
     }
 
-    /// Adds a catalog-zone member PTR record.
     pub fn add_catalog_ptr(&mut self, zone: &Zone, member_zone: &str) -> Result<(), String> {
         let member_id = crate::dns::zone_name_to_member_id(member_zone);
         let ptr_name = format!("{}.zones.{}.", member_id, zone.name);
@@ -198,7 +194,6 @@ impl DnsMessageBuilder {
         )
     }
 
-    /// Adds an answer from a database Record model.
     pub fn add_record(&mut self, record: &Record, zone_name: &ZoneName) -> Result<(), String> {
         self.add_record_parts(
             zone_name,
@@ -376,7 +371,6 @@ impl DnsMessageBuilder {
         Ok(frame)
     }
 
-    /// Consumes the builder and returns the serialized DNS message.
     pub fn build(self) -> Vec<u8> {
         let mut message = Vec::with_capacity(self.message_len());
         self.build_message_into(&mut message);

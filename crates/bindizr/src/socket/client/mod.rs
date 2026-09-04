@@ -16,7 +16,6 @@ use crate::{
 pub(crate) struct DaemonSocketClient;
 
 impl DaemonSocketClient {
-    /// Create a new [`DaemonSocketClient`].
     pub(crate) fn new() -> Self {
         DaemonSocketClient
     }
@@ -42,7 +41,6 @@ impl DaemonSocketClient {
         }
     }
 
-    /// Query the daemon's status.
     pub(crate) async fn status(&self) -> Result<DaemonStatusResponse, CliError> {
         let res = self.send_control_command(DaemonCommandKind::Status).await?;
         serde_json::from_value(res.data)

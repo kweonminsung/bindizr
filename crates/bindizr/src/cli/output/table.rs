@@ -29,7 +29,6 @@ fn value_text(value: &RecordValueRequest) -> String {
     }
 }
 
-/// Table row for zone display.
 #[derive(Debug, Tabled)]
 pub(crate) struct ZoneRow {
     #[tabled(rename = "ID")]
@@ -59,7 +58,6 @@ impl From<&GetZoneResponse> for ZoneRow {
     }
 }
 
-/// Table row for record display.
 #[derive(Debug, Tabled)]
 pub(crate) struct RecordRow {
     #[tabled(rename = "ID", display = "display_option_i32")]
@@ -92,7 +90,6 @@ impl From<&GetRecordResponse> for RecordRow {
     }
 }
 
-/// Table row for DNSSEC signing-key display.
 #[derive(Debug, Tabled)]
 pub(crate) struct DnssecKeyRow {
     #[tabled(rename = "ID")]
@@ -127,7 +124,6 @@ impl From<&DnssecKeyInfo> for DnssecKeyRow {
     }
 }
 
-/// Table row for DNSSEC policy display.
 #[derive(Debug, Tabled)]
 pub(crate) struct DnssecPolicyRow {
     #[tabled(rename = "NAME")]
@@ -170,7 +166,6 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
     }
 }
 
-/// Table row for zone version display.
 #[derive(Debug, Tabled)]
 pub(crate) struct VersionRow {
     #[tabled(rename = "SERIAL")]
@@ -224,7 +219,6 @@ impl From<&VersionRecordResponse> for VersionRecordRow {
     }
 }
 
-/// Table row for rollback result summaries.
 #[derive(Debug, Tabled)]
 pub(crate) struct RollbackSummaryRow {
     #[tabled(rename = "TARGET-SERIAL")]
@@ -257,7 +251,6 @@ impl From<&RollbackZoneResponse> for RollbackSummaryRow {
     }
 }
 
-/// Table row for per-secondary zone sync status.
 #[derive(Debug, Tabled)]
 pub(crate) struct SecondaryStatusRow {
     #[tabled(rename = "ADDRESS")]
@@ -302,7 +295,6 @@ impl SecondaryStatusRow {
     }
 }
 
-/// Table row for zone-file import summaries.
 #[derive(Debug, Tabled)]
 pub(crate) struct ImportSummaryRow {
     #[tabled(rename = "PARSED")]
@@ -332,7 +324,6 @@ impl From<&ImportSummary> for ImportSummaryRow {
     }
 }
 
-/// Table row for API token display.
 #[derive(Debug, Tabled)]
 pub(crate) struct TokenRow {
     #[tabled(rename = "NAME")]
@@ -359,7 +350,6 @@ impl From<&GetTokenResponse> for TokenRow {
     }
 }
 
-/// Table row for TSIG key display.
 #[derive(Debug, Tabled)]
 pub(crate) struct TsigKeyRow {
     #[tabled(rename = "ID")]
@@ -386,7 +376,6 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
     }
 }
 
-/// Table row for zone token policy display.
 #[derive(Debug, Tabled)]
 pub(crate) struct ZoneTokenPolicyRow {
     #[tabled(rename = "ID")]
@@ -410,7 +399,6 @@ impl From<&GetZoneTokenPolicyResponse> for ZoneTokenPolicyRow {
     }
 }
 
-/// Table row for zone TSIG policy display.
 #[derive(Debug, Tabled)]
 pub(crate) struct ZoneTsigPolicyRow {
     #[tabled(rename = "ID")]

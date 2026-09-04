@@ -17,11 +17,9 @@ use crate::api::{
     RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody,
 };
 
-/// Route group for zone DNSSEC endpoints.
 pub(crate) struct DnssecApi;
 
 impl DnssecApi {
-    /// Build the router for zone DNSSEC endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/zones/{name}/dnssec", routing::get(get_dnssec_status))

@@ -93,7 +93,6 @@ impl SignedViewParams<'_> {
             - chrono::Duration::seconds((slot % self.expiration_jitter_secs as u64) as i64)
     }
 
-    /// Compute the signed view these params describe.
     pub fn compute(&self) -> Result<SignedViewDiff, String> {
         let zone = self.zone;
         let apex = to_wire_name(zone.name.to_wire())?;

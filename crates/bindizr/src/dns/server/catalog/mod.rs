@@ -30,7 +30,10 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     log_info!("Catalog zone contains {} member zones", member_zones.len());
 
     // The catalog zone is virtual (no DB row).
-    let serial = generate_catalog_serial(&member_zones, &all_zones).await?;
+    let digest = catalog_digest(&member_zones, &all_zones);
+    let base_serial = all_zones.iter().map(|z| z.serial).max().unwrap_or(1);
+    let serial =
+        ZoneService::advance_catalog_serial(CATALOG_ZONE_NAME, &digest, base_serial).await?;
 
     let catalog_zone = Zone {
         id: 0,
@@ -48,12 +51,6 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     };
 
     Ok((catalog_zone, member_zones))
-}
-
-async fn generate_catalog_serial(member_zones: &[String], zones: &[Zone]) -> Result<i32, XfrError> {
-    let digest = catalog_digest(member_zones, zones);
-    let base_serial = zones.iter().map(|z| z.serial).max().unwrap_or(1);
-    Ok(ZoneService::advance_catalog_serial(CATALOG_ZONE_NAME, &digest, base_serial).await?)
 }
 
 fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {

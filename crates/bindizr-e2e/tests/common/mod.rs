@@ -64,26 +64,22 @@ enum TestRuntime {
 
 impl TestApp {
     pub(crate) async fn start() -> Self {
-        if dns_verification_enabled() {
+        if env_flag(DNS_VERIFICATION_ENV) {
             Self::start_compose().await
         } else {
-            Self::start_local_with(TestAppOptions::default()).await
+            Self::start_with_options(TestAppOptions::default()).await
         }
     }
 
     /// A locally spawned daemon with the default config, even in compose
     /// mode — for tests bound to this host's filesystem or default config.
     pub(crate) async fn start_local() -> Self {
-        Self::start_local_with(TestAppOptions::default()).await
+        Self::start_with_options(TestAppOptions::default()).await
     }
 
     /// Start with non-default config; always the local runtime, because the
     /// compose stack's config is fixed.
     pub(crate) async fn start_with_options(options: TestAppOptions) -> Self {
-        Self::start_local_with(options).await
-    }
-
-    async fn start_local_with(options: TestAppOptions) -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("bindizr.sqlite");
         fs::File::create(&db_path).expect("failed to create sqlite file");
@@ -272,7 +268,6 @@ impl TestApp {
         (status, body)
     }
 
-    /// A zone's records as the API reports them.
     pub(crate) async fn list_records(&self, zone_name: &str) -> Vec<Value> {
         let (status, body) = self
             .request(
@@ -288,7 +283,6 @@ impl TestApp {
             .clone()
     }
 
-    /// A zone's current SOA serial.
     pub(crate) async fn zone_serial(&self, zone_name: &str) -> i64 {
         let (status, body) = self
             .request(Method::GET, &format!("/zones/{zone_name}"), None)
@@ -602,10 +596,6 @@ fn test_namespace() -> String {
     });
     let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     format!("{run_id}-{sequence}")
-}
-
-fn dns_verification_enabled() -> bool {
-    env_flag(DNS_VERIFICATION_ENV)
 }
 
 /// The ARM override swaps the amd64-only ISC bind9 image for a multi-arch one.

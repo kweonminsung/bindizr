@@ -7,7 +7,6 @@ use crate::{
     repository::{LockLevel, RepositoryTx, ZoneChangeRepository},
 };
 
-/// SQLite-backed implementation of `ZoneChangeRepository`.
 pub(crate) struct SqliteZoneChangeRepository {
     pool: Pool<Sqlite>,
 }

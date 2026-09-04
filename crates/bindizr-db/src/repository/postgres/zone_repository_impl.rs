@@ -10,7 +10,6 @@ use crate::{
     },
 };
 
-/// PostgreSQL-backed implementation of `ZoneRepository`.
 pub(crate) struct PostgresZoneRepository {
     pool: Pool<Postgres>,
 }

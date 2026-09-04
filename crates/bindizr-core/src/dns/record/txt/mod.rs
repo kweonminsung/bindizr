@@ -148,7 +148,6 @@ impl TxtRecordValue {
         out
     }
 
-    /// The raw RDATA bytes.
     pub fn into_rdata(self) -> Vec<u8> {
         self.0
     }

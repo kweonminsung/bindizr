@@ -34,7 +34,8 @@ mod tests {
 
     #[test]
     fn zone_name_to_member_id_fits_a_label_for_the_longest_zone_name() {
-        // The old dot-to-dash spelling emitted the whole name as one label.
+        // RFC 9432, Section 4.1: the id is one label, so the longest zone
+        // name must still fit under the 63-byte label cap.
         let long = [
             "a".repeat(63),
             "b".repeat(63),
@@ -48,7 +49,7 @@ mod tests {
 
     #[test]
     fn zone_name_to_member_id_distinguishes_dot_from_dash() {
-        // RFC 9432, Section 4.1 requires unique ids; "a.b" and "a-b" collided.
+        // RFC 9432, Section 4.1 requires unique ids.
         assert_ne!(
             zone_name_to_member_id("a.b.example.com"),
             zone_name_to_member_id("a-b.example.com")

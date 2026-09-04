@@ -10,7 +10,6 @@ use crate::{
     },
 };
 
-/// MySQL-backed implementation of `ZoneRepository`.
 pub(crate) struct MySqlZoneRepository {
     pool: Pool<MySql>,
 }

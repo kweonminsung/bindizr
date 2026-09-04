@@ -11,11 +11,9 @@ use bindizr_service::{
 
 use crate::api::{RequestCaller, error::ApiError, middleware::body_parser::JsonBody};
 
-/// Route group for NOTIFY endpoints.
 pub(crate) struct NotifyApi;
 
 impl NotifyApi {
-    /// Build the router for NOTIFY endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new().route("/zones/notify", routing::post(notify_zones))
     }

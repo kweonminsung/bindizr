@@ -7,7 +7,6 @@ use crate::{
     repository::{LockLevel, RepositoryTx, ZoneChangeRepository, sql::lock_clause},
 };
 
-/// PostgreSQL-backed implementation of `ZoneChangeRepository`.
 pub(crate) struct PostgresZoneChangeRepository {
     pool: Pool<Postgres>,
 }

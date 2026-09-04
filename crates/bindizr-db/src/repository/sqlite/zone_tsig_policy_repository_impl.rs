@@ -7,7 +7,6 @@ use crate::{
     repository::{LockLevel, RepositoryTx, ZoneTsigPolicyRepository},
 };
 
-/// SQLite-backed implementation of `ZoneTsigPolicyRepository`.
 pub(crate) struct SqliteZoneTsigPolicyRepository {
     pool: Pool<Sqlite>,
 }

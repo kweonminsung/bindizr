@@ -21,11 +21,9 @@ use crate::api::{
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
 
-/// Route group for record endpoints.
 pub(crate) struct RecordApi;
 
 impl RecordApi {
-    /// Build the router for record endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/records", routing::get(get_records))
@@ -234,13 +232,11 @@ pub(crate) async fn create_records_bulk(
     Ok((status, Json(response)).into_response())
 }
 
-/// Path parameters scoped to a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ZoneScopedParam {
     zone_name: String,
 }
 
-/// Path parameters addressing a record by id.
 #[derive(Debug, Deserialize)]
 pub(crate) struct RecordIdParam {
     record_id: i32,

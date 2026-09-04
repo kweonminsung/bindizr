@@ -21,11 +21,9 @@ use crate::api::{
     middleware::body_parser::JsonBody,
 };
 
-/// Route group for TSIG key and zone TSIG policy endpoints.
 pub(crate) struct TsigKeyApi;
 
 impl TsigKeyApi {
-    /// Build the router for TSIG key and zone TSIG policy endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/tsig-keys", routing::get(get_tsig_keys))

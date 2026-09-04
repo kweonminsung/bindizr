@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-/// Errors returned by database operations.
 #[derive(Debug, Error)]
 pub enum DatabaseError {
     #[error("Query failed: {0}")]

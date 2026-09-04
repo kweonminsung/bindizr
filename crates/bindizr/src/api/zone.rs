@@ -23,11 +23,9 @@ use crate::api::{
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
 
-/// Route group for zone endpoints.
 pub(crate) struct ZoneApi;
 
 impl ZoneApi {
-    /// Build the router for zone endpoints.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/zones", routing::get(get_zones))
@@ -79,7 +77,6 @@ pub(crate) async fn get_zone_status(
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
-/// Query parameters for the zone export.
 #[derive(Deserialize)]
 pub(crate) struct ExportZoneQuery {
     pub(crate) signed: Option<bool>,
@@ -205,7 +202,6 @@ pub(crate) async fn rollback_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-/// Query parameters for listing zone versions.
 #[derive(Debug, Deserialize)]
 pub(crate) struct VersionListQuery {
     limit: Option<u32>,
@@ -214,14 +210,12 @@ pub(crate) struct VersionListQuery {
     offset: Option<u64>,
 }
 
-/// Path parameters addressing a zone version by zone name and serial.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ZoneVersionParam {
     name: String,
     serial: i32,
 }
 
-/// Query parameters selecting the two serials to diff.
 #[derive(Debug, Deserialize)]
 pub(crate) struct VersionDiffQuery {
     from: i32,
@@ -445,7 +439,6 @@ pub(crate) async fn import_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-/// Query parameters for fetching a zone.
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetZoneQuery {
     records: Option<bool>,

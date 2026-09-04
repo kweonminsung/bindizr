@@ -18,7 +18,6 @@ pub const MAX_DNS_LABEL_LEN: usize = 63;
 /// Maximum length of a domain name, in bytes (RFC 1035).
 pub const MAX_DOMAIN_LEN: usize = 253;
 
-/// Whether the value contains any whitespace or ASCII control character.
 pub fn has_whitespace_or_control(value: &str) -> bool {
     value
         .chars()

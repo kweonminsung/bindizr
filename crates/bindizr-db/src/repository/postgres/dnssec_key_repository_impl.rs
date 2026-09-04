@@ -8,7 +8,6 @@ use crate::{
     repository::{DnssecKeyRepository, LockLevel, RepositoryTx, sql::lock_clause},
 };
 
-/// PostgreSQL-backed implementation of `DnssecKeyRepository`.
 pub(crate) struct PostgresDnssecKeyRepository {
     pool: Pool<Postgres>,
 }

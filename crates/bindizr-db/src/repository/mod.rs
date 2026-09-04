@@ -42,7 +42,6 @@ pub enum LockLevel {
     None,
 }
 
-/// Optional criteria for querying zones.
 #[derive(Clone, Debug, Default)]
 pub struct ZoneFilter {
     pub name: Option<String>,
@@ -62,7 +61,6 @@ pub struct ZoneFilter {
     pub offset: Option<u64>,
 }
 
-/// Optional criteria for querying records.
 #[derive(Clone, Debug, Default)]
 pub struct RecordFilter {
     /// Matched through a subquery on `zones.name`, so the filter still lands
@@ -87,8 +85,8 @@ pub struct RecordFilter {
     pub offset: Option<u64>,
 }
 
-/// Optional criteria for querying derived DNSSEC records. Value, search, and
-/// priority have no derived-plane meaning, so the filter has no slot for them.
+/// Value, search, and priority have no derived-plane meaning, so the derived
+/// filter has no slot for them.
 #[derive(Clone, Debug, Default)]
 pub struct DnssecRecordFilter {
     /// Matched as in `RecordFilter`.
@@ -116,7 +114,6 @@ enum RepositoryTxKind<'a> {
     SQLite(sqlx::Transaction<'a, Sqlite>),
 }
 
-/// Begin a transaction on the global database pool.
 pub async fn begin_transaction() -> Result<RepositoryTx<'static>, DatabaseError> {
     // IMMEDIATE takes SQLite's write lock up front so a read-then-write
     // transaction can't fail late with "database is locked".
@@ -151,7 +148,6 @@ async fn begin(sqlite_begin: &'static str) -> Result<RepositoryTx<'static>, Data
 }
 
 impl<'a> RepositoryTx<'a> {
-    /// Commit the transaction.
     pub async fn commit(self) -> Result<(), DatabaseError> {
         match self.0 {
             RepositoryTxKind::MySQL(tx) => tx
@@ -169,7 +165,6 @@ impl<'a> RepositoryTx<'a> {
         }
     }
 
-    /// Roll back the transaction.
     pub async fn rollback(self) -> Result<(), DatabaseError> {
         match self.0 {
             RepositoryTxKind::MySQL(tx) => tx
@@ -225,7 +220,6 @@ impl<'a> RepositoryTx<'a> {
     }
 }
 
-/// Persistence operations for zones.
 #[async_trait]
 pub trait ZoneRepository: Send + Sync {
     async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
@@ -278,7 +272,6 @@ pub trait ZoneRepository: Send + Sync {
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
 }
 
-/// Persistence operations for DNSSEC policies.
 #[async_trait]
 pub trait DnssecPolicyRepository: Send + Sync {
     async fn create(&self, policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError>;
@@ -306,7 +299,6 @@ pub trait DnssecPolicyRepository: Send + Sync {
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
-/// Persistence operations for TSIG keys.
 #[async_trait]
 pub trait TsigKeyRepository: Send + Sync {
     async fn create(&self, key: TsigKey) -> Result<TsigKey, DatabaseError>;
@@ -315,7 +307,6 @@ pub trait TsigKeyRepository: Send + Sync {
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
-/// Persistence operations for zone TSIG policies.
 #[async_trait]
 pub trait ZoneTsigPolicyRepository: Send + Sync {
     async fn create(&self, policy: ZoneTsigPolicy) -> Result<ZoneTsigPolicy, DatabaseError>;
@@ -359,7 +350,6 @@ pub trait ZoneTokenPolicyRepository: Send + Sync {
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
-/// Persistence operations for records.
 #[async_trait]
 pub trait RecordRepository: Send + Sync {
     async fn create_tx(
@@ -434,7 +424,6 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<(), DatabaseError>;
 }
 
-/// Persistence operations for zone changes.
 #[async_trait]
 pub trait ZoneChangeRepository: Send + Sync {
     /// Insert many zone changes in one statement (chunked). Ids are not returned.
@@ -471,7 +460,6 @@ pub trait ZoneChangeRepository: Send + Sync {
     ) -> Result<u64, DatabaseError>;
 }
 
-/// Persistence operations for zone versions.
 #[async_trait]
 pub trait ZoneVersionRepository: Send + Sync {
     async fn upsert_tx(
@@ -521,7 +509,6 @@ pub trait ZoneVersionRepository: Send + Sync {
     ) -> Result<u64, DatabaseError>;
 }
 
-/// Persistence operations for DNSSEC signing keys.
 #[async_trait]
 pub trait DnssecKeyRepository: Send + Sync {
     async fn create_tx(
@@ -535,8 +522,8 @@ pub trait DnssecKeyRepository: Send + Sync {
         zone_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<DnssecKey>, DatabaseError>;
-    /// Keys sitting in `state` since before `cutoff`: the rollover work list.
-    /// Keys in `state` whose stamped transition deadline has passed.
+    /// Keys in `state` whose stamped `eligible_at` deadline has passed `cutoff`:
+    /// the rollover work list.
     async fn list_by_state_eligible_before(
         &self,
         state: DnssecKeyState,
@@ -621,7 +608,6 @@ pub trait DnssecRecordRepository: Send + Sync {
     async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError>;
 }
 
-/// Persistence operations for API tokens.
 #[async_trait]
 pub trait ApiTokenRepository: Send + Sync {
     async fn create(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
@@ -651,7 +637,6 @@ pub trait DnssecWithdrawalRepository: Send + Sync {
     -> Result<(), DatabaseError>;
 }
 
-/// Persistence operations for catalog zone state.
 #[async_trait]
 pub trait CatalogZoneStateRepository: Send + Sync {
     /// The serial advances only when `digest` changed; returns the serial in
@@ -665,7 +650,6 @@ pub trait CatalogZoneStateRepository: Send + Sync {
     ) -> Result<i32, DatabaseError>;
 }
 
-/// Builds backend-specific repository implementations for a given pool.
 pub(crate) struct RepositoryFactory;
 
 impl RepositoryFactory {

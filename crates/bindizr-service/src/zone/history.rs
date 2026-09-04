@@ -21,7 +21,6 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType},
-        zone_version::ZoneVersion,
     },
     record::{
         RecordService, validate_delete_constraints, validate_record_add_constraints_normalized,
@@ -210,34 +209,6 @@ fn sort_records(records: &mut [ReconstructedRecord]) {
     });
 }
 
-/// Build the zone as it should look after rolling back to `version`: SOA
-/// metadata from the version, identity (id/name) and creation time unchanged,
-/// serial advanced to `new_serial`.
-fn restored_zone_from_version(
-    zone: &Zone,
-    version: &ZoneVersion,
-    new_serial: i32,
-) -> Result<Zone, ServiceError> {
-    let rname = SoaMailbox::from_encoded(&version.rname)
-        .to_email()
-        .map_err(|e| ServiceError::internal(format!("Failed to decode version rname: {}", e)))?;
-
-    Ok(Zone {
-        id: zone.id,
-        name: zone.name.clone(),
-        mname: version.mname.clone(),
-        rname,
-        default_ttl: version.default_ttl,
-        serial: new_serial,
-        refresh: version.refresh,
-        retry: version.retry,
-        expire: version.expire,
-        dnssec_policy_id: zone.dnssec_policy_id,
-        minimum_ttl: version.minimum_ttl,
-        created_at: zone.created_at,
-    })
-}
-
 impl ZoneService {
     /// List a zone's versions (serial history), newest serial first. Unless
     /// `all`, signer-only serials (DNSSEC re-signs, rollovers) are skipped —
@@ -388,7 +359,27 @@ impl ZoneService {
             .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target_serial))?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
-            let restored_zone = restored_zone_from_version(&zone, &version, new_serial)?;
+            // SOA metadata comes back from the version; identity and creation
+            // time are not part of one and stay.
+            let rname = SoaMailbox::from_encoded(&version.rname)
+                .to_email()
+                .map_err(|e| {
+                    ServiceError::internal(format!("Failed to decode version rname: {}", e))
+                })?;
+            let restored_zone = Zone {
+                id: zone.id,
+                name: zone.name.clone(),
+                mname: version.mname.clone(),
+                rname,
+                default_ttl: version.default_ttl,
+                serial: new_serial,
+                refresh: version.refresh,
+                retry: version.retry,
+                expire: version.expire,
+                dnssec_policy_id: zone.dnssec_policy_id,
+                minimum_ttl: version.minimum_ttl,
+                created_at: zone.created_at,
+            };
             let soa_changed = zone.soa_metadata_differs(&restored_zone);
 
             let current_records =
