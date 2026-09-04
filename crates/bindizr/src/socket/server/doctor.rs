@@ -1,10 +1,14 @@
 use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{config, dns::CATALOG_ZONE_NAME};
-use bindizr_service::{authorization::Caller, error::ServiceError, zone::ZoneService};
+use bindizr_service::{
+    authorization::Caller,
+    dns_client::{notify, probe},
+    error::ServiceError,
+    zone::ZoneService,
+};
 
 use crate::{
-    dns::client::{notify, probe},
     net::loopback_if_unspecified,
     socket::{
         server::to_response_data,
@@ -65,7 +69,8 @@ pub(crate) async fn doctor() -> Result<DaemonResponse, ServiceError> {
         };
 
     let secondaries = probe::probe_secondaries(CATALOG_ZONE_NAME)
-        .await?
+        .await
+        .map_err(ServiceError::internal)?
         .into_iter()
         .map(|probe| match probe.result {
             Ok(serial) => DoctorProbeResult {
@@ -82,7 +87,8 @@ pub(crate) async fn doctor() -> Result<DaemonResponse, ServiceError> {
         .collect();
 
     let notifies = notify::notify_secondaries(CATALOG_ZONE_NAME)
-        .await?
+        .await
+        .map_err(ServiceError::internal)?
         .into_iter()
         .map(|notify| DoctorProbeResult {
             address: notify.address,

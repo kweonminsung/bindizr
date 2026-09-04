@@ -7,18 +7,14 @@ use super::ZoneService;
 use crate::{
     authorization::Caller,
     error::ServiceError,
-    model::{record::RecordType, zone_tsig_policy::ZoneTsigPolicy},
+    model::{
+        record::RecordType,
+        zone_tsig_policy::{ZoneTsigPolicy, ZoneTsigPolicyWithKey},
+    },
     policy_pattern::{normalize_pattern, normalize_types, pattern_matches_name, types_match},
     repository::RepositoryService,
     tsig_key::TsigKeyService,
 };
-
-/// A zone TSIG policy joined with the name of the key it grants.
-#[derive(Debug, Clone)]
-pub struct ZoneTsigPolicyWithKey {
-    pub(crate) policy: ZoneTsigPolicy,
-    pub(crate) tsig_key_name: String,
-}
 
 /// Grants and revokes per-zone nsupdate rights for TSIG keys.
 pub struct ZoneTsigPolicyService;

@@ -5,5 +5,7 @@ charts
 docs
 packaging
 public
-bindizr.db
+*.db
+*.db-shm
+*.db-wal
 *.log

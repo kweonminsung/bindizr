@@ -245,7 +245,6 @@ async fn record_update_changes_only_passed_fields_via_cli() {
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     assert_eq!(updated["value"], "127.0.0.1");
-    // Omitted fields keep their current values.
     assert_eq!(updated["ttl"], 300);
     assert_eq!(updated["record_type"], "A");
     assert_eq!(updated["name"], format!("www.{zone_name}."));

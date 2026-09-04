@@ -6,6 +6,28 @@
 pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
+        CREATE TABLE IF NOT EXISTS dnssec_policies (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            algorithm INT NOT NULL,
+            denial VARCHAR(8) NOT NULL,
+            split_keys BOOLEAN NOT NULL DEFAULT FALSE,
+            signature_validity_days INT NOT NULL,
+            signature_refresh_days INT NOT NULL,
+            zsk_lifetime_days INT NOT NULL DEFAULT 0,
+            rollover_publish_holddown_secs BIGINT NOT NULL,
+            rollover_retire_holddown_secs BIGINT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
+        r#"
+        INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
+            signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
+            rollover_retire_holddown_secs)
+        SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800 FROM DUAL
+        WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS zones (
             id INT PRIMARY KEY AUTO_INCREMENT,
             name VARCHAR(255) UNIQUE NOT NULL,
@@ -17,8 +39,10 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             retry INT NOT NULL DEFAULT 60,
             expire INT NOT NULL DEFAULT 3600000,
             minimum_ttl INT NOT NULL DEFAULT 86400,
-            dnssec_denial VARCHAR(8) NOT NULL DEFAULT 'nsec',
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            dnssec_policy_id INT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id),
+            INDEX idx_zones_dnssec_policy (dnssec_policy_id)
         );
         "#,
         r#"
@@ -177,6 +201,28 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
 pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
+        CREATE TABLE IF NOT EXISTS dnssec_policies (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            algorithm INTEGER NOT NULL,
+            denial VARCHAR(8) NOT NULL,
+            split_keys BOOLEAN NOT NULL DEFAULT FALSE,
+            signature_validity_days INTEGER NOT NULL,
+            signature_refresh_days INTEGER NOT NULL,
+            zsk_lifetime_days INTEGER NOT NULL DEFAULT 0,
+            rollover_publish_holddown_secs BIGINT NOT NULL,
+            rollover_retire_holddown_secs BIGINT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
+        r#"
+        INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
+            signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
+            rollover_retire_holddown_secs)
+        SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800
+        WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS zones (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) UNIQUE NOT NULL,
@@ -188,9 +234,13 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             retry INTEGER NOT NULL DEFAULT 60,
             expire INTEGER NOT NULL DEFAULT 3600000,
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
-            dnssec_denial VARCHAR(8) NOT NULL DEFAULT 'nsec',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            dnssec_policy_id INTEGER NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id)
         );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zones_dnssec_policy ON zones(dnssec_policy_id);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS records (
@@ -368,6 +418,28 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
 pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
+        CREATE TABLE IF NOT EXISTS dnssec_policies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            algorithm INTEGER NOT NULL,
+            denial TEXT NOT NULL,
+            split_keys BOOLEAN NOT NULL DEFAULT FALSE,
+            signature_validity_days INTEGER NOT NULL,
+            signature_refresh_days INTEGER NOT NULL,
+            zsk_lifetime_days INTEGER NOT NULL DEFAULT 0,
+            rollover_publish_holddown_secs BIGINT NOT NULL,
+            rollover_retire_holddown_secs BIGINT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
+        r#"
+        INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
+            signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
+            rollover_retire_holddown_secs)
+        SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800
+        WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS zones (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
@@ -379,9 +451,13 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             retry INTEGER NOT NULL DEFAULT 60,
             expire INTEGER NOT NULL DEFAULT 3600000,
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
-            dnssec_denial TEXT NOT NULL DEFAULT 'nsec',
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            dnssec_policy_id INTEGER NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id)
         );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zones_dnssec_policy ON zones(dnssec_policy_id);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS records (

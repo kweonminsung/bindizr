@@ -4,7 +4,7 @@ pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
 use bindizr_core::{
     dns::{message, message::Rtype, name::ZoneName},
     log_info,
-    model::zone::{DnssecDenial, Zone},
+    model::zone::Zone,
 };
 use bindizr_service::zone::ZoneService;
 use chrono::Utc;
@@ -29,7 +29,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
 
     log_info!("Catalog zone contains {} member zones", member_zones.len());
 
-    // The catalog zone is virtual (no DB row); build its metadata in memory.
+    // The catalog zone is virtual (no DB row).
     let serial = generate_catalog_serial(&member_zones, &all_zones).await?;
 
     let catalog_zone = Zone {
@@ -43,7 +43,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
         retry: 600,
         expire: 86400,
         minimum_ttl: 60,
-        dnssec_denial: DnssecDenial::Nsec,
+        dnssec_policy_id: None,
         created_at: Utc::now(),
     };
 

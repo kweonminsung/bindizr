@@ -4,6 +4,8 @@
 *.log
 *.tar.gz
 *.db
+*.db-shm
+*.db-wal
 *.deb
 *.rpm
 .cr-release-packages

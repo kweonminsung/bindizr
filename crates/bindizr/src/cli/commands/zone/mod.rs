@@ -9,7 +9,7 @@ mod version;
 use bindizr_service::types::{
     CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
     ImportMode as ServiceImportMode, ImportZoneFileRequest, ImportZoneFileResponse,
-    NotifyZoneRequest, UpdateZonePatch, ZoneStatusResponse,
+    ImportZoneFromServerRequest, NotifyZoneRequest, UpdateZonePatch, ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use dnssec::ZoneDnssecCommand;
@@ -28,8 +28,8 @@ use crate::{
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, ExportZoneFileParams, ImportZoneFileParams, UpdateZoneParams,
-            ZoneNameParams,
+            DaemonCommandKind, ExportZoneFileParams, ImportZoneFileParams,
+            ImportZoneFromServerParams, UpdateZoneParams, ZoneNameParams,
         },
     },
 };
@@ -140,6 +140,7 @@ pub(crate) enum ZoneCommand {
     },
 
     /// Delete a zone
+    #[command(alias = "rm")]
     Delete {
         /// The name of the zone
         name: String,
@@ -159,7 +160,15 @@ $INCLUDE is not supported.")]
         /// The name of the zone
         name: String,
         /// Path to a BIND zone file, or '-' to read from stdin
-        file: String,
+        #[arg(
+            required_unless_present = "from_server",
+            conflicts_with = "from_server"
+        )]
+        file: Option<String>,
+        /// Pull the records over AXFR from this server (host[:port], port 53
+        /// default) instead of a file
+        #[arg(long, value_name = "SERVER")]
+        from_server: Option<String>,
         /// How parsed records are reconciled with existing records
         #[arg(long, value_enum, default_value_t = ImportMode::Append)]
         mode: ImportMode,
@@ -397,26 +406,44 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         ZoneCommand::Import {
             name,
             file,
+            from_server,
             mode,
             dry_run,
             preview,
             output,
         } => {
-            let content = super::read_input(&file)?;
-            let response = client
-                .send_command(
-                    DaemonCommandKind::ImportZoneFile,
-                    ImportZoneFileParams {
-                        zone_name: name,
-                        request: ImportZoneFileRequest {
-                            content,
-                            mode: mode.into(),
-                            // Preview never applies; it is a dry run rendered as a diff.
-                            dry_run: dry_run || preview,
+            // Preview never applies; it is a dry run rendered as a diff.
+            let dry_run = dry_run || preview;
+            let response = if let Some(from_server) = from_server {
+                client
+                    .send_command(
+                        DaemonCommandKind::ImportZoneFromServer,
+                        ImportZoneFromServerParams {
+                            zone_name: name,
+                            request: ImportZoneFromServerRequest {
+                                from_server,
+                                mode: mode.into(),
+                                dry_run,
+                            },
                         },
-                    },
-                )
-                .await?;
+                    )
+                    .await?
+            } else {
+                let file = file.expect("clap requires a file unless --from-server is present");
+                client
+                    .send_command(
+                        DaemonCommandKind::ImportZoneFile,
+                        ImportZoneFileParams {
+                            zone_name: name,
+                            request: ImportZoneFileRequest {
+                                content: super::read_input(&file)?,
+                                mode: mode.into(),
+                                dry_run,
+                            },
+                        },
+                    )
+                    .await?
+            };
 
             if output == OutputFormat::Table {
                 let import: ImportZoneFileResponse = parse_response(&response.data)?;

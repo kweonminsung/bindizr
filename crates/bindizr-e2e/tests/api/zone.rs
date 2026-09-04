@@ -961,7 +961,6 @@ async fn zone_import_append_into_populated_zone_isolates_names() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Populate two unrelated names.
     seed_records(
         &app,
         zone_name,
@@ -1120,7 +1119,7 @@ async fn zone_rollback_dry_run_then_apply() {
         .await;
     let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
 
-    // Mutate past the target: add a record and change the SOA TTL.
+    // Mutate past the target.
     let extra_record = json!({
         "name": "extra", "record_type": "A", "value": "192.0.2.61",
         "ttl": 300, "zone_name": zone_name

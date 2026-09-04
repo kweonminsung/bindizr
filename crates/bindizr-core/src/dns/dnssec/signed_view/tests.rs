@@ -5,14 +5,15 @@ use chrono::{DateTime, Duration, Utc};
 use super::{SignedViewDiff, SignedViewParams};
 use crate::{
     dns::{
-        dnssec::generate_key,
+        dnssec::{generate_key, import_key},
         name::{OwnerName, ZoneName},
     },
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
+        dnssec_policy::DnssecDenial,
         dnssec_record::{DnssecRecord, DnssecRecordType},
         record::{Record, RecordType},
-        zone::{DnssecDenial, Zone},
+        zone::Zone,
     },
 };
 
@@ -28,7 +29,7 @@ fn test_zone() -> Zone {
         retry: 60,
         expire: 3600000,
         minimum_ttl: 900,
-        dnssec_denial: DnssecDenial::Nsec,
+        dnssec_policy_id: None,
         created_at: Utc::now(),
     }
 }
@@ -866,6 +867,123 @@ fn p384_keys_advertise_a_sha384_ds_digest() {
     // RFC 6605, Section 4 pairs P-384 with a SHA-384 (type 4) DS digest.
     assert_eq!(rdata.as_bytes()[3], 4);
     assert_eq!(rdata.as_bytes().len(), 4 + 48);
+}
+
+#[test]
+fn ed448_keys_generate_and_sign() {
+    let zone = test_zone();
+    let mut key = generate_key(
+        &zone,
+        DnssecAlgorithm::Ed448,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+    key.id = 1;
+    let keys = [key];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let diff = compute(ComputeArgs {
+        zone: &zone,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        new_serial: 2,
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        force: false,
+    });
+
+    // Algorithm 16 only signs through the OpenSSL backend; this guards the
+    // ring-to-OpenSSL fallback staying wired up.
+    let apex = OwnerName::apex();
+    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32);
+    assert_eq!(rrsigs.len(), 1);
+    assert_eq!(rrsigs[0].rdata.as_bytes()[2], 16);
+}
+
+#[test]
+fn imported_bind_key_pair_round_trips() {
+    let zone = test_zone();
+    let generated = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let record = format!(
+        "example.com. 3600 IN DNSKEY 257 3 13 {}",
+        generated.public_key
+    );
+
+    let imported = import_key(&zone, false, &record, &generated.private_key, fixed_now()).unwrap();
+
+    assert_eq!(imported.role, DnssecKeyRole::Csk);
+    assert_eq!(imported.key_tag, generated.key_tag);
+    assert_eq!(imported.public_key, generated.public_key);
+    assert_eq!(imported.state, DnssecKeyState::Active);
+}
+
+#[test]
+fn import_derives_the_role_from_the_key_layout() {
+    let zone = test_zone();
+    let sep = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let record = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", sep.public_key);
+
+    // The SEP flag alone cannot tell a CSK from a KSK; the layout does.
+    let imported = import_key(&zone, false, &record, &sep.private_key, fixed_now()).unwrap();
+    assert_eq!(imported.role, DnssecKeyRole::Csk);
+    let imported = import_key(&zone, true, &record, &sep.private_key, fixed_now()).unwrap();
+    assert_eq!(imported.role, DnssecKeyRole::Ksk);
+
+    let zsk = test_key(&zone, 2, DnssecKeyRole::Zsk, DnssecKeyState::Active);
+    let record = format!("example.com. 3600 IN DNSKEY 256 3 13 {}", zsk.public_key);
+    let imported = import_key(&zone, true, &record, &zsk.private_key, fixed_now()).unwrap();
+    assert_eq!(imported.role, DnssecKeyRole::Zsk);
+    assert!(import_key(&zone, false, &record, &zsk.private_key, fixed_now()).is_err());
+}
+
+#[test]
+fn import_rejects_a_mismatched_key_pair() {
+    let zone = test_zone();
+    let one = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let other = test_key(&zone, 2, DnssecKeyRole::Csk, DnssecKeyState::Active);
+    let record = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", one.public_key);
+
+    assert!(import_key(&zone, false, &record, &other.private_key, fixed_now()).is_err());
+}
+
+#[test]
+fn rsa_keys_generate_and_sign() {
+    let zone = test_zone();
+    let mut key = generate_key(
+        &zone,
+        DnssecAlgorithm::RsaSha256,
+        DnssecKeyRole::Csk,
+        DnssecKeyState::Active,
+        fixed_now(),
+        fixed_now(),
+    )
+    .unwrap();
+    key.id = 1;
+    let keys = [key];
+    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+
+    let diff = compute(ComputeArgs {
+        zone: &zone,
+        records: &records,
+        keys: &keys,
+        prev: &[],
+        denial: DnssecDenial::Nsec,
+        new_serial: 2,
+        expiration: default_expiration(),
+        expiration_jitter_secs: 0,
+        force: false,
+    });
+
+    // RSA key generation also runs on the OpenSSL backend (ring only signs).
+    let apex = OwnerName::apex();
+    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32);
+    assert_eq!(rrsigs.len(), 1);
+    assert_eq!(rrsigs[0].rdata.as_bytes()[2], 8);
 }
 
 #[test]

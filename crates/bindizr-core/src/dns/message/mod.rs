@@ -259,7 +259,6 @@ impl DnsMessageBuilder {
     fn add_answer<N: ToName, D: ComposeRecordData>(&mut self, owner: N, ttl: u32, data: D) {
         let record = domain::base::Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
         let mut answer = Vec::new();
-        // Composing into a Vec is infallible.
         record
             .compose_record(&mut answer)
             .expect("composing into a Vec cannot run out of space");
@@ -451,7 +450,6 @@ impl ParsedQuery {
         header.set_rcode(rcode);
 
         let mut question = builder.question();
-        // Composing one question into a Vec cannot fail.
         question
             .push((&self.qname, self.qtype))
             .expect("composing into a Vec cannot run out of space");

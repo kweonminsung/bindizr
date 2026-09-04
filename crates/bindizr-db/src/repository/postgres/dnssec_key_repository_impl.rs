@@ -100,39 +100,33 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         Ok(keys)
     }
 
-    async fn list_zone_ids_by_role_and_state_entered_before(
+    async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         &self,
         role: DnssecKeyRole,
         state: DnssecKeyState,
-        cutoff: DateTime<Utc>,
+        now: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let zone_ids = sqlx::query_scalar::<_, i32>(
             r#"
-            SELECT DISTINCT zone_id
-            FROM dnssec_keys
-            WHERE role = $1 AND state = $2 AND state_changed_at < $3
-            ORDER BY zone_id
+            SELECT DISTINCT k.zone_id
+            FROM dnssec_keys k
+            JOIN zones z ON z.id = k.zone_id
+            JOIN dnssec_policies p ON p.id = z.dnssec_policy_id
+            WHERE k.role = $1 AND k.state = $2
+              AND p.zsk_lifetime_days > 0
+              AND k.state_changed_at < $3 - make_interval(days => p.zsk_lifetime_days)
+            ORDER BY k.zone_id
             "#,
         )
         .bind(role.as_str())
         .bind(state.as_str())
-        .bind(cutoff)
+        .bind(now)
         .fetch_all(&mut *conn)
         .await?;
 
         Ok(zone_ids)
-    }
-
-    async fn count_zone_ids(&self) -> Result<u64, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(DISTINCT zone_id) FROM dnssec_keys")
-            .fetch_one(&mut *conn)
-            .await?;
-
-        Ok(count as u64)
     }
 
     async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError> {

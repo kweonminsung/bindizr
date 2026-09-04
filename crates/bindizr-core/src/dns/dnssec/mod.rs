@@ -103,9 +103,17 @@ pub fn generate_key(
     eligible_at: DateTime<Utc>,
 ) -> Result<DnssecKey, String> {
     let params = match algorithm {
+        // 2048 bits is the interoperable RSA size (RFC 8624 requires >= 2048).
+        DnssecAlgorithm::RsaSha256 => {
+            domain::crypto::sign::GenerateParams::RsaSha256 { bits: 2048 }
+        }
+        DnssecAlgorithm::RsaSha512 => {
+            domain::crypto::sign::GenerateParams::RsaSha512 { bits: 2048 }
+        }
         DnssecAlgorithm::EcdsaP256Sha256 => domain::crypto::sign::GenerateParams::EcdsaP256Sha256,
         DnssecAlgorithm::EcdsaP384Sha384 => domain::crypto::sign::GenerateParams::EcdsaP384Sha384,
         DnssecAlgorithm::Ed25519 => domain::crypto::sign::GenerateParams::Ed25519,
+        DnssecAlgorithm::Ed448 => domain::crypto::sign::GenerateParams::Ed448,
     };
     let (secret, dnskey) = domain::crypto::sign::generate(&params, role.flags())
         .map_err(|e| format!("failed to generate DNSSEC key: {}", e))?;
@@ -121,6 +129,93 @@ pub fn generate_key(
         state,
         state_changed_at: now,
         eligible_at,
+        max_signed_ttl: 0,
+        created_at: now,
+    })
+}
+
+/// Rebuild a key from its BIND key files (`K*.key` and `K*.private`),
+/// validating the pair by reconstructing the signer; it imports as `active`.
+/// The zone's key layout types a SEP key as the CSK or the KSK.
+pub fn import_key(
+    zone: &Zone,
+    split_keys: bool,
+    dnskey_record: &str,
+    private_key: &str,
+    now: DateTime<Utc>,
+) -> Result<DnssecKey, String> {
+    // `K*.key` holds one DNSKEY record; the bare RDATA form is accepted too.
+    let tokens: Vec<&str> = dnskey_record
+        .lines()
+        .filter(|line| !line.trim_start().starts_with(';'))
+        .flat_map(str::split_whitespace)
+        .collect();
+    let rdata_at = tokens
+        .iter()
+        .position(|token| token.eq_ignore_ascii_case("DNSKEY"))
+        .map_or(0, |index| index + 1);
+    let (flags, protocol, algorithm, public) = match &tokens[rdata_at..] {
+        [flags, protocol, algorithm, public @ ..] if !public.is_empty() => {
+            (flags, protocol, algorithm, public.concat())
+        }
+        _ => return Err("DNSKEY record needs flags, protocol, algorithm, and key".to_string()),
+    };
+
+    let flags: u16 = flags
+        .parse()
+        .map_err(|_| format!("invalid DNSKEY flags '{}'", flags))?;
+    if *protocol != "3" {
+        return Err(format!("DNSKEY protocol must be 3, got '{}'", protocol));
+    }
+    let algorithm = algorithm
+        .parse::<i32>()
+        .ok()
+        .and_then(DnssecAlgorithm::from_int)
+        .ok_or_else(|| format!("unsupported DNSKEY algorithm '{}'", algorithm))?;
+    let public_key = base64::engine::general_purpose::STANDARD
+        .decode(&public)
+        .map_err(|e| format!("DNSKEY public key is not base64: {}", e))?;
+
+    let role = match (flags, split_keys) {
+        (257, false) => DnssecKeyRole::Csk,
+        (257, true) => DnssecKeyRole::Ksk,
+        (256, true) => DnssecKeyRole::Zsk,
+        (256, false) => {
+            return Err(
+                "a 256-flag key is a ZSK, which a single-CSK layout does not use".to_string(),
+            );
+        }
+        _ => {
+            return Err(format!(
+                "unsupported DNSKEY flags {} (expected 256 or 257)",
+                flags
+            ));
+        }
+    };
+
+    let dnskey = domain::rdata::Dnskey::new(
+        flags,
+        3,
+        SecurityAlgorithm::from_int(algorithm.to_int() as u8),
+        public_key,
+    )
+    .map_err(|e| format!("invalid DNSKEY: {}", e))?;
+    let secret = domain::crypto::sign::SecretKeyBytes::parse_from_bind(private_key)
+        .map_err(|e| format!("invalid private key: {}", e))?;
+    domain::crypto::sign::KeyPair::from_bytes(&secret, &dnskey)
+        .map_err(|e| format!("private key does not match the DNSKEY: {}", e))?;
+
+    Ok(DnssecKey {
+        id: 0,
+        zone_id: zone.id,
+        role,
+        algorithm,
+        key_tag: i32::from(dnskey.key_tag()),
+        public_key: base64::engine::general_purpose::STANDARD.encode(dnskey.public_key()),
+        private_key: secret.display_as_bind().to_string(),
+        state: DnssecKeyState::Active,
+        state_changed_at: now,
+        eligible_at: now,
         max_signed_ttl: 0,
         created_at: now,
     })

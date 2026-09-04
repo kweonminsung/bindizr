@@ -9,8 +9,8 @@ mod output;
 use clap::{Parser, Subcommand};
 
 use crate::cli::commands::{
-    config::ConfigCommand, record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand,
-    zone::ZoneCommand,
+    config::ConfigCommand, dnssec_policy::DnssecPolicyCommand, record::RecordCommand,
+    token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
 };
 
 /// Top-level CLI argument parser.
@@ -57,6 +57,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: TsigKeyCommand,
     },
+    /// Manage DNSSEC policies, the signing-parameter bundles zones sign under
+    DnssecPolicy {
+        #[command(subcommand)]
+        subcommand: DnssecPolicyCommand,
+    },
     /// Manage zones
     Zone {
         #[command(subcommand)]
@@ -84,6 +89,9 @@ pub async fn execute() {
         Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
+        Command::DnssecPolicy { subcommand } => {
+            commands::dnssec_policy::handle_command(subcommand).await
+        }
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
         Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
     } {

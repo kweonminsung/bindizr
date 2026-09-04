@@ -1,22 +1,21 @@
 //! The `zone dnssec` subcommands.
 
 use bindizr_service::types::{
-    EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest, VerifyDnssecResponse,
+    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyPair,
+    ImportDnssecKeyRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
 };
 use clap::Subcommand;
 
 use crate::{
     cli::{
         error::CliError,
-        output::{
-            DnssecCheckRow, DnssecKeyRow, OutputFormat, parse_response, print_response, print_table,
-        },
+        output::{DnssecKeyRow, OutputFormat, parse_response, print_response, print_table},
     },
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
-            RolloverZoneDnssecParams, ZoneNameParams,
+            DaemonCommandKind, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
+            RolloverZoneDnssecParams, SetZoneDnssecPolicyParams, ZoneNameParams,
         },
     },
 };
@@ -24,21 +23,26 @@ use crate::{
 /// Subcommands for managing a zone's DNSSEC signing.
 #[derive(Subcommand, Debug)]
 pub(crate) enum ZoneDnssecCommand {
-    /// Enable DNSSEC: generate a signing key and sign the zone
+    /// Enable DNSSEC: generate the signing key(s) a policy prescribes and
+    /// sign the zone
     Enable {
         /// The name of the zone
         name: String,
-        /// Signing algorithm: ecdsap256sha256 (default), ecdsap384sha384, or ed25519
-        #[arg(long, value_name = "ALG")]
-        algorithm: Option<String>,
-        /// Denial-of-existence mode: nsec (default) or nsec3 (fixed at
-        /// enable time)
-        #[arg(long, value_name = "nsec|nsec3")]
-        denial: Option<String>,
-        /// Generate split KSK/ZSK keys instead of one CSK, so the ZSK rolls
-        /// without touching the parent zone's DS
-        #[arg(long)]
-        split_keys: bool,
+        /// DNSSEC policy to sign under (default: the built-in "default"
+        /// policy; see `bindizr dnssec-policy list`)
+        #[arg(long, value_name = "NAME")]
+        policy: Option<String>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+    /// Move a signed zone to another DNSSEC policy. The denial mode and key
+    /// layout must match; a different algorithm starts an algorithm rollover
+    SetPolicy {
+        /// The name of the zone
+        name: String,
+        /// Name of the target policy
+        policy: String,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -62,7 +66,7 @@ pub(crate) enum ZoneDnssecCommand {
         /// The name of the zone
         name: String,
     },
-    /// Show a zone's DNSSEC status (keys, DS records, signature expiry)
+    /// Show a zone's DNSSEC status (policy, keys, DS records, signature expiry)
     Status {
         /// The name of the zone
         name: String,
@@ -80,38 +84,31 @@ pub(crate) enum ZoneDnssecCommand {
         /// The name of the zone
         name: String,
     },
-    /// Verify the zone's DNSSEC state (keys, signatures, denial chain, and
-    /// the parent DS when dnssec.ds_probe_resolver is set)
-    Verify {
-        /// The name of the zone
-        name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
-    },
     /// Roll a zone's signing key: pre-publish a replacement, then promote it
     Rollover {
         #[command(subcommand)]
         subcommand: ZoneDnssecRolloverCommand,
+    },
+    /// Import or export the zone's raw keys (BIND `K*.key`/`K*.private` form)
+    Keys {
+        #[command(subcommand)]
+        subcommand: ZoneDnssecKeysCommand,
     },
 }
 
 /// Subcommands for rolling a zone's signing keys.
 #[derive(Subcommand, Debug)]
 pub(crate) enum ZoneDnssecRolloverCommand {
-    /// Pre-publish a replacement key: it joins the DNSKEY RRset and
-    /// CDS/CDNSKEY set but signs no zone data until `ds-seen` promotes it
+    /// Pre-publish a same-algorithm replacement key: it joins the DNSKEY
+    /// RRset and CDS/CDNSKEY set but signs no zone data until `ds-seen`
+    /// promotes it. To change the algorithm, use `zone dnssec set-policy`
     Start {
         /// The name of the zone
         name: String,
         /// Which key to roll: required for split-key zones (ksk or zsk),
-        /// omitted for CSK zones and algorithm rollovers
+        /// omitted for CSK zones
         #[arg(long, value_name = "ksk|zsk")]
         role: Option<String>,
-        /// Roll to this algorithm instead (replaces every key; the zone is
-        /// double-signed until the old keys leave)
-        #[arg(long, value_name = "ALG")]
-        algorithm: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -122,9 +119,38 @@ pub(crate) enum ZoneDnssecRolloverCommand {
     DsSeen {
         /// The name of the zone
         name: String,
-        /// Skip the parent DS verification against dnssec.ds_probe_resolver
-        #[arg(long)]
-        force: bool,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+}
+
+/// Subcommands for moving raw key material in and out of bindizr.
+#[derive(Subcommand, Debug)]
+pub(crate) enum ZoneDnssecKeysCommand {
+    /// Print the zone's keys in BIND key-file form, private halves
+    /// included — redirect somewhere with tight permissions
+    Export {
+        /// The name of the zone
+        name: String,
+    },
+    /// Import the zone's key set as BIND key pairs and sign it: one CSK
+    /// pair, or a KSK pair and a ZSK pair for a split-key policy. The
+    /// migration path for a zone signed elsewhere; the zone must be unsigned
+    Import {
+        /// The name of the zone
+        name: String,
+        /// Path to a K*.key file (the DNSKEY record); repeat with --private
+        /// for each pair
+        #[arg(long, value_name = "FILE", required = true)]
+        key: Vec<String>,
+        /// Path to the matching K*.private file, in the same order as --key
+        #[arg(long, value_name = "FILE", required = true)]
+        private: Vec<String>,
+        /// Policy the zone signs under (default: "default"); its algorithm
+        /// and key layout decide what the keys must be
+        #[arg(long, value_name = "NAME")]
+        policy: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -138,9 +164,7 @@ pub(crate) async fn handle_command(
     match subcommand {
         ZoneDnssecCommand::Enable {
             name,
-            algorithm,
-            denial,
-            split_keys,
+            policy,
             output,
         } => {
             let response = client
@@ -148,11 +172,26 @@ pub(crate) async fn handle_command(
                     DaemonCommandKind::ZoneDnssecEnable,
                     EnableZoneDnssecParams {
                         zone_name: name,
-                        request: EnableDnssecRequest {
-                            algorithm,
-                            denial,
-                            split_keys,
-                        },
+                        request: EnableDnssecRequest { policy },
+                    },
+                )
+                .await?;
+            if output == OutputFormat::Table {
+                println!("{}", response.message);
+            }
+            print_status(&response.data, output)?;
+        }
+        ZoneDnssecCommand::SetPolicy {
+            name,
+            policy,
+            output,
+        } => {
+            let response = client
+                .send_command(
+                    DaemonCommandKind::ZoneDnssecSetPolicy,
+                    SetZoneDnssecPolicyParams {
+                        zone_name: name,
+                        request: SetZoneDnssecPolicyRequest { policy },
                     },
                 )
                 .await?;
@@ -177,6 +216,59 @@ pub(crate) async fn handle_command(
             }
             print_status(&response.data, output)?;
         }
+        ZoneDnssecCommand::Keys { subcommand } => match subcommand {
+            ZoneDnssecKeysCommand::Export { name } => {
+                let response = client
+                    .send_command(
+                        DaemonCommandKind::ZoneDnssecKeysExport,
+                        ZoneNameParams { name },
+                    )
+                    .await?;
+                let exported: ExportDnssecKeysResponse =
+                    parse_response(&response.data).map_err(CliError::from)?;
+                print_key_material(&exported);
+            }
+            ZoneDnssecKeysCommand::Import {
+                name,
+                key,
+                private,
+                policy,
+                output,
+            } => {
+                if key.len() != private.len() {
+                    return Err(CliError::from(format!(
+                        "--key and --private must be given in pairs ({} and {})",
+                        key.len(),
+                        private.len()
+                    )));
+                }
+                let mut keys = Vec::with_capacity(key.len());
+                for (key, private) in key.iter().zip(&private) {
+                    let dnskey = std::fs::read_to_string(key)
+                        .map_err(|e| CliError::from(format!("Failed to read '{}': {}", key, e)))?;
+                    let private_key = std::fs::read_to_string(private).map_err(|e| {
+                        CliError::from(format!("Failed to read '{}': {}", private, e))
+                    })?;
+                    keys.push(ImportDnssecKeyPair {
+                        dnskey,
+                        private_key,
+                    });
+                }
+                let response = client
+                    .send_command(
+                        DaemonCommandKind::ZoneDnssecKeysImport,
+                        ImportZoneDnssecKeyParams {
+                            zone_name: name,
+                            request: ImportDnssecKeyRequest { keys, policy },
+                        },
+                    )
+                    .await?;
+                if output == OutputFormat::Table {
+                    println!("{}", response.message);
+                }
+                print_status(&response.data, output)?;
+            }
+        },
         ZoneDnssecCommand::Disable { name } => {
             let response = client
                 .send_command(
@@ -204,47 +296,14 @@ pub(crate) async fn handle_command(
                 .await?;
             println!("{}", response.message);
         }
-        ZoneDnssecCommand::Verify { name, output } => {
-            let response = client
-                .send_command(DaemonCommandKind::ZoneDnssecVerify, ZoneNameParams { name })
-                .await?;
-            let report: VerifyDnssecResponse = parse_response(&response.data)?;
-            if output != OutputFormat::Table {
-                print_response(&response.data, output, |report: &VerifyDnssecResponse| {
-                    report.checks.iter().map(DnssecCheckRow::from).collect()
-                })?;
-            } else {
-                println!(
-                    "Zone {}: {}",
-                    report.zone_name,
-                    if report.ok {
-                        "all checks passed"
-                    } else {
-                        "checks FAILED"
-                    }
-                );
-                print_table(report.checks.iter().map(DnssecCheckRow::from).collect());
-            }
-            // Scripts read the exit status, so a failed report must not exit 0.
-            if !report.ok {
-                return Err(
-                    format!("DNSSEC verification failed for zone {}", report.zone_name).into(),
-                );
-            }
-        }
         ZoneDnssecCommand::Rollover { subcommand } => match subcommand {
-            ZoneDnssecRolloverCommand::Start {
-                name,
-                role,
-                algorithm,
-                output,
-            } => {
+            ZoneDnssecRolloverCommand::Start { name, role, output } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverStart,
                         RolloverZoneDnssecParams {
                             zone_name: name,
-                            request: RolloverDnssecRequest { role, algorithm },
+                            request: RolloverDnssecRequest { role },
                         },
                     )
                     .await?;
@@ -253,15 +312,11 @@ pub(crate) async fn handle_command(
                 }
                 print_status(&response.data, output)?;
             }
-            ZoneDnssecRolloverCommand::DsSeen {
-                name,
-                force,
-                output,
-            } => {
+            ZoneDnssecRolloverCommand::DsSeen { name, output } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverDsSeen,
-                        DsSeenZoneDnssecParams { name, force },
+                        ZoneNameParams { name },
                     )
                     .await?;
                 if output == OutputFormat::Table {
@@ -283,19 +338,28 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
     }
 
     let status: GetDnssecStatusResponse = parse_response(data)?;
-    if !status.enabled {
+    let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
         println!(
             "Zone {} (serial {}): DNSSEC disabled",
             status.zone_name, status.serial
         );
         return Ok(());
-    }
+    };
 
     println!(
         "Zone {} (serial {}): DNSSEC enabled, {} denial",
         status.zone_name,
         status.serial,
-        status.denial.to_uppercase()
+        policy.denial.to_uppercase()
+    );
+    println!(
+        "Policy: {} ({}, {}; validity {}d, refresh {}d, zsk-lifetime {}d)",
+        policy.name,
+        policy.algorithm,
+        if policy.split_keys { "KSK/ZSK" } else { "CSK" },
+        policy.signature_validity_days,
+        policy.signature_refresh_days,
+        policy.zsk_lifetime_days
     );
     if status.withdrawing {
         println!(
@@ -336,4 +400,27 @@ fn print_ds_records(data: &serde_json::Value) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Print each key as its BIND file pair, headed by the file name BIND
+/// tooling expects, so the stream splits cleanly into `K*.key`/`K*.private`.
+fn print_key_material(exported: &ExportDnssecKeysResponse) {
+    for (i, key) in exported.keys.iter().enumerate() {
+        let mut base = format!(
+            "K{}.+{:03}+{:05}",
+            exported.zone_name, key.algorithm, key.key_tag
+        );
+        // Distinct keys may share (algorithm, tag); the suffix keeps names unique.
+        let dup = exported.keys[..i]
+            .iter()
+            .filter(|k| k.algorithm == key.algorithm && k.key_tag == key.key_tag)
+            .count();
+        if dup > 0 {
+            base.push_str(&format!(".{}", dup + 1));
+        }
+        println!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
+        println!("{}", key.dnskey_record);
+        println!("; {}.private", base);
+        println!("{}", key.private_key.trim_end());
+    }
 }

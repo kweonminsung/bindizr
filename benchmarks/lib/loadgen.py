@@ -46,7 +46,7 @@ async def run_closed_loop(
             except Exception:
                 ok = False
             t1 = clock()
-            if t1 >= warmup_until:  # only record post-warmup
+            if t1 >= warmup_until:
                 rec.record(t1 - t0, ok=ok)
 
     workers = [asyncio.create_task(worker()) for _ in range(concurrency)]

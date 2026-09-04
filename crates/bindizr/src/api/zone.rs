@@ -17,13 +17,10 @@ use bindizr_service::{
 };
 use serde::Deserialize;
 
-use crate::{
-    api::{
-        RequestCaller, ZoneNameParam,
-        error::ApiError,
-        middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
-    },
-    dns,
+use crate::api::{
+    RequestCaller, ZoneNameParam,
+    error::ApiError,
+    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
 
 /// Route group for zone endpoints.
@@ -78,7 +75,7 @@ pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    let status = dns::status::zone_status(&caller, &params.name).await?;
+    let status = ZoneService::get_status(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -423,7 +420,7 @@ pub(crate) async fn delete_zone(
         path = "/zones/{name}/imports",
         tag = "Zone",
         summary = "Import a BIND zone file into a zone",
-        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.",
+        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. Importing a zone over AXFR is available only through the CLI (`zone import --from-server`).",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to import records into.")
         ),

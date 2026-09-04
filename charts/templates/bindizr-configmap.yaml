@@ -12,6 +12,7 @@ data:
     require_authentication = {{ .Values.bindizr.api.requireAuthentication }}
     metrics_enabled = {{ .Values.bindizr.api.metricsEnabled }}
     external_dns_enabled = {{ .Values.bindizr.api.externalDnsEnabled }}
+    openapi_enabled = {{ .Values.bindizr.api.openapiEnabled }}
 
     [database]
     type = "{{ .Values.bindizr.database.type }}"
@@ -31,6 +32,10 @@ data:
     notify_retries = {{ .Values.bindizr.dns.notifyRetries }}
     notify_timeout_secs = {{ .Values.bindizr.dns.notifyTimeoutSecs }}
     nsupdate_allow_unsigned = {{ .Values.bindizr.dns.nsupdateAllowUnsigned }}
+    notify_mode = "{{ .Values.bindizr.dns.notifyMode }}"
+    notify_batch_ms = {{ .Values.bindizr.dns.notifyBatchMs }}
+    zone_cache = {{ .Values.bindizr.dns.zoneCache }}
+    journal_retention_days = {{ .Values.bindizr.dns.journalRetentionDays }}
 
     [logging]
     log_level = "{{ .Values.bindizr.logging.level }}"

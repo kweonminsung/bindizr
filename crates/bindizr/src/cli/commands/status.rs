@@ -1,4 +1,7 @@
-use crate::{cli::error::CliError, socket::client::DaemonSocketClient};
+use crate::{
+    cli::{error::CliError, output::color},
+    socket::client::DaemonSocketClient,
+};
 
 /// Handle the `status` subcommand by querying the daemon and printing its status.
 pub(crate) async fn handle_command() -> Result<(), CliError> {
@@ -6,7 +9,7 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
 
     println!("=== BINDIZR STATUS ===");
 
-    println!("Status: \x1b[32mRunning\x1b[0m");
+    println!("Status: {}", color::green("Running"));
 
     let pid = match status.pid {
         Some(pid) => pid.to_string(),

@@ -117,11 +117,20 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
+    let policy_name = format!("{}-nsec3", app.namespace());
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/dnssec-policies",
+            Some(json!({ "name": policy_name, "denial": "nsec3" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
     let (status, _) = app
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "denial": "nsec3" })),
+            Some(json!({ "policy": policy_name })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);

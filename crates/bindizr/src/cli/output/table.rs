@@ -2,14 +2,13 @@
 //! the column set is all this module decides.
 
 use bindizr_service::types::{
-    DnssecCheckInfo, DnssecKeyInfo, GetRecordResponse, GetTokenResponse, GetTsigKeyResponse,
-    GetZoneResponse, GetZoneTokenPolicyResponse, GetZoneTsigPolicyResponse, ImportSummary,
-    RecordValueRequest, RollbackZoneResponse, SecondaryStatusResponse, VersionRecordResponse,
-    ZoneStatusResponse, ZoneVersionResponse,
+    DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse, GetTokenResponse,
+    GetTsigKeyResponse, GetZoneResponse, GetZoneTokenPolicyResponse, GetZoneTsigPolicyResponse,
+    ImportSummary, RecordValueRequest, RollbackZoneResponse, SecondaryStatusResponse,
+    VersionRecordResponse, ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
-// Display Option<i32> in tables, using "-" for None.
 fn display_option_i32(opt: &Option<i32>) -> String {
     match opt {
         Some(val) => val.to_string(),
@@ -124,6 +123,49 @@ impl From<&DnssecKeyInfo> for DnssecKeyRow {
             algorithm: key.algorithm.clone(),
             key_tag: key.key_tag,
             dnskey: key.dnskey.clone(),
+        }
+    }
+}
+
+/// Table row for DNSSEC policy display.
+#[derive(Debug, Tabled)]
+pub(crate) struct DnssecPolicyRow {
+    #[tabled(rename = "NAME")]
+    pub(crate) name: String,
+    #[tabled(rename = "ALGORITHM")]
+    pub(crate) algorithm: String,
+    #[tabled(rename = "DENIAL")]
+    pub(crate) denial: String,
+    #[tabled(rename = "KEYS")]
+    pub(crate) keys: String,
+    #[tabled(rename = "VALIDITY")]
+    pub(crate) validity: String,
+    #[tabled(rename = "REFRESH")]
+    pub(crate) refresh: String,
+    #[tabled(rename = "ZSK-LIFETIME")]
+    pub(crate) zsk_lifetime: String,
+    #[tabled(rename = "PUBLISH-WAIT")]
+    pub(crate) publish_wait: String,
+    #[tabled(rename = "RETIRE-WAIT")]
+    pub(crate) retire_wait: String,
+}
+
+impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
+    fn from(policy: &GetDnssecPolicyResponse) -> Self {
+        DnssecPolicyRow {
+            name: policy.name.clone(),
+            algorithm: policy.algorithm.clone(),
+            denial: policy.denial.to_uppercase(),
+            keys: if policy.split_keys { "KSK/ZSK" } else { "CSK" }.to_string(),
+            validity: format!("{}d", policy.signature_validity_days),
+            refresh: format!("{}d", policy.signature_refresh_days),
+            zsk_lifetime: if policy.zsk_lifetime_days == 0 {
+                "-".to_string()
+            } else {
+                format!("{}d", policy.zsk_lifetime_days)
+            },
+            publish_wait: format!("{}s", policy.rollover_publish_holddown_secs),
+            retire_wait: format!("{}s", policy.rollover_retire_holddown_secs),
         }
     }
 }
@@ -388,27 +430,6 @@ impl From<&GetZoneTsigPolicyResponse> for ZoneTsigPolicyRow {
             tsig_key: policy.tsig_key.clone(),
             record_name_pattern: policy.record_name_pattern.clone(),
             record_types: policy.record_types.clone(),
-        }
-    }
-}
-
-/// Table row for DNSSEC verification checks.
-#[derive(Debug, Tabled)]
-pub(crate) struct DnssecCheckRow {
-    #[tabled(rename = "CHECK")]
-    pub(crate) check: String,
-    #[tabled(rename = "OK")]
-    pub(crate) ok: String,
-    #[tabled(rename = "DETAIL")]
-    pub(crate) detail: String,
-}
-
-impl From<&DnssecCheckInfo> for DnssecCheckRow {
-    fn from(check: &DnssecCheckInfo) -> Self {
-        DnssecCheckRow {
-            check: check.check.clone(),
-            ok: yes_no(check.ok),
-            detail: check.detail.clone(),
         }
     }
 }

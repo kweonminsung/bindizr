@@ -34,8 +34,10 @@ pub(crate) enum TokenCommand {
         global: bool,
     },
     /// List all API tokens
+    #[command(alias = "ls")]
     List,
     /// Delete an API token by name
+    #[command(alias = "rm")]
     Delete {
         /// Name of the token to delete
         name: String,

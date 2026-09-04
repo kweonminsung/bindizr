@@ -17,6 +17,9 @@ bindizr:
     # ExternalDNS provider API (/external-dns), consumed by the
     # bindizr-external-dns adapter running next to external-dns.
     externalDnsEnabled: false
+    # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml
+    # (unauthenticated; describes the whole API surface).
+    openapiEnabled: false
     service:
       type: ClusterIP
       port: 8000
@@ -31,6 +34,14 @@ bindizr:
     # Accept unsigned nsupdate requests (not recommended in production). TSIG
     # keys and policies are managed at runtime via the bindizr CLI or HTTP API.
     nsupdateAllowUnsigned: false
+    # "sync" runs the NOTIFY inline; "async" queues it to a background worker.
+    notifyMode: sync
+    # async only: window to batch NOTIFYs into one per zone (0 disables the wait).
+    notifyBatchMs: 50
+    # Cache each zone's records by serial so repeated AXFRs skip the DB read.
+    zoneCache: true
+    # Days of IXFR journal/SOA history to keep (0 = unlimited).
+    journalRetentionDays: 365
     service:
       port: 53
 

@@ -1,16 +1,19 @@
-//! Turning signing on and off, and the operator's force re-sign.
+//! Turning signing on and off, moving a zone between policies, and the
+//! operator's force re-sign.
 
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status};
+use super::{DnssecService, key_layout, notify_zone, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
+    dnssec_policy::normalize_policy_name,
     error::ServiceError,
     model::{
-        dnssec_key::{DnssecAlgorithm, DnssecKeyRole, DnssecKeyState},
-        zone::{DnssecDenial, Zone},
+        dnssec_key::{DnssecKeyRole, DnssecKeyState},
+        dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME,
+        zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::RepositoryService,
@@ -20,27 +23,15 @@ use crate::{
 };
 
 impl DnssecService {
-    /// Enable DNSSEC for a zone: generate its key(s) and sign the whole zone.
+    /// Enable DNSSEC for a zone under `policy` (the built-in `default` when
+    /// omitted): generate its key(s) and sign the whole zone.
     pub async fn enable(
         caller: &Caller,
         zone_name: &str,
-        algorithm: Option<&str>,
-        denial: Option<&str>,
-        split_keys: bool,
+        policy: Option<&str>,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
-        let algorithm = match algorithm {
-            Some(name) => name
-                .parse::<DnssecAlgorithm>()
-                .map_err(ServiceError::invalid_input)?,
-            None => DnssecAlgorithm::EcdsaP256Sha256,
-        };
-        let denial = match denial {
-            Some(name) => name
-                .parse::<DnssecDenial>()
-                .map_err(ServiceError::invalid_input)?,
-            None => DnssecDenial::Nsec,
-        };
+        let policy_name = normalize_policy_name(policy.unwrap_or(DEFAULT_DNSSEC_POLICY_NAME))?;
 
         let mut tx = RepositoryService::begin_tx("failed to enable DNSSEC").await?;
         let result = async {
@@ -51,37 +42,125 @@ impl DnssecService {
             if !existing.is_empty() {
                 return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
             }
+            // Shared: a concurrent delete of the policy must wait for the FK
+            // reference this transaction is about to write.
+            let policy = RepositoryService::get_dnssec_policy_by_name_tx(
+                &mut tx,
+                &policy_name,
+                LockLevel::Shared,
+            )
+            .await?
+            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
 
-            let now = Utc::now();
-            RepositoryService::update_zone_dnssec_denial_tx(&mut tx, zone.id, denial).await?;
+            RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id))
+                .await?;
             let zone = Zone {
-                dnssec_denial: denial,
+                dnssec_policy_id: Some(policy.id),
                 ..zone
             };
 
-            let roles: &[DnssecKeyRole] = if split_keys {
+            let now = Utc::now();
+            let roles: &[DnssecKeyRole] = if policy.split_keys {
                 &[DnssecKeyRole::Ksk, DnssecKeyRole::Zsk]
             } else {
                 &[DnssecKeyRole::Csk]
             };
             let mut keys = Vec::with_capacity(roles.len());
             for role in roles {
-                let key = generate_key(&zone, algorithm, *role, DnssecKeyState::Active, now, now)
-                    .map_err(ServiceError::dnssec_signing_failed)?;
+                let key = generate_key(
+                    &zone,
+                    policy.algorithm,
+                    *role,
+                    DnssecKeyState::Active,
+                    now,
+                    now,
+                )
+                .map_err(ServiceError::dnssec_signing_failed)?;
                 keys.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
 
-            // Signing changes the zone content secondaries hold, so it rides the
-            // same serial/IXFR mechanics as any record change.
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            build_status(&zone, denial, &keys, earliest, new_serial, false)
+            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
         }
         .await;
         let response = RepositoryService::finish_tx(tx, result, "failed to enable DNSSEC").await?;
+
+        notify_zone(&response.zone_name).await;
+        Ok(response)
+    }
+
+    /// Move a signed zone to another policy. The denial mode and key layout
+    /// must match (they are fixed while signed); a different algorithm
+    /// starts an algorithm rollover under the new policy.
+    pub async fn set_policy(
+        caller: &Caller,
+        zone_name: &str,
+        policy_name: &str,
+    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+        caller.require_global("manage DNSSEC signing")?;
+        let policy_name = normalize_policy_name(policy_name)?;
+
+        let mut tx = RepositoryService::begin_tx("failed to change the DNSSEC policy").await?;
+        let result = async {
+            let (zone, current, keys) =
+                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            let target = RepositoryService::get_dnssec_policy_by_name_tx(
+                &mut tx,
+                &policy_name,
+                LockLevel::Shared,
+            )
+            .await?
+            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
+            if target.id == current.id {
+                return build_status_tx(&mut tx, &zone, Some(&current), &keys, zone.serial).await;
+            }
+            // Switching the denial chain or splitting a CSK in place has no
+            // safe transition; the zone goes insecure and re-enables instead.
+            if target.denial != current.denial {
+                return Err(ServiceError::invalid_input(format!(
+                    "policy '{}' uses {} denial but zone '{}' signs with {}; the denial mode \
+                     is fixed while signed, so disable DNSSEC and re-enable under the new policy",
+                    target.name,
+                    target.denial,
+                    zone.name.as_str(),
+                    current.denial
+                )));
+            }
+            if target.split_keys != current.split_keys {
+                return Err(ServiceError::invalid_input(format!(
+                    "policy '{}' uses {} but zone '{}' signs with {}; the key layout is fixed \
+                     while signed, so disable DNSSEC and re-enable under the new policy",
+                    target.name,
+                    key_layout(target.split_keys),
+                    zone.name.as_str(),
+                    key_layout(current.split_keys)
+                )));
+            }
+
+            let keys = if keys.iter().any(|key| key.algorithm != target.algorithm) {
+                Self::start_algorithm_rollover_tx(&mut tx, &zone, &target, keys).await?
+            } else {
+                keys
+            };
+            RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, Some(target.id))
+                .await?;
+            let zone = Zone {
+                dnssec_policy_id: Some(target.id),
+                ..zone
+            };
+
+            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &target, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
+
+            build_status_tx(&mut tx, &zone, Some(&target), &keys, new_serial).await
+        }
+        .await;
+        let response =
+            RepositoryService::finish_tx(tx, result, "failed to change the DNSSEC policy").await?;
 
         notify_zone(&response.zone_name).await;
         Ok(response)
@@ -95,7 +174,7 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {
-            let (zone, _) =
+            let (zone, _, _) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
             let derived =
@@ -124,8 +203,7 @@ impl DnssecService {
             RepositoryService::delete_dnssec_records_by_zone_id_tx(&mut tx, zone.id).await?;
             RepositoryService::delete_dnssec_keys_by_zone_id_tx(&mut tx, zone.id).await?;
             RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
-            RepositoryService::update_zone_dnssec_denial_tx(&mut tx, zone.id, DnssecDenial::Nsec)
-                .await?;
+            RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, None).await?;
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok(zone.name.as_str().to_string())
@@ -148,7 +226,7 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to withdraw the parent DS").await?;
         let result = async {
-            let (zone, keys) =
+            let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
                 .await?
@@ -160,12 +238,11 @@ impl DnssecService {
             }
             RepositoryService::create_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
 
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            build_status(&zone, zone.dnssec_denial, &keys, earliest, new_serial, true)
+            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
         }
         .await;
         let response =
@@ -185,7 +262,7 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to cancel the DS withdrawal").await?;
         let result = async {
-            let (zone, keys) =
+            let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
                 .await?
@@ -195,19 +272,11 @@ impl DnssecService {
             }
             RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
 
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, false).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
+                .await?
+                .unwrap_or(zone.serial);
 
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            build_status(
-                &zone,
-                zone.dnssec_denial,
-                &keys,
-                earliest,
-                new_serial,
-                false,
-            )
+            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
         }
         .await;
         let response =
@@ -224,11 +293,9 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to sign zone").await?;
         let result = async {
-            let (zone, keys) =
+            let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let new_serial = generate_serial(Some(zone.serial))?;
-            Self::sign_zone_locked(&mut tx, &zone, new_serial, &keys, true).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, true).await?;
             Ok(zone.name.as_str().to_string())
         }
         .await;

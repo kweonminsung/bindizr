@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use crate::common::{TestApp, assert_cli_failure_contains, assert_cli_success};
+use crate::common::{TestApp, TestAppOptions, assert_cli_failure_contains, assert_cli_success};
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -54,7 +54,6 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     assert_eq!(updated["refresh"], 300);
     assert_eq!(updated["retry"], 60);
-    // Omitted fields keep their current values.
     assert_eq!(updated["default_ttl"], 3600);
     assert_eq!(updated["mname"], format!("ns1.{zone_name}"));
 }
@@ -329,7 +328,7 @@ async fn zone_import_preview_via_cli() {
         .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
-    // Only the apex NS seeded at creation exists; the preview applied nothing.
+    // Only the apex NS seeded at creation exists.
     let names: Vec<&str> = records["items"]
         .as_array()
         .unwrap()
@@ -506,4 +505,66 @@ async fn zone_status_via_cli() {
         assert!(status.contains("No secondaries configured."));
         assert!(parsed["secondaries"].as_array().unwrap().is_empty());
     }
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_from_server_round_trips_over_axfr() {
+    // The transfer ACL must admit the test's own loopback AXFR.
+    let app = TestApp::start_with_options(TestAppOptions {
+        secondary_addrs: "127.0.0.1".to_string(),
+        ..Default::default()
+    })
+    .await;
+    let zone_name = app.zone_name("axfr-import.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    // MX and a spaced TXT exercise priority and quoting through the wire
+    // presentation round trip.
+    app.run_cli_success_with_input(
+        &["zone", "import", &zone_name, "-"],
+        "www IN A 192.0.2.30\nmail 300 IN MX 10 mx.example.com.\n@ IN TXT \"v=spf1 -all\"\n_sip._udp 300 IN SRV 10 5 5060 sip.example.com.\n",
+    )
+    .await;
+
+    let server = format!("127.0.0.1:{}", app.dns_port());
+    let preview = app
+        .run_cli_success(&[
+            "zone",
+            "import",
+            &zone_name,
+            "--from-server",
+            &server,
+            "--mode",
+            "replace",
+            "--preview",
+            "--output",
+            "json",
+        ])
+        .await;
+    let preview: Value = serde_json::from_str(&preview).expect("CLI did not return valid JSON");
+    // A transfer of the zone's own content replaces it with itself.
+    assert_eq!(preview["applied"], false);
+    assert_eq!(preview["summary"]["added"], 0, "{preview}");
+    assert_eq!(preview["summary"]["deleted"], 0, "{preview}");
+    assert_eq!(preview["summary"]["updated"], 0, "{preview}");
+    assert_eq!(preview["summary"]["parsed"], 5, "{preview}");
+
+    let applied = app
+        .run_cli_success(&[
+            "zone",
+            "import",
+            &zone_name,
+            "--from-server",
+            &server,
+            "--mode",
+            "replace",
+            "--output",
+            "json",
+        ])
+        .await;
+    let applied: Value = serde_json::from_str(&applied).expect("CLI did not return valid JSON");
+    assert_eq!(applied["applied"], true, "{applied}");
+    assert_eq!(applied["summary"]["deleted"], 0, "{applied}");
+    assert_eq!(applied["summary"]["unchanged"], 5, "{applied}");
 }

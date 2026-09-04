@@ -10,7 +10,7 @@ Restart=on-failure
 RestartPreventExitStatus=1
 RestartSec=5
 RuntimeDirectory=bindizr
-RuntimeDirectoryMode=0755
+RuntimeDirectoryMode=0700
 StandardOutput=journal
 StandardError=journal
 

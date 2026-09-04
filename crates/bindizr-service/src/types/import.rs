@@ -32,6 +32,20 @@ pub struct ImportZoneFileRequest {
     pub dry_run: bool,
 }
 
+/// Import request pulling the zone over AXFR instead of carrying text;
+/// daemon-socket only — the HTTP API cannot start an outbound transfer.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ImportZoneFromServerRequest {
+    /// Transfer source (`host[:port]`, port 53 default); the source's SOA and
+    /// DNSSEC-derived records are dropped.
+    pub from_server: String,
+    #[serde(default)]
+    pub mode: ImportMode,
+    /// When true, parse and validate without applying any change.
+    #[serde(default, alias = "dryRun")]
+    pub dry_run: bool,
+}
+
 /// Result of a zone-file import, including a summary and any validation errors.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ImportZoneFileResponse {

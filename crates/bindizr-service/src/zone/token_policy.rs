@@ -8,19 +8,15 @@ use chrono::Utc;
 use crate::{
     authorization::Caller,
     error::ServiceError,
-    model::{api_token::ApiToken, zone_token_policy::ZoneTokenPolicy},
+    model::{
+        api_token::ApiToken,
+        zone_token_policy::{ZoneTokenPolicy, ZoneTokenPolicyWithToken},
+    },
     policy_pattern::{normalize_pattern, normalize_types},
     repository::RepositoryService,
     token::normalize_token_name,
     zone::ZoneService,
 };
-
-/// A zone token policy joined with the name of the token it grants.
-#[derive(Debug, Clone)]
-pub struct ZoneTokenPolicyWithToken {
-    pub(crate) policy: ZoneTokenPolicy,
-    pub(crate) api_token_name: String,
-}
 
 /// Grants and revokes per-zone record rights for API tokens.
 pub struct ZoneTokenPolicyService;

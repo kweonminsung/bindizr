@@ -36,6 +36,7 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus a sync/async apply mode that batches NOTIFYs under load.
 - **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone update policies.
+- **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, and BIND-format key import/export.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
 - **Observability** — health probe, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
@@ -83,14 +84,18 @@ $ sudo systemctl enable --now bindizr
 However you installed it, this checks the whole path end to end:
 
 ```bash
-$ bindizr doctor
+$ sudo bindizr doctor
 ```
+
+The daemon's control socket is owner-only, so the CLI runs as the user the
+daemon runs as: `sudo` for a package install, `docker exec` / `kubectl exec`
+into the container for Compose and Helm.
 
 API authentication is on by default for Helm and package installs — the Compose
 stack ships with it off. Create a token before calling the API:
 
 ```bash
-$ bindizr token create --name admin --global
+$ sudo bindizr token create --name admin --global
 ```
 
 ## Documentation

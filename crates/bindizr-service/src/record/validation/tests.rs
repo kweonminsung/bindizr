@@ -12,7 +12,7 @@ use crate::{
     error::{ErrorCode, ServiceError},
     model::{
         record::{Record, RecordType},
-        zone::{DnssecDenial, Zone},
+        zone::Zone,
     },
 };
 
@@ -354,7 +354,7 @@ fn test_zone() -> Zone {
         retry: 3600,
         expire: 604800,
         minimum_ttl: 86400,
-        dnssec_denial: DnssecDenial::Nsec,
+        dnssec_policy_id: None,
         created_at: Utc::now(),
     }
 }

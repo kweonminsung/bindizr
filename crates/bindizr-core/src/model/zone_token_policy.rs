@@ -16,3 +16,10 @@ pub struct ZoneTokenPolicy {
     pub record_types: String,
     pub created_at: DateTime<Utc>,
 }
+
+/// A zone token policy joined with the name of the token it grants.
+#[derive(Debug, Clone)]
+pub struct ZoneTokenPolicyWithToken {
+    pub policy: ZoneTokenPolicy,
+    pub api_token_name: String,
+}

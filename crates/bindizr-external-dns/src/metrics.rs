@@ -41,9 +41,9 @@ pub(crate) fn metrics() -> &'static AdapterMetrics {
             .register(Box::new(request_duration_seconds.clone()))
             .expect("metric registers once");
 
-        // Pre-create every label combination `server::track` emits: an empty
-        // metric family fails text encoding, which would blank /metrics until
-        // the first webhook request.
+        // Pre-create every label combination `server::track_webhook_metrics`
+        // emits: an empty metric family fails text encoding, which would blank
+        // /metrics until the first webhook request.
         let endpoints = [
             "negotiate",
             "records_get",

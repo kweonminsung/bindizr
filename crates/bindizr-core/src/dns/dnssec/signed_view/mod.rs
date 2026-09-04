@@ -40,9 +40,10 @@ use crate::{
     },
     model::{
         dnssec_key::DnssecKey,
+        dnssec_policy::DnssecDenial,
         dnssec_record::{DnssecRecord, DnssecRecordType},
         record::Record,
-        zone::{DnssecDenial, Zone},
+        zone::Zone,
     },
 };
 

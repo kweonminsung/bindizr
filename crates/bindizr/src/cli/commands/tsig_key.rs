@@ -42,6 +42,7 @@ pub(crate) enum TsigKeyCommand {
         name: String,
     },
     /// Delete a TSIG key (refused while zone TSIG policies still use it)
+    #[command(alias = "rm")]
     Delete {
         /// Name of the key
         name: String,

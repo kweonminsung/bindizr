@@ -4,6 +4,11 @@ Bindizr provides a command-line interface for managing the DNS synchronization
 service, its zone data, and API tokens. `bindizr help` lists everything;
 this page covers the commands you reach for most.
 
+Every command except `start` and `config check` talks to the running daemon
+over its Unix socket, which is owner-only because connecting grants full
+control. Run the CLI as the user the daemon runs as: `sudo bindizr ...` for a
+package install, or a shell inside the container for Compose and Helm.
+
 ## Service
 
 ```bash
@@ -48,6 +53,15 @@ the change as a `+`/`-`/`~` diff and applies nothing:
 ```bash
 $ bindizr record bulk-create records.json --zone <ZONE_NAME> --preview
 $ bindizr zone import <ZONE_NAME> zone.txt --preview
+```
+
+A zone served elsewhere imports without exporting a file first —
+`--from-server` pulls the records over AXFR (the source must allow the
+transfer; its SOA and DNSSEC records are dropped since the zone keeps its
+own SOA fields and signs itself):
+
+```bash
+$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --preview
 ```
 
 ## Zone history

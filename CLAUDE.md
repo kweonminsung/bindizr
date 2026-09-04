@@ -17,8 +17,9 @@ cargo clippy --workspace                                  # lint
 cargo +nightly fmt                                         # format (needs nightly)
 ```
 
-- Tests **must** run single-threaded (`--test-threads=1`); they share process
-  state and will race otherwise.
+- Tests run single-threaded: `.cargo/config.toml` sets `RUST_TEST_THREADS=1`,
+  so plain `cargo test` complies; the explicit `--test-threads=1` in the CI
+  command is the same guarantee spelled out.
 - `rustfmt.toml` enables unstable features (`imports_granularity`,
   `group_imports`), so formatting requires the **nightly** toolchain. On stable
   `cargo fmt` runs but silently ignores those options.
@@ -35,11 +36,14 @@ cargo +nightly fmt                                         # format (needs night
   `repository/{mysql,postgres,sqlite}/`. **The three backends are intentionally
   duplicated** (per-backend SQL + error text); do not try to deduplicate them.
 - `bindizr-service` — business logic for zones/records (create/update/delete,
-  bulk, zone-file import, tokens, serial bumping, RFC 2136 apply).
+  bulk, zone-file import, tokens, serial bumping, RFC 2136 apply), plus the
+  outbound DNS clients its flows drive (`dns_client/`: NOTIFY fan-out, SOA
+  probing, inbound AXFR) — the wire format stays core's.
 - `bindizr` — the binary: the daemon runtime (`daemon.rs`) and every front end
   it serves — HTTP API (axum), CLI (clap), Unix-socket daemon IPC, and the DNS
-  server (`dns/`: TCP/UDP listeners, AXFR/IXFR/catalog/NOTIFY, nsupdate
-  dispatch). The protocol itself lives in core; `dns/` is I/O and dispatch.
+  **server** (`dns/`: TCP/UDP listeners, AXFR/IXFR/catalog/NOTIFY serving,
+  nsupdate dispatch). The protocol itself lives in core, outbound clients in
+  the service; `dns/` is inbound I/O and dispatch.
 - `bindizr-external-dns` — a second binary: the ExternalDNS webhook provider
   adapter, forwarding to bindizr's `/external-dns` API over HTTP. No DNS logic
   or state of its own.
@@ -59,7 +63,7 @@ cargo +nightly fmt                                         # format (needs night
 - **Transactions are the service's.** No other crate opens one, so `*_tx`
   methods and `RepositoryTx` are `pub(crate)`.
 - **A use case has one home.** When two front ends answer the same question,
-  the assembly lives in one place both reach (`dns::status::zone_status`,
+  the assembly lives in one place both reach (`ZoneService::get_status`,
   shared by the HTTP API and the daemon socket), not once per transport.
 - **Payload shapes are the service's.** `bindizr_service::types` is the wire
   contract of the HTTP API, the daemon socket, and the CLI alike; response

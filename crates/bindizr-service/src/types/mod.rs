@@ -7,6 +7,7 @@
 
 mod common;
 mod dnssec;
+mod dnssec_policy;
 mod external_dns;
 mod import;
 mod pagination;
@@ -19,15 +20,23 @@ mod zone;
 
 pub use common::{ErrorResponse, HealthResponse, MessageResponse};
 pub use dnssec::{
-    DnssecCheckInfo, DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecStatusResponse,
-    EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest, VerifyDnssecResponse,
+    DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecKeyMaterial, DnssecStatusResponse,
+    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyPair,
+    ImportDnssecKeyRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
+};
+pub use dnssec_policy::{
+    CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,
+    GetDnssecPolicyResponse, UpdateDnssecPolicyRequest,
 };
 pub use external_dns::{
     ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,
     ExternalDnsChangesResponse, ExternalDnsRecordItem, ExternalDnsRecordsResponse,
     ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse,
 };
-pub use import::{ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse};
+pub use import::{
+    ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
+    ImportZoneFromServerRequest,
+};
 pub use pagination::{PaginatedResponse, Pagination};
 pub(crate) use record::display_record_value_request;
 pub use record::{

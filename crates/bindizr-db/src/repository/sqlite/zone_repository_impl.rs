@@ -3,7 +3,7 @@ use sqlx::{Pool, Sqlite};
 
 use crate::{
     error::DatabaseError,
-    model::zone::{DnssecDenial, Zone},
+    model::zone::Zone,
     repository::{LockLevel, RepositoryTx, ZoneFilter, ZoneRepository, sql::like_pattern},
 };
 
@@ -57,7 +57,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE id = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones WHERE id = ?")
             .bind(id)
             .fetch_optional(&mut **sqlite_tx)
             .await?;
@@ -68,7 +68,7 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE name = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones WHERE name = ?")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await?;
@@ -84,7 +84,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones WHERE name = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones WHERE name = ?")
             .bind(name)
             .fetch_optional(&mut **sqlite_tx)
             .await?;
@@ -95,7 +95,7 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await?;
 
@@ -109,7 +109,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Vec<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones ORDER BY name")
             .fetch_all(&mut **sqlite_tx)
             .await?;
 
@@ -122,7 +122,7 @@ impl ZoneRepository for SqliteZoneRepository {
 
         let zones = sqlx::query_as::<_, Zone>(
             r#"
-            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_denial, created_at
+            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at
             FROM zones
             WHERE (? IS NULL OR LOWER(name) = LOWER(?))
               AND (? IS NULL OR id = ?)
@@ -278,21 +278,33 @@ impl ZoneRepository for SqliteZoneRepository {
         Ok(zone)
     }
 
-    async fn update_dnssec_denial_tx(
+    async fn update_dnssec_policy_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
-        denial: DnssecDenial,
+        dnssec_policy_id: Option<i32>,
     ) -> Result<(), DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        sqlx::query("UPDATE zones SET dnssec_denial = ? WHERE id = ?")
-            .bind(denial.as_str())
+        sqlx::query("UPDATE zones SET dnssec_policy_id = ? WHERE id = ?")
+            .bind(dnssec_policy_id)
             .bind(zone_id)
             .execute(&mut **sqlite_tx)
             .await?;
 
         Ok(())
+    }
+
+    async fn count_by_dnssec_policy_id(&self, dnssec_policy_id: i32) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM zones WHERE dnssec_policy_id = ?")
+                .bind(dnssec_policy_id)
+                .fetch_one(&mut *conn)
+                .await?;
+
+        Ok(count as u64)
     }
 
     async fn update_serial_tx(

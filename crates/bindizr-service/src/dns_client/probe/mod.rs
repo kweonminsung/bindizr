@@ -7,15 +7,13 @@ use bindizr_core::{
     config,
     dns::{
         message::{Name, Opcode, Rtype},
-        query::{DsAnswer, build_question, extract_ds_answers, extract_soa_serial},
+        query::{build_question, extract_soa_serial},
     },
 };
 
-use crate::dns::error::XfrError;
-
 /// Result of probing one configured secondary: the serial its SOA answer
 /// carries, or the reason the probe failed.
-pub(crate) struct SecondaryProbe {
+pub struct ProbeReport {
     pub address: String,
     pub result: Result<u32, String>,
 }
@@ -23,7 +21,7 @@ pub(crate) struct SecondaryProbe {
 /// Query every configured secondary for the zone's SOA serial, in parallel.
 /// One probe per configured entry; a hostname entry is tried at each resolved
 /// address until one answers. An empty `secondary_addrs` yields an empty list.
-pub(crate) async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryProbe>, XfrError> {
+pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<ProbeReport>, String> {
     let dns_config = &config::bindizr_config().dns;
     let raw = dns_config.secondary_addrs.as_str();
     if raw.trim().is_empty() {
@@ -31,8 +29,8 @@ pub(crate) async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryPr
     }
     let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
 
-    let qname = Name::<Vec<u8>>::from_str(zone_name)
-        .map_err(|e| XfrError::ProtocolError(format!("Invalid zone name: {}", e)))?;
+    let qname =
+        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
 
     let mut probes = Vec::new();
     let mut tasks = Vec::new();
@@ -40,7 +38,7 @@ pub(crate) async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryPr
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {
-                probes.push(SecondaryProbe {
+                probes.push(ProbeReport {
                     address: entry,
                     result: Err(format!("failed to resolve: {}", e)),
                 });
@@ -57,8 +55,8 @@ pub(crate) async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryPr
 
     for (entry, task) in tasks {
         match task.await {
-            Ok((address, result)) => probes.push(SecondaryProbe { address, result }),
-            Err(e) => probes.push(SecondaryProbe {
+            Ok((address, result)) => probes.push(ProbeReport { address, result }),
+            Err(e) => probes.push(ProbeReport {
                 address: entry,
                 result: Err(format!("probe task failed: {}", e)),
             }),
@@ -70,7 +68,7 @@ pub(crate) async fn probe_secondaries(zone_name: &str) -> Result<Vec<SecondaryPr
 
 /// Query one explicit server for the zone's SOA serial (e.g. bindizr's own
 /// listener during health checks).
-pub(crate) async fn probe_server(
+pub async fn probe_server(
     server_addr: SocketAddr,
     zone_name: &str,
     timeout: Duration,
@@ -107,40 +105,10 @@ async fn probe_one(
 ) -> Result<u32, String> {
     let (query_id, query) = build_question(Opcode::QUERY, false, false, qname, Rtype::SOA);
 
-    let (received, response) = super::udp_exchange(server_addr, timeout, &query, "SOA probe")
-        .await
-        .map_err(|e| e.to_string())?;
+    let (received, response) =
+        super::udp_exchange(server_addr, timeout, &query, "SOA probe").await?;
 
     extract_soa_serial(query_id, &response[..received])
-}
-
-/// The zone's DS RRset as `dnssec.ds_probe_resolver` sees it; errors when no
-/// resolver is configured.
-pub(crate) async fn probe_parent_ds(zone_name: &str) -> Result<Vec<DsAnswer>, String> {
-    let config = config::bindizr_config();
-    let raw = config.dnssec.ds_probe_resolver.trim();
-    if raw.is_empty() {
-        return Err("dnssec.ds_probe_resolver is not configured".to_string());
-    }
-    let timeout = Duration::from_secs(config.dns.notify_timeout_secs);
-
-    let qname =
-        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
-
-    let mut last = None;
-    for (entry, result) in super::resolve_secondary_entries(raw, timeout).await {
-        let addrs = result.map_err(|e| format!("failed to resolve {}: {}", entry, e))?;
-        for addr in addrs {
-            let (query_id, query) = build_question(Opcode::QUERY, false, true, &qname, Rtype::DS);
-            match super::udp_exchange(addr, timeout, &query, "DS probe").await {
-                Ok((received, response)) => {
-                    return extract_ds_answers(query_id, &response[..received]);
-                }
-                Err(e) => last = Some(format!("{}: {}", addr, e)),
-            }
-        }
-    }
-    Err(last.unwrap_or_else(|| "no resolver address to probe".to_string()))
 }
 
 #[cfg(test)]

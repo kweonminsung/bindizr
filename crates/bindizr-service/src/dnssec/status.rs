@@ -1,5 +1,5 @@
-//! Assembling the status a signed zone reports: key inventory and the DS
-//! records the parent needs.
+//! Assembling the status a signed zone reports: its policy, key inventory,
+//! and the DS records the parent needs.
 
 use bindizr_core::dns::dnssec::{ds_rdata_for, to_wire_name};
 use chrono::{DateTime, Utc};
@@ -11,16 +11,17 @@ use crate::{
     error::ServiceError,
     model::{
         dnssec_key::{DnssecKey, DnssecKeyState},
-        zone::{DnssecDenial, Zone},
+        dnssec_policy::DnssecPolicy,
+        zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    types::{DnssecDsInfo, DnssecKeyInfo, GetDnssecStatusResponse},
+    types::{DnssecDsInfo, DnssecKeyInfo, GetDnssecPolicyResponse, GetDnssecStatusResponse},
     zone::ZoneService,
 };
 
 impl DnssecService {
-    /// DNSSEC signing state of a zone; `enabled: false` with empty key and DS
-    /// lists for an unsigned zone.
+    /// DNSSEC signing state of a zone; `enabled: false` with no policy and
+    /// empty key and DS lists for an unsigned zone.
     pub async fn get_status(
         caller: &Caller,
         zone_name: &str,
@@ -34,50 +35,17 @@ impl DnssecService {
             let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
             let keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            let earliest = Self::earliest_expiry_tx(&mut tx, zone.id).await?;
-            let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_some();
-
-            build_status(
-                &zone,
-                zone.dnssec_denial,
-                &keys,
-                earliest,
-                zone.serial,
-                withdrawing,
-            )
+            let policy = Self::find_zone_policy_tx(&mut tx, &zone).await?;
+            build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
         }
         .await;
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
     }
 
-    /// DS records the parent must publish before [`Self::rollover_ds_seen`]:
-    /// those of the pre-published SEP keys.
-    pub async fn list_pending_parent_ds(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<Vec<DnssecDsInfo>, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
-
-        let mut tx = RepositoryService::begin_read_tx("failed to read DNSSEC status").await?;
-        let result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            keys.iter()
-                .filter(|key| key.role.is_sep() && key.state == DnssecKeyState::Published)
-                .map(|key| ds_info(&zone, key))
-                .collect()
-        }
-        .await;
-        RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
-    }
-
-    /// Count the zones that are signed (hold at least one key).
+    /// Count the zones serving a signed view.
     pub async fn count_signed_zones(caller: &Caller) -> Result<u64, ServiceError> {
         caller.require_global("read DNSSEC metrics")?;
-        RepositoryService::count_dnssec_key_zone_ids().await
+        RepositoryService::count_dnssec_record_zone_ids().await
     }
 
     /// Count keys in `state` across every zone.
@@ -89,13 +57,14 @@ impl DnssecService {
         RepositoryService::count_dnssec_keys_by_state(state).await
     }
 
-    /// Count signatures expiring before `cutoff` across every zone.
-    pub async fn count_rrsigs_expiring_before(
+    /// Count signatures inside their policy's re-sign window across every
+    /// zone.
+    pub async fn count_rrsigs_expiring_within_refresh(
         caller: &Caller,
-        cutoff: DateTime<Utc>,
+        now: DateTime<Utc>,
     ) -> Result<u64, ServiceError> {
         caller.require_global("read DNSSEC metrics")?;
-        RepositoryService::count_rrsig_dnssec_records_expiring_before(cutoff).await
+        RepositoryService::count_rrsig_dnssec_records_expiring_within_refresh(now).await
     }
 
     pub(crate) async fn earliest_expiry_tx(
@@ -108,9 +77,25 @@ impl DnssecService {
     }
 }
 
-pub(crate) fn build_status(
+/// Assemble the zone's status on the caller's transaction: the earliest
+/// signature expiry and any pending withdrawal join the rows already loaded.
+pub(crate) async fn build_status_tx(
+    tx: &mut RepositoryTx<'_>,
     zone: &Zone,
-    denial: DnssecDenial,
+    policy: Option<&DnssecPolicy>,
+    keys: &[DnssecKey],
+    serial: i32,
+) -> Result<GetDnssecStatusResponse, ServiceError> {
+    let earliest = DnssecService::earliest_expiry_tx(tx, zone.id).await?;
+    let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(tx, zone.id)
+        .await?
+        .is_some();
+    build_status(zone, policy, keys, earliest, serial, withdrawing)
+}
+
+fn build_status(
+    zone: &Zone,
+    policy: Option<&DnssecPolicy>,
     keys: &[DnssecKey],
     earliest_signature_expires_at: Option<DateTime<Utc>>,
     serial: i32,
@@ -127,7 +112,7 @@ pub(crate) fn build_status(
     Ok(GetDnssecStatusResponse {
         zone_name: zone.name.as_str().to_string(),
         enabled: !keys.is_empty(),
-        denial: denial.to_string(),
+        policy: policy.map(GetDnssecPolicyResponse::from_policy),
         keys: keys
             .iter()
             .map(|key| DnssecKeyInfo {
@@ -155,7 +140,7 @@ pub(crate) fn build_status(
 }
 
 /// The key's DS form, decoded from the same RDATA the CDS records carry.
-fn ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
+pub(crate) fn ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
     let apex = to_wire_name(zone.name.to_wire())
         .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
     let rdata = ds_rdata_for(key, &apex).map_err(ServiceError::dnssec_signing_failed)?;

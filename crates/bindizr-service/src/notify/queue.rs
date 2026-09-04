@@ -1,41 +1,16 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, OnceLock},
-    time::Duration,
-};
+//! The async apply queue: committed writes enqueue a NOTIFY here and return,
+//! and the worker batches a burst into one NOTIFY per zone.
 
-use async_trait::async_trait;
-use bindizr_core::config::{self, NotifyMode};
+use std::{collections::HashSet, sync::OnceLock, time::Duration};
+
+use bindizr_core::config;
 use tokio::{
     sync::mpsc::{UnboundedSender, unbounded_channel},
     time::{Instant, timeout},
 };
 
+use super::send_notify;
 use crate::log_warn;
-
-#[async_trait]
-pub trait NotifySender: Send + Sync {
-    async fn send_notify(&self, zone_name: Option<&str>) -> Result<(), String>;
-}
-
-static NOTIFY_SENDER: OnceLock<Arc<dyn NotifySender>> = OnceLock::new();
-
-/// Register the global NOTIFY sender; fails if one is already registered.
-pub fn set_notify_sender(sender: Arc<dyn NotifySender>) -> Result<(), &'static str> {
-    NOTIFY_SENDER
-        .set(sender)
-        .map_err(|_| "notify sender is already registered")
-}
-
-/// Send a DNS NOTIFY for `zone_name` (or all zones) via the registered sender.
-pub(crate) async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
-    match NOTIFY_SENDER.get() {
-        Some(sender) => sender.send_notify(zone_name).await,
-        None => Err("notify sender is not registered".to_string()),
-    }
-}
-
-// --- Async apply queue --------------------------------------------------------
 
 /// A queued propagation job: send NOTIFY for one zone, or for all zones (`None`).
 #[derive(Debug)]
@@ -50,7 +25,7 @@ static APPLY_QUEUE: OnceLock<UnboundedSender<ApplyJob>> = OnceLock::new();
 pub fn init_notify_worker() {
     let (tx, mut rx) = unbounded_channel::<ApplyJob>();
     if APPLY_QUEUE.set(tx).is_err() {
-        return; // already initialized
+        return;
     }
 
     tokio::spawn(async move {
@@ -121,7 +96,7 @@ impl NotifyBatch {
 
 /// Queue a NOTIFY for later delivery. Returns `false` if the worker was never
 /// started, so the caller can fall back to sending inline.
-fn enqueue_notify(zone_name: Option<&str>) -> bool {
+pub(crate) fn enqueue_notify(zone_name: Option<&str>) -> bool {
     match APPLY_QUEUE.get() {
         Some(tx) => tx
             .send(ApplyJob {
@@ -130,19 +105,4 @@ fn enqueue_notify(zone_name: Option<&str>) -> bool {
             .is_ok(),
         None => false,
     }
-}
-
-/// Send a NOTIFY after a zone update, unless disabled by `notify_after_update`.
-/// In async mode it is queued and this returns at once; otherwise sent inline.
-pub(crate) async fn send_notify_after_update(zone_name: Option<&str>) -> Result<(), String> {
-    let dns = &config::bindizr_config().dns;
-    if !dns.notify_after_update {
-        return Ok(());
-    }
-
-    if dns.notify_mode == NotifyMode::Async && enqueue_notify(zone_name) {
-        return Ok(());
-    }
-
-    send_notify(zone_name).await
 }

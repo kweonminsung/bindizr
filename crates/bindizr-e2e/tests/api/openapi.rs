@@ -13,7 +13,7 @@ fn openapi_options() -> TestAppOptions {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn openapi_document_is_absent_unless_enabled() {
-    let app = TestApp::start_with_options(TestAppOptions::default()).await;
+    let app = TestApp::start_local().await;
 
     for path in ["/openapi.json", "/openapi.yaml"] {
         let (status, _) = app.request(Method::GET, path, None).await;

@@ -16,7 +16,7 @@ categories.workspace = true
 [dependencies]
 base64.workspace = true
 chrono.workspace = true
-domain = { workspace = true, features = ["tsig", "zonefile", "unstable-sign", "ring"] }
+domain = { workspace = true, features = ["tsig", "zonefile", "unstable-sign", "ring", "openssl"] }
 hex.workspace = true
 config.workspace = true
 log.workspace = true
@@ -32,3 +32,8 @@ hmac.workspace = true
 
 [lints]
 workspace = true
+
+# musl (the release targets) has no system OpenSSL for the `domain` openssl
+# backend; vendoring builds it from source for that target only.
+[target.'cfg(target_env = "musl")'.dependencies]
+openssl = { workspace = true, features = ["vendored"] }

@@ -16,3 +16,10 @@ pub struct ZoneTsigPolicy {
     pub record_types: String,
     pub created_at: DateTime<Utc>,
 }
+
+/// A zone TSIG policy joined with the name of the key it grants.
+#[derive(Debug, Clone)]
+pub struct ZoneTsigPolicyWithKey {
+    pub policy: ZoneTsigPolicy,
+    pub tsig_key_name: String,
+}

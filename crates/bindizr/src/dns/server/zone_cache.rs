@@ -117,8 +117,7 @@ fn lookup(zone_id: i32, serial: i32) -> Option<ZoneContent> {
 
 fn store(zone_id: i32, serial: i32, content: ZoneContent) {
     let mut map = locked_cache();
-    // Evict the least-recently-used entry when inserting a new zone would exceed
-    // the cap. Updating an existing zone (same key) never grows the map.
+    // Updating an existing zone (same key) never grows the map.
     if !map.contains_key(&zone_id) && map.len() >= MAX_ENTRIES {
         let lru_id = map
             .iter()

@@ -31,8 +31,8 @@ use crate::{
     serial::generate_serial,
     timing::elapsed_ms,
     types::{
-        ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, RecordDiff,
-        RecordValueRequest,
+        ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
+        ImportZoneFromServerRequest, RecordDiff, RecordValueRequest,
     },
     zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
@@ -85,19 +85,50 @@ struct ImportTimings {
 }
 
 impl RecordService {
-    /// Import a BIND zone file into an existing zone, reconciling it by mode. On
-    /// apply the zone serial is incremented once and a single NOTIFY is sent. If
-    /// any record fails validation nothing is applied and the errors are returned.
+    /// Import a BIND zone file into an existing zone, reconciling it by mode.
+    /// On apply the zone serial is incremented once and a single NOTIFY is
+    /// sent. If any record fails validation nothing is applied and the errors
+    /// are returned.
     pub async fn import_zone_file(
         caller: &Caller,
         zone_name: &str,
         request: &ImportZoneFileRequest,
     ) -> Result<ImportZoneFileResponse, ServiceError> {
         caller.require_global("import zone files")?;
+        Self::reconcile_zone_file(zone_name, &request.content, request.mode, request.dry_run).await
+    }
 
-        let mode = request.mode;
-        let dry_run = request.dry_run;
+    /// Import the zone fetched over AXFR from the request's server, then
+    /// reconcile it like [`Self::import_zone_file`]. Reaches only the daemon
+    /// socket: the HTTP API cannot start an outbound transfer.
+    pub async fn import_zone_from_server(
+        caller: &Caller,
+        zone_name: &str,
+        request: &ImportZoneFromServerRequest,
+    ) -> Result<ImportZoneFileResponse, ServiceError> {
+        caller.require_global("import zone files")?;
 
+        let server = request.from_server.trim();
+        if server.is_empty() {
+            return Err(ServiceError::invalid_input("from_server is required"));
+        }
+        // The zone's existence precedes the outbound fetch, so a mistyped
+        // name cannot start a transfer.
+        ZoneService::lookup_by_name(zone_name).await?;
+        let content = crate::dns_client::axfr::fetch_zone_file(server, zone_name)
+            .await
+            .map_err(|e| {
+                ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))
+            })?;
+        Self::reconcile_zone_file(zone_name, &content, request.mode, request.dry_run).await
+    }
+
+    async fn reconcile_zone_file(
+        zone_name: &str,
+        content: &str,
+        mode: ImportMode,
+        dry_run: bool,
+    ) -> Result<ImportZoneFileResponse, ServiceError> {
         let t_total = Instant::now();
 
         let mut timings = ImportTimings::default();
@@ -111,7 +142,7 @@ impl RecordService {
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let parsed = parse_zone_file(&request.content, zone.name.as_str(), zone.default_ttl);
+            let parsed = parse_zone_file(content, zone.name.as_str(), zone.default_ttl);
             timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
@@ -249,7 +280,6 @@ impl RecordService {
                 })
             };
 
-            // Deletions implied by the mode.
             let dels: Vec<Record> = match mode {
                 ImportMode::Append => Vec::new(),
                 ImportMode::Replace => existing_records
@@ -268,7 +298,6 @@ impl RecordService {
                     .collect(),
             };
 
-            // Reconcile TTL only for upsert/replace.
             let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
             let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.default_ttl);
 

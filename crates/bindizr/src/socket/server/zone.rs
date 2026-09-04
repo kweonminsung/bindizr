@@ -2,7 +2,10 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     record::RecordService,
-    types::{CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter},
+    types::{
+        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
+        ImportZoneFileResponse,
+    },
     zone::ZoneService,
 };
 use serde_json::json;
@@ -11,8 +14,8 @@ use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
         DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneFileParams,
-        ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams, ZoneNameParams,
-        ZoneVersionParams,
+        ImportZoneFromServerParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
+        ZoneNameParams, ZoneVersionParams,
     },
 };
 
@@ -72,6 +75,23 @@ pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
     let response =
         RecordService::import_zone_file(&Caller::Global, &params.zone_name, &params.request)
             .await?;
+    import_zone_response(response)
+}
+
+/// Handle the `ImportZoneFromServer` command by transferring the zone over
+/// AXFR and reconciling it like a file import.
+pub(crate) async fn import_zone_from_server(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: ImportZoneFromServerParams = parse_params(data)?;
+
+    let response =
+        RecordService::import_zone_from_server(&Caller::Global, &params.zone_name, &params.request)
+            .await?;
+    import_zone_response(response)
+}
+
+fn import_zone_response(response: ImportZoneFileResponse) -> Result<DaemonResponse, ServiceError> {
     let message = if !response.errors.is_empty() {
         format!(
             "Import validation failed with {} error(s); nothing applied",
@@ -201,7 +221,7 @@ pub(crate) async fn rollback_zone(
 pub(crate) async fn zone_status(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let response = crate::dns::status::zone_status(&Caller::Global, &params.name).await?;
+    let response = ZoneService::get_status(&Caller::Global, &params.name).await?;
 
     let in_sync = response
         .secondaries

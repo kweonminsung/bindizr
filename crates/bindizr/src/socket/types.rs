@@ -1,8 +1,9 @@
 use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateZoneTokenPolicyRequest, CreateZoneTsigPolicyRequest,
-    EnableDnssecRequest, ImportZoneFileRequest, RollbackZoneRequest, RolloverDnssecRequest,
-    UpdateRecordPatch, UpdateZonePatch,
+    EnableDnssecRequest, ImportDnssecKeyRequest, ImportZoneFileRequest,
+    ImportZoneFromServerRequest, RollbackZoneRequest, RolloverDnssecRequest,
+    SetZoneDnssecPolicyRequest, UpdateDnssecPolicyRequest, UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +19,11 @@ pub(crate) enum DaemonCommandKind {
     TsigKeyList,
     TsigKeyGet,
     TsigKeyDelete,
+    DnssecPolicyCreate,
+    DnssecPolicyList,
+    DnssecPolicyGet,
+    DnssecPolicyUpdate,
+    DnssecPolicyDelete,
     ZoneTsigPolicyAdd,
     ZoneTsigPolicyList,
     ZoneTsigPolicyRemove,
@@ -37,6 +43,7 @@ pub(crate) enum DaemonCommandKind {
     DeleteRecord,
     NotifyZone,
     ImportZoneFile,
+    ImportZoneFromServer,
     ExportZoneFile,
     ListZoneVersions,
     GetZoneVersion,
@@ -51,7 +58,9 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecRolloverDsSeen,
     ZoneDnssecWithdraw,
     ZoneDnssecWithdrawCancel,
-    ZoneDnssecVerify,
+    ZoneDnssecSetPolicy,
+    ZoneDnssecKeysExport,
+    ZoneDnssecKeysImport,
     Doctor,
     Shutdown,
     Restart,
@@ -91,6 +100,20 @@ pub(crate) struct RecordIdParams {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct TsigKeyNameParams {
     pub(crate) name: String,
+}
+
+/// Payload addressing a DNSSEC policy by name.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct DnssecPolicyNameParams {
+    pub(crate) name: String,
+}
+
+/// Payload for editing a DNSSEC policy's timing.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct UpdateDnssecPolicyParams {
+    pub(crate) name: String,
+    #[serde(flatten)]
+    pub(crate) request: UpdateDnssecPolicyRequest,
 }
 
 /// Payload addressing an API token by name.
@@ -141,6 +164,13 @@ pub(crate) struct ImportZoneFileParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
     pub(crate) request: ImportZoneFileRequest,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct ImportZoneFromServerParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: ImportZoneFromServerRequest,
 }
 
 /// Payload for inserting records into a zone in one transaction.
@@ -217,13 +247,20 @@ pub(crate) struct RolloverZoneDnssecParams {
     pub(crate) request: RolloverDnssecRequest,
 }
 
-/// Payload for confirming a rollover's parent DS.
+/// Payload for importing one BIND key pair into a zone.
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct DsSeenZoneDnssecParams {
-    pub(crate) name: String,
-    /// Skip the parent DS verification.
-    #[serde(default)]
-    pub(crate) force: bool,
+pub(crate) struct ImportZoneDnssecKeyParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: ImportDnssecKeyRequest,
+}
+
+/// Payload for moving a signed zone to another DNSSEC policy.
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct SetZoneDnssecPolicyParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: SetZoneDnssecPolicyRequest,
 }
 
 /// Daemon status details returned by the `Status` command.

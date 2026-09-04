@@ -3,6 +3,8 @@
 use bindizr_core::dns::record::TxtRecordValue;
 use bindizr_service::types::{RecordDiffEntry, RecordDiffValue, RecordValueRequest};
 
+use crate::cli::output::color;
+
 /// Render one record's value as zone-file rdata: MX/SRV carry the priority
 /// inline, TXT is quoted per character-string, other types use the value as-is.
 fn rdata(record: &RecordDiffValue, record_type: &str) -> String {
@@ -43,6 +45,7 @@ pub(crate) fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
             .filter(|line| !to_lines.contains(line))
             .cloned()
             .collect();
+        let removed = lines.len();
         lines.extend(
             to_lines
                 .iter()
@@ -55,10 +58,17 @@ pub(crate) fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
         for (index, (ttl, data)) in lines.iter().enumerate() {
             let head = if index == 0 { sign } else { ' ' };
             let name_col = if index == 0 { entry.name.as_str() } else { "" };
-            out.push_str(&format!(
-                "{} {:<24} {:>5} IN {:<6} {}\n",
+            let line = format!(
+                "{} {:<24} {:>5} IN {:<6} {}",
                 head, name_col, ttl, rtype, data
-            ));
+            );
+            let line = if index < removed {
+                color::red(&line)
+            } else {
+                color::green(&line)
+            };
+            out.push_str(&line);
+            out.push('\n');
         }
     }
     out
@@ -73,10 +83,10 @@ pub(crate) fn render_change_preview(entries: &[RecordDiffEntry]) -> String {
     let mut out = render_diff_lines(entries);
     out.push('\n');
     out.push_str(&format!(
-        "Records: +{} -{} ~{}\n",
-        count(entries, "added"),
-        count(entries, "removed"),
-        count(entries, "changed")
+        "Records: {} {} {}\n",
+        color::green(&format!("+{}", count(entries, "added"))),
+        color::red(&format!("-{}", count(entries, "removed"))),
+        color::yellow(&format!("~{}", count(entries, "changed")))
     ));
     out
 }

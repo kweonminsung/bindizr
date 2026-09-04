@@ -1,19 +1,20 @@
 //! DNSSEC zone signing: key management and rollover, the signed-view hook
 //! every zone-data mutation runs before its serial bump, and the maintenance
-//! scheduler. Whether a zone is signed is carried by its key rows; every
-//! transition journals its delta so secondaries follow via IXFR.
+//! scheduler. Whether a zone is signed is carried by its key rows, the
+//! parameters it signs under by the policy `zones.dnssec_policy_id` names;
+//! every transition journals its delta so secondaries follow via IXFR.
 //!
 //! Rollover is RFC 7583 pre-publish: `published` ahead of use, `active` once
 //! caches know the key (automatic for ZSKs, `ds-seen` for CSK/KSK), `retired`
 //! until caches drain, then removed.
 
+mod keys;
 mod lifecycle;
 mod maintenance;
 mod rollover;
 mod status;
-mod verify;
 
-use bindizr_core::{config::bindizr_config, dns::dnssec::SignedViewParams};
+use bindizr_core::dns::dnssec::SignedViewParams;
 use chrono::{Duration, Utc};
 pub use maintenance::init_maintenance_scheduler;
 
@@ -23,6 +24,7 @@ use crate::{
     log_warn,
     model::{
         dnssec_key::DnssecKey,
+        dnssec_policy::DnssecPolicy,
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
@@ -55,23 +57,96 @@ impl DnssecService {
         if keys.is_empty() {
             return Ok(());
         }
-        Self::sign_zone_locked(tx, zone, new_serial, &keys, false).await?;
+        let policy = Self::get_zone_policy_tx(tx, zone).await?;
+        Self::sign_zone_locked(tx, zone, &policy, new_serial, &keys, false).await?;
         Ok(())
     }
 
-    /// Load the zone (locked at `lock_level`) together with its signing keys;
-    /// a zone with no keys reads as not DNSSEC-enabled.
+    /// Re-sign the locked zone under a freshly advanced serial, riding the
+    /// same serial/IXFR mechanics as any record change; `None` (serial kept)
+    /// when nothing needed replacing.
+    async fn resign_zone_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        policy: &DnssecPolicy,
+        keys: &[DnssecKey],
+        force: bool,
+    ) -> Result<Option<i32>, ServiceError> {
+        let new_serial = crate::serial::generate_serial(Some(zone.serial))?;
+        if !Self::sign_zone_locked(tx, zone, policy, new_serial, keys, force).await? {
+            return Ok(None);
+        }
+        ZoneService::advance_serial_tx(tx, zone, new_serial).await?;
+        Ok(Some(new_serial))
+    }
+
+    /// The policy the zone signs under, or `None` for an unsigned zone. Read
+    /// unlocked: a policy in use cannot be deleted (FK), and its editable
+    /// fields are safe to read at any moment.
+    pub(crate) async fn find_zone_policy_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+    ) -> Result<Option<DnssecPolicy>, ServiceError> {
+        let Some(policy_id) = zone.dnssec_policy_id else {
+            return Ok(None);
+        };
+        RepositoryService::get_dnssec_policy_tx(tx, policy_id, LockLevel::None)
+            .await?
+            .map(Some)
+            .ok_or_else(|| {
+                ServiceError::internal(format!(
+                    "zone {} references a missing DNSSEC policy",
+                    zone.name.as_str()
+                ))
+            })
+    }
+
+    /// The policy a signed zone signs under; a signed zone without one is a
+    /// broken invariant, never a caller error.
+    pub(crate) async fn get_zone_policy_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+    ) -> Result<DnssecPolicy, ServiceError> {
+        Self::find_zone_policy_tx(tx, zone).await?.ok_or_else(|| {
+            ServiceError::internal(format!(
+                "zone {} is signed but has no DNSSEC policy",
+                zone.name.as_str()
+            ))
+        })
+    }
+
+    /// Load the zone (locked at `lock_level`) together with its policy and
+    /// signing keys; a zone with no keys reads as not DNSSEC-enabled.
     pub(crate) async fn get_signed_zone_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
         lock_level: LockLevel,
-    ) -> Result<(Zone, Vec<DnssecKey>), ServiceError> {
+    ) -> Result<(Zone, DnssecPolicy, Vec<DnssecKey>), ServiceError> {
         let zone = ZoneService::get_by_name_tx(tx, zone_name, lock_level).await?;
         let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
         if keys.is_empty() {
             return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
         }
-        Ok((zone, keys))
+        let policy = Self::get_zone_policy_tx(tx, &zone).await?;
+        Ok((zone, policy, keys))
+    }
+
+    /// The scheduler's form of [`Self::get_signed_zone_tx`]: `None` when the
+    /// zone was deleted or unsigned since its id was listed.
+    pub(crate) async fn find_signed_zone_by_id_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        lock_level: LockLevel,
+    ) -> Result<Option<(Zone, DnssecPolicy, Vec<DnssecKey>)>, ServiceError> {
+        let Some(zone) = RepositoryService::get_zone_tx(tx, zone_id, lock_level).await? else {
+            return Ok(None);
+        };
+        let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
+        if keys.is_empty() {
+            return Ok(None);
+        }
+        let policy = Self::get_zone_policy_tx(tx, &zone).await?;
+        Ok(Some((zone, policy, keys)))
     }
 
     /// Returns whether anything changed; with `force`, stored signatures are
@@ -79,6 +154,7 @@ impl DnssecService {
     async fn sign_zone_locked(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
+        policy: &DnssecPolicy,
         new_serial: i32,
         keys: &[DnssecKey],
         force: bool,
@@ -89,7 +165,6 @@ impl DnssecService {
             .await?
             .is_some();
 
-        let dnssec = &bindizr_config().dnssec;
         let now = Utc::now();
         let diff = SignedViewParams {
             zone,
@@ -97,12 +172,12 @@ impl DnssecService {
             records: &records,
             keys,
             prev: &prev,
-            denial: zone.dnssec_denial,
+            denial: policy.denial,
             now,
             inception: now - Duration::seconds(SIGNATURE_INCEPTION_OFFSET_SECS),
-            expiration: now + Duration::days(i64::from(dnssec.signature_validity_days)),
+            expiration: now + Duration::days(i64::from(policy.signature_validity_days)),
             expiration_jitter_secs: MAX_EXPIRATION_JITTER_SECS as i64,
-            refresh_secs: i64::from(dnssec.signature_refresh_days) * 86_400,
+            refresh_secs: i64::from(policy.signature_refresh_days) * 86_400,
             force,
             withdraw_parent_ds,
         }
@@ -170,6 +245,14 @@ impl DnssecService {
         RepositoryService::delete_dnssec_records_tx(tx, &removed_ids).await?;
         RepositoryService::create_dnssec_records_tx(tx, &diff.added).await?;
         Ok(true)
+    }
+}
+
+fn key_layout(split_keys: bool) -> &'static str {
+    if split_keys {
+        "split KSK/ZSK keys"
+    } else {
+        "a single CSK"
     }
 }
 

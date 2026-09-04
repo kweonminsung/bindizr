@@ -10,9 +10,9 @@ use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 
 use super::{
-    dnssec::DnssecApi, error::ApiError, external_dns::ExternalDnsApi, notify::NotifyApi,
-    openapi::ApiDoc, record::RecordApi, token_policy::TokenPolicyApi, tsig_key::TsigKeyApi,
-    zone::ZoneApi,
+    dnssec::DnssecApi, dnssec_policy::DnssecPolicyApi, error::ApiError,
+    external_dns::ExternalDnsApi, notify::NotifyApi, openapi::ApiDoc, record::RecordApi,
+    token_policy::TokenPolicyApi, tsig_key::TsigKeyApi, zone::ZoneApi,
 };
 
 /// HTTP API router assembling all route groups.
@@ -30,6 +30,7 @@ impl ApiRouter {
             .merge(TsigKeyApi::routes().await)
             .merge(TokenPolicyApi::routes().await)
             .merge(DnssecApi::routes().await)
+            .merge(DnssecPolicyApi::routes().await)
             .route("/", routing::get(ApiRouter::get_home));
 
         // Unregistered when disabled, so the endpoints fall through to 404.

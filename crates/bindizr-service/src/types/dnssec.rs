@@ -4,34 +4,33 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use super::GetDnssecPolicyResponse;
+
 /// Request body for enabling DNSSEC on a zone.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct EnableDnssecRequest {
-    /// Defaults to `ecdsap256sha256`; also accepts `ecdsap384sha384` and `ed25519`.
-    #[schema(example = "ecdsap256sha256")]
-    pub algorithm: Option<String>,
-    /// Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276
-    /// parameters). Fixed at enable time.
-    #[schema(example = "nsec3")]
-    pub denial: Option<String>,
-    /// Split KSK/ZSK keys instead of one CSK, so the ZSK rolls without
-    /// touching the parent DS.
-    #[serde(default)]
-    #[schema(example = false)]
-    pub split_keys: bool,
+    /// Name of the DNSSEC policy to sign under; defaults to `default`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "default")]
+    pub policy: Option<String>,
+}
+
+/// Request body for moving a signed zone to another DNSSEC policy.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct SetZoneDnssecPolicyRequest {
+    /// Name of an existing DNSSEC policy with the zone's denial mode and key
+    /// layout; a different algorithm starts an algorithm rollover.
+    #[schema(example = "strict")]
+    pub policy: String,
 }
 
 /// Request body for starting a key rollover.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct RolloverDnssecRequest {
     /// Which key to roll: required for split-key zones (`ksk` or `zsk`),
-    /// omitted for CSK zones and algorithm rollovers.
+    /// omitted for CSK zones.
     #[schema(example = "zsk")]
     pub role: Option<String>,
-    /// Roll to this algorithm instead (RFC 6840, Section 5.11): replaces
-    /// every key, double-signing the zone until the old keys leave.
-    #[schema(example = "ed25519")]
-    pub algorithm: Option<String>,
 }
 
 /// A signing key's public half; the private key never leaves the server.
@@ -88,9 +87,9 @@ pub struct GetDnssecStatusResponse {
     pub zone_name: String,
     #[schema(example = true)]
     pub enabled: bool,
-    /// Denial-of-existence mode: `nsec` or `nsec3`.
-    #[schema(example = "nsec")]
-    pub denial: String,
+    /// The policy the zone signs under; absent for an unsigned zone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy: Option<GetDnssecPolicyResponse>,
     pub keys: Vec<DnssecKeyInfo>,
     /// DS forms of the keys, to be registered in the parent zone.
     pub ds_records: Vec<DnssecDsInfo>,
@@ -106,26 +105,44 @@ pub struct GetDnssecStatusResponse {
     pub serial: i32,
 }
 
-/// One verification check's outcome.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct DnssecCheckInfo {
-    #[schema(example = "signatures")]
-    pub check: String,
-    #[schema(example = true)]
-    pub ok: bool,
-    #[schema(example = "142 RRSIGs, earliest expiry 2026-09-12T00:00:00Z")]
-    pub detail: String,
+/// One key's BIND file contents. Served only over the daemon socket:
+/// private keys never transit the HTTP API.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DnssecKeyMaterial {
+    pub role: String,
+    /// IANA algorithm number.
+    pub algorithm: i32,
+    pub key_tag: i32,
+    /// `K*.key` contents: the DNSKEY record line.
+    pub dnskey_record: String,
+    /// `K*.private` contents.
+    pub private_key: String,
 }
 
-/// Result of verifying a zone's DNSSEC state.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct VerifyDnssecResponse {
-    #[schema(example = "example.com")]
+/// Response body listing a zone's keys in BIND file form.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ExportDnssecKeysResponse {
     pub zone_name: String,
-    /// Whether every check passed.
-    #[schema(example = true)]
-    pub ok: bool,
-    pub checks: Vec<DnssecCheckInfo>,
+    pub keys: Vec<DnssecKeyMaterial>,
+}
+
+/// One BIND key pair: `K*.key` contents (or the bare DNSKEY RDATA) and the
+/// matching `K*.private` contents.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ImportDnssecKeyPair {
+    pub dnskey: String,
+    pub private_key: String,
+}
+
+/// Request body importing a zone's complete key set; daemon-socket only.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ImportDnssecKeyRequest {
+    /// One CSK pair, or a KSK pair and a ZSK pair under a split-key policy.
+    /// The policy's layout decides the role of a SEP key.
+    pub keys: Vec<ImportDnssecKeyPair>,
+    /// Policy the zone signs under; defaults to `default`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
 }
 
 /// A zone's DNSSEC status wrapped in a response envelope.

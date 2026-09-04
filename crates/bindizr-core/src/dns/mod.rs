@@ -1,3 +1,4 @@
+pub mod address;
 mod catalog_zone;
 pub mod dnssec;
 pub mod message;

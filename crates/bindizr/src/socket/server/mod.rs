@@ -3,6 +3,7 @@
 
 pub(crate) mod control;
 mod dnssec;
+mod dnssec_policy;
 mod doctor;
 mod notify;
 mod record;
@@ -11,7 +12,12 @@ mod token;
 mod tsig_key;
 mod zone;
 
-use std::{io, os::unix::fs::FileTypeExt, path::Path};
+use std::{
+    fs::Permissions,
+    io,
+    os::unix::fs::{FileTypeExt, PermissionsExt},
+    path::Path,
+};
 
 use bindizr_core::{log_error, log_info, log_warn};
 use bindizr_service::{error::ServiceError, types::ErrorResponse};
@@ -48,6 +54,19 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::TsigKeyList => tsig_key::list_tsig_keys().await,
                 DaemonCommandKind::TsigKeyGet => tsig_key::get_tsig_key(&cmd.data).await,
                 DaemonCommandKind::TsigKeyDelete => tsig_key::delete_tsig_key(&cmd.data).await,
+                DaemonCommandKind::DnssecPolicyCreate => {
+                    dnssec_policy::create_dnssec_policy(&cmd.data).await
+                }
+                DaemonCommandKind::DnssecPolicyList => dnssec_policy::list_dnssec_policies().await,
+                DaemonCommandKind::DnssecPolicyGet => {
+                    dnssec_policy::get_dnssec_policy(&cmd.data).await
+                }
+                DaemonCommandKind::DnssecPolicyUpdate => {
+                    dnssec_policy::update_dnssec_policy(&cmd.data).await
+                }
+                DaemonCommandKind::DnssecPolicyDelete => {
+                    dnssec_policy::delete_dnssec_policy(&cmd.data).await
+                }
                 DaemonCommandKind::ZoneTsigPolicyAdd => {
                     tsig_key::add_zone_tsig_policy(&cmd.data).await
                 }
@@ -81,6 +100,9 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
                 DaemonCommandKind::NotifyZone => notify::notify_zone(&cmd.data).await,
                 DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
+                DaemonCommandKind::ImportZoneFromServer => {
+                    zone::import_zone_from_server(&cmd.data).await
+                }
                 DaemonCommandKind::ExportZoneFile => zone::export_zone(&cmd.data).await,
                 DaemonCommandKind::ListZoneVersions => zone::list_zone_versions(&cmd.data).await,
                 DaemonCommandKind::GetZoneVersion => zone::get_zone_version(&cmd.data).await,
@@ -94,10 +116,18 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ZoneDnssecRolloverStart => {
                     dnssec::rollover_start(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneDnssecVerify => dnssec::verify_dnssec(&cmd.data).await,
                 DaemonCommandKind::ZoneDnssecWithdraw => dnssec::withdraw_dnssec(&cmd.data).await,
                 DaemonCommandKind::ZoneDnssecWithdrawCancel => {
                     dnssec::cancel_dnssec_withdrawal(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneDnssecSetPolicy => {
+                    dnssec::set_dnssec_policy(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneDnssecKeysExport => {
+                    dnssec::export_dnssec_keys(&cmd.data).await
+                }
+                DaemonCommandKind::ZoneDnssecKeysImport => {
+                    dnssec::import_dnssec_key(&cmd.data).await
                 }
                 DaemonCommandKind::ZoneDnssecRolloverDsSeen => {
                     dnssec::rollover_ds_seen(&cmd.data).await
@@ -185,12 +215,18 @@ async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
 
 async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {
     prepare_socket_path(socket_path).await?;
-    UnixListener::bind(socket_path)
+    let listener = UnixListener::bind(socket_path)?;
+    // Connecting grants global access; the file mode is the auth boundary.
+    fs::set_permissions(socket_path, Permissions::from_mode(0o600)).await?;
+    Ok(listener)
 }
 
 async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     if let Some(parent) = Path::new(socket_path).parent() {
         fs::create_dir_all(parent).await?;
+        // 0700 before the socket exists: the directory gates access, so the
+        // bind-then-chmod window cannot leak a umask-permissive socket.
+        fs::set_permissions(parent, Permissions::from_mode(0o700)).await?;
     }
 
     match fs::symlink_metadata(socket_path).await {

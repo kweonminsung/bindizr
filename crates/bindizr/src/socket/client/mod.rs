@@ -33,7 +33,9 @@ impl DaemonSocketClient {
 
         match try_connect_daemon_socket().await {
             Ok(_) => false,
-            // Primary refused/missing/inaccessible; the fallback was also tried.
+            // An owner-only socket this user cannot open is a live daemon.
+            Err((err, _)) if err.kind() == std::io::ErrorKind::PermissionDenied => false,
+            // Primary refused/missing; the fallback was also tried.
             Err((_, Some(fallback_err))) => gone(&fallback_err),
             // Primary failed in an unexpected way; the fallback was not tried.
             Err((err, None)) => gone(&err),
@@ -117,6 +119,13 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     try_connect_daemon_socket()
         .await
         .map_err(|(err, fallback_err)| match fallback_err {
+            // Owner-only by design: connecting grants global access.
+            _ if err.kind() == std::io::ErrorKind::PermissionDenied => CliError::from(format!(
+                "Permission denied on the daemon socket at '{}'. The socket is owner-only, so \
+                 run the CLI as the user the daemon runs as (for a package install, `sudo \
+                 bindizr ...`).",
+                SOCKET_FILE_PATH
+            )),
             Some(fallback_err) => CliError::from(format!(
                 "Could not connect to the daemon socket at '{}' or fallback '{}': {}; fallback error: {}\nIs the bindizr daemon running?",
                 SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH, err, fallback_err

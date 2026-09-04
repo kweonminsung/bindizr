@@ -255,7 +255,6 @@ def _render_markdown(env: dict, data: dict) -> str:
     out.append(_md_table(["Software", "Version"],
                          [[k, v] for k, v in env["software"].items()]))
 
-    # Benchmark 1 — CRUD TPS
     if "b01_crud_tps" in data:
         out.append("\n## Benchmark 1 — Record CRUD TPS\n")
         rows = []
@@ -270,7 +269,7 @@ def _render_markdown(env: dict, data: dict) -> str:
             ["Product", "Create TPS", "Update TPS", "Delete TPS", "Read TPS",
              "Read p95 (ms)", "Error Rate", "Runs"], rows))
 
-    # Benchmark 2 — Bulk Import (curated: mean ± std on time / throughput).
+    # Curated table: mean ± std on time / throughput.
     if "b02_bulk_import" in data:
         results = sorted(_rows(data, "b02_bulk_import"),
                          key=lambda r: (r["system"], r.get("size", 0)))
@@ -306,7 +305,6 @@ def _render_markdown(env: dict, data: dict) -> str:
         rows = [[r.get(h, "-") for h in headers] for r in results]
         out.append(_md_table(headers, rows))
 
-    # Benchmark 7 — Database Performance (CRUD + per-backend bulk import).
     if "b07_database" in data:
         out.append(_render_b07(_rows(data, "b07_database")))
 

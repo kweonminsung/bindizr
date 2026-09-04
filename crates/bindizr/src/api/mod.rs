@@ -1,6 +1,7 @@
 //! HTTP API server: routing, middleware, and the zone/record/notify endpoints.
 
 pub(crate) mod dnssec;
+pub(crate) mod dnssec_policy;
 pub(crate) mod error;
 pub(crate) mod external_dns;
 pub(crate) mod health;

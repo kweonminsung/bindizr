@@ -4,9 +4,9 @@
 use domain::{
     base::{
         Message, MessageBuilder, Name,
-        iana::{Opcode, Rcode, Rtype},
+        iana::{Class, Opcode, Rcode, Rtype},
     },
-    rdata::{Ds, Soa},
+    rdata::Soa,
 };
 
 /// Build a single-question DNS message with a random id, returning
@@ -28,7 +28,6 @@ pub fn build_question(
     header.set_rd(rd);
 
     let mut question = builder.question();
-    // Composing one question into a Vec cannot fail.
     question
         .push((qname, rtype))
         .expect("composing into a Vec cannot run out of space");
@@ -36,17 +35,25 @@ pub fn build_question(
     (query_id, question.finish())
 }
 
-/// One DS record from a response's answer section; digest in uppercase hex.
-pub struct DsAnswer {
-    pub key_tag: u16,
-    pub algorithm: u8,
-    pub digest_type: u8,
-    pub digest: String,
+/// One answer record from a zone-transfer response, in presentation form.
+#[derive(Debug)]
+pub struct TransferRecord {
+    /// Owner name as an absolute presentation name (trailing dot).
+    pub name: String,
+    pub rtype: Rtype,
+    pub ttl: u32,
+    /// RDATA in standard presentation form.
+    pub rdata: String,
 }
 
-/// Validate a DS query response and collect every DS record in its answer
-/// section; empty when the delegation carries no DS.
-pub fn extract_ds_answers(query_id: u16, response: &[u8]) -> Result<Vec<DsAnswer>, String> {
+/// Validate one AXFR response message and collect every answer record; the
+/// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
+pub fn extract_transfer_records(
+    query_id: u16,
+    response: &[u8],
+) -> Result<Vec<TransferRecord>, String> {
+    use domain::rdata::AllRecordData;
+
     let message =
         Message::from_octets(response).map_err(|e| format!("malformed response: {}", e))?;
 
@@ -72,14 +79,44 @@ pub fn extract_ds_answers(query_id: u16, response: &[u8]) -> Result<Vec<DsAnswer
         .answer()
         .map_err(|e| format!("malformed answer section: {}", e))?;
     let mut records = Vec::new();
-    for record in answer.limit_to::<Ds<_>>() {
-        let record = record.map_err(|e| format!("malformed DS record: {}", e))?;
-        let data = record.data();
-        records.push(DsAnswer {
-            key_tag: data.key_tag(),
-            algorithm: data.algorithm().to_int(),
-            digest_type: data.digest_type().to_int(),
-            digest: hex::encode_upper(data.digest()),
+    for record in answer.limit_to::<AllRecordData<_, _>>() {
+        let record = record.map_err(|e| format!("malformed answer record: {}", e))?;
+        // A zone transfer is single-class; rendering would rewrite any other
+        // class as IN.
+        if record.class() != Class::IN {
+            return Err(format!(
+                "transfer carries a class {} record for {}",
+                record.class(),
+                record.owner()
+            ));
+        }
+        // Every embedded rdata name renders absolute except the SRV
+        // target; left bare, re-parsing would requalify it.
+        let rdata = match record.data() {
+            AllRecordData::Srv(srv) => {
+                let target = srv.target().to_string();
+                let target = if target == "." {
+                    target
+                } else {
+                    format!("{}.", target)
+                };
+                format!(
+                    "{} {} {} {}",
+                    srv.priority(),
+                    srv.weight(),
+                    srv.port(),
+                    target
+                )
+            }
+            data => data.to_string(),
+        };
+        records.push(TransferRecord {
+            // Display omits the root dot; the absolute form keeps the
+            // import parser from re-qualifying the name.
+            name: format!("{}.", record.owner()),
+            rtype: record.rtype(),
+            ttl: record.ttl().as_secs(),
+            rdata,
         });
     }
     Ok(records)
@@ -153,4 +190,34 @@ pub fn extract_soa_serial(query_id: u16, response: &[u8]) -> Result<u32, String>
         .find_map(|record| record.ok())
         .map(|record| record.data().serial().into_int())
         .ok_or_else(|| "no SOA record in answer".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use domain::{base::Ttl, rdata::A};
+
+    use super::*;
+
+    #[test]
+    fn transfer_rejects_a_non_in_record() {
+        let name: Name<Vec<u8>> = Name::from_str("example.com").unwrap();
+        let mut builder = MessageBuilder::new_vec();
+        builder.header_mut().set_id(7);
+        builder.header_mut().set_qr(true);
+        let mut answer = builder.answer();
+        answer
+            .push((
+                &name,
+                Class::CH,
+                Ttl::from_secs(300),
+                A::new("192.0.2.1".parse().unwrap()),
+            ))
+            .unwrap();
+        let wire = answer.finish();
+
+        let err = extract_transfer_records(7, &wire).unwrap_err();
+        assert!(err.contains("class"), "{err}");
+    }
 }

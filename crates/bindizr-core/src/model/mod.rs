@@ -1,5 +1,6 @@
 pub mod api_token;
 pub mod dnssec_key;
+pub mod dnssec_policy;
 pub mod dnssec_record;
 pub mod record;
 pub mod tsig_key;

@@ -6,11 +6,7 @@ use chrono::Utc;
 use super::{Caller, RecordWrite, authorize_with_policies};
 use crate::{
     error::ErrorCode,
-    model::{
-        record::RecordType,
-        zone::{DnssecDenial, Zone},
-        zone_token_policy::ZoneTokenPolicy,
-    },
+    model::{record::RecordType, zone::Zone, zone_token_policy::ZoneTokenPolicy},
 };
 
 fn test_zone() -> Zone {
@@ -25,7 +21,7 @@ fn test_zone() -> Zone {
         retry: 3600,
         expire: 604800,
         minimum_ttl: 86400,
-        dnssec_denial: DnssecDenial::Nsec,
+        dnssec_policy_id: None,
         created_at: Utc::now(),
     }
 }
