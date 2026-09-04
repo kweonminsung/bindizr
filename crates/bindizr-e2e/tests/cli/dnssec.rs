@@ -1,5 +1,17 @@
 use crate::common::TestApp;
 
+/// The key tag of the zone's first signing key, read from `dnssec status`.
+async fn signing_key_tag(app: &TestApp, zone_name: &str) -> u64 {
+    let status = app
+        .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"])
+        .await;
+    let status: serde_json::Value =
+        serde_json::from_str(&status).expect("CLI did not return valid JSON");
+    status["keys"][0]["key_tag"]
+        .as_u64()
+        .expect("status lists the signing key")
+}
+
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_lifecycle_via_cli() {
@@ -8,23 +20,12 @@ async fn zone_dnssec_lifecycle_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let enabled = app.run_cli_success(&["dnssec", "enable", &zone_name]).await;
-    assert!(enabled.contains("DNSSEC enabled successfully"));
-    assert!(enabled.contains("DNSSEC enabled"));
+    assert!(enabled.contains("DNSSEC enabled"), "{enabled}");
 
     let status = app.run_cli_success(&["dnssec", "status", &zone_name]).await;
     assert!(status.contains("DNSSEC enabled"));
-    // The keys table row is `ID ROLE STATE ELIGIBLE-AT ALGORITHM KEY_TAG
-    // DNSKEY`; an active key's ELIGIBLE-AT renders as `-`. The policy line
-    // above the table names the algorithm too, so it is skipped.
-    let key_row = status
-        .lines()
-        .find(|line| line.contains("ecdsap256sha256") && !line.starts_with("Policy:"))
-        .expect("status lists the signing key");
-    let key_tag = key_row
-        .split_whitespace()
-        .nth(5)
-        .expect("key row carries a key tag");
-    assert!(key_tag.parse::<u32>().expect("key tag is numeric") > 0);
+    let key_tag = signing_key_tag(&app, &zone_name).await;
+    assert!(key_tag > 0);
 
     let ds = app.run_cli_success(&["dnssec", "ds", &zone_name]).await;
     assert!(ds.contains(&format!("IN DS {key_tag} ")), "{ds}");
@@ -46,11 +47,9 @@ async fn zone_dnssec_lifecycle_via_cli() {
     let moved = app
         .run_cli_success(&["dnssec", "set-policy", &zone_name, &policy_name])
         .await;
-    assert!(moved.contains("DNSSEC policy changed successfully"));
+    // The policy row of the status output carries the new timing.
     assert!(
-        moved.contains(&format!("Policy: {policy_name} ("))
-            && moved.contains("validity 30d")
-            && moved.contains("zsk-lifetime 90d"),
+        moved.contains(&policy_name) && moved.contains("30d") && moved.contains("90d"),
         "{moved}"
     );
     assert!(!moved.contains("published"), "{moved}");
@@ -99,13 +98,13 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     let enabled = app
         .run_cli_success(&["dnssec", "enable", &zone_name, "--policy", &policy_name])
         .await;
-    assert!(enabled.contains("DNSSEC enabled successfully"));
-    assert!(enabled.contains("NSEC3 denial"));
+    assert!(enabled.contains("NSEC3 denial"), "{enabled}");
 
     let started = app
         .run_cli_success(&["dnssec", "rollover", "start", &zone_name])
         .await;
-    assert!(started.contains("Key rollover started successfully"));
+    // The pre-published replacement key joins the key table.
+    assert!(started.contains("published"), "{started}");
 
     let status = app.run_cli_success(&["dnssec", "status", &zone_name]).await;
     assert!(status.contains("NSEC3 denial"));
@@ -127,18 +126,12 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
     app.run_cli_success(&["dnssec", "enable", &zone_name]).await;
 
-    let status = app.run_cli_success(&["dnssec", "status", &zone_name]).await;
-    let key_tag = status
-        .lines()
-        .find(|line| line.contains("ecdsap256sha256") && !line.starts_with("Policy:"))
-        .and_then(|line| line.split_whitespace().nth(5))
-        .expect("status lists the signing key")
-        .to_string();
+    let key_tag = signing_key_tag(&app, &zone_name).await;
 
     let exported = app
         .run_cli_success(&["dnssec", "keys", "export", &zone_name])
         .await;
-    let base = format!("K{zone_name}.+013+{:05}", key_tag.parse::<u32>().unwrap());
+    let base = format!("K{zone_name}.+013+{key_tag:05}");
     assert!(
         exported.contains(&format!("; {base}.private")),
         "{exported}"
@@ -212,11 +205,7 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
             &private_file,
         ])
         .await;
-    assert!(
-        imported.contains("DNSSEC key imported successfully"),
-        "{imported}"
-    );
-    assert!(imported.contains(&key_tag), "{imported}");
+    assert!(imported.contains(&key_tag.to_string()), "{imported}");
 }
 
 #[tokio::test]

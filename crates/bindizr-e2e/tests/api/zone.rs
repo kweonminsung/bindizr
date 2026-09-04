@@ -1099,6 +1099,63 @@ async fn zone_versions_list_and_get() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_versions_diff_reports_the_rrsets_between_two_serials() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let base_serial = zone["serial"].as_i64().unwrap();
+
+    for (name, value) in [("www", "192.0.2.80"), ("extra", "192.0.2.81")] {
+        let (status, _) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name, "record_type": "A", "value": value,
+                    "ttl": 300, "zone_name": zone_name
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    let (status, diff) = app
+        .request(
+            Method::GET,
+            &format!(
+                "/zones/{zone_name}/versions/diff?from={}&to={}",
+                base_serial,
+                base_serial + 1
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        diff["diff"]["summary"],
+        json!({ "added": 1, "removed": 0, "changed": 0 })
+    );
+    let added = &diff["diff"]["entries"][0];
+    assert_eq!(added["change"], "added");
+    assert_eq!(added["name"], format!("www.{zone_name}."));
+    // The value is structured (display form), not a rendered rdata string.
+    assert_eq!(added["to"][0]["value"], "192.0.2.80");
+
+    // Omitting `to` compares against the current serial.
+    let (status, diff) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/versions/diff?from={base_serial}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(diff["to_serial"].as_i64().unwrap(), base_serial + 2);
+    assert_eq!(diff["diff"]["summary"]["added"].as_i64().unwrap(), 2);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_rollback_dry_run_then_apply() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;

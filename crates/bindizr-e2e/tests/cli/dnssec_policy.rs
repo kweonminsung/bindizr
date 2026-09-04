@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 use crate::common::TestApp;
 
 #[tokio::test]
@@ -19,19 +21,16 @@ async fn dnssec_policy_lifecycle_via_cli() {
             "21",
             "--signature-refresh-days",
             "7",
+            "--output",
+            "json",
         ])
         .await;
-    assert!(created.contains("DNSSEC policy created successfully"));
-    assert!(
-        created.contains(&format!("Name: {policy_name}")),
-        "{created}"
-    );
-    assert!(created.contains("Algorithm: ecdsap384sha384"), "{created}");
-    assert!(created.contains("Keys: KSK/ZSK"), "{created}");
-    assert!(
-        created.contains("Signature validity: 21d (re-sign with 7d left)"),
-        "{created}"
-    );
+    let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
+    assert_eq!(created["name"], policy_name);
+    assert_eq!(created["algorithm"], "ecdsap384sha384");
+    assert_eq!(created["split_keys"], true);
+    assert_eq!(created["signature_validity_days"], 21);
+    assert_eq!(created["signature_refresh_days"], 7);
 
     let listed = app.run_cli_success(&["dnssec-policy", "list"]).await;
     let row = listed
@@ -51,20 +50,20 @@ async fn dnssec_policy_lifecycle_via_cli() {
             &policy_name,
             "--zsk-lifetime-days",
             "60",
+            "--output",
+            "json",
         ])
         .await;
-    assert!(updated.contains("DNSSEC policy updated successfully"));
-    assert!(updated.contains("ZSK lifetime: 60d"), "{updated}");
+    let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    assert_eq!(updated["zsk_lifetime_days"], 60);
     // The untouched fields keep their values.
-    assert!(
-        updated.contains("Signature validity: 21d (re-sign with 7d left)"),
-        "{updated}"
-    );
+    assert_eq!(updated["signature_validity_days"], 21);
+    assert_eq!(updated["signature_refresh_days"], 7);
 
     let got = app
         .run_cli_success(&["dnssec-policy", "get", &policy_name])
         .await;
-    assert!(got.contains("ZSK lifetime: 60d"), "{got}");
+    assert!(got.contains("60d"), "{got}");
 
     let deleted = app
         .run_cli_success(&["dnssec-policy", "delete", &policy_name])

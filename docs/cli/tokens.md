@@ -9,7 +9,8 @@ on the record plane of zones granted through token policies, the HTTP twin of
 Tokens are identified by a unique name, fixed at creation.
 
 ```bash
-# Create a scoped API token (no access until policies grant zones)
+# Create a scoped API token (no access until policies grant zones); the
+# plaintext token is shown once, here
 $ bindizr token create --name external-dns
 
 # Create a global (admin) API token

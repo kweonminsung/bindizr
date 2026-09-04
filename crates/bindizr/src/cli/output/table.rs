@@ -20,6 +20,14 @@ fn yes_no(value: bool) -> String {
     if value { "yes" } else { "no" }.to_string()
 }
 
+fn display_option_text(opt: &Option<String>) -> String {
+    opt.clone().unwrap_or_else(|| "-".to_string())
+}
+
+fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
+    opt.map_or_else(|| "-".to_string(), |at| at.to_rfc3339())
+}
+
 /// A record value as one table cell; TXT segments concatenate into the string
 /// they encode.
 fn value_text(value: &RecordValueRequest) -> String {
@@ -43,6 +51,14 @@ pub(crate) struct ZoneRow {
     pub(crate) default_ttl: i32,
     #[tabled(rename = "SERIAL")]
     pub(crate) serial: i32,
+    #[tabled(rename = "REFRESH")]
+    pub(crate) refresh: i32,
+    #[tabled(rename = "RETRY")]
+    pub(crate) retry: i32,
+    #[tabled(rename = "EXPIRE")]
+    pub(crate) expire: i32,
+    #[tabled(rename = "MINIMUM-TTL")]
+    pub(crate) minimum_ttl: i32,
 }
 
 impl From<&GetZoneResponse> for ZoneRow {
@@ -54,6 +70,10 @@ impl From<&GetZoneResponse> for ZoneRow {
             rname: zone.rname.clone(),
             default_ttl: zone.default_ttl,
             serial: zone.serial,
+            refresh: zone.refresh,
+            retry: zone.retry,
+            expire: zone.expire,
+            minimum_ttl: zone.minimum_ttl,
         }
     }
 }
@@ -72,6 +92,8 @@ pub(crate) struct RecordRow {
     pub(crate) ttl: i32,
     #[tabled(rename = "PRIORITY", display = "display_option_i32")]
     pub(crate) priority: Option<i32>,
+    #[tabled(rename = "ZONE-ID")]
+    pub(crate) zone_id: i32,
     #[tabled(rename = "ZONE")]
     pub(crate) zone_name: String,
 }
@@ -85,6 +107,7 @@ impl From<&GetRecordResponse> for RecordRow {
             value: value_text(&record.value),
             ttl: record.ttl,
             priority: record.priority,
+            zone_id: record.zone_id,
             zone_name: record.zone_name.clone().unwrap_or_default(),
         }
     }
@@ -98,6 +121,8 @@ pub(crate) struct DnssecKeyRow {
     pub(crate) role: String,
     #[tabled(rename = "STATE")]
     pub(crate) state: String,
+    #[tabled(rename = "STATE-CHANGED-AT")]
+    pub(crate) state_changed_at: String,
     #[tabled(rename = "ELIGIBLE-AT")]
     pub(crate) eligible_at: String,
     #[tabled(rename = "ALGORITHM")]
@@ -106,6 +131,8 @@ pub(crate) struct DnssecKeyRow {
     pub(crate) key_tag: i32,
     #[tabled(rename = "DNSKEY")]
     pub(crate) dnskey: String,
+    #[tabled(rename = "CREATED-AT")]
+    pub(crate) created_at: String,
 }
 
 impl From<&DnssecKeyInfo> for DnssecKeyRow {
@@ -114,18 +141,20 @@ impl From<&DnssecKeyInfo> for DnssecKeyRow {
             id: key.id,
             role: key.role.clone(),
             state: key.state.clone(),
-            eligible_at: key
-                .eligible_at
-                .map_or_else(|| "-".to_string(), |at| at.to_rfc3339()),
+            state_changed_at: key.state_changed_at.to_rfc3339(),
+            eligible_at: display_option_time(&key.eligible_at),
             algorithm: key.algorithm.clone(),
             key_tag: key.key_tag,
             dnskey: key.dnskey.clone(),
+            created_at: key.created_at.to_rfc3339(),
         }
     }
 }
 
 #[derive(Debug, Tabled)]
 pub(crate) struct DnssecPolicyRow {
+    #[tabled(rename = "ID")]
+    pub(crate) id: i32,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "ALGORITHM")]
@@ -144,11 +173,14 @@ pub(crate) struct DnssecPolicyRow {
     pub(crate) publish_wait: String,
     #[tabled(rename = "RETIRE-WAIT")]
     pub(crate) retire_wait: String,
+    #[tabled(rename = "CREATED-AT")]
+    pub(crate) created_at: String,
 }
 
 impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
     fn from(policy: &GetDnssecPolicyResponse) -> Self {
         DnssecPolicyRow {
+            id: policy.id,
             name: policy.name.clone(),
             algorithm: policy.algorithm.clone(),
             denial: policy.denial.to_uppercase(),
@@ -162,6 +194,7 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
             },
             publish_wait: format!("{}s", policy.rollover_publish_holddown_secs),
             retire_wait: format!("{}s", policy.rollover_retire_holddown_secs),
+            created_at: policy.created_at.to_rfc3339(),
         }
     }
 }
@@ -176,6 +209,14 @@ pub(crate) struct VersionRow {
     pub(crate) rname: String,
     #[tabled(rename = "DEFAULT-TTL")]
     pub(crate) default_ttl: i32,
+    #[tabled(rename = "REFRESH")]
+    pub(crate) refresh: i32,
+    #[tabled(rename = "RETRY")]
+    pub(crate) retry: i32,
+    #[tabled(rename = "EXPIRE")]
+    pub(crate) expire: i32,
+    #[tabled(rename = "MINIMUM-TTL")]
+    pub(crate) minimum_ttl: i32,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
@@ -187,6 +228,10 @@ impl From<&ZoneVersionResponse> for VersionRow {
             mname: version.mname.clone(),
             rname: version.rname.clone(),
             default_ttl: version.default_ttl,
+            refresh: version.refresh,
+            retry: version.retry,
+            expire: version.expire,
+            minimum_ttl: version.minimum_ttl,
             created_at: version.created_at.to_rfc3339(),
         }
     }
@@ -227,6 +272,8 @@ pub(crate) struct RollbackSummaryRow {
     pub(crate) new_serial: i32,
     #[tabled(rename = "APPLIED")]
     pub(crate) applied: bool,
+    #[tabled(rename = "DRY-RUN")]
+    pub(crate) dry_run: bool,
     #[tabled(rename = "ADDED")]
     pub(crate) records_added: usize,
     #[tabled(rename = "DELETED")]
@@ -243,6 +290,7 @@ impl From<&RollbackZoneResponse> for RollbackSummaryRow {
             target_serial: response.target_serial,
             new_serial: response.new_serial,
             applied: response.applied,
+            dry_run: response.dry_run,
             records_added: response.summary.records_added,
             records_deleted: response.summary.records_deleted,
             records_unchanged: response.summary.records_unchanged,
@@ -324,32 +372,47 @@ impl From<&ImportSummary> for ImportSummaryRow {
     }
 }
 
+/// The TOKEN column carries the plaintext only in a `create` response, the
+/// one time the API discloses it.
 #[derive(Debug, Tabled)]
 pub(crate) struct TokenRow {
+    #[tabled(rename = "ID")]
+    pub(crate) id: i32,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
+    #[tabled(rename = "TOKEN")]
+    pub(crate) token: String,
     #[tabled(rename = "GLOBAL")]
     pub(crate) global: String,
     #[tabled(rename = "DESCRIPTION")]
     pub(crate) description: String,
+    #[tabled(rename = "CREATED-AT")]
+    pub(crate) created_at: String,
     #[tabled(rename = "EXPIRES-AT")]
     pub(crate) expires_at: String,
+    #[tabled(rename = "LAST-USED-AT")]
+    pub(crate) last_used_at: String,
 }
 
 impl From<&GetTokenResponse> for TokenRow {
     fn from(token: &GetTokenResponse) -> Self {
         TokenRow {
+            id: token.id,
             name: token.name.clone(),
+            token: display_option_text(&token.token),
             global: yes_no(token.global),
-            description: token.description.clone().unwrap_or_else(|| "-".to_string()),
+            description: display_option_text(&token.description),
+            created_at: token.created_at.to_rfc3339(),
             expires_at: token
                 .expires_at
                 .map(|dt| dt.to_rfc3339())
                 .unwrap_or_else(|| "Never".to_string()),
+            last_used_at: display_option_time(&token.last_used_at),
         }
     }
 }
 
+/// The SECRET column is filled by `create` and `get`; a listing omits it.
 #[derive(Debug, Tabled)]
 pub(crate) struct TsigKeyRow {
     #[tabled(rename = "ID")]
@@ -358,6 +421,8 @@ pub(crate) struct TsigKeyRow {
     pub(crate) name: String,
     #[tabled(rename = "ALGORITHM")]
     pub(crate) algorithm: String,
+    #[tabled(rename = "SECRET")]
+    pub(crate) secret: String,
     #[tabled(rename = "GLOBAL")]
     pub(crate) global: String,
     #[tabled(rename = "CREATED-AT")]
@@ -370,6 +435,7 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
             id: key.id,
             name: key.name.clone(),
             algorithm: key.algorithm.clone(),
+            secret: display_option_text(&key.secret),
             global: yes_no(key.global),
             created_at: key.created_at.to_rfc3339(),
         }
@@ -386,6 +452,8 @@ pub(crate) struct ZoneTokenPolicyRow {
     pub(crate) record_name_pattern: String,
     #[tabled(rename = "RECORD-TYPES")]
     pub(crate) record_types: String,
+    #[tabled(rename = "CREATED-AT")]
+    pub(crate) created_at: String,
 }
 
 impl From<&GetZoneTokenPolicyResponse> for ZoneTokenPolicyRow {
@@ -395,6 +463,7 @@ impl From<&GetZoneTokenPolicyResponse> for ZoneTokenPolicyRow {
             api_token: policy.api_token.clone(),
             record_name_pattern: policy.record_name_pattern.clone(),
             record_types: policy.record_types.clone(),
+            created_at: policy.created_at.to_rfc3339(),
         }
     }
 }
@@ -409,6 +478,8 @@ pub(crate) struct ZoneTsigPolicyRow {
     pub(crate) record_name_pattern: String,
     #[tabled(rename = "RECORD-TYPES")]
     pub(crate) record_types: String,
+    #[tabled(rename = "CREATED-AT")]
+    pub(crate) created_at: String,
 }
 
 impl From<&GetZoneTsigPolicyResponse> for ZoneTsigPolicyRow {
@@ -418,6 +489,7 @@ impl From<&GetZoneTsigPolicyResponse> for ZoneTsigPolicyRow {
             tsig_key: policy.tsig_key.clone(),
             record_name_pattern: policy.record_name_pattern.clone(),
             record_types: policy.record_types.clone(),
+            created_at: policy.created_at.to_rfc3339(),
         }
     }
 }

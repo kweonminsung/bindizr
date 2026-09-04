@@ -42,6 +42,12 @@ async fn handle_client(stream: UnixStream) {
     let mut line = String::new();
 
     if reader.read_line(&mut line).await.is_ok() {
+        // A connect-and-close is another `bindizr start` probing whether this
+        // daemon is alive (`prepare_socket_path`), not a command.
+        if line.is_empty() {
+            return;
+        }
+
         let parsed: Result<DaemonCommand, _> = serde_json::from_str(&line);
 
         let raw_response = match parsed {

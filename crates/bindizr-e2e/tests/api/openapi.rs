@@ -2,13 +2,6 @@ use reqwest::{Method, StatusCode};
 
 use crate::common::{TestApp, TestAppOptions};
 
-fn openapi_options() -> TestAppOptions {
-    TestAppOptions {
-        openapi_enabled: true,
-        ..TestAppOptions::default()
-    }
-}
-
 // Unauthenticated and describing every endpoint, so it stays off by default.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -24,7 +17,11 @@ async fn openapi_document_is_absent_unless_enabled() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn openapi_document_is_served_when_enabled() {
-    let app = TestApp::start_with_options(openapi_options()).await;
+    let app = TestApp::start_with_options(TestAppOptions {
+        openapi_enabled: true,
+        ..Default::default()
+    })
+    .await;
 
     let (status, body) = app.request(Method::GET, "/openapi.json", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -45,7 +42,8 @@ async fn openapi_document_is_served_when_enabled() {
 async fn openapi_document_needs_no_token() {
     let app = TestApp::start_with_options(TestAppOptions {
         require_authentication: true,
-        ..openapi_options()
+        openapi_enabled: true,
+        ..Default::default()
     })
     .await;
 

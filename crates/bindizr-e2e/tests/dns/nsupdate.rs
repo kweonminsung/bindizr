@@ -249,12 +249,14 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
 async fn create_key(app: &TestApp, name: &str) -> SigningKey {
     app.run_cli_success(&["tsig-key", "create", "--name", name])
         .await;
-    let fetched = app.run_cli_success(&["tsig-key", "get", name]).await;
-    let secret = fetched
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("Secret: "))
+    let fetched = app
+        .run_cli_success(&["tsig-key", "get", name, "--output", "json"])
+        .await;
+    let fetched: serde_json::Value =
+        serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");
+    let secret = fetched["secret"]
+        .as_str()
         .expect("tsig-key get prints the secret")
-        .trim()
         .to_string();
     SigningKey {
         name: name.to_string(),

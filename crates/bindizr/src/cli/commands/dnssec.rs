@@ -9,7 +9,9 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{DnssecKeyRow, OutputFormat, parse_response, print_response, print_table},
+        output::{
+            DnssecKeyRow, DnssecPolicyRow, OutputFormat, parse_response, print_payload, print_table,
+        },
     },
     socket::{
         client::DaemonSocketClient,
@@ -27,48 +29,45 @@ pub(crate) enum DnssecCommand {
     /// sign the zone
     Enable {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// DNSSEC policy to sign under (default: the built-in "default"
         /// policy; see `bindizr dnssec-policy list`)
-        #[arg(long, value_name = "NAME")]
+        #[arg(long, value_name = "POLICY_NAME")]
         policy: Option<String>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
     /// Move a signed zone to another DNSSEC policy. The denial mode and key
     /// layout must match; a different algorithm starts an algorithm rollover
     SetPolicy {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Name of the target policy
+        #[arg(value_name = "POLICY_NAME")]
         policy: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
     /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
     /// parent to drop the zone's DS: the first step of going insecure
     Withdraw {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Cancel a published withdrawal instead
         #[arg(long)]
         cancel: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
     /// Disable DNSSEC: delete the zone's keys and signatures. Remove the DS
     /// record from the parent zone and wait out its TTL first, or validating
     /// resolvers will treat the zone as bogus
     Disable {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
     },
     /// Show a zone's DNSSEC status (policy, keys, DS records, signature expiry)
     Status {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
@@ -77,11 +76,13 @@ pub(crate) enum DnssecCommand {
     /// Print a zone's DS records for pasting into the parent zone
     Ds {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
     },
     /// Re-sign a zone from scratch, discarding stored signatures
     Sign {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
     },
     /// Roll a zone's signing key: pre-publish a replacement, then promote it
@@ -104,24 +105,20 @@ pub(crate) enum DnssecRolloverCommand {
     /// promotes it. To change the algorithm, use `dnssec set-policy`
     Start {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Which key to roll: required for split-key zones (ksk or zsk),
         /// omitted for CSK zones
         #[arg(long, value_name = "ksk|zsk")]
         role: Option<String>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
     /// Confirm the new DS has been seen at the parent (and its TTL has
     /// passed): promotes the pre-published key and retires the one it
     /// replaces. ZSK rollovers involve no DS and promote automatically
     DsSeen {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
 }
 
@@ -132,6 +129,7 @@ pub(crate) enum DnssecKeysCommand {
     /// included — redirect somewhere with tight permissions
     Export {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
     },
     /// Import the zone's key set as BIND key pairs and sign it: one CSK
@@ -139,6 +137,7 @@ pub(crate) enum DnssecKeysCommand {
     /// migration path for a zone signed elsewhere; the zone must be unsigned
     Import {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Path to a K*.key file (the DNSKEY record); repeat with --private
         /// for each pair
@@ -149,22 +148,15 @@ pub(crate) enum DnssecKeysCommand {
         private: Vec<String>,
         /// Policy the zone signs under (default: "default"); its algorithm
         /// and key layout decide what the keys must be
-        #[arg(long, value_name = "NAME")]
+        #[arg(long, value_name = "POLICY_NAME")]
         policy: Option<String>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
 }
 
 pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
     match subcommand {
-        DnssecCommand::Enable {
-            name,
-            policy,
-            output,
-        } => {
+        DnssecCommand::Enable { name, policy } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneDnssecEnable,
@@ -174,16 +166,9 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                     },
                 )
                 .await?;
-            if output == OutputFormat::Table {
-                println!("{}", response.message);
-            }
-            print_status(&response.data, output)?;
+            print_status(&response.data)?;
         }
-        DnssecCommand::SetPolicy {
-            name,
-            policy,
-            output,
-        } => {
+        DnssecCommand::SetPolicy { name, policy } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneDnssecSetPolicy,
@@ -193,26 +178,16 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                     },
                 )
                 .await?;
-            if output == OutputFormat::Table {
-                println!("{}", response.message);
-            }
-            print_status(&response.data, output)?;
+            print_status(&response.data)?;
         }
-        DnssecCommand::Withdraw {
-            name,
-            cancel,
-            output,
-        } => {
+        DnssecCommand::Withdraw { name, cancel } => {
             let kind = if cancel {
                 DaemonCommandKind::ZoneDnssecWithdrawCancel
             } else {
                 DaemonCommandKind::ZoneDnssecWithdraw
             };
             let response = client.send_command(kind, ZoneNameParams { name }).await?;
-            if output == OutputFormat::Table {
-                println!("{}", response.message);
-            }
-            print_status(&response.data, output)?;
+            print_status(&response.data)?;
         }
         DnssecCommand::Keys { subcommand } => match subcommand {
             DnssecKeysCommand::Export { name } => {
@@ -231,7 +206,6 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 key,
                 private,
                 policy,
-                output,
             } => {
                 if key.len() != private.len() {
                     return Err(CliError::from(format!(
@@ -261,10 +235,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                         },
                     )
                     .await?;
-                if output == OutputFormat::Table {
-                    println!("{}", response.message);
-                }
-                print_status(&response.data, output)?;
+                print_status(&response.data)?;
             }
         },
         DnssecCommand::Disable { name } => {
@@ -280,7 +251,10 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             let response = client
                 .send_command(DaemonCommandKind::ZoneDnssecStatus, ZoneNameParams { name })
                 .await?;
-            print_status(&response.data, output)?;
+            match output {
+                OutputFormat::Table => print_status(&response.data)?,
+                _ => print_payload(&response.data, output)?,
+            }
         }
         DnssecCommand::Ds { name } => {
             let response = client
@@ -295,7 +269,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             println!("{}", response.message);
         }
         DnssecCommand::Rollover { subcommand } => match subcommand {
-            DnssecRolloverCommand::Start { name, role, output } => {
+            DnssecRolloverCommand::Start { name, role } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverStart,
@@ -305,22 +279,16 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                         },
                     )
                     .await?;
-                if output == OutputFormat::Table {
-                    println!("{}", response.message);
-                }
-                print_status(&response.data, output)?;
+                print_status(&response.data)?;
             }
-            DnssecRolloverCommand::DsSeen { name, output } => {
+            DnssecRolloverCommand::DsSeen { name } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverDsSeen,
                         ZoneNameParams { name },
                     )
                     .await?;
-                if output == OutputFormat::Table {
-                    println!("{}", response.message);
-                }
-                print_status(&response.data, output)?;
+                print_status(&response.data)?;
             }
         },
     }
@@ -328,13 +296,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
     Ok(())
 }
 
-fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
-    if output != OutputFormat::Table {
-        return print_response(data, output, |status: &GetDnssecStatusResponse| {
-            status.keys.iter().map(DnssecKeyRow::from).collect()
-        });
-    }
-
+fn print_status(data: &serde_json::Value) -> Result<(), String> {
     let status: GetDnssecStatusResponse = parse_response(data)?;
     let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
         println!(
@@ -350,15 +312,6 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
         status.serial,
         policy.denial.to_uppercase()
     );
-    println!(
-        "Policy: {} ({}, {}; validity {}d, refresh {}d, zsk-lifetime {}d)",
-        policy.name,
-        policy.algorithm,
-        if policy.split_keys { "KSK/ZSK" } else { "CSK" },
-        policy.signature_validity_days,
-        policy.signature_refresh_days,
-        policy.zsk_lifetime_days
-    );
     if status.withdrawing {
         println!(
             "DS withdrawal published (RFC 8078): the parent should drop this zone's DS records."
@@ -370,6 +323,9 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
             expires_at.format("%Y-%m-%d %H:%M:%S")
         );
     }
+    println!("Policy:");
+    print_table(vec![DnssecPolicyRow::from(policy)]);
+    println!("Keys:");
     print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
     if !status.ds_records.is_empty() {
         println!("DS records (register in the parent zone):");

@@ -180,16 +180,16 @@ impl TestApp {
     }
 
     async fn create_token_with(&self, args: &[&str]) -> (String, String) {
-        let stdout = self.run_cli_success(args).await;
-        let field = |prefix: &str| {
-            stdout
-                .lines()
-                .find_map(|line| line.strip_prefix(prefix))
-                .unwrap_or_else(|| panic!("token create output did not contain '{prefix}'"))
-                .trim()
+        let args = [args, &["--output", "json"]].concat();
+        let stdout = self.run_cli_success(&args).await;
+        let token: Value = serde_json::from_str(&stdout).expect("token create did not print JSON");
+        let field = |name: &str| {
+            token[name]
+                .as_str()
+                .unwrap_or_else(|| panic!("token create output did not contain '{name}'"))
                 .to_string()
         };
-        (field("Name: "), field("Token: "))
+        (field("name"), field("token"))
     }
 
     pub(crate) fn zone_name(&self, base: &str) -> String {

@@ -9,7 +9,7 @@ async fn record_create_read_delete() {
     let zone_name = app.zone_name("cli.example");
 
     let created_zone = app.create_zone_cli(&zone_name, "3600").await;
-    assert!(created_zone.contains("Zone created successfully"));
+    assert!(created_zone.contains(&zone_name), "{created_zone}");
 
     let created_record = app
         .run_cli_success(&[
@@ -27,7 +27,11 @@ async fn record_create_read_delete() {
             "300",
         ])
         .await;
-    assert!(created_record.contains("Record created successfully"));
+    assert!(
+        created_record.contains(&format!("www.{zone_name}."))
+            && created_record.contains("192.0.2.10"),
+        "{created_record}"
+    );
 
     let records = app
         .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])

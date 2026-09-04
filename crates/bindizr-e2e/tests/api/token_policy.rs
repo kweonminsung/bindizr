@@ -3,13 +3,6 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
 
-fn authed_options() -> TestAppOptions {
-    TestAppOptions {
-        require_authentication: true,
-        ..TestAppOptions::default()
-    }
-}
-
 async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
         .request(
@@ -38,7 +31,11 @@ fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> s
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_sees_and_writes_only_granted_zones() {
-    let mut app = TestApp::start_with_options(authed_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
     let (_, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token);
 
@@ -188,7 +185,11 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn token_policies_enforce_name_patterns_and_types() {
-    let mut app = TestApp::start_with_options(authed_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
     let (_, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token);
 
@@ -249,7 +250,11 @@ async fn token_policies_enforce_name_patterns_and_types() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_without_policies_sees_nothing() {
-    let mut app = TestApp::start_with_options(authed_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
     let (_, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token);
 
@@ -276,7 +281,11 @@ async fn scoped_token_without_policies_sees_nothing() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
-    let mut app = TestApp::start_with_options(authed_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
     let (_, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token);
 
@@ -322,7 +331,11 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
-    let mut app = TestApp::start_with_options(authed_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
     let (_, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token);
 
@@ -352,7 +365,11 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn global_token_policy_management_over_http() {
-    let mut app = TestApp::start_with_options(authed_options()).await;
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
     let (global_name, global_token) = app.create_api_token().await;
     app.set_auth_token(global_token);
 

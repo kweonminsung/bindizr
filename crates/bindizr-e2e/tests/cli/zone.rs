@@ -1,6 +1,17 @@
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::common::{TestApp, TestAppOptions, assert_cli_failure_contains, assert_cli_success};
+
+/// The `zone import` summary row: PARSED ADDED DELETED UPDATED UNCHANGED SKIPPED.
+fn summary_row(stdout: &str) -> Vec<&str> {
+    stdout
+        .lines()
+        .skip_while(|line| !line.contains("PARSED"))
+        .nth(1)
+        .expect("import printed a summary table")
+        .split_whitespace()
+        .collect()
+}
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -10,7 +21,7 @@ async fn zone_create_read_delete() {
     let mname = format!("ns1.{zone_name}");
 
     let created = app.create_zone_cli(&zone_name, "3600").await;
-    assert!(created.contains("Zone created successfully"));
+    assert!(created.contains(&zone_name), "{created}");
 
     let zone = app
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
@@ -158,31 +169,30 @@ async fn zone_import_zone_file_from_stdin() {
 
     let imported = app
         .run_cli_success_with_input(
-            &["zone", "import", &zone_name, "-", "--output", "json"],
+            &["zone", "import", &zone_name, "-"],
             "www IN A 192.0.2.30\nmail IN A 192.0.2.31\n",
         )
         .await;
-    let imported: Value = serde_json::from_str(&imported).expect("CLI did not return valid JSON");
-    assert_eq!(imported["applied"], true);
-    assert_eq!(imported["summary"]["added"], 2);
+    assert!(
+        imported.contains("Zone file imported successfully"),
+        "{imported}"
+    );
+    assert_eq!(
+        summary_row(&imported),
+        ["2", "2", "0", "0", "0", "0"],
+        "{imported}"
+    );
 
     let dry_run = app
         .run_cli_success_with_input(
-            &[
-                "zone",
-                "import",
-                &zone_name,
-                "-",
-                "--dry-run",
-                "--output",
-                "json",
-            ],
+            &["zone", "import", &zone_name, "-", "--dry-run"],
             "extra IN A 192.0.2.32\n",
         )
         .await;
-    let dry_run: Value = serde_json::from_str(&dry_run).expect("CLI did not return valid JSON");
-    assert_eq!(dry_run["applied"], false);
-    assert_eq!(dry_run["dry_run"], true);
+    assert!(
+        dry_run.contains("Dry run completed; no changes applied"),
+        "{dry_run}"
+    );
 
     let records = app
         .run_cli_success(&[
@@ -255,14 +265,9 @@ async fn zone_export_via_cli() {
 
     // Re-importing the export into the same zone changes nothing.
     let reimport = app
-        .run_cli_success_with_input(
-            &["zone", "import", &zone_name, "-", "--output", "json"],
-            &exported,
-        )
+        .run_cli_success_with_input(&["zone", "import", &zone_name, "-"], &exported)
         .await;
-    let reimport: Value = serde_json::from_str(&reimport).expect("CLI did not return valid JSON");
-    assert_eq!(reimport["summary"]["added"], 0, "{reimport}");
-    assert_eq!(reimport["summary"]["deleted"], 0, "{reimport}");
+    assert_eq!(summary_row(&reimport)[1..3], ["0", "0"], "{reimport}");
 }
 
 #[tokio::test]
@@ -415,35 +420,28 @@ async fn zone_versions_and_rollback_flow() {
 
     // Serial 1 -> 2 added the www A record; 2 -> 3 added extra.
     let diff = app
-        .run_cli_success(&[
-            "zone", "version", "diff", &zone_name, "1", "2", "--output", "json",
-        ])
+        .run_cli_success(&["zone", "version", "diff", &zone_name, "1", "2"])
         .await;
-    let diff: Value = serde_json::from_str(&diff).expect("CLI did not return valid JSON");
-    assert_eq!(
-        diff["diff"]["summary"],
-        json!({ "added": 1, "removed": 0, "changed": 0 })
+    assert!(diff.contains("SOA serial: 1 -> 2"), "{diff}");
+    assert!(diff.contains("Records: +1 -0 ~0"), "{diff}");
+    // The added RRset renders as a zone-file line under a `+`.
+    assert!(diff.contains(&format!("+ www.{zone_name}.")), "{diff}");
+    assert!(
+        diff.contains("IN A") && diff.contains("192.0.2.80"),
+        "{diff}"
     );
-    let added = &diff["diff"]["entries"][0];
-    assert_eq!(added["change"], "added");
-    assert_eq!(added["name"], format!("www.{zone_name}."));
-    // The value is structured (display form), not a rendered rdata string.
-    assert_eq!(added["to"][0]["value"], "192.0.2.80");
 
     // Omitting the second serial compares against the current serial (3).
     let diff_to_current = app
-        .run_cli_success(&[
-            "zone", "version", "diff", &zone_name, "1", "--output", "json",
-        ])
+        .run_cli_success(&["zone", "version", "diff", &zone_name, "1"])
         .await;
-    let diff_to_current: Value =
-        serde_json::from_str(&diff_to_current).expect("CLI did not return valid JSON");
-    assert_eq!(diff_to_current["to_serial"].as_i64().unwrap(), 3);
-    assert_eq!(
-        diff_to_current["diff"]["summary"]["added"]
-            .as_i64()
-            .unwrap(),
-        2
+    assert!(
+        diff_to_current.contains("SOA serial: 1 -> 3"),
+        "{diff_to_current}"
+    );
+    assert!(
+        diff_to_current.contains("Records: +2 -0 ~0"),
+        "{diff_to_current}"
     );
 
     let dry_run = app
@@ -495,15 +493,8 @@ async fn zone_status_via_cli() {
     let status = app.run_cli_success(&["zone", "status", &zone_name]).await;
     assert!(status.contains(&format!("Zone {} (serial 1)", zone_name)));
 
-    let json_output = app
-        .run_cli_success(&["zone", "status", &zone_name, "--output", "json"])
-        .await;
-    let parsed: Value = serde_json::from_str(&json_output).expect("CLI did not return valid JSON");
-    assert_eq!(parsed["zone"], zone_name);
-    assert_eq!(parsed["serial"].as_i64().unwrap(), 1);
     if !app.has_dns_secondaries() {
         assert!(status.contains("No secondaries configured."));
-        assert!(parsed["secondaries"].as_array().unwrap().is_empty());
     }
 }
 
@@ -538,17 +529,10 @@ async fn zone_import_from_server_round_trips_over_axfr() {
             "--mode",
             "replace",
             "--preview",
-            "--output",
-            "json",
         ])
         .await;
-    let preview: Value = serde_json::from_str(&preview).expect("CLI did not return valid JSON");
     // A transfer of the zone's own content replaces it with itself.
-    assert_eq!(preview["applied"], false);
-    assert_eq!(preview["summary"]["added"], 0, "{preview}");
-    assert_eq!(preview["summary"]["deleted"], 0, "{preview}");
-    assert_eq!(preview["summary"]["updated"], 0, "{preview}");
-    assert_eq!(preview["summary"]["parsed"], 5, "{preview}");
+    assert!(preview.contains("Records: +0 -0 ~0"), "{preview}");
 
     let applied = app
         .run_cli_success(&[
@@ -559,12 +543,15 @@ async fn zone_import_from_server_round_trips_over_axfr() {
             &server,
             "--mode",
             "replace",
-            "--output",
-            "json",
         ])
         .await;
-    let applied: Value = serde_json::from_str(&applied).expect("CLI did not return valid JSON");
-    assert_eq!(applied["applied"], true, "{applied}");
-    assert_eq!(applied["summary"]["deleted"], 0, "{applied}");
-    assert_eq!(applied["summary"]["unchanged"], 5, "{applied}");
+    assert!(
+        applied.contains("Zone file imported successfully"),
+        "{applied}"
+    );
+    assert_eq!(
+        summary_row(&applied),
+        ["5", "0", "0", "0", "5", "0"],
+        "{applied}"
+    );
 }

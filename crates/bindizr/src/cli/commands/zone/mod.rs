@@ -34,7 +34,7 @@ pub(crate) enum ZoneCommand {
     /// Create a zone
     Create {
         /// Zone name
-        #[arg(long)]
+        #[arg(long, value_name = "ZONE_NAME")]
         name: String,
         /// SOA MNAME (primary name server)
         #[arg(long)]
@@ -48,16 +48,19 @@ pub(crate) enum ZoneCommand {
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<i32>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 
     /// List zones
     #[command(alias = "ls")]
     List {
         /// Filter by zone name
-        #[arg(long)]
+        #[arg(long, value_name = "ZONE_NAME")]
         name: Option<String>,
         /// Filter by zone ID
-        #[arg(long)]
+        #[arg(long, value_name = "ZONE_ID")]
         id: Option<i32>,
         /// Filter by mname
         #[arg(long)]
@@ -94,6 +97,7 @@ pub(crate) enum ZoneCommand {
     /// Get a zone by name
     Get {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
@@ -103,9 +107,10 @@ pub(crate) enum ZoneCommand {
     /// Update a zone, changing only the fields you pass
     Update {
         /// The name of the zone to update
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Rename the zone to this name
-        #[arg(long)]
+        #[arg(long, value_name = "ZONE_NAME")]
         new_name: Option<String>,
         /// SOA MNAME (primary name server)
         #[arg(long)]
@@ -137,6 +142,7 @@ pub(crate) enum ZoneCommand {
     #[command(alias = "rm")]
     Delete {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
     },
 
@@ -152,6 +158,7 @@ zone TTL. SOA lines are ignored (SOA metadata is managed by bindizr) and
 $INCLUDE is not supported.")]
     Import {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Path to a BIND zone file, or '-' to read from stdin
         #[arg(
@@ -172,14 +179,12 @@ $INCLUDE is not supported.")]
         /// Preview the change as a +/-/~ diff without applying it (implies --dry-run)
         #[arg(long)]
         preview: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
 
     /// Export a zone as BIND master-file text
     Export {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Append the derived DNSSEC records; for inspection, not re-import
         #[arg(long)]
@@ -189,10 +194,8 @@ $INCLUDE is not supported.")]
     /// Show how far each secondary has caught up with a zone
     Status {
         /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
-        output: OutputFormat,
     },
 
     /// Send NOTIFY messages to secondary servers for a zone
@@ -237,6 +240,7 @@ pub(crate) struct NotifyArgs {
     bump_serial: bool,
 
     /// Zone name to notify (optional: if not specified, notifies all zones)
+    #[arg(value_name = "ZONE_NAME")]
     name: Option<String>,
 }
 
@@ -251,8 +255,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             rname,
             default_ttl,
             serial,
+            output,
         } => {
-            let response = client
+            let data = client
                 .send_command(
                     DaemonCommandKind::CreateZone,
                     CreateZoneRequest {
@@ -267,8 +272,10 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         minimum_ttl: None,
                     },
                 )
-                .await?;
-            println!("{}", response.message);
+                .await?
+                .data;
+
+            print_zones(&data, output)?;
         }
         ZoneCommand::List {
             name,
@@ -386,7 +393,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             mode,
             dry_run,
             preview,
-            output,
         } => {
             // Preview never applies; it is a dry run rendered as a diff.
             let dry_run = dry_run || preview;
@@ -421,46 +427,36 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     .await?
             };
 
-            if output == OutputFormat::Table {
-                let import: ImportZoneFileResponse = parse_response(&response.data)?;
-                if import.errors.is_empty() {
-                    println!("{}", response.message);
-                } else {
-                    eprintln!("{}", response.message);
-                    for error in &import.errors {
-                        eprintln!("  - {}", error);
-                    }
-                }
-
-                if preview {
-                    print!("{}", render_change_preview(&import.diff.entries));
-                    return Ok(());
+            let import: ImportZoneFileResponse = parse_response(&response.data)?;
+            // Errors go to stderr so a shell pipeline keeps the summary clean.
+            if import.errors.is_empty() {
+                println!("{}", response.message);
+            } else {
+                eprintln!("{}", response.message);
+                for error in &import.errors {
+                    eprintln!("  - {}", error);
                 }
             }
 
-            print_response(&response.data, output, |import: &ImportZoneFileResponse| {
-                vec![ImportSummaryRow::from(&import.summary)]
-            })?;
+            if preview {
+                print!("{}", render_change_preview(&import.diff.entries));
+                return Ok(());
+            }
+            print_table(vec![ImportSummaryRow::from(&import.summary)]);
         }
         ZoneCommand::Version { subcommand } => version::handle_command(&client, subcommand).await?,
-        ZoneCommand::Status { name, output } => {
+        ZoneCommand::Status { name } => {
             let response = client
                 .send_command(DaemonCommandKind::ZoneStatus, ZoneNameParams { name })
                 .await?;
 
-            if output == OutputFormat::Table {
-                let status: ZoneStatusResponse = parse_response(&response.data)?;
-                println!("Zone {} (serial {})", status.zone, status.serial);
-                if status.secondaries.is_empty() {
-                    println!("No secondaries configured.");
-                    return Ok(());
-                }
-                print_table(SecondaryStatusRow::rows_from_status(&status));
+            let status: ZoneStatusResponse = parse_response(&response.data)?;
+            println!("Zone {} (serial {})", status.zone, status.serial);
+            if status.secondaries.is_empty() {
+                println!("No secondaries configured.");
                 return Ok(());
             }
-            print_response(&response.data, output, |status: &ZoneStatusResponse| {
-                SecondaryStatusRow::rows_from_status(status)
-            })?;
+            print_table(SecondaryStatusRow::rows_from_status(&status));
         }
         ZoneCommand::Notify(args) => {
             let response = client
