@@ -757,6 +757,138 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /tokens:
+    get:
+      tags:
+      - Token
+      summary: List all API tokens
+      description: Lists every API token without its secret; a secret is shown once, in the create response.
+      operationId: get_tokens
+      responses:
+        '200':
+          description: All API tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Token
+      summary: Create an API token
+      description: Creates an API token and returns its secret, the one time it is shown. A scoped token (the default) acts only on the zones it is later granted; `global` makes it cover every zone and the zone plane, fixed at creation.
+      operationId: create_token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTokenRequest'
+        required: true
+      responses:
+        '201':
+          description: API token created; the response carries the secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedTokenResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: An API token with the same name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /tokens/{name}:
+    delete:
+      tags:
+      - Token
+      summary: Delete an API token
+      description: Deletes an API token; its grants go with it.
+      operationId: delete_token
+      parameters:
+      - name: name
+        in: path
+        description: The name of the API token.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: API token deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /tokens/{name}/grants:
     get:
       tags:
@@ -2886,6 +3018,35 @@ components:
           type: string
           description: Name of an existing zone.
           example: example.com
+    CreateTokenRequest:
+      type: object
+      description: Request body for creating an API token.
+      required:
+      - name
+      properties:
+        description:
+          type:
+          - string
+          - 'null'
+          description: At most 255 characters.
+          example: ExternalDNS in the prod cluster
+        expires_in_days:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Days until expiry, 1 to 36500; omit for a token that never expires.
+          example: 90
+        global:
+          type: boolean
+          description: |-
+            Make the token global: it may manage every zone and the zone plane.
+            Fixed at creation.
+          example: false
+        name:
+          type: string
+          description: 'Letters, digits, `.`, `_`, and `-`: one URL path segment.'
+          example: external-dns
     CreateTsigGrantRequest:
       type: object
       description: Request body for granting a TSIG key nsupdate rights in a zone.
@@ -2990,6 +3151,18 @@ components:
           format: int32
           description: Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
           example: 42
+    CreatedTokenResponse:
+      type: object
+      description: 'The create response: the token and its secret, the one time it is shown.'
+      required:
+      - token
+      - secret
+      properties:
+        secret:
+          type: string
+          example: k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu
+        token:
+          $ref: '#/components/schemas/GetTokenResponse'
     DnssecDsInfo:
       type: object
       description: A key's DS form for parent-zone registration.
@@ -3388,13 +3561,14 @@ components:
           example: example.com
     GetRecordResponse:
       type: object
-      description: API representation of a record, optionally carrying its zone name.
+      description: API representation of a record.
       required:
       - name
       - record_type
       - value
       - ttl
       - zone_id
+      - zone_name
       properties:
         id:
           type:
@@ -3428,9 +3602,7 @@ components:
           format: int32
           example: 1
         zone_name:
-          type:
-          - string
-          - 'null'
+          type: string
           example: example.com
     GetTokenGrantResponse:
       type: object
@@ -3462,6 +3634,43 @@ components:
         zone_name:
           type: string
           example: example.com
+    GetTokenResponse:
+      type: object
+      description: API representation of an API token; never carries the secret.
+      required:
+      - id
+      - name
+      - global
+      - created_at
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type:
+          - string
+          - 'null'
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        global:
+          type: boolean
+          description: Whether the token may manage every zone and the zone plane.
+          example: false
+        id:
+          type: integer
+          format: int32
+          example: 1
+        last_used_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        name:
+          type: string
+          example: external-dns
     GetTsigGrantResponse:
       type: object
       description: API representation of a TSIG grant.
@@ -3494,9 +3703,7 @@ components:
           example: example.com
     GetTsigKeyResponse:
       type: object
-      description: |-
-        API representation of a TSIG key. `secret` is only present on create and
-        single-key reads; list responses omit it.
+      description: API representation of a TSIG key; never carries the secret.
       required:
       - id
       - name
@@ -3521,11 +3728,6 @@ components:
         name:
           type: string
           example: update-key
-        secret:
-          type:
-          - string
-          - 'null'
-          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
     GetZoneResponse:
       type: object
       description: API representation of a zone.
@@ -3710,13 +3912,14 @@ components:
           type: array
           items:
             type: object
-            description: API representation of a record, optionally carrying its zone name.
+            description: API representation of a record.
             required:
             - name
             - record_type
             - value
             - ttl
             - zone_id
+            - zone_name
             properties:
               id:
                 type:
@@ -3750,9 +3953,7 @@ components:
                 format: int32
                 example: 1
               zone_name:
-                type:
-                - string
-                - 'null'
+                type: string
                 example: example.com
         pagination:
           $ref: '#/components/schemas/Pagination'
@@ -4173,6 +4374,16 @@ components:
       properties:
         token_grant:
           $ref: '#/components/schemas/GetTokenGrantResponse'
+    TokenListResponse:
+      type: object
+      description: List of API tokens (secrets omitted).
+      required:
+      - tokens
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetTokenResponse'
     TsigGrantListResponse:
       type: object
       description: Grants of one key, or every grant that applies to one zone.
@@ -4203,10 +4414,14 @@ components:
             $ref: '#/components/schemas/GetTsigKeyResponse'
     TsigKeyResponse:
       type: object
-      description: A single TSIG key wrapped in a response envelope.
+      description: 'A key with its secret: the create and get responses.'
       required:
       - tsig_key
+      - secret
       properties:
+        secret:
+          type: string
+          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
         tsig_key:
           $ref: '#/components/schemas/GetTsigKeyResponse'
     UpdateDnssecPolicyRequest:
@@ -4419,7 +4634,7 @@ tags:
 - name: TSIG
   description: Manage TSIG keys and the zone grants each holds for nsupdate.
 - name: Token
-  description: The zone grants a scoped API token holds over the record plane.
+  description: API tokens and the zone grants each holds.
 - name: DNSSEC
   description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone, key rollover, and re-signing.'
 - name: ExternalDNS

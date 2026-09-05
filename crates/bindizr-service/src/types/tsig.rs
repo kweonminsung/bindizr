@@ -24,8 +24,7 @@ pub struct CreateTsigKeyRequest {
     pub global: bool,
 }
 
-/// API representation of a TSIG key. `secret` is only present on create and
-/// single-key reads; list responses omit it.
+/// API representation of a TSIG key; never carries the secret.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetTsigKeyResponse {
     #[schema(example = 1)]
@@ -34,9 +33,6 @@ pub struct GetTsigKeyResponse {
     pub name: String,
     #[schema(example = "hmac-sha256")]
     pub algorithm: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
-    pub secret: Option<String>,
     /// Whether the key may update every zone without any grant.
     #[schema(example = false)]
     pub global: bool,
@@ -44,13 +40,11 @@ pub struct GetTsigKeyResponse {
 }
 
 impl GetTsigKeyResponse {
-    /// An empty secret is treated as already-cleared and omitted.
     pub fn from_key(key: &TsigKey) -> Self {
         GetTsigKeyResponse {
             id: key.id,
             name: key.name.clone(),
             algorithm: key.algorithm.to_string(),
-            secret: Some(key.secret.clone()).filter(|secret| !secret.is_empty()),
             global: key.is_global,
             created_at: key.created_at,
         }
@@ -101,10 +95,21 @@ impl GetTsigGrantResponse {
     }
 }
 
-/// A single TSIG key wrapped in a response envelope.
-#[derive(Serialize, Debug, ToSchema)]
+/// A key with its secret: the create and get responses.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct TsigKeyResponse {
     pub tsig_key: GetTsigKeyResponse,
+    #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
+    pub secret: String,
+}
+
+impl TsigKeyResponse {
+    pub fn from_key(key: &TsigKey) -> Self {
+        TsigKeyResponse {
+            tsig_key: GetTsigKeyResponse::from_key(key),
+            secret: key.secret.clone(),
+        }
+    }
 }
 
 /// List of TSIG keys (secrets omitted).

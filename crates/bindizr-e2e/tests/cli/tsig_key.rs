@@ -13,8 +13,8 @@ async fn tsig_key_create_list_get_delete() {
         ])
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
-    assert_eq!(created["name"], "cli-key");
-    assert_eq!(created["algorithm"], "hmac-sha256");
+    assert_eq!(created["tsig_key"]["name"], "cli-key");
+    assert_eq!(created["tsig_key"]["algorithm"], "hmac-sha256");
     let secret = created["secret"]
         .as_str()
         .expect("create discloses the secret")
@@ -126,7 +126,7 @@ async fn global_tsig_key_create_list_delete() {
         .run_cli_success(&["tsig-key", "get", "cli-global-key", "--output", "json"])
         .await;
     let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
-    assert_eq!(fetched["global"], true);
+    assert_eq!(fetched["tsig_key"]["global"], true);
 
     app.run_cli_success(&["tsig-key", "delete", "cli-global-key"])
         .await;

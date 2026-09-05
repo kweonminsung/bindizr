@@ -1,6 +1,7 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
     CreateTsigGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
+    TsigKeyResponse,
 };
 use clap::{ArgGroup, Subcommand};
 
@@ -132,12 +133,12 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 
             log_debug!("TSIG key creation result: {:?}", res);
 
-            let key: GetTsigKeyResponse = parse_response(&res.data)?;
+            let created: TsigKeyResponse = parse_response(&res.data)?;
             // stderr, so `--output json` stays parseable.
-            if key.global {
+            if created.tsig_key.global {
                 eprintln!("Warning: this key can update every zone without any grant.");
             }
-            print_response(&res.data, output, |key: &GetTsigKeyResponse| {
+            print_response(&res.data, output, |key: &TsigKeyResponse| {
                 vec![TsigKeyRow::from(key)]
             })?;
         }
@@ -159,7 +160,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 
             log_debug!("TSIG key get result: {:?}", res);
 
-            print_response(&res.data, output, |key: &GetTsigKeyResponse| {
+            print_response(&res.data, output, |key: &TsigKeyResponse| {
                 vec![TsigKeyRow::from(key)]
             })?;
         }

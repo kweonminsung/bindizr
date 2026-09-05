@@ -11,7 +11,7 @@ pub(crate) mod notify;
 pub(crate) mod openapi;
 pub(crate) mod record;
 pub(crate) mod router;
-pub(crate) mod token_grant;
+pub(crate) mod token;
 pub(crate) mod tsig_key;
 pub(crate) mod zone;
 
