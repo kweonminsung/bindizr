@@ -3561,13 +3561,14 @@ components:
           example: example.com
     GetRecordResponse:
       type: object
-      description: API representation of a record, optionally carrying its zone name.
+      description: API representation of a record.
       required:
       - name
       - record_type
       - value
       - ttl
       - zone_id
+      - zone_name
       properties:
         id:
           type:
@@ -3601,9 +3602,7 @@ components:
           format: int32
           example: 1
         zone_name:
-          type:
-          - string
-          - 'null'
+          type: string
           example: example.com
     GetTokenGrantResponse:
       type: object
@@ -3704,9 +3703,7 @@ components:
           example: example.com
     GetTsigKeyResponse:
       type: object
-      description: |-
-        API representation of a TSIG key. `secret` is only present on create and
-        single-key reads; list responses omit it.
+      description: API representation of a TSIG key; never carries the secret.
       required:
       - id
       - name
@@ -3731,11 +3728,6 @@ components:
         name:
           type: string
           example: update-key
-        secret:
-          type:
-          - string
-          - 'null'
-          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
     GetZoneResponse:
       type: object
       description: API representation of a zone.
@@ -3920,13 +3912,14 @@ components:
           type: array
           items:
             type: object
-            description: API representation of a record, optionally carrying its zone name.
+            description: API representation of a record.
             required:
             - name
             - record_type
             - value
             - ttl
             - zone_id
+            - zone_name
             properties:
               id:
                 type:
@@ -3960,9 +3953,7 @@ components:
                 format: int32
                 example: 1
               zone_name:
-                type:
-                - string
-                - 'null'
+                type: string
                 example: example.com
         pagination:
           $ref: '#/components/schemas/Pagination'
@@ -4423,10 +4414,14 @@ components:
             $ref: '#/components/schemas/GetTsigKeyResponse'
     TsigKeyResponse:
       type: object
-      description: A single TSIG key wrapped in a response envelope.
+      description: 'A key with its secret: the create and get responses.'
       required:
       - tsig_key
+      - secret
       properties:
+        secret:
+          type: string
+          example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
         tsig_key:
           $ref: '#/components/schemas/GetTsigKeyResponse'
     UpdateDnssecPolicyRequest:

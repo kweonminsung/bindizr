@@ -5,7 +5,8 @@ use bindizr_service::types::{
     CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
     GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse, GetTsigKeyResponse,
     GetZoneResponse, ImportSummary, RecordValueRequest, RollbackZoneResponse,
-    SecondaryStatusResponse, VersionRecordResponse, ZoneStatusResponse, ZoneVersionResponse,
+    SecondaryStatusResponse, TsigKeyResponse, VersionRecordResponse, ZoneStatusResponse,
+    ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -108,7 +109,7 @@ impl From<&GetRecordResponse> for RecordRow {
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
-            zone_name: record.zone_name.clone().unwrap_or_default(),
+            zone_name: record.zone_name.clone(),
         }
     }
 }
@@ -420,7 +421,7 @@ impl From<&CreatedTokenResponse> for TokenRow {
     }
 }
 
-/// The SECRET column is filled by `create` and `get`; a listing omits it.
+/// SECRET is filled from the create and get responses; a listing carries none.
 #[derive(Debug, Tabled)]
 pub(crate) struct TsigKeyRow {
     #[tabled(rename = "ID")]
@@ -443,9 +444,18 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
             id: key.id,
             name: key.name.clone(),
             algorithm: key.algorithm.clone(),
-            secret: display_option_text(&key.secret),
+            secret: display_option_text(&None),
             global: yes_no(key.global),
             created_at: key.created_at.to_rfc3339(),
+        }
+    }
+}
+
+impl From<&TsigKeyResponse> for TsigKeyRow {
+    fn from(key: &TsigKeyResponse) -> Self {
+        TsigKeyRow {
+            secret: key.secret.clone(),
+            ..TsigKeyRow::from(&key.tsig_key)
         }
     }
 }

@@ -40,7 +40,7 @@ impl ListedRecord {
                 ttl: row.ttl,
                 priority: None,
                 zone_id: row.zone_id,
-                zone_name: Some(row.zone_name.to_fqdn()),
+                zone_name: row.zone_name.to_fqdn(),
             },
         }
     }

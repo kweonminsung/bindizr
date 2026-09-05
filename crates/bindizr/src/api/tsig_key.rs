@@ -99,9 +99,7 @@ pub(crate) async fn create_tsig_key(
         body.global,
     )
     .await?;
-    let response = TsigKeyResponse {
-        tsig_key: GetTsigKeyResponse::from_key(&key),
-    };
+    let response = TsigKeyResponse::from_key(&key);
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -128,9 +126,7 @@ pub(crate) async fn get_tsig_key(
     Path(params): Path<TsigKeyNameParam>,
 ) -> Result<Response, ApiError> {
     let key = TsigKeyService::get(&caller, &params.name).await?;
-    let response = TsigKeyResponse {
-        tsig_key: GetTsigKeyResponse::from_key(&key),
-    };
+    let response = TsigKeyResponse::from_key(&key);
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

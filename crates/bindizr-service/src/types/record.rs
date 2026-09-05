@@ -152,7 +152,7 @@ pub struct GetRecordsFilter {
     pub offset: Option<u64>,
 }
 
-/// API representation of a record, optionally carrying its zone name.
+/// API representation of a record.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetRecordResponse {
     /// Absent on the derived DNSSEC rows of a signed listing, which are not
@@ -172,9 +172,8 @@ pub struct GetRecordResponse {
     pub priority: Option<i32>,
     #[schema(example = 1)]
     pub zone_id: i32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "example.com")]
-    pub zone_name: Option<String>,
+    pub zone_name: String,
 }
 
 impl GetRecordResponse {
@@ -188,7 +187,7 @@ impl GetRecordResponse {
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
-            zone_name: Some(zone_name.to_fqdn()),
+            zone_name: zone_name.to_fqdn(),
         }
     }
 

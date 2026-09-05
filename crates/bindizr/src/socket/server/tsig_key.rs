@@ -2,7 +2,7 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     tsig_key::{TsigKeyService, grant::TsigGrantService},
-    types::{CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse},
+    types::{CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse, TsigKeyResponse},
 };
 
 use crate::socket::{
@@ -30,7 +30,7 @@ pub(crate) async fn create_tsig_key(
 
     Ok(DaemonResponse {
         message: "TSIG key created successfully".to_string(),
-        data: to_response_data(GetTsigKeyResponse::from_key(&key))?,
+        data: to_response_data(TsigKeyResponse::from_key(&key))?,
     })
 }
 
@@ -53,7 +53,7 @@ pub(crate) async fn get_tsig_key(data: &serde_json::Value) -> Result<DaemonRespo
 
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),
-        data: to_response_data(GetTsigKeyResponse::from_key(&key))?,
+        data: to_response_data(TsigKeyResponse::from_key(&key))?,
     })
 }
 

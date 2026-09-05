@@ -34,7 +34,7 @@ async fn tsig_key_create_read_delete() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["tsig_key"]["name"], "update-key");
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha256");
-    let generated_secret = body["tsig_key"]["secret"].as_str().unwrap().to_string();
+    let generated_secret = body["secret"].as_str().unwrap().to_string();
     assert!(!generated_secret.is_empty());
 
     // The generated secret is returned again on a single-key read...
@@ -42,7 +42,7 @@ async fn tsig_key_create_read_delete() {
         .request(Method::GET, "/tsig-keys/update-key", None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["tsig_key"]["secret"], generated_secret.as_str());
+    assert_eq!(body["secret"], generated_secret.as_str());
 
     // ...but omitted from the list response.
     let (status, body) = app.request(Method::GET, "/tsig-keys", None).await;
@@ -90,7 +90,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["tsig_key"]["algorithm"], "hmac-sha512");
     assert_eq!(
-        body["tsig_key"]["secret"],
+        body["secret"],
         "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
     );
 
