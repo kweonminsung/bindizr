@@ -18,7 +18,7 @@ pub(crate) mod zone;
 use std::net::SocketAddr;
 
 use axum::{extract::FromRequestParts, http::request::Parts};
-use bindizr_core::{config, log_error, log_info};
+use bindizr_core::{config, log_error, log_info, model::api_token::ApiToken};
 use bindizr_service::{authorization::Caller, error::ServiceError};
 use error::ApiError;
 use router::ApiRouter;
@@ -54,6 +54,26 @@ where
             .cloned()
             .map(RequestCaller)
             .ok_or_else(|| ApiError(ServiceError::unauthorized("Request has no caller identity")))
+    }
+}
+
+/// The token a request authenticated with, attached by the auth middleware;
+/// absent (so a 401) when authentication is disabled.
+#[derive(Clone)]
+pub(crate) struct AuthenticatedToken(pub(crate) ApiToken);
+
+impl<S> FromRequestParts<S> for AuthenticatedToken
+where
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
+        parts
+            .extensions
+            .get::<AuthenticatedToken>()
+            .cloned()
+            .ok_or_else(|| ApiError(ServiceError::unauthorized("Request carries no API token")))
     }
 }
 

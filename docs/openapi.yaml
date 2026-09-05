@@ -844,6 +844,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /tokens/self:
+    get:
+      tags:
+      - Token
+      summary: Describe the API token making the request
+      description: Returns the calling token's own metadata — name, scope, expiry — never its secret. Any token may read itself. With authentication disabled no token is presented, so this is the one endpoint that answers 401 then.
+      operationId: get_self_token
+      responses:
+        '200':
+          description: The calling token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Unauthorized, or no token presented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /tokens/{name}:
     delete:
       tags:
@@ -4384,6 +4410,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GetTokenResponse'
+    TokenResponse:
+      type: object
+      description: 'One token without its secret: the self lookup.'
+      required:
+      - token
+      properties:
+        token:
+          $ref: '#/components/schemas/GetTokenResponse'
     TsigGrantListResponse:
       type: object
       description: Grants of one key, or every grant that applies to one zone.

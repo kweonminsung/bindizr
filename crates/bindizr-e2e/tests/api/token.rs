@@ -166,3 +166,40 @@ async fn scoped_token_cannot_manage_tokens() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn tokens_self_describes_the_bearer() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (global_name, global_token) = app.create_api_token().await;
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+
+    for (name, token, global) in [
+        (global_name, global_token, true),
+        (scoped_name, scoped_token, false),
+    ] {
+        app.set_auth_token(token);
+        let (status, body) = app.request(Method::GET, "/tokens/self", None).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["token"]["name"], json!(name));
+        assert_eq!(body["token"]["global"], json!(global));
+        assert!(body.get("secret").is_none(), "{body}");
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn tokens_self_needs_a_token_even_with_authentication_off() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: false,
+        ..Default::default()
+    })
+    .await;
+
+    let (status, _) = app.request(Method::GET, "/tokens/self", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

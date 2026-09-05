@@ -55,6 +55,12 @@ impl GetTokenResponse {
     }
 }
 
+/// One token without its secret: the self lookup.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct TokenResponse {
+    pub token: GetTokenResponse,
+}
+
 /// The create response: the token and its secret, the one time it is shown.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreatedTokenResponse {

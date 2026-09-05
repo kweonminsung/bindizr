@@ -48,17 +48,18 @@ impl Caller {
 
     /// Resolve who a Bearer token acts as: validate the token, then preload a
     /// scoped token's grants so the rest of the request decides against one
-    /// read.
-    pub async fn authenticate(bearer_token: &str) -> Result<Caller, ServiceError> {
+    /// read. The token row comes back too, since `Global` keeps no identity.
+    pub async fn authenticate(bearer_token: &str) -> Result<(Caller, ApiToken), ServiceError> {
         let token = validate_token(bearer_token).await?;
         if token.is_global {
-            return Ok(Caller::Global);
+            return Ok((Caller::Global, token));
         }
         let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
-        Ok(Caller::Token {
+        let caller = Caller::Token {
             id: token.id,
             grants: grants.into(),
-        })
+        };
+        Ok((caller, token))
     }
 
     /// Reject non-global callers for zone-plane and management operations.

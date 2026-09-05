@@ -10,13 +10,14 @@ use bindizr_service::{
     types::{
         CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, ErrorResponse,
         GetTokenGrantResponse, GetTokenResponse, MessageResponse, TokenGrantListResponse,
-        TokenGrantResponse, TokenListResponse,
+        TokenGrantResponse, TokenListResponse, TokenResponse,
     },
 };
 use serde::Deserialize;
 
 use crate::api::{
-    GrantIdParam, RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody,
+    AuthenticatedToken, GrantIdParam, RequestCaller, ZoneNameParam, error::ApiError,
+    middleware::body_parser::JsonBody,
 };
 
 pub(crate) struct TokenApi;
@@ -26,6 +27,7 @@ impl TokenApi {
         Router::new()
             .route("/tokens", routing::get(get_tokens))
             .route("/tokens", routing::post(create_token))
+            .route("/tokens/self", routing::get(get_self_token))
             .route("/tokens/{name}", routing::delete(delete_token))
             .route("/tokens/{name}/grants", routing::get(get_token_grants))
             .route("/tokens/{name}/grants", routing::post(create_token_grant))
@@ -102,6 +104,28 @@ pub(crate) async fn create_token(
         secret,
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        get,
+        path = "/tokens/self",
+        tag = "Token",
+        summary = "Describe the API token making the request",
+        description = "The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 401.",
+        responses(
+            (status = 200, description = "The calling token", body = TokenResponse),
+            (status = 401, description = "Unauthorized, or no token presented", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Describe the token the request authenticated with.
+pub(crate) async fn get_self_token(
+    AuthenticatedToken(token): AuthenticatedToken,
+) -> Result<Response, ApiError> {
+    let response = TokenResponse {
+        token: GetTokenResponse::from_token(&token),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(
