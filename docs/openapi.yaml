@@ -3028,7 +3028,7 @@ components:
           type:
           - string
           - 'null'
-          description: At most 255 bytes.
+          description: At most 255 characters.
           example: ExternalDNS in the prod cluster
         expires_in_days:
           type:

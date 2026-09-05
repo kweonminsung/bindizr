@@ -34,11 +34,7 @@ impl TokenService {
         caller.require_global("manage API tokens")?;
 
         let name = normalize_token_name(name)?;
-        if description.is_some_and(|d| d.len() > MAX_TOKEN_DESCRIPTION_LEN) {
-            return Err(ServiceError::invalid_input(
-                "description must be 255 bytes or fewer",
-            ));
-        }
+        validate_token_description(description)?;
         let expires_at = expires_at(expires_in_days)?;
 
         if RepositoryService::get_api_token_by_name(&name)
@@ -120,6 +116,25 @@ pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
     }
 
     Ok(name)
+}
+
+/// VARCHAR(255) counts characters, not bytes, and PostgreSQL text cannot hold
+/// NUL; both must be 400s rather than a backend-dependent insert failure.
+fn validate_token_description(description: Option<&str>) -> Result<(), ServiceError> {
+    let Some(description) = description else {
+        return Ok(());
+    };
+    if description.chars().count() > MAX_TOKEN_DESCRIPTION_LEN {
+        return Err(ServiceError::invalid_input(
+            "description must be 255 characters or fewer",
+        ));
+    }
+    if description.contains('\0') {
+        return Err(ServiceError::invalid_input(
+            "description must not contain NUL characters",
+        ));
+    }
+    Ok(())
 }
 
 /// When a token created now expires; `None` never does.

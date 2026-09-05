@@ -11,7 +11,7 @@ use crate::model::api_token::ApiToken;
 pub struct CreateTokenRequest {
     #[schema(example = "external-dns")]
     pub name: String,
-    /// At most 255 bytes.
+    /// At most 255 characters.
     #[schema(example = "ExternalDNS in the prod cluster")]
     pub description: Option<String>,
     /// Days until expiry, 1 to 36500; omit for a token that never expires.
