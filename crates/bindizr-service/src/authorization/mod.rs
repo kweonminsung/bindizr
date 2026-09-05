@@ -110,7 +110,8 @@ impl Caller {
 
     /// Authorize record-plane writes in `zone`, share-locking the caller's
     /// grants inside the transaction so a concurrent revocation waits for
-    /// this mutation instead of racing it.
+    /// this mutation instead of racing it. An ungranted zone reads as
+    /// `NotFound`, so a write cannot probe zone existence either.
     pub(crate) async fn authorize_record_writes_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -130,10 +131,7 @@ impl Caller {
                 // Ahead of the per-write loop, which a batch resolving to no
                 // writes would otherwise pass vacuously.
                 if grants.is_empty() {
-                    return Err(ServiceError::forbidden(format!(
-                        "API token is not allowed to manage records in zone '{}'",
-                        zone.name
-                    )));
+                    return Err(ServiceError::zone_not_found(zone.name.as_str()));
                 }
                 authorize_with_grants(&grants, zone, writes)
             }

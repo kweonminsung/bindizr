@@ -341,7 +341,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: No authoritative zone for a record name
+          description: No authoritative zone for a record name, or the token cannot see it
           content:
             application/json:
               schema:
@@ -600,6 +600,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found, or not visible to the token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
           content:
@@ -849,7 +855,7 @@ paths:
       tags:
       - Token
       summary: Describe the API token making the request
-      description: Returns the calling token's own metadata — name, scope, expiry — never its secret. Any token may read itself. With authentication disabled no token is presented, so this is the one endpoint that answers 401 then.
+      description: The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 401.
       operationId: get_self_token
       responses:
         '200':
@@ -2846,7 +2852,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: Zone not found
+          description: Zone not found, or not visible to the token
           content:
             application/json:
               schema:

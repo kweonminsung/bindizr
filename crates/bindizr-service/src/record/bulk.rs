@@ -185,7 +185,7 @@ impl RecordService {
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             timings.load_zone_ms = elapsed_ms(t);
 
-            // Before any row is read, so an ungranted caller gets 403 rather than
+            // Before any row is read, so an ungranted caller gets 404 rather than
             // a constraint error naming what the zone holds; dry runs included.
             // A name that will not parse lists no write; validation reports it.
             let writes: Vec<RecordWrite<'_>> = prepared

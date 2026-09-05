@@ -53,9 +53,10 @@ describes the calling token, scoped ones included), `GET`/`POST
 /tokens/{name}/grants` and `DELETE /tokens/{name}/grants/{id}` for grants,
 and `GET /zones/{name}/token-grants` for the zone-side view.
 
-A scoped token sees only its granted zones: other zones read as 404 and
-writes outside its grants return 403. The name pattern and type list restrict
-**writes** only — within a granted zone the token reads every record.
+A scoped token sees only its granted zones: other zones read as 404, on
+writes as on reads. The name pattern and type list restrict **writes** only —
+within a granted zone the token reads every record, and a write outside them
+returns 403.
 Creating, updating, or deleting zones —
 and managing tokens, keys, or grants over HTTP — always requires a global
 token. The CLI talks to the daemon over its local socket and is not subject

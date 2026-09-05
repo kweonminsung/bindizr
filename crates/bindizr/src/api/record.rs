@@ -115,6 +115,7 @@ pub(crate) async fn get_record(
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
+            (status = 404, description = "Zone not found, or not visible to the token", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -210,7 +211,7 @@ pub(crate) async fn delete_record(
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
-            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 404, description = "Zone not found, or not visible to the token", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

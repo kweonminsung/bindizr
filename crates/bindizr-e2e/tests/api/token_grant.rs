@@ -80,7 +80,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
-    // Record writes work in the granted zone and 403 elsewhere.
+    // Record writes work in the granted zone and 404 elsewhere.
     let (status, body) = app
         .request(
             Method::POST,
@@ -98,8 +98,8 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
             Some(record_body(&other_zone, "app", "A", "192.0.2.2")),
         )
         .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["code"], "FORBIDDEN");
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "ZONE_NOT_FOUND");
 
     // Record listing only surfaces granted zones.
     let (status, body) = app
@@ -268,7 +268,7 @@ async fn scoped_token_without_grants_sees_nothing() {
             Some(record_body(&zone_name, "app", "A", "192.0.2.1")),
         )
         .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -311,7 +311,7 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
                 })),
             )
             .await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "dry_run={dry_run}: {body}");
+        assert_eq!(status, StatusCode::NOT_FOUND, "dry_run={dry_run}: {body}");
         assert!(
             !body.to_string().contains("already exists"),
             "dry_run={dry_run} leaked the existing record: {body}"
@@ -351,8 +351,8 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
         .await;
 
     // 400 here would confirm the zone exists and that its validation ran.
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-    assert_eq!(body["code"], "FORBIDDEN", "{body}");
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    assert_eq!(body["code"], "ZONE_NOT_FOUND", "{body}");
 }
 
 #[tokio::test]

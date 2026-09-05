@@ -128,8 +128,8 @@ recommended default.
 | Symptom | Cause / fix |
 | --- | --- |
 | `401` in the adapter log | Token missing, expired, or wrong |
-| `403 API token is not allowed to manage ...` | Grant the zone: `bindizr token grant <TOKEN_NAME> <zone>` |
 | `403` every sync; allowed changes never apply | The grant is restricted by name pattern or type, which ExternalDNS cannot see, and a sync is all-or-nothing. Grant the whole zone (the `token grant` default), or narrow external-dns's `--domain-filter` to the granted names |
+| `404 Zone with name '<zone>' not found` for a zone that exists | The token has no grant on it. Grant the zone: `bindizr token grant <TOKEN_NAME> <zone>` |
 | `404 No zone is authoritative for '<name>'` | Create the zone first; ExternalDNS never creates zones |
 | `502` from the adapter | Bindizr unreachable or 5xx; external-dns retries automatically |
 | `503 no manageable zones` at startup | The token has no zone grants (or no zones exist yet). Grant one: `bindizr token grant <TOKEN_NAME> <zone>`; negotiation recovers on its own |
