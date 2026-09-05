@@ -1,5 +1,5 @@
 use bindizr_core::dns::name::has_whitespace_or_control;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
@@ -30,7 +30,7 @@ impl TokenService {
         caller.require_global("manage API tokens")?;
 
         let name = normalize_token_name(name)?;
-        validate_expires_in_days(expires_in_days)?;
+        let expires_at = expires_at(expires_in_days)?;
 
         if RepositoryService::get_api_token_by_name(&name)
             .await?
@@ -46,8 +46,6 @@ impl TokenService {
             .collect();
 
         let token_hash = hash_token(&raw_token);
-
-        let expires_at = expires_in_days.map(|days| Utc::now() + Duration::days(days));
 
         let mut created = RepositoryService::create_api_token(ApiToken {
             id: 0,
@@ -115,16 +113,21 @@ pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
     Ok(name)
 }
 
-fn validate_expires_in_days(expires_in_days: Option<i64>) -> Result<(), ServiceError> {
-    if let Some(days) = expires_in_days
-        && days <= 0
-    {
+/// When a token created now expires; `None` never does. Checked, because
+/// chrono panics past its range and the value comes straight off the wire.
+fn expires_at(expires_in_days: Option<i64>) -> Result<Option<DateTime<Utc>>, ServiceError> {
+    let Some(days) = expires_in_days else {
+        return Ok(None);
+    };
+    if days <= 0 {
         return Err(ServiceError::invalid_input(
             "expires_in_days must be greater than 0",
         ));
     }
-
-    Ok(())
+    Duration::try_days(days)
+        .and_then(|duration| Utc::now().checked_add_signed(duration))
+        .map(Some)
+        .ok_or_else(|| ServiceError::invalid_input("expires_in_days is too far in the future"))
 }
 
 pub mod grant;
