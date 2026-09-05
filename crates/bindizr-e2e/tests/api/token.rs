@@ -37,7 +37,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["token"]["name"], json!(scoped_name));
     assert_eq!(body["token"]["global"], false);
-    let scoped_secret = body["token"]["token"]
+    let scoped_secret = body["secret"]
         .as_str()
         .expect("create response carries the secret")
         .to_string();
@@ -63,7 +63,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["token"]["global"], true);
-    let global_secret = body["token"]["token"].as_str().unwrap().to_string();
+    let global_secret = body["secret"].as_str().unwrap().to_string();
 
     // A global token minted over HTTP holds the zone plane.
     app.set_auth_token(global_secret);
@@ -87,7 +87,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         );
     }
     assert!(
-        tokens.iter().all(|token| token.get("token").is_none()),
+        tokens.iter().all(|token| token.get("secret").is_none()),
         "a listing must never carry a secret: {body}"
     );
 

@@ -807,7 +807,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenResponse'
+                $ref: '#/components/schemas/CreatedTokenResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -3045,6 +3045,7 @@ components:
           example: false
         name:
           type: string
+          description: 'Letters, digits, `.`, `_`, and `-`: one URL path segment.'
           example: external-dns
     CreateTsigGrantRequest:
       type: object
@@ -3150,6 +3151,18 @@ components:
           format: int32
           description: Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
           example: 42
+    CreatedTokenResponse:
+      type: object
+      description: 'The create response: the token and its secret, the one time it is shown.'
+      required:
+      - token
+      - secret
+      properties:
+        secret:
+          type: string
+          example: k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu
+        token:
+          $ref: '#/components/schemas/GetTokenResponse'
     DnssecDsInfo:
       type: object
       description: A key's DS form for parent-zone registration.
@@ -3624,9 +3637,7 @@ components:
           example: example.com
     GetTokenResponse:
       type: object
-      description: |-
-        API representation of an API token. `token` carries the raw secret and is
-        only present in the create response — the one time it is shown.
+      description: API representation of an API token; never carries the secret.
       required:
       - id
       - name
@@ -3661,11 +3672,6 @@ components:
         name:
           type: string
           example: external-dns
-        token:
-          type:
-          - string
-          - 'null'
-          example: k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu
     GetTsigGrantResponse:
       type: object
       description: API representation of a TSIG grant.
@@ -4387,14 +4393,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GetTokenResponse'
-    TokenResponse:
-      type: object
-      description: A single API token wrapped in a response envelope.
-      required:
-      - token
-      properties:
-        token:
-          $ref: '#/components/schemas/GetTokenResponse'
     TsigGrantListResponse:
       type: object
       description: Grants of one key, or every grant that applies to one zone.

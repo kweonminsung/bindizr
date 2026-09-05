@@ -9,6 +9,7 @@ use crate::model::api_token::ApiToken;
 /// Request body for creating an API token.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreateTokenRequest {
+    /// Letters, digits, `.`, `_`, and `-`: one URL path segment.
     #[schema(example = "external-dns")]
     pub name: String,
     /// At most 255 characters.
@@ -24,17 +25,13 @@ pub struct CreateTokenRequest {
     pub global: bool,
 }
 
-/// API representation of an API token. `token` carries the raw secret and is
-/// only present in the create response — the one time it is shown.
+/// API representation of an API token; never carries the secret.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetTokenResponse {
     #[schema(example = 1)]
     pub id: i32,
     #[schema(example = "external-dns")]
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]
-    pub token: Option<String>,
     pub description: Option<String>,
     /// Whether the token may manage every zone and the zone plane.
     #[schema(example = false)]
@@ -45,12 +42,10 @@ pub struct GetTokenResponse {
 }
 
 impl GetTokenResponse {
-    /// An empty `token` is treated as already-cleared and omitted.
     pub fn from_token(token: &ApiToken) -> Self {
         GetTokenResponse {
             id: token.id,
             name: token.name.clone(),
-            token: Some(token.token.clone()).filter(|secret| !secret.is_empty()),
             description: token.description.clone(),
             global: token.is_global,
             created_at: token.created_at,
@@ -60,10 +55,12 @@ impl GetTokenResponse {
     }
 }
 
-/// A single API token wrapped in a response envelope.
-#[derive(Serialize, Debug, ToSchema)]
-pub struct TokenResponse {
+/// The create response: the token and its secret, the one time it is shown.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct CreatedTokenResponse {
     pub token: GetTokenResponse,
+    #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]
+    pub secret: String,
 }
 
 /// List of API tokens (secrets omitted).

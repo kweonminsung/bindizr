@@ -1,4 +1,3 @@
-use bindizr_core::dns::name::has_whitespace_or_control;
 use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
@@ -22,15 +21,14 @@ pub(crate) fn hash_token(token: &str) -> String {
 }
 
 impl TokenService {
-    /// Create a new API token; the returned token carries the raw secret to
-    /// show once.
+    /// Create an API token; the secret comes back beside it, shown this once.
     pub async fn create(
         caller: &Caller,
         name: &str,
         description: Option<&str>,
         expires_in_days: Option<i64>,
         is_global: bool,
-    ) -> Result<ApiToken, ServiceError> {
+    ) -> Result<(ApiToken, String), ServiceError> {
         caller.require_global("manage API tokens")?;
 
         let name = normalize_token_name(name)?;
@@ -52,7 +50,7 @@ impl TokenService {
 
         let token_hash = hash_token(&raw_token);
 
-        let mut created = RepositoryService::create_api_token(ApiToken {
+        let created = RepositoryService::create_api_token(ApiToken {
             id: 0,
             name,
             token: token_hash,
@@ -64,19 +62,14 @@ impl TokenService {
         })
         .await?;
 
-        created.token = raw_token;
-        Ok(created)
+        Ok((created, raw_token))
     }
 
-    /// List all API tokens with their secret hashes cleared.
+    /// List all API tokens.
     pub async fn list(caller: &Caller) -> Result<Vec<ApiToken>, ServiceError> {
         caller.require_global("manage API tokens")?;
 
-        let mut tokens = RepositoryService::list_api_tokens().await?;
-        for token in &mut tokens {
-            token.token.clear();
-        }
-        Ok(tokens)
+        RepositoryService::list_api_tokens().await
     }
 
     /// Delete the API token with the given name, returning `NotFound` if it
@@ -96,17 +89,26 @@ impl TokenService {
     }
 }
 
-/// Lowercased so one name means one token on every backend: MySQL compares the
-/// column case-insensitively, the others exactly.
+/// Lowercased so one name means one token on every backend (MySQL compares
+/// case-insensitively), and kept to one URL path segment for `/tokens/{name}`.
 pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
     let name = name.trim().to_lowercase();
 
     if name.is_empty() {
         return Err(ServiceError::invalid_input("token name must not be empty"));
     }
-    if has_whitespace_or_control(&name) {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return Err(ServiceError::invalid_input(
-            "token name must not contain whitespace or control characters",
+            "token name may contain only letters, digits, '.', '_', and '-'",
+        ));
+    }
+    // Dot segments never survive URL normalization.
+    if name == "." || name == ".." {
+        return Err(ServiceError::invalid_input(
+            "token name must not be '.' or '..'",
         ));
     }
     if name.len() > MAX_TOKEN_NAME_LEN {

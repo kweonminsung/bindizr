@@ -1,6 +1,7 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateTokenGrantRequest, CreateTokenRequest, GetTokenGrantResponse, GetTokenResponse,
+    CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
+    GetTokenResponse,
 };
 use clap::{ArgGroup, Subcommand};
 
@@ -23,8 +24,7 @@ use crate::{
 pub(crate) enum TokenCommand {
     /// Create a new API token; the plaintext token is shown once, here
     Create {
-        /// Unique token name (e.g. "external-dns"); used to reference the
-        /// token in other commands
+        /// Unique name (letters, digits, '.', '_', '-'); how other commands refer to it
         #[arg(long, value_name = "TOKEN_NAME")]
         name: String,
         /// Description of the token
@@ -123,8 +123,8 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
 
             log_debug!("Token creation result: {:?}", res);
 
-            print_response(&res.data, output, |token: &GetTokenResponse| {
-                vec![TokenRow::from(token)]
+            print_response(&res.data, output, |created: &CreatedTokenResponse| {
+                vec![TokenRow::from(created)]
             })?;
         }
         TokenCommand::List { output } => {

@@ -2,10 +2,10 @@
 //! the column set is all this module decides.
 
 use bindizr_service::types::{
-    DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse, GetTokenGrantResponse,
-    GetTokenResponse, GetTsigGrantResponse, GetTsigKeyResponse, GetZoneResponse, ImportSummary,
-    RecordValueRequest, RollbackZoneResponse, SecondaryStatusResponse, VersionRecordResponse,
-    ZoneStatusResponse, ZoneVersionResponse,
+    CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
+    GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse, GetTsigKeyResponse,
+    GetZoneResponse, ImportSummary, RecordValueRequest, RollbackZoneResponse,
+    SecondaryStatusResponse, VersionRecordResponse, ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -372,8 +372,7 @@ impl From<&ImportSummary> for ImportSummaryRow {
     }
 }
 
-/// The TOKEN column carries the plaintext only in a `create` response, the
-/// one time the API discloses it.
+/// TOKEN is filled only from a create response, the one time the secret is shown.
 #[derive(Debug, Tabled)]
 pub(crate) struct TokenRow {
     #[tabled(rename = "ID")]
@@ -399,7 +398,7 @@ impl From<&GetTokenResponse> for TokenRow {
         TokenRow {
             id: token.id,
             name: token.name.clone(),
-            token: display_option_text(&token.token),
+            token: display_option_text(&None),
             global: yes_no(token.global),
             description: display_option_text(&token.description),
             created_at: token.created_at.to_rfc3339(),
@@ -408,6 +407,15 @@ impl From<&GetTokenResponse> for TokenRow {
                 .map(|dt| dt.to_rfc3339())
                 .unwrap_or_else(|| "Never".to_string()),
             last_used_at: display_option_time(&token.last_used_at),
+        }
+    }
+}
+
+impl From<&CreatedTokenResponse> for TokenRow {
+    fn from(created: &CreatedTokenResponse) -> Self {
+        TokenRow {
+            token: created.secret.clone(),
+            ..TokenRow::from(&created.token)
         }
     }
 }

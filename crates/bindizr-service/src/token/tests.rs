@@ -22,6 +22,19 @@ fn normalize_token_name_rejects_empty_and_whitespace_names() {
     }
 }
 
+// `/` splits a path segment, `?` and `#` end it, and dot segments get normalized away.
+#[test]
+fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
+    for name in [".", "..", "a/b", "a?b", "a#b", "a%2fb", "토큰"] {
+        let err = normalize_token_name(name).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput, "{name}");
+    }
+    assert_eq!(
+        normalize_token_name("ci.prod_v2-x").unwrap(),
+        "ci.prod_v2-x"
+    );
+}
+
 #[test]
 fn expires_at_is_none_without_days_and_ahead_of_now_with_them() {
     assert!(expires_at(None).unwrap().is_none());

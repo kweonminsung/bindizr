@@ -2,7 +2,7 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     token::{TokenService, grant::TokenGrantService},
-    types::{CreateTokenRequest, GetTokenGrantResponse, GetTokenResponse},
+    types::{CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse, GetTokenResponse},
 };
 
 use crate::socket::{
@@ -17,7 +17,7 @@ use crate::socket::{
 pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let request: CreateTokenRequest = parse_params(data)?;
 
-    let created_token = TokenService::create(
+    let (token, secret) = TokenService::create(
         &Caller::Global,
         &request.name,
         request.description.as_deref(),
@@ -28,7 +28,10 @@ pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 
     let response = DaemonResponse {
         message: "Token created successfully".to_string(),
-        data: to_response_data(GetTokenResponse::from_token(&created_token))?,
+        data: to_response_data(CreatedTokenResponse {
+            token: GetTokenResponse::from_token(&token),
+            secret,
+        })?,
     };
     Ok(response)
 }

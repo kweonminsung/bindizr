@@ -8,9 +8,9 @@ use axum::{
 use bindizr_service::{
     token::{TokenService, grant::TokenGrantService},
     types::{
-        CreateTokenGrantRequest, CreateTokenRequest, ErrorResponse, GetTokenGrantResponse,
-        GetTokenResponse, MessageResponse, TokenGrantListResponse, TokenGrantResponse,
-        TokenListResponse, TokenResponse,
+        CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, ErrorResponse,
+        GetTokenGrantResponse, GetTokenResponse, MessageResponse, TokenGrantListResponse,
+        TokenGrantResponse, TokenListResponse,
     },
 };
 use serde::Deserialize;
@@ -75,7 +75,7 @@ pub(crate) async fn get_tokens(RequestCaller(caller): RequestCaller) -> Result<R
         description = "Creates an API token and returns its secret, the one time it is shown. A scoped token (the default) acts only on the zones it is later granted; `global` makes it cover every zone and the zone plane, fixed at creation.",
         request_body = CreateTokenRequest,
         responses(
-            (status = 201, description = "API token created; the response carries the secret", body = TokenResponse),
+            (status = 201, description = "API token created; the response carries the secret", body = CreatedTokenResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
@@ -89,7 +89,7 @@ pub(crate) async fn create_token(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTokenRequest>,
 ) -> Result<Response, ApiError> {
-    let token = TokenService::create(
+    let (token, secret) = TokenService::create(
         &caller,
         &body.name,
         body.description.as_deref(),
@@ -97,8 +97,9 @@ pub(crate) async fn create_token(
         body.global,
     )
     .await?;
-    let response = TokenResponse {
+    let response = CreatedTokenResponse {
         token: GetTokenResponse::from_token(&token),
+        secret,
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
