@@ -6,10 +6,11 @@ use axum::{
     routing,
 };
 use bindizr_service::{
-    token::grant::TokenGrantService,
+    token::{TokenService, grant::TokenGrantService},
     types::{
-        CreateTokenGrantRequest, ErrorResponse, GetTokenGrantResponse, MessageResponse,
-        TokenGrantListResponse, TokenGrantResponse,
+        CreateTokenGrantRequest, CreateTokenRequest, ErrorResponse, GetTokenGrantResponse,
+        GetTokenResponse, MessageResponse, TokenGrantListResponse, TokenGrantResponse,
+        TokenListResponse, TokenResponse,
     },
 };
 use serde::Deserialize;
@@ -18,13 +19,14 @@ use crate::api::{
     GrantIdParam, RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody,
 };
 
-/// Grants hang off the token that holds them; tokens themselves are created
-/// over the daemon socket only, so `/tokens` has no collection route.
-pub(crate) struct TokenGrantApi;
+pub(crate) struct TokenApi;
 
-impl TokenGrantApi {
+impl TokenApi {
     pub(crate) async fn routes() -> Router {
         Router::new()
+            .route("/tokens", routing::get(get_tokens))
+            .route("/tokens", routing::post(create_token))
+            .route("/tokens/{name}", routing::delete(delete_token))
             .route("/tokens/{name}/grants", routing::get(get_token_grants))
             .route("/tokens/{name}/grants", routing::post(create_token_grant))
             .route(
@@ -41,6 +43,93 @@ impl TokenGrantApi {
 #[derive(Deserialize)]
 pub(crate) struct TokenNameParam {
     pub(crate) name: String,
+}
+
+#[utoipa::path(
+        get,
+        path = "/tokens",
+        tag = "Token",
+        summary = "List all API tokens",
+        description = "Lists every API token without its secret; a secret is shown once, in the create response.",
+        responses(
+            (status = 200, description = "All API tokens", body = TokenListResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// List all API tokens (secrets omitted).
+pub(crate) async fn get_tokens(RequestCaller(caller): RequestCaller) -> Result<Response, ApiError> {
+    let tokens = TokenService::list(&caller).await?;
+    let response = TokenListResponse {
+        tokens: tokens.iter().map(GetTokenResponse::from_token).collect(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        post,
+        path = "/tokens",
+        tag = "Token",
+        summary = "Create an API token",
+        description = "Creates an API token and returns its secret, the one time it is shown. A scoped token (the default) acts only on the zones it is later granted; `global` makes it cover every zone and the zone plane, fixed at creation.",
+        request_body = CreateTokenRequest,
+        responses(
+            (status = 201, description = "API token created; the response carries the secret", body = TokenResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 409, description = "An API token with the same name already exists", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Create an API token; the secret is returned once, here.
+pub(crate) async fn create_token(
+    RequestCaller(caller): RequestCaller,
+    JsonBody(body): JsonBody<CreateTokenRequest>,
+) -> Result<Response, ApiError> {
+    let token = TokenService::create(
+        &caller,
+        &body.name,
+        body.description.as_deref(),
+        body.expires_in_days,
+        body.global,
+    )
+    .await?;
+    let response = TokenResponse {
+        token: GetTokenResponse::from_token(&token),
+    };
+    Ok((StatusCode::CREATED, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        delete,
+        path = "/tokens/{name}",
+        tag = "Token",
+        summary = "Delete an API token",
+        description = "Deletes an API token; its grants go with it.",
+        params(
+            ("name" = String, Path, description = "The name of the API token.")
+        ),
+        responses(
+            (status = 200, description = "API token deleted", body = MessageResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Token not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Delete an API token by name.
+pub(crate) async fn delete_token(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<TokenNameParam>,
+) -> Result<Response, ApiError> {
+    TokenService::delete(&caller, &params.name).await?;
+    let response = MessageResponse {
+        message: "Token deleted successfully".to_string(),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[utoipa::path(

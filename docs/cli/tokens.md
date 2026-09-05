@@ -47,9 +47,10 @@ $ bindizr token grants --zone example.com
 $ bindizr token revoke external-dns <GRANT_ID>
 ```
 
-Over HTTP the same grants live under the token: `GET`/`POST
-/tokens/{name}/grants`, `DELETE /tokens/{name}/grants/{id}`, and
-`GET /zones/{name}/token-grants` for the zone-side view.
+A global token can do all of this over HTTP too: `POST`/`GET /tokens` and
+`DELETE /tokens/{name}` for the tokens themselves, `GET`/`POST
+/tokens/{name}/grants` and `DELETE /tokens/{name}/grants/{id}` for grants,
+and `GET /zones/{name}/token-grants` for the zone-side view.
 
 A scoped token sees only its granted zones: other zones read as 404 and
 writes outside its grants return 403. The name pattern and type list restrict

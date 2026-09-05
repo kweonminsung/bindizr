@@ -11,7 +11,7 @@ generator.
 
 ## Authentication
 
-Create a token with the CLI:
+Bootstrap the first token with the CLI:
 
 ```bash
 $ bindizr token create --name admin --global
@@ -26,6 +26,11 @@ Then include it in the `Authorization` header:
 ```bash
 $ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/zones
 ```
+
+From there a global token manages tokens over HTTP as well — `POST /tokens`
+returns the new secret once, `GET /tokens` lists them, `DELETE /tokens/{name}`
+revokes one. The CLI stays the recovery path: if every global token is lost,
+create a new one on the daemon host.
 
 Setting `api.require_authentication = false` disables the check entirely — only
 sensible when Bindizr is bound to a loopback address or an otherwise trusted
