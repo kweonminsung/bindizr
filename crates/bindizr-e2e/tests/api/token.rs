@@ -100,12 +100,20 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
 
-    // An expiry past chrono's range is a 400, not a dropped connection.
+    // Values the columns cannot hold are a 400, not a backend-dependent 500.
     let (status, _) = app
         .request(
             Method::POST,
             "/tokens",
             Some(json!({ "name": app.zone_name("never"), "expires_in_days": i64::MAX })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/tokens",
+            Some(json!({ "name": app.zone_name("verbose"), "description": "x".repeat(256) })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

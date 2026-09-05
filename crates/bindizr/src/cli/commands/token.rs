@@ -30,7 +30,7 @@ pub(crate) enum TokenCommand {
         /// Description of the token
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
-        /// Number of days until the token expires (default: never expires)
+        /// Days until the token expires, up to 36500 (default: never expires)
         #[arg(long, value_name = "N")]
         expires_in_days: Option<i64>,
         /// Make the token global: it may manage every zone and the zone

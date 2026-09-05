@@ -7,6 +7,10 @@ use super::{error::ServiceError, repository::RepositoryService};
 use crate::{authorization::Caller, model::api_token::ApiToken};
 
 const MAX_TOKEN_NAME_LEN: usize = 255;
+/// `api_tokens.description` is VARCHAR(255) on MySQL and PostgreSQL.
+const MAX_TOKEN_DESCRIPTION_LEN: usize = 255;
+/// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
+const MAX_EXPIRES_IN_DAYS: i64 = 36_500;
 
 /// Creates, lists, and revokes API tokens.
 pub struct TokenService;
@@ -30,6 +34,11 @@ impl TokenService {
         caller.require_global("manage API tokens")?;
 
         let name = normalize_token_name(name)?;
+        if description.is_some_and(|d| d.len() > MAX_TOKEN_DESCRIPTION_LEN) {
+            return Err(ServiceError::invalid_input(
+                "description must be 255 bytes or fewer",
+            ));
+        }
         let expires_at = expires_at(expires_in_days)?;
 
         if RepositoryService::get_api_token_by_name(&name)
@@ -113,21 +122,18 @@ pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
     Ok(name)
 }
 
-/// When a token created now expires; `None` never does. Checked, because
-/// chrono panics past its range and the value comes straight off the wire.
+/// When a token created now expires; `None` never does.
 fn expires_at(expires_in_days: Option<i64>) -> Result<Option<DateTime<Utc>>, ServiceError> {
     let Some(days) = expires_in_days else {
         return Ok(None);
     };
-    if days <= 0 {
-        return Err(ServiceError::invalid_input(
-            "expires_in_days must be greater than 0",
-        ));
+    if !(1..=MAX_EXPIRES_IN_DAYS).contains(&days) {
+        return Err(ServiceError::invalid_input(format!(
+            "expires_in_days must be between 1 and {MAX_EXPIRES_IN_DAYS}"
+        )));
     }
-    Duration::try_days(days)
-        .and_then(|duration| Utc::now().checked_add_signed(duration))
-        .map(Some)
-        .ok_or_else(|| ServiceError::invalid_input("expires_in_days is too far in the future"))
+    // Within the cap neither the duration nor the date can overflow.
+    Ok(Some(Utc::now() + Duration::days(days)))
 }
 
 pub mod grant;

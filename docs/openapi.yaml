@@ -3028,13 +3028,14 @@ components:
           type:
           - string
           - 'null'
+          description: At most 255 bytes.
           example: ExternalDNS in the prod cluster
         expires_in_days:
           type:
           - integer
           - 'null'
           format: int64
-          description: Days until expiry; omit for a token that never expires.
+          description: Days until expiry, 1 to 36500; omit for a token that never expires.
           example: 90
         global:
           type: boolean
