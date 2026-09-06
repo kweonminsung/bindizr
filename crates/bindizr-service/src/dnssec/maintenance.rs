@@ -128,11 +128,13 @@ async fn run_maintenance_pass() {
     .await
     {
         Ok(keys) => {
-            let zone_ids: Vec<i32> = keys
+            // Keys arrive ordered by zone id, so dedup() leaves one entry per zone.
+            let mut zone_ids: Vec<i32> = keys
                 .iter()
                 .filter(|key| key.role == DnssecKeyRole::Zsk)
                 .map(|key| key.zone_id)
                 .collect();
+            zone_ids.dedup();
             for zone_id in zone_ids {
                 match promote_zsks_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
@@ -160,7 +162,9 @@ async fn run_maintenance_pass() {
     .await
     {
         Ok(keys) => {
-            let zone_ids: Vec<i32> = keys.iter().map(|key| key.zone_id).collect();
+            // Keys arrive ordered by zone id, so dedup() leaves one entry per zone.
+            let mut zone_ids: Vec<i32> = keys.iter().map(|key| key.zone_id).collect();
+            zone_ids.dedup();
             for zone_id in zone_ids {
                 match remove_retired_keys_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
