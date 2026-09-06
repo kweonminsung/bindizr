@@ -62,9 +62,9 @@ impl ExternalDnsService {
         })
         .await?;
 
-        // Keyed by name and type; rows of one name and type share a TTL, so
-        // the first row's stands for all. The map's order is the response's.
-        let mut grouped: BTreeMap<(String, String), (i32, Vec<String>)> = BTreeMap::new();
+        // TTL is part of the key: one zone's rows of a name and type share it,
+        // but an overlapping parent and child zone may not.
+        let mut grouped: BTreeMap<(String, String, i32), Vec<String>> = BTreeMap::new();
         for row in rows {
             let record = row.record();
             if !record.record_type.is_external_dns_supported() {
@@ -75,16 +75,15 @@ impl ExternalDnsService {
                 .record_type
                 .presentation_rdata(&record.value, record.priority);
             grouped
-                .entry((name, record.record_type.to_string()))
-                .or_insert_with(|| (record.ttl, Vec::new()))
-                .1
+                .entry((name, record.record_type.to_string(), record.ttl))
+                .or_default()
                 .push(value);
         }
 
         // Sorted values so an unchanged state never reads as a diff.
         Ok(grouped
             .into_iter()
-            .map(|((name, record_type), (ttl, mut values))| {
+            .map(|((name, record_type, ttl), mut values)| {
                 values.sort();
                 ExternalDnsRecord {
                     name,
