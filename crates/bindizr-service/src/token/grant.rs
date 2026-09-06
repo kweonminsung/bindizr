@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use bindizr_db::repository::ZoneFilter;
 use chrono::Utc;
 
 use super::TokenService;
@@ -80,7 +81,12 @@ impl TokenGrantService {
     pub async fn list_self(token: &ApiToken) -> Result<Vec<TokenGrantWithNames>, ServiceError> {
         let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
 
-        let zone_names: HashMap<i32, String> = RepositoryService::list_zones()
+        // Any token reaches this, so read only its granted zones.
+        let zone_names: HashMap<i32, String> =
+            RepositoryService::list_zones_by_filter(ZoneFilter {
+                scope_token_id: Some(token.id),
+                ..ZoneFilter::default()
+            })
             .await?
             .into_iter()
             .map(|zone| (zone.id, zone.name.to_string()))
