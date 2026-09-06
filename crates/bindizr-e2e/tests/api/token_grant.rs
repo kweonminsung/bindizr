@@ -488,3 +488,47 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
         "{body}"
     );
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let granted_zone = app.zone_name("granted.com");
+    let hidden_zone = app.zone_name("hidden.com");
+    create_zone(&app, &granted_zone).await;
+    create_zone(&app, &hidden_zone).await;
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&["token", "grant", &scoped_name, &granted_zone])
+        .await;
+    app.set_auth_token(scoped_token);
+
+    // An echoed spelling would name a hidden zone as stored, an absent one as typed.
+    let absent_zone = app.zone_name("absent.com");
+    for zone in [&hidden_zone, &absent_zone] {
+        let spelled = format!("{}.", zone.to_uppercase());
+        let expected = json!(format!("Zone with name '{zone}' not found"));
+
+        let (status, body) = app
+            .request(Method::GET, &format!("/zones/{spelled}"), None)
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+        assert_eq!(body["error"], expected, "{body}");
+
+        let (status, body) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(record_body(&spelled, "www", "A", "192.0.2.1")),
+            )
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+        assert_eq!(body["error"], expected, "{body}");
+    }
+}
