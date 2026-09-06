@@ -407,7 +407,7 @@ impl RecordService {
             // hot path (import benchmarks measure records/sec here). Skip it too when
             // errors block the import, so the preview shows no un-appliable changes.
             let diff = if dry_run && errors.is_empty() {
-                import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels)
+                build_import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels)
             } else {
                 RecordDiff::default()
             };
@@ -525,7 +525,7 @@ impl RecordService {
 
 /// The reconcile as a record diff: `after` is the existing set minus the
 /// deletes plus the adds, so `build_record_diff` classifies each RRset.
-fn import_diff(
+fn build_import_diff(
     zone: &Zone,
     existing: &[Record],
     adds: &[&DesiredRecord],

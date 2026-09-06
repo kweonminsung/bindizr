@@ -7,7 +7,6 @@ use crate::{
     error::ServiceError,
     log_error,
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone, zone_change::ZoneChange},
-    pagination::paginated_response,
     repository::RepositoryService,
     types::{GetZoneResponse, GetZonesFilter, PaginatedResponse},
 };
@@ -34,7 +33,7 @@ impl ZoneService {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, ServiceError> {
-        RepositoryService::list_zone_journal_between_serials(zone_id, from_serial, to_serial).await
+        RepositoryService::list_zone_changes_between_serials(zone_id, from_serial, to_serial).await
     }
 
     /// Cheap database round-trip (limit-1 zones probe), for health checks.
@@ -47,6 +46,11 @@ impl ZoneService {
             log_error!("Failed to fetch zones: {}", e);
             ServiceError::internal("Failed to fetch zones")
         })
+    }
+
+    /// Every zone, for the unauthenticated metrics endpoint.
+    pub async fn count_all() -> Result<u64, ServiceError> {
+        RepositoryService::count_zones_by_filter(ZoneFilter::default()).await
     }
 
     /// Count the zones visible to `caller`.
@@ -86,7 +90,7 @@ impl ZoneService {
         let total = RepositoryService::count_zones_by_filter(zone_filter.clone()).await?;
         let zones = RepositoryService::list_zones_by_filter(zone_filter).await?;
         let items = zones.iter().map(GetZoneResponse::from_zone).collect();
-        Ok(paginated_response(items, limit, offset, total))
+        Ok(PaginatedResponse::from_page(items, limit, offset, total))
     }
 
     /// Fetch a zone by name for `caller`; a zone it cannot see reads as

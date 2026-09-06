@@ -4,7 +4,7 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, prepare_record},
+    bulk::{PreparedRecord, parse_record},
     validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
 };
 use crate::{
@@ -31,7 +31,7 @@ impl RecordService {
             record_type,
             value: record_value,
             ..
-        } = prepare_record(
+        } = parse_record(
             &create_record_request.name,
             &create_record_request.record_type,
             &create_record_request.value,
@@ -119,6 +119,7 @@ impl RecordService {
             })?;
 
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+            // Advance the serial once so IXFR consumers detect the change
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok::<(Record, ZoneName), ServiceError>((created_record, zone.name))

@@ -75,7 +75,7 @@ pub(crate) async fn delete_dnssec_policy(
     DnssecPolicyService::delete(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
-        message: "DNSSEC policy deleted successfully".to_string(),
+        message: format!("DNSSEC policy '{}' deleted successfully", params.name),
         data: serde_json::Value::Null,
     })
 }

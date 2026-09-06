@@ -33,8 +33,9 @@ impl TokenService {
 
         let name = normalize_token_name(name)?;
         validate_token_description(description)?;
-        let expires_at = expires_at(expires_in_days)?;
+        let expires_at = to_expires_at(expires_in_days)?;
 
+        // Friendly pre-check; the UNIQUE(name) backstop covers the race.
         if RepositoryService::get_api_token_by_name(&name)
             .await?
             .is_some()
@@ -140,7 +141,7 @@ fn validate_token_description(description: Option<&str>) -> Result<(), ServiceEr
 }
 
 /// When a token created now expires; `None` never does.
-fn expires_at(expires_in_days: Option<i64>) -> Result<Option<DateTime<Utc>>, ServiceError> {
+fn to_expires_at(expires_in_days: Option<i64>) -> Result<Option<DateTime<Utc>>, ServiceError> {
     let Some(days) = expires_in_days else {
         return Ok(None);
     };

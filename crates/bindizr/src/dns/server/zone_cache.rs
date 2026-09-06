@@ -53,7 +53,7 @@ fn tick() -> u64 {
 /// Load a zone's transfer content, from cache when enabled and fresh.
 /// Serve the returned zone row, not the pre-read one — it is the row the
 /// content was read with. `None` when the zone was deleted meanwhile.
-pub(crate) async fn list_zone_content(
+pub(crate) async fn find_zone_content(
     zone: Zone,
 ) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
     if !config::bindizr_config().dns.zone_cache {

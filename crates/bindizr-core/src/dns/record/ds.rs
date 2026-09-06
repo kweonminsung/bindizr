@@ -78,7 +78,7 @@ impl DsRecordValue {
     }
 
     /// The wire-format RDATA of a stored value (RFC 4034, Section 5.1).
-    pub fn to_rdata(&self) -> Result<Rdata, String> {
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = Vec::with_capacity(4 + self.digest.len());
         rdata.extend_from_slice(&self.key_tag.to_be_bytes());
         rdata.push(self.algorithm);

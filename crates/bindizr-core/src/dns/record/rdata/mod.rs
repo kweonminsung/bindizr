@@ -34,12 +34,12 @@ impl Rdata {
         &self.0
     }
 
-    pub fn into_bytes(self) -> Vec<u8> {
+    pub(crate) fn into_bytes(self) -> Vec<u8> {
         self.0
     }
 
     /// Base64 presentation fallback for rows whose RDATA does not parse.
-    pub fn to_base64(&self) -> String {
+    pub(crate) fn to_base64(&self) -> String {
         base64::engine::general_purpose::STANDARD.encode(&self.0)
     }
 }
@@ -93,7 +93,7 @@ impl EncodedRdata {
     /// Wire RDATA for stored record columns (records and journal rows share
     /// this shape). TXT stays one opaque byte mapping: canonical RRset order
     /// is a byte comparison over the rdata.
-    pub fn from_columns(
+    pub(crate) fn from_columns(
         record_type: &RecordType,
         value: &str,
         priority: Option<i32>,

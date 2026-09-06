@@ -76,7 +76,6 @@ impl RecordWithZone {
 }
 
 /// The record types bindizr stores.
-#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RecordType {
     A,
@@ -360,7 +359,7 @@ impl RecordType {
     }
 
     /// Whether this type's display form is a domain name.
-    pub fn is_name_like(&self) -> bool {
+    pub(crate) fn is_name_like(&self) -> bool {
         NAME_LIKE_RECORD_TYPES.contains(self)
     }
 

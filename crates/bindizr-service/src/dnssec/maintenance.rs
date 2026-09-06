@@ -66,7 +66,7 @@ async fn run_maintenance_pass() {
     match RepositoryService::list_rrsig_zone_ids_expiring_within_refresh(Utc::now()).await {
         Ok(zone_ids) => {
             for zone_id in zone_ids {
-                match sign_zone_by_id(zone_id).await {
+                match sign_zone_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log_info!("Re-signed zone {} ahead of signature expiry", zone_name);
                         notify_zone(&zone_name).await;
@@ -128,12 +128,11 @@ async fn run_maintenance_pass() {
     .await
     {
         Ok(keys) => {
-            let mut zone_ids: Vec<i32> = keys
+            let zone_ids: Vec<i32> = keys
                 .iter()
                 .filter(|key| key.role == DnssecKeyRole::Zsk)
                 .map(|key| key.zone_id)
                 .collect();
-            zone_ids.dedup();
             for zone_id in zone_ids {
                 match promote_zsks_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
@@ -161,8 +160,7 @@ async fn run_maintenance_pass() {
     .await
     {
         Ok(keys) => {
-            let mut zone_ids: Vec<i32> = keys.iter().map(|key| key.zone_id).collect();
-            zone_ids.dedup();
+            let zone_ids: Vec<i32> = keys.iter().map(|key| key.zone_id).collect();
             for zone_id in zone_ids {
                 match remove_retired_keys_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
@@ -196,7 +194,7 @@ async fn prune_zone_history(cutoff: DateTime<Utc>) -> Result<(u64, u64), Service
     let mut tx = RepositoryService::begin_tx("failed to prune zone history").await?;
     let result = async {
         let journal_rows =
-            RepositoryService::prune_zone_journal_older_than_tx(&mut tx, cutoff).await?;
+            RepositoryService::prune_zone_changes_older_than_tx(&mut tx, cutoff).await?;
         let version_rows =
             RepositoryService::prune_zone_versions_older_than_tx(&mut tx, cutoff).await?;
         Ok::<_, ServiceError>((journal_rows, version_rows))
@@ -208,7 +206,7 @@ async fn prune_zone_history(cutoff: DateTime<Utc>) -> Result<(u64, u64), Service
 /// Re-sign one zone in its own transaction, bumping the serial only when the
 /// pass actually replaced signatures. `None` when there was nothing to do
 /// (zone deleted or unsigned meanwhile, or a concurrent mutation re-signed it).
-async fn sign_zone_by_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
+async fn sign_zone_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to sign zone").await?;
     let result = async {
         let Some((zone, policy, keys)) =

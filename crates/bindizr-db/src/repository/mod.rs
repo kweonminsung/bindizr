@@ -27,7 +27,8 @@ use super::model::{
 use crate::{DatabasePool, error::DatabaseError, get_pool};
 
 /// How strongly a transactional read locks the rows it returns. Every `_tx`
-/// read names one, so the locking model reads off the call site. Granularity
+/// read names one, so the locking model reads off the call site; the two that
+/// take none read rows the caller's zone lock already covers. Granularity
 /// is the backend's: MySQL and PostgreSQL lock rows, SQLite's whole-database
 /// write lock already covers every level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,7 +115,7 @@ enum RepositoryTxKind<'a> {
     SQLite(sqlx::Transaction<'a, Sqlite>),
 }
 
-pub async fn begin_transaction() -> Result<RepositoryTx<'static>, DatabaseError> {
+pub async fn begin_tx() -> Result<RepositoryTx<'static>, DatabaseError> {
     // IMMEDIATE takes SQLite's write lock up front so a read-then-write
     // transaction can't fail late with "database is locked".
     begin("BEGIN IMMEDIATE").await
@@ -122,7 +123,7 @@ pub async fn begin_transaction() -> Result<RepositoryTx<'static>, DatabaseError>
 
 /// Begin a transaction for multi-statement reads that write nothing: SQLite
 /// readers then run concurrently instead of taking the single writer slot.
-pub async fn begin_read_transaction() -> Result<RepositoryTx<'static>, DatabaseError> {
+pub async fn begin_read_tx() -> Result<RepositoryTx<'static>, DatabaseError> {
     begin("BEGIN DEFERRED").await
 }
 
@@ -436,8 +437,8 @@ pub trait ZoneChangeRepository: Send + Sync {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
-    /// Tx variant of [`Self::list_between_serials`], for reads that must
-    /// be consistent with a mutation in the same transaction.
+    /// For reads that must be consistent with a mutation in the same
+    /// transaction.
     async fn list_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -487,8 +488,8 @@ pub trait ZoneVersionRepository: Send + Sync {
         offset: u64,
     ) -> Result<Vec<ZoneVersion>, DatabaseError>;
     async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError>;
-    /// Tx variant of [`Self::get_by_serial`], for reads that must
-    /// be consistent with a mutation in the same transaction.
+    /// For reads that must be consistent with a mutation in the same
+    /// transaction.
     async fn get_by_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -532,7 +533,7 @@ pub trait DnssecKeyRepository: Send + Sync {
         &self,
         role: DnssecKeyRole,
         state: DnssecKeyState,
-        now: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError>;
     async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError>;
     async fn update_state_tx(
@@ -588,15 +589,17 @@ pub trait DnssecRecordRepository: Send + Sync {
     /// Zones holding a signed view (any derived row): the signed-zone count.
     async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
     /// Zones holding an RRSIG that expires within their policy's re-sign
-    /// window after `now`: the re-sign work list.
+    /// window after `cutoff`: the re-sign work list.
     async fn list_zone_ids_expiring_within_refresh(
         &self,
-        now: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError>;
     /// Rows expiring within their zone's policy's re-sign window after
-    /// `now`; only RRSIG rows carry `expires_at`.
-    async fn count_expiring_within_refresh(&self, now: DateTime<Utc>)
-    -> Result<u64, DatabaseError>;
+    /// `cutoff`; only RRSIG rows carry `expires_at`.
+    async fn count_expiring_within_refresh(
+        &self,
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, DatabaseError>;
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,

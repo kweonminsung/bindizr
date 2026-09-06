@@ -36,7 +36,7 @@ impl<'a> SrvRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 2782).
-    pub fn to_rdata(&self) -> Result<Rdata, String> {
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = Vec::with_capacity(6);
         rdata.extend_from_slice(&self.priority.to_be_bytes());
         rdata.extend_from_slice(&self.weight.to_be_bytes());

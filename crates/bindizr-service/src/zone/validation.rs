@@ -179,15 +179,15 @@ pub(crate) struct ResolvedSoaTimers {
 
 /// Validate client-supplied SOA timers, using `fallback` for omitted fields
 /// (zone defaults on create, the existing zone's values on update).
-pub(crate) fn resolve_soa_timers(
+pub(crate) fn normalize_soa_timers(
     request: &CreateZoneRequest,
     fallback: ResolvedSoaTimers,
 ) -> Result<ResolvedSoaTimers, ServiceError> {
     Ok(ResolvedSoaTimers {
-        refresh: resolve_soa_interval(request.refresh, fallback.refresh, "refresh")?,
-        retry: resolve_soa_interval(request.retry, fallback.retry, "retry")?,
-        expire: resolve_soa_interval(request.expire, fallback.expire, "expire")?,
-        minimum_ttl: resolve_soa_interval(
+        refresh: normalize_soa_interval(request.refresh, fallback.refresh, "refresh")?,
+        retry: normalize_soa_interval(request.retry, fallback.retry, "retry")?,
+        expire: normalize_soa_interval(request.expire, fallback.expire, "expire")?,
+        minimum_ttl: normalize_soa_interval(
             request.minimum_ttl,
             fallback.minimum_ttl,
             "minimum_ttl",
@@ -195,7 +195,7 @@ pub(crate) fn resolve_soa_timers(
     })
 }
 
-fn resolve_soa_interval(
+fn normalize_soa_interval(
     value: Option<i32>,
     fallback: i32,
     field: &str,

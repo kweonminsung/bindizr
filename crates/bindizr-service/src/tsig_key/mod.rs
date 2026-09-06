@@ -36,6 +36,7 @@ impl TsigKeyService {
             None => generate_secret(),
         };
 
+        // Friendly pre-check; the UNIQUE(name) backstop covers the race.
         if RepositoryService::get_tsig_key_by_name(&name)
             .await?
             .is_some()

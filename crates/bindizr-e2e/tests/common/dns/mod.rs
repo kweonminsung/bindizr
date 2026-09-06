@@ -110,9 +110,9 @@ fn is_deleted_zone_absence(record_type: u16, expected: &[Value], error: &str) ->
 }
 
 #[derive(Debug)]
-struct DnsAnswer {
-    record_type: u16,
-    value: Option<Value>,
+pub(crate) struct DnsAnswer {
+    pub(crate) record_type: u16,
+    pub(crate) value: Option<Value>,
 }
 
 fn dns_values_match(record_type: u16, expected: &[Value], answers: &[DnsAnswer]) -> bool {
@@ -221,7 +221,7 @@ fn query_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     Name::from_str(trimmed).map_err(|e| format!("invalid DNS name '{name}': {e}"))
 }
 
-fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<DnsAnswer>, String> {
+pub(crate) fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<DnsAnswer>, String> {
     let message = Message::from_octets(response).map_err(|e| e.to_string())?;
     if !check_response_header(query_id, &message)? {
         return Ok(Vec::new());
@@ -284,20 +284,20 @@ fn decode_dns_value(
     let value = match data {
         AllRecordData::A(a) => Value::String(a.addr().to_string()),
         AllRecordData::Aaaa(aaaa) => Value::String(aaaa.addr().to_string()),
-        AllRecordData::Ns(ns) => Value::String(presentation_name(ns.nsdname())),
-        AllRecordData::Cname(cname) => Value::String(presentation_name(cname.cname())),
-        AllRecordData::Ptr(ptr) => Value::String(presentation_name(ptr.ptrdname())),
+        AllRecordData::Ns(ns) => Value::String(to_presentation_name(ns.nsdname())),
+        AllRecordData::Cname(cname) => Value::String(to_presentation_name(cname.cname())),
+        AllRecordData::Ptr(ptr) => Value::String(to_presentation_name(ptr.ptrdname())),
         AllRecordData::Mx(mx) => Value::String(format!(
             "{} {}",
             mx.preference(),
-            presentation_name(mx.exchange())
+            to_presentation_name(mx.exchange())
         )),
         AllRecordData::Srv(srv) => Value::String(format!(
             "{} {} {} {}",
             srv.priority(),
             srv.weight(),
             srv.port(),
-            presentation_name(srv.target())
+            to_presentation_name(srv.target())
         )),
         AllRecordData::Txt(txt) => {
             let mut segments = txt
@@ -352,7 +352,7 @@ fn hex_upper(bytes: impl AsRef<[u8]>) -> String {
 
 /// Renders names the way records are compared here: labels joined with '.',
 /// trailing dot, lossy UTF-8 (never `Display`, which escapes label bytes).
-fn presentation_name(name: &ParsedName<&[u8]>) -> String {
+fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
     let mut out = String::new();
     for label in name.iter() {
         if label.is_root() {
@@ -366,6 +366,3 @@ fn presentation_name(name: &ParsedName<&[u8]>) -> String {
     }
     out
 }
-
-#[cfg(test)]
-mod tests;

@@ -226,7 +226,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> 
     Ok(format!("{}.", join_labels(&labels)))
 }
 
-pub fn parse_rdata<'a, T>(
+pub(crate) fn parse_rdata<'a, T>(
     message: &'a [u8],
     rr: &UpdateRr,
     what: &str,

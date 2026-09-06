@@ -4,7 +4,7 @@
 use bindizr_core::dns::dnssec::import_key;
 use chrono::Utc;
 
-use super::{DnssecService, key_layout, notify_zone, status::build_status_tx};
+use super::{DnssecService, notify_zone, status::build_status_tx, to_key_layout};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -135,7 +135,7 @@ impl DnssecService {
                     "key set does not match policy '{}' ({}); import a KSK pair and a ZSK \
                      pair together",
                     policy.name,
-                    key_layout(policy.split_keys)
+                    to_key_layout(policy.split_keys)
                 )));
             }
 
@@ -160,6 +160,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
 
+        crate::log_info!("event=dnssec_import_keys zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }

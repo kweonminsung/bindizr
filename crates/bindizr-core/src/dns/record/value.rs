@@ -73,6 +73,7 @@ pub(crate) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, St
         .map_err(|_| format!("{field} must be an unsigned 16-bit integer: {value}"))
 }
 
+/// Escapes are refused below, so every `.` here is a label boundary.
 pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();
 

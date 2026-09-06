@@ -428,6 +428,7 @@ impl ExternalDnsService {
                 )
                 .await?;
                 DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+                // Advance the serial once so IXFR consumers detect the change
                 ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
                 records_deleted += change_set.deletes.len() as u32;

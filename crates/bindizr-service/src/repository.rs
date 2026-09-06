@@ -7,9 +7,10 @@ use crate::{
     database::{
         error::DatabaseError,
         get_api_token_repository, get_catalog_zone_state_repository, get_dnssec_key_repository,
-        get_dnssec_policy_repository, get_dnssec_record_repository, get_record_repository,
-        get_token_grant_repository, get_tsig_grant_repository, get_tsig_key_repository,
-        get_zone_change_repository, get_zone_repository, get_zone_version_repository,
+        get_dnssec_policy_repository, get_dnssec_record_repository,
+        get_dnssec_withdrawal_repository, get_record_repository, get_token_grant_repository,
+        get_tsig_grant_repository, get_tsig_key_repository, get_zone_change_repository,
+        get_zone_repository, get_zone_version_repository,
         model::{
             api_token::ApiToken,
             dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
@@ -52,17 +53,17 @@ impl RepositoryService {
     pub(crate) async fn begin_tx(
         internal_msg: &'static str,
     ) -> Result<RepositoryTx<'static>, ServiceError> {
-        db_repository::begin_transaction()
+        db_repository::begin_tx()
             .await
             .map_err(|e| begin_tx_error(internal_msg, &e))
     }
 
     /// Begin a transaction for a caller that only reads; see
-    /// [`db_repository::begin_read_transaction`].
+    /// [`db_repository::begin_read_tx`].
     pub(crate) async fn begin_read_tx(
         internal_msg: &'static str,
     ) -> Result<RepositoryTx<'static>, ServiceError> {
-        db_repository::begin_read_transaction()
+        db_repository::begin_read_tx()
             .await
             .map_err(|e| begin_tx_error(internal_msg, &e))
     }
@@ -165,7 +166,7 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<(), ServiceError> {
-        crate::database::get_dnssec_withdrawal_repository()
+        get_dnssec_withdrawal_repository()
             .create_tx(tx, zone_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to record DS withdrawal: {}", e)))
@@ -175,7 +176,7 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Option<i32>, ServiceError> {
-        crate::database::get_dnssec_withdrawal_repository()
+        get_dnssec_withdrawal_repository()
             .get_tx(tx, zone_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load DS withdrawal: {}", e)))
@@ -185,7 +186,7 @@ impl RepositoryService {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<(), ServiceError> {
-        crate::database::get_dnssec_withdrawal_repository()
+        get_dnssec_withdrawal_repository()
             .delete_tx(tx, zone_id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to clear DS withdrawal: {}", e)))
@@ -233,7 +234,7 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
-    pub(crate) async fn get_ds_name_without_ns_tx(
+    pub(crate) async fn get_record_ds_name_without_ns_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Option<String>, ServiceError> {
@@ -338,7 +339,7 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load record: {}", e)))
     }
 
-    pub(crate) async fn create_zone_journal_tx(
+    pub(crate) async fn create_zone_changes_tx(
         tx: &mut RepositoryTx<'_>,
         changes: &[ZoneChange],
     ) -> Result<(), ServiceError> {
@@ -348,7 +349,7 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to create zone changes: {}", e)))
     }
 
-    pub(crate) async fn list_zone_journal_between_serials(
+    pub(crate) async fn list_zone_changes_between_serials(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
@@ -359,7 +360,7 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
     }
 
-    pub(crate) async fn prune_zone_journal_older_than_tx(
+    pub(crate) async fn prune_zone_changes_older_than_tx(
         tx: &mut RepositoryTx<'_>,
         cutoff: DateTime<Utc>,
     ) -> Result<u64, ServiceError> {
@@ -433,10 +434,10 @@ impl RepositoryService {
     pub(crate) async fn list_dnssec_key_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         role: DnssecKeyRole,
         state: DnssecKeyState,
-        now: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, ServiceError> {
         get_dnssec_key_repository()
-            .list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(role, state, now)
+            .list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(role, state, cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load DNSSEC keys: {}", e)))
     }
@@ -458,10 +459,10 @@ impl RepositoryService {
     }
 
     pub(crate) async fn count_rrsig_dnssec_records_expiring_within_refresh(
-        now: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
     ) -> Result<u64, ServiceError> {
         get_dnssec_record_repository()
-            .count_expiring_within_refresh(now)
+            .count_expiring_within_refresh(cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
@@ -490,7 +491,7 @@ impl RepositoryService {
             .update_max_signed_ttl_tx(tx, id, max_signed_ttl)
             .await
             .map_err(|e| {
-                ServiceError::internal(format!("failed to update DNSSEC key state: {}", e))
+                ServiceError::internal(format!("failed to update DNSSEC key max signed TTL: {}", e))
             })
     }
 
@@ -564,10 +565,10 @@ impl RepositoryService {
     }
 
     pub(crate) async fn list_rrsig_zone_ids_expiring_within_refresh(
-        now: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, ServiceError> {
         get_dnssec_record_repository()
-            .list_zone_ids_expiring_within_refresh(now)
+            .list_zone_ids_expiring_within_refresh(cutoff)
             .await
             .map_err(|e| {
                 ServiceError::internal(format!("failed to find zones needing re-signing: {}", e))
@@ -697,7 +698,7 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load version: {}", e)))
     }
 
-    pub(crate) async fn list_zone_journal_between_serials_tx(
+    pub(crate) async fn list_zone_changes_between_serials_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         from_serial: i32,

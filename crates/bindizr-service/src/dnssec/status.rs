@@ -42,28 +42,21 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
     }
 
-    /// Count the zones serving a signed view.
-    pub async fn count_signed_zones(caller: &Caller) -> Result<u64, ServiceError> {
-        caller.require_global("read DNSSEC metrics")?;
+    /// Zones serving a signed view, for the unauthenticated metrics endpoint.
+    pub async fn count_signed_zones() -> Result<u64, ServiceError> {
         RepositoryService::count_dnssec_record_zone_ids().await
     }
 
-    /// Count keys in `state` across every zone.
-    pub async fn count_keys_by_state(
-        caller: &Caller,
-        state: DnssecKeyState,
-    ) -> Result<u64, ServiceError> {
-        caller.require_global("read DNSSEC metrics")?;
+    /// Keys in `state` across every zone, for the metrics endpoint.
+    pub async fn count_keys_by_state(state: DnssecKeyState) -> Result<u64, ServiceError> {
         RepositoryService::count_dnssec_keys_by_state(state).await
     }
 
     /// Count signatures inside their policy's re-sign window across every
     /// zone.
     pub async fn count_rrsigs_expiring_within_refresh(
-        caller: &Caller,
         now: DateTime<Utc>,
     ) -> Result<u64, ServiceError> {
-        caller.require_global("read DNSSEC metrics")?;
         RepositoryService::count_rrsig_dnssec_records_expiring_within_refresh(now).await
     }
 
@@ -96,7 +89,7 @@ pub(crate) async fn build_status_tx(
     let ds_records = keys
         .iter()
         .filter(|key| key.wants_parent_ds())
-        .map(|key| ds_info(zone, key))
+        .map(|key| build_ds_info(zone, key))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(GetDnssecStatusResponse {
@@ -130,7 +123,7 @@ pub(crate) async fn build_status_tx(
 }
 
 /// The key's DS form, decoded from the same RDATA the CDS records carry.
-pub(crate) fn ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
+pub(crate) fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
     let apex = to_wire_name(zone.name.to_wire())
         .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
     let rdata = ds_rdata_for(key, &apex).map_err(ServiceError::dnssec_signing_failed)?;

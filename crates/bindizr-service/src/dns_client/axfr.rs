@@ -6,6 +6,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 use bindizr_core::{
     dns::{
         message::{Name, Opcode, Rtype},
+        name::decode_name_labels,
         query::{TransferRr, build_question, extract_transfer_rrs},
     },
     model::record::RecordType,
@@ -66,6 +67,7 @@ async fn transfer_from(addr: SocketAddr, qname: &Name<Vec<u8>>) -> Result<Vec<Tr
         .map_err(|e| format!("send failed: {}", e))?;
 
     let expected_owner = format!("{}.", qname);
+    let expected_labels = owner_labels(&expected_owner)?;
     let mut rrs: Vec<TransferRr> = Vec::new();
     let mut total_bytes = 0usize;
     loop {
@@ -92,7 +94,7 @@ async fn transfer_from(addr: SocketAddr, qname: &Name<Vec<u8>>) -> Result<Vec<Tr
                 if rr.rtype != Rtype::SOA {
                     return Err("transfer does not start with the zone's SOA".to_string());
                 }
-                if !rr.name.eq_ignore_ascii_case(&expected_owner) {
+                if owner_labels(&rr.name)? != expected_labels {
                     return Err(format!(
                         "transfer opens with the SOA of {}, not {}",
                         rr.name, expected_owner
@@ -101,7 +103,9 @@ async fn transfer_from(addr: SocketAddr, qname: &Name<Vec<u8>>) -> Result<Vec<Tr
             } else if rr.rtype == Rtype::SOA {
                 // The stream ends by repeating the opening SOA (RFC 5936, Section 2.2).
                 let opening = &rrs[0];
-                if !rr.name.eq_ignore_ascii_case(&opening.name) || rr.rdata != opening.rdata {
+                if owner_labels(&rr.name)? != owner_labels(&opening.name)?
+                    || rr.rdata != opening.rdata
+                {
                     return Err("transfer carries a SOA that is not the opening one".to_string());
                 }
                 rrs.push(rr);
@@ -113,6 +117,13 @@ async fn transfer_from(addr: SocketAddr, qname: &Name<Vec<u8>>) -> Result<Vec<Tr
             }
         }
     }
+}
+
+/// Owner names compare as labels, never as text (RFC 4343 case, escapes).
+fn owner_labels(name: &str) -> Result<Vec<String>, String> {
+    decode_name_labels(name)
+        .map(|(labels, _)| labels)
+        .map_err(|e| format!("invalid owner name '{}': {}", name, e))
 }
 
 /// Render transferred RRs as zone-file lines. SOA and DNSSEC-derived

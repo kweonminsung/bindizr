@@ -4,7 +4,7 @@
 use bindizr_core::dns::name::OwnerName;
 use bindizr_db::repository::LockLevel;
 
-use super::{DynamicUpdateError, Prerequisite, owner_in_zone};
+use super::{DynamicUpdateError, Prerequisite, parse_owner_in_zone};
 use crate::{
     RepositoryTx,
     model::{
@@ -29,8 +29,8 @@ pub(crate) async fn evaluate_prerequisites_tx(
     for prerequisite in prerequisites {
         match prerequisite {
             Prerequisite::NameInUse { name } => {
-                let owner = owner_in_zone(name, &zone.name)?;
-                if !owner_exists(&owner, &zone_records) {
+                let owner = parse_owner_in_zone(name, &zone.name)?;
+                if !has_owner(&owner, &zone_records) {
                     return Err(DynamicUpdateError::NxDomain(format!(
                         "owner '{}' does not exist",
                         owner
@@ -38,8 +38,8 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 }
             }
             Prerequisite::NameNotInUse { name } => {
-                let owner = owner_in_zone(name, &zone.name)?;
-                if owner_exists(&owner, &zone_records) {
+                let owner = parse_owner_in_zone(name, &zone.name)?;
+                if has_owner(&owner, &zone_records) {
                     return Err(DynamicUpdateError::YxDomain(format!(
                         "owner '{}' exists",
                         owner
@@ -47,8 +47,8 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 }
             }
             Prerequisite::RrsetInUse { name, record_type } => {
-                let owner = owner_in_zone(name, &zone.name)?;
-                if !rrset_exists(&owner, record_type, &zone_records) {
+                let owner = parse_owner_in_zone(name, &zone.name)?;
+                if !has_rrset(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::NxRrset(format!(
                         "no {} records at {}",
                         record_type, owner
@@ -56,8 +56,8 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 }
             }
             Prerequisite::RrsetNotInUse { name, record_type } => {
-                let owner = owner_in_zone(name, &zone.name)?;
-                if rrset_exists(&owner, record_type, &zone_records) {
+                let owner = parse_owner_in_zone(name, &zone.name)?;
+                if has_rrset(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::YxRrset(format!(
                         "{} records at {} exist",
                         record_type, owner
@@ -70,7 +70,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 value,
                 priority,
             } => {
-                let owner = owner_in_zone(name, &zone.name)?;
+                let owner = parse_owner_in_zone(name, &zone.name)?;
                 let exists = zone_records.iter().any(|record| {
                     record.name == owner
                         && record.record_type == *record_type
@@ -94,11 +94,11 @@ pub(crate) async fn evaluate_prerequisites_tx(
 }
 
 /// The apex always exists: the zone itself owns its SOA and NS records.
-fn owner_exists(owner: &OwnerName, records: &[Record]) -> bool {
+fn has_owner(owner: &OwnerName, records: &[Record]) -> bool {
     owner.is_apex() || records.iter().any(|record| record.name == *owner)
 }
 
-fn rrset_exists(owner: &OwnerName, record_type: &RecordType, records: &[Record]) -> bool {
+fn has_rrset(owner: &OwnerName, record_type: &RecordType, records: &[Record]) -> bool {
     records
         .iter()
         .any(|record| record.name == *owner && record.record_type == *record_type)

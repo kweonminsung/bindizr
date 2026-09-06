@@ -606,6 +606,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
           content:
@@ -707,6 +713,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
           content:
@@ -753,6 +765,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
           content:
             application/json:
               schema:
@@ -1586,6 +1604,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A zone with the same name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
           content:
@@ -1637,6 +1661,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Zone conflict
           content:
             application/json:
               schema:
@@ -1742,6 +1772,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A zone with the new name already exists
           content:
             application/json:
               schema:
@@ -2464,6 +2500,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
           content:
@@ -2523,6 +2565,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone or version not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
           content:
             application/json:
               schema:
@@ -2879,6 +2927,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found, or not visible to the token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
           content:
             application/json:
               schema:
@@ -3416,11 +3470,13 @@ components:
         records_added:
           type: integer
           format: int32
+          description: Counted one per value written, not per name and type.
           example: 2
           minimum: 0
         records_deleted:
           type: integer
           format: int32
+          description: Counted one per value removed, not per name and type.
           example: 1
           minimum: 0
     ExternalDnsRecord:

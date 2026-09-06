@@ -16,8 +16,8 @@ use domain::{
 
 /// The key an update is signed with, as `tsig-key get` reports it.
 pub(crate) struct SigningKey {
-    pub name: String,
-    pub secret: String,
+    pub(crate) name: String,
+    pub(crate) secret: String,
 }
 
 /// One RR of an update section, in the class that gives it its meaning

@@ -187,7 +187,7 @@ impl DynamicUpdateService {
 
         if changed {
             log_info!(
-                "NSUPDATE committed for zone {} with serial {}",
+                "event=nsupdate_apply zone={} serial={}",
                 zone.name,
                 new_serial
             );
@@ -237,7 +237,7 @@ async fn authorize_key(
     }
 
     for op in updates {
-        let owner = owner_in_zone(op.name(), &zone.name)?;
+        let owner = parse_owner_in_zone(op.name(), &zone.name)?;
         if !authorize_update(&grants, &owner, op.record_type()) {
             return Err(DynamicUpdateError::Refused(format!(
                 "TSIG key '{}' is not authorized to update '{}' ({}) in zone '{}'",
@@ -266,7 +266,7 @@ async fn apply_op(
             ttl,
             priority,
         } => {
-            let owner = owner_in_zone(name, &zone.name)?;
+            let owner = parse_owner_in_zone(name, &zone.name)?;
 
             // Row-encode so nsupdate stores the same spelling as the other write
             // paths; TXT arrives already encoded from the wire rdata.
@@ -352,7 +352,7 @@ async fn delete_matching(
     priority: Option<i32>,
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
-    let owner = owner_in_zone(name, &zone.name)?;
+    let owner = parse_owner_in_zone(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.
     let owner_records =
         RepositoryService::list_records_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive)
@@ -398,7 +398,7 @@ async fn delete_matching(
 
 /// The owner of an update RR. The wire carries owners absolutely, so a name
 /// outside the zone is NOTZONE rather than something to qualify.
-fn owner_in_zone(name: &str, zone_name: &ZoneName) -> Result<OwnerName, DynamicUpdateError> {
+fn parse_owner_in_zone(name: &str, zone_name: &ZoneName) -> Result<OwnerName, DynamicUpdateError> {
     if name.trim_end_matches('.').is_empty() {
         return Err(DynamicUpdateError::NotZone(
             "root owner is not supported".to_string(),

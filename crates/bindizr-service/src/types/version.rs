@@ -34,7 +34,7 @@ pub struct ZoneVersionResponse {
 }
 
 impl ZoneVersionResponse {
-    pub fn from_version(version: &ZoneVersion) -> Result<Self, ServiceError> {
+    pub(crate) fn from_version(version: &ZoneVersion) -> Result<Self, ServiceError> {
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
             .map_err(|e| {

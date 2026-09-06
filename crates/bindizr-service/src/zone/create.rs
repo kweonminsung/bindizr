@@ -12,7 +12,7 @@ use crate::{
     types::CreateZoneRequest,
     zone::{
         DEFAULT_EXPIRE, DEFAULT_MINIMUM_TTL, DEFAULT_REFRESH, DEFAULT_RETRY,
-        validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
+        validation::{ResolvedSoaTimers, normalize_soa_timers, validate_create_zone_request},
     },
 };
 
@@ -25,7 +25,7 @@ impl ZoneService {
         caller.require_global("create zones")?;
 
         let validated = validate_create_zone_request(create_zone_request)?;
-        let timers = resolve_soa_timers(
+        let timers = normalize_soa_timers(
             create_zone_request,
             ResolvedSoaTimers {
                 refresh: DEFAULT_REFRESH,

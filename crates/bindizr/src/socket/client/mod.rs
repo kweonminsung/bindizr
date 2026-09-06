@@ -89,7 +89,7 @@ impl DaemonSocketClient {
         stream
             .write_all(b"\n")
             .await
-            .map_err(|e| format!("Error writing newline to socket: {}", e))?;
+            .map_err(|e| format!("Failed to write newline to socket: {}", e))?;
 
         let mut reader = BufReader::new(stream);
         let mut response = String::new();

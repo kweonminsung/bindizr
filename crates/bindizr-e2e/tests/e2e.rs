@@ -18,6 +18,7 @@ mod api {
 
 mod dns {
     mod dnssec;
+    mod harness;
     mod nsupdate;
 }
 

@@ -66,7 +66,7 @@ pub(crate) async fn delete_tsig_key(
     TsigKeyService::delete(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
-        message: "TSIG key deleted successfully".to_string(),
+        message: format!("TSIG key '{}' deleted successfully", params.name),
         data: serde_json::Value::Null,
     })
 }

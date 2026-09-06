@@ -205,7 +205,7 @@ pub struct ZoneStatusResponse {
 impl ZoneStatusResponse {
     /// Classify each secondary's probed SOA serial against the zone's serial;
     /// a probe error reads as `unreachable`.
-    pub fn from_probes(
+    pub(crate) fn from_probes(
         zone: &Zone,
         probes: impl IntoIterator<Item = (String, Result<u32, String>)>,
     ) -> Self {

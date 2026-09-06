@@ -103,7 +103,7 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         &self,
         role: DnssecKeyRole,
         state: DnssecKeyState,
-        now: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -121,7 +121,7 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         )
         .bind(role.as_str())
         .bind(state.as_str())
-        .bind(now)
+        .bind(cutoff)
         .fetch_all(&mut *conn)
         .await?;
 

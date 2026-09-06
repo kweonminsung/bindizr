@@ -35,7 +35,7 @@ pub(crate) async fn handle_axfr(
         .await?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 
-    let (zone, content) = zone_cache::list_zone_content(zone)
+    let (zone, content) = zone_cache::find_zone_content(zone)
         .await?
         .ok_or_else(|| XfrError::ZoneNotFound(zone_name_str.to_string()))?;
 

@@ -54,8 +54,10 @@ pub struct ExternalDnsChangesResponse {
     /// Zones whose serial advanced; empty when the request was a no-op.
     #[schema(example = json!(["example.com"]))]
     pub changed_zones: Vec<String>,
+    /// Counted one per value written, not per name and type.
     #[schema(example = 2)]
     pub records_added: u32,
+    /// Counted one per value removed, not per name and type.
     #[schema(example = 1)]
     pub records_deleted: u32,
 }

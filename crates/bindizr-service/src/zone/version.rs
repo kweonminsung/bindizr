@@ -34,7 +34,7 @@ impl ZoneService {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<(), ServiceError> {
-        let orphaned = RepositoryService::get_ds_name_without_ns_tx(tx, zone_id).await?;
+        let orphaned = RepositoryService::get_record_ds_name_without_ns_tx(tx, zone_id).await?;
         if let Some(name) = orphaned.as_deref() {
             let name = if name.is_empty() { "@" } else { name };
             return Err(ServiceError::record_conflict(format!(

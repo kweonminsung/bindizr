@@ -60,6 +60,11 @@ cargo +nightly fmt                                         # format (needs night
   Service-internal lookups that must skip visibility are `pub(crate)` under
   their own name (`ZoneService::lookup_by_name`). DNS-plane operations
   (transfers, NOTIFY, nsupdate) take no caller — ACL and TSIG authorize there.
+  So do operations with nothing to gate: pure request normalization
+  (`ExternalDnsService::adjust_records`), a token reading itself
+  (`TokenGrantService::list_self`, keyed by the authenticated `ApiToken`), and
+  the aggregate counts behind the unauthenticated metrics endpoint
+  (`count_all`), which expose no zone data.
 - **Transactions are the service's.** No other crate opens one, so `*_tx`
   methods and `RepositoryTx` are `pub(crate)`.
 - **A use case has one home.** When two front ends answer the same question,
@@ -80,6 +85,9 @@ One locking model covers the service layer; keep new code on it:
   rows — that order is
   the deadlock rule. Authorization, validation, and conflict checks decide on
   rows loaded inside that transaction, never on an earlier unlocked read.
+  `get_by_name_tx` is the unchecked tx lookup (record writes authorize
+  through `authorize_record_writes_tx`); the caller-gated tx read is
+  `get_visible_by_name_tx`.
 - Outside the transaction belong: pure input parsing/normalization,
   non-locking pre-reads done only to learn the lock target (commented at each
   site), friendly duplicate pre-checks that a UNIQUE/FK constraint backstops,
@@ -202,7 +210,8 @@ entity methods, and are the only exemptions.
   `count_by_key_id`, `delete_by_zone_id_tx`), a batch over many scopes
   (`list_by_zone_ids`), and any key set whose elision would leave two methods
   of one surface distinguishable only by their signatures — which is why the
-  two-sided policy tables spell everything.
+  two-sided policy tables spell everything. `_by_filter` is the one
+  non-column key: a struct of optional predicates for the listing queries.
 - `_with_<join>` — the result carries joined data
   (`get_record_with_zone`); never a filter or semi-join.
 - `_<predicate>` — a comparison filter as `<subject>_<comparison>`. Serial
@@ -247,7 +256,9 @@ equality selector the name must carry as `_by_state`.
 
 The `get_*`/`find_*`/`list_*`/`count_*` verbs above are reserved for data
 access and mean the same thing in every crate, not just the service — a free
-helper that computes a value never takes `get_`. Other helper verbs:
+helper that computes a value never takes `get_`. The
+`get_<entity>_repository()` factories in `bindizr-db` are the one exception:
+they hand out the data-access object itself. Other helper verbs:
 
 - `to_<form>` — convert a name/value into a named form (`to_fqdn_lowercase`,
   `to_lookup_name`).
@@ -259,6 +270,9 @@ helper that computes a value never takes `get_`. Other helper verbs:
 - `normalize_<thing>` — service-layer trim + canonicalize + validate,
   returning the canonical value or a `ServiceError`.
 - `is_<x>` / `has_<x>` — predicates.
+- `build_<thing>` / `compute_<thing>` — assemble or derive a value from several
+  inputs (`build_record_diff`, `compute_zone_change_set`); `group_<things>`
+  partitions into a keyed map.
 
 One concept keeps one name across crates. Do not add a wrapper that only
 reorders or renames the arguments of the function it calls — call it directly.
@@ -280,6 +294,7 @@ keep them, because that is where the distinction is load-bearing.
 Protocol tokens keep their own spelling: nsupdate RCODEs (`NXRRSET`,
 `YXRRSET`, the `YxRrset` variants, lowercase log and metric labels),
 ExternalDNS protocol words (endpoint, targets, recordTTL), and RFC quotations.
+Core's `dns/` holds wire items only, so no `*Record` type belongs there.
 Check with:
 
 ```sh
@@ -288,6 +303,7 @@ grep -rnE "RRsets?\b|record set|resource record|\bRRs?\b" \
   crates/bindizr-service/src/types
 grep -rnE '"[^"]*(RRset|resource record|record set)[^"]*"' crates/*/src
 grep -rnE '"[^"]*\b(rr|rrs)\b[^"]*"' crates/*/src
+grep -rnE "\b(struct|type|enum) [A-Za-z]*Record\b" crates/bindizr-core/src/dns
 ```
 
 ## Code style

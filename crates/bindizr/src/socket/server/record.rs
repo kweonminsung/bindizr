@@ -4,7 +4,6 @@ use bindizr_service::{
     record::RecordService,
     types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
 };
-use serde_json::json;
 
 use crate::socket::{
     server::{parse_params, to_response_data},
@@ -102,6 +101,6 @@ pub(crate) async fn delete_record(
     RecordService::delete(&Caller::Global, params.id).await?;
     Ok(DaemonResponse {
         message: format!("Record '{}' deleted successfully", params.id),
-        data: json!(null),
+        data: serde_json::Value::Null,
     })
 }

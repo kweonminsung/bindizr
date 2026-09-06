@@ -84,7 +84,7 @@ pub(crate) fn render_change_preview(diff: &RecordDiff) -> String {
     let summary = &diff.summary;
     out.push('\n');
     out.push_str(&format!(
-        "Records: {} {} {}\n",
+        "By name and type: {} {} {}\n",
         color::green(&format!("+{}", summary.added)),
         color::red(&format!("-{}", summary.removed)),
         color::yellow(&format!("~{}", summary.changed))

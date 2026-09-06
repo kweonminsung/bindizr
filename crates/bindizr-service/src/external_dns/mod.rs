@@ -70,11 +70,7 @@ impl ExternalDnsService {
             if !record.record_type.is_external_dns_supported() {
                 continue;
             }
-            let name = record
-                .name
-                .to_fqdn(&row.zone_name)
-                .trim_end_matches('.')
-                .to_string();
+            let name = policy::normalize_lookup_name(&record.name.to_fqdn(&row.zone_name))?;
             let value = record
                 .record_type
                 .presentation_rdata(&record.value, record.priority);

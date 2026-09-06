@@ -3,7 +3,7 @@ use sqlx::FromRow;
 
 use crate::{
     dns::{
-        name::{OwnerName, ZoneName, to_fqdn},
+        name::{OwnerName, ZoneName, decode_name_labels},
         record::{Rdata, SoaMailbox, SoaRecordValue},
     },
     model::record::{Record, RecordType},
@@ -45,7 +45,11 @@ impl Zone {
     /// Whether the record is the apex NS this zone's `mname` names. One
     /// such row must exist for the zone to stay self-consistent.
     pub fn is_mname(&self, record_type: &RecordType, name: &OwnerName, value: &str) -> bool {
-        is_apex_ns(record_type, name) && to_fqdn(value).eq_ignore_ascii_case(&to_fqdn(&self.mname))
+        is_apex_ns(record_type, name)
+            && matches!(
+                (decode_name_labels(value), decode_name_labels(&self.mname)),
+                (Ok((value, _)), Ok((mname, _))) if value == mname
+            )
     }
 
     /// TTL a synthesized apex NS must take to join the existing RRset rather
@@ -89,7 +93,7 @@ impl Zone {
 
     /// This zone's wire-format SOA RDATA at `serial`; the SOA is synthesized
     /// from zone columns, never stored as a record row.
-    pub fn soa_rdata(&self, serial: u32) -> Result<Rdata, String> {
+    pub(crate) fn soa_rdata(&self, serial: u32) -> Result<Rdata, String> {
         let rname = self.soa_mailbox()?;
         SoaRecordValue {
             mname: &self.mname,

@@ -240,7 +240,7 @@ impl DnssecService {
                 derived: true,
             });
         }
-        RepositoryService::create_zone_journal_tx(tx, &changes).await?;
+        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
         let removed_ids: Vec<i32> = diff.removed.iter().map(|row| row.id).collect();
         RepositoryService::delete_dnssec_records_tx(tx, &removed_ids).await?;
         RepositoryService::create_dnssec_records_tx(tx, &diff.added).await?;
@@ -248,7 +248,7 @@ impl DnssecService {
     }
 }
 
-fn key_layout(split_keys: bool) -> &'static str {
+fn to_key_layout(split_keys: bool) -> &'static str {
     if split_keys {
         "split KSK/ZSK keys"
     } else {

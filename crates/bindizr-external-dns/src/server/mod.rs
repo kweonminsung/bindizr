@@ -33,7 +33,7 @@ pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", routing::get(negotiate))
         .route("/records", routing::get(get_records).post(apply_changes))
-        .route("/adjustendpoints", routing::post(adjust_endpoints_handler))
+        .route("/adjustendpoints", routing::post(adjust_endpoints))
         .route_layer(middleware::from_fn(track_webhook_metrics))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state)
@@ -223,7 +223,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
 
 /// `POST /adjustendpoints` — validate locally, canonicalize on the bindizr
 /// server so this answer cannot drift from the stored form.
-async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: String) -> Response {
+async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> Response {
     let endpoints: Vec<Endpoint> = match serde_json::from_str(&body) {
         Ok(endpoints) => endpoints,
         Err(e) => {
@@ -238,7 +238,7 @@ async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: Stri
     let records = match to_bindizr_records(&endpoints) {
         Ok(records) => records,
         Err(message) => {
-            log_warn!("event=adjustendpoints rejected={}", message);
+            log_warn!("event=adjust_endpoints rejected={}", message);
             return (StatusCode::BAD_REQUEST, message).into_response();
         }
     };
@@ -255,7 +255,7 @@ async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: Stri
         )
             .into_response(),
         Ok(adjusted) => {
-            log_info!("event=adjustendpoints endpoints={}", endpoints.len());
+            log_info!("event=adjust_endpoints endpoints={}", endpoints.len());
             json_response(&merge_adjusted_endpoints(endpoints, adjusted))
         }
         Err(e) => upstream_error_response(e),

@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 
 mod assertions;
-mod dns;
+pub(crate) mod dns;
 pub(crate) mod nsupdate;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
@@ -49,12 +49,12 @@ pub(crate) struct TestApp {
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
 #[derive(Default)]
 pub(crate) struct TestAppOptions {
-    pub require_authentication: bool,
-    pub external_dns_enabled: bool,
-    pub nsupdate_allow_unsigned: bool,
-    pub openapi_enabled: bool,
+    pub(crate) require_authentication: bool,
+    pub(crate) external_dns_enabled: bool,
+    pub(crate) nsupdate_allow_unsigned: bool,
+    pub(crate) openapi_enabled: bool,
     /// Also the zone-transfer ACL; NOTIFY stays off in tests.
-    pub secondary_addrs: String,
+    pub(crate) secondary_addrs: String,
 }
 
 enum TestRuntime {
@@ -213,6 +213,8 @@ impl TestApp {
         &self.dns_secondary_ports
     }
 
+    /// One API request; in compose mode every mutating call also asserts the
+    /// DNS secondaries match the API.
     pub(crate) async fn request(
         &self,
         method: Method,

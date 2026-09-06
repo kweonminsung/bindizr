@@ -21,7 +21,7 @@ pub(crate) fn init() -> mpsc::Receiver<DaemonControl> {
 }
 
 pub(crate) fn shutdown() -> Result<DaemonResponse, ServiceError> {
-    request(DaemonControl::Shutdown)?;
+    send_control(DaemonControl::Shutdown)?;
     Ok(DaemonResponse {
         message: "Bindizr is shutting down".to_string(),
         data: serde_json::Value::Null,
@@ -29,7 +29,7 @@ pub(crate) fn shutdown() -> Result<DaemonResponse, ServiceError> {
 }
 
 pub(crate) fn restart() -> Result<DaemonResponse, ServiceError> {
-    request(DaemonControl::Restart)?;
+    send_control(DaemonControl::Restart)?;
     Ok(DaemonResponse {
         message: "Bindizr is restarting".to_string(),
         data: serde_json::Value::Null,
@@ -38,7 +38,7 @@ pub(crate) fn restart() -> Result<DaemonResponse, ServiceError> {
 
 /// Deliver the transition after a short delay so the command response reaches
 /// the client before the daemon tears down.
-fn request(control: DaemonControl) -> Result<(), ServiceError> {
+fn send_control(control: DaemonControl) -> Result<(), ServiceError> {
     let tx = CONTROL_TX
         .get()
         .ok_or_else(|| ServiceError::internal("Daemon control channel is not initialized"))?

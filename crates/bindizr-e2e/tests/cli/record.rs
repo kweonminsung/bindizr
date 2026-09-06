@@ -87,7 +87,7 @@ async fn record_bulk_preview_via_cli() {
         "preview was: {preview}"
     );
     assert!(
-        preview.contains("Records: +2 -0 ~0"),
+        preview.contains("By name and type: +2 -0 ~0"),
         "preview was: {preview}"
     );
 

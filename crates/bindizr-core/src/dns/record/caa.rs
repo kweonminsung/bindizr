@@ -79,7 +79,7 @@ impl<'a> CaaRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 8659, Section 5.1).
-    pub fn to_rdata(&self) -> Result<Rdata, String> {
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
         let tag_len = u8::try_from(self.tag.len())
             .map_err(|_| format!("CAA tag must be 1-15 alphanumeric characters: {}", self.tag))?;
         let mut rdata = Vec::with_capacity(2 + self.tag.len() + self.value.len());

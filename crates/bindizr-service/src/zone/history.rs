@@ -36,7 +36,7 @@ use crate::{
 /// A record as it existed at a past serial, rebuilt from the journal;
 /// carries no database id.
 #[derive(Debug, Clone)]
-pub struct ReconstructedRecord {
+pub(crate) struct ReconstructedRecord {
     pub(crate) name: OwnerName,
     pub(crate) record_type: RecordType,
     pub(crate) value: String,
@@ -60,7 +60,7 @@ impl From<Record> for ReconstructedRecord {
 /// type, and the canonical comparison form of the value(+priority).
 type MatchKey = (String, String, String);
 
-fn match_key(
+fn to_match_key(
     name: &OwnerName,
     record_type: &RecordType,
     value: &str,
@@ -73,8 +73,8 @@ fn match_key(
     )
 }
 
-fn record_match_key(record: &Record) -> MatchKey {
-    match_key(
+fn to_record_match_key(record: &Record) -> MatchKey {
+    to_match_key(
         &record.name,
         &record.record_type,
         &record.value,
@@ -94,12 +94,12 @@ async fn reconstruct_records_at_serial(
     let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
     for record in RepositoryService::list_records_tx(tx, zone_id, LockLevel::None).await? {
         state
-            .entry(record_match_key(&record))
+            .entry(to_record_match_key(&record))
             .or_default()
             .push(record.into());
     }
 
-    let changes = RepositoryService::list_zone_journal_between_serials_tx(
+    let changes = RepositoryService::list_zone_changes_between_serials_tx(
         tx,
         zone_id,
         target_serial,
@@ -125,7 +125,7 @@ async fn reconstruct_records_at_serial(
             continue;
         };
         let record_type = record_type.clone();
-        let key = match_key(
+        let key = to_match_key(
             &change.record_name,
             &record_type,
             record_value,
@@ -184,7 +184,7 @@ async fn records_at_serial(
 }
 
 /// A serial is diffable only if it is the current serial or has a version.
-async fn require_serial(
+async fn validate_serial_diffable(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     serial: i32,
@@ -238,7 +238,7 @@ impl ZoneService {
             .map(ZoneVersionResponse::from_version)
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(crate::pagination::paginated_response(
+        Ok(PaginatedResponse::from_page(
             items,
             Some(effective_limit),
             offset,
@@ -305,8 +305,8 @@ impl ZoneService {
                     .await?;
             let to_serial = to_serial.unwrap_or(zone.serial);
 
-            require_serial(&mut tx, &zone, from_serial).await?;
-            require_serial(&mut tx, &zone, to_serial).await?;
+            validate_serial_diffable(&mut tx, &zone, from_serial).await?;
+            validate_serial_diffable(&mut tx, &zone, to_serial).await?;
 
             let from_records =
                 records_at_serial(&mut tx, zone.id, from_serial, zone.serial).await?;
@@ -392,7 +392,7 @@ impl ZoneService {
             // apex NS is kept and the newer one becomes deletable.
             let mut target_by_key: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
             for target in target_records {
-                let key = match_key(
+                let key = to_match_key(
                     &target.name,
                     &target.record_type,
                     &target.value,
@@ -406,7 +406,7 @@ impl ZoneService {
             let mut to_add: Vec<ReconstructedRecord> = Vec::new();
 
             for record in &current_records {
-                let key = record_match_key(record);
+                let key = to_record_match_key(record);
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
                         // The DEL + ADD pair preserves the record's identity, so
@@ -526,7 +526,7 @@ impl ZoneService {
 
             if soa_changed {
                 let changes = soa_replacement_changes(&zone, &restored_zone, new_serial)?;
-                RepositoryService::create_zone_journal_tx(&mut tx, &changes).await?;
+                RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
             }
 
             RecordService::delete_records_with_changes_tx(&mut tx, zone.id, new_serial, &dels)

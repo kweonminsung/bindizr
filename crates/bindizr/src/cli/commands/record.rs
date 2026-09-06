@@ -169,7 +169,8 @@ YAML example:
     #[command(alias = "rm")]
     Delete {
         /// The record ID
-        record_id: i32,
+        #[arg(value_name = "RECORD_ID")]
+        id: i32,
     },
 }
 
@@ -341,12 +342,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
             print_records(&data, output)?;
         }
-        RecordCommand::Delete { record_id } => {
+        RecordCommand::Delete { id } => {
             let response = client
-                .send_command(
-                    DaemonCommandKind::DeleteRecord,
-                    RecordIdParams { id: record_id },
-                )
+                .send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
                 .await?;
             println!("{}", response.message);
         }

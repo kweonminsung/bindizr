@@ -40,7 +40,7 @@ fn parse_algorithm_rejects_unsupported_names() {
 }
 
 #[test]
-fn validate_secret_accepts_base64_and_rejects_garbage() {
+fn normalize_secret_accepts_base64_and_rejects_garbage() {
     // 32-byte imported secret, whitespace trimmed.
     assert_eq!(
         normalize_secret(" bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU= ").unwrap(),
@@ -55,7 +55,7 @@ fn validate_secret_accepts_base64_and_rejects_garbage() {
 }
 
 #[test]
-fn validate_secret_enforces_length_bounds() {
+fn normalize_secret_enforces_length_bounds() {
     // 6 decoded bytes: far below the 128-bit minimum.
     let short = normalize_secret("c2VjcmV0").unwrap_err();
     assert_eq!(short.code, ErrorCode::InvalidInput);

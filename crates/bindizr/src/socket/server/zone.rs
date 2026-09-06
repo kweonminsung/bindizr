@@ -8,7 +8,6 @@ use bindizr_service::{
     },
     zone::ZoneService,
 };
-use serde_json::json;
 
 use crate::socket::{
     server::{parse_params, to_response_data},
@@ -252,6 +251,6 @@ pub(crate) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonRespon
     ZoneService::delete(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
         message: format!("Zone '{}' deleted successfully", params.name),
-        data: json!(null),
+        data: serde_json::Value::Null,
     })
 }
