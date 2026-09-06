@@ -32,6 +32,7 @@ fn test_zone(id: i32, name: &str) -> Zone {
         expire: 604800,
         minimum_ttl: 86400,
         dnssec_policy_id: None,
+        parent_ns_addrs: None,
         created_at: Utc::now(),
     }
 }

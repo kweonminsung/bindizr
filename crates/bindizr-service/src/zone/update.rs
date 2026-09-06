@@ -179,6 +179,7 @@ impl ZoneService {
                     expire: timers.expire,
                     minimum_ttl: timers.minimum_ttl,
                     dnssec_policy_id: existing_zone.dnssec_policy_id,
+                    parent_ns_addrs: existing_zone.parent_ns_addrs.clone(),
                     created_at: existing_zone.created_at,
                 },
             )

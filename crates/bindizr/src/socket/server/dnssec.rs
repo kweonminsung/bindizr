@@ -3,8 +3,9 @@ use bindizr_service::{authorization::Caller, dnssec::DnssecService, error::Servi
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
-        RolloverZoneDnssecParams, SetZoneDnssecPolicyParams, ZoneNameParams,
+        DaemonResponse, DisableZoneDnssecParams, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
+        RolloverZoneDnssecParams, SetZoneDnssecParentNsAddrsParams, SetZoneDnssecPolicyParams,
+        ZoneNameParams,
     },
 };
 
@@ -18,6 +19,7 @@ pub(crate) async fn enable_dnssec(
         &Caller::Global,
         &params.zone_name,
         params.request.policy.as_deref(),
+        params.request.parent_ns_addrs.as_deref(),
     )
     .await?;
 
@@ -32,9 +34,9 @@ pub(crate) async fn enable_dnssec(
 pub(crate) async fn disable_dnssec(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: DisableZoneDnssecParams = parse_params(data)?;
 
-    DnssecService::disable(&Caller::Global, &params.name).await?;
+    DnssecService::disable(&Caller::Global, &params.zone_name, params.force).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC disabled successfully".to_string(),
@@ -176,6 +178,41 @@ pub(crate) async fn cancel_dnssec_withdrawal(
 
     Ok(DaemonResponse {
         message: "DS withdrawal cancelled successfully".to_string(),
+        data: to_response_data(status)?,
+    })
+}
+
+/// Handle the `ZoneDnssecCheckDs` command by asking the parent zone for the
+/// zone's DS.
+pub(crate) async fn check_dnssec_ds(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: ZoneNameParams = parse_params(data)?;
+
+    let status = DnssecService::check_ds(&Caller::Global, &params.name).await?;
+
+    Ok(DaemonResponse {
+        message: "Parent DS checked successfully".to_string(),
+        data: to_response_data(status)?,
+    })
+}
+
+/// Handle the `ZoneDnssecSetParentNsAddrs` command by setting or clearing the
+/// zone's parent servers.
+pub(crate) async fn set_dnssec_parent_ns_addrs(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: SetZoneDnssecParentNsAddrsParams = parse_params(data)?;
+
+    let status = DnssecService::set_parent_ns_addrs(
+        &Caller::Global,
+        &params.zone_name,
+        params.request.parent_ns_addrs.as_deref(),
+    )
+    .await?;
+
+    Ok(DaemonResponse {
+        message: "Parent nameserver addresses set successfully".to_string(),
         data: to_response_data(status)?,
     })
 }

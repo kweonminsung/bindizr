@@ -68,6 +68,7 @@ impl ZoneService {
                     mname: validated.mname,
                     rname: validated.rname,
                     dnssec_policy_id: None,
+                    parent_ns_addrs: None,
                     default_ttl: validated.ttl,
                     serial,
                     refresh: timers.refresh,

@@ -612,6 +612,22 @@ impl RepositoryService {
             })
     }
 
+    pub(crate) async fn update_zone_parent_ns_addrs_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        parent_ns_addrs: Option<&str>,
+    ) -> Result<(), ServiceError> {
+        get_zone_repository()
+            .update_parent_ns_addrs_tx(tx, zone_id, parent_ns_addrs)
+            .await
+            .map_err(|e| {
+                ServiceError::internal(format!(
+                    "failed to update zone parent nameserver addresses: {}",
+                    e
+                ))
+            })
+    }
+
     pub(crate) async fn count_zones_by_dnssec_policy_id(
         dnssec_policy_id: i32,
     ) -> Result<u64, ServiceError> {

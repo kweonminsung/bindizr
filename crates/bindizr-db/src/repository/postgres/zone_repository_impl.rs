@@ -31,8 +31,8 @@ impl ZoneRepository for PostgresZoneRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id
             "#,
         )
@@ -45,6 +45,7 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(zone.retry)
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
+        .bind(&zone.parent_ns_addrs)
         .fetch_one(&mut **postgres_tx)
         .await?;
 
@@ -60,7 +61,7 @@ impl ZoneRepository for PostgresZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones WHERE id = $1{}",lock_clause(lock_level))))
+        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE id = $1{}",lock_clause(lock_level))))
             .bind(id)
             .fetch_optional(&mut **postgres_tx)
             .await?;
@@ -71,7 +72,7 @@ impl ZoneRepository for PostgresZoneRepository {
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones WHERE name = $1")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE name = $1")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await?;
@@ -88,7 +89,7 @@ impl ZoneRepository for PostgresZoneRepository {
         let postgres_tx = tx.as_postgres()?;
 
         let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(
-            format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones WHERE name = $1{}",
+            format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE name = $1{}",
             lock_clause(lock_level),
         )))
         .bind(name)
@@ -101,7 +102,7 @@ impl ZoneRepository for PostgresZoneRepository {
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await?;
 
@@ -115,7 +116,7 @@ impl ZoneRepository for PostgresZoneRepository {
     ) -> Result<Vec<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
             .fetch_all(&mut **postgres_tx)
             .await?;
 
@@ -128,7 +129,7 @@ impl ZoneRepository for PostgresZoneRepository {
 
         let zones = sqlx::query_as::<_, Zone>(
             r#"
-            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, created_at
+            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at
             FROM zones
             WHERE ($1::TEXT IS NULL OR LOWER(name) = LOWER($2))
               AND ($3::INT4 IS NULL OR id = $4)
@@ -292,6 +293,23 @@ impl ZoneRepository for PostgresZoneRepository {
 
         sqlx::query("UPDATE zones SET dnssec_policy_id = $1 WHERE id = $2")
             .bind(dnssec_policy_id)
+            .bind(zone_id)
+            .execute(&mut **postgres_tx)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn update_parent_ns_addrs_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        parent_ns_addrs: Option<&str>,
+    ) -> Result<(), DatabaseError> {
+        let postgres_tx = tx.as_postgres()?;
+
+        sqlx::query("UPDATE zones SET parent_ns_addrs = $1 WHERE id = $2")
+            .bind(parent_ns_addrs)
             .bind(zone_id)
             .execute(&mut **postgres_tx)
             .await?;

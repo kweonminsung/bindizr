@@ -1,4 +1,4 @@
-use crate::common::TestApp;
+use crate::common::{FakeParent, TestApp, assert_cli_failure_contains};
 
 /// The key tag of the zone's first signing key, read from `dnssec status`.
 async fn signing_key_tag(app: &TestApp, zone_name: &str) -> u64 {
@@ -45,7 +45,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     ])
     .await;
     let moved = app
-        .run_cli_success(&["dnssec", "set-policy", &zone_name, &policy_name])
+        .run_cli_success(&["dnssec", "set", "policy", &zone_name, &policy_name])
         .await;
     // The policy row of the status output carries the new timing.
     assert!(
@@ -70,7 +70,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     assert!(signed.contains("Zone signed successfully"));
 
     let disabled = app
-        .run_cli_success(&["dnssec", "disable", &zone_name])
+        .run_cli_success(&["dnssec", "disable", &zone_name, "--force"])
         .await;
     assert!(disabled.contains("DNSSEC disabled successfully"));
 
@@ -161,7 +161,7 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     let private_file = private_file.to_str().expect("utf-8 temp dir").to_string();
 
     // Disable drops the keys; the import must restore the same key.
-    app.run_cli_success(&["dnssec", "disable", &zone_name])
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--force"])
         .await;
 
     // Under a split-key policy the lone SEP key is a KSK with no ZSK, so the
@@ -264,7 +264,7 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     }
     pairs.sort(); // ksk before zsk
 
-    app.run_cli_success(&["dnssec", "disable", &zone_name])
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--force"])
         .await;
 
     // Both halves arrive in one call: a KSK alone could not sign, so the
@@ -305,4 +305,96 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
             && signed_export.contains("\tIN\tDNSKEY\t256 3 "),
         "{signed_export}"
     );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_dnssec_parent_ds_check_via_cli() {
+    let app = TestApp::start_local().await;
+    let parent = FakeParent::start();
+    let parent_addr = parent.addr();
+    let zone_name = app.zone_name("dnssec-parent-cli.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    let enabled = app
+        .run_cli_success(&[
+            "dnssec",
+            "enable",
+            &zone_name,
+            "--parent-ns-addrs",
+            &parent_addr,
+        ])
+        .await;
+    assert!(
+        enabled.contains(&format!("Parent nameservers: {parent_addr}")),
+        "{enabled}"
+    );
+    let key_tag = signing_key_tag(&app, &zone_name).await;
+    parent.set_ds(vec![(key_tag as u16, 3600)]);
+
+    let disable_args = ["dnssec", "disable", &zone_name];
+    let refused = app.run_cli(&disable_args).await;
+    assert_cli_failure_contains(&disable_args, &refused, "still serves DS records");
+
+    let checked = app
+        .run_cli_success(&["dnssec", "check-ds", &zone_name])
+        .await;
+    assert!(
+        checked.contains(&format!(
+            "Parent DS: key tag {key_tag} served by {parent_addr} (TTL 3600s)"
+        )),
+        "{checked}"
+    );
+
+    let cleared = app
+        .run_cli_success(&["dnssec", "set", "parent-ns-addrs", &zone_name, "--clear"])
+        .await;
+    assert!(
+        cleared.contains("Parent nameservers: discovered through the system resolver"),
+        "{cleared}"
+    );
+    let set = app
+        .run_cli_success(&["dnssec", "set", "parent-ns-addrs", &zone_name, &parent_addr])
+        .await;
+    assert!(
+        set.contains(&format!("Parent nameservers: {parent_addr}")),
+        "{set}"
+    );
+
+    parent.set_ds(Vec::new());
+    let checked = app
+        .run_cli_success(&["dnssec", "check-ds", &zone_name])
+        .await;
+    assert!(
+        checked.contains(&format!("Parent DS: none served by {parent_addr}")),
+        "{checked}"
+    );
+    let disabled = app.run_cli_success(&disable_args).await;
+    assert!(disabled.contains("DNSSEC disabled successfully"));
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_dnssec_disable_force_skips_the_parent_check_via_cli() {
+    let app = TestApp::start_local().await;
+    let zone_name = app.zone_name("dnssec-force-cli.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    // Nothing listens on the loopback discard port, so the parent never answers.
+    app.run_cli_success(&[
+        "dnssec",
+        "enable",
+        &zone_name,
+        "--parent-ns-addrs",
+        "127.0.0.1:9",
+    ])
+    .await;
+
+    let disable_args = ["dnssec", "disable", &zone_name];
+    let refused = app.run_cli(&disable_args).await;
+    assert_cli_failure_contains(&disable_args, &refused, "could not verify");
+
+    let disabled = app
+        .run_cli_success(&["dnssec", "disable", &zone_name, "--force"])
+        .await;
+    assert!(disabled.contains("DNSSEC disabled successfully"));
 }

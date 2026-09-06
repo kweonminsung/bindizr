@@ -1,10 +1,13 @@
 //! The `dnssec` subcommands.
 
+mod keys;
+
 use bindizr_service::types::{
-    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyPair,
-    ImportDnssecKeyRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
+    EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest,
+    SetDnssecParentNsAddrsRequest, SetZoneDnssecPolicyRequest,
 };
 use clap::Subcommand;
+pub(crate) use keys::DnssecKeysCommand;
 
 use crate::{
     cli::{
@@ -16,8 +19,9 @@ use crate::{
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
-            RolloverZoneDnssecParams, SetZoneDnssecPolicyParams, ZoneNameParams,
+            DaemonCommandKind, DisableZoneDnssecParams, EnableZoneDnssecParams,
+            RolloverZoneDnssecParams, SetZoneDnssecParentNsAddrsParams, SetZoneDnssecPolicyParams,
+            ZoneNameParams,
         },
     },
 };
@@ -35,16 +39,15 @@ pub(crate) enum DnssecCommand {
         /// policy; see `bindizr dnssec-policy list`)
         #[arg(long, value_name = "POLICY_NAME")]
         policy: Option<String>,
+        /// The parent zone's nameservers (comma-separated host[:port]) asked
+        /// for this zone's DS before DNSSEC is disabled (default: discovered)
+        #[arg(long, value_name = "ADDRS")]
+        parent_ns_addrs: Option<String>,
     },
-    /// Move a signed zone to another DNSSEC policy. The denial mode and key
-    /// layout must match; a different algorithm starts an algorithm rollover
-    SetPolicy {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
-        /// Name of the target policy
-        #[arg(value_name = "POLICY_NAME")]
-        policy: String,
+    /// Set a signed zone's policy or its parent's nameservers
+    Set {
+        #[command(subcommand)]
+        subcommand: DnssecSetCommand,
     },
     /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
     /// parent to drop the zone's DS: the first step of going insecure
@@ -56,10 +59,20 @@ pub(crate) enum DnssecCommand {
         #[arg(long)]
         cancel: bool,
     },
-    /// Disable DNSSEC: delete the zone's keys and signatures. Remove the DS
-    /// record from the parent zone and wait out its TTL first, or validating
-    /// resolvers will treat the zone as bogus
+    /// Disable DNSSEC: delete the zone's keys and signatures. Refused while
+    /// the parent zone still serves this zone's DS record or cannot be asked;
+    /// remove the DS and wait out its TTL first
     Disable {
+        /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
+        name: String,
+        /// Skip the parent DS check
+        #[arg(long)]
+        force: bool,
+    },
+    /// Ask the parent zone whether it serves this zone's DS record: the
+    /// check that gates `disable`
+    CheckDs {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
@@ -97,12 +110,44 @@ pub(crate) enum DnssecCommand {
     },
 }
 
+/// Subcommands setting one attribute of a zone's signing.
+#[derive(Subcommand, Debug)]
+pub(crate) enum DnssecSetCommand {
+    /// Move a signed zone to another DNSSEC policy. The denial mode and key
+    /// layout must match; a different algorithm starts an algorithm rollover
+    Policy {
+        /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
+        name: String,
+        /// Name of the target policy
+        #[arg(value_name = "POLICY_NAME")]
+        policy: String,
+    },
+    /// Set the parent zone's nameservers asked for this zone's DS record,
+    /// or clear them so the parent is discovered again
+    ParentNsAddrs {
+        /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
+        name: String,
+        /// Comma-separated host[:port] entries of the parent's nameservers
+        #[arg(
+            value_name = "ADDRS",
+            required_unless_present = "clear",
+            conflicts_with = "clear"
+        )]
+        addrs: Option<String>,
+        /// Return the zone to parent discovery
+        #[arg(long)]
+        clear: bool,
+    },
+}
+
 /// Subcommands for rolling a zone's signing keys.
 #[derive(Subcommand, Debug)]
 pub(crate) enum DnssecRolloverCommand {
     /// Pre-publish a same-algorithm replacement key: it joins the DNSKEY
     /// and CDS/CDNSKEY records but signs no zone data until `ds-seen`
-    /// promotes it. To change the algorithm, use `dnssec set-policy`
+    /// promotes it. To change the algorithm, use `dnssec set policy`
     Start {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -122,64 +167,65 @@ pub(crate) enum DnssecRolloverCommand {
     },
 }
 
-/// Subcommands for moving raw key material in and out of bindizr.
-#[derive(Subcommand, Debug)]
-pub(crate) enum DnssecKeysCommand {
-    /// Print the zone's keys in BIND key-file form, private halves
-    /// included — redirect somewhere with tight permissions
-    Export {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
-    },
-    /// Import the zone's key set as BIND key pairs and sign it: one CSK
-    /// pair, or a KSK pair and a ZSK pair for a split-key policy. The
-    /// migration path for a zone signed elsewhere; the zone must be unsigned
-    Import {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
-        /// Path to a K*.key file (the DNSKEY record); repeat with --private
-        /// for each pair
-        #[arg(long, value_name = "FILE", required = true)]
-        key: Vec<String>,
-        /// Path to the matching K*.private file, in the same order as --key
-        #[arg(long, value_name = "FILE", required = true)]
-        private: Vec<String>,
-        /// Policy the zone signs under (default: "default"); its algorithm
-        /// and key layout decide what the keys must be
-        #[arg(long, value_name = "POLICY_NAME")]
-        policy: Option<String>,
-    },
-}
-
 pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
     match subcommand {
-        DnssecCommand::Enable { name, policy } => {
+        DnssecCommand::Enable {
+            name,
+            policy,
+            parent_ns_addrs,
+        } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneDnssecEnable,
                     EnableZoneDnssecParams {
                         zone_name: name,
-                        request: EnableDnssecRequest { policy },
+                        request: EnableDnssecRequest {
+                            policy,
+                            parent_ns_addrs,
+                        },
                     },
                 )
                 .await?;
             print_status(&response.data)?;
         }
-        DnssecCommand::SetPolicy { name, policy } => {
+        DnssecCommand::CheckDs { name } => {
             let response = client
                 .send_command(
-                    DaemonCommandKind::ZoneDnssecSetPolicy,
-                    SetZoneDnssecPolicyParams {
-                        zone_name: name,
-                        request: SetZoneDnssecPolicyRequest { policy },
-                    },
+                    DaemonCommandKind::ZoneDnssecCheckDs,
+                    ZoneNameParams { name },
                 )
                 .await?;
             print_status(&response.data)?;
         }
+        DnssecCommand::Set { subcommand } => match subcommand {
+            DnssecSetCommand::Policy { name, policy } => {
+                let response = client
+                    .send_command(
+                        DaemonCommandKind::ZoneDnssecSetPolicy,
+                        SetZoneDnssecPolicyParams {
+                            zone_name: name,
+                            request: SetZoneDnssecPolicyRequest { policy },
+                        },
+                    )
+                    .await?;
+                print_status(&response.data)?;
+            }
+            DnssecSetCommand::ParentNsAddrs { name, addrs, clear } => {
+                let response = client
+                    .send_command(
+                        DaemonCommandKind::ZoneDnssecSetParentNsAddrs,
+                        SetZoneDnssecParentNsAddrsParams {
+                            zone_name: name,
+                            request: SetDnssecParentNsAddrsRequest {
+                                parent_ns_addrs: if clear { None } else { addrs },
+                            },
+                        },
+                    )
+                    .await?;
+                print_status(&response.data)?;
+            }
+        },
         DnssecCommand::Withdraw { name, cancel } => {
             let kind = if cancel {
                 DaemonCommandKind::ZoneDnssecWithdrawCancel
@@ -189,60 +235,15 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             let response = client.send_command(kind, ZoneNameParams { name }).await?;
             print_status(&response.data)?;
         }
-        DnssecCommand::Keys { subcommand } => match subcommand {
-            DnssecKeysCommand::Export { name } => {
-                let response = client
-                    .send_command(
-                        DaemonCommandKind::ZoneDnssecKeysExport,
-                        ZoneNameParams { name },
-                    )
-                    .await?;
-                let exported: ExportDnssecKeysResponse =
-                    parse_response(&response.data).map_err(CliError::from)?;
-                print_key_material(&exported);
-            }
-            DnssecKeysCommand::Import {
-                name,
-                key,
-                private,
-                policy,
-            } => {
-                if key.len() != private.len() {
-                    return Err(CliError::from(format!(
-                        "--key and --private must be given in pairs ({} and {})",
-                        key.len(),
-                        private.len()
-                    )));
-                }
-                let mut keys = Vec::with_capacity(key.len());
-                for (key, private) in key.iter().zip(&private) {
-                    let dnskey = std::fs::read_to_string(key)
-                        .map_err(|e| CliError::from(format!("Failed to read '{}': {}", key, e)))?;
-                    let private_key = std::fs::read_to_string(private).map_err(|e| {
-                        CliError::from(format!("Failed to read '{}': {}", private, e))
-                    })?;
-                    keys.push(ImportDnssecKeyPair {
-                        dnskey,
-                        private_key,
-                    });
-                }
-                let response = client
-                    .send_command(
-                        DaemonCommandKind::ZoneDnssecKeysImport,
-                        ImportZoneDnssecKeyParams {
-                            zone_name: name,
-                            request: ImportDnssecKeyRequest { keys, policy },
-                        },
-                    )
-                    .await?;
-                print_status(&response.data)?;
-            }
-        },
-        DnssecCommand::Disable { name } => {
+        DnssecCommand::Keys { subcommand } => keys::handle_command(&client, subcommand).await?,
+        DnssecCommand::Disable { name, force } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneDnssecDisable,
-                    ZoneNameParams { name },
+                    DisableZoneDnssecParams {
+                        zone_name: name,
+                        force,
+                    },
                 )
                 .await?;
             println!("{}", response.message);
@@ -296,7 +297,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
     Ok(())
 }
 
-fn print_status(data: &serde_json::Value) -> Result<(), String> {
+pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
     let status: GetDnssecStatusResponse = parse_response(data)?;
     let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
         println!(
@@ -316,6 +317,33 @@ fn print_status(data: &serde_json::Value) -> Result<(), String> {
         println!(
             "DS withdrawal published (RFC 8078): the parent should drop this zone's DS records."
         );
+    }
+    match status.parent_ns_addrs.as_deref() {
+        Some(addrs) => println!("Parent nameservers: {}", addrs),
+        None => println!("Parent nameservers: discovered through the system resolver"),
+    }
+    if let Some(delegation) = &status.delegation {
+        let servers = delegation.parent_servers.join(", ");
+        if delegation.ds_key_tags.is_empty() {
+            println!("Parent DS: none served by {}", servers);
+        } else {
+            println!(
+                "Parent DS: key tag{} {} served by {} (TTL {}s)",
+                if delegation.ds_key_tags.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                },
+                delegation
+                    .ds_key_tags
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                servers,
+                delegation.ds_ttl.unwrap_or(0)
+            );
+        }
     }
     if let Some(expires_at) = status.earliest_signature_expires_at {
         println!(
@@ -354,27 +382,4 @@ fn print_ds_records(data: &serde_json::Value) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-/// Print each key as its BIND file pair, headed by the file name BIND
-/// tooling expects, so the stream splits cleanly into `K*.key`/`K*.private`.
-fn print_key_material(exported: &ExportDnssecKeysResponse) {
-    for (i, key) in exported.keys.iter().enumerate() {
-        let mut base = format!(
-            "K{}.+{:03}+{:05}",
-            exported.zone_name, key.algorithm, key.key_tag
-        );
-        // Distinct keys may share (algorithm, tag); the suffix keeps names unique.
-        let dup = exported.keys[..i]
-            .iter()
-            .filter(|k| k.algorithm == key.algorithm && k.key_tag == key.key_tag)
-            .count();
-        if dup > 0 {
-            base.push_str(&format!(".{}", dup + 1));
-        }
-        println!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
-        println!("{}", key.dnskey_record);
-        println!("; {}.private", base);
-        println!("{}", key.private_key.trim_end());
-    }
 }

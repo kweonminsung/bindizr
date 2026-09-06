@@ -13,6 +13,44 @@ pub struct EnableDnssecRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "default")]
     pub policy: Option<String>,
+    /// The parent zone's nameservers (comma-separated `host[:port]`) asked
+    /// for the zone's DS before DNSSEC is disabled. Omitted, the zone keeps
+    /// its setting; a zone with none discovers its parent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
+    pub parent_ns_addrs: Option<String>,
+}
+
+/// Request body for setting a zone's parent nameservers.
+#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+pub struct SetDnssecParentNsAddrsRequest {
+    /// Comma-separated `host[:port]` entries; null or empty returns the zone
+    /// to parent discovery.
+    #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
+    pub parent_ns_addrs: Option<String>,
+}
+
+/// What the parent zone's servers answered when asked for the zone's DS.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct DnssecDelegationInfo {
+    /// The servers asked: the zone's `parent_ns_addrs`, or the discovered
+    /// parent's nameservers.
+    pub parent_servers: Vec<String>,
+    /// Whether the servers were discovered rather than configured on the zone.
+    #[schema(example = true)]
+    pub discovered: bool,
+    /// `published` when the parent serves a DS for the zone, `hidden` when
+    /// it serves none.
+    #[schema(example = "published")]
+    pub ds_state: String,
+    /// Key tags of the DS records the parent serves.
+    pub ds_key_tags: Vec<u16>,
+    /// TTL of the parent's DS records: how long caches may keep serving
+    /// them once removed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 86400)]
+    pub ds_ttl: Option<u32>,
+    pub checked_at: DateTime<Utc>,
 }
 
 /// Request body for moving a signed zone to another DNSSEC policy.
@@ -98,6 +136,15 @@ pub struct GetDnssecStatusResponse {
     #[serde(default)]
     #[schema(example = false)]
     pub withdrawing: bool,
+    /// The parent nameservers configured on the zone; absent when the
+    /// parent is discovered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
+    pub parent_ns_addrs: Option<String>,
+    /// The parent's answer about the zone's DS; present only when this
+    /// status comes from a parent check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegation: Option<DnssecDelegationInfo>,
     /// Earliest stored signature expiration; the re-signer renews before it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub earliest_signature_expires_at: Option<DateTime<Utc>>,

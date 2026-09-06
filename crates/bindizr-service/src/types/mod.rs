@@ -20,9 +20,10 @@ mod zone;
 
 pub use common::{ErrorResponse, HealthResponse, MessageResponse};
 pub use dnssec::{
-    DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecKeyMaterial, DnssecStatusResponse,
-    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyPair,
-    ImportDnssecKeyRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
+    DnssecDelegationInfo, DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecKeyMaterial,
+    DnssecStatusResponse, EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse,
+    ImportDnssecKeyPair, ImportDnssecKeyRequest, RolloverDnssecRequest,
+    SetDnssecParentNsAddrsRequest, SetZoneDnssecPolicyRequest,
 };
 pub use dnssec_policy::{
     CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,

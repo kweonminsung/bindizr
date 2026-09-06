@@ -84,7 +84,7 @@ private key never leaves bindizr.
 A signed zone moves to another policy with:
 
 ```sh
-bindizr dnssec set-policy example.com strict
+bindizr dnssec set policy example.com strict
 ```
 
 Also `PUT /zones/{name}/dnssec/policy`. The target must share the zone's
@@ -149,7 +149,7 @@ A retired key stays published for the policy's
 shows every key's state (`published`/`active`/`retired`) throughout.
 
 An **algorithm rollover** (RFC 6840, Section 5.11) is started by moving the
-zone to a policy of the new algorithm (`dnssec set-policy`): every key is
+zone to a policy of the new algorithm (`dnssec set policy`): every key is
 replaced with one of the new algorithm and the zone is double-signed — both
 algorithms cover all data — until the old keys leave together after
 `ds-seen`.
@@ -163,7 +163,7 @@ sign example.com` forces a full re-sign if stored signatures are ever
 doubted.
 
 To give some zones different timing, create a policy with the values you
-want and move them to it with `dnssec set-policy`; editing a policy
+want and move them to it with `dnssec set policy`; editing a policy
 with `dnssec-policy update` changes every zone under it from the next
 signing pass or maintenance scan. `dnssec status` reports the zone's
 policy and its values.
@@ -197,14 +197,36 @@ CLI/daemon socket — private keys never transit the HTTP API.
 ## Disabling DNSSEC
 
 Dropping signatures while the parent still publishes your DS makes the zone
-**bogus**. Go insecure in order:
+**bogus**, so `dnssec disable` asks the parent's nameservers for the DS
+first and refuses while any still serves one (`DNSSEC_DS_PUBLISHED`) or
+fails to answer (`DNSSEC_DS_UNVERIFIED`). Go insecure in order:
 
 1. Ask the parent to remove the DS. If the parent consumes CDS,
    `bindizr dnssec withdraw example.com` publishes the RFC 8078 delete
    pair (`CDS 0 0 0 00`) and the parent drops the DS on its own; otherwise
    remove it at the registrar. `--cancel` takes a withdrawal back.
-2. Wait until the DS is gone and its TTL has passed.
+2. Wait until the DS is gone and its TTL has passed. `bindizr dnssec
+   check-ds example.com` (`POST /zones/{name}/dnssec/check-ds`) shows what
+   the parent serves now and its TTL; the wait itself is yours.
 3. `bindizr dnssec disable example.com`
+
+`--force` (`DELETE /zones/{name}/dnssec?force=true`) skips the check, for
+a host that cannot reach the parent at all.
+
+The parent is discovered by default: bindizr walks up the zone's name
+asking the system resolver (`/etc/resolv.conf`) for NS records, then
+queries every nameserver it finds directly. When the parent is private,
+unreachable, or the host has no resolver, name its nameservers on the zone
+instead:
+
+```sh
+bindizr dnssec enable example.com --parent-ns-addrs ns1.parent.example,ns2.parent.example
+bindizr dnssec set parent-ns-addrs example.com ns1.parent.example:5353
+bindizr dnssec set parent-ns-addrs example.com --clear    # back to discovery
+```
+
+Also `parent_ns_addrs` in the enable body and `PUT
+/zones/{name}/dnssec/parent-ns-addrs`; `dnssec status` shows the setting.
 
 ## Behavior notes
 

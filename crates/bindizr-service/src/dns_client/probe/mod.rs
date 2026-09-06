@@ -34,7 +34,7 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<ProbeReport>, Stri
 
     let mut probes = Vec::new();
     let mut tasks = Vec::new();
-    for (entry, result) in super::resolve_secondary_entries(raw, timeout).await {
+    for (entry, result) in super::resolve_address_entries(raw, timeout).await {
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {
@@ -95,7 +95,7 @@ async fn probe_entry(
         }
     }
 
-    last.expect("resolve_secondary_entries never yields an empty Ok")
+    last.expect("resolve_address_entries never yields an empty Ok")
 }
 
 async fn probe_one(

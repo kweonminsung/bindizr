@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::Path,
+    extract::{Path, Query},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
@@ -9,9 +9,11 @@ use bindizr_service::{
     dnssec::DnssecService,
     types::{
         DnssecDsListResponse, DnssecStatusResponse, EnableDnssecRequest, ErrorResponse,
-        MessageResponse, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
+        MessageResponse, RolloverDnssecRequest, SetDnssecParentNsAddrsRequest,
+        SetZoneDnssecPolicyRequest,
     },
 };
+use serde::Deserialize;
 
 use crate::api::{
     RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody,
@@ -45,6 +47,14 @@ impl DnssecApi {
             .route(
                 "/zones/{name}/dnssec/policy",
                 routing::put(set_zone_dnssec_policy),
+            )
+            .route(
+                "/zones/{name}/dnssec/check-ds",
+                routing::post(check_dnssec_ds),
+            )
+            .route(
+                "/zones/{name}/dnssec/parent-ns-addrs",
+                routing::put(set_dnssec_parent_ns_addrs),
             )
     }
 }
@@ -81,7 +91,7 @@ pub(crate) async fn get_dnssec_status(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Enable DNSSEC for a zone",
-        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone.",
+        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` names the parent zone's nameservers that disabling DNSSEC later asks for the DS; omitted, the parent is discovered through the system resolver.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -103,9 +113,20 @@ pub(crate) async fn enable_dnssec(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<EnableDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::enable(&caller, &params.name, body.policy.as_deref()).await?;
+    let status = DnssecService::enable(
+        &caller,
+        &params.name,
+        body.policy.as_deref(),
+        body.parent_ns_addrs.as_deref(),
+    )
+    .await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::CREATED, Json(response)).into_response())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DisableDnssecQuery {
+    pub(crate) force: Option<bool>,
 }
 
 #[utoipa::path(
@@ -113,16 +134,17 @@ pub(crate) async fn enable_dnssec(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Disable DNSSEC for a zone",
-        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. While the parent zone still publishes a DS record, dropping the signatures makes the zone bogus for validating resolvers: remove the DS and wait out its TTL before calling this.",
+        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the parent's nameservers (`parent_ns_addrs`, or the discovered ones) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`) or fails to answer (`DNSSEC_DS_UNVERIFIED`). `force=true` skips the check; waiting out the DS TTL after its removal stays the caller's.",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone.")
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("force" = Option<bool>, Query, description = "Skip the parent DS check.")
         ),
         responses(
             (status = 200, description = "DNSSEC disabled successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
-            (status = 409, description = "DNSSEC is not enabled for the zone", body = ErrorResponse),
+            (status = 409, description = "DNSSEC is not enabled for the zone, the parent still serves its DS, or the parent could not be asked", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -130,8 +152,9 @@ pub(crate) async fn enable_dnssec(
 pub(crate) async fn disable_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
+    Query(query): Query<DisableDnssecQuery>,
 ) -> Result<Response, ApiError> {
-    DnssecService::disable(&caller, &params.name).await?;
+    DnssecService::disable(&caller, &params.name, query.force.unwrap_or(false)).await?;
     let response = MessageResponse {
         message: "DNSSEC disabled successfully".to_string(),
     };
@@ -344,6 +367,67 @@ pub(crate) async fn cancel_dnssec_withdrawal(
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::withdraw_cancel(&caller, &params.name).await?;
+    let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        post,
+        path = "/zones/{name}/dnssec/check-ds",
+        tag = "DNSSEC",
+        summary = "Ask the parent zone whether it serves the zone's DS",
+        description = "Asks the parent zone's nameservers (`parent_ns_addrs`, or the discovered ones) for the zone's DS records and reports the answer in `delegation`: `published` with the key tags and TTL served, or `hidden`. The same check gates disabling DNSSEC.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        responses(
+            (status = 200, description = "The parent's answer with the zone's DNSSEC status", body = DnssecStatusResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 409, description = "DNSSEC is not enabled for the zone, or the parent could not be asked", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Ask the parent zone whether it serves the zone's DS.
+pub(crate) async fn check_dnssec_ds(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+) -> Result<Response, ApiError> {
+    let status = DnssecService::check_ds(&caller, &params.name).await?;
+    let response = DnssecStatusResponse { dnssec: status };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        put,
+        path = "/zones/{name}/dnssec/parent-ns-addrs",
+        tag = "DNSSEC",
+        summary = "Set the parent zone's nameservers of a zone",
+        description = "Sets the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; null or empty returns the zone to discovering its parent. Needed where the parent is private, unreachable from bindizr, or undiscoverable without a system resolver.",
+        params(
+            ("name" = String, Path, description = "The name of the DNS zone.")
+        ),
+        request_body = SetDnssecParentNsAddrsRequest,
+        responses(
+            (status = 200, description = "Parent nameservers set", body = DnssecStatusResponse),
+            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Set the parent zone's servers of a zone.
+pub(crate) async fn set_dnssec_parent_ns_addrs(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<ZoneNameParam>,
+    JsonBody(body): JsonBody<SetDnssecParentNsAddrsRequest>,
+) -> Result<Response, ApiError> {
+    let status =
+        DnssecService::set_parent_ns_addrs(&caller, &params.name, body.parent_ns_addrs.as_deref())
+            .await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

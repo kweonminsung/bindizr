@@ -1,0 +1,286 @@
+//! Outbound queries and the responses they expect: building a question,
+//! and reading back a NOTIFY acknowledgement, a SOA serial, a parent's DS
+//! RRset, or a zone's NS names.
+
+use domain::{
+    base::{
+        Message, MessageBuilder, Name,
+        iana::{Class, Opcode, Rcode, Rtype},
+    },
+    rdata::{Ds, Ns, Soa},
+};
+
+/// EDNS0 payload size advertised where the answer may outgrow 512 bytes (a
+/// TLD's NS RRset): the DNS flag day 2020 value.
+pub const EDNS_UDP_PAYLOAD_SIZE: u16 = 1232;
+
+/// Build a single-question DNS message with a random id, returning
+/// `(query_id, wire bytes)`. `rd` asks a resolver to recurse.
+pub fn build_question(
+    opcode: Opcode,
+    aa: bool,
+    rd: bool,
+    qname: &Name<Vec<u8>>,
+    rtype: Rtype,
+) -> (u16, Vec<u8>) {
+    let query_id = rand::random::<u16>();
+
+    let mut builder = MessageBuilder::new_vec();
+    let header = builder.header_mut();
+    header.set_id(query_id);
+    header.set_opcode(opcode);
+    header.set_aa(aa);
+    header.set_rd(rd);
+
+    let mut question = builder.question();
+    question
+        .push((qname, rtype))
+        .expect("composing into a Vec cannot run out of space");
+
+    (query_id, question.finish())
+}
+
+/// [`build_question`] for a standard query carrying an EDNS0 OPT record
+/// (RFC 6891) that advertises [`EDNS_UDP_PAYLOAD_SIZE`].
+pub fn build_edns_question(rd: bool, qname: &Name<Vec<u8>>, rtype: Rtype) -> (u16, Vec<u8>) {
+    let query_id = rand::random::<u16>();
+
+    let mut builder = MessageBuilder::new_vec();
+    let header = builder.header_mut();
+    header.set_id(query_id);
+    header.set_opcode(Opcode::QUERY);
+    header.set_rd(rd);
+
+    let mut question = builder.question();
+    question
+        .push((qname, rtype))
+        .expect("composing into a Vec cannot run out of space");
+    let mut additional = question.additional();
+    additional
+        .opt(|opt| {
+            opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
+            Ok(())
+        })
+        .expect("composing into a Vec cannot run out of space");
+
+    (query_id, additional.finish())
+}
+
+/// Check a response answers our question: our id, QR set, not truncated.
+/// The RCODE is the caller's, since NXDOMAIN answers some questions.
+fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, String> {
+    let message =
+        Message::from_octets(response).map_err(|e| format!("malformed response: {}", e))?;
+
+    let header = message.header();
+    if header.id() != query_id {
+        return Err(format!(
+            "response ID mismatch: expected {}, got {}",
+            query_id,
+            header.id()
+        ));
+    }
+    if !header.qr() {
+        return Err("response does not have QR bit set".to_string());
+    }
+    if header.tc() {
+        return Err("truncated response".to_string());
+    }
+    Ok(message)
+}
+
+/// One answer RR from a zone-transfer response, in presentation form.
+#[derive(Debug)]
+pub struct TransferRr {
+    /// Owner name as an absolute presentation name (trailing dot).
+    pub name: String,
+    pub rtype: Rtype,
+    pub ttl: u32,
+    /// RDATA in standard presentation form.
+    pub rdata: String,
+}
+
+/// Validate one AXFR response message and collect every answer RR; the
+/// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
+pub fn extract_transfer_rrs(query_id: u16, response: &[u8]) -> Result<Vec<TransferRr>, String> {
+    use domain::rdata::AllRecordData;
+
+    let message = parse_response(query_id, response)?;
+    if message.header().rcode() != Rcode::NOERROR {
+        return Err(format!("RCODE {}", message.header().rcode().to_int()));
+    }
+
+    let answer = message
+        .answer()
+        .map_err(|e| format!("malformed answer section: {}", e))?;
+    let mut rrs = Vec::new();
+    for rr in answer.limit_to::<AllRecordData<_, _>>() {
+        let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
+        // A zone transfer is single-class; rendering would rewrite any other
+        // class as IN.
+        if rr.class() != Class::IN {
+            return Err(format!(
+                "transfer carries a class {} record for {}",
+                rr.class(),
+                rr.owner()
+            ));
+        }
+        // Every embedded rdata name renders absolute except the SRV
+        // target; left bare, re-parsing would requalify it.
+        let rdata = match rr.data() {
+            AllRecordData::Srv(srv) => {
+                let target = srv.target().to_string();
+                let target = if target == "." {
+                    target
+                } else {
+                    format!("{}.", target)
+                };
+                format!(
+                    "{} {} {} {}",
+                    srv.priority(),
+                    srv.weight(),
+                    srv.port(),
+                    target
+                )
+            }
+            data => data.to_string(),
+        };
+        rrs.push(TransferRr {
+            // Display omits the root dot; the absolute form keeps the
+            // import parser from re-qualifying the name.
+            name: format!("{}.", rr.owner()),
+            rtype: rr.rtype(),
+            ttl: rr.ttl().as_secs(),
+            rdata,
+        });
+    }
+    Ok(rrs)
+}
+
+/// Check that a NOTIFY was acknowledged by the server we asked.
+pub fn validate_notify_response(query_id: u16, response: &[u8]) -> Result<(), String> {
+    let message = Message::from_octets(response)
+        .map_err(|e| format!("NOTIFY response is malformed: {}", e))?;
+
+    let header = message.header();
+    if header.id() != query_id {
+        return Err(format!(
+            "NOTIFY response ID mismatch: expected {}, got {}",
+            query_id,
+            header.id()
+        ));
+    }
+
+    if !header.qr() {
+        return Err("NOTIFY response does not have QR bit set".to_string());
+    }
+
+    if header.opcode() != Opcode::NOTIFY {
+        return Err(format!(
+            "NOTIFY response opcode mismatch: expected {}, got {}",
+            Opcode::NOTIFY.to_int(),
+            header.opcode().to_int()
+        ));
+    }
+
+    if header.rcode() != Rcode::NOERROR {
+        return Err(format!(
+            "NOTIFY response returned RCODE {}",
+            header.rcode().to_int()
+        ));
+    }
+
+    Ok(())
+}
+
+/// Validates a SOA query response and extracts the serial from the first SOA
+/// record in the answer section.
+pub fn extract_soa_serial(query_id: u16, response: &[u8]) -> Result<u32, String> {
+    let message = parse_response(query_id, response)?;
+    if message.header().rcode() != Rcode::NOERROR {
+        return Err(format!("RCODE {}", message.header().rcode().to_int()));
+    }
+
+    let answer = message
+        .answer()
+        .map_err(|e| format!("malformed answer section: {}", e))?;
+    answer
+        .limit_to::<Soa<_>>()
+        .find_map(|rr| rr.ok())
+        .map(|rr| rr.data().serial().into_int())
+        .ok_or_else(|| "no SOA record in answer".to_string())
+}
+
+/// The DS RRset a parent-zone server holds for a child.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DsRrset {
+    /// Key tags of the keys the DS records name, ascending and deduplicated.
+    pub key_tags: Vec<u16>,
+    /// The RRset's TTL: how long a cache may keep serving these DS records.
+    pub ttl: u32,
+}
+
+/// Read a parent server's answer to a DS question: `Some` with the RRset,
+/// `None` for an authoritative NODATA or NXDOMAIN. A non-authoritative
+/// answer is refused: a cache may lag the parent.
+pub fn extract_ds_rrset(query_id: u16, response: &[u8]) -> Result<Option<DsRrset>, String> {
+    let message = parse_response(query_id, response)?;
+    let header = message.header();
+    if !header.aa() {
+        return Err("response is not authoritative".to_string());
+    }
+    match header.rcode() {
+        Rcode::NOERROR => {}
+        Rcode::NXDOMAIN => return Ok(None),
+        rcode => return Err(format!("RCODE {}", rcode.to_int())),
+    }
+
+    let qname = message
+        .sole_question()
+        .map_err(|e| format!("malformed question section: {}", e))?
+        .into_qname();
+    let answer = message
+        .answer()
+        .map_err(|e| format!("malformed answer section: {}", e))?;
+    let mut key_tags = Vec::new();
+    let mut ttl: Option<u32> = None;
+    for rr in answer.limit_to::<Ds<_>>() {
+        let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
+        // Only DS records at the child's own name are its delegation.
+        if rr.owner() != &qname {
+            continue;
+        }
+        key_tags.push(rr.data().key_tag());
+        ttl = Some(ttl.map_or(rr.ttl().as_secs(), |t| t.min(rr.ttl().as_secs())));
+    }
+    let Some(ttl) = ttl else {
+        return Ok(None);
+    };
+    key_tags.sort_unstable();
+    key_tags.dedup();
+    Ok(Some(DsRrset { key_tags, ttl }))
+}
+
+/// Read a resolver's answer to an NS question: the nameserver names without
+/// the trailing dot; empty for NODATA or NXDOMAIN.
+pub fn extract_ns_names(query_id: u16, response: &[u8]) -> Result<Vec<String>, String> {
+    let message = parse_response(query_id, response)?;
+    match message.header().rcode() {
+        Rcode::NOERROR => {}
+        Rcode::NXDOMAIN => return Ok(Vec::new()),
+        rcode => return Err(format!("RCODE {}", rcode.to_int())),
+    }
+
+    let answer = message
+        .answer()
+        .map_err(|e| format!("malformed answer section: {}", e))?;
+    let mut names = Vec::new();
+    for rr in answer.limit_to::<Ns<_>>() {
+        let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
+        names.push(rr.data().nsdname().to_string());
+    }
+    Ok(names)
+}
+
+#[cfg(test)]
+mod tests;

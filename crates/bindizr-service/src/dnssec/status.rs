@@ -119,6 +119,8 @@ pub(crate) async fn build_status_tx(
         earliest_signature_expires_at,
         serial,
         withdrawing,
+        parent_ns_addrs: zone.parent_ns_addrs.clone(),
+        delegation: None,
     })
 }
 

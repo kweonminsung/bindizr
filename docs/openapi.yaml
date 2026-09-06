@@ -1886,7 +1886,7 @@ paths:
       tags:
       - DNSSEC
       summary: Enable DNSSEC for a zone
-      description: Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone.
+      description: Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` names the parent zone's nameservers that disabling DNSSEC later asks for the DS; omitted, the parent is discovered through the system resolver.
       operationId: enable_dnssec
       parameters:
       - name: name
@@ -1954,7 +1954,7 @@ paths:
       tags:
       - DNSSEC
       summary: Disable DNSSEC for a zone
-      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. While the parent zone still publishes a DS record, dropping the signatures makes the zone bogus for validating resolvers: remove the DS and wait out its TTL before calling this.'
+      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the parent''s nameservers (`parent_ns_addrs`, or the discovered ones) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`) or fails to answer (`DNSSEC_DS_UNVERIFIED`). `force=true` skips the check; waiting out the DS TTL after its removal stays the caller''s.'
       operationId: disable_dnssec
       parameters:
       - name: name
@@ -1963,6 +1963,12 @@ paths:
         required: true
         schema:
           type: string
+      - name: force
+        in: query
+        description: Skip the parent DS check.
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
           description: DNSSEC disabled successfully
@@ -1989,7 +1995,58 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: DNSSEC is not enabled for the zone
+          description: DNSSEC is not enabled for the zone, the parent still serves its DS, or the parent could not be asked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/dnssec/check-ds:
+    post:
+      tags:
+      - DNSSEC
+      summary: Ask the parent zone whether it serves the zone's DS
+      description: 'Asks the parent zone''s nameservers (`parent_ns_addrs`, or the discovered ones) for the zone''s DS records and reports the answer in `delegation`: `published` with the key tags and TTL served, or `hidden`. The same check gates disabling DNSSEC.'
+      operationId: check_dnssec_ds
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The parent's answer with the zone's DNSSEC status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecStatusResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: DNSSEC is not enabled for the zone, or the parent could not be asked
           content:
             application/json:
               schema:
@@ -2035,6 +2092,69 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/dnssec/parent-ns-addrs:
+    put:
+      tags:
+      - DNSSEC
+      summary: Set the parent zone's nameservers of a zone
+      description: Sets the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; null or empty returns the zone to discovering its parent. Needed where the parent is private, unreachable from bindizr, or undiscoverable without a system resolver.
+      operationId: set_dnssec_parent_ns_addrs
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetDnssecParentNsAddrsRequest'
+        required: true
+      responses:
+        '200':
+          description: Parent nameservers set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecStatusResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
           content:
             application/json:
               schema:
@@ -3275,6 +3395,53 @@ components:
           example: k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu
         token:
           $ref: '#/components/schemas/GetTokenResponse'
+    DnssecDelegationInfo:
+      type: object
+      description: What the parent zone's servers answered when asked for the zone's DS.
+      required:
+      - parent_servers
+      - discovered
+      - ds_state
+      - ds_key_tags
+      - checked_at
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+        discovered:
+          type: boolean
+          description: Whether the servers were discovered rather than configured on the zone.
+          example: true
+        ds_key_tags:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 0
+          description: Key tags of the DS records the parent serves.
+        ds_state:
+          type: string
+          description: |-
+            `published` when the parent serves a DS for the zone, `hidden` when
+            it serves none.
+          example: published
+        ds_ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            TTL of the parent's DS records: how long caches may keep serving
+            them once removed.
+          example: 86400
+          minimum: 0
+        parent_servers:
+          type: array
+          items:
+            type: string
+          description: |-
+            The servers asked: the zone's `parent_ns_addrs`, or the discovered
+            parent's nameservers.
     DnssecDsInfo:
       type: object
       description: A key's DS form for parent-zone registration.
@@ -3397,6 +3564,15 @@ components:
       type: object
       description: Request body for enabling DNSSEC on a zone.
       properties:
+        parent_ns_addrs:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The parent zone's nameservers (comma-separated `host[:port]`) asked
+            for the zone's DS before DNSSEC is disabled. Omitted, the zone keeps
+            its setting; a zone with none discovers its parent.
+          example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           type:
           - string
@@ -3615,6 +3791,13 @@ components:
       - ds_records
       - serial
       properties:
+        delegation:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/DnssecDelegationInfo'
+            description: |-
+              The parent's answer about the zone's DS; present only when this
+              status comes from a parent check.
         ds_records:
           type: array
           items:
@@ -3633,6 +3816,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DnssecKeyInfo'
+        parent_ns_addrs:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The parent nameservers configured on the zone; absent when the
+            parent is discovered.
+          example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           oneOf:
           - type: 'null'
@@ -4436,6 +4627,18 @@ components:
           - 'null'
           format: int64
           example: 42
+    SetDnssecParentNsAddrsRequest:
+      type: object
+      description: Request body for setting a zone's parent nameservers.
+      properties:
+        parent_ns_addrs:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Comma-separated `host[:port]` entries; null or empty returns the zone
+            to parent discovery.
+          example: a.gtld-servers.net,b.gtld-servers.net
     SetZoneDnssecPolicyRequest:
       type: object
       description: Request body for moving a signed zone to another DNSSEC policy.
@@ -4736,6 +4939,6 @@ tags:
 - name: Token
   description: API tokens and the zone grants each holds.
 - name: DNSSEC
-  description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone, key rollover, and re-signing.'
+  description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone and the parent''s check of them, key rollover, and re-signing.'
 - name: ExternalDNS
   description: Provider endpoints for the ExternalDNS webhook adapter; registered only when api.external_dns_enabled is set.

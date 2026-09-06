@@ -377,6 +377,7 @@ impl ZoneService {
                 retry: version.retry,
                 expire: version.expire,
                 dnssec_policy_id: zone.dnssec_policy_id,
+                parent_ns_addrs: zone.parent_ns_addrs.clone(),
                 minimum_ttl: version.minimum_ttl,
                 created_at: zone.created_at,
             };

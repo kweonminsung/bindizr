@@ -179,7 +179,11 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     assert_eq!(body["code"], "DNSSEC_POLICY_IN_USE");
 
     let (status, _) = app
-        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .request(
+            Method::DELETE,
+            &format!("/zones/{zone_name}/dnssec?force=true"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
 

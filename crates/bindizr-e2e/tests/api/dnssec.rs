@@ -1,7 +1,18 @@
+use std::net::UdpSocket;
+
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::{TestApp, TestAppOptions};
+use crate::common::{FakeParent, TestApp, TestAppOptions};
+
+/// A `host:port` nothing listens on, standing in for an unreachable parent.
+fn closed_parent_addr() -> String {
+    let socket = UdpSocket::bind(("127.0.0.1", 0)).expect("failed to bind an ephemeral port");
+    socket
+        .local_addr()
+        .expect("failed to read the ephemeral port")
+        .to_string()
+}
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -191,7 +202,11 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert!(!body.as_str().unwrap().contains("RRSIG"), "{body}");
 
     let (status, _) = app
-        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .request(
+            Method::DELETE,
+            &format!("/zones/{zone_name}/dnssec?force=true"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
 
@@ -576,4 +591,176 @@ async fn dnssec_enable_requires_a_global_token() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["code"], "FORBIDDEN");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
+    let app = TestApp::start_local().await;
+    let parent = FakeParent::start();
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": parent.addr() })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["dnssec"]["parent_ns_addrs"], parent.addr());
+    assert!(body["dnssec"]["delegation"].is_null(), "{body}");
+    let key_tag = body["dnssec"]["keys"][0]["key_tag"].as_u64().unwrap() as u16;
+    parent.set_ds(vec![(key_tag, 3600)]);
+
+    // The parent still delegates trust: dropping the signatures now would
+    // make the zone bogus.
+    let (status, body) = app
+        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["code"], "DNSSEC_DS_PUBLISHED");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains(&key_tag.to_string()),
+        "{body}"
+    );
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/check-ds"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let delegation = &body["dnssec"]["delegation"];
+    assert_eq!(delegation["ds_state"], "published");
+    assert_eq!(delegation["ds_key_tags"], json!([key_tag]));
+    assert_eq!(delegation["ds_ttl"], 3600);
+    assert_eq!(delegation["parent_servers"], json!([parent.addr()]));
+    assert_eq!(delegation["discovered"], false);
+
+    // A status read asks no one; only the check does.
+    let (status, body) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["dnssec"]["delegation"].is_null(), "{body}");
+
+    parent.set_ds(Vec::new());
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/check-ds"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["dnssec"]["delegation"]["ds_state"], "hidden");
+    assert_eq!(body["dnssec"]["delegation"]["ds_key_tags"], json!([]));
+    assert!(body["dnssec"]["delegation"]["ds_ttl"].is_null(), "{body}");
+
+    let (status, _) = app
+        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["dnssec"]["enabled"], false);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": closed_parent_addr() })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // A parent that does not answer may still serve the DS.
+    let (status, body) = app
+        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED");
+
+    let parent = FakeParent::start();
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}/dnssec/parent-ns-addrs"),
+            Some(json!({ "parent_ns_addrs": format!(" {} ,", parent.addr()) })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["dnssec"]["parent_ns_addrs"], parent.addr());
+
+    // An empty list returns the zone to parent discovery.
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}/dnssec/parent-ns-addrs"),
+            Some(json!({ "parent_ns_addrs": "" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["dnssec"]["parent_ns_addrs"].is_null(), "{body}");
+
+    let (status, _) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}/dnssec/parent-ns-addrs"),
+            Some(json!({ "parent_ns_addrs": parent.addr() })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = app
+        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let zone_name = app.zone_name("dnssec-force.example");
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "default_ttl": 3600
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": closed_parent_addr() })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _) = app
+        .request(
+            Method::DELETE,
+            &format!("/zones/{zone_name}/dnssec?force=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
 }

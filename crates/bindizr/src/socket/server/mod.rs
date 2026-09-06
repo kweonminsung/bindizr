@@ -127,6 +127,10 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ZoneDnssecSetPolicy => {
                     dnssec::set_dnssec_policy(&cmd.data).await
                 }
+                DaemonCommandKind::ZoneDnssecCheckDs => dnssec::check_dnssec_ds(&cmd.data).await,
+                DaemonCommandKind::ZoneDnssecSetParentNsAddrs => {
+                    dnssec::set_dnssec_parent_ns_addrs(&cmd.data).await
+                }
                 DaemonCommandKind::ZoneDnssecKeysExport => {
                     dnssec::export_dnssec_keys(&cmd.data).await
                 }

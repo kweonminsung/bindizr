@@ -2,8 +2,8 @@ use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest,
     ImportDnssecKeyRequest, ImportZoneFileRequest, ImportZoneFromServerRequest,
-    RollbackZoneRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
-    UpdateDnssecPolicyRequest, UpdateRecordPatch, UpdateZonePatch,
+    RollbackZoneRequest, RolloverDnssecRequest, SetDnssecParentNsAddrsRequest,
+    SetZoneDnssecPolicyRequest, UpdateDnssecPolicyRequest, UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -61,6 +61,8 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecWithdraw,
     ZoneDnssecWithdrawCancel,
     ZoneDnssecSetPolicy,
+    ZoneDnssecCheckDs,
+    ZoneDnssecSetParentNsAddrs,
     ZoneDnssecKeysExport,
     ZoneDnssecKeysImport,
     Doctor,
@@ -243,6 +245,20 @@ pub(crate) struct SetZoneDnssecPolicyParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
     pub(crate) request: SetZoneDnssecPolicyRequest,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct DisableZoneDnssecParams {
+    pub(crate) zone_name: String,
+    /// Skip the parent DS check.
+    pub(crate) force: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct SetZoneDnssecParentNsAddrsParams {
+    pub(crate) zone_name: String,
+    #[serde(flatten)]
+    pub(crate) request: SetDnssecParentNsAddrsRequest,
 }
 
 /// Daemon status details returned by the `Status` command.

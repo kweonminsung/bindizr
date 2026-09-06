@@ -4,7 +4,10 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status_tx, to_key_layout};
+use super::{
+    DnssecService, delegation::normalize_parent_ns_addrs, notify_zone, status::build_status_tx,
+    to_key_layout,
+};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -24,14 +27,19 @@ use crate::{
 
 impl DnssecService {
     /// Enable DNSSEC for a zone under `policy` (the built-in `default` when
-    /// omitted): generate its key(s) and sign the whole zone.
+    /// omitted): generate its key(s) and sign the whole zone. `parent_ns_addrs`
+    /// given (even empty) replaces the zone's parent servers.
     pub async fn enable(
         caller: &Caller,
         zone_name: &str,
         policy: Option<&str>,
+        parent_ns_addrs: Option<&str>,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
         let policy_name = normalize_policy_name(policy.unwrap_or(DEFAULT_DNSSEC_POLICY_NAME))?;
+        let parent_ns_addrs = parent_ns_addrs
+            .map(|raw| normalize_parent_ns_addrs(Some(raw)))
+            .transpose()?;
 
         let mut tx = RepositoryService::begin_tx("failed to enable DNSSEC").await?;
         let result = async {
@@ -42,6 +50,21 @@ impl DnssecService {
             if !existing.is_empty() {
                 return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
             }
+            let zone = match parent_ns_addrs {
+                Some(parent_ns_addrs) => {
+                    RepositoryService::update_zone_parent_ns_addrs_tx(
+                        &mut tx,
+                        zone.id,
+                        parent_ns_addrs.as_deref(),
+                    )
+                    .await?;
+                    Zone {
+                        parent_ns_addrs,
+                        ..zone
+                    }
+                }
+                None => zone,
+            };
             // Shared: a concurrent delete of the policy must wait for the FK
             // reference this transaction is about to write.
             let policy = RepositoryService::get_dnssec_policy_by_name_tx(
@@ -168,11 +191,34 @@ impl DnssecService {
         Ok(response)
     }
 
-    /// Disable DNSSEC for a zone. The caller is responsible for the
-    /// going-insecure order: remove the parent DS and wait out its TTL first,
-    /// or validating resolvers read the zone as bogus.
-    pub async fn disable(caller: &Caller, zone_name: &str) -> Result<(), ServiceError> {
+    /// Disable DNSSEC for a zone. Refused while the parent still serves the
+    /// zone's DS or cannot be asked, since signatures dropped under a DS make
+    /// the zone bogus; `force` skips that check.
+    pub async fn disable(
+        caller: &Caller,
+        zone_name: &str,
+        force: bool,
+    ) -> Result<(), ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
+
+        if !force {
+            // Unlocked pre-read to learn which parent to ask; the network wait
+            // must not hold the zone row, which the deletion re-reads locked.
+            let zone = {
+                let mut tx = RepositoryService::begin_read_tx("failed to disable DNSSEC").await?;
+                let result = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::None)
+                    .await
+                    .map(|(zone, _, _)| zone);
+                RepositoryService::finish_tx(tx, result, "failed to disable DNSSEC").await?
+            };
+            let delegation = Self::probe_delegation(&zone).await?;
+            if !delegation.ds_key_tags.is_empty() {
+                return Err(ServiceError::dnssec_ds_published(
+                    zone.name.as_str(),
+                    &delegation.ds_key_tags,
+                ));
+            }
+        }
 
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {
@@ -214,6 +260,9 @@ impl DnssecService {
         let zone_name =
             RepositoryService::finish_tx(tx, result, "failed to disable DNSSEC").await?;
 
+        if force {
+            crate::log_warn!("event=dnssec_disable_forced zone={}", zone_name);
+        }
         crate::log_info!("event=dnssec_disable zone={}", zone_name);
         notify_zone(&zone_name).await;
         Ok(())

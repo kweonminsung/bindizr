@@ -30,6 +30,7 @@ fn test_zone() -> Zone {
         expire: 3600000,
         minimum_ttl: 900,
         dnssec_policy_id: None,
+        parent_ns_addrs: None,
         created_at: Utc::now(),
     }
 }

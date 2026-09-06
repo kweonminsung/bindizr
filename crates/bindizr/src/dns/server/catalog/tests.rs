@@ -17,6 +17,7 @@ fn catalog_digest_changes_when_members_change() {
             expire: 604800,
             minimum_ttl: 3600,
             dnssec_policy_id: None,
+            parent_ns_addrs: None,
             created_at: Utc::now(),
         },
         Zone {
@@ -31,6 +32,7 @@ fn catalog_digest_changes_when_members_change() {
             expire: 604800,
             minimum_ttl: 3600,
             dnssec_policy_id: None,
+            parent_ns_addrs: None,
             created_at: Utc::now(),
         },
     ];

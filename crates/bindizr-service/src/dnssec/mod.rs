@@ -8,6 +8,7 @@
 //! caches know the key (automatic for ZSKs, `ds-seen` for CSK/KSK), `retired`
 //! until caches drain, then removed.
 
+mod delegation;
 mod keys;
 mod lifecycle;
 mod maintenance;
