@@ -142,7 +142,7 @@ pub(crate) async fn list_zone_versions(
 }
 
 /// Handle the `GetZoneVersion` command by returning one version with its
-/// reconstructed record set.
+/// reconstructed records.
 pub(crate) async fn get_zone_version(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {

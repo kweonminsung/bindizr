@@ -47,7 +47,7 @@ use crate::{
     },
 };
 
-type SignRecord = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
+type SignRr = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
 
 pub struct SignedViewParams<'a> {
     pub zone: &'a Zone,
@@ -124,7 +124,7 @@ impl SignedViewParams<'_> {
 
         // Rows for everything the signer owns: the apex key RRsets from `input`
         // and the denial chain. User records and the SOA stay in their own planes.
-        for record in input.iter().filter(|r| is_key_rrset_type(r.rtype())) {
+        for record in input.iter().filter(|r| is_key_type(r.rtype())) {
             new_rows.push(DnssecRecord {
                 id: 0,
                 zone_id: zone.id,
@@ -160,8 +160,8 @@ impl SignedViewParams<'_> {
             .map(|r| r.owner().as_slice().to_vec())
             .collect();
 
-        let mut signable: Vec<Vec<&SignRecord>> = Vec::new();
-        let mut current: Vec<&SignRecord> = Vec::new();
+        let mut signable: Vec<Vec<&SignRr>> = Vec::new();
+        let mut current: Vec<&SignRr> = Vec::new();
         for record in &input {
             if let Some(last) = current.last()
                 && (last.owner() != record.owner() || last.rtype() != record.rtype())
@@ -205,7 +205,7 @@ impl SignedViewParams<'_> {
             // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
             // active zone-data keys.
             let rrset_signers: &[&Signer<'_>] =
-                if *rrset[0].owner() == apex && is_key_rrset_type(rrset[0].rtype()) {
+                if *rrset[0].owner() == apex && is_key_type(rrset[0].rtype()) {
                     &key_signers
                 } else {
                     &data_signers
@@ -308,13 +308,13 @@ fn derived_record_type(rtype: Rtype) -> Result<DnssecRecordType, String> {
     DnssecRecordType::try_from(rtype.to_int() as i32)
 }
 
-fn is_key_rrset_type(rtype: Rtype) -> bool {
+fn is_key_type(rtype: Rtype) -> bool {
     matches!(rtype, Rtype::DNSKEY | Rtype::CDS | Rtype::CDNSKEY)
 }
 
 /// Content identity for signature reuse; any component changing must force
 /// a fresh signature.
-fn rrset_digest(signers: &[&Signer<'_>], rrset: &[&SignRecord]) -> String {
+fn rrset_digest(signers: &[&Signer<'_>], rrset: &[&SignRr]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(rrset[0].owner().as_slice());
     hasher.update(rrset[0].rtype().to_int().to_be_bytes());
@@ -388,7 +388,7 @@ impl<'a> Signer<'a> {
 
     fn sign_rrset(
         &self,
-        rrset: &[&SignRecord],
+        rrset: &[&SignRr],
         inception: DateTime<Utc>,
         expiration: DateTime<Utc>,
     ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, String> {
@@ -410,9 +410,9 @@ fn build_signing_input(
     params: &SignedViewParams<'_>,
     apex: &WireName,
     signers: &[Signer<'_>],
-) -> Result<Vec<SignRecord>, String> {
+) -> Result<Vec<SignRr>, String> {
     let zone = params.zone;
-    let mut input: Vec<SignRecord> = Vec::new();
+    let mut input: Vec<SignRr> = Vec::new();
 
     let soa_bytes = zone.soa_rdata(params.new_serial as u32)?;
     input.push(WireRecord::new(
@@ -527,13 +527,13 @@ fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, String> {
 /// (RFC 9077 TTLs and zone cuts included).
 fn denial_records(
     apex: &WireName,
-    input: &[SignRecord],
+    input: &[SignRr],
     denial: DnssecDenial,
-) -> Result<Vec<SignRecord>, String> {
+) -> Result<Vec<SignRr>, String> {
     fn into_sign_record<D>(
         record: WireRecord<WireName, D>,
         wrap: impl FnOnce(D) -> ZoneRecordData<Vec<u8>, WireName>,
-    ) -> SignRecord {
+    ) -> SignRr {
         let class = record.class();
         let ttl = record.ttl();
         let (owner, data) = record.into_owner_and_data();

@@ -51,7 +51,7 @@ pub(crate) async fn create_record(
     })
 }
 
-/// Handle the `UpdateRecord` command by applying a partial-update patch.
+/// Handle the `UpdateRr` command by applying a partial-update patch.
 pub(crate) async fn update_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {

@@ -18,7 +18,7 @@ pub enum ZoneFileValue {
 }
 
 /// A single record extracted from a BIND zone file.
-pub struct ParsedRecord {
+pub struct ZoneFileRr {
     /// Absolute owner name (e.g. `www.example.com.`).
     pub owner_fqdn: String,
     pub record_type: RecordType,
@@ -28,7 +28,7 @@ pub struct ParsedRecord {
 }
 
 pub struct ParsedZoneFile {
-    pub records: Vec<ParsedRecord>,
+    pub records: Vec<ZoneFileRr>,
     /// Human-readable problems (unsupported type, non-IN class, parse failure).
     pub errors: Vec<String>,
 }
@@ -138,7 +138,7 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
                     }
                 };
 
-                records.push(ParsedRecord {
+                records.push(ZoneFileRr {
                     owner_fqdn: to_fqdn_lowercase(&record.owner().to_string()),
                     record_type,
                     value,

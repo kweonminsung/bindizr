@@ -40,7 +40,7 @@ pub(crate) enum DaemonCommandKind {
     GetRecord,
     ListRecords,
     CreateRecord,
-    UpdateRecord,
+    UpdateRr,
     BulkCreateRecords,
     DeleteRecord,
     NotifyZone,

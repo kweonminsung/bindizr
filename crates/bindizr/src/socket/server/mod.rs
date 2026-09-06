@@ -97,7 +97,7 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
-                DaemonCommandKind::UpdateRecord => record::update_record(&cmd.data).await,
+                DaemonCommandKind::UpdateRr => record::update_record(&cmd.data).await,
                 DaemonCommandKind::BulkCreateRecords => {
                     record::bulk_create_records(&cmd.data).await
                 }
@@ -162,7 +162,7 @@ async fn handle_client(stream: UnixStream) {
 
 /// Bind the daemon's Unix socket and spawn the connection accept loop.
 pub(crate) async fn initialize() -> Result<(), String> {
-    status::record_start_time();
+    status::mark_start_time();
     let (socket_path, listener) = bind_daemon_socket().await?;
 
     log_info!("Daemon socket server listening on {}", socket_path);

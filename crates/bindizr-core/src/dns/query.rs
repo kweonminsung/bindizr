@@ -35,9 +35,9 @@ pub fn build_question(
     (query_id, question.finish())
 }
 
-/// One answer record from a zone-transfer response, in presentation form.
+/// One answer RR from a zone-transfer response, in presentation form.
 #[derive(Debug)]
-pub struct TransferRecord {
+pub struct TransferRr {
     /// Owner name as an absolute presentation name (trailing dot).
     pub name: String,
     pub rtype: Rtype,
@@ -46,12 +46,9 @@ pub struct TransferRecord {
     pub rdata: String,
 }
 
-/// Validate one AXFR response message and collect every answer record; the
+/// Validate one AXFR response message and collect every answer RR; the
 /// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
-pub fn extract_transfer_records(
-    query_id: u16,
-    response: &[u8],
-) -> Result<Vec<TransferRecord>, String> {
+pub fn extract_transfer_rrs(query_id: u16, response: &[u8]) -> Result<Vec<TransferRr>, String> {
     use domain::rdata::AllRecordData;
 
     let message =
@@ -110,7 +107,7 @@ pub fn extract_transfer_records(
             }
             data => data.to_string(),
         };
-        records.push(TransferRecord {
+        records.push(TransferRr {
             // Display omits the root dot; the absolute form keeps the
             // import parser from re-qualifying the name.
             name: format!("{}.", record.owner()),
@@ -217,7 +214,7 @@ mod tests {
             .unwrap();
         let wire = answer.finish();
 
-        let err = extract_transfer_records(7, &wire).unwrap_err();
+        let err = extract_transfer_rrs(7, &wire).unwrap_err();
         assert!(err.contains("class"), "{err}");
     }
 }

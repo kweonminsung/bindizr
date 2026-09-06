@@ -1,4 +1,4 @@
-//! Per-zone cache of the record set, keyed by serial. Every write bumps the
+//! Per-zone cache of a zone's records, keyed by serial. Every write bumps the
 //! serial, so an entry matching the zone's current serial is always fresh;
 //! repeated AXFRs at that serial skip the database read. One entry per zone.
 //!

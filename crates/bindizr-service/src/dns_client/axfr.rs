@@ -6,7 +6,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 use bindizr_core::{
     dns::{
         message::{Name, Opcode, Rtype},
-        query::{TransferRecord, build_question, extract_transfer_records},
+        query::{TransferRr, build_question, extract_transfer_rrs},
     },
     model::record::RecordType,
 };
@@ -27,7 +27,7 @@ const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Transfer the zone from `server` (`host[:port]`, port 53 default) and
 /// return its records, the delimiting SOAs included (RFC 5936, Section 2.2).
-async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferRecord>, String> {
+async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferRr>, String> {
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
 
@@ -49,10 +49,7 @@ async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferReco
 
 /// One AXFR over TCP: read length-prefixed response messages until the
 /// closing SOA repeats the opening one.
-async fn transfer_from(
-    addr: SocketAddr,
-    qname: &Name<Vec<u8>>,
-) -> Result<Vec<TransferRecord>, String> {
+async fn transfer_from(addr: SocketAddr, qname: &Name<Vec<u8>>) -> Result<Vec<TransferRr>, String> {
     let (query_id, query) = build_question(Opcode::QUERY, false, false, qname, Rtype::AXFR);
 
     let mut stream = tokio::net::TcpStream::connect(addr)
@@ -69,7 +66,7 @@ async fn transfer_from(
         .map_err(|e| format!("send failed: {}", e))?;
 
     let expected_owner = format!("{}.", qname);
-    let mut records: Vec<TransferRecord> = Vec::new();
+    let mut records: Vec<TransferRr> = Vec::new();
     let mut total_bytes = 0usize;
     loop {
         let mut length = [0u8; 2];
@@ -89,7 +86,7 @@ async fn transfer_from(
             .await
             .map_err(|e| format!("read failed before the closing SOA: {}", e))?;
 
-        let batch = extract_transfer_records(query_id, &response)?;
+        let batch = extract_transfer_rrs(query_id, &response)?;
         for record in batch {
             if records.is_empty() {
                 if record.rtype != Rtype::SOA {
@@ -123,7 +120,7 @@ async fn transfer_from(
 /// rows are dropped (the zone keeps its own SOA fields and signs itself);
 /// any other unsupported type fails the import rather than thinning the
 /// zone silently.
-fn render_zone_file(records: &[TransferRecord]) -> Result<String, String> {
+fn render_zone_file(records: &[TransferRr]) -> Result<String, String> {
     let mut lines = String::new();
     for record in records {
         if matches!(

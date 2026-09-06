@@ -1,6 +1,6 @@
 use bindizr_core::dns::{
     message::{Class, Rtype},
-    nsupdate::parser::UpdateRecord,
+    nsupdate::parser::UpdateRr,
 };
 
 use super::{UpdateError, validate_delete_shape};
@@ -54,8 +54,8 @@ fn validate_delete_shape_rejects_none_class_delete_with_type_any() {
     assert!(matches!(err, UpdateError::Refused(_)));
 }
 
-fn update_record(rr_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
-    UpdateRecord {
+fn update_record(rr_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRr {
+    UpdateRr {
         name: "www.example.com.".to_string(),
         rr_type,
         class,

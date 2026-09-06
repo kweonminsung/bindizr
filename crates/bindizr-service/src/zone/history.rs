@@ -83,7 +83,7 @@ fn record_match_key(record: &Record) -> MatchKey {
 }
 
 /// Reverse-apply the zone's journal in `(target_serial, current_serial]`
-/// onto the current record set, yielding the record set at `target_serial`.
+/// onto the current records, yielding the records at `target_serial`.
 /// SOA rows are skipped (SOA state is restored from `zone_versions`).
 async fn reconstruct_records_at_serial(
     tx: &mut RepositoryTx<'_>,
@@ -161,7 +161,7 @@ async fn reconstruct_records_at_serial(
     Ok(records)
 }
 
-/// The record set at `serial`: the live records when it is the current serial,
+/// The records at `serial`: the live records when it is the current serial,
 /// otherwise reconstructed from the journal.
 async fn records_at_serial(
     tx: &mut RepositoryTx<'_>,
@@ -463,7 +463,7 @@ impl ZoneService {
                 });
             }
 
-            // Validate the adds in-memory against the post-delete record set
+            // Validate the adds in-memory against the records left after the deletes
             // (mirrors the import reconcile).
             let mut records_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
             for record in &current_records {

@@ -1,4 +1,4 @@
-use super::{ParseError, UpdateRecord, parse_update_request, rr_to_record_value};
+use super::{ParseError, UpdateRr, parse_update_request, rr_to_record_value};
 use crate::{
     dns::message::{Class, Rtype},
     model::record::RecordType,
@@ -150,7 +150,7 @@ fn parse_update_request_rejects_tsig_before_other_additional_rrs() {
 
 #[test]
 fn rr_to_record_value_preserves_txt_character_string_boundaries() {
-    let first = UpdateRecord {
+    let first = UpdateRr {
         name: "txt.example.com.".to_string(),
         rr_type: Rtype::TXT,
         class: Class::IN,
@@ -158,7 +158,7 @@ fn rr_to_record_value_preserves_txt_character_string_boundaries() {
         rdata: vec![2, b'a', b'b', 1, b'c'],
         rdata_start: 0,
     };
-    let second = UpdateRecord {
+    let second = UpdateRr {
         name: "txt.example.com.".to_string(),
         rr_type: Rtype::TXT,
         class: Class::IN,
@@ -183,7 +183,7 @@ fn rr_to_record_value_follows_compression_pointer_in_name_rdata() {
     let pointer = [0xC0, 5]; // Points at the "example.com." bytes above
     message.extend_from_slice(&pointer);
 
-    let update = UpdateRecord {
+    let update = UpdateRr {
         name: "www.example.com.".to_string(),
         rr_type: Rtype::CNAME,
         class: Class::IN,
@@ -256,8 +256,8 @@ fn rr_to_record_value_splits_srv_priority_into_its_own_column() {
     assert_eq!(priority, Some(10));
 }
 
-fn update_record(rr_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
-    UpdateRecord {
+fn update_record(rr_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRr {
+    UpdateRr {
         name: "www.example.com.".to_string(),
         rr_type,
         class,

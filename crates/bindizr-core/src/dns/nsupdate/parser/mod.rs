@@ -21,16 +21,16 @@ const DNS_HEADER_LEN: usize = 12;
 #[derive(Debug, Clone)]
 pub struct UpdateRequest {
     pub zone_name: String,
-    pub prerequisites: Vec<UpdateRecord>,
-    pub updates: Vec<UpdateRecord>,
-    pub tsig: Option<TsigRecord>,
+    pub prerequisites: Vec<UpdateRr>,
+    pub updates: Vec<UpdateRr>,
+    pub tsig: Option<TsigRr>,
 }
 
 /// One RR from the prerequisite or update section. `rdata_start` locates the
 /// rdata in the original message so compressed names inside it can be decoded
 /// lazily by the update flow.
 #[derive(Debug, Clone)]
-pub struct UpdateRecord {
+pub struct UpdateRr {
     pub name: String,
     pub rr_type: Rtype,
     pub class: Class,
@@ -45,7 +45,7 @@ pub struct UpdateRecord {
 /// rejects structurally invalid TSIG RRs with FORMERR (RFC 8945, Section 5.2) before
 /// that happens.
 #[derive(Debug, Clone)]
-pub struct TsigRecord {
+pub struct TsigRr {
     pub name: String,
     pub fudge: u16,
 }
@@ -129,7 +129,7 @@ pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
     })
 }
 
-fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRecord, ParseError> {
+fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRr, ParseError> {
     let name = ParsedName::parse(parser).map_err(|_| ParseError::InvalidName)?;
     let name = to_presentation_name(&name)?;
 
@@ -141,7 +141,7 @@ fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRecord, 
     let rdata_start = parser.pos();
     parser.advance(rdlen).map_err(|_| ParseError::InvalidRr)?;
 
-    Ok(UpdateRecord {
+    Ok(UpdateRr {
         name,
         rr_type,
         class,
@@ -154,7 +154,7 @@ fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRecord, 
 fn parse_additional_section(
     parser: &mut Parser<'_, [u8]>,
     count: usize,
-) -> Result<Option<TsigRecord>, ParseError> {
+) -> Result<Option<TsigRr>, ParseError> {
     let mut tsig = None;
 
     for index in 0..count {
@@ -182,7 +182,7 @@ fn parse_additional_section(
 fn parse_tsig_rr(
     parser: &mut Parser<'_, [u8]>,
     owner: &ParsedName<&[u8]>,
-) -> Result<TsigRecord, ParseError> {
+) -> Result<TsigRr, ParseError> {
     let class = Class::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidTsig)?);
     let ttl = parser.parse_u32_be().map_err(|_| ParseError::InvalidTsig)?;
     let rdlen = parser.parse_u16_be().map_err(|_| ParseError::InvalidTsig)? as usize;
@@ -199,7 +199,7 @@ fn parse_tsig_rr(
         return Err(ParseError::InvalidTsig);
     }
 
-    Ok(TsigRecord {
+    Ok(TsigRr {
         name: to_presentation_name(owner)?,
         fudge: record.fudge(),
     })
@@ -228,17 +228,17 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> 
 
 pub fn parse_rdata<'a, T>(
     message: &'a [u8],
-    update: &UpdateRecord,
+    rr: &UpdateRr,
     what: &str,
     parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
 ) -> Result<T, String> {
     let refused = || format!("invalid {} rdata", what);
 
     let mut parser = Parser::from_ref(message);
-    parser.advance(update.rdata_start).map_err(|_| refused())?;
+    parser.advance(rr.rdata_start).map_err(|_| refused())?;
     let value = parse(&mut parser).ok_or_else(refused)?;
 
-    if parser.pos() != update.rdata_start + update.rdata.len() {
+    if parser.pos() != rr.rdata_start + rr.rdata.len() {
         return Err(refused());
     }
 
@@ -247,20 +247,20 @@ pub fn parse_rdata<'a, T>(
 
 /// One UPDATE RR decoded into the record columns the service stores.
 pub fn rr_to_record_value(
-    update: &UpdateRecord,
+    rr: &UpdateRr,
     message: &[u8],
 ) -> Result<(RecordType, String, Option<i32>), String> {
-    match RecordType::from_rtype(update.rr_type)? {
+    match RecordType::from_rtype(rr.rr_type)? {
         RecordType::A => {
-            let data = parse_rdata(message, update, "A", |parser| A::parse(parser).ok())?;
+            let data = parse_rdata(message, rr, "A", |parser| A::parse(parser).ok())?;
             Ok((RecordType::A, data.addr().to_string(), None))
         }
         RecordType::AAAA => {
-            let data = parse_rdata(message, update, "AAAA", |parser| Aaaa::parse(parser).ok())?;
+            let data = parse_rdata(message, rr, "AAAA", |parser| Aaaa::parse(parser).ok())?;
             Ok((RecordType::AAAA, data.addr().to_string(), None))
         }
         record_type @ (RecordType::CNAME | RecordType::NS | RecordType::PTR) => {
-            let name = parse_rdata(message, update, record_type.as_str(), |parser| {
+            let name = parse_rdata(message, rr, record_type.as_str(), |parser| {
                 ParsedName::parse(parser).ok()
             })?;
             let value = to_presentation_name(&name)
@@ -268,7 +268,7 @@ pub fn rr_to_record_value(
             Ok((record_type, value, None))
         }
         RecordType::TXT => {
-            let data = Txt::from_octets(update.rdata.as_slice())
+            let data = Txt::from_octets(rr.rdata.as_slice())
                 .map_err(|e| format!("invalid TXT rdata: {}", e))?;
             // TXT values must be valid UTF-8 (a project-wide rule), so reject
             // non-UTF-8 character-strings even though the wire allows them.
@@ -277,43 +277,43 @@ pub fn rr_to_record_value(
                     return Err("invalid TXT rdata".to_string());
                 }
             }
-            let value = TxtRecordValue::from_rdata(&update.rdata)
+            let value = TxtRecordValue::from_rdata(&rr.rdata)
                 .map_err(|e| format!("invalid TXT rdata: {}", e))?
                 .to_presentation();
             Ok((RecordType::TXT, value, None))
         }
         RecordType::CAA => {
-            let data = parse_rdata(message, update, "CAA", |parser| {
+            let data = parse_rdata(message, rr, "CAA", |parser| {
                 domain::rdata::Caa::parse(parser).ok()
             })?;
             Ok((RecordType::CAA, data.to_string(), None))
         }
         RecordType::DS => {
-            let data = parse_rdata(message, update, "DS", |parser| {
+            let data = parse_rdata(message, rr, "DS", |parser| {
                 domain::rdata::Ds::parse(parser).ok()
             })?;
             Ok((RecordType::DS, data.to_string(), None))
         }
         RecordType::SSHFP => {
-            let data = parse_rdata(message, update, "SSHFP", |parser| {
+            let data = parse_rdata(message, rr, "SSHFP", |parser| {
                 domain::rdata::Sshfp::parse(parser).ok()
             })?;
             Ok((RecordType::SSHFP, data.to_string(), None))
         }
         RecordType::TLSA => {
-            let data = parse_rdata(message, update, "TLSA", |parser| {
+            let data = parse_rdata(message, rr, "TLSA", |parser| {
                 domain::rdata::Tlsa::parse(parser).ok()
             })?;
             Ok((RecordType::TLSA, data.to_string(), None))
         }
         RecordType::MX => {
-            let data = parse_rdata(message, update, "MX", |parser| Mx::parse(parser).ok())?;
+            let data = parse_rdata(message, rr, "MX", |parser| Mx::parse(parser).ok())?;
             let host = to_presentation_name(data.exchange())
                 .map_err(|e| format!("invalid MX rdata: {}", e))?;
             Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
         }
         RecordType::SRV => {
-            let data = parse_rdata(message, update, "SRV", |parser| Srv::parse(parser).ok())?;
+            let data = parse_rdata(message, rr, "SRV", |parser| Srv::parse(parser).ok())?;
             let target = to_presentation_name(data.target())
                 .map_err(|e| format!("invalid SRV rdata: {}", e))?;
             // Priority lives in its own column, so the value holds the rest.

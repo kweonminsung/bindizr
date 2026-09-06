@@ -84,7 +84,7 @@ pub enum Prerequisite {
 /// One update to apply (RFC 2136, Section 2.5). Owner names are absolute.
 pub enum UpdateOp {
     /// CLASS IN: add the RR.
-    Add {
+    AddRr {
         name: String,
         record_type: RecordType,
         /// TXT arrives row-encoded; every other type in presentation form.
@@ -110,7 +110,7 @@ pub enum UpdateOp {
 impl UpdateOp {
     fn name(&self) -> &str {
         match self {
-            UpdateOp::Add { name, .. }
+            UpdateOp::AddRr { name, .. }
             | UpdateOp::DeleteRrset { name, .. }
             | UpdateOp::DeleteRr { name, .. } => name,
         }
@@ -119,7 +119,7 @@ impl UpdateOp {
     /// The type this update touches; `None` for a whole-name delete.
     fn record_type(&self) -> Option<&RecordType> {
         match self {
-            UpdateOp::Add { record_type, .. } | UpdateOp::DeleteRr { record_type, .. } => {
+            UpdateOp::AddRr { record_type, .. } | UpdateOp::DeleteRr { record_type, .. } => {
                 Some(record_type)
             }
             UpdateOp::DeleteRrset { record_type, .. } => record_type.as_ref(),
@@ -259,7 +259,7 @@ async fn apply_op(
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
     match op {
-        UpdateOp::Add {
+        UpdateOp::AddRr {
             name,
             record_type,
             value,
