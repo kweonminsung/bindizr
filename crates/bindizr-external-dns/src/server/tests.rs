@@ -206,12 +206,12 @@ async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
 }
 
 #[tokio::test]
-async fn get_records_groups_rows_into_endpoints() {
+async fn get_records_maps_records_to_endpoints() {
     let records = json!({"records": [
-        {"name": "app.example.com", "record_type": "A", "ttl": 300, "value": "192.0.2.2"},
-        {"name": "app.example.com", "record_type": "A", "ttl": 300, "value": "192.0.2.1"},
+        {"name": "app.example.com", "record_type": "A", "ttl": 300,
+         "values": ["192.0.2.1", "192.0.2.2"]},
         {"name": "app.example.com", "record_type": "TXT", "ttl": 3600,
-         "value": "\"heritage=external-dns,external-dns/owner=default\""}
+         "values": ["\"heritage=external-dns,external-dns/owner=default\""]}
     ]});
     let mock = spawn_mock(
         (200, json!({"zones": []})),
@@ -350,7 +350,7 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
 }
 
 #[tokio::test]
-async fn adjustendpoints_forwards_rrsets_and_returns_merged_endpoints() {
+async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     let (zones, records, changes) = ok_mock_bodies();
     let mock = spawn_mock_with_adjust(
         zones,
@@ -358,7 +358,7 @@ async fn adjustendpoints_forwards_rrsets_and_returns_merged_endpoints() {
         changes,
         (
             200,
-            json!({"rrsets": [
+            json!({"records": [
                 {"name": "a.example.com", "record_type": "AAAA", "ttl": 300, "values": ["2001:db8::1"]},
                 {"name": "b.example.com", "record_type": "TXT", "values": ["\"v=spf1 -all\""]}
             ]}),
@@ -393,7 +393,7 @@ async fn adjustendpoints_forwards_rrsets_and_returns_merged_endpoints() {
     assert_eq!(recorded[0].0, "/external-dns/adjust");
     assert_eq!(
         serde_json::from_str::<Value>(&recorded[0].2).unwrap(),
-        json!({"rrsets": [
+        json!({"records": [
             {"name": "a.example.com", "record_type": "AAAA", "ttl": 300, "values": ["2001:0DB8::1"]},
             {"name": "b.example.com", "record_type": "TXT", "values": ["v=spf1 -all"]}
         ]})

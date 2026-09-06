@@ -37,12 +37,12 @@ pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError>
 
 pub(crate) fn normalize_record_owner_name(
     input_name: &str,
-    zone: &ZoneName,
+    zone_name: &ZoneName,
 ) -> Result<OwnerName, ServiceError> {
-    let owner = OwnerName::parse_in_zone(input_name, zone).map_err(|e| match e {
+    let owner = OwnerName::parse_in_zone(input_name, zone_name).map_err(|e| match e {
         ParseNameError::OutsideZone => ServiceError::invalid_record_name(format!(
             "record name '{}' is outside zone '{}'",
-            input_name, zone
+            input_name, zone_name
         )),
         other => ServiceError::invalid_record_name(format!("record name {}", other)),
     })?;
@@ -66,7 +66,7 @@ fn has_matching_rdata<'a>(
 
 /// Validate an add whose owner name has already been normalized to `stored_name`.
 pub(crate) fn validate_record_add_constraints_normalized(
-    zone_records: &[Record],
+    records: &[Record],
     stored_name: &OwnerName,
     record_type: &RecordType,
     value: &str,
@@ -82,13 +82,13 @@ pub(crate) fn validate_record_add_constraints_normalized(
         ));
     }
 
-    let existing_records_with_name: Vec<_> = zone_records
+    let records_at_name: Vec<_> = records
         .iter()
         .filter(|r| r.name == *stored_name && except_record_id.map(|id| id != r.id).unwrap_or(true))
         .collect();
 
     if has_matching_rdata(
-        existing_records_with_name.iter().copied(),
+        records_at_name.iter().copied(),
         record_type,
         value,
         priority,
@@ -101,10 +101,10 @@ pub(crate) fn validate_record_add_constraints_normalized(
 
     if *record_type == RecordType::MX {
         let adding_null_mx = MxRecordValue::is_null_value(value, priority);
-        let has_existing_null_mx = existing_records_with_name.iter().any(|r| {
+        let has_existing_null_mx = records_at_name.iter().any(|r| {
             r.record_type == RecordType::MX && MxRecordValue::is_null_value(&r.value, r.priority)
         });
-        let has_existing_mx = existing_records_with_name
+        let has_existing_mx = records_at_name
             .iter()
             .any(|r| r.record_type == RecordType::MX);
 
@@ -116,14 +116,14 @@ pub(crate) fn validate_record_add_constraints_normalized(
         }
     }
 
-    if !existing_records_with_name.is_empty() {
+    if !records_at_name.is_empty() {
         if *record_type == RecordType::CNAME {
             return Err(ServiceError::record_conflict(format!(
                 "Another record with name '{}' already exists in this zone, so CNAME cannot be used",
                 stored_name
             )));
         }
-        if existing_records_with_name
+        if records_at_name
             .iter()
             .any(|r| r.record_type == RecordType::CNAME)
         {
@@ -144,12 +144,12 @@ pub(crate) fn validate_record_add_constraints_normalized(
     }
 
     // RFC 2181, Section 5.2: one TTL per RRset.
-    if let Some(conflicting) = existing_records_with_name
+    if let Some(conflicting) = records_at_name
         .iter()
         .find(|r| r.record_type == *record_type && r.ttl != ttl)
     {
         return Err(ServiceError::record_conflict(format!(
-            "TTL {} does not match the existing {} RRset for '{}' (TTL {}); every record in an RRset must share one TTL",
+            "TTL {} does not match the existing {} records for '{}' (TTL {}); records sharing a name and type share one TTL",
             ttl, record_type, stored_name, conflicting.ttl
         )));
     }
@@ -176,12 +176,12 @@ pub(crate) fn validate_delete_constraints(
 /// Validate an update whose new owner name is already normalized.
 pub(crate) fn validate_record_update_constraints_normalized(
     zone: &Zone,
-    zone_records: &[Record],
+    records: &[Record],
     existing_record: &Record,
     updated_record: &Record,
 ) -> Result<(), ServiceError> {
     validate_record_add_constraints_normalized(
-        zone_records,
+        records,
         &updated_record.name,
         &updated_record.record_type,
         &updated_record.value,
@@ -235,7 +235,7 @@ impl RecordService {
     ) -> Result<AddOutcome, ServiceError> {
         // Only records sharing the owner name can conflict, so load just those
         // instead of the whole zone.
-        let zone_records = RepositoryService::list_records_by_name_tx(
+        let records_at_name = RepositoryService::list_records_by_name_tx(
             tx,
             zone.id,
             owner_name,
@@ -243,16 +243,16 @@ impl RecordService {
         )
         .await
         .map_err(|e| {
-            log_error!("Failed to load zone records: {}", e);
-            ServiceError::internal("Failed to load zone records")
+            log_error!("Failed to load records: {}", e);
+            ServiceError::internal("Failed to load records")
         })?;
 
-        if has_matching_rdata(zone_records.iter(), record_type, value, priority) {
+        if has_matching_rdata(records_at_name.iter(), record_type, value, priority) {
             return Ok(AddOutcome::Duplicate);
         }
 
         validate_record_add_constraints_normalized(
-            &zone_records,
+            &records_at_name,
             owner_name,
             record_type,
             value,

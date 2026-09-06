@@ -6,7 +6,8 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 use bindizr_core::{
     dns::{
         message::{Name, Opcode, Rtype},
-        query::{TransferRecord, build_question, extract_transfer_records},
+        name::decode_name_labels,
+        query::{TransferRr, build_question, extract_transfer_rrs},
     },
     model::record::RecordType,
 };
@@ -15,19 +16,19 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 /// Transfer the zone from `server` and render it as zone-file text ready
 /// for the import parser.
 pub(crate) async fn fetch_zone_file(server: &str, zone_name: &str) -> Result<String, String> {
-    let records = transfer_zone(server, zone_name).await?;
-    render_zone_file(&records)
+    let rrs = transfer_zone(server, zone_name).await?;
+    render_zone_file(&rrs)
 }
 
 /// Bounds on one inbound transfer, guarding against a runaway server.
 const MAX_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
-const MAX_TRANSFER_RECORDS: usize = 200_000;
+const MAX_TRANSFER_RRS: usize = 200_000;
 /// Whole-transfer deadline: resolution and every address attempt share it.
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Transfer the zone from `server` (`host[:port]`, port 53 default) and
-/// return its records, the delimiting SOAs included (RFC 5936, Section 2.2).
-async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferRecord>, String> {
+/// return its RRs, the delimiting SOAs included (RFC 5936, Section 2.2).
+async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferRr>, String> {
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
 
@@ -37,7 +38,7 @@ async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferReco
         let addrs = result.map_err(|e| format!("failed to resolve {}: {}", entry, e))?;
         for addr in addrs {
             match tokio::time::timeout_at(deadline, transfer_from(addr, &qname)).await {
-                Ok(Ok(records)) => return Ok(records),
+                Ok(Ok(rrs)) => return Ok(rrs),
                 Ok(Err(e)) => last = Some(format!("{}: {}", addr, e)),
                 // The deadline is absolute; later attempts would time out too.
                 Err(_) => return Err(format!("{}: transfer timed out", addr)),
@@ -49,10 +50,7 @@ async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferReco
 
 /// One AXFR over TCP: read length-prefixed response messages until the
 /// closing SOA repeats the opening one.
-async fn transfer_from(
-    addr: SocketAddr,
-    qname: &Name<Vec<u8>>,
-) -> Result<Vec<TransferRecord>, String> {
+async fn transfer_from(addr: SocketAddr, qname: &Name<Vec<u8>>) -> Result<Vec<TransferRr>, String> {
     let (query_id, query) = build_question(Opcode::QUERY, false, false, qname, Rtype::AXFR);
 
     let mut stream = tokio::net::TcpStream::connect(addr)
@@ -69,7 +67,8 @@ async fn transfer_from(
         .map_err(|e| format!("send failed: {}", e))?;
 
     let expected_owner = format!("{}.", qname);
-    let mut records: Vec<TransferRecord> = Vec::new();
+    let expected_labels = owner_labels(&expected_owner)?;
+    let mut rrs: Vec<TransferRr> = Vec::new();
     let mut total_bytes = 0usize;
     loop {
         let mut length = [0u8; 2];
@@ -89,45 +88,53 @@ async fn transfer_from(
             .await
             .map_err(|e| format!("read failed before the closing SOA: {}", e))?;
 
-        let batch = extract_transfer_records(query_id, &response)?;
-        for record in batch {
-            if records.is_empty() {
-                if record.rtype != Rtype::SOA {
+        let batch = extract_transfer_rrs(query_id, &response)?;
+        for rr in batch {
+            if rrs.is_empty() {
+                if rr.rtype != Rtype::SOA {
                     return Err("transfer does not start with the zone's SOA".to_string());
                 }
-                if !record.name.eq_ignore_ascii_case(&expected_owner) {
+                if owner_labels(&rr.name)? != expected_labels {
                     return Err(format!(
                         "transfer opens with the SOA of {}, not {}",
-                        record.name, expected_owner
+                        rr.name, expected_owner
                     ));
                 }
-            } else if record.rtype == Rtype::SOA {
+            } else if rr.rtype == Rtype::SOA {
                 // The stream ends by repeating the opening SOA (RFC 5936, Section 2.2).
-                let opening = &records[0];
-                if !record.name.eq_ignore_ascii_case(&opening.name) || record.rdata != opening.rdata
+                let opening = &rrs[0];
+                if owner_labels(&rr.name)? != owner_labels(&opening.name)?
+                    || rr.rdata != opening.rdata
                 {
                     return Err("transfer carries a SOA that is not the opening one".to_string());
                 }
-                records.push(record);
-                return Ok(records);
+                rrs.push(rr);
+                return Ok(rrs);
             }
-            records.push(record);
-            if records.len() > MAX_TRANSFER_RECORDS {
-                return Err(format!("transfer exceeds {} records", MAX_TRANSFER_RECORDS));
+            rrs.push(rr);
+            if rrs.len() > MAX_TRANSFER_RRS {
+                return Err(format!("transfer exceeds {} records", MAX_TRANSFER_RRS));
             }
         }
     }
 }
 
-/// Render transferred records as zone-file lines. SOA and DNSSEC-derived
+/// Owner names compare as labels, never as text (RFC 4343 case, escapes).
+fn owner_labels(name: &str) -> Result<Vec<String>, String> {
+    decode_name_labels(name)
+        .map(|(labels, _)| labels)
+        .map_err(|e| format!("invalid owner name '{}': {}", name, e))
+}
+
+/// Render transferred RRs as zone-file lines. SOA and DNSSEC-derived
 /// rows are dropped (the zone keeps its own SOA fields and signs itself);
 /// any other unsupported type fails the import rather than thinning the
 /// zone silently.
-fn render_zone_file(records: &[TransferRecord]) -> Result<String, String> {
+fn render_zone_file(rrs: &[TransferRr]) -> Result<String, String> {
     let mut lines = String::new();
-    for record in records {
+    for rr in rrs {
         if matches!(
-            record.rtype,
+            rr.rtype,
             Rtype::SOA
                 | Rtype::RRSIG
                 | Rtype::NSEC
@@ -139,15 +146,15 @@ fn render_zone_file(records: &[TransferRecord]) -> Result<String, String> {
         ) {
             continue;
         }
-        RecordType::from_rtype(record.rtype).map_err(|_| {
+        RecordType::from_rtype(rr.rtype).map_err(|_| {
             format!(
                 "the source zone carries a record type bindizr does not store: {} {}",
-                record.name, record.rtype
+                rr.name, rr.rtype
             )
         })?;
         lines.push_str(&format!(
             "{} {} IN {} {}\n",
-            record.name, record.ttl, record.rtype, record.rdata
+            rr.name, rr.ttl, rr.rtype, rr.rdata
         ));
     }
     Ok(lines)

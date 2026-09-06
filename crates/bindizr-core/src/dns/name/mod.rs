@@ -14,9 +14,9 @@ pub use owner_name::{OwnerName, decode_name_labels, is_label_suffix};
 pub use zone_name::ZoneName;
 
 /// Maximum length of a single DNS label, in bytes (RFC 1035).
-pub const MAX_DNS_LABEL_LEN: usize = 63;
+pub(crate) const MAX_DNS_LABEL_LEN: usize = 63;
 /// Maximum length of a domain name, in bytes (RFC 1035).
-pub const MAX_DOMAIN_LEN: usize = 253;
+pub(crate) const MAX_DOMAIN_LEN: usize = 253;
 
 pub fn has_whitespace_or_control(value: &str) -> bool {
     value
@@ -52,7 +52,7 @@ fn classify_domain_label(label: &str, allow_underscore: bool) -> Result<(), Pars
 }
 
 /// `classify_domain_label` with the problem phrased against `field`.
-pub fn validate_domain_label(
+pub(crate) fn validate_domain_label(
     label: &str,
     field: &str,
     allow_underscore: bool,
@@ -85,7 +85,7 @@ pub fn join_labels(labels: &[String]) -> String {
 }
 
 /// Return `value` as a lowercase, trailing-dot FQDN.
-pub fn to_fqdn_lowercase(value: &str) -> String {
+pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
     format!(
         "{}.",
         value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -113,7 +113,7 @@ pub fn encode_name(name: &str) -> Result<Vec<u8>, String> {
 /// Length-prefixed wire labels plus the root. Limits are re-checked at this
 /// one emitter, so a row edited outside bindizr cannot smuggle a label past
 /// the length octet.
-pub fn labels_to_wire<'a>(
+pub(crate) fn labels_to_wire<'a>(
     labels: impl Iterator<Item = &'a str>,
 ) -> Result<Vec<u8>, ParseNameError> {
     let mut wire = Vec::new();

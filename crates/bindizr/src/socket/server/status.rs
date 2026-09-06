@@ -14,8 +14,8 @@ use crate::socket::{
 
 static STARTED_AT_MS: OnceLock<u64> = OnceLock::new();
 
-/// Record the daemon start time; restart detection compares it across execs.
-pub(crate) fn record_start_time() {
+/// Mark the daemon start time; restart detection compares it across execs.
+pub(crate) fn mark_start_time() {
     let _ = STARTED_AT_MS.set(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)

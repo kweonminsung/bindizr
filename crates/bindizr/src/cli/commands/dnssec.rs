@@ -101,7 +101,7 @@ pub(crate) enum DnssecCommand {
 #[derive(Subcommand, Debug)]
 pub(crate) enum DnssecRolloverCommand {
     /// Pre-publish a same-algorithm replacement key: it joins the DNSKEY
-    /// RRset and CDS/CDNSKEY set but signs no zone data until `ds-seen`
+    /// and CDS/CDNSKEY records but signs no zone data until `ds-seen`
     /// promotes it. To change the algorithm, use `dnssec set-policy`
     Start {
         /// The name of the zone

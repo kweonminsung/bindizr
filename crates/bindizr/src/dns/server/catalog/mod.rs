@@ -23,7 +23,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     let member_zones: Vec<String> = all_zones
         .iter()
         .map(|z| z.name.clone())
-        .filter(|name| name.as_str() != CATALOG_ZONE_NAME)
+        .filter(|name| !is_catalog_zone(name.as_str()))
         .map(|name| name.to_string())
         .collect();
 
@@ -54,16 +54,13 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
 }
 
 fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {
-    // Index serials by lowercased name so the per-member lookup is O(1).
+    // Names are canonical, so the index needs no case folding.
     let serial_by_name: HashMap<String, i32> = zones
         .iter()
         .map(|z| (z.name.to_string(), z.serial))
         .collect();
 
-    let mut members = member_zones
-        .iter()
-        .map(|member| member.to_ascii_lowercase())
-        .collect::<Vec<_>>();
+    let mut members = member_zones.to_vec();
     members.sort();
 
     let mut hasher = Sha256::new();

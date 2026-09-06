@@ -3,7 +3,8 @@
 
 use bindizr_core::dns::name::OwnerName;
 
-use super::{super::model::record::NAME_LIKE_RECORD_TYPES, LockLevel};
+use super::LockLevel;
+use crate::model::record::NAME_LIKE_RECORD_TYPES;
 
 /// The locking clause for `lock_level`, as a suffix appended after any
 /// `ORDER BY`. SQLite locks the whole database instead, so it never calls this.

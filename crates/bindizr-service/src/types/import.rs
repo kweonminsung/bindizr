@@ -12,8 +12,8 @@ pub enum ImportMode {
     /// Add parsed records; records already present are left untouched.
     #[default]
     Append,
-    /// Replace every RRset (name + type) that appears in the file with the
-    /// parsed records, leaving other RRsets untouched.
+    /// Replace the records of every name and type that appears in the file
+    /// with the parsed records, leaving other names and types untouched.
     Upsert,
     /// Replace all non-protected records in the zone with the parsed records.
     Replace,

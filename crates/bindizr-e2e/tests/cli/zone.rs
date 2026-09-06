@@ -325,7 +325,7 @@ async fn zone_import_preview_via_cli() {
         .await;
     assert!(preview.contains("+ www."), "preview was: {preview}");
     assert!(
-        preview.contains("Records: +2 -0 ~0"),
+        preview.contains("By name and type: +2 -0 ~0"),
         "preview was: {preview}"
     );
 
@@ -423,7 +423,7 @@ async fn zone_versions_and_rollback_flow() {
         .run_cli_success(&["zone", "version", "diff", &zone_name, "1", "2"])
         .await;
     assert!(diff.contains("SOA serial: 1 -> 2"), "{diff}");
-    assert!(diff.contains("Records: +1 -0 ~0"), "{diff}");
+    assert!(diff.contains("By name and type: +1 -0 ~0"), "{diff}");
     // The added RRset renders as a zone-file line under a `+`.
     assert!(diff.contains(&format!("+ www.{zone_name}.")), "{diff}");
     assert!(
@@ -440,7 +440,7 @@ async fn zone_versions_and_rollback_flow() {
         "{diff_to_current}"
     );
     assert!(
-        diff_to_current.contains("Records: +2 -0 ~0"),
+        diff_to_current.contains("By name and type: +2 -0 ~0"),
         "{diff_to_current}"
     );
 
@@ -532,7 +532,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
         ])
         .await;
     // A transfer of the zone's own content replaces it with itself.
-    assert!(preview.contains("Records: +0 -0 ~0"), "{preview}");
+    assert!(preview.contains("By name and type: +0 -0 ~0"), "{preview}");
 
     let applied = app
         .run_cli_success(&[

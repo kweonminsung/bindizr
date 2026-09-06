@@ -147,33 +147,33 @@ impl RecordService {
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
 
-            // Normalize parsed records and drop duplicates within the file,
+            // Normalize parsed RRs and drop duplicates within the file,
             // indexed by owner name so the dedup check scans only same-name entries.
             let t = Instant::now();
-            let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
+            let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.rrs.len());
             let mut desired_by_name: HashMap<OwnerName, Vec<usize>> =
-                HashMap::with_capacity(parsed.records.len());
-            for record in parsed.records {
-                let requested = match record.value {
+                HashMap::with_capacity(parsed.rrs.len());
+            for rr in parsed.rrs {
+                let requested = match rr.value {
                     ZoneFileValue::Rdata(rdata) => RecordValueRequest::String(rdata),
                     ZoneFileValue::CharacterStrings(segments) => {
                         RecordValueRequest::Segments(segments)
                     }
                 };
-                let value = match requested.to_encoded_value(&record.record_type, record.priority) {
+                let value = match requested.to_encoded_value(&rr.record_type, rr.priority) {
                     Ok(value) => value,
                     Err(e) => {
-                        errors.push(format!("{}: {}", record.owner_fqdn, e));
+                        errors.push(format!("{}: {}", rr.owner_fqdn, e));
                         continue;
                     }
                 };
-                let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name)
+                let stored_name = match normalize_record_owner_name(&rr.owner_fqdn, &zone.name)
                 {
                     Ok(stored_name) => stored_name,
                     // Collect any client-input error (4xx) per record; only
                     // internal failures abort the whole import.
                     Err(e) if e.code.http_status() < 500 => {
-                        errors.push(format!("{}: {}", record.owner_fqdn, e.message));
+                        errors.push(format!("{}: {}", rr.owner_fqdn, e.message));
                         continue;
                     }
                     Err(e) => return Err(e),
@@ -182,24 +182,24 @@ impl RecordService {
                 let name_key = stored_name.clone();
                 let duplicate_in_file = desired_by_name.get(&name_key).and_then(|idxs| {
                     idxs.iter().copied().find(|&i| {
-                        desired[i].prepared.record_type == record.record_type
-                            && record.record_type.values_equal(
+                        desired[i].prepared.record_type == rr.record_type
+                            && rr.record_type.values_equal(
                                 &desired[i].prepared.value,
                                 desired[i].prepared.priority,
                                 &value,
-                                record.priority,
+                                rr.priority,
                             )
                     })
                 });
                 if let Some(kept) = duplicate_in_file {
                     let kept_ttl = desired[kept].prepared.ttl.unwrap_or(zone.default_ttl);
-                    let this_ttl = record.ttl;
+                    let this_ttl = rr.ttl;
                     // The same RR at two TTLs is a mixed-TTL RRset (RFC 2181,
                     // Section 5.2); deduplication must not swallow the conflict.
                     if kept_ttl != this_ttl {
                         errors.push(format!(
-                            "{}: duplicate {} record with conflicting TTLs {} and {}",
-                            record.owner_fqdn, record.record_type, kept_ttl, this_ttl
+                            "{}: {} records with conflicting TTLs {} and {}; records sharing a name and type share one TTL",
+                            rr.owner_fqdn, rr.record_type, kept_ttl, this_ttl
                         ));
                     } else {
                         skipped += 1;
@@ -213,11 +213,11 @@ impl RecordService {
                     .push(desired.len());
                 desired.push(DesiredRecord {
                     prepared: PreparedRecord {
-                        owner_name: record.owner_fqdn,
-                        record_type: record.record_type,
+                        owner_name: rr.owner_fqdn,
+                        record_type: rr.record_type,
                         value,
-                        ttl: Some(record.ttl),
-                        priority: record.priority,
+                        ttl: Some(rr.ttl),
+                        priority: rr.priority,
                     },
                     stored_name,
                 });
@@ -268,15 +268,15 @@ impl RecordService {
             timings.build_index_ms = elapsed_ms(t);
 
             let t = Instant::now();
-            let desired_matches_existing = |e: &Record| {
+            let desired_matches_existing = |existing: &Record| {
                 desired_by_name
-                    .get(&e.name)
-                    .is_some_and(|idxs| idxs.iter().any(|&i| desired_matches(e, &desired[i])))
+                    .get(&existing.name)
+                    .is_some_and(|idxs| idxs.iter().any(|&i| desired_matches(existing, &desired[i])))
             };
-            let desired_key_matches_existing = |e: &Record| {
-                desired_by_name.get(&e.name).is_some_and(|idxs| {
+            let desired_key_matches_existing = |existing: &Record| {
+                desired_by_name.get(&existing.name).is_some_and(|idxs| {
                     idxs.iter()
-                        .any(|&i| desired[i].prepared.record_type == e.record_type)
+                        .any(|&i| desired[i].prepared.record_type == existing.record_type)
                 })
             };
 
@@ -348,11 +348,11 @@ impl RecordService {
                 }
             }
             for add in &adds {
-                let same_name = simulated_by_name
+                let records_at_name = simulated_by_name
                     .entry(add.stored_name.clone())
                     .or_default();
                 match validate_record_add_constraints_normalized(
-                    same_name,
+                    records_at_name,
                     &add.stored_name,
                     &add.prepared.record_type,
                     &add.prepared.value,
@@ -362,7 +362,7 @@ impl RecordService {
                 ) {
                     // In-memory comparison only; the negative id keeps the
                     // placeholder distinct from persisted rows.
-                    Ok(()) => same_name.push(Record {
+                    Ok(()) => records_at_name.push(Record {
                         id: -1,
                         name: add.stored_name.clone(),
                         record_type: add.prepared.record_type.clone(),
@@ -385,7 +385,7 @@ impl RecordService {
                     && !rows.iter().any(|r| r.record_type == RecordType::NS)
                 {
                     errors.push(format!(
-                        "'{}': DS records require a delegation NS RRset at the same name",
+                        "'{}': DS records require delegation NS records at the same name",
                         name
                     ));
                 }
@@ -407,7 +407,7 @@ impl RecordService {
             // hot path (import benchmarks measure records/sec here). Skip it too when
             // errors block the import, so the preview shows no un-appliable changes.
             let diff = if dry_run && errors.is_empty() {
-                import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels)
+                build_import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels)
             } else {
                 RecordDiff::default()
             };
@@ -525,7 +525,7 @@ impl RecordService {
 
 /// The reconcile as a record diff: `after` is the existing set minus the
 /// deletes plus the adds, so `build_record_diff` classifies each RRset.
-fn import_diff(
+fn build_import_diff(
     zone: &Zone,
     existing: &[Record],
     adds: &[&DesiredRecord],

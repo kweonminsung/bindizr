@@ -1,7 +1,6 @@
 use bindizr_service::{
     authorization::Caller, error::ServiceError, types::NotifyZoneRequest, zone::ZoneService,
 };
-use serde_json::json;
 
 use crate::socket::{server::parse_params, types::DaemonResponse};
 
@@ -18,6 +17,6 @@ pub(crate) async fn notify_zone(data: &serde_json::Value) -> Result<DaemonRespon
 
     Ok(DaemonResponse {
         message: request.success_message(),
-        data: json!(null),
+        data: serde_json::Value::Null,
     })
 }

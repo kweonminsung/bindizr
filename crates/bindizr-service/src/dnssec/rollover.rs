@@ -89,6 +89,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to start key rollover").await?;
 
+        crate::log_info!("event=dnssec_rollover_start zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }
@@ -186,6 +187,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await?;
 
+        crate::log_info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }

@@ -68,7 +68,7 @@ async fn dnssec_policy_lifecycle_via_cli() {
     let deleted = app
         .run_cli_success(&["dnssec-policy", "delete", &policy_name])
         .await;
-    assert!(deleted.contains("DNSSEC policy deleted successfully"));
+    assert!(deleted.contains("deleted successfully"), "{deleted}");
 
     let missing = app.run_cli(&["dnssec-policy", "get", &policy_name]).await;
     assert!(!missing.status.success());

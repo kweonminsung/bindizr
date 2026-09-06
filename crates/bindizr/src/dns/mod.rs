@@ -102,13 +102,13 @@ async fn handle_tcp_connection(
             }
         };
 
-        handle_tcp_query(&mut stream, client_addr, &secondary_acl, &query_data).await?;
+        dispatch_tcp_query(&mut stream, client_addr, &secondary_acl, &query_data).await?;
     }
 
     Ok(())
 }
 
-async fn handle_tcp_query(
+async fn dispatch_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
     secondary_acl: &SecondaryAcl,

@@ -35,9 +35,9 @@ pub fn build_question(
     (query_id, question.finish())
 }
 
-/// One answer record from a zone-transfer response, in presentation form.
+/// One answer RR from a zone-transfer response, in presentation form.
 #[derive(Debug)]
-pub struct TransferRecord {
+pub struct TransferRr {
     /// Owner name as an absolute presentation name (trailing dot).
     pub name: String,
     pub rtype: Rtype,
@@ -46,12 +46,9 @@ pub struct TransferRecord {
     pub rdata: String,
 }
 
-/// Validate one AXFR response message and collect every answer record; the
+/// Validate one AXFR response message and collect every answer RR; the
 /// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
-pub fn extract_transfer_records(
-    query_id: u16,
-    response: &[u8],
-) -> Result<Vec<TransferRecord>, String> {
+pub fn extract_transfer_rrs(query_id: u16, response: &[u8]) -> Result<Vec<TransferRr>, String> {
     use domain::rdata::AllRecordData;
 
     let message =
@@ -78,21 +75,21 @@ pub fn extract_transfer_records(
     let answer = message
         .answer()
         .map_err(|e| format!("malformed answer section: {}", e))?;
-    let mut records = Vec::new();
-    for record in answer.limit_to::<AllRecordData<_, _>>() {
-        let record = record.map_err(|e| format!("malformed answer record: {}", e))?;
+    let mut rrs = Vec::new();
+    for rr in answer.limit_to::<AllRecordData<_, _>>() {
+        let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
         // A zone transfer is single-class; rendering would rewrite any other
         // class as IN.
-        if record.class() != Class::IN {
+        if rr.class() != Class::IN {
             return Err(format!(
                 "transfer carries a class {} record for {}",
-                record.class(),
-                record.owner()
+                rr.class(),
+                rr.owner()
             ));
         }
         // Every embedded rdata name renders absolute except the SRV
         // target; left bare, re-parsing would requalify it.
-        let rdata = match record.data() {
+        let rdata = match rr.data() {
             AllRecordData::Srv(srv) => {
                 let target = srv.target().to_string();
                 let target = if target == "." {
@@ -110,16 +107,16 @@ pub fn extract_transfer_records(
             }
             data => data.to_string(),
         };
-        records.push(TransferRecord {
+        rrs.push(TransferRr {
             // Display omits the root dot; the absolute form keeps the
             // import parser from re-qualifying the name.
-            name: format!("{}.", record.owner()),
-            rtype: record.rtype(),
-            ttl: record.ttl().as_secs(),
+            name: format!("{}.", rr.owner()),
+            rtype: rr.rtype(),
+            ttl: rr.ttl().as_secs(),
             rdata,
         });
     }
-    Ok(records)
+    Ok(rrs)
 }
 
 /// Check that a NOTIFY was acknowledged by the server we asked.
@@ -187,8 +184,8 @@ pub fn extract_soa_serial(query_id: u16, response: &[u8]) -> Result<u32, String>
         .map_err(|e| format!("malformed answer section: {}", e))?;
     answer
         .limit_to::<Soa<_>>()
-        .find_map(|record| record.ok())
-        .map(|record| record.data().serial().into_int())
+        .find_map(|rr| rr.ok())
+        .map(|rr| rr.data().serial().into_int())
         .ok_or_else(|| "no SOA record in answer".to_string())
 }
 
@@ -201,7 +198,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn transfer_rejects_a_non_in_record() {
+    fn transfer_rejects_a_non_in_rr() {
         let name: Name<Vec<u8>> = Name::from_str("example.com").unwrap();
         let mut builder = MessageBuilder::new_vec();
         builder.header_mut().set_id(7);
@@ -217,7 +214,7 @@ mod tests {
             .unwrap();
         let wire = answer.finish();
 
-        let err = extract_transfer_records(7, &wire).unwrap_err();
+        let err = extract_transfer_rrs(7, &wire).unwrap_err();
         assert!(err.contains("class"), "{err}");
     }
 }

@@ -151,7 +151,7 @@ pub(crate) async fn list_zone_versions(
         path = "/zones/{name}/versions/{serial}",
         tag = "Zone",
         summary = "Get the zone state captured at a version serial",
-        description = "Returns the version's SOA fields together with the zone's record set at that serial, reconstructed from the journal.",
+        description = "Returns the version's SOA fields together with the zone's records at that serial, reconstructed from the journal.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("serial" = i32, Path, description = "The version serial to inspect.")
@@ -163,7 +163,7 @@ pub(crate) async fn list_zone_versions(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Get one version plus the reconstructed record set at that serial.
+/// Get one version plus the reconstructed records at that serial.
 pub(crate) async fn get_zone_version(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneVersionParam>,
@@ -177,7 +177,7 @@ pub(crate) async fn get_zone_version(
         path = "/zones/{name}/rollback",
         tag = "Zone",
         summary = "Roll a zone back to a version serial",
-        description = "Restores the zone's record set and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With dry_run the rollback is computed and reported without applying any change.",
+        description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With dry_run the rollback is computed and reported without applying any change.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to roll back.")
         ),
@@ -188,6 +188,7 @@ pub(crate) async fn get_zone_version(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone or version not found", body = ErrorResponse),
+            (status = 409, description = "Record conflict", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -227,7 +228,7 @@ pub(crate) struct VersionDiffQuery {
         path = "/zones/{name}/versions/diff",
         tag = "Zone",
         summary = "Diff the records between two of a zone's serials",
-        description = "Reports the RRsets added, removed, and changed between `from` and `to`. Omitting `to` compares against the current serial. Each serial must be the current one or an existing version.",
+        description = "Reports the records added, removed, and changed between `from` and `to`, grouped by name and type. Omitting `to` compares against the current serial. Each serial must be the current one or an existing version.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("from" = i32, Query, description = "The serial to diff from."),
@@ -240,7 +241,7 @@ pub(crate) struct VersionDiffQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Diff the record sets at two of a zone's serials.
+/// Diff the records at two of a zone's serials.
 pub(crate) async fn diff_zone_versions(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -333,6 +334,7 @@ pub(crate) async fn get_zone(
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 409, description = "A zone with the same name already exists", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -364,6 +366,7 @@ pub(crate) async fn create_zone(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 409, description = "A zone with the new name already exists", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -425,6 +428,7 @@ pub(crate) async fn delete_zone(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 409, description = "Record conflict", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

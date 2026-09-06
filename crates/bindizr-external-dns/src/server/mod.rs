@@ -16,8 +16,7 @@ use crate::{
     metrics::metrics,
     upstream::{UpstreamClient, UpstreamError},
     wire::{
-        Changes, DomainFilter, Endpoint, MEDIA_TYPE, group_records_into_endpoints,
-        merge_adjusted_endpoints, to_bindizr_rrsets,
+        Changes, DomainFilter, Endpoint, MEDIA_TYPE, merge_adjusted_endpoints, to_bindizr_records,
     },
 };
 
@@ -34,7 +33,7 @@ pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", routing::get(negotiate))
         .route("/records", routing::get(get_records).post(apply_changes))
-        .route("/adjustendpoints", routing::post(adjust_endpoints_handler))
+        .route("/adjustendpoints", routing::post(adjust_endpoints))
         .route_layer(middleware::from_fn(track_webhook_metrics))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state)
@@ -144,7 +143,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
             .into_response();
     }
 
-    match state.upstream.get_zones().await {
+    match state.upstream.list_zones().await {
         // An empty DomainFilter reads as "manage everything" to external-dns;
         // refuse retryably so a new grant heals negotiation without a restart.
         Ok(zones) if zones.is_empty() => (
@@ -171,9 +170,12 @@ async fn get_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> 
             .into_response();
     }
 
-    match state.upstream.get_records().await {
+    match state.upstream.list_records().await {
         Ok(records) => {
-            let endpoints = group_records_into_endpoints(records);
+            let endpoints: Vec<Endpoint> = records
+                .into_iter()
+                .map(Endpoint::from_bindizr_record)
+                .collect();
             log_info!("event=records_get endpoints={}", endpoints.len());
             json_response(&endpoints)
         }
@@ -221,7 +223,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
 
 /// `POST /adjustendpoints` — validate locally, canonicalize on the bindizr
 /// server so this answer cannot drift from the stored form.
-async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: String) -> Response {
+async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> Response {
     let endpoints: Vec<Endpoint> = match serde_json::from_str(&body) {
         Ok(endpoints) => endpoints,
         Err(e) => {
@@ -233,27 +235,27 @@ async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: Stri
         }
     };
 
-    let rrsets = match to_bindizr_rrsets(&endpoints) {
-        Ok(rrsets) => rrsets,
+    let records = match to_bindizr_records(&endpoints) {
+        Ok(records) => records,
         Err(message) => {
-            log_warn!("event=adjustendpoints rejected={}", message);
+            log_warn!("event=adjust_endpoints rejected={}", message);
             return (StatusCode::BAD_REQUEST, message).into_response();
         }
     };
 
-    match state.upstream.adjust_rrsets(&rrsets).await {
+    match state.upstream.adjust_records(&records).await {
         // A short answer would silently drop endpoints in the zip below.
         Ok(adjusted) if adjusted.len() != endpoints.len() => (
             StatusCode::BAD_GATEWAY,
             format!(
-                "bindizr adjusted {} of {} rrsets",
+                "bindizr adjusted {} of {} records",
                 adjusted.len(),
                 endpoints.len()
             ),
         )
             .into_response(),
         Ok(adjusted) => {
-            log_info!("event=adjustendpoints endpoints={}", endpoints.len());
+            log_info!("event=adjust_endpoints endpoints={}", endpoints.len());
             json_response(&merge_adjusted_endpoints(endpoints, adjusted))
         }
         Err(e) => upstream_error_response(e),

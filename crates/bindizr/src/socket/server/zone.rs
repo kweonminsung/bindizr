@@ -8,7 +8,6 @@ use bindizr_service::{
     },
     zone::ZoneService,
 };
-use serde_json::json;
 
 use crate::socket::{
     server::{parse_params, to_response_data},
@@ -142,7 +141,7 @@ pub(crate) async fn list_zone_versions(
 }
 
 /// Handle the `GetZoneVersion` command by returning one version with its
-/// reconstructed record set.
+/// reconstructed records.
 pub(crate) async fn get_zone_version(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -252,6 +251,6 @@ pub(crate) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonRespon
     ZoneService::delete(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
         message: format!("Zone '{}' deleted successfully", params.name),
-        data: json!(null),
+        data: serde_json::Value::Null,
     })
 }

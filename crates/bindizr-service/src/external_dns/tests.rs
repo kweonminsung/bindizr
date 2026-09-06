@@ -16,7 +16,7 @@ use crate::{
         token_grant::TokenGrant,
         zone::Zone,
     },
-    types::{ExternalDnsChangesRequest, ExternalDnsRrset, ExternalDnsRrsetUpdate},
+    types::{ExternalDnsChangesRequest, ExternalDnsRecord, ExternalDnsRecordUpdate},
 };
 
 fn test_zone(id: i32, name: &str) -> Zone {
@@ -49,8 +49,8 @@ fn test_record(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i
     }
 }
 
-fn rrset(name: &str, record_type: &str, ttl: Option<i32>, values: &[&str]) -> ExternalDnsRrset {
-    ExternalDnsRrset {
+fn rrset(name: &str, record_type: &str, ttl: Option<i32>, values: &[&str]) -> ExternalDnsRecord {
+    ExternalDnsRecord {
         name: name.to_string(),
         record_type: record_type.to_string(),
         ttl,
@@ -354,7 +354,7 @@ fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
         deletes: vec![],
     };
 
-    // No TTL on the rrset, so it resolves to the zone's 3600 — not the row's 300.
+    // No TTL on the RRset, so it resolves to the zone's 3600 — not the row's 300.
     let change_set = compute_zone_change_set(&zone, &existing, &zone_ops(&request, &zone)).unwrap();
 
     assert!(change_set.deletes.is_empty());
@@ -368,7 +368,7 @@ fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
     let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
     let request = ExternalDnsChangesRequest {
         creates: vec![],
-        updates: vec![ExternalDnsRrsetUpdate {
+        updates: vec![ExternalDnsRecordUpdate {
             old: rrset("app.example.com", "A", Some(300), &["192.0.2.1"]),
             new: rrset("app.example.com", "A", Some(900), &["192.0.2.1"]),
         }],
@@ -407,7 +407,7 @@ fn change_set_cancels_unchanged_updates_even_with_reordered_targets() {
     ];
     let request = ExternalDnsChangesRequest {
         creates: vec![],
-        updates: vec![ExternalDnsRrsetUpdate {
+        updates: vec![ExternalDnsRecordUpdate {
             old: rrset("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
             new: rrset("app.example.com", "A", None, &["192.0.2.2", "192.0.2.1"]),
         }],
@@ -429,7 +429,7 @@ fn change_set_replaces_rows_when_update_changes_targets() {
     ];
     let request = ExternalDnsChangesRequest {
         creates: vec![],
-        updates: vec![ExternalDnsRrsetUpdate {
+        updates: vec![ExternalDnsRecordUpdate {
             old: rrset("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
             new: rrset("app.example.com", "A", None, &["192.0.2.1", "192.0.2.3"]),
         }],
@@ -449,21 +449,34 @@ fn change_set_replaces_rows_when_update_changes_targets() {
 #[test]
 fn change_set_replaces_whole_rrset_when_ttl_changes() {
     let zone = test_zone(1, "example.com");
-    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 3600)];
+    let existing = vec![
+        test_record(10, "app", RecordType::A, "192.0.2.1", 3600),
+        test_record(11, "app", RecordType::A, "192.0.2.2", 3600),
+    ];
     let request = ExternalDnsChangesRequest {
         creates: vec![],
-        updates: vec![ExternalDnsRrsetUpdate {
-            old: rrset("app.example.com", "A", Some(3600), &["192.0.2.1"]),
-            new: rrset("app.example.com", "A", Some(300), &["192.0.2.1"]),
+        updates: vec![ExternalDnsRecordUpdate {
+            old: rrset(
+                "app.example.com",
+                "A",
+                Some(3600),
+                &["192.0.2.1", "192.0.2.2"],
+            ),
+            new: rrset(
+                "app.example.com",
+                "A",
+                Some(300),
+                &["192.0.2.1", "192.0.2.2"],
+            ),
         }],
         deletes: vec![],
     };
 
     let change_set = compute_zone_change_set(&zone, &existing, &zone_ops(&request, &zone)).unwrap();
 
-    assert_eq!(change_set.deletes.len(), 1);
-    assert_eq!(change_set.creates.len(), 1);
-    assert_eq!(change_set.creates[0].ttl, 300);
+    assert_eq!(change_set.deletes.len(), 2);
+    assert_eq!(change_set.creates.len(), 2);
+    assert!(change_set.creates.iter().all(|record| record.ttl == 300));
 }
 
 #[test]

@@ -50,7 +50,7 @@ pub(crate) struct PreparedRecord {
 }
 
 /// Parse the record type and encode the value into its record-row form.
-pub(crate) fn prepare_record(
+pub(crate) fn parse_record(
     name: &str,
     record_type: &str,
     value: &RecordValueRequest,
@@ -100,8 +100,37 @@ impl RecordService {
                 derived: false,
             })
             .collect();
-        RepositoryService::create_zone_journal_tx(tx, &changes).await?;
+        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
         Ok(created_records)
+    }
+
+    /// Update one record with its DEL(old)+ADD(new) zone changes for IXFR. The
+    /// caller has already validated the row.
+    pub(crate) async fn update_record_with_changes_tx(
+        tx: &mut RepositoryTx<'_>,
+        new_serial: i32,
+        existing: &Record,
+        updated: Record,
+    ) -> Result<Record, ServiceError> {
+        let updated = RepositoryService::update_record_tx(tx, updated).await?;
+        let change = |operation, record: &Record| ZoneChange {
+            zone_id: record.zone_id,
+            serial: new_serial,
+            operation,
+            record_name: record.name.clone(),
+            record_type: JournalRecordType::User(record.record_type.clone()),
+            record_value: Some(record.value.clone()),
+            record_rdata: None,
+            record_ttl: record.ttl,
+            record_priority: record.priority,
+            derived: false,
+        };
+        let changes = [
+            change(ChangeOperation::Del, existing),
+            change(ChangeOperation::Add, &updated),
+        ];
+        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
+        Ok(updated)
     }
 
     /// Delete records with their DEL zone changes for IXFR.
@@ -132,7 +161,7 @@ impl RecordService {
                 derived: false,
             })
             .collect();
-        RepositoryService::create_zone_journal_tx(tx, &changes).await?;
+        RepositoryService::create_zone_changes_tx(tx, &changes).await?;
         Ok(())
     }
 }
@@ -164,7 +193,7 @@ impl RecordService {
         let prepared = items
             .iter()
             .map(|item| {
-                prepare_record(
+                parse_record(
                     &item.name,
                     &item.record_type,
                     &item.value,
@@ -268,14 +297,14 @@ impl RecordService {
                     normalize_dur += t.elapsed();
                 }
 
-                let same_name = records_by_name.entry(owner_name.clone()).or_default();
+                let records_at_name = records_by_name.entry(owner_name.clone()).or_default();
 
                 // Fixed at write time: a later zone TTL change will not move it.
                 let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
                 let t = timing_enabled.then(Instant::now);
                 validate_record_add_constraints_normalized(
-                    same_name,
+                    records_at_name,
                     &owner_name,
                     &prepared_record.record_type,
                     &prepared_record.value,
@@ -297,7 +326,7 @@ impl RecordService {
                     zone_id: zone.id,
                     created_at: Utc::now(),
                 };
-                same_name.push(record.clone());
+                records_at_name.push(record.clone());
                 to_insert.push(record);
             }
             timings.normalize_ms = duration_ms(normalize_dur);
@@ -312,7 +341,7 @@ impl RecordService {
                         && !rows.iter().any(|r| r.record_type == RecordType::NS)
                     {
                         return Err(ServiceError::record_conflict(format!(
-                            "DS records at '{}' require a delegation NS RRset at the same name",
+                            "DS records at '{}' require delegation NS records at the same name",
                             name
                         )));
                     }

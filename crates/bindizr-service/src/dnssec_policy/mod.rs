@@ -56,6 +56,7 @@ impl DnssecPolicyService {
             zsk_lifetime_days,
         )?;
 
+        // Friendly pre-check; the UNIQUE(name) backstop covers the race.
         if RepositoryService::get_dnssec_policy_by_name(&name)
             .await?
             .is_some()

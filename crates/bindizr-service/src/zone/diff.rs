@@ -1,4 +1,4 @@
-//! RRset-level diffing of two record sets: what an import, a bulk apply, or a
+//! RRset-level diffing of two serials' records: what an import, a bulk apply, or a
 //! rollback would add, remove, or change.
 
 use std::collections::BTreeMap;
@@ -12,10 +12,10 @@ use crate::{
     zone::history::ReconstructedRecord,
 };
 
-/// One record within an RRset group: its identity (for change detection) and
+/// One record within an RRset: its identity (for change detection) and
 /// its display-form value (for the response).
 #[derive(Clone)]
-struct GroupedRecord {
+struct RrsetRecord {
     identity: (String, i32),
     value: RecordDiffValue,
 }
@@ -25,14 +25,14 @@ struct GroupedRecord {
 fn group_rrsets(
     zone: &Zone,
     records: &[ReconstructedRecord],
-) -> BTreeMap<(String, String), Vec<GroupedRecord>> {
-    let mut groups: BTreeMap<(String, String), Vec<GroupedRecord>> = BTreeMap::new();
+) -> BTreeMap<(String, String), Vec<RrsetRecord>> {
+    let mut rrsets: BTreeMap<(String, String), Vec<RrsetRecord>> = BTreeMap::new();
     for record in records {
         let key = (
             record.name.to_fqdn(&zone.name),
             record.record_type.to_string(),
         );
-        groups.entry(key).or_default().push(GroupedRecord {
+        rrsets.entry(key).or_default().push(RrsetRecord {
             identity: (
                 record
                     .record_type
@@ -47,35 +47,35 @@ fn group_rrsets(
             },
         });
     }
-    groups
+    rrsets
 }
 
 /// Borrowed so the two sides can be compared without copying every identity.
-fn group_identities(group: &[GroupedRecord]) -> Vec<&(String, i32)> {
-    let mut ids: Vec<_> = group.iter().map(|r| &r.identity).collect();
+fn rrset_identities(rrset: &[RrsetRecord]) -> Vec<&(String, i32)> {
+    let mut ids: Vec<_> = rrset.iter().map(|r| &r.identity).collect();
     ids.sort();
     ids
 }
 
-fn group_values(group: Vec<GroupedRecord>) -> Vec<RecordDiffValue> {
-    group.into_iter().map(|r| r.value).collect()
+fn rrset_values(rrset: Vec<RrsetRecord>) -> Vec<RecordDiffValue> {
+    rrset.into_iter().map(|r| r.value).collect()
 }
 
-/// Diff two record sets at the RRset level. TTL is part of a record's identity,
+/// Diff two serials' records at the RRset level. TTL is part of a record's identity,
 /// so a TTL-only change shows as `changed`.
 pub(crate) fn build_record_diff(
     zone: &Zone,
     before: &[ReconstructedRecord],
     after: &[ReconstructedRecord],
 ) -> RecordDiff {
-    let mut before_groups = group_rrsets(zone, before);
-    let mut after_groups = group_rrsets(zone, after);
+    let mut before_rrsets = group_rrsets(zone, before);
+    let mut after_rrsets = group_rrsets(zone, after);
 
-    let mut keys: Vec<(String, String)> = before_groups.keys().cloned().collect();
+    let mut keys: Vec<(String, String)> = before_rrsets.keys().cloned().collect();
     keys.extend(
-        after_groups
+        after_rrsets
             .keys()
-            .filter(|k| !before_groups.contains_key(*k))
+            .filter(|k| !before_rrsets.contains_key(*k))
             .cloned(),
     );
     keys.sort();
@@ -84,9 +84,9 @@ pub(crate) fn build_record_diff(
     let (mut added, mut removed, mut changed) = (0usize, 0usize, 0usize);
 
     for key in keys {
-        // Both maps are drained here, so each group can be moved into its entry.
-        let before = before_groups.remove(&key);
-        let after = after_groups.remove(&key);
+        // Both maps are drained here, so each RRset can be moved into its entry.
+        let before = before_rrsets.remove(&key);
+        let after = after_rrsets.remove(&key);
         let (name, record_type) = key;
         match (before, after) {
             (None, Some(after)) => {
@@ -96,7 +96,7 @@ pub(crate) fn build_record_diff(
                     name,
                     record_type,
                     from: Vec::new(),
-                    to: group_values(after),
+                    to: rrset_values(after),
                 });
             }
             (Some(before), None) => {
@@ -105,23 +105,23 @@ pub(crate) fn build_record_diff(
                     change: "removed".to_string(),
                     name,
                     record_type,
-                    from: group_values(before),
+                    from: rrset_values(before),
                     to: Vec::new(),
                 });
             }
             (Some(before), Some(after)) => {
-                if group_identities(&before) != group_identities(&after) {
+                if rrset_identities(&before) != rrset_identities(&after) {
                     changed += 1;
                     entries.push(RecordDiffEntry {
                         change: "changed".to_string(),
                         name,
                         record_type,
-                        from: group_values(before),
-                        to: group_values(after),
+                        from: rrset_values(before),
+                        to: rrset_values(after),
                     });
                 }
             }
-            (None, None) => unreachable!("keys come from the two group maps"),
+            (None, None) => unreachable!("keys come from one of the two maps"),
         }
     }
 

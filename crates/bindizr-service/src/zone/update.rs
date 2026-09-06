@@ -18,7 +18,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::{CreateZoneRequest, UpdateZonePatch},
-    zone::validation::{ResolvedSoaTimers, resolve_soa_timers, validate_create_zone_request},
+    zone::validation::{ResolvedSoaTimers, normalize_soa_timers, validate_create_zone_request},
 };
 
 /// Outcome of the transactional part of a zone update.
@@ -67,7 +67,7 @@ impl ZoneService {
         request: &CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
         caller.require_global("update zones")?;
-        reject_serial(request.serial)?;
+        validate_serial_absent(request.serial)?;
         Self::update_locked(zone_name, |_existing| CreateZoneRequest {
             name: request.name.clone(),
             mname: request.mname.clone(),
@@ -90,7 +90,7 @@ impl ZoneService {
         patch: &UpdateZonePatch,
     ) -> Result<Zone, ServiceError> {
         caller.require_global("update zones")?;
-        reject_serial(patch.serial)?;
+        validate_serial_absent(patch.serial)?;
         Self::update_locked(zone_name, |existing| CreateZoneRequest {
             name: patch
                 .new_name
@@ -106,7 +106,7 @@ impl ZoneService {
                 .unwrap_or_else(|| existing.rname.clone()),
             default_ttl: patch.default_ttl.unwrap_or(existing.default_ttl),
             serial: None,
-            // Omitted timers fall back to the existing zone in resolve_soa_timers.
+            // Omitted timers fall back to the existing zone in normalize_soa_timers.
             refresh: patch.refresh,
             retry: patch.retry,
             expire: patch.expire,
@@ -133,7 +133,7 @@ impl ZoneService {
             let request = build(&existing_zone);
             let validated = validate_create_zone_request(&request)?;
 
-            let timers = resolve_soa_timers(
+            let timers = normalize_soa_timers(
                 &request,
                 ResolvedSoaTimers {
                     refresh: existing_zone.refresh,
@@ -235,7 +235,7 @@ impl ZoneService {
 
             let changes = soa_replacement_changes(&existing_zone, &updated_zone, new_serial)?;
 
-            RepositoryService::create_zone_journal_tx(&mut tx, &changes)
+            RepositoryService::create_zone_changes_tx(&mut tx, &changes)
                 .await
                 .map_err(|e| {
                     log_error!("Failed to create zone changes: {}", e);
@@ -277,7 +277,7 @@ impl ZoneService {
             );
         }
 
-        // Re-send catalog NOTIFY when the zone was renamed
+        // The catalog lists zones by name, so a rename must reach secondaries too.
         if previous_name != updated_zone.name
             && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
         {
@@ -289,7 +289,7 @@ impl ZoneService {
 }
 
 /// The serial is a system-managed version counter and cannot be set on update.
-fn reject_serial(serial: Option<i32>) -> Result<(), ServiceError> {
+fn validate_serial_absent(serial: Option<i32>) -> Result<(), ServiceError> {
     if serial.is_some() {
         return Err(ServiceError::invalid_input(
             "serial is managed automatically and cannot be set on update",

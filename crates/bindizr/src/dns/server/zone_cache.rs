@@ -1,4 +1,4 @@
-//! Per-zone cache of the record set, keyed by serial. Every write bumps the
+//! Per-zone cache of a zone's records, keyed by serial. Every write bumps the
 //! serial, so an entry matching the zone's current serial is always fresh;
 //! repeated AXFRs at that serial skip the database read. One entry per zone.
 //!
@@ -23,9 +23,9 @@ use bindizr_core::{
 };
 use bindizr_service::{error::ServiceError, zone::ZoneService};
 
-/// Cap on distinct zones held at once. Each entry holds a zone's full record
-/// set, so this bounds worst-case memory while comfortably covering the active
-/// working set of any realistic deployment.
+/// Cap on distinct zones held at once. Each entry holds a zone's full
+/// records, so this bounds worst-case memory while comfortably covering
+/// the active working set of any realistic deployment.
 const MAX_ENTRIES: usize = 1024;
 
 /// Everything a full transfer serves for one zone: the user records and the
@@ -53,7 +53,7 @@ fn tick() -> u64 {
 /// Load a zone's transfer content, from cache when enabled and fresh.
 /// Serve the returned zone row, not the pre-read one — it is the row the
 /// content was read with. `None` when the zone was deleted meanwhile.
-pub(crate) async fn list_zone_content(
+pub(crate) async fn find_zone_content(
     zone: Zone,
 ) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
     if !config::bindizr_config().dns.zone_cache {

@@ -31,7 +31,10 @@ async fn tsig_key_create_list_get_delete() {
     let deleted = app
         .run_cli_success(&["tsig-key", "delete", "cli-key"])
         .await;
-    assert!(deleted.contains("TSIG key deleted successfully"));
+    assert!(
+        deleted.contains("TSIG key 'cli-key' deleted successfully"),
+        "{deleted}"
+    );
 
     let args = ["tsig-key", "get", "cli-key"];
     let missing = app.run_cli(&args).await;

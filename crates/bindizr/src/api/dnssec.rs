@@ -263,7 +263,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
         path = "/zones/{name}/dnssec/withdraw",
         tag = "DNSSEC",
         summary = "Publish the DS withdrawal (RFC 8078 delete CDS/CDNSKEY)",
-        description = "Replaces the zone's CDS/CDNSKEY set with the RFC 8078 delete pair (`CDS 0 0 0 00`), asking a CDS-consuming parent to remove the zone's DS records — the first step of going insecure. Once the parent DS is gone and its TTL has passed, disable DNSSEC.",
+        description = "Replaces the zone's CDS/CDNSKEY records with the RFC 8078 delete pair (`CDS 0 0 0 00`), asking a CDS-consuming parent to remove the zone's DS records — the first step of going insecure. Once the parent DS is gone and its TTL has passed, disable DNSSEC.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -324,7 +324,7 @@ pub(crate) async fn set_zone_dnssec_policy(
         path = "/zones/{name}/dnssec/withdraw",
         tag = "DNSSEC",
         summary = "Cancel a published DS withdrawal",
-        description = "Removes the RFC 8078 delete pair; the per-key CDS/CDNSKEY set returns with this signing pass.",
+        description = "Removes the RFC 8078 delete pair; the per-key CDS/CDNSKEY records return with this signing pass.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),

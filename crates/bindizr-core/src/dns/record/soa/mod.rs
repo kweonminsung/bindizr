@@ -18,7 +18,7 @@ pub struct SoaRecordValue<'a> {
 }
 
 impl<'a> SoaRecordValue<'a> {
-    pub fn to_rdata(&self) -> Result<Rdata, String> {
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = encode_name(self.mname)?;
         rdata.extend_from_slice(&encode_name(self.rname)?);
         for field in [
@@ -97,7 +97,7 @@ impl SoaMailbox {
             return Err(ParseNameError::TooLong);
         }
 
-        for label in decode_labels(bare)? {
+        for label in decode_mailbox_labels(bare)? {
             if label.is_empty() {
                 return Err(ParseNameError::EmptyLabel);
             }
@@ -120,7 +120,7 @@ impl SoaMailbox {
 
 /// Split a mailbox into its decoded labels, so the local part's escaped dots
 /// stay inside one label (RFC 1035, Section 5.1).
-fn decode_labels(mailbox: &str) -> Result<Vec<String>, ParseNameError> {
+fn decode_mailbox_labels(mailbox: &str) -> Result<Vec<String>, ParseNameError> {
     let mut labels = Vec::new();
     let mut label = String::new();
     let mut chars = mailbox.chars();

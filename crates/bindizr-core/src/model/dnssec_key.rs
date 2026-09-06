@@ -66,7 +66,7 @@ impl DnssecAlgorithm {
     }
 
     /// All supported algorithm names, for error messages.
-    pub fn supported_names() -> &'static [&'static str] {
+    pub(crate) fn supported_names() -> &'static [&'static str] {
         &[
             "rsasha256",
             "rsasha512",
@@ -132,7 +132,7 @@ impl DnssecKeyRole {
     }
 
     /// Whether the key is represented in the parent DS set (SEP keys).
-    pub fn is_sep(&self) -> bool {
+    pub(crate) fn is_sep(&self) -> bool {
         matches!(self, DnssecKeyRole::Csk | DnssecKeyRole::Ksk)
     }
 

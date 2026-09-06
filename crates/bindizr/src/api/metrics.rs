@@ -9,8 +9,7 @@ use bindizr_core::{
     model::dnssec_key::DnssecKeyState,
 };
 use bindizr_service::{
-    authorization::Caller, dnssec::DnssecService, error::ServiceError, record::RecordService,
-    zone::ZoneService,
+    dnssec::DnssecService, error::ServiceError, record::RecordService, zone::ZoneService,
 };
 use chrono::Utc;
 
@@ -39,19 +38,18 @@ pub(crate) async fn get_metrics() -> Response {
 // Totals only, so count directly: a limit-1 page still orders the whole table.
 async fn refresh_db_gauges() -> Result<(), ServiceError> {
     let metrics = metrics();
-    let caller = Caller::Global;
 
     // The same per-policy window as the scheduler's re-sign scan, so a
     // persistent nonzero value means that scan is not keeping up.
     // Concurrent, so the probe timeout budgets one round trip, not seven.
     let (zones, records, dnssec_zones, published, active, retired, expiring) = tokio::try_join!(
-        ZoneService::count(&caller),
-        RecordService::count(&caller),
-        DnssecService::count_signed_zones(&caller),
-        DnssecService::count_keys_by_state(&caller, DnssecKeyState::Published),
-        DnssecService::count_keys_by_state(&caller, DnssecKeyState::Active),
-        DnssecService::count_keys_by_state(&caller, DnssecKeyState::Retired),
-        DnssecService::count_rrsigs_expiring_within_refresh(&caller, Utc::now()),
+        ZoneService::count_all(),
+        RecordService::count_all(),
+        DnssecService::count_signed_zones(),
+        DnssecService::count_keys_by_state(DnssecKeyState::Published),
+        DnssecService::count_keys_by_state(DnssecKeyState::Active),
+        DnssecService::count_keys_by_state(DnssecKeyState::Retired),
+        DnssecService::count_rrsigs_expiring_within_refresh(Utc::now()),
     )?;
 
     metrics.zones_total.set(zones as i64);

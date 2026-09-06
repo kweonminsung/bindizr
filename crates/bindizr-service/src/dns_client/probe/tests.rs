@@ -44,14 +44,14 @@ fn build_soa_response(query_id: u16, flags: u16, with_answer: bool, serial: u32)
 }
 
 #[test]
-fn extracts_serial_from_soa_answer() {
+fn extract_soa_serial_reads_the_answer_serial() {
     // 0x8400 = QR + AA, NOERROR.
     let response = build_soa_response(42, 0x8400, true, 2026);
     assert_eq!(extract_soa_serial(42, &response).unwrap(), 2026);
 }
 
 #[test]
-fn rejects_id_mismatch() {
+fn extract_soa_serial_rejects_id_mismatch() {
     let response = build_soa_response(42, 0x8400, true, 2026);
     assert!(
         extract_soa_serial(7, &response)
@@ -61,14 +61,14 @@ fn rejects_id_mismatch() {
 }
 
 #[test]
-fn rejects_error_rcode() {
+fn extract_soa_serial_rejects_error_rcode() {
     // RCODE 5 (REFUSED)
     let response = build_soa_response(42, 0x8405, true, 2026);
     assert_eq!(extract_soa_serial(42, &response).unwrap_err(), "RCODE 5");
 }
 
 #[test]
-fn rejects_missing_qr_bit() {
+fn extract_soa_serial_rejects_missing_qr_bit() {
     let response = build_soa_response(42, 0x0400, true, 2026);
     assert!(
         extract_soa_serial(42, &response)
@@ -78,7 +78,7 @@ fn rejects_missing_qr_bit() {
 }
 
 #[test]
-fn rejects_truncated_response() {
+fn extract_soa_serial_rejects_truncated_response() {
     let response = build_soa_response(42, 0x8600, true, 2026);
     assert_eq!(
         extract_soa_serial(42, &response).unwrap_err(),
@@ -87,7 +87,7 @@ fn rejects_truncated_response() {
 }
 
 #[test]
-fn rejects_answer_without_soa() {
+fn extract_soa_serial_rejects_answer_without_soa() {
     let response = build_soa_response(42, 0x8400, false, 0);
     assert_eq!(
         extract_soa_serial(42, &response).unwrap_err(),

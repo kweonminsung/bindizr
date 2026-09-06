@@ -32,7 +32,8 @@ fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
         .expect("records array")
         .iter()
         .filter(|r| r["name"] == name && r["record_type"] == record_type)
-        .map(|r| r["value"].as_str().expect("record value").to_string())
+        .flat_map(|r| r["values"].as_array().expect("record values").iter())
+        .map(|v| v.as_str().expect("record value").to_string())
         .collect()
 }
 

@@ -30,7 +30,7 @@ impl TxtRecordValue {
     }
 
     /// Wrap raw RDATA bytes, validating the character-string chain.
-    pub fn from_rdata(rdata: &[u8]) -> Result<Self, String> {
+    pub(crate) fn from_rdata(rdata: &[u8]) -> Result<Self, String> {
         if rdata.is_empty() || char_strings(rdata).is_none() {
             return Err("TXT RDATA is not a valid character-string sequence".to_string());
         }
@@ -148,7 +148,7 @@ impl TxtRecordValue {
         out
     }
 
-    pub fn into_rdata(self) -> Vec<u8> {
+    pub(crate) fn into_rdata(self) -> Vec<u8> {
         self.0
     }
 }

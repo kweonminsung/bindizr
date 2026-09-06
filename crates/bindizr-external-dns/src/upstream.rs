@@ -5,7 +5,7 @@ use std::time::Duration;
 use bindizr_core::log_error;
 use serde::Deserialize;
 
-use crate::wire::{BindizrChanges, BindizrRecordItem, BindizrRrset};
+use crate::wire::{BindizrChanges, BindizrRecord};
 
 /// A bindizr API failure, split for the webhook error mapping in `server`.
 #[derive(Debug)]
@@ -46,7 +46,7 @@ impl UpstreamClient {
         })
     }
 
-    pub(crate) async fn get_zones(&self) -> Result<Vec<String>, UpstreamError> {
+    pub(crate) async fn list_zones(&self) -> Result<Vec<String>, UpstreamError> {
         #[derive(Deserialize)]
         struct ZonesBody {
             zones: Vec<String>,
@@ -55,10 +55,10 @@ impl UpstreamClient {
         Ok(body.zones)
     }
 
-    pub(crate) async fn get_records(&self) -> Result<Vec<BindizrRecordItem>, UpstreamError> {
+    pub(crate) async fn list_records(&self) -> Result<Vec<BindizrRecord>, UpstreamError> {
         #[derive(Deserialize)]
         struct RecordsBody {
-            records: Vec<BindizrRecordItem>,
+            records: Vec<BindizrRecord>,
         }
         let body: RecordsBody = self.get_json("/external-dns/records").await?;
         Ok(body.records)
@@ -75,28 +75,28 @@ impl UpstreamClient {
         Ok(())
     }
 
-    /// Canonicalize desired RRsets on the bindizr server; the response
+    /// Canonicalize desired records on the bindizr server; the response
     /// pairs with the request by position.
-    pub(crate) async fn adjust_rrsets(
+    pub(crate) async fn adjust_records(
         &self,
-        rrsets: &[BindizrRrset],
-    ) -> Result<Vec<BindizrRrset>, UpstreamError> {
+        records: &[BindizrRecord],
+    ) -> Result<Vec<BindizrRecord>, UpstreamError> {
         #[derive(serde::Serialize)]
         struct AdjustRequest<'a> {
-            rrsets: &'a [BindizrRrset],
+            records: &'a [BindizrRecord],
         }
         #[derive(Deserialize)]
         struct AdjustBody {
-            rrsets: Vec<BindizrRrset>,
+            records: Vec<BindizrRecord>,
         }
         let request = self
             .request(reqwest::Method::POST, "/external-dns/adjust")
-            .json(&AdjustRequest { rrsets });
+            .json(&AdjustRequest { records });
         let response = self.send(request).await?;
         let body: AdjustBody = response.json().await.map_err(|e| {
             UpstreamError::Unreachable(format!("invalid response from bindizr: {}", e))
         })?;
-        Ok(body.rrsets)
+        Ok(body.records)
     }
 
     /// Unauthenticated liveness probe of the bindizr server.

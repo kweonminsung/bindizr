@@ -35,7 +35,7 @@ pub(crate) enum RecordCommand {
         /// Zone name
         #[arg(short, long, value_name = "ZONE_NAME")]
         zone: String,
-        /// TTL in seconds, defaulting to the zone TTL (records of one RRset share a TTL)
+        /// TTL in seconds, defaulting to the zone TTL (records sharing a name and type share one TTL)
         #[arg(long)]
         ttl: Option<i32>,
         /// Priority (MX and SRV only)
@@ -154,7 +154,7 @@ YAML example:
         /// Record value
         #[arg(long)]
         value: Option<String>,
-        /// TTL (records of one RRset share a TTL)
+        /// TTL (records sharing a name and type share one TTL)
         #[arg(long)]
         ttl: Option<i32>,
         /// Priority (MX and SRV only)
@@ -169,7 +169,8 @@ YAML example:
     #[command(alias = "rm")]
     Delete {
         /// The record ID
-        record_id: i32,
+        #[arg(value_name = "RECORD_ID")]
+        id: i32,
     },
 }
 
@@ -341,12 +342,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
             print_records(&data, output)?;
         }
-        RecordCommand::Delete { record_id } => {
+        RecordCommand::Delete { id } => {
             let response = client
-                .send_command(
-                    DaemonCommandKind::DeleteRecord,
-                    RecordIdParams { id: record_id },
-                )
+                .send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
                 .await?;
             println!("{}", response.message);
         }

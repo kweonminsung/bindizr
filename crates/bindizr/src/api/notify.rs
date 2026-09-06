@@ -31,6 +31,7 @@ impl NotifyApi {
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required to notify all zones or to bump a serial", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 409, description = "Zone conflict", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

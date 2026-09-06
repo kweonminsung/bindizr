@@ -7,8 +7,8 @@ use crate::cli::output::color;
 
 /// Render one record's value as zone-file rdata: MX/SRV carry the priority
 /// inline, TXT is quoted per character-string, other types use the value as-is.
-fn rdata(record: &RecordDiffValue, record_type: &str) -> String {
-    let segments: &[String] = match &record.value {
+fn rdata(diff_value: &RecordDiffValue, record_type: &str) -> String {
+    let segments: &[String] = match &diff_value.value {
         RecordValueRequest::String(value) => std::slice::from_ref(value),
         RecordValueRequest::Segments(segments) => segments,
     };
@@ -19,13 +19,17 @@ fn rdata(record: &RecordDiffValue, record_type: &str) -> String {
             .map(|segment| TxtRecordValue::to_quoted_charstr(segment.as_bytes()))
             .collect::<Vec<_>>()
             .join(" "),
-        "MX" | "SRV" => format!("{} {}", record.priority.unwrap_or(10), segments.concat()),
+        "MX" | "SRV" => format!(
+            "{} {}",
+            diff_value.priority.unwrap_or(10),
+            segments.concat()
+        ),
         _ => segments.concat(),
     }
 }
 
 /// Render the `+`/`-`/`~` lines for a diff's entries (no summary footer). A
-/// changed RRset stacks its removed records above its added ones.
+/// changed entry stacks its removed records above its added ones.
 pub(crate) fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
     let mut out = String::new();
     for entry in entries {
@@ -53,7 +57,7 @@ pub(crate) fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
                 .cloned(),
         );
 
-        // Sign and name label the RRset once; TTL stays per-line so a TTL-only
+        // Sign and name label the entry once; TTL stays per-line so a TTL-only
         // change reads clearly.
         for (index, (ttl, data)) in lines.iter().enumerate() {
             let head = if index == 0 { sign } else { ' ' };
@@ -80,7 +84,7 @@ pub(crate) fn render_change_preview(diff: &RecordDiff) -> String {
     let summary = &diff.summary;
     out.push('\n');
     out.push_str(&format!(
-        "Records: {} {} {}\n",
+        "By name and type: {} {} {}\n",
         color::green(&format!("+{}", summary.added)),
         color::red(&format!("-{}", summary.removed)),
         color::yellow(&format!("~{}", summary.changed))

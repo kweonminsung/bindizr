@@ -252,10 +252,9 @@ impl DnsMessageBuilder {
     /// Composes one class-IN answer RR into its own buffer so it can be
     /// popped/reflushed by the chunked TCP writer.
     fn add_answer<N: ToName, D: ComposeRecordData>(&mut self, owner: N, ttl: u32, data: D) {
-        let record = domain::base::Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
+        let rr = domain::base::Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
         let mut answer = Vec::new();
-        record
-            .compose_record(&mut answer)
+        rr.compose_record(&mut answer)
             .expect("composing into a Vec cannot run out of space");
         self.push_answer(answer);
     }
@@ -457,8 +456,8 @@ fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<u32> {
         .authority()
         .ok()?
         .limit_to::<Soa<_>>()
-        .find_map(|record| record.ok())
-        .map(|record| record.data().serial().into_int())
+        .find_map(|rr| rr.ok())
+        .map(|rr| rr.data().serial().into_int())
 }
 
 pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, String> {

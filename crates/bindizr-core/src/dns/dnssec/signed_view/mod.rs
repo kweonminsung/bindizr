@@ -47,7 +47,7 @@ use crate::{
     },
 };
 
-type SignRecord = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
+type SignRr = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
 
 pub struct SignedViewParams<'a> {
     pub zone: &'a Zone,
@@ -112,7 +112,7 @@ impl SignedViewParams<'_> {
             .collect();
         if !signers.is_empty() && (key_signers.is_empty() || data_signers.is_empty()) {
             return Err(
-                "zone has keys but no usable signer for the key RRsets or the zone data"
+                "zone has keys but no usable signer for the key records or the zone data"
                     .to_string(),
             );
         }
@@ -120,32 +120,32 @@ impl SignedViewParams<'_> {
         let input = build_signing_input(self, &apex, &signers)?;
 
         let mut new_rows: Vec<DnssecRecord> = Vec::new();
-        let denial_records = denial_records(&apex, &input, self.denial)?;
+        let denial_rrs = denial_rrs(&apex, &input, self.denial)?;
 
         // Rows for everything the signer owns: the apex key RRsets from `input`
         // and the denial chain. User records and the SOA stay in their own planes.
-        for record in input.iter().filter(|r| is_key_rrset_type(r.rtype())) {
+        for rr in input.iter().filter(|rr| is_key_rtype(rr.rtype())) {
             new_rows.push(DnssecRecord {
                 id: 0,
                 zone_id: zone.id,
                 name: OwnerName::apex(),
-                record_type: derived_record_type(record.rtype())?,
+                record_type: derived_record_type(rr.rtype())?,
                 covered_record_type: None,
-                ttl: record.ttl().as_secs() as i32,
-                rdata: to_rdata(record.data()),
+                ttl: rr.ttl().as_secs() as i32,
+                rdata: to_rdata(rr.data()),
                 expires_at: None,
                 rrset_digest: None,
             });
         }
-        for record in &denial_records {
+        for rr in &denial_rrs {
             new_rows.push(DnssecRecord {
                 id: 0,
                 zone_id: zone.id,
-                name: owner_in_zone(record.owner(), &zone.name)?,
-                record_type: derived_record_type(record.rtype())?,
+                name: owner_in_zone(rr.owner(), &zone.name)?,
+                record_type: derived_record_type(rr.rtype())?,
                 covered_record_type: None,
-                ttl: record.ttl().as_secs() as i32,
-                rdata: to_rdata(record.data()),
+                ttl: rr.ttl().as_secs() as i32,
+                rdata: to_rdata(rr.data()),
                 expires_at: None,
                 rrset_digest: None,
             });
@@ -156,19 +156,19 @@ impl SignedViewParams<'_> {
         // are served but not signed (RFC 4035, Section 2.2).
         let delegations: BTreeSet<Vec<u8>> = input
             .iter()
-            .filter(|r| r.rtype() == Rtype::NS && *r.owner() != apex)
-            .map(|r| r.owner().as_slice().to_vec())
+            .filter(|rr| rr.rtype() == Rtype::NS && *rr.owner() != apex)
+            .map(|rr| rr.owner().as_slice().to_vec())
             .collect();
 
-        let mut signable: Vec<Vec<&SignRecord>> = Vec::new();
-        let mut current: Vec<&SignRecord> = Vec::new();
-        for record in &input {
+        let mut signable: Vec<Vec<&SignRr>> = Vec::new();
+        let mut current: Vec<&SignRr> = Vec::new();
+        for rr in &input {
             if let Some(last) = current.last()
-                && (last.owner() != record.owner() || last.rtype() != record.rtype())
+                && (last.owner() != rr.owner() || last.rtype() != rr.rtype())
             {
                 signable.push(std::mem::take(&mut current));
             }
-            current.push(record);
+            current.push(rr);
         }
         if !current.is_empty() {
             signable.push(current);
@@ -180,8 +180,8 @@ impl SignedViewParams<'_> {
             }
             !is_below_cut(owner, &apex, &delegations)
         });
-        for record in &denial_records {
-            signable.push(vec![record]);
+        for rr in &denial_rrs {
+            signable.push(vec![rr]);
         }
 
         // Index stored signatures for reuse: (owner, covered type) → rows.
@@ -205,7 +205,7 @@ impl SignedViewParams<'_> {
             // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
             // active zone-data keys.
             let rrset_signers: &[&Signer<'_>] =
-                if *rrset[0].owner() == apex && is_key_rrset_type(rrset[0].rtype()) {
+                if *rrset[0].owner() == apex && is_key_rtype(rrset[0].rtype()) {
                     &key_signers
                 } else {
                     &data_signers
@@ -271,31 +271,31 @@ impl SignedViewDiff {
     }
 
     fn from_planes(prev: &[DnssecRecord], new_rows: Vec<DnssecRecord>) -> SignedViewDiff {
-        let identity = |row: &DnssecRecord| {
+        let identity = |record: &DnssecRecord| {
             (
-                row.name.to_stored(),
-                row.record_type,
-                row.ttl,
-                row.rdata.clone(),
+                record.name.to_stored(),
+                record.record_type,
+                record.ttl,
+                record.rdata.clone(),
             )
         };
 
         let mut remaining: BTreeMap<(String, DnssecRecordType, i32, Rdata), Vec<DnssecRecord>> =
             BTreeMap::new();
-        for row in prev {
+        for record in prev {
             remaining
-                .entry(identity(row))
+                .entry(identity(record))
                 .or_default()
-                .push(row.clone());
+                .push(record.clone());
         }
 
         let mut added = Vec::new();
-        for row in new_rows {
-            match remaining.get_mut(&identity(&row)) {
+        for record in new_rows {
+            match remaining.get_mut(&identity(&record)) {
                 Some(rows) if !rows.is_empty() => {
                     rows.pop();
                 }
-                _ => added.push(row),
+                _ => added.push(record),
             }
         }
         let removed = remaining.into_values().flatten().collect();
@@ -308,19 +308,19 @@ fn derived_record_type(rtype: Rtype) -> Result<DnssecRecordType, String> {
     DnssecRecordType::try_from(rtype.to_int() as i32)
 }
 
-fn is_key_rrset_type(rtype: Rtype) -> bool {
+fn is_key_rtype(rtype: Rtype) -> bool {
     matches!(rtype, Rtype::DNSKEY | Rtype::CDS | Rtype::CDNSKEY)
 }
 
 /// Content identity for signature reuse; any component changing must force
 /// a fresh signature.
-fn rrset_digest(signers: &[&Signer<'_>], rrset: &[&SignRecord]) -> String {
+fn rrset_digest(signers: &[&Signer<'_>], rrset: &[&SignRr]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(rrset[0].owner().as_slice());
     hasher.update(rrset[0].rtype().to_int().to_be_bytes());
     hasher.update(rrset[0].ttl().as_secs().to_be_bytes());
 
-    let mut rdatas: Vec<Rdata> = rrset.iter().map(|r| to_rdata(r.data())).collect();
+    let mut rdatas: Vec<Rdata> = rrset.iter().map(|rr| to_rdata(rr.data())).collect();
     rdatas.sort();
     for rdata in rdatas {
         hasher.update((rdata.as_bytes().len() as u32).to_be_bytes());
@@ -352,11 +352,11 @@ fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8
     false
 }
 
-fn owner_in_zone(owner: &WireName, zone: &ZoneName) -> Result<OwnerName, String> {
-    OwnerName::parse_absolute_in_zone(&owner.to_string(), zone).map_err(|e| {
+fn owner_in_zone(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
+    OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|e| {
         format!(
             "derived owner '{}' is not inside zone '{}': {}",
-            owner, zone, e
+            owner, zone_name, e
         )
     })
 }
@@ -388,11 +388,12 @@ impl<'a> Signer<'a> {
 
     fn sign_rrset(
         &self,
-        rrset: &[&SignRecord],
+        rrset: &[&SignRr],
         inception: DateTime<Utc>,
         expiration: DateTime<Utc>,
     ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, String> {
-        let rrset = Rrset::new_from_refs(rrset).map_err(|e| format!("invalid RRset: {}", e))?;
+        let rrset = Rrset::new_from_refs(rrset)
+            .map_err(|e| format!("mismatched records for one name and type: {}", e))?;
         sign_rrset(
             &self.signing_key,
             &rrset,
@@ -409,9 +410,9 @@ fn build_signing_input(
     params: &SignedViewParams<'_>,
     apex: &WireName,
     signers: &[Signer<'_>],
-) -> Result<Vec<SignRecord>, String> {
+) -> Result<Vec<SignRr>, String> {
     let zone = params.zone;
-    let mut input: Vec<SignRecord> = Vec::new();
+    let mut input: Vec<SignRr> = Vec::new();
 
     let soa_bytes = zone.soa_rdata(params.new_serial as u32)?;
     input.push(WireRecord::new(
@@ -492,14 +493,14 @@ fn build_signing_input(
     // An RRset shares one TTL (RFC 2181, Section 5.2); normalize stragglers to
     // the set's minimum so RRset construction and Original TTL are well-defined.
     let mut rrset_ttls: BTreeMap<(Vec<u8>, u16), Ttl> = BTreeMap::new();
-    for record in &input {
-        let key = (record.owner().as_slice().to_vec(), record.rtype().to_int());
-        let entry = rrset_ttls.entry(key).or_insert_with(|| record.ttl());
-        *entry = (*entry).min(record.ttl());
+    for rr in &input {
+        let key = (rr.owner().as_slice().to_vec(), rr.rtype().to_int());
+        let entry = rrset_ttls.entry(key).or_insert_with(|| rr.ttl());
+        *entry = (*entry).min(rr.ttl());
     }
-    for record in &mut input {
-        let key = (record.owner().as_slice().to_vec(), record.rtype().to_int());
-        record.set_ttl(rrset_ttls[&key]);
+    for rr in &mut input {
+        let key = (rr.owner().as_slice().to_vec(), rr.rtype().to_int());
+        rr.set_ttl(rrset_ttls[&key]);
     }
 
     input.sort_by(|a, b| {
@@ -524,22 +525,22 @@ fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, String> {
 /// the NSEC3 chain plus its NSEC3PARAM. The chain is cheap to rebuild whole,
 /// and doing so removes incremental chain-repair edge cases entirely
 /// (RFC 9077 TTLs and zone cuts included).
-fn denial_records(
+fn denial_rrs(
     apex: &WireName,
-    input: &[SignRecord],
+    input: &[SignRr],
     denial: DnssecDenial,
-) -> Result<Vec<SignRecord>, String> {
-    fn into_sign_record<D>(
-        record: WireRecord<WireName, D>,
+) -> Result<Vec<SignRr>, String> {
+    fn into_sign_rr<D>(
+        rr: WireRecord<WireName, D>,
         wrap: impl FnOnce(D) -> ZoneRecordData<Vec<u8>, WireName>,
-    ) -> SignRecord {
-        let class = record.class();
-        let ttl = record.ttl();
-        let (owner, data) = record.into_owner_and_data();
+    ) -> SignRr {
+        let class = rr.class();
+        let ttl = rr.ttl();
+        let (owner, data) = rr.into_owner_and_data();
         WireRecord::new(owner, class, ttl, wrap(data))
     }
 
-    let mut records = Vec::new();
+    let mut rrs = Vec::new();
     if denial == DnssecDenial::Nsec3 {
         // GenerateNsec3Config::default() is the RFC 9276 profile: SHA-1, zero
         // iterations, no salt, no opt-out.
@@ -551,9 +552,9 @@ fn denial_records(
         .map_err(|e| format!("NSEC3 generation failed: {}", e))?;
 
         for nsec3 in nsec3s {
-            records.push(into_sign_record(nsec3, ZoneRecordData::Nsec3));
+            rrs.push(into_sign_rr(nsec3, ZoneRecordData::Nsec3));
         }
-        records.push(into_sign_record(nsec3param, ZoneRecordData::Nsec3param));
+        rrs.push(into_sign_rr(nsec3param, ZoneRecordData::Nsec3param));
     } else {
         let nsecs = generate_nsecs(
             apex,
@@ -562,10 +563,10 @@ fn denial_records(
         )
         .map_err(|e| format!("NSEC generation failed: {}", e))?;
         for nsec in nsecs {
-            records.push(into_sign_record(nsec, ZoneRecordData::Nsec));
+            rrs.push(into_sign_rr(nsec, ZoneRecordData::Nsec));
         }
     }
-    Ok(records)
+    Ok(rrs)
 }
 
 /// Wire RDATA of `data`, without the length prefix. Composed protocol values

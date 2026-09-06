@@ -31,7 +31,7 @@ impl OwnerName {
     /// Parse client input — `@`, a relative name, or an absolute name inside
     /// `zone` — into the owner's labels. Labels are checked for wire safety
     /// only, since owner names carry the `_` labels a zone name may not.
-    pub fn parse_in_zone(input: &str, zone: &ZoneName) -> Result<Self, ParseNameError> {
+    pub fn parse_in_zone(input: &str, zone_name: &ZoneName) -> Result<Self, ParseNameError> {
         let trimmed = input.trim();
         if trimmed.trim_end_matches('.').is_empty() {
             return Err(ParseNameError::Empty);
@@ -41,7 +41,7 @@ impl OwnerName {
         }
 
         let (labels, absolute) = decode_name_labels(trimmed)?;
-        let zone_labels = zone.labels();
+        let zone_labels = zone_name.labels();
 
         // A relative name that happens to end in the zone was already absolute.
         match strip_zone_suffix(&labels, &zone_labels) {
@@ -59,14 +59,17 @@ impl OwnerName {
     /// Parse a name that is already absolute, so a name outside `zone` is an
     /// error instead of being qualified by appending the zone. Callers whose
     /// input carries no trailing dot (lookup form, wire owners) need this.
-    pub fn parse_absolute_in_zone(input: &str, zone: &ZoneName) -> Result<Self, ParseNameError> {
+    pub fn parse_absolute_in_zone(
+        input: &str,
+        zone_name: &ZoneName,
+    ) -> Result<Self, ParseNameError> {
         let trimmed = input.trim();
         if trimmed == Self::APEX {
             return Ok(Self::apex());
         }
 
         let (labels, _) = decode_name_labels(trimmed)?;
-        strip_zone_suffix(&labels, zone.labels().as_slice())
+        strip_zone_suffix(&labels, zone_name.labels().as_slice())
             .map(Self)
             .ok_or(ParseNameError::OutsideZone)
     }
@@ -101,8 +104,8 @@ impl OwnerName {
 
     /// The wire form within `zone`: this owner's labels, the zone's, then the
     /// root.
-    pub fn to_wire(&self, zone: &ZoneName) -> Result<Vec<u8>, ParseNameError> {
-        let zone_labels = zone.labels();
+    pub fn to_wire(&self, zone_name: &ZoneName) -> Result<Vec<u8>, ParseNameError> {
+        let zone_labels = zone_name.labels();
         super::labels_to_wire(
             self.0
                 .iter()
@@ -112,12 +115,12 @@ impl OwnerName {
     }
 
     /// The absolute form within `zone`.
-    pub fn to_fqdn(&self, zone: &ZoneName) -> String {
+    pub fn to_fqdn(&self, zone_name: &ZoneName) -> String {
         if self.is_apex() {
-            return zone.to_fqdn();
+            return zone_name.to_fqdn();
         }
 
-        format!("{}.{}", self.render_labels(), zone.to_fqdn())
+        format!("{}.{}", self.render_labels(), zone_name.to_fqdn())
     }
 
     fn render_labels(&self) -> String {

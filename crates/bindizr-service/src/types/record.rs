@@ -69,7 +69,7 @@ pub struct CreateRecordRequest {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
-    /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
+    /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
     /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
@@ -89,7 +89,7 @@ pub struct RecordItem {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
-    /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Every record of an RRset (same name and type) must share one TTL.
+    /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
     /// MX and SRV priority, set here rather than inline in the value; other record types reject it.

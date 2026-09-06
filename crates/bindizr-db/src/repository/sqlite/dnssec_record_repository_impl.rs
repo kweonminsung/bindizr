@@ -140,7 +140,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
 
     async fn list_zone_ids_expiring_within_refresh(
         &self,
-        now: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -154,7 +154,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
               AND datetime(r.expires_at) < datetime(?, '+' || p.signature_refresh_days || ' days')
             "#,
         )
-        .bind(now)
+        .bind(cutoff)
         .fetch_all(&mut *conn)
         .await?;
 
@@ -163,7 +163,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
 
     async fn count_expiring_within_refresh(
         &self,
-        now: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
     ) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -177,7 +177,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
               AND datetime(r.expires_at) < datetime(?, '+' || p.signature_refresh_days || ' days')
             "#,
         )
-        .bind(now)
+        .bind(cutoff)
         .fetch_one(&mut *conn)
         .await?;
 
@@ -210,7 +210,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
                     OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = ? AND p.zone_id = d.zone_id)
               )
-            -- d.name ties across an RRset, so without d.id a plan change
+            -- every type at one name shares d.name, so without d.id a plan change
             -- between two pages could drop or repeat a row.
             ORDER BY d.name, d.id
             LIMIT ? OFFSET ?

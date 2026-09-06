@@ -188,7 +188,7 @@ fn render_version_diff(response: &VersionDiffResponse) -> String {
         response.from_serial, response.to_serial
     ));
     out.push_str(&format!(
-        "Records: +{} -{} ~{}\n",
+        "By name and type: +{} -{} ~{}\n",
         summary.added, summary.removed, summary.changed
     ));
     out

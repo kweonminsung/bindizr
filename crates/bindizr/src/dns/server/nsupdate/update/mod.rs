@@ -8,7 +8,7 @@ use bindizr_core::{
         message::{Class, Rtype},
         nsupdate::{
             auth::{ResponseSigner, TsigError},
-            parser::{UpdateRecord, UpdateRequest, rr_to_record_value},
+            parser::{UpdateRequest, UpdateRr, rr_to_record_value},
         },
     },
     model::{record::RecordType, tsig_key::TsigKey},
@@ -159,7 +159,7 @@ async fn authenticate_request(
 
 /// One prerequisite RR, with the wire shapes of RFC 2136, Section 2.4 enforced:
 /// TTL is always 0, and only a CLASS IN prerequisite carries rdata.
-fn decode_prerequisite(rr: &UpdateRecord, query_data: &[u8]) -> Result<Prerequisite, UpdateError> {
+fn decode_prerequisite(rr: &UpdateRr, query_data: &[u8]) -> Result<Prerequisite, UpdateError> {
     if rr.ttl != 0 {
         return Err(UpdateError::Refused(
             "prerequisite TTL must be 0".to_string(),
@@ -193,7 +193,7 @@ fn decode_prerequisite(rr: &UpdateRecord, query_data: &[u8]) -> Result<Prerequis
         Class::IN => {
             if rr.rr_type == Rtype::ANY || rr.rdata.is_empty() {
                 return Err(UpdateError::Refused(
-                    "IN-class prerequisite must specify rrtype and rdata".to_string(),
+                    "IN-class prerequisite must specify record type and rdata".to_string(),
                 ));
             }
 
@@ -212,7 +212,7 @@ fn decode_prerequisite(rr: &UpdateRecord, query_data: &[u8]) -> Result<Prerequis
     }
 }
 
-fn decode_update(rr: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, UpdateError> {
+fn decode_update(rr: &UpdateRr, query_data: &[u8]) -> Result<UpdateOp, UpdateError> {
     let name = rr.name.clone();
     match rr.class {
         Class::IN => {
@@ -224,7 +224,7 @@ fn decode_update(rr: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, Updat
                     i32::MAX
                 )));
             }
-            Ok(UpdateOp::Add {
+            Ok(UpdateOp::AddRr {
                 name,
                 record_type,
                 value,
@@ -258,27 +258,27 @@ fn decode_update(rr: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, Updat
     }
 }
 
-fn validate_delete_shape(update: &UpdateRecord, is_rrset_delete: bool) -> Result<(), UpdateError> {
-    if update.ttl != 0 {
+fn validate_delete_shape(rr: &UpdateRr, is_rrset_delete: bool) -> Result<(), UpdateError> {
+    if rr.ttl != 0 {
         return Err(UpdateError::Refused(
             "delete update TTL must be 0".to_string(),
         ));
     }
 
     if is_rrset_delete {
-        if !update.rdata.is_empty() {
+        if !rr.rdata.is_empty() {
             return Err(UpdateError::Refused(
                 "ANY-class delete must have empty rdata".to_string(),
             ));
         }
     } else {
-        if update.rr_type == Rtype::ANY {
+        if rr.rr_type == Rtype::ANY {
             return Err(UpdateError::Refused(
-                "NONE-class delete must specify rrtype".to_string(),
+                "NONE-class delete must specify record type".to_string(),
             ));
         }
 
-        if update.rdata.is_empty() {
+        if rr.rdata.is_empty() {
             return Err(UpdateError::Refused(
                 "NONE-class delete must specify rdata".to_string(),
             ));

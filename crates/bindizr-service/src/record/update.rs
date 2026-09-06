@@ -3,7 +3,7 @@ use bindizr_db::repository::LockLevel;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, prepare_record},
+    bulk::{PreparedRecord, parse_record},
     validation::{
         normalize_record_owner_name, parse_record_type,
         validate_record_update_constraints_normalized,
@@ -17,7 +17,6 @@ use crate::{
     model::{
         record::{Record, RecordType, RecordWithZone},
         zone::Zone,
-        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -50,7 +49,7 @@ impl RecordService {
                 record_type,
                 value: encoded_value,
                 ..
-            } = prepare_record(
+            } = parse_record(
                 &request.name,
                 &request.record_type,
                 &request.value,
@@ -75,7 +74,7 @@ impl RecordService {
         record_id: i32,
         patch: &UpdateRecordPatch,
     ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(caller, record_id, |_zone, existing| {
+        Self::update_locked(caller, record_id, |zone, existing| {
             let record_type = match &patch.record_type {
                 Some(record_type) => parse_record_type(record_type)?,
                 None => existing.record_type.clone(),
@@ -101,7 +100,7 @@ impl RecordService {
             };
             // An omitted name keeps the stored owner, which needs no reparse.
             let owner_name = match &patch.name {
-                Some(name) => normalize_record_owner_name(name, &_zone.name)?,
+                Some(name) => normalize_record_owner_name(name, &zone.name)?,
                 None => existing.name.clone(),
             };
             Ok(ResolvedRecordUpdate {
@@ -193,7 +192,7 @@ impl RecordService {
                 .await?;
             // Only records sharing the new owner name can conflict, so load just
             // those instead of the whole zone.
-            let zone_records = match RepositoryService::list_records_by_name_tx(
+            let records_at_name = match RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone.id,
                 &resolved.owner_name,
@@ -203,7 +202,7 @@ impl RecordService {
             {
                 Ok(records) => records,
                 Err(e) => {
-                    log_error!("Failed to load zone records: {}", e);
+                    log_error!("Failed to load records: {}", e);
                     return Err(ServiceError::internal(
                         "Failed to update record".to_string(),
                     ));
@@ -223,7 +222,7 @@ impl RecordService {
 
             validate_record_update_constraints_normalized(
                 &zone,
-                &zone_records,
+                &records_at_name,
                 &existing_record,
                 &candidate_updated,
             )?;
@@ -231,48 +230,16 @@ impl RecordService {
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();
 
-            let updated_record = RepositoryService::update_record_tx(&mut tx, candidate_updated)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to update record: {}", e);
-                    ServiceError::internal("Failed to update record")
-                })?;
-
-            // Record DEL(old)+ADD(new) zone changes for IXFR in one batch.
-            let changes = vec![
-                ZoneChange {
-                    zone_id: zone.id,
-                    serial: new_serial,
-                    operation: ChangeOperation::Del,
-                    record_name: existing_record.name.clone(),
-                    record_type: JournalRecordType::User(existing_record.record_type.clone()),
-                    record_value: Some(existing_record.value.clone()),
-                    record_rdata: None,
-                    record_ttl: existing_record.ttl,
-                    record_priority: existing_record.priority,
-                    derived: false,
-                },
-                ZoneChange {
-                    zone_id: zone.id,
-                    serial: new_serial,
-                    operation: ChangeOperation::Add,
-                    record_name: updated_record.name.clone(),
-                    record_type: JournalRecordType::User(updated_record.record_type.clone()),
-                    record_value: Some(updated_record.value.clone()),
-                    record_rdata: None,
-                    record_ttl: updated_record.ttl,
-                    record_priority: updated_record.priority,
-                    derived: false,
-                },
-            ];
-            RepositoryService::create_zone_journal_tx(&mut tx, &changes)
-                .await
-                .map_err(|e| {
-                    log_error!("Failed to create zone changes: {}", e);
-                    ServiceError::internal("Failed to create zone change")
-                })?;
+            let updated_record = Self::update_record_with_changes_tx(
+                &mut tx,
+                new_serial,
+                &existing_record,
+                candidate_updated,
+            )
+            .await?;
 
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+            // Advance the serial once so IXFR consumers detect the change
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
             Ok::<(Record, ZoneName), ServiceError>((updated_record, zone_name))

@@ -112,8 +112,9 @@ fn default_expiration() -> DateTime<Utc> {
 
 /// Stored form of a computed plane: rows get distinct ids like the database
 /// would assign.
-fn as_stored(rows: &[DnssecRecord]) -> Vec<DnssecRecord> {
-    rows.iter()
+fn as_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
+    records
+        .iter()
         .enumerate()
         .map(|(index, row)| DnssecRecord {
             id: index as i32 + 1,
@@ -122,18 +123,20 @@ fn as_stored(rows: &[DnssecRecord]) -> Vec<DnssecRecord> {
         .collect()
 }
 
-fn rows_of_type(rows: &[DnssecRecord], record_type: DnssecRecordType) -> Vec<&DnssecRecord> {
-    rows.iter()
+fn records_of_type(records: &[DnssecRecord], record_type: DnssecRecordType) -> Vec<&DnssecRecord> {
+    records
+        .iter()
         .filter(|row| row.record_type == record_type)
         .collect()
 }
 
 fn rrsigs_covering<'a>(
-    rows: &'a [DnssecRecord],
+    records: &'a [DnssecRecord],
     owner: &OwnerName,
     covered: i32,
 ) -> Vec<&'a DnssecRecord> {
-    rows.iter()
+    records
+        .iter()
         .filter(|row| {
             row.record_type == DnssecRecordType::Rrsig
                 && row.covered_record_type == Some(covered)
@@ -180,13 +183,14 @@ fn expirations_spread_across_the_jitter_window() {
         force: false,
     });
 
-    let expirations: BTreeSet<DateTime<Utc>> = rows_of_type(&diff.added, DnssecRecordType::Rrsig)
-        .iter()
-        .filter_map(|row| row.expires_at)
-        .collect();
+    let expirations: BTreeSet<DateTime<Utc>> =
+        records_of_type(&diff.added, DnssecRecordType::Rrsig)
+            .iter()
+            .filter_map(|row| row.expires_at)
+            .collect();
     assert!(
         expirations.len() > 1,
-        "one pass would come due for every RRset at once: {expirations:?}"
+        "one pass would come due for every signature at once: {expirations:?}"
     );
     let earliest = *expirations.iter().next().expect("signatures were emitted");
     let latest = *expirations
@@ -224,16 +228,19 @@ fn initial_signing_emits_key_rrsets_nsec_chain_and_rrsigs() {
     });
 
     assert!(diff.removed.is_empty());
-    assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Dnskey).len(), 1);
-    // The CSK wants a parent DS, so it is advertised via CDS/CDNSKEY (RFC 7344).
-    assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
     assert_eq!(
-        rows_of_type(&diff.added, DnssecRecordType::Cdnskey).len(),
+        records_of_type(&diff.added, DnssecRecordType::Dnskey).len(),
+        1
+    );
+    // The CSK wants a parent DS, so it is advertised via CDS/CDNSKEY (RFC 7344).
+    assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
+    assert_eq!(
+        records_of_type(&diff.added, DnssecRecordType::Cdnskey).len(),
         1
     );
 
     // One NSEC per authoritative name, chained apex → www → apex.
-    let nsecs = rows_of_type(&diff.added, DnssecRecordType::Nsec);
+    let nsecs = records_of_type(&diff.added, DnssecRecordType::Nsec);
     assert_eq!(nsecs.len(), 2);
     let apex_nsec = nsecs.iter().find(|row| row.name.is_apex()).unwrap();
     let www_wire = b"\x03www\x07example\x03com\x00";
@@ -252,7 +259,7 @@ fn initial_signing_emits_key_rrsets_nsec_chain_and_rrsigs() {
     assert!(nsecs.iter().all(|row| row.ttl == 900));
 
     // RRSIGs: SOA, DNSKEY, CDS, CDNSKEY, apex NS, apex NSEC, www A, www NSEC.
-    let rrsigs = rows_of_type(&diff.added, DnssecRecordType::Rrsig);
+    let rrsigs = records_of_type(&diff.added, DnssecRecordType::Rrsig);
     assert_eq!(rrsigs.len(), 8);
     let apex = OwnerName::apex();
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
@@ -305,15 +312,15 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
         force: false,
     });
 
-    assert!(rows_of_type(&diff.added, DnssecRecordType::Nsec).is_empty());
-    let params = rows_of_type(&diff.added, DnssecRecordType::Nsec3param);
+    assert!(records_of_type(&diff.added, DnssecRecordType::Nsec).is_empty());
+    let params = records_of_type(&diff.added, DnssecRecordType::Nsec3param);
     assert_eq!(params.len(), 1);
     assert!(params[0].name.is_apex());
     // RFC 9276 parameters: SHA-1 (1), flags 0, iterations 0, empty salt.
     assert_eq!(params[0].rdata.as_bytes(), [1, 0, 0, 0, 0]);
 
     // One NSEC3 per authoritative name, at a hashed (base32) owner label.
-    let nsec3s = rows_of_type(&diff.added, DnssecRecordType::Nsec3);
+    let nsec3s = records_of_type(&diff.added, DnssecRecordType::Nsec3);
     assert_eq!(nsec3s.len(), 2);
     assert!(nsec3s.iter().all(|row| !row.name.is_apex()));
 
@@ -367,8 +374,11 @@ fn published_key_cosigns_key_rrsets_but_not_zone_data() {
     let apex = OwnerName::apex();
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
     // Both keys are published and advertised to the parent (double-DS).
-    assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Dnskey).len(), 2);
-    assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Cds).len(), 2);
+    assert_eq!(
+        records_of_type(&diff.added, DnssecRecordType::Dnskey).len(),
+        2
+    );
+    assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 2);
     // Both SEP keys sign the DNSKEY RRset — a validator may arrive via either
     // DS — but only the active key signs zone data.
     assert_eq!(
@@ -411,7 +421,10 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
     let apex = OwnerName::apex();
     // Still in the DNSKEY RRset (cached signatures and a possibly lingering
     // old DS need it) and still co-signing that RRset...
-    assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Dnskey).len(), 2);
+    assert_eq!(
+        records_of_type(&diff.added, DnssecRecordType::Dnskey).len(),
+        2
+    );
     assert_eq!(
         rrsigs_covering(
             &diff.added,
@@ -422,9 +435,9 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
         2
     );
     // ...but no longer advertised to the parent: its DS should be dropped.
-    assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
+    assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
     assert_eq!(
-        rows_of_type(&diff.added, DnssecRecordType::Cdnskey).len(),
+        records_of_type(&diff.added, DnssecRecordType::Cdnskey).len(),
         1
     );
     // And it signs no zone data.
@@ -457,10 +470,13 @@ fn split_keys_partition_key_rrsets_from_zone_data() {
 
     let apex = OwnerName::apex();
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
-    assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Dnskey).len(), 2);
+    assert_eq!(
+        records_of_type(&diff.added, DnssecRecordType::Dnskey).len(),
+        2
+    );
     // Only the KSK is in the parent DS set and signs the key RRsets
     // (RFC 7344, Section 4.1); only the ZSK signs zone data.
-    assert_eq!(rows_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
+    assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
     assert_eq!(
         rrsigs_covering(
             &diff.added,
@@ -640,7 +656,7 @@ fn signature_inside_refresh_window_is_resigned() {
         force: false,
     });
     let stored = as_stored(&initial.added);
-    let stored_rrsigs = rows_of_type(&stored, DnssecRecordType::Rrsig).len();
+    let stored_rrsigs = records_of_type(&stored, DnssecRecordType::Rrsig).len();
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -656,15 +672,15 @@ fn signature_inside_refresh_window_is_resigned() {
 
     // Content is unchanged, so only signatures move — every one of them.
     assert_eq!(
-        rows_of_type(&diff.removed, DnssecRecordType::Rrsig).len(),
+        records_of_type(&diff.removed, DnssecRecordType::Rrsig).len(),
         stored_rrsigs
     );
     assert_eq!(
-        rows_of_type(&diff.added, DnssecRecordType::Rrsig).len(),
+        records_of_type(&diff.added, DnssecRecordType::Rrsig).len(),
         stored_rrsigs
     );
-    assert!(rows_of_type(&diff.added, DnssecRecordType::Nsec).is_empty());
-    assert!(rows_of_type(&diff.removed, DnssecRecordType::Dnskey).is_empty());
+    assert!(records_of_type(&diff.added, DnssecRecordType::Nsec).is_empty());
+    assert!(records_of_type(&diff.removed, DnssecRecordType::Dnskey).is_empty());
 }
 
 #[test]
@@ -750,7 +766,7 @@ fn force_resigns_every_rrset() {
         force: false,
     });
     let stored = as_stored(&initial.added);
-    let stored_rrsigs = rows_of_type(&stored, DnssecRecordType::Rrsig).len();
+    let stored_rrsigs = records_of_type(&stored, DnssecRecordType::Rrsig).len();
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -765,11 +781,11 @@ fn force_resigns_every_rrset() {
     });
 
     assert_eq!(
-        rows_of_type(&diff.added, DnssecRecordType::Rrsig).len(),
+        records_of_type(&diff.added, DnssecRecordType::Rrsig).len(),
         stored_rrsigs
     );
     assert_eq!(
-        rows_of_type(&diff.removed, DnssecRecordType::Rrsig).len(),
+        records_of_type(&diff.removed, DnssecRecordType::Rrsig).len(),
         stored_rrsigs
     );
 }
@@ -839,10 +855,10 @@ fn withdrawal_publishes_the_delete_cds_pair() {
 
     // RFC 8078, Section 4: a single 0-algorithm CDS/CDNSKEY pair replaces the
     // per-key set and asks the parent to delete the DS RRset.
-    let cds = rows_of_type(&diff.added, DnssecRecordType::Cds);
+    let cds = records_of_type(&diff.added, DnssecRecordType::Cds);
     assert_eq!(cds.len(), 1);
     assert_eq!(cds[0].rdata.as_bytes(), &[0, 0, 0, 0, 0]);
-    let cdnskey = rows_of_type(&diff.added, DnssecRecordType::Cdnskey);
+    let cdnskey = records_of_type(&diff.added, DnssecRecordType::Cdnskey);
     assert_eq!(cdnskey.len(), 1);
     assert_eq!(cdnskey[0].rdata.as_bytes(), &[0, 0, 3, 0, 0]);
 }
@@ -909,12 +925,12 @@ fn ed448_keys_generate_and_sign() {
 fn imported_bind_key_pair_round_trips() {
     let zone = test_zone();
     let generated = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
-    let record = format!(
+    let dnskey = format!(
         "example.com. 3600 IN DNSKEY 257 3 13 {}",
         generated.public_key
     );
 
-    let imported = import_key(&zone, false, &record, &generated.private_key, fixed_now()).unwrap();
+    let imported = import_key(&zone, false, &dnskey, &generated.private_key, fixed_now()).unwrap();
 
     assert_eq!(imported.role, DnssecKeyRole::Csk);
     assert_eq!(imported.key_tag, generated.key_tag);
@@ -926,19 +942,19 @@ fn imported_bind_key_pair_round_trips() {
 fn import_derives_the_role_from_the_key_layout() {
     let zone = test_zone();
     let sep = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
-    let record = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", sep.public_key);
+    let dnskey = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", sep.public_key);
 
     // The SEP flag alone cannot tell a CSK from a KSK; the layout does.
-    let imported = import_key(&zone, false, &record, &sep.private_key, fixed_now()).unwrap();
+    let imported = import_key(&zone, false, &dnskey, &sep.private_key, fixed_now()).unwrap();
     assert_eq!(imported.role, DnssecKeyRole::Csk);
-    let imported = import_key(&zone, true, &record, &sep.private_key, fixed_now()).unwrap();
+    let imported = import_key(&zone, true, &dnskey, &sep.private_key, fixed_now()).unwrap();
     assert_eq!(imported.role, DnssecKeyRole::Ksk);
 
     let zsk = test_key(&zone, 2, DnssecKeyRole::Zsk, DnssecKeyState::Active);
-    let record = format!("example.com. 3600 IN DNSKEY 256 3 13 {}", zsk.public_key);
-    let imported = import_key(&zone, true, &record, &zsk.private_key, fixed_now()).unwrap();
+    let dnskey = format!("example.com. 3600 IN DNSKEY 256 3 13 {}", zsk.public_key);
+    let imported = import_key(&zone, true, &dnskey, &zsk.private_key, fixed_now()).unwrap();
     assert_eq!(imported.role, DnssecKeyRole::Zsk);
-    assert!(import_key(&zone, false, &record, &zsk.private_key, fixed_now()).is_err());
+    assert!(import_key(&zone, false, &dnskey, &zsk.private_key, fixed_now()).is_err());
 }
 
 #[test]
@@ -946,9 +962,9 @@ fn import_rejects_a_mismatched_key_pair() {
     let zone = test_zone();
     let one = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
     let other = test_key(&zone, 2, DnssecKeyRole::Csk, DnssecKeyState::Active);
-    let record = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", one.public_key);
+    let dnskey = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", one.public_key);
 
-    assert!(import_key(&zone, false, &record, &other.private_key, fixed_now()).is_err());
+    assert!(import_key(&zone, false, &dnskey, &other.private_key, fixed_now()).is_err());
 }
 
 #[test]

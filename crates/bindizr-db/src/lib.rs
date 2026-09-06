@@ -168,7 +168,7 @@ impl DatabasePool {
                     sqlx::query("PRAGMA foreign_keys = ON")
                         .execute(&mut *conn)
                         .await?;
-                    // SQLite's busy handler polls unfairly, so 5s starved
+                    // SQLite's busy handler polls unfairly, so a short timeout starves
                     // BEGIN IMMEDIATE waiters into SQLITE_BUSY. Set before the
                     // WAL switch below, which takes a lock of its own.
                     sqlx::query("PRAGMA busy_timeout = 15000")

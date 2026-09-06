@@ -4,8 +4,8 @@ use bindizr_service::types::{
     CreateZoneRequest, CreatedTokenResponse, DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo,
     DnssecPolicyListResponse, DnssecPolicyResponse, DnssecStatusResponse, EnableDnssecRequest,
     ErrorResponse, ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,
-    ExternalDnsChangesResponse, ExternalDnsRecordItem, ExternalDnsRecordsResponse,
-    ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse, GetDnssecPolicyResponse,
+    ExternalDnsChangesResponse, ExternalDnsRecord, ExternalDnsRecordUpdate,
+    ExternalDnsRecordsResponse, ExternalDnsZonesResponse, GetDnssecPolicyResponse,
     GetDnssecStatusResponse, GetRecordResponse, GetTokenGrantResponse, GetTokenResponse,
     GetTsigGrantResponse, GetTsigKeyResponse, GetZoneResponse, HealthResponse, ImportMode,
     ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse,
@@ -82,7 +82,7 @@ use utoipa::{
         super::external_dns::get_external_dns_zones,
         super::external_dns::get_external_dns_records,
         super::external_dns::apply_external_dns_changes,
-        super::external_dns::adjust_external_dns_rrsets
+        super::external_dns::adjust_external_dns_records
     ),
     components(schemas(
         BulkRecordsResponse,
@@ -107,10 +107,9 @@ use utoipa::{
         ExternalDnsAdjustResponse,
         ExternalDnsChangesRequest,
         ExternalDnsChangesResponse,
-        ExternalDnsRecordItem,
+        ExternalDnsRecord,
+        ExternalDnsRecordUpdate,
         ExternalDnsRecordsResponse,
-        ExternalDnsRrset,
-        ExternalDnsRrsetUpdate,
         ExternalDnsZonesResponse,
         GetDnssecPolicyResponse,
         GetDnssecStatusResponse,

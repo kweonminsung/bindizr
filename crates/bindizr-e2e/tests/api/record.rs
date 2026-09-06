@@ -185,7 +185,7 @@ async fn record_reject_invalid_values() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_reject_mixed_rrset_ttl() {
+async fn record_reject_mixed_ttl_for_one_name_and_type() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
 
@@ -212,10 +212,7 @@ async fn record_reject_mixed_rrset_ttl() {
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert!(
-        body["error"]
-            .as_str()
-            .unwrap()
-            .contains("must share one TTL"),
+        body["error"].as_str().unwrap().contains("share one TTL"),
         "unexpected error: {}",
         body["error"]
     );

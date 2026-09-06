@@ -1,4 +1,4 @@
-use super::{MAX_EXPIRES_IN_DAYS, expires_at, normalize_token_name, validate_token_description};
+use super::{MAX_EXPIRES_IN_DAYS, normalize_token_name, to_expires_at, validate_token_description};
 use crate::error::ErrorCode;
 
 #[test]
@@ -36,25 +36,25 @@ fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
 }
 
 #[test]
-fn expires_at_is_none_without_days_and_ahead_of_now_with_them() {
-    assert!(expires_at(None).unwrap().is_none());
-    assert!(expires_at(Some(1)).unwrap().unwrap() > chrono::Utc::now());
-    assert!(expires_at(Some(MAX_EXPIRES_IN_DAYS)).is_ok());
+fn to_expires_at_is_none_without_days_and_ahead_of_now_with_them() {
+    assert!(to_expires_at(None).unwrap().is_none());
+    assert!(to_expires_at(Some(1)).unwrap().unwrap() > chrono::Utc::now());
+    assert!(to_expires_at(Some(MAX_EXPIRES_IN_DAYS)).is_ok());
 }
 
 #[test]
-fn expires_at_rejects_non_positive_values() {
-    let zero = expires_at(Some(0)).unwrap_err();
-    let negative = expires_at(Some(-1)).unwrap_err();
+fn to_expires_at_rejects_non_positive_values() {
+    let zero = to_expires_at(Some(0)).unwrap_err();
+    let negative = to_expires_at(Some(-1)).unwrap_err();
 
     assert_eq!(zero.code, ErrorCode::InvalidInput);
     assert_eq!(negative.code, ErrorCode::InvalidInput);
 }
 
 #[test]
-fn expires_at_rejects_values_beyond_the_cap() {
-    let just_over = expires_at(Some(MAX_EXPIRES_IN_DAYS + 1)).unwrap_err();
-    let overflow = expires_at(Some(i64::MAX)).unwrap_err();
+fn to_expires_at_rejects_values_beyond_the_cap() {
+    let just_over = to_expires_at(Some(MAX_EXPIRES_IN_DAYS + 1)).unwrap_err();
+    let overflow = to_expires_at(Some(i64::MAX)).unwrap_err();
 
     assert_eq!(just_over.code, ErrorCode::InvalidInput);
     assert_eq!(overflow.code, ErrorCode::InvalidInput);

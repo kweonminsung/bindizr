@@ -4,7 +4,7 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
-use super::{DnssecService, key_layout, notify_zone, status::build_status_tx};
+use super::{DnssecService, notify_zone, status::build_status_tx, to_key_layout};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -88,6 +88,7 @@ impl DnssecService {
         .await;
         let response = RepositoryService::finish_tx(tx, result, "failed to enable DNSSEC").await?;
 
+        crate::log_info!("event=dnssec_enable zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }
@@ -134,9 +135,9 @@ impl DnssecService {
                     "policy '{}' uses {} but zone '{}' signs with {}; the key layout is fixed \
                      while signed, so disable DNSSEC and re-enable under the new policy",
                     target.name,
-                    key_layout(target.split_keys),
+                    to_key_layout(target.split_keys),
                     zone.name.as_str(),
-                    key_layout(current.split_keys)
+                    to_key_layout(current.split_keys)
                 )));
             }
 
@@ -162,6 +163,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to change the DNSSEC policy").await?;
 
+        crate::log_info!("event=dnssec_set_policy zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }
@@ -199,7 +201,7 @@ impl DnssecService {
                     derived: true,
                 })
                 .collect();
-            RepositoryService::create_zone_journal_tx(&mut tx, &changes).await?;
+            RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
             RepositoryService::delete_dnssec_records_by_zone_id_tx(&mut tx, zone.id).await?;
             RepositoryService::delete_dnssec_keys_by_zone_id_tx(&mut tx, zone.id).await?;
             RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
@@ -212,6 +214,7 @@ impl DnssecService {
         let zone_name =
             RepositoryService::finish_tx(tx, result, "failed to disable DNSSEC").await?;
 
+        crate::log_info!("event=dnssec_disable zone={}", zone_name);
         notify_zone(&zone_name).await;
         Ok(())
     }
@@ -248,6 +251,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
 
+        crate::log_info!("event=dnssec_withdraw zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }
@@ -282,6 +286,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
 
+        crate::log_info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }
@@ -301,6 +306,7 @@ impl DnssecService {
         .await;
         let zone_name = RepositoryService::finish_tx(tx, result, "failed to sign zone").await?;
 
+        crate::log_info!("event=dnssec_sign zone={}", zone_name);
         notify_zone(&zone_name).await;
         Ok(())
     }

@@ -10,7 +10,6 @@ pub mod error;
 pub mod external_dns;
 pub(crate) mod grant_pattern;
 pub mod notify;
-mod pagination;
 pub mod record;
 mod repository;
 pub(crate) mod serial;

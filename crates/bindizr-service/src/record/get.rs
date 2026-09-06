@@ -10,7 +10,6 @@ use crate::{
         dnssec_record::DnssecRecordType,
         record::{Record, RecordType, RecordWithZone},
     },
-    pagination::paginated_response,
     repository::RepositoryService,
     types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse},
     zone::{ZoneService, validation::normalize_zone_name},
@@ -48,6 +47,11 @@ impl RecordService {
             log_error!("Failed to fetch records for zone {}: {}", zone_name, e);
             ServiceError::internal(format!("Failed to fetch records for zone {}", zone_name))
         })
+    }
+
+    /// Every record, for the unauthenticated metrics endpoint.
+    pub async fn count_all() -> Result<u64, ServiceError> {
+        RepositoryService::count_records_by_filter(RecordFilter::default()).await
     }
 
     /// Count the records visible to `caller`.
@@ -167,7 +171,7 @@ impl RecordService {
         }
 
         let items = items.iter().map(ListedRecord::to_response).collect();
-        Ok(paginated_response(
+        Ok(PaginatedResponse::from_page(
             items,
             limit,
             offset,

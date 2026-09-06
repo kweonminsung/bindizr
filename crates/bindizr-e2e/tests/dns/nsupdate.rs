@@ -87,7 +87,7 @@ async fn nsupdate_adds_and_deletes_records() {
 
 #[tokio::test]
 #[serial]
-async fn nsupdate_deletes_a_whole_rrset() {
+async fn nsupdate_deletes_every_record_of_a_name_and_type() {
     let app = unsigned_nsupdate_app().await;
     let zone_name = app.zone_name("nsupdate-rrset.example");
     app.create_zone_cli(&zone_name, "3600").await;
@@ -125,7 +125,7 @@ async fn nsupdate_deletes_a_whole_rrset() {
             .await
             .iter()
             .any(|record| record["name"] == format!("multi.{zone_name}.")),
-        "RRset was not deleted"
+        "records were not deleted"
     );
 }
 

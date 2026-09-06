@@ -23,7 +23,7 @@ use crate::{
     record::{RecordService, parse_record_type, validate_record_add_constraints_normalized},
     repository::RepositoryService,
     serial::generate_serial,
-    types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRrset},
+    types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRecord},
     zone::ZoneService,
 };
 
@@ -91,33 +91,33 @@ fn normalize_ttl(ttl: Option<i32>) -> Result<Option<i32>, ServiceError> {
 }
 
 fn validate_rrset_shape(
-    rrset: &ExternalDnsRrset,
+    record: &ExternalDnsRecord,
     record_type: &RecordType,
 ) -> Result<(), ServiceError> {
-    if rrset.values.is_empty() {
+    if record.values.is_empty() {
         return Err(ServiceError::invalid_input(format!(
-            "RRset '{}' {} must have at least one value",
-            rrset.name, record_type
+            "record '{}' {} must have at least one value",
+            record.name, record_type
         )));
     }
-    if *record_type == RecordType::CNAME && rrset.values.len() > 1 {
+    if *record_type == RecordType::CNAME && record.values.len() > 1 {
         return Err(ServiceError::invalid_record_value(format!(
-            "CNAME RRset '{}' must have exactly one value",
-            rrset.name
+            "CNAME record '{}' must have exactly one value",
+            record.name
         )));
     }
     Ok(())
 }
 
-pub(crate) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, ServiceError> {
-    let record_type = parse_supported_record_type(&rrset.record_type)?;
-    let name = normalize_lookup_name(&rrset.name)?;
-    let ttl = normalize_ttl(rrset.ttl)?;
-    validate_rrset_shape(rrset, &record_type)?;
+pub(crate) fn convert_rrset(record: &ExternalDnsRecord) -> Result<RrsetOp, ServiceError> {
+    let record_type = parse_supported_record_type(&record.record_type)?;
+    let name = normalize_lookup_name(&record.name)?;
+    let ttl = normalize_ttl(record.ttl)?;
+    validate_rrset_shape(record, &record_type)?;
 
     // Deduplicate values that normalize identically (e.g. IPv6 spellings).
-    let mut values: Vec<String> = Vec::with_capacity(rrset.values.len());
-    for value in &rrset.values {
+    let mut values: Vec<String> = Vec::with_capacity(record.values.len());
+    for value in &record.values {
         let encoded = record_type
             .encoded_value(value, None)
             .map_err(ServiceError::invalid_record_value)?;
@@ -137,16 +137,16 @@ pub(crate) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, Service
     })
 }
 
-/// One RRset in the canonical form `apply_changes` would store and
+/// One record in the canonical form `apply_changes` would store and
 /// `list_records` return. Unparseable values pass through so apply reports
 /// its ordinary error; the name is echoed as sent.
-pub(crate) fn adjust_rrset(rrset: &ExternalDnsRrset) -> Result<ExternalDnsRrset, ServiceError> {
-    let record_type = parse_supported_record_type(&rrset.record_type)?;
-    let ttl = normalize_ttl(rrset.ttl)?;
-    validate_rrset_shape(rrset, &record_type)?;
+pub(crate) fn adjust_rrset(record: &ExternalDnsRecord) -> Result<ExternalDnsRecord, ServiceError> {
+    let record_type = parse_supported_record_type(&record.record_type)?;
+    let ttl = normalize_ttl(record.ttl)?;
+    validate_rrset_shape(record, &record_type)?;
 
-    let mut values: Vec<String> = Vec::with_capacity(rrset.values.len());
-    for value in &rrset.values {
+    let mut values: Vec<String> = Vec::with_capacity(record.values.len());
+    for value in &record.values {
         let canonical = match record_type.encoded_value(value, None) {
             Ok(encoded) => record_type.presentation_rdata(&encoded, None),
             Err(_) => value.clone(),
@@ -157,8 +157,8 @@ pub(crate) fn adjust_rrset(rrset: &ExternalDnsRrset) -> Result<ExternalDnsRrset,
     }
     values.sort();
 
-    Ok(ExternalDnsRrset {
-        name: rrset.name.clone(),
+    Ok(ExternalDnsRecord {
+        name: record.name.clone(),
         record_type: record_type.to_string(),
         ttl,
         values,
@@ -260,12 +260,14 @@ pub(crate) fn compute_zone_change_set(
     for add in &ops.adds {
         let ttl = add.ttl.unwrap_or(zone.default_ttl);
         for value in &add.values {
-            let same_rdata = |row: &Record| {
-                row.name == add.name
-                    && row.record_type == add.record_type
-                    && add.record_type.values_equal(&row.value, None, value, None)
+            let same_rdata = |record: &Record| {
+                record.name == add.name
+                    && record.record_type == add.record_type
+                    && add
+                        .record_type
+                        .values_equal(&record.value, None, value, None)
             };
-            let matches = |row: &Record| same_rdata(row) && row.ttl == ttl;
+            let matches = |record: &Record| same_rdata(record) && record.ttl == ttl;
 
             // An unchanged update cancels its own delete instead of rewriting
             // the row. TTL-sensitive, so a TTL-only update is still a change.
@@ -303,12 +305,12 @@ pub(crate) fn compute_zone_change_set(
     // Validate each insert against the post-delete state plus earlier inserts,
     // so CNAME exclusivity and RRset TTL rules see the state they will land in.
     for (index, create) in creates.iter().enumerate() {
-        let mut same_name: Vec<Record> = existing
+        let mut records_at_name: Vec<Record> = existing
             .iter()
             .filter(|row| deletes.iter().all(|d| d.id != row.id) && row.name == create.name)
             .cloned()
             .collect();
-        same_name.extend(
+        records_at_name.extend(
             creates[..index]
                 .iter()
                 .filter(|row| row.name == create.name)
@@ -316,7 +318,7 @@ pub(crate) fn compute_zone_change_set(
         );
 
         validate_record_add_constraints_normalized(
-            &same_name,
+            &records_at_name,
             &create.name,
             &create.record_type,
             &create.value,
@@ -426,6 +428,7 @@ impl ExternalDnsService {
                 )
                 .await?;
                 DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+                // Advance the serial once so IXFR consumers detect the change
                 ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
 
                 records_deleted += change_set.deletes.len() as u32;

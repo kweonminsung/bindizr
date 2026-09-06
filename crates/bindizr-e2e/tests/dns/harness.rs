@@ -9,7 +9,7 @@ use domain::{
 };
 use serde_json::{Value, json};
 
-use super::parse_dns_response;
+use crate::common::dns::parse_dns_response;
 
 #[test]
 fn parse_dns_response_renders_values_in_harness_comparison_format() {

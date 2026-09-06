@@ -30,6 +30,7 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 [workspace.lints.clippy]
 redundant_clone = "warn"
 inefficient_to_string = "warn"
+upper_case_acronyms = "allow"
 
 [workspace.dependencies]
 async-trait = "0.1.89"

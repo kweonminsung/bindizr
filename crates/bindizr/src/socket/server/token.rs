@@ -55,7 +55,7 @@ pub(crate) async fn delete_token(data: &serde_json::Value) -> Result<DaemonRespo
     TokenService::delete(&Caller::Global, &params.name).await?;
 
     let response = DaemonResponse {
-        message: "Token deleted successfully".to_string(),
+        message: format!("Token '{}' deleted successfully", params.name),
         data: serde_json::Value::Null,
     };
     Ok(response)
