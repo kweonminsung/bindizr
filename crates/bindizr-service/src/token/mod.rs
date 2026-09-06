@@ -105,11 +105,11 @@ pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
             "token name may contain only letters, digits, '.', '_', and '-'",
         ));
     }
-    // Dot segments never survive URL normalization.
-    if name == "." || name == ".." {
-        return Err(ServiceError::invalid_input(
-            "token name must not be '.' or '..'",
-        ));
+    // Dot segments get normalized away; `self` is the lookup route.
+    if name == "." || name == ".." || name == "self" {
+        return Err(ServiceError::invalid_input(format!(
+            "token name must not be '{name}'"
+        )));
     }
     if name.len() > MAX_TOKEN_NAME_LEN {
         return Err(ServiceError::invalid_input(

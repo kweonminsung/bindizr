@@ -9,7 +9,7 @@
 //! [`Caller::Global`]. Operations serving the DNS protocol plane (transfers,
 //! NOTIFY, nsupdate) take no caller — that plane authorizes by ACL and TSIG.
 
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use bindizr_core::dns::name::OwnerName;
 use bindizr_db::repository::LockLevel;
@@ -48,17 +48,18 @@ impl Caller {
 
     /// Resolve who a Bearer token acts as: validate the token, then preload a
     /// scoped token's grants so the rest of the request decides against one
-    /// read.
-    pub async fn authenticate(bearer_token: &str) -> Result<Caller, ServiceError> {
+    /// read. The token row comes back too, since `Global` keeps no identity.
+    pub async fn authenticate(bearer_token: &str) -> Result<(Caller, ApiToken), ServiceError> {
         let token = validate_token(bearer_token).await?;
         if token.is_global {
-            return Ok(Caller::Global);
+            return Ok((Caller::Global, token));
         }
         let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
-        Ok(Caller::Token {
+        let caller = Caller::Token {
             id: token.id,
             grants: grants.into(),
-        })
+        };
+        Ok((caller, token))
     }
 
     /// Reject non-global callers for zone-plane and management operations.
@@ -70,14 +71,6 @@ impl Caller {
             "a global API token is required to {}",
             action
         )))
-    }
-
-    /// Zone ids the caller may see; `None` means unrestricted.
-    pub(crate) fn visible_zone_ids(&self) -> Option<HashSet<i32>> {
-        match self {
-            Caller::Global => None,
-            Caller::Token { grants, .. } => Some(grants.iter().map(|p| p.zone_id).collect()),
-        }
     }
 
     /// The token whose grants bound the caller's visibility; `None` means
@@ -109,7 +102,8 @@ impl Caller {
 
     /// Authorize record-plane writes in `zone`, share-locking the caller's
     /// grants inside the transaction so a concurrent revocation waits for
-    /// this mutation instead of racing it.
+    /// this mutation instead of racing it. An ungranted zone reads as
+    /// `NotFound`, so a write cannot probe zone existence either.
     pub(crate) async fn authorize_record_writes_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -129,10 +123,7 @@ impl Caller {
                 // Ahead of the per-write loop, which a batch resolving to no
                 // writes would otherwise pass vacuously.
                 if grants.is_empty() {
-                    return Err(ServiceError::forbidden(format!(
-                        "API token is not allowed to manage records in zone '{}'",
-                        zone.name
-                    )));
+                    return Err(ServiceError::zone_not_found(zone.name.as_str()));
                 }
                 authorize_with_grants(&grants, zone, writes)
             }

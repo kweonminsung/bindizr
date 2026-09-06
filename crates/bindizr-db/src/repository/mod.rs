@@ -372,7 +372,6 @@ pub trait RecordRepository: Send + Sync {
     ) -> Result<Option<Record>, DatabaseError>;
     async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     /// Records of every listed zone in one round trip.
-    async fn list_by_zone_ids(&self, zone_ids: &[i32]) -> Result<Vec<Record>, DatabaseError>;
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

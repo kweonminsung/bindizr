@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use bindizr_db::repository::ZoneFilter;
 use chrono::Utc;
 
 use super::TokenService;
@@ -11,7 +12,10 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     grant_pattern::{normalize_pattern, normalize_types},
-    model::token_grant::{TokenGrant, TokenGrantWithNames},
+    model::{
+        api_token::ApiToken,
+        token_grant::{TokenGrant, TokenGrantWithNames},
+    },
     repository::RepositoryService,
     zone::ZoneService,
 };
@@ -69,9 +73,20 @@ impl TokenGrantService {
         caller.require_global("manage token grants")?;
 
         let token = TokenService::lookup_by_name(token_name).await?;
+        Self::list_self(&token).await
+    }
+
+    /// Every grant of `token`, with the zone each covers. Any token may read
+    /// its own, so there is no caller to gate.
+    pub async fn list_self(token: &ApiToken) -> Result<Vec<TokenGrantWithNames>, ServiceError> {
         let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
 
-        let zone_names: HashMap<i32, String> = RepositoryService::list_zones()
+        // Any token reaches this, so read only its granted zones.
+        let zone_names: HashMap<i32, String> =
+            RepositoryService::list_zones_by_filter(ZoneFilter {
+                scope_token_id: Some(token.id),
+                ..ZoneFilter::default()
+            })
             .await?
             .into_iter()
             .map(|zone| (zone.id, zone.name.to_string()))

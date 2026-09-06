@@ -43,7 +43,9 @@ pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
     GetRecordsFilter, RecordItem, RecordResponse, RecordValueRequest, UpdateRecordPatch,
 };
-pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenListResponse};
+pub use token::{
+    CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenListResponse, TokenResponse,
+};
 pub use token_grant::{
     CreateTokenGrantRequest, GetTokenGrantResponse, TokenGrantListResponse, TokenGrantResponse,
 };

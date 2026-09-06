@@ -107,10 +107,10 @@ fn supported_record_type(record_type: &str) -> Option<RecordType> {
 }
 
 impl Endpoint {
-    /// Validate against what the adapter supports; the message becomes a
-    /// permanent (4xx) error body. Mirrors the server's own validation so a
-    /// bad plan fails without a round trip.
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    /// Validate against what the adapter supports, yielding the parsed record
+    /// type; the message becomes a permanent (4xx) error body. Mirrors the
+    /// server's own validation so a bad plan fails without a round trip.
+    pub(crate) fn validate(&self) -> Result<RecordType, String> {
         if self.dns_name.trim().is_empty() {
             return Err("dnsName must not be empty".to_string());
         }
@@ -156,15 +156,16 @@ impl Endpoint {
             return Err(format!("recordTTL {} is out of range", self.record_ttl));
         }
 
-        Ok(())
+        Ok(record_type)
     }
 
-    /// Convert a validated endpoint into a bindizr RRset. TXT targets pass
-    /// through in presentation form; the server parses and stores them.
-    pub(crate) fn to_bindizr_rrset(&self) -> BindizrRrset {
+    /// Convert into a bindizr RRset under the type `validate` parsed. TXT
+    /// targets pass through in presentation form; the server parses and
+    /// stores them.
+    pub(crate) fn to_bindizr_rrset(&self, record_type: RecordType) -> BindizrRrset {
         BindizrRrset {
             name: self.dns_name.clone(),
-            record_type: self.record_type.to_ascii_uppercase(),
+            record_type: record_type.as_str().to_string(),
             ttl: (self.record_ttl > 0).then_some(self.record_ttl as i32),
             values: self.targets.clone(),
         }
@@ -183,28 +184,20 @@ impl Changes {
             ));
         }
 
-        for endpoint in self
-            .create
-            .iter()
-            .chain(&self.update_old)
-            .chain(&self.update_new)
-            .chain(&self.delete)
-        {
-            endpoint.validate()?;
-        }
-
         Ok(BindizrChanges {
-            creates: self.create.iter().map(Endpoint::to_bindizr_rrset).collect(),
+            creates: to_bindizr_rrsets(&self.create)?,
             updates: self
                 .update_old
                 .iter()
                 .zip(&self.update_new)
-                .map(|(old, new)| BindizrRrsetUpdate {
-                    old: old.to_bindizr_rrset(),
-                    new: new.to_bindizr_rrset(),
+                .map(|(old, new)| -> Result<BindizrRrsetUpdate, String> {
+                    Ok(BindizrRrsetUpdate {
+                        old: old.to_bindizr_rrset(old.validate()?),
+                        new: new.to_bindizr_rrset(new.validate()?),
+                    })
                 })
-                .collect(),
-            deletes: self.delete.iter().map(Endpoint::to_bindizr_rrset).collect(),
+                .collect::<Result<_, _>>()?,
+            deletes: to_bindizr_rrsets(&self.delete)?,
         })
     }
 }
@@ -235,12 +228,14 @@ pub(crate) fn group_records_into_endpoints(records: Vec<BindizrRecordItem>) -> V
         .collect()
 }
 
-/// Validate desired endpoints and convert them for `POST /adjust`.
+/// Validate endpoints and convert them into bindizr RRsets.
 pub(crate) fn to_bindizr_rrsets(endpoints: &[Endpoint]) -> Result<Vec<BindizrRrset>, String> {
-    for endpoint in endpoints {
-        endpoint.validate()?;
-    }
-    Ok(endpoints.iter().map(Endpoint::to_bindizr_rrset).collect())
+    endpoints
+        .iter()
+        .map(|endpoint| -> Result<BindizrRrset, String> {
+            Ok(endpoint.to_bindizr_rrset(endpoint.validate()?))
+        })
+        .collect()
 }
 
 /// Pair server-adjusted RRsets with the desired endpoints by position:

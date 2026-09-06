@@ -199,18 +199,22 @@ pub(crate) fn convert_request(
 /// Resolve every operation to its most-specific authoritative zone; the
 /// caller's write authorization is checked per zone inside the transaction.
 pub(crate) fn group_ops_by_zone(
+    caller: &Caller,
     zones: &[Zone],
     ops: Vec<PendingOp>,
 ) -> Result<BTreeMap<ZoneName, ZoneOps>, ServiceError> {
     let mut grouped: BTreeMap<ZoneName, ZoneOps> = BTreeMap::new();
 
     for pending in ops {
-        let zone = find_authoritative_zone(zones, &pending.op.name).ok_or_else(|| {
-            ServiceError::new(
-                ErrorCode::ZoneNotFound,
-                format!("No zone is authoritative for '{}'", pending.op.name),
-            )
-        })?;
+        // From every zone, so a hidden subzone still shadows a granted parent.
+        let zone = find_authoritative_zone(zones, &pending.op.name)
+            .filter(|zone| caller.zone_visible(zone.id))
+            .ok_or_else(|| {
+                ServiceError::new(
+                    ErrorCode::ZoneNotFound,
+                    format!("No zone is authoritative for '{}'", pending.op.name),
+                )
+            })?;
 
         let op = ZoneRrsetOp {
             name: OwnerName::parse_absolute_in_zone(&pending.op.name, &zone.name)
@@ -353,7 +357,7 @@ impl ExternalDnsService {
             // Resolve authoritative zones from committed state inside the tx;
             // the residual race with concurrent zone creation is accepted.
             let zones = RepositoryService::list_zones_tx(&mut tx, LockLevel::None).await?;
-            let zone_ops = group_ops_by_zone(&zones, ops)?;
+            let zone_ops = group_ops_by_zone(caller, &zones, ops)?;
 
             let mut changed_zones = Vec::new();
             let mut records_added = 0u32;

@@ -90,7 +90,7 @@ impl Zone {
     /// This zone's wire-format SOA RDATA at `serial`; the SOA is synthesized
     /// from zone columns, never stored as a record row.
     pub fn soa_rdata(&self, serial: u32) -> Result<Rdata, String> {
-        let rname = SoaMailbox::from_email(&self.rname)?;
+        let rname = self.soa_mailbox()?;
         SoaRecordValue {
             mname: &self.mname,
             rname: rname.as_str(),

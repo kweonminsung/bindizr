@@ -341,7 +341,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: No authoritative zone for a record name
+          description: No authoritative zone for a record name, or the token cannot see it
           content:
             application/json:
               schema:
@@ -600,6 +600,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found, or not visible to the token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
           content:
@@ -834,6 +840,58 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /tokens/self:
+    get:
+      tags:
+      - Token
+      summary: Describe the API token making the request
+      description: The calling token's own metadata, never its secret; any token may read itself. With authentication disabled no token is presented, so this answers 401.
+      operationId: get_self_token
+      responses:
+        '200':
+          description: The calling token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Unauthorized, or no token presented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /tokens/self/grants:
+    get:
+      tags:
+      - Token
+      summary: List the grants of the API token making the request
+      description: The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.
+      operationId: get_self_token_grants
+      responses:
+        '200':
+          description: The calling token's grants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenGrantListResponse'
+        '401':
+          description: Unauthorized, or no token presented
           content:
             application/json:
               schema:
@@ -2820,7 +2878,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: Zone not found
+          description: Zone not found, or not visible to the token
           content:
             application/json:
               schema:
@@ -4384,6 +4442,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GetTokenResponse'
+    TokenResponse:
+      type: object
+      description: 'One token without its secret: the self lookup.'
+      required:
+      - token
+      properties:
+        token:
+          $ref: '#/components/schemas/GetTokenResponse'
     TsigGrantListResponse:
       type: object
       description: Grants of one key, or every grant that applies to one zone.

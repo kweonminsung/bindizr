@@ -210,8 +210,13 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
             })),
         )
         .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["code"], "FORBIDDEN");
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "ZONE_NOT_FOUND");
+    // Worded as for a name no zone covers, so the hidden zone stays hidden.
+    assert_eq!(
+        body["error"],
+        json!(format!("No zone is authoritative for 'b.{ungranted_zone}'"))
+    );
 
     // Nothing was applied for the granted zone either.
     app.set_auth_token(global_token);
@@ -254,7 +259,7 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
             })),
         )
         .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::NOT_FOUND);
     assert!(
         body["error"]
             .as_str()

@@ -7,7 +7,7 @@ use axum::{
 use bindizr_core::log_debug;
 use bindizr_service::{authorization::Caller, error::ServiceError};
 
-use crate::api::error::ApiError;
+use crate::api::{AuthenticatedToken, error::ApiError};
 
 /// Validate the request's Bearer token, rejecting unauthorized requests.
 pub(crate) async fn auth_middleware(
@@ -33,8 +33,9 @@ pub(crate) async fn auth_middleware(
     let token = &auth_str[7..];
 
     match Caller::authenticate(token).await {
-        Ok(caller) => {
+        Ok((caller, token)) => {
             req.extensions_mut().insert(caller);
+            req.extensions_mut().insert(AuthenticatedToken(token));
             Ok(next.run(req).await)
         }
         Err(err) => {

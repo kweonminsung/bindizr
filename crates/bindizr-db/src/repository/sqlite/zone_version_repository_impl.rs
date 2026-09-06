@@ -76,18 +76,11 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
 
-        sqlx::query_as::<_, ZoneVersion>(
-            r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
-            FROM zone_versions
-            WHERE zone_id = ? AND serial = ?
-            "#,
-        )
-        .bind(version.zone_id)
-        .bind(version.serial)
-        .fetch_one(&mut **sqlite_tx)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+        self.get_by_serial_tx(tx, version.zone_id, version.serial, LockLevel::None)
+            .await?
+            .ok_or_else(|| {
+                DatabaseError::QueryFailed("upserted zone version did not read back".to_string())
+            })
     }
 
     async fn get_by_serial(

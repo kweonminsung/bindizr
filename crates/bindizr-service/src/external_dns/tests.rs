@@ -9,9 +9,11 @@ use super::{
     policy::{find_authoritative_zone, normalize_lookup_name},
 };
 use crate::{
+    authorization::Caller,
     error::ErrorCode,
     model::{
         record::{Record, RecordType},
+        token_grant::TokenGrant,
         zone::Zone,
     },
     types::{ExternalDnsChangesRequest, ExternalDnsRrset, ExternalDnsRrsetUpdate},
@@ -245,7 +247,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
     };
     let ops = convert_request(&request).unwrap();
 
-    let grouped = group_ops_by_zone(&zones, ops).unwrap();
+    let grouped = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap();
     assert_eq!(grouped.len(), 1);
     assert!(grouped.contains_key(&ZoneName::from_row("internal.example.com")));
     assert_eq!(
@@ -264,13 +266,47 @@ fn group_ops_rejects_names_without_authoritative_zone() {
     };
     let ops = convert_request(&request).unwrap();
 
-    let err = group_ops_by_zone(&zones, ops).unwrap_err();
+    let err = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap_err();
     assert_eq!(err.code, ErrorCode::ZoneNotFound);
+}
+
+#[test]
+fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
+    let zones = vec![
+        test_zone(1, "example.com"),
+        test_zone(2, "internal.example.com"),
+    ];
+    let caller = Caller::Token {
+        id: 7,
+        grants: vec![TokenGrant {
+            id: 1,
+            zone_id: 1,
+            api_token_id: 7,
+            record_name_pattern: "*".to_string(),
+            record_types: "*".to_string(),
+            created_at: Utc::now(),
+        }]
+        .into(),
+    };
+    let request = ExternalDnsChangesRequest {
+        creates: vec![rrset("api.internal.example.com", "A", None, &["192.0.2.1"])],
+        updates: vec![],
+        deletes: vec![],
+    };
+    let ops = convert_request(&request).unwrap();
+
+    let err = group_ops_by_zone(&caller, &zones, ops).unwrap_err();
+    assert_eq!(err.code, ErrorCode::ZoneNotFound);
+    assert!(
+        err.to_string()
+            .contains("No zone is authoritative for 'api.internal.example.com'"),
+        "{err}"
+    );
 }
 
 fn zone_ops(request: &ExternalDnsChangesRequest, zone: &Zone) -> ZoneOps {
     let ops = convert_request(request).unwrap();
-    let grouped = group_ops_by_zone(std::slice::from_ref(zone), ops).unwrap();
+    let grouped = group_ops_by_zone(&Caller::Global, std::slice::from_ref(zone), ops).unwrap();
     grouped.into_values().next().unwrap_or_default()
 }
 

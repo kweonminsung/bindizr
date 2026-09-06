@@ -101,9 +101,11 @@ impl ZoneService {
     /// the unchecked lookup for service-internal use; anything reachable from a
     /// front end goes through [`Self::get_by_name`].
     pub(crate) async fn lookup_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
-        Self::find_by_name(zone_name)
+        // Canonical, like the hidden-zone 404s: an echoed spelling would tell them apart.
+        let lookup_name = normalize_zone_name(zone_name)?;
+        RepositoryService::get_zone_by_name(lookup_name.as_str())
             .await?
-            .ok_or_else(|| ServiceError::zone_not_found(zone_name))
+            .ok_or_else(|| ServiceError::zone_not_found(lookup_name.as_str()))
     }
 
     /// Fetch a zone by name for `caller` within the caller's transaction at
@@ -117,9 +119,7 @@ impl ZoneService {
         lock_level: LockLevel,
     ) -> Result<Zone, ServiceError> {
         let zone = Self::get_by_name_tx(tx, zone_name, lock_level).await?;
-        if !caller.zone_visible(zone.id) {
-            return Err(ServiceError::zone_not_found(zone_name));
-        }
+        caller.ensure_zone_visible(&zone)?;
         Ok(zone)
     }
 
@@ -130,9 +130,10 @@ impl ZoneService {
         zone_name: &str,
         lock_level: LockLevel,
     ) -> Result<Zone, ServiceError> {
-        Self::find_by_name_tx(tx, zone_name, lock_level)
+        let lookup_name = normalize_zone_name(zone_name)?;
+        RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str(), lock_level)
             .await?
-            .ok_or_else(|| ServiceError::zone_not_found(zone_name))
+            .ok_or_else(|| ServiceError::zone_not_found(lookup_name.as_str()))
     }
     /// A zone row and both record planes read under one shared zone lock, so
     /// a transfer never serves records and signatures from different serials.

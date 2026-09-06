@@ -123,7 +123,7 @@ pub(crate) async fn adjust_external_dns_rrsets(
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token is not allowed to manage a target record", body = ErrorResponse),
-            (status = 404, description = "No authoritative zone for a record name", body = ErrorResponse),
+            (status = 404, description = "No authoritative zone for a record name, or the token cannot see it", body = ErrorResponse),
             (status = 409, description = "Record conflict", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)

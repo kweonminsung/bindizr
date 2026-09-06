@@ -25,7 +25,7 @@ fn normalize_token_name_rejects_empty_and_whitespace_names() {
 // `/` splits a path segment, `?` and `#` end it, and dot segments get normalized away.
 #[test]
 fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
-    for name in [".", "..", "a/b", "a?b", "a#b", "a%2fb", "토큰"] {
+    for name in [".", "..", "self", "a/b", "a?b", "a#b", "a%2fb", "토큰"] {
         let err = normalize_token_name(name).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput, "{name}");
     }

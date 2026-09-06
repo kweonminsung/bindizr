@@ -1,7 +1,7 @@
 //! Client-side rendering of a `RecordDiff` as a zone-file `+`/`-`/`~` patch:
 //! the API sends structured records, and rdata assembly lives here.
 use bindizr_core::dns::record::TxtRecordValue;
-use bindizr_service::types::{RecordDiffEntry, RecordDiffValue, RecordValueRequest};
+use bindizr_service::types::{RecordDiff, RecordDiffEntry, RecordDiffValue, RecordValueRequest};
 
 use crate::cli::output::color;
 
@@ -74,19 +74,16 @@ pub(crate) fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
     out
 }
 
-fn count(entries: &[RecordDiffEntry], change: &str) -> usize {
-    entries.iter().filter(|e| e.change == change).count()
-}
-
 /// Render a preview of a diff: the change lines plus a summary footer.
-pub(crate) fn render_change_preview(entries: &[RecordDiffEntry]) -> String {
-    let mut out = render_diff_lines(entries);
+pub(crate) fn render_change_preview(diff: &RecordDiff) -> String {
+    let mut out = render_diff_lines(&diff.entries);
+    let summary = &diff.summary;
     out.push('\n');
     out.push_str(&format!(
         "Records: {} {} {}\n",
-        color::green(&format!("+{}", count(entries, "added"))),
-        color::red(&format!("-{}", count(entries, "removed"))),
-        color::yellow(&format!("~{}", count(entries, "changed")))
+        color::green(&format!("+{}", summary.added)),
+        color::red(&format!("-{}", summary.removed)),
+        color::yellow(&format!("~{}", summary.changed))
     ));
     out
 }
