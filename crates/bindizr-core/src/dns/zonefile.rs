@@ -139,7 +139,7 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
                 };
 
                 records.push(ParsedRecord {
-                    owner_fqdn: record.owner().to_string().to_ascii_lowercase(),
+                    owner_fqdn: to_fqdn_lowercase(&record.owner().to_string()),
                     record_type,
                     value,
                     ttl,

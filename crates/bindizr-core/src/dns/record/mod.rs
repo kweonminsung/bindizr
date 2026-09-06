@@ -33,3 +33,4 @@ pub use srv::SrvRecordValue;
 pub use sshfp::SshfpRecordValue;
 pub use tlsa::TlsaRecordValue;
 pub use txt::{TxtContent, TxtRecordValue};
+pub(crate) use value::DEFAULT_PRIORITY;

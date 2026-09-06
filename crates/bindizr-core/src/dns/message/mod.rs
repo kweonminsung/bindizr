@@ -16,6 +16,7 @@ use domain::{
 use crate::{
     dns::{
         DNS_TCP_MAX_SIZE,
+        dnssec::to_wire_name,
         name::{OwnerName, ParseNameError, ZoneName, encode_name, to_fqdn},
         record::{EncodedRdata, Rdata, SoaRecordValue, TxtRecordValue},
     },
@@ -61,8 +62,7 @@ impl IntoOwner for Name<Vec<u8>> {
 
 impl IntoOwner for Result<Vec<u8>, ParseNameError> {
     fn into_owner(self) -> Result<Name<Vec<u8>>, String> {
-        let wire = self.map_err(|e| format!("invalid owner name: {}", e))?;
-        Name::from_octets(wire).map_err(|e| format!("invalid owner name: {}", e))
+        to_wire_name(self)
     }
 }
 

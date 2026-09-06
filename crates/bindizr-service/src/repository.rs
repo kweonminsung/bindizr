@@ -210,15 +210,6 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
-    pub(crate) async fn list_records_by_zone_ids(
-        zone_ids: &[i32],
-    ) -> Result<Vec<Record>, ServiceError> {
-        get_record_repository()
-            .list_by_zone_ids(zone_ids)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
-    }
-
     pub(crate) async fn list_records_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

@@ -439,7 +439,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             }
 
             if preview {
-                print!("{}", render_change_preview(&import.diff.entries));
+                print!("{}", render_change_preview(&import.diff));
                 return Ok(());
             }
             print_table(vec![ImportSummaryRow::from(&import.summary)]);

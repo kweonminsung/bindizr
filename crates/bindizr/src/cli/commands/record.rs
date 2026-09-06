@@ -298,7 +298,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
             let bulk: BulkRecordsResponse = parse_response(&response.data)?;
             if preview {
-                print!("{}", render_change_preview(&bulk.diff.entries));
+                print!("{}", render_change_preview(&bulk.diff));
                 return Ok(());
             }
 

@@ -9,7 +9,7 @@
 //! [`Caller::Global`]. Operations serving the DNS protocol plane (transfers,
 //! NOTIFY, nsupdate) take no caller — that plane authorizes by ACL and TSIG.
 
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use bindizr_core::dns::name::OwnerName;
 use bindizr_db::repository::LockLevel;
@@ -71,14 +71,6 @@ impl Caller {
             "a global API token is required to {}",
             action
         )))
-    }
-
-    /// Zone ids the caller may see; `None` means unrestricted.
-    pub(crate) fn visible_zone_ids(&self) -> Option<HashSet<i32>> {
-        match self {
-            Caller::Global => None,
-            Caller::Token { grants, .. } => Some(grants.iter().map(|p| p.zone_id).collect()),
-        }
     }
 
     /// The token whose grants bound the caller's visibility; `None` means

@@ -8,12 +8,11 @@ mod policy;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
+use bindizr_db::repository::{RecordFilter, ZoneFilter};
 
 use crate::{
     authorization::Caller,
     error::ServiceError,
-    model::zone::Zone,
     repository::RepositoryService,
     types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecordItem},
 };
@@ -39,11 +38,13 @@ impl ExternalDnsService {
 
     /// Names of the zones the caller may manage.
     pub async fn list_zone_names(caller: &Caller) -> Result<Vec<String>, ServiceError> {
-        let visible = caller.visible_zone_ids();
-        let zones = RepositoryService::list_zones().await?;
+        let zones = RepositoryService::list_zones_by_filter(ZoneFilter {
+            scope_token_id: caller.scope_token_id(),
+            ..ZoneFilter::default()
+        })
+        .await?;
         Ok(zones
             .into_iter()
-            .filter(|zone| visible.as_ref().is_none_or(|ids| ids.contains(&zone.id)))
             .map(|zone| zone.name.to_string())
             .collect())
     }
@@ -52,31 +53,23 @@ impl ExternalDnsService {
     /// ExternalDNS-supported record types, with absolute owner names and
     /// presentation-form values.
     pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecordItem>, ServiceError> {
-        let visible = caller.visible_zone_ids();
-        let zones = RepositoryService::list_zones().await?;
-        let zones_by_id: HashMap<i32, &Zone> = zones
-            .iter()
-            .filter(|zone| visible.as_ref().is_none_or(|ids| ids.contains(&zone.id)))
-            .map(|zone| (zone.id, zone))
-            .collect();
-
-        // One batched query; a round trip per zone stalls large deployments.
-        let zone_ids: Vec<i32> = zones_by_id.keys().copied().collect();
-        let records = RepositoryService::list_records_by_zone_ids(&zone_ids).await?;
+        // One query, joined against the caller's grants in SQL.
+        let rows = RepositoryService::list_records_by_filter_with_zone(RecordFilter {
+            scope_token_id: caller.scope_token_id(),
+            ..RecordFilter::default()
+        })
+        .await?;
 
         let mut items = Vec::new();
-        for record in records {
+        for row in rows {
+            let record = row.record();
             if !record.record_type.is_external_dns_supported() {
                 continue;
             }
-            let Some(zone) = zones_by_id.get(&record.zone_id) else {
-                continue;
-            };
             items.push(ExternalDnsRecordItem {
                 name: record
                     .name
-                    .clone()
-                    .to_fqdn(&zone.name)
+                    .to_fqdn(&row.zone_name)
                     .trim_end_matches('.')
                     .to_string(),
                 record_type: record.record_type.to_string(),

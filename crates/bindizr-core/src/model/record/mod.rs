@@ -7,9 +7,9 @@ use sqlx::FromRow;
 use crate::dns::{
     name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
-        ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DsRecordValue,
-        MxRecordValue, NsRecordValue, PtrRecordValue, SrvRecordValue, SshfpRecordValue,
-        TlsaRecordValue, TxtContent, TxtRecordValue,
+        ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
+        DsRecordValue, MxRecordValue, NsRecordValue, PtrRecordValue, SrvRecordValue,
+        SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue,
     },
 };
 
@@ -371,7 +371,11 @@ impl RecordType {
         match self {
             RecordType::TXT => value.to_string(),
             RecordType::MX | RecordType::SRV => {
-                format!("{} {}", priority.unwrap_or(10), self.display_value(value))
+                format!(
+                    "{} {}",
+                    priority.unwrap_or(i32::from(DEFAULT_PRIORITY)),
+                    self.display_value(value)
+                )
             }
             _ => self.display_value(value),
         }
