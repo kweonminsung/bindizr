@@ -39,9 +39,9 @@ pub struct UpdateRr {
     pub rdata_start: usize,
 }
 
-/// The request's TSIG record, reduced to what the update flow needs: the key
+/// The request's TSIG RR, reduced to what the update flow needs: the key
 /// name for the DB lookup and the fudge echoed in the response. Cryptographic
-/// validation re-reads the full record via `domain::tsig`; parsing here still
+/// validation re-reads the full RR via `domain::tsig`; parsing here still
 /// rejects structurally invalid TSIG RRs with FORMERR (RFC 8945, Section 5.2) before
 /// that happens.
 #[derive(Debug, Clone)]
@@ -194,14 +194,14 @@ fn parse_tsig_rr(
     let mut rdata = parser
         .parse_parser(rdlen)
         .map_err(|_| ParseError::InvalidTsig)?;
-    let record = Tsig::parse(&mut rdata).map_err(|_| ParseError::InvalidTsig)?;
+    let tsig = Tsig::parse(&mut rdata).map_err(|_| ParseError::InvalidTsig)?;
     if rdata.remaining() != 0 {
         return Err(ParseError::InvalidTsig);
     }
 
     Ok(TsigRr {
         name: to_presentation_name(owner)?,
-        fudge: record.fudge(),
+        fudge: tsig.fudge(),
     })
 }
 

@@ -324,7 +324,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let data = client
                 .send_command(
-                    DaemonCommandKind::UpdateRr,
+                    DaemonCommandKind::UpdateRecord,
                     UpdateRecordParams {
                         id,
                         patch: UpdateRecordPatch {

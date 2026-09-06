@@ -268,14 +268,14 @@ impl RecordService {
                     normalize_dur += t.elapsed();
                 }
 
-                let same_name = records_by_name.entry(owner_name.clone()).or_default();
+                let records_at_name = records_by_name.entry(owner_name.clone()).or_default();
 
                 // Fixed at write time: a later zone TTL change will not move it.
                 let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
                 let t = timing_enabled.then(Instant::now);
                 validate_record_add_constraints_normalized(
-                    same_name,
+                    records_at_name,
                     &owner_name,
                     &prepared_record.record_type,
                     &prepared_record.value,
@@ -297,7 +297,7 @@ impl RecordService {
                     zone_id: zone.id,
                     created_at: Utc::now(),
                 };
-                same_name.push(record.clone());
+                records_at_name.push(record.clone());
                 to_insert.push(record);
             }
             timings.normalize_ms = duration_ms(normalize_dur);

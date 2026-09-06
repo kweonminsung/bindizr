@@ -614,7 +614,7 @@ async fn zone_import_zone_file_replace_mode() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_zone_file_upsert_mode_replaces_only_named_records() {
+async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_only() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

@@ -350,7 +350,7 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
 }
 
 #[tokio::test]
-async fn adjustendpoints_forwards_rrsets_and_returns_merged_endpoints() {
+async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     let (zones, records, changes) = ok_mock_bodies();
     let mock = spawn_mock_with_adjust(
         zones,

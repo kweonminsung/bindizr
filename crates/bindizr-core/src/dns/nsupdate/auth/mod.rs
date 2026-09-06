@@ -117,10 +117,10 @@ fn tsig_failure(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     }
 }
 
-/// Build a NOTAUTH response carrying an unsigned TSIG error record that
+/// Build a NOTAUTH response carrying an unsigned TSIG error RR that
 /// echoes the request TSIG with an empty MAC (RFC 8945, Section 5.3.2).
 fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8>> {
-    let record = msg
+    let tsig_rr = msg
         .additional()
         .ok()?
         .limit_to::<Tsig<_, _>>()
@@ -133,13 +133,13 @@ fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8
     let mut builder = builder.additional();
     builder
         .push((
-            record.owner(),
-            record.class(),
-            record.ttl(),
+            tsig_rr.owner(),
+            tsig_rr.class(),
+            tsig_rr.ttl(),
             Tsig::new(
-                record.data().algorithm(),
-                record.data().time_signed(),
-                record.data().fudge(),
+                tsig_rr.data().algorithm(),
+                tsig_rr.data().time_signed(),
+                tsig_rr.data().fudge(),
                 b"",
                 msg.header().id(),
                 error,

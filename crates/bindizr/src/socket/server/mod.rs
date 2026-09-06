@@ -97,7 +97,7 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
-                DaemonCommandKind::UpdateRr => record::update_record(&cmd.data).await,
+                DaemonCommandKind::UpdateRecord => record::update_record(&cmd.data).await,
                 DaemonCommandKind::BulkCreateRecords => {
                     record::bulk_create_records(&cmd.data).await
                 }

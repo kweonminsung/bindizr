@@ -23,9 +23,9 @@ use bindizr_core::{
 };
 use bindizr_service::{error::ServiceError, zone::ZoneService};
 
-/// Cap on distinct zones held at once. Each entry holds a zone's full record
-/// set, so this bounds worst-case memory while comfortably covering the active
-/// working set of any realistic deployment.
+/// Cap on distinct zones held at once. Each entry holds a zone's full
+/// records, so this bounds worst-case memory while comfortably covering
+/// the active working set of any realistic deployment.
 const MAX_ENTRIES: usize = 1024;
 
 /// Everything a full transfer serves for one zone: the user records and the

@@ -7,8 +7,8 @@ use crate::cli::output::color;
 
 /// Render one record's value as zone-file rdata: MX/SRV carry the priority
 /// inline, TXT is quoted per character-string, other types use the value as-is.
-fn rdata(record: &RecordDiffValue, record_type: &str) -> String {
-    let segments: &[String] = match &record.value {
+fn rdata(diff_value: &RecordDiffValue, record_type: &str) -> String {
+    let segments: &[String] = match &diff_value.value {
         RecordValueRequest::String(value) => std::slice::from_ref(value),
         RecordValueRequest::Segments(segments) => segments,
     };
@@ -19,7 +19,11 @@ fn rdata(record: &RecordDiffValue, record_type: &str) -> String {
             .map(|segment| TxtRecordValue::to_quoted_charstr(segment.as_bytes()))
             .collect::<Vec<_>>()
             .join(" "),
-        "MX" | "SRV" => format!("{} {}", record.priority.unwrap_or(10), segments.concat()),
+        "MX" | "SRV" => format!(
+            "{} {}",
+            diff_value.priority.unwrap_or(10),
+            segments.concat()
+        ),
         _ => segments.concat(),
     }
 }

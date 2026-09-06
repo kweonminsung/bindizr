@@ -98,14 +98,14 @@ pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u
 /// data.
 fn response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Vec<u8>) {
     let msg = Message::from_octets(response).unwrap();
-    let record = msg
+    let tsig_rr = msg
         .additional()
         .unwrap()
         .limit_to::<Tsig<_, _>>()
         .last()
         .unwrap()
         .unwrap();
-    let data = record.data();
+    let data = tsig_rr.data();
 
     (
         msg.header().rcode(),

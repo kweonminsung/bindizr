@@ -211,7 +211,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
                     OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = ? AND p.zone_id = d.zone_id)
               )
-            -- d.name ties across an RRset, so without d.id a plan change
+            -- every type at one name shares d.name, so without d.id a plan change
             -- between two pages could drop or repeat a row.
             ORDER BY d.name, d.id
             LIMIT ? OFFSET ?

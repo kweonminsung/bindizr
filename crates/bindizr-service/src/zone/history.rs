@@ -246,8 +246,8 @@ impl ZoneService {
         ))
     }
 
-    /// Fetch the version at `serial` together with the reconstructed record
-    /// set at that serial. Visibility is checked on the row this tx locked, so
+    /// Fetch the version at `serial` together with the reconstructed records
+    /// at that serial. Visibility is checked on the row this tx locked, so
     /// a same-name recreation cannot swap the zone in.
     pub async fn get_version(
         caller: &Caller,
@@ -323,8 +323,8 @@ impl ZoneService {
         RepositoryService::finish_tx(tx, result, "Failed to diff versions").await
     }
 
-    /// Roll a zone back to the state captured at `target_serial`. The record
-    /// set and SOA metadata return to that serial's state while the zone's
+    /// Roll a zone back to the state captured at `target_serial`. The records
+    /// and SOA metadata return to that serial's state while the zone's
     /// serial advances to a new value (serials never go backward). The zone
     /// name is not part of a version and is never restored.
     pub async fn rollback(
@@ -477,9 +477,9 @@ impl ZoneService {
             }
             let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());
             for target in &to_add {
-                let same_name = records_by_name.entry(target.name.clone()).or_default();
+                let records_at_name = records_by_name.entry(target.name.clone()).or_default();
                 validate_record_add_constraints_normalized(
-                    same_name,
+                    records_at_name,
                     &target.name,
                     &target.record_type,
                     &target.value,
@@ -497,7 +497,7 @@ impl ZoneService {
                     zone_id: zone.id,
                     created_at: Utc::now(),
                 };
-                same_name.push(record.clone());
+                records_at_name.push(record.clone());
                 to_insert.push(record);
             }
 

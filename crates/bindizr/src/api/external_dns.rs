@@ -107,7 +107,7 @@ pub(crate) async fn adjust_external_dns_records(
     RequestCaller(_caller): RequestCaller,
     JsonBody(body): JsonBody<ExternalDnsAdjustRequest>,
 ) -> Result<Response, ApiError> {
-    let response = ExternalDnsService::adjust_rrsets(&body)?;
+    let response = ExternalDnsService::adjust_records(&body)?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

@@ -371,7 +371,6 @@ pub trait RecordRepository: Send + Sync {
         lock_level: LockLevel,
     ) -> Result<Option<Record>, DatabaseError>;
     async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
-    /// Records of every listed zone in one round trip.
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

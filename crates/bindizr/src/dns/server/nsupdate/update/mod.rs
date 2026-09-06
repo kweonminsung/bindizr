@@ -193,7 +193,7 @@ fn decode_prerequisite(rr: &UpdateRr, query_data: &[u8]) -> Result<Prerequisite,
         Class::IN => {
             if rr.rr_type == Rtype::ANY || rr.rdata.is_empty() {
                 return Err(UpdateError::Refused(
-                    "IN-class prerequisite must specify rrtype and rdata".to_string(),
+                    "IN-class prerequisite must specify record type and rdata".to_string(),
                 ));
             }
 
@@ -274,7 +274,7 @@ fn validate_delete_shape(rr: &UpdateRr, is_rrset_delete: bool) -> Result<(), Upd
     } else {
         if rr.rr_type == Rtype::ANY {
             return Err(UpdateError::Refused(
-                "NONE-class delete must specify rrtype".to_string(),
+                "NONE-class delete must specify record type".to_string(),
             ));
         }
 

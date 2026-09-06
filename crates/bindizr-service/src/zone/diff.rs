@@ -121,7 +121,7 @@ pub(crate) fn build_record_diff(
                     });
                 }
             }
-            (None, None) => unreachable!("keys come from the two RRset maps"),
+            (None, None) => unreachable!("keys come from one of the two maps"),
         }
     }
 

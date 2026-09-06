@@ -64,7 +64,7 @@ impl RecordService {
                 )
                 .await?;
 
-            let existing_records_with_name = match RepositoryService::list_records_by_name_tx(
+            let records_at_name = match RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone.id,
                 &owner_name,
@@ -85,7 +85,7 @@ impl RecordService {
             let ttl = create_record_request.ttl.unwrap_or(zone.default_ttl);
 
             validate_record_add_constraints_normalized(
-                &existing_records_with_name,
+                &records_at_name,
                 &owner_name,
                 &record_type,
                 &record_value,

@@ -23,11 +23,11 @@ use crate::{
 pub struct ExternalDnsService;
 
 impl ExternalDnsService {
-    /// Canonicalize desired RRsets to the form applying them would store, so
+    /// Canonicalize desired records to the form applying them would store, so
     /// the adapter's AdjustEndpoints answer cannot drift from the server's
     /// normalization. Takes no caller: it only normalizes the request's own
     /// payload.
-    pub fn adjust_rrsets(
+    pub fn adjust_records(
         request: &ExternalDnsAdjustRequest,
     ) -> Result<ExternalDnsAdjustResponse, ServiceError> {
         let records = request

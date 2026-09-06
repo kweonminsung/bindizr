@@ -8,7 +8,7 @@ use domain::{
 
 use crate::{dns::name::to_fqdn_lowercase, model::record::RecordType};
 
-/// A record's value as the zone file spells it.
+/// An RR's value as the zone file spells it.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ZoneFileValue {
     /// Presentation-form rdata, for every type but TXT.
@@ -17,7 +17,7 @@ pub enum ZoneFileValue {
     CharacterStrings(Vec<String>),
 }
 
-/// A single record extracted from a BIND zone file.
+/// One RR from a BIND zone file.
 pub struct ZoneFileRr {
     /// Absolute owner name (e.g. `www.example.com.`).
     pub owner_fqdn: String,
@@ -28,7 +28,7 @@ pub struct ZoneFileRr {
 }
 
 pub struct ParsedZoneFile {
-    pub records: Vec<ZoneFileRr>,
+    pub rrs: Vec<ZoneFileRr>,
     /// Human-readable problems (unsupported type, non-IN class, parse failure).
     pub errors: Vec<String>,
 }
@@ -50,22 +50,22 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
     zonefile.set_default_class(Class::IN);
     zonefile.extend_from_slice(buffer.as_bytes());
 
-    let mut records = Vec::new();
+    let mut rrs = Vec::new();
     let mut errors = Vec::new();
 
     loop {
         match zonefile.next_entry() {
-            Ok(Some(Entry::Record(record))) => {
-                if record.class() != Class::IN {
+            Ok(Some(Entry::Record(rr))) => {
+                if rr.class() != Class::IN {
                     errors.push(format!(
                         "unsupported record class '{}' for '{}'",
-                        record.class(),
-                        record.owner()
+                        rr.class(),
+                        rr.owner()
                     ));
                     continue;
                 }
 
-                let record_type = match record.rtype() {
+                let record_type = match rr.rtype() {
                     Rtype::SOA => continue, // managed via zone fields
                     other => match RecordType::from_rtype(other) {
                         Ok(record_type) => record_type,
@@ -73,7 +73,7 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
                             errors.push(format!(
                                 "unsupported record type '{}' for '{}'",
                                 other,
-                                record.owner()
+                                rr.owner()
                             ));
                             continue;
                         }
@@ -82,19 +82,19 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
 
                 // Stored as i32; reject TTLs that would wrap negative (like the
                 // JSON and nsupdate paths) instead of silently corrupting them.
-                let ttl_secs = record.ttl().as_secs();
+                let ttl_secs = rr.ttl().as_secs();
                 if ttl_secs > i32::MAX as u32 {
                     errors.push(format!(
                         "TTL {} for '{}' exceeds the maximum of {}",
                         ttl_secs,
-                        record.owner(),
+                        rr.owner(),
                         i32::MAX
                     ));
                     continue;
                 }
                 let ttl = ttl_secs as i32;
 
-                let (value, priority) = match record.data() {
+                let (value, priority) = match rr.data() {
                     ZoneRecordData::Txt(txt) => {
                         // TXT values must be valid UTF-8; reject non-UTF-8 octets
                         // (e.g. BIND `\DDD` escapes) rather than storing them.
@@ -110,10 +110,8 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
                             }
                         }
                         if non_utf8 {
-                            errors.push(format!(
-                                "TXT value for '{}' is not valid UTF-8",
-                                record.owner()
-                            ));
+                            errors
+                                .push(format!("TXT value for '{}' is not valid UTF-8", rr.owner()));
                             continue;
                         }
                         (ZoneFileValue::CharacterStrings(segments), None)
@@ -138,8 +136,8 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
                     }
                 };
 
-                records.push(ZoneFileRr {
-                    owner_fqdn: to_fqdn_lowercase(&record.owner().to_string()),
+                rrs.push(ZoneFileRr {
+                    owner_fqdn: to_fqdn_lowercase(&rr.owner().to_string()),
                     record_type,
                     value,
                     ttl,
@@ -157,7 +155,7 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
         }
     }
 
-    ParsedZoneFile { records, errors }
+    ParsedZoneFile { rrs, errors }
 }
 
 #[cfg(test)]
@@ -175,9 +173,9 @@ mod tests {
         );
         assert!(
             !parsed
-                .records
+                .rrs
                 .iter()
-                .any(|r| r.record_type == RecordType::TXT),
+                .any(|rr| rr.record_type == RecordType::TXT),
             "the non-UTF-8 TXT record should not have been stored"
         );
     }
@@ -190,12 +188,12 @@ mod tests {
             "unexpected errors: {:?}",
             parsed.errors
         );
-        let rec = parsed
-            .records
+        let rr = parsed
+            .rrs
             .iter()
-            .find(|r| r.record_type == RecordType::TXT)
+            .find(|rr| rr.record_type == RecordType::TXT)
             .expect("a TXT record");
-        match &rec.value {
+        match &rr.value {
             ZoneFileValue::CharacterStrings(segments) => assert_eq!(segments, &["foo", "bar"]),
             other => panic!("expected segments, got {other:?}"),
         }

@@ -46,7 +46,7 @@ impl UpstreamClient {
         })
     }
 
-    pub(crate) async fn get_zones(&self) -> Result<Vec<String>, UpstreamError> {
+    pub(crate) async fn list_zones(&self) -> Result<Vec<String>, UpstreamError> {
         #[derive(Deserialize)]
         struct ZonesBody {
             zones: Vec<String>,
@@ -55,7 +55,7 @@ impl UpstreamClient {
         Ok(body.zones)
     }
 
-    pub(crate) async fn get_records(&self) -> Result<Vec<BindizrRecord>, UpstreamError> {
+    pub(crate) async fn list_records(&self) -> Result<Vec<BindizrRecord>, UpstreamError> {
         #[derive(Deserialize)]
         struct RecordsBody {
             records: Vec<BindizrRecord>,

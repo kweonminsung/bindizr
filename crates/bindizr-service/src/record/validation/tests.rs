@@ -133,7 +133,7 @@ fn validate_srv_value_rejects_invalid_forms() {
 
 /// Validate an add whose owner name is already in stored form.
 fn validate_add(
-    zone_records: &[Record],
+    records: &[Record],
     stored_name: &str,
     record_type: &RecordType,
     value: &str,
@@ -141,7 +141,7 @@ fn validate_add(
     priority: Option<i32>,
 ) -> Result<(), ServiceError> {
     validate_record_add_constraints_normalized(
-        zone_records,
+        records,
         &OwnerName::from_row(stored_name),
         record_type,
         value,

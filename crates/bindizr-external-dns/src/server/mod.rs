@@ -143,7 +143,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
             .into_response();
     }
 
-    match state.upstream.get_zones().await {
+    match state.upstream.list_zones().await {
         // An empty DomainFilter reads as "manage everything" to external-dns;
         // refuse retryably so a new grant heals negotiation without a restart.
         Ok(zones) if zones.is_empty() => (
@@ -170,7 +170,7 @@ async fn get_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> 
             .into_response();
     }
 
-    match state.upstream.get_records().await {
+    match state.upstream.list_records().await {
         Ok(records) => {
             let endpoints: Vec<Endpoint> = records
                 .into_iter()

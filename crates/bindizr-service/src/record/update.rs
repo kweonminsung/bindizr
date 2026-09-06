@@ -193,7 +193,7 @@ impl RecordService {
                 .await?;
             // Only records sharing the new owner name can conflict, so load just
             // those instead of the whole zone.
-            let zone_records = match RepositoryService::list_records_by_name_tx(
+            let records_at_name = match RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone.id,
                 &resolved.owner_name,
@@ -203,7 +203,7 @@ impl RecordService {
             {
                 Ok(records) => records,
                 Err(e) => {
-                    log_error!("Failed to load zone records: {}", e);
+                    log_error!("Failed to load records: {}", e);
                     return Err(ServiceError::internal(
                         "Failed to update record".to_string(),
                     ));
@@ -223,7 +223,7 @@ impl RecordService {
 
             validate_record_update_constraints_normalized(
                 &zone,
-                &zone_records,
+                &records_at_name,
                 &existing_record,
                 &candidate_updated,
             )?;

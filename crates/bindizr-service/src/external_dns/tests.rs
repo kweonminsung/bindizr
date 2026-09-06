@@ -449,21 +449,34 @@ fn change_set_replaces_rows_when_update_changes_targets() {
 #[test]
 fn change_set_replaces_whole_rrset_when_ttl_changes() {
     let zone = test_zone(1, "example.com");
-    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 3600)];
+    let existing = vec![
+        test_record(10, "app", RecordType::A, "192.0.2.1", 3600),
+        test_record(11, "app", RecordType::A, "192.0.2.2", 3600),
+    ];
     let request = ExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![ExternalDnsRecordUpdate {
-            old: rrset("app.example.com", "A", Some(3600), &["192.0.2.1"]),
-            new: rrset("app.example.com", "A", Some(300), &["192.0.2.1"]),
+            old: rrset(
+                "app.example.com",
+                "A",
+                Some(3600),
+                &["192.0.2.1", "192.0.2.2"],
+            ),
+            new: rrset(
+                "app.example.com",
+                "A",
+                Some(300),
+                &["192.0.2.1", "192.0.2.2"],
+            ),
         }],
         deletes: vec![],
     };
 
     let change_set = compute_zone_change_set(&zone, &existing, &zone_ops(&request, &zone)).unwrap();
 
-    assert_eq!(change_set.deletes.len(), 1);
-    assert_eq!(change_set.creates.len(), 1);
-    assert_eq!(change_set.creates[0].ttl, 300);
+    assert_eq!(change_set.deletes.len(), 2);
+    assert_eq!(change_set.creates.len(), 2);
+    assert!(change_set.creates.iter().all(|record| record.ttl == 300));
 }
 
 #[test]

@@ -162,7 +162,7 @@ impl Endpoint {
         Ok(record_type)
     }
 
-    /// Convert into a bindizr RRset under the type `validate` parsed. TXT
+    /// Convert into a bindizr record under the type `validate` parsed. TXT
     /// targets pass through in presentation form; the server parses and
     /// stores them.
     pub(crate) fn to_bindizr_record(&self, record_type: RecordType) -> BindizrRecord {

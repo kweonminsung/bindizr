@@ -286,7 +286,8 @@ Check with:
 grep -rnE "RRsets?\b|record set|resource record|\bRRs?\b" \
   docs README.md crates/bindizr/src/api crates/bindizr/src/cli \
   crates/bindizr-service/src/types
-grep -rnE '"[^"]*(RRset|resource record)[^"]*"' crates/*/src
+grep -rnE '"[^"]*(RRset|resource record|record set)[^"]*"' crates/*/src
+grep -rnE '"[^"]*\b(rr|rrs)\b[^"]*"' crates/*/src
 ```
 
 ## Code style
