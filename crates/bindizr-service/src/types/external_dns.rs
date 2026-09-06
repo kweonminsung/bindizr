@@ -3,10 +3,10 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// One RRset (owner name and type) exchanged with the ExternalDNS API. Names
+/// One record of the ExternalDNS API: every value of one name and type. Names
 /// are absolute; TXT values are quoted presentation strings.
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
-pub struct ExternalDnsRrset {
+pub struct ExternalDnsRecord {
     #[schema(example = "app.example.com")]
     pub name: String,
     #[schema(example = "A")]
@@ -18,34 +18,34 @@ pub struct ExternalDnsRrset {
     pub values: Vec<String>,
 }
 
-/// An RRset replacement: `old` values are removed and `new` written in place.
+/// A record replacement: `old` values are removed and `new` written in place.
 #[derive(Deserialize, Debug, ToSchema)]
-pub struct ExternalDnsRrsetUpdate {
-    pub old: ExternalDnsRrset,
-    pub new: ExternalDnsRrset,
+pub struct ExternalDnsRecordUpdate {
+    pub old: ExternalDnsRecord,
+    pub new: ExternalDnsRecord,
 }
 
-/// Request body for canonicalizing desired RRsets without applying them.
+/// Request body for canonicalizing desired records without applying them.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct ExternalDnsAdjustRequest {
-    pub rrsets: Vec<ExternalDnsRrset>,
+    pub records: Vec<ExternalDnsRecord>,
 }
 
-/// The request's RRsets in the canonical form applying them would store.
+/// The request's records in the canonical form applying them would store.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ExternalDnsAdjustResponse {
-    pub rrsets: Vec<ExternalDnsRrset>,
+    pub records: Vec<ExternalDnsRecord>,
 }
 
 /// Request body for applying an ExternalDNS change set atomically.
 #[derive(Deserialize, Debug, ToSchema)]
 pub struct ExternalDnsChangesRequest {
     #[serde(default)]
-    pub creates: Vec<ExternalDnsRrset>,
+    pub creates: Vec<ExternalDnsRecord>,
     #[serde(default)]
-    pub updates: Vec<ExternalDnsRrsetUpdate>,
+    pub updates: Vec<ExternalDnsRecordUpdate>,
     #[serde(default)]
-    pub deletes: Vec<ExternalDnsRrset>,
+    pub deletes: Vec<ExternalDnsRecord>,
 }
 
 /// Summary of an applied ExternalDNS change set.
@@ -67,22 +67,9 @@ pub struct ExternalDnsZonesResponse {
     pub zones: Vec<String>,
 }
 
-/// One record row managed through the ExternalDNS API: absolute owner name
-/// and the value in presentation form (TXT quoted).
-#[derive(Serialize, Debug, ToSchema)]
-pub struct ExternalDnsRecordItem {
-    #[schema(example = "app.example.com")]
-    pub name: String,
-    #[schema(example = "A")]
-    pub record_type: String,
-    #[schema(example = 300)]
-    pub ttl: i32,
-    #[schema(example = "192.0.2.10")]
-    pub value: String,
-}
-
-/// Records of every ExternalDNS-managed zone, deterministically ordered.
+/// Records of every ExternalDNS-managed zone, one per name and type, in a
+/// deterministic order.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct ExternalDnsRecordsResponse {
-    pub records: Vec<ExternalDnsRecordItem>,
+    pub records: Vec<ExternalDnsRecord>,
 }

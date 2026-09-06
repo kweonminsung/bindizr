@@ -30,8 +30,8 @@ pub use dnssec_policy::{
 };
 pub use external_dns::{
     ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,
-    ExternalDnsChangesResponse, ExternalDnsRecordItem, ExternalDnsRecordsResponse,
-    ExternalDnsRrset, ExternalDnsRrsetUpdate, ExternalDnsZonesResponse,
+    ExternalDnsChangesResponse, ExternalDnsRecord, ExternalDnsRecordUpdate,
+    ExternalDnsRecordsResponse, ExternalDnsZonesResponse,
 };
 pub use import::{
     ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,

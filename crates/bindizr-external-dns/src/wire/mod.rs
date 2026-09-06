@@ -67,9 +67,10 @@ pub(crate) struct DomainFilter {
     pub(crate) include: Vec<String>,
 }
 
-/// One RRset of the bindizr `/external-dns` API (snake_case, internal shape).
+/// One record of the bindizr `/external-dns` API: every value of one name and
+/// type (snake_case, internal shape).
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct BindizrRrset {
+pub(crate) struct BindizrRecord {
     pub(crate) name: String,
     pub(crate) record_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -80,24 +81,15 @@ pub(crate) struct BindizrRrset {
 /// `POST /external-dns/changes` request body of the bindizr API.
 #[derive(Debug, Serialize)]
 pub(crate) struct BindizrChanges {
-    pub(crate) creates: Vec<BindizrRrset>,
-    pub(crate) updates: Vec<BindizrRrsetUpdate>,
-    pub(crate) deletes: Vec<BindizrRrset>,
+    pub(crate) creates: Vec<BindizrRecord>,
+    pub(crate) updates: Vec<BindizrRecordUpdate>,
+    pub(crate) deletes: Vec<BindizrRecord>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct BindizrRrsetUpdate {
-    pub(crate) old: BindizrRrset,
-    pub(crate) new: BindizrRrset,
-}
-
-/// One record row of `GET /external-dns/records`.
-#[derive(Debug, Deserialize)]
-pub(crate) struct BindizrRecordItem {
-    pub(crate) name: String,
-    pub(crate) record_type: String,
-    pub(crate) ttl: i32,
-    pub(crate) value: String,
+pub(crate) struct BindizrRecordUpdate {
+    pub(crate) old: BindizrRecord,
+    pub(crate) new: BindizrRecord,
 }
 
 /// The endpoint's record type, if bindizr's ExternalDNS API manages it.
@@ -107,6 +99,17 @@ fn supported_record_type(record_type: &str) -> Option<RecordType> {
 }
 
 impl Endpoint {
+    /// An endpoint for one bindizr record; the server already sorts values.
+    pub(crate) fn from_bindizr_record(record: BindizrRecord) -> Self {
+        Endpoint {
+            dns_name: record.name,
+            targets: record.values,
+            record_type: record.record_type,
+            record_ttl: record.ttl.map(i64::from).unwrap_or(0),
+            ..Endpoint::default()
+        }
+    }
+
     /// Validate against what the adapter supports, yielding the parsed record
     /// type; the message becomes a permanent (4xx) error body. Mirrors the
     /// server's own validation so a bad plan fails without a round trip.
@@ -162,8 +165,8 @@ impl Endpoint {
     /// Convert into a bindizr RRset under the type `validate` parsed. TXT
     /// targets pass through in presentation form; the server parses and
     /// stores them.
-    pub(crate) fn to_bindizr_rrset(&self, record_type: RecordType) -> BindizrRrset {
-        BindizrRrset {
+    pub(crate) fn to_bindizr_record(&self, record_type: RecordType) -> BindizrRecord {
+        BindizrRecord {
             name: self.dns_name.clone(),
             record_type: record_type.as_str().to_string(),
             ttl: (self.record_ttl > 0).then_some(self.record_ttl as i32),
@@ -185,75 +188,49 @@ impl Changes {
         }
 
         Ok(BindizrChanges {
-            creates: to_bindizr_rrsets(&self.create)?,
+            creates: to_bindizr_records(&self.create)?,
             updates: self
                 .update_old
                 .iter()
                 .zip(&self.update_new)
-                .map(|(old, new)| -> Result<BindizrRrsetUpdate, String> {
-                    Ok(BindizrRrsetUpdate {
-                        old: old.to_bindizr_rrset(old.validate()?),
-                        new: new.to_bindizr_rrset(new.validate()?),
+                .map(|(old, new)| -> Result<BindizrRecordUpdate, String> {
+                    Ok(BindizrRecordUpdate {
+                        old: old.to_bindizr_record(old.validate()?),
+                        new: new.to_bindizr_record(new.validate()?),
                     })
                 })
                 .collect::<Result<_, _>>()?,
-            deletes: to_bindizr_rrsets(&self.delete)?,
+            deletes: to_bindizr_records(&self.delete)?,
         })
     }
 }
 
-/// Group bindizr record rows into endpoints: one per (dnsName, recordType,
-/// TTL), with targets collected in sorted order for deterministic output.
-pub(crate) fn group_records_into_endpoints(records: Vec<BindizrRecordItem>) -> Vec<Endpoint> {
-    let mut grouped: BTreeMap<(String, String, i32), Vec<String>> = BTreeMap::new();
-    for record in records {
-        grouped
-            .entry((record.name, record.record_type, record.ttl))
-            .or_default()
-            .push(record.value);
-    }
-
-    grouped
-        .into_iter()
-        .map(|((dns_name, record_type, ttl), mut targets)| {
-            targets.sort();
-            Endpoint {
-                dns_name,
-                targets,
-                record_type,
-                record_ttl: ttl as i64,
-                ..Endpoint::default()
-            }
-        })
-        .collect()
-}
-
-/// Validate endpoints and convert them into bindizr RRsets.
-pub(crate) fn to_bindizr_rrsets(endpoints: &[Endpoint]) -> Result<Vec<BindizrRrset>, String> {
+/// Validate endpoints and convert them into bindizr records.
+pub(crate) fn to_bindizr_records(endpoints: &[Endpoint]) -> Result<Vec<BindizrRecord>, String> {
     endpoints
         .iter()
-        .map(|endpoint| -> Result<BindizrRrset, String> {
-            Ok(endpoint.to_bindizr_rrset(endpoint.validate()?))
+        .map(|endpoint| -> Result<BindizrRecord, String> {
+            Ok(endpoint.to_bindizr_record(endpoint.validate()?))
         })
         .collect()
 }
 
-/// Pair server-adjusted RRsets with the desired endpoints by position:
+/// Pair server-adjusted records with the desired endpoints by position:
 /// identity (dnsName, labels) stays the caller's, type/TTL/targets are the
 /// server's. Dropping provider-specific properties declares them
 /// unsupported.
 pub(crate) fn merge_adjusted_endpoints(
     endpoints: Vec<Endpoint>,
-    adjusted: Vec<BindizrRrset>,
+    adjusted: Vec<BindizrRecord>,
 ) -> Vec<Endpoint> {
     endpoints
         .into_iter()
         .zip(adjusted)
-        .map(|(mut endpoint, rrset)| {
+        .map(|(mut endpoint, record)| {
             endpoint.provider_specific.clear();
-            endpoint.record_type = rrset.record_type;
-            endpoint.record_ttl = rrset.ttl.map(i64::from).unwrap_or(0);
-            endpoint.targets = rrset.values;
+            endpoint.record_type = record.record_type;
+            endpoint.record_ttl = record.ttl.map(i64::from).unwrap_or(0);
+            endpoint.targets = record.values;
             endpoint
         })
         .collect()

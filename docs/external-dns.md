@@ -93,7 +93,7 @@ metadata:
   all zones apply together or not at all, and retried requests are no-ops.
 - **SOA serials**: only zones with an actual change advance their serial, once
   per sync, with IXFR history for secondaries.
-- **TTL**: endpoints without a TTL use the zone's default TTL.
+- **TTL**: records without a TTL use the zone's default TTL.
 - **Zone matching**: the most-specific existing zone wins
   (`api.internal.example.com` → `internal.example.com`, never the parent).
 

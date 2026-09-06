@@ -41,7 +41,7 @@ impl ExternalDnsApi {
             .route(
                 "/external-dns/adjust",
                 // The whole desired set arrives at once; same cap as changes.
-                routing::post(adjust_external_dns_rrsets)
+                routing::post(adjust_external_dns_records)
                     .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
     }
@@ -72,7 +72,7 @@ pub(crate) async fn get_external_dns_zones(
         path = "/external-dns/records",
         tag = "ExternalDNS",
         summary = "List the records of every ExternalDNS-managed zone",
-        description = "Records of every zone the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT), with absolute owner names and presentation-form values.",
+        description = "Records of every zone the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.",
         responses(
             (status = 200, description = "Records of the allowed zones", body = ExternalDnsRecordsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
@@ -91,19 +91,19 @@ pub(crate) async fn get_external_dns_records(
         post,
         path = "/external-dns/adjust",
         tag = "ExternalDNS",
-        summary = "Canonicalize desired RRsets without applying them",
-        description = "Backs the adapter's AdjustEndpoints step: returns each desired RRset in the canonical form applying it would store (uppercase type, sorted deduplicated presentation values), so external-dns compares desired state against the exact spelling GET /external-dns/records returns.",
+        summary = "Canonicalize desired records without applying them",
+        description = "Backs the adapter's AdjustEndpoints step: returns each desired record in the canonical form applying it would store (uppercase type, sorted deduplicated presentation values), so external-dns compares desired state against the exact spelling GET /external-dns/records returns.",
         request_body = ExternalDnsAdjustRequest,
         responses(
-            (status = 200, description = "Canonicalized RRsets, in request order", body = ExternalDnsAdjustResponse),
+            (status = 200, description = "Canonicalized records, in request order", body = ExternalDnsAdjustResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Canonicalize desired RRsets for the ExternalDNS adapter's adjust step.
-pub(crate) async fn adjust_external_dns_rrsets(
+/// Canonicalize desired records for the ExternalDNS adapter's adjust step.
+pub(crate) async fn adjust_external_dns_records(
     RequestCaller(_caller): RequestCaller,
     JsonBody(body): JsonBody<ExternalDnsAdjustRequest>,
 ) -> Result<Response, ApiError> {

@@ -8,13 +8,15 @@ mod policy;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeMap;
+
 use bindizr_db::repository::{RecordFilter, ZoneFilter};
 
 use crate::{
     authorization::Caller,
     error::ServiceError,
     repository::RepositoryService,
-    types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecordItem},
+    types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecord},
 };
 
 /// Business logic for the ExternalDNS provider API.
@@ -28,12 +30,12 @@ impl ExternalDnsService {
     pub fn adjust_rrsets(
         request: &ExternalDnsAdjustRequest,
     ) -> Result<ExternalDnsAdjustResponse, ServiceError> {
-        let rrsets = request
-            .rrsets
+        let records = request
+            .records
             .iter()
             .map(apply::adjust_rrset)
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(ExternalDnsAdjustResponse { rrsets })
+        Ok(ExternalDnsAdjustResponse { records })
     }
 
     /// Names of the zones the caller may manage.
@@ -50,9 +52,9 @@ impl ExternalDnsService {
     }
 
     /// Records of every zone the caller may manage, restricted to the
-    /// ExternalDNS-supported record types, with absolute owner names and
-    /// presentation-form values.
-    pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecordItem>, ServiceError> {
+    /// ExternalDNS-supported record types: one per name and type, with absolute
+    /// owner names and sorted presentation-form values.
+    pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecord>, ServiceError> {
         // One query, joined against the caller's grants in SQL.
         let rows = RepositoryService::list_records_by_filter_with_zone(RecordFilter {
             scope_token_id: caller.scope_token_id(),
@@ -60,30 +62,41 @@ impl ExternalDnsService {
         })
         .await?;
 
-        let mut items = Vec::new();
+        // Keyed by name and type; rows of one name and type share a TTL, so
+        // the first row's stands for all. The map's order is the response's.
+        let mut grouped: BTreeMap<(String, String), (i32, Vec<String>)> = BTreeMap::new();
         for row in rows {
             let record = row.record();
             if !record.record_type.is_external_dns_supported() {
                 continue;
             }
-            items.push(ExternalDnsRecordItem {
-                name: record
-                    .name
-                    .to_fqdn(&row.zone_name)
-                    .trim_end_matches('.')
-                    .to_string(),
-                record_type: record.record_type.to_string(),
-                ttl: record.ttl,
-                value: record
-                    .record_type
-                    .presentation_rdata(&record.value, record.priority),
-            });
+            let name = record
+                .name
+                .to_fqdn(&row.zone_name)
+                .trim_end_matches('.')
+                .to_string();
+            let value = record
+                .record_type
+                .presentation_rdata(&record.value, record.priority);
+            grouped
+                .entry((name, record.record_type.to_string()))
+                .or_insert_with(|| (record.ttl, Vec::new()))
+                .1
+                .push(value);
         }
 
-        // Deterministic order so an unchanged state never reads as a diff.
-        items.sort_by(|a, b| {
-            (&a.name, &a.record_type, &a.value).cmp(&(&b.name, &b.record_type, &b.value))
-        });
-        Ok(items)
+        // Sorted values so an unchanged state never reads as a diff.
+        Ok(grouped
+            .into_iter()
+            .map(|((name, record_type), (ttl, mut values))| {
+                values.sort();
+                ExternalDnsRecord {
+                    name,
+                    record_type,
+                    ttl: Some(ttl),
+                    values,
+                }
+            })
+            .collect())
     }
 }

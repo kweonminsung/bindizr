@@ -23,7 +23,7 @@ use crate::{
     record::{RecordService, parse_record_type, validate_record_add_constraints_normalized},
     repository::RepositoryService,
     serial::generate_serial,
-    types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRrset},
+    types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRecord},
     zone::ZoneService,
 };
 
@@ -91,25 +91,25 @@ fn normalize_ttl(ttl: Option<i32>) -> Result<Option<i32>, ServiceError> {
 }
 
 fn validate_rrset_shape(
-    rrset: &ExternalDnsRrset,
+    rrset: &ExternalDnsRecord,
     record_type: &RecordType,
 ) -> Result<(), ServiceError> {
     if rrset.values.is_empty() {
         return Err(ServiceError::invalid_input(format!(
-            "RRset '{}' {} must have at least one value",
+            "record '{}' {} must have at least one value",
             rrset.name, record_type
         )));
     }
     if *record_type == RecordType::CNAME && rrset.values.len() > 1 {
         return Err(ServiceError::invalid_record_value(format!(
-            "CNAME RRset '{}' must have exactly one value",
+            "CNAME record '{}' must have exactly one value",
             rrset.name
         )));
     }
     Ok(())
 }
 
-pub(crate) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, ServiceError> {
+pub(crate) fn convert_rrset(rrset: &ExternalDnsRecord) -> Result<RrsetOp, ServiceError> {
     let record_type = parse_supported_record_type(&rrset.record_type)?;
     let name = normalize_lookup_name(&rrset.name)?;
     let ttl = normalize_ttl(rrset.ttl)?;
@@ -140,7 +140,7 @@ pub(crate) fn convert_rrset(rrset: &ExternalDnsRrset) -> Result<RrsetOp, Service
 /// One RRset in the canonical form `apply_changes` would store and
 /// `list_records` return. Unparseable values pass through so apply reports
 /// its ordinary error; the name is echoed as sent.
-pub(crate) fn adjust_rrset(rrset: &ExternalDnsRrset) -> Result<ExternalDnsRrset, ServiceError> {
+pub(crate) fn adjust_rrset(rrset: &ExternalDnsRecord) -> Result<ExternalDnsRecord, ServiceError> {
     let record_type = parse_supported_record_type(&rrset.record_type)?;
     let ttl = normalize_ttl(rrset.ttl)?;
     validate_rrset_shape(rrset, &record_type)?;
@@ -157,7 +157,7 @@ pub(crate) fn adjust_rrset(rrset: &ExternalDnsRrset) -> Result<ExternalDnsRrset,
     }
     values.sort();
 
-    Ok(ExternalDnsRrset {
+    Ok(ExternalDnsRecord {
         name: rrset.name.clone(),
         record_type: record_type.to_string(),
         ttl,

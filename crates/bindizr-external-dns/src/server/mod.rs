@@ -16,8 +16,7 @@ use crate::{
     metrics::metrics,
     upstream::{UpstreamClient, UpstreamError},
     wire::{
-        Changes, DomainFilter, Endpoint, MEDIA_TYPE, group_records_into_endpoints,
-        merge_adjusted_endpoints, to_bindizr_rrsets,
+        Changes, DomainFilter, Endpoint, MEDIA_TYPE, merge_adjusted_endpoints, to_bindizr_records,
     },
 };
 
@@ -173,7 +172,10 @@ async fn get_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> 
 
     match state.upstream.get_records().await {
         Ok(records) => {
-            let endpoints = group_records_into_endpoints(records);
+            let endpoints: Vec<Endpoint> = records
+                .into_iter()
+                .map(Endpoint::from_bindizr_record)
+                .collect();
             log_info!("event=records_get endpoints={}", endpoints.len());
             json_response(&endpoints)
         }
@@ -233,20 +235,20 @@ async fn adjust_endpoints_handler(State(state): State<Arc<AppState>>, body: Stri
         }
     };
 
-    let rrsets = match to_bindizr_rrsets(&endpoints) {
-        Ok(rrsets) => rrsets,
+    let records = match to_bindizr_records(&endpoints) {
+        Ok(records) => records,
         Err(message) => {
             log_warn!("event=adjustendpoints rejected={}", message);
             return (StatusCode::BAD_REQUEST, message).into_response();
         }
     };
 
-    match state.upstream.adjust_rrsets(&rrsets).await {
+    match state.upstream.adjust_records(&records).await {
         // A short answer would silently drop endpoints in the zip below.
         Ok(adjusted) if adjusted.len() != endpoints.len() => (
             StatusCode::BAD_GATEWAY,
             format!(
-                "bindizr adjusted {} of {} rrsets",
+                "bindizr adjusted {} of {} records",
                 adjusted.len(),
                 endpoints.len()
             ),
