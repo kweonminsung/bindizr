@@ -402,6 +402,9 @@ narrow signature must let the caller be read without opening the body
 (`normalize_ttl`). A name that merely labels a section of its one caller, or
 a body correct only next to that caller's invariants, belongs inlined — long
 sequenced bodies (`apply_changes`) stay whole rather than fragmented.
+A Codacy complexity finding is never a reason to split a function: a bot
+review cannot justify a helper, so leave the function whole unless the user
+asks for the split.
 
 ### Struct literals stay at the use site
 

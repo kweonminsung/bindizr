@@ -30,7 +30,6 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 [workspace.lints.clippy]
 redundant_clone = "warn"
 inefficient_to_string = "warn"
-# Record-type variants are the RFC 1035 mnemonics (A, AAAA, ...).
 upper_case_acronyms = "allow"
 
 [workspace.dependencies]
