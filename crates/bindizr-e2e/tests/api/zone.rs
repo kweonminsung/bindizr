@@ -614,7 +614,7 @@ async fn zone_import_zone_file_replace_mode() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_zone_file_upsert_mode_replaces_only_named_rrsets() {
+async fn zone_import_zone_file_upsert_mode_replaces_only_named_records() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
@@ -1099,7 +1099,7 @@ async fn zone_versions_list_and_get() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_versions_diff_reports_the_rrsets_between_two_serials() {
+async fn zone_versions_diff_reports_the_records_between_two_serials() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();

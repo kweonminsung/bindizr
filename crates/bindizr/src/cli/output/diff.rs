@@ -25,7 +25,7 @@ fn rdata(record: &RecordDiffValue, record_type: &str) -> String {
 }
 
 /// Render the `+`/`-`/`~` lines for a diff's entries (no summary footer). A
-/// changed RRset stacks its removed records above its added ones.
+/// changed entry stacks its removed records above its added ones.
 pub(crate) fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
     let mut out = String::new();
     for entry in entries {
@@ -53,7 +53,7 @@ pub(crate) fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
                 .cloned(),
         );
 
-        // Sign and name label the RRset once; TTL stays per-line so a TTL-only
+        // Sign and name label the entry once; TTL stays per-line so a TTL-only
         // change reads clearly.
         for (index, (ttl, data)) in lines.iter().enumerate() {
             let head = if index == 0 { sign } else { ' ' };

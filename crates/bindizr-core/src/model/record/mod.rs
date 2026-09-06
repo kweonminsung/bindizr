@@ -13,7 +13,7 @@ use crate::dns::{
     },
 };
 
-/// A single DNS resource record belonging to a zone.
+/// One stored DNS record of a zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Record {
     pub id: i32,
@@ -75,7 +75,7 @@ impl RecordWithZone {
     }
 }
 
-/// Supported DNS resource record types.
+/// The record types bindizr stores.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RecordType {
@@ -188,7 +188,7 @@ impl RecordType {
             Rtype::TXT => Ok(RecordType::TXT),
             Rtype::AAAA => Ok(RecordType::AAAA),
             Rtype::SRV => Ok(RecordType::SRV),
-            _ => Err(format!("unsupported rr type: {}", rtype)),
+            _ => Err(format!("unsupported record type: {}", rtype)),
         }
     }
 

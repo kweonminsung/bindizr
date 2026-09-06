@@ -122,7 +122,7 @@ bindizr dnssec rollover start example.com --role zsk # split-key zones
 ```
 
 `start` pre-publishes a replacement with the same algorithm: it joins the
-`DNSKEY` RRset (and, for CSK/KSK, the CDS/CDNSKEY set) but signs nothing
+`DNSKEY` records (and, for CSK/KSK, the CDS/CDNSKEY records) but signs nothing
 yet, giving resolver caches the policy's `rollover_publish_holddown_secs`
 to learn it. Then:
 
@@ -208,8 +208,8 @@ Dropping signatures while the parent still publishes your DS makes the zone
 
 ## Behavior notes
 
-- At a delegation only the child's `DS` RRset is signed; the `NS` beside it
-  and glue at or below the cut are served unsigned (RFC 4035).
+- At a delegation only the child's `DS` records are signed; the `NS` records
+  beside them and glue at or below the cut are served unsigned (RFC 4035).
 - The derived records are system-owned: never edited, diffed, or rolled
   back. Version listings hide signer-only serials unless `all` is requested;
   `record list --signed` (`GET /records?signed=true`) pages them after the

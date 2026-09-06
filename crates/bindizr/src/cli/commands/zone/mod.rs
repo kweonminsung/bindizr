@@ -215,7 +215,7 @@ $INCLUDE is not supported.")]
 pub(crate) enum ImportMode {
     /// Add parsed records; records already present are left untouched
     Append,
-    /// Replace every RRset (name + type) that appears in the file
+    /// Replace the records of every name and type that appears in the file
     Upsert,
     /// Replace all non-protected records in the zone
     Replace,

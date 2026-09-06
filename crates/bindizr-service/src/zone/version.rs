@@ -38,7 +38,7 @@ impl ZoneService {
         if let Some(name) = orphaned.as_deref() {
             let name = if name.is_empty() { "@" } else { name };
             return Err(ServiceError::record_conflict(format!(
-                "DS records at '{}' require a delegation NS RRset at the same name",
+                "DS records at '{}' require delegation NS records at the same name",
                 name
             )));
         }

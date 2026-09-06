@@ -82,7 +82,7 @@ impl From<ReconstructedRecord> for VersionRecordResponse {
     }
 }
 
-/// One version plus the reconstructed record set at that serial.
+/// One version plus the reconstructed records at that serial.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct VersionDetailResponse {
     pub version: ZoneVersionResponse,
@@ -100,8 +100,8 @@ pub struct RecordDiffValue {
     pub priority: Option<i32>,
 }
 
-/// One RRset (owner name + type) whose records differ, with the records present
-/// on each side. `from` is empty for `added`, `to` for `removed`.
+/// The records of one name and type that differ, with those present on
+/// each side. `from` is empty for `added`, `to` for `removed`.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiffEntry {
     /// `added`, `removed`, or `changed`.
@@ -115,7 +115,7 @@ pub struct RecordDiffEntry {
     pub to: Vec<RecordDiffValue>,
 }
 
-/// How many RRsets were added, removed, and changed.
+/// How many name-and-type groups of records were added, removed, and changed.
 #[derive(Default, Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiffSummary {
     #[schema(example = 1)]
@@ -126,7 +126,7 @@ pub struct RecordDiffSummary {
     pub changed: usize,
 }
 
-/// A record-level difference between two record sets, RRset by RRset. Empty on
+/// The difference between two serials' records, grouped by name and type. Empty on
 /// a real apply, which does not need it; populated only for a dry-run preview.
 #[derive(Default, Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiff {

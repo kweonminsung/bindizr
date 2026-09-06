@@ -112,7 +112,7 @@ impl SignedViewParams<'_> {
             .collect();
         if !signers.is_empty() && (key_signers.is_empty() || data_signers.is_empty()) {
             return Err(
-                "zone has keys but no usable signer for the key RRsets or the zone data"
+                "zone has keys but no usable signer for the key records or the zone data"
                     .to_string(),
             );
         }
@@ -392,7 +392,8 @@ impl<'a> Signer<'a> {
         inception: DateTime<Utc>,
         expiration: DateTime<Utc>,
     ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, String> {
-        let rrset = Rrset::new_from_refs(rrset).map_err(|e| format!("invalid RRset: {}", e))?;
+        let rrset = Rrset::new_from_refs(rrset)
+            .map_err(|e| format!("mismatched records for one name and type: {}", e))?;
         sign_rrset(
             &self.signing_key,
             &rrset,

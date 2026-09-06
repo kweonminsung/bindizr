@@ -198,7 +198,7 @@ impl RecordService {
                     // Section 5.2); deduplication must not swallow the conflict.
                     if kept_ttl != this_ttl {
                         errors.push(format!(
-                            "{}: duplicate {} record with conflicting TTLs {} and {}",
+                            "{}: {} records with conflicting TTLs {} and {}; records sharing a name and type share one TTL",
                             record.owner_fqdn, record.record_type, kept_ttl, this_ttl
                         ));
                     } else {
@@ -385,7 +385,7 @@ impl RecordService {
                     && !rows.iter().any(|r| r.record_type == RecordType::NS)
                 {
                     errors.push(format!(
-                        "'{}': DS records require a delegation NS RRset at the same name",
+                        "'{}': DS records require delegation NS records at the same name",
                         name
                     ));
                 }

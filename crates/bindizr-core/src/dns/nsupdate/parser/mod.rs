@@ -69,8 +69,8 @@ impl fmt::Display for ParseError {
             ParseError::InvalidHeader => write!(f, "Invalid DNS UPDATE header"),
             ParseError::InvalidZoneSection => write!(f, "Invalid DNS UPDATE zone section"),
             ParseError::InvalidName => write!(f, "Invalid compressed domain name"),
-            ParseError::InvalidRr => write!(f, "Invalid resource record in UPDATE section"),
-            ParseError::InvalidTsig => write!(f, "Invalid TSIG resource record"),
+            ParseError::InvalidRr => write!(f, "Invalid record in UPDATE section"),
+            ParseError::InvalidTsig => write!(f, "Invalid TSIG record"),
         }
     }
 }

@@ -35,7 +35,7 @@ pub(crate) enum RecordCommand {
         /// Zone name
         #[arg(short, long, value_name = "ZONE_NAME")]
         zone: String,
-        /// TTL in seconds, defaulting to the zone TTL (records of one RRset share a TTL)
+        /// TTL in seconds, defaulting to the zone TTL (records sharing a name and type share one TTL)
         #[arg(long)]
         ttl: Option<i32>,
         /// Priority (MX and SRV only)
@@ -154,7 +154,7 @@ YAML example:
         /// Record value
         #[arg(long)]
         value: Option<String>,
-        /// TTL (records of one RRset share a TTL)
+        /// TTL (records sharing a name and type share one TTL)
         #[arg(long)]
         ttl: Option<i32>,
         /// Priority (MX and SRV only)

@@ -312,7 +312,7 @@ impl RecordService {
                         && !rows.iter().any(|r| r.record_type == RecordType::NS)
                     {
                         return Err(ServiceError::record_conflict(format!(
-                            "DS records at '{}' require a delegation NS RRset at the same name",
+                            "DS records at '{}' require delegation NS records at the same name",
                             name
                         )));
                     }

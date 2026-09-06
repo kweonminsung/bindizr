@@ -263,6 +263,32 @@ helper that computes a value never takes `get_`. Other helper verbs:
 One concept keeps one name across crates. Do not add a wrapper that only
 reorders or renames the arguments of the function it calls — call it directly.
 
+### Vocabulary — record, RR, RRset
+
+User-facing text says **record** and nothing else: docs, OpenAPI annotations
+and the payload docs in `bindizr_service::types`, CLI help and output, error
+and log messages, e2e test names. A rule about one name and type is spelled
+out ("records sharing a name and type share one TTL"); a zone snapshot is
+"the zone's records at serial N". Never "RRset", "RR", "resource record", or
+"record set" there.
+
+**RR** (one wire resource record) and **RRset** (RFC 2181, Section 5: the
+records of one owner name and type) stay internal. Identifiers and code
+comments in core's wire, DNSSEC, and nsupdate layers and in service internals
+keep them, because that is where the distinction is load-bearing.
+
+Protocol tokens keep their own spelling: nsupdate RCODEs (`NXRRSET`,
+`YXRRSET`, the `YxRrset` variants, lowercase log and metric labels),
+ExternalDNS protocol words (endpoint, targets, recordTTL), and RFC quotations.
+Check with:
+
+```sh
+grep -rnE "RRsets?\b|record set|resource record|\bRRs?\b" \
+  docs README.md crates/bindizr/src/api crates/bindizr/src/cli \
+  crates/bindizr-service/src/types
+grep -rnE '"[^"]*(RRset|resource record)[^"]*"' crates/*/src
+```
+
 ## Code style
 
 ### Comments

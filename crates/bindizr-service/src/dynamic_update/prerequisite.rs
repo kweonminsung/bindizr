@@ -50,8 +50,8 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 let owner = owner_in_zone(name, &zone.name)?;
                 if !rrset_exists(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::NxRrset(format!(
-                        "RRset {} {} does not exist",
-                        owner, record_type
+                        "no {} records at {}",
+                        record_type, owner
                     )));
                 }
             }
@@ -59,8 +59,8 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 let owner = owner_in_zone(name, &zone.name)?;
                 if rrset_exists(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::YxRrset(format!(
-                        "RRset {} {} exists",
-                        owner, record_type
+                        "{} records at {} exist",
+                        record_type, owner
                     )));
                 }
             }
@@ -82,7 +82,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
 
                 if !exists {
                     return Err(DynamicUpdateError::NxRrset(format!(
-                        "RR {} {} not found",
+                        "record {} {} not found",
                         owner, record_type
                     )));
                 }

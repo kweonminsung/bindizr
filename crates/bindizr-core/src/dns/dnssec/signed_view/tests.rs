@@ -186,7 +186,7 @@ fn expirations_spread_across_the_jitter_window() {
         .collect();
     assert!(
         expirations.len() > 1,
-        "one pass would come due for every RRset at once: {expirations:?}"
+        "one pass would come due for every record group at once: {expirations:?}"
     );
     let earliest = *expirations.iter().next().expect("signatures were emitted");
     let latest = *expirations

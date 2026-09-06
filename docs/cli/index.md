@@ -65,7 +65,7 @@ $ bindizr zone delete example.com
 # Update a zone, changing only the fields you pass
 $ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
 
-# Create, list, inspect, and delete records (TTL defaults to the zone's)
+# Create, list, inspect, and delete records (TTL defaults to the zone's; one TTL per name and type)
 $ bindizr record create --zone example.com --name www --type A --value 192.0.2.1 --ttl 300
 $ bindizr record list --zone example.com
 $ bindizr record get <RECORD_ID>

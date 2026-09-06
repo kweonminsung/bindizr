@@ -149,7 +149,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         .find(|r| r.record_type == *record_type && r.ttl != ttl)
     {
         return Err(ServiceError::record_conflict(format!(
-            "TTL {} does not match the existing {} RRset for '{}' (TTL {}); every record in an RRset must share one TTL",
+            "TTL {} does not match the existing {} records for '{}' (TTL {}); records sharing a name and type share one TTL",
             ttl, record_type, stored_name, conflicting.ttl
         )));
     }
