@@ -435,3 +435,56 @@ async fn global_token_grant_management_over_http() {
     assert_eq!(status, StatusCode::OK);
     assert!(body["token_grants"].as_array().unwrap().is_empty());
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn tokens_self_grants_lists_the_bearers_own_grants() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token.clone());
+
+    let granted_zone = app.zone_name("granted.com");
+    create_zone(&app, &granted_zone).await;
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/tokens/{scoped_name}/grants"),
+            Some(json!({
+                "zone_name": granted_zone,
+                "record_name_pattern": "*.dyn",
+                "record_types": "A,AAAA",
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    app.set_auth_token(scoped_token);
+    let (status, body) = app.request(Method::GET, "/tokens/self/grants", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let grants = body["token_grants"].as_array().unwrap();
+    assert_eq!(grants.len(), 1, "{body}");
+    assert_eq!(grants[0]["api_token"], json!(scoped_name));
+    assert_eq!(grants[0]["zone_name"], json!(granted_zone));
+    assert_eq!(grants[0]["record_name_pattern"], "*.dyn");
+    assert_eq!(grants[0]["record_types"], "A,AAAA");
+
+    // The by-name path stays global-only even for the token's own name.
+    let (status, _) = app
+        .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // A global token holds no grants.
+    app.set_auth_token(global_token);
+    let (status, body) = app.request(Method::GET, "/tokens/self/grants", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body["token_grants"].as_array().unwrap().is_empty(),
+        "{body}"
+    );
+}

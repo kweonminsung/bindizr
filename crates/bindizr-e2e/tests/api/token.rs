@@ -200,6 +200,8 @@ async fn tokens_self_needs_a_token_even_with_authentication_off() {
     })
     .await;
 
-    let (status, _) = app.request(Method::GET, "/tokens/self", None).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    for path in ["/tokens/self", "/tokens/self/grants"] {
+        let (status, _) = app.request(Method::GET, path, None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
+    }
 }

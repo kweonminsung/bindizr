@@ -28,6 +28,7 @@ impl TokenApi {
             .route("/tokens", routing::get(get_tokens))
             .route("/tokens", routing::post(create_token))
             .route("/tokens/self", routing::get(get_self_token))
+            .route("/tokens/self/grants", routing::get(get_self_token_grants))
             .route("/tokens/{name}", routing::delete(delete_token))
             .route("/tokens/{name}/grants", routing::get(get_token_grants))
             .route("/tokens/{name}/grants", routing::post(create_token_grant))
@@ -124,6 +125,32 @@ pub(crate) async fn get_self_token(
 ) -> Result<Response, ApiError> {
     let response = TokenResponse {
         token: GetTokenResponse::from_token(&token),
+    };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        get,
+        path = "/tokens/self/grants",
+        tag = "Token",
+        summary = "List the grants of the API token making the request",
+        description = "The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.",
+        responses(
+            (status = 200, description = "The calling token's grants", body = TokenGrantListResponse),
+            (status = 401, description = "Unauthorized, or no token presented", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// List the grants of the token the request authenticated with.
+pub(crate) async fn get_self_token_grants(
+    AuthenticatedToken(token): AuthenticatedToken,
+) -> Result<Response, ApiError> {
+    let grants = TokenGrantService::list_self(&token).await?;
+    let response = TokenGrantListResponse {
+        token_grants: grants
+            .iter()
+            .map(GetTokenGrantResponse::from_grant)
+            .collect(),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

@@ -58,6 +58,7 @@ use utoipa::{
         super::token::get_tokens,
         super::token::create_token,
         super::token::get_self_token,
+        super::token::get_self_token_grants,
         super::token::delete_token,
         super::token::get_token_grants,
         super::token::create_token_grant,

@@ -876,6 +876,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /tokens/self/grants:
+    get:
+      tags:
+      - Token
+      summary: List the grants of the API token making the request
+      description: The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.
+      operationId: get_self_token_grants
+      responses:
+        '200':
+          description: The calling token's grants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenGrantListResponse'
+        '401':
+          description: Unauthorized, or no token presented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /tokens/{name}:
     delete:
       tags:
