@@ -32,7 +32,7 @@ const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", routing::get(negotiate))
-        .route("/records", routing::get(get_records).post(apply_changes))
+        .route("/records", routing::get(list_records).post(apply_changes))
         .route("/adjustendpoints", routing::post(adjust_endpoints))
         .route_layer(middleware::from_fn(track_webhook_metrics))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
@@ -161,7 +161,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
 }
 
 /// `GET /records` — all managed records as grouped endpoints.
-async fn get_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if !is_accept_supported(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,

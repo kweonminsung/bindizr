@@ -10,16 +10,16 @@ const MAX_EMAIL_LOCAL_LEN: usize = 64;
 const MIN_TTL: i32 = 60;
 const MAX_TTL: i32 = 604_800;
 
-pub(crate) struct ValidatedCreateZoneRequest {
+pub(crate) struct NormalizedCreateZoneRequest {
     pub(crate) name: ZoneName,
     pub(crate) mname: String,
     pub(crate) rname: String,
     pub(crate) ttl: i32,
 }
 
-pub(crate) fn validate_create_zone_request(
+pub(crate) fn normalize_create_zone_request(
     request: &CreateZoneRequest,
-) -> Result<ValidatedCreateZoneRequest, ServiceError> {
+) -> Result<NormalizedCreateZoneRequest, ServiceError> {
     let zone_name = normalize_zone_name(&request.name)?;
     let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
     let rname = normalize_email(&request.rname)?;
@@ -27,7 +27,7 @@ pub(crate) fn validate_create_zone_request(
 
     validate_soa_wire_safety(&rname)?;
 
-    Ok(ValidatedCreateZoneRequest {
+    Ok(NormalizedCreateZoneRequest {
         name: zone_name,
         mname,
         rname,

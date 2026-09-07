@@ -206,7 +206,7 @@ async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
 }
 
 #[tokio::test]
-async fn get_records_maps_records_to_endpoints() {
+async fn list_records_maps_records_to_endpoints() {
     let records = json!({"records": [
         {"name": "app.example.com", "record_type": "A", "ttl": 300,
          "values": ["192.0.2.1", "192.0.2.2"]},

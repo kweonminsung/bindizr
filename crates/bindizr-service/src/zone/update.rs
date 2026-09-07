@@ -18,7 +18,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::{CreateZoneRequest, UpdateZoneRequest},
-    zone::validation::{ResolvedSoaTimers, normalize_soa_timers, validate_create_zone_request},
+    zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
 };
 
 /// Outcome of the transactional part of a zone update.
@@ -109,7 +109,7 @@ impl ZoneService {
             let zone_id = existing_zone.id;
 
             let request = build(&existing_zone);
-            let validated = validate_create_zone_request(&request)?;
+            let validated = normalize_create_zone_request(&request)?;
 
             let timers = normalize_soa_timers(
                 &request,
