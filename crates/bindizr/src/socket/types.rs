@@ -1,4 +1,3 @@
-use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest,
     ImportZoneRequest, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
@@ -11,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DaemonCommandKind {
     Status,
+    Config,
     TokenCreate,
     TokenList,
     TokenDelete,
@@ -266,7 +266,6 @@ pub(crate) struct DaemonStatusResponse {
     /// Restart detection marker: exec keeps the PID, so a new start time is
     /// the only signal that the daemon was replaced.
     pub(crate) started_at_ms: u64,
-    pub(crate) config: BindizrConfig,
 }
 
 /// Daemon-side installation checks returned by the `Doctor` command.

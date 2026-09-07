@@ -44,13 +44,13 @@ fn check_config(file: Option<&str>) -> Result<(), CliError> {
 }
 
 async fn print_config_list() -> Result<(), CliError> {
-    let config = loaded_daemon_config().await?;
+    let config = DaemonSocketClient::new().config().await?;
     print_config(&config);
     Ok(())
 }
 
 async fn print_config_value(key: &str) -> Result<(), CliError> {
-    let config = loaded_daemon_config().await?;
+    let config = DaemonSocketClient::new().config().await?;
     let value = serde_json::to_value(&config)
         .map_err(|e| format!("Failed to serialize configuration: {}", e))?;
 
@@ -69,12 +69,6 @@ async fn print_config_value(key: &str) -> Result<(), CliError> {
         value => println!("{}", value),
     }
     Ok(())
-}
-
-/// Fetch the running daemon's loaded config (file plus environment overrides),
-/// which can differ from what the file on disk currently says.
-async fn loaded_daemon_config() -> Result<BindizrConfig, CliError> {
-    Ok(DaemonSocketClient::new().status().await?.config)
 }
 
 fn print_config(config: &BindizrConfig) {
