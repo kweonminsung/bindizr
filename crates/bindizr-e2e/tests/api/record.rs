@@ -813,6 +813,7 @@ async fn record_bulk_insert() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let bulk_request = json!({
+        "zone_name": zone_name,
         "records": [
             { "name": "bulk1", "record_type": "A", "value": "192.0.2.1" },
             { "name": "bulk2", "record_type": "A", "value": "192.0.2.2", "ttl": 1800 },
@@ -821,11 +822,7 @@ async fn record_bulk_insert() {
         ]
     });
     let (status, body) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{zone_name}/records/bulk"),
-            Some(bulk_request),
-        )
+        .request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["inserted"], 4);
@@ -850,17 +847,14 @@ async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let bulk_request = json!({
+        "zone_name": zone_name,
         "records": [
             { "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" },
             { "name": "sub", "record_type": "NS", "value": "ns1.example.net." }
         ]
     });
     let (status, body) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{zone_name}/records/bulk"),
-            Some(bulk_request),
-        )
+        .request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["inserted"], 2);
@@ -878,17 +872,14 @@ async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
     // The commit-time delegation invariant only runs on apply, so the dry run
     // must reject the same batch itself to keep its validation promise.
     let bulk_request = json!({
+        "zone_name": zone_name,
         "records": [
             { "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" }
         ],
         "dry_run": true
     });
     let (status, body) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{zone_name}/records/bulk"),
-            Some(bulk_request),
-        )
+        .request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert!(
@@ -906,17 +897,14 @@ async fn record_bulk_insert_is_all_or_nothing() {
 
     // The second record has an invalid type, so the whole batch must fail.
     let bulk_request = json!({
+        "zone_name": zone_name,
         "records": [
             { "name": "ok", "record_type": "A", "value": "192.0.2.5" },
             { "name": "bad", "record_type": "NOPE", "value": "192.0.2.6" }
         ]
     });
     let (status, _) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{zone_name}/records/bulk"),
-            Some(bulk_request),
-        )
+        .request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
@@ -939,14 +927,11 @@ async fn record_bulk_insert_unknown_zone_returns_not_found() {
     let missing_zone = app.zone_name("missing.example.com");
 
     let bulk_request = json!({
+        "zone_name": missing_zone,
         "records": [ { "name": "a", "record_type": "A", "value": "192.0.2.1" } ]
     });
     let (status, _) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{missing_zone}/records/bulk"),
-            Some(bulk_request),
-        )
+        .request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -959,6 +944,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let bulk_request = json!({
+        "zone_name": zone_name,
         "records": [
             { "name": "dry1", "record_type": "A", "value": "192.0.2.40" },
             { "name": "dry2", "record_type": "A", "value": "192.0.2.41", "ttl": 1800 }
@@ -966,11 +952,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
         "dry_run": true
     });
     let (status, body) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{zone_name}/records/bulk"),
-            Some(bulk_request),
-        )
+        .request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], false);
@@ -990,17 +972,14 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 
     let bulk_request = json!({
+        "zone_name": zone_name,
         "records": [
             { "name": "dry1", "record_type": "A", "value": "192.0.2.40" },
             { "name": "dry2", "record_type": "A", "value": "192.0.2.41", "ttl": 1800 }
         ]
     });
     let (status, body) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{zone_name}/records/bulk"),
-            Some(bulk_request),
-        )
+        .request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["applied"], true);

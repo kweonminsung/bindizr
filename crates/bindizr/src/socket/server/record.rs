@@ -2,12 +2,12 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     record::RecordService,
-    types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
+    types::{CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
 };
 
 use crate::socket::{
     server::{parse_params, to_response_data},
-    types::{BulkCreateRecordsParams, DaemonResponse, RecordIdParams, UpdateRecordParams},
+    types::{DaemonResponse, RecordIdParams, UpdateRecordParams},
 };
 
 /// Handle the `GetRecord` command by returning a record by ID.
@@ -68,11 +68,11 @@ pub(crate) async fn update_record(
 pub(crate) async fn bulk_create_records(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let BulkCreateRecordsParams { zone_name, request } = parse_params(data)?;
+    let request: CreateBulkRecordsRequest = parse_params(data)?;
 
     let response = RecordService::create_bulk(
         &Caller::Global,
-        &zone_name,
+        &request.zone_name,
         &request.records,
         request.dry_run,
     )

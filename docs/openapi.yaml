@@ -624,6 +624,74 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /records/bulk:
+    post:
+      tags:
+      - Record
+      summary: Bulk insert DNS records into a zone
+      description: Insert many records into the named zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.
+      operationId: create_records_bulk
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBulkRecordsRequest'
+        required: true
+      responses:
+        '200':
+          description: Dry run validated successfully, nothing applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRecordsResponse'
+        '201':
+          description: DNS records created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRecordsResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The token's grants do not allow this record write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found, or not visible to the token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /records/{record_id}:
     get:
       tags:
@@ -2899,81 +2967,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/{zone_name}/records/bulk:
-    post:
-      tags:
-      - Record
-      summary: Bulk insert DNS records into a zone
-      description: Insert many records into a single zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.
-      operationId: create_records_bulk
-      parameters:
-      - name: zone_name
-        in: path
-        description: The name of the DNS zone to insert records into.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateBulkRecordsRequest'
-        required: true
-      responses:
-        '200':
-          description: Dry run validated successfully, nothing applied
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BulkRecordsResponse'
-        '201':
-          description: DNS records created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BulkRecordsResponse'
-        '400':
-          description: Bad request, invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: The token's grants do not allow this record write
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone not found, or not visible to the token
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: Record conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     BulkRecordsResponse:
@@ -3010,6 +3003,7 @@ components:
       type: object
       description: Request body for bulk-inserting records into a zone.
       required:
+      - zone_name
       - records
       properties:
         dry_run:
@@ -3019,6 +3013,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RecordItem'
+        zone_name:
+          type: string
+          example: example.com
     CreateDnssecPolicyRequest:
       type: object
       description: |-

@@ -99,6 +99,8 @@ pub struct RecordItem {
 /// Request body for bulk-inserting records into a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreateBulkRecordsRequest {
+    #[schema(example = "example.com")]
+    pub zone_name: String,
     pub records: Vec<RecordItem>,
     /// When true, parse and validate without applying any change.
     #[serde(default, alias = "dryRun")]

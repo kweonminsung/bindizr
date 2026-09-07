@@ -8,8 +8,8 @@ async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
     let (status, _) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/records/bulk"),
-            Some(json!({ "records": records })),
+            "/records/bulk",
+            Some(json!({ "zone_name": zone_name, "records": records })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);

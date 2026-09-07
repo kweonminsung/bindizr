@@ -14,7 +14,7 @@ use crate::{
     },
     socket::{
         client::DaemonSocketClient,
-        types::{BulkCreateRecordsParams, DaemonCommandKind, RecordIdParams, UpdateRecordParams},
+        types::{DaemonCommandKind, RecordIdParams, UpdateRecordParams},
     },
 };
 
@@ -286,13 +286,11 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let response = client
                 .send_command(
                     DaemonCommandKind::BulkCreateRecords,
-                    BulkCreateRecordsParams {
+                    CreateBulkRecordsRequest {
                         zone_name: zone,
-                        request: CreateBulkRecordsRequest {
-                            records,
-                            // Preview never applies; it is a dry run rendered as a diff.
-                            dry_run: dry_run || preview,
-                        },
+                        records,
+                        // Preview never applies; it is a dry run rendered as a diff.
+                        dry_run: dry_run || preview,
                     },
                 )
                 .await?;
