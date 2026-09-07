@@ -191,10 +191,11 @@ class BindizrAdapter(DnsAdapter):
         """Bulk-insert via Bindizr's `/records/bulk` API in single-transaction
         chunks (each chunk bumps the serial once and sends one NOTIFY)."""
         self.bulk_errors = 0
-        url = self.base + f"/zones/{zone.rstrip('.')}/records/bulk"
+        url = self.base + "/records/bulk"
         for start in range(0, len(records), self.bulk_chunk):
             chunk = records[start:start + self.bulk_chunk]
-            body = {"records": [self._bulk_item(r) for r in chunk]}
+            body = {"zone_name": zone.rstrip("."),
+                    "records": [self._bulk_item(r) for r in chunk]}
             self.bulk_errors += await self._post_with_retry(url, body, len(chunk))
 
     def _zone_line(self, rec: dict) -> str:
