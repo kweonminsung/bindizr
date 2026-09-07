@@ -304,9 +304,10 @@ pub(crate) async fn get_zones(
         path = "/zones/{name}",
         tag = "Zone",
         summary = "Get a specific DNS zone",
+        description = "With `records=true` the response carries every record of the zone in one unpaginated array; for a large zone list them page by page with `GET /records?zone_name=` instead.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to retrieve."),
-            ("records" = Option<bool>, Query, description = "Whether to include records for the DNS zone.")
+            ("records" = Option<bool>, Query, description = "Include the zone's records, unpaginated.")
         ),
         responses(
             (status = 200, description = "Details of the DNS zone", body = ZoneDetailResponse),

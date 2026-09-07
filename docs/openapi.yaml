@@ -1734,6 +1734,7 @@ paths:
       tags:
       - Zone
       summary: Get a specific DNS zone
+      description: With `records=true` the response carries every record of the zone in one unpaginated array; for a large zone list them page by page with `GET /records?zone_name=` instead.
       operationId: get_zone
       parameters:
       - name: name
@@ -1744,7 +1745,7 @@ paths:
           type: string
       - name: records
         in: query
-        description: Whether to include records for the DNS zone.
+        description: Include the zone's records, unpaginated.
         required: false
         schema:
           type: boolean
