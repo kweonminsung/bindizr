@@ -46,7 +46,7 @@ struct DesiredRecord {
 }
 
 /// Whether `existing` is the record the import wants present.
-fn desired_matches(existing: &Record, desired: &DesiredRecord) -> bool {
+fn matches_desired(existing: &Record, desired: &DesiredRecord) -> bool {
     let record_type = &desired.prepared.record_type;
     existing.name == desired.stored_name
         && existing.record_type == *record_type
@@ -276,7 +276,7 @@ impl RecordService {
             let desired_matches_existing = |existing: &Record| {
                 desired_by_name
                     .get(&existing.name)
-                    .is_some_and(|idxs| idxs.iter().any(|&i| desired_matches(existing, &desired[i])))
+                    .is_some_and(|idxs| idxs.iter().any(|&i| matches_desired(existing, &desired[i])))
             };
             let desired_key_matches_existing = |existing: &Record| {
                 desired_by_name.get(&existing.name).is_some_and(|idxs| {
@@ -316,7 +316,7 @@ impl RecordService {
                 let mut stale = false;
                 if let Some(es) = existing_by_name.get(&d.stored_name) {
                     for &e in es {
-                        if desired_matches(e, d) {
+                        if matches_desired(e, d) {
                             present = true;
                             if reconcile_ttl && e.ttl != desired_ttl {
                                 ttl_dels.push(e.clone());

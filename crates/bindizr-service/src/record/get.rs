@@ -90,7 +90,7 @@ impl RecordService {
             ZoneService::lookup_by_name(name.as_str()).await?;
         }
 
-        let name = to_record_name_filter(filter.name, zone_name.as_ref());
+        let name = build_record_name_filter(filter.name, zone_name.as_ref());
         let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
         let user_plane = derived_type.is_none();
@@ -201,7 +201,7 @@ impl RecordService {
     }
 }
 
-fn to_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) -> Option<String> {
+fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) -> Option<String> {
     name.and_then(|name| {
         let trimmed = name.trim();
         // An empty value is no filter. Left to fall through it would spell the

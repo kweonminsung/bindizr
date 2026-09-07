@@ -18,7 +18,7 @@ use chrono::{Duration, Utc};
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    grant_pattern::{pattern_matches_name, types_match},
+    grant_pattern::{matches_name, matches_types},
     log_error,
     model::{api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone},
     repository::RepositoryService,
@@ -138,8 +138,8 @@ fn authorize_with_grants(
 ) -> Result<(), ServiceError> {
     for write in writes {
         let granted = grants.iter().any(|grant| {
-            pattern_matches_name(&grant.record_name_pattern, &write.relative_name)
-                && types_match(&grant.record_types, write.record_type)
+            matches_name(&grant.record_name_pattern, &write.relative_name)
+                && matches_types(&grant.record_types, write.record_type)
         });
         if !granted {
             return Err(ServiceError::forbidden(format!(

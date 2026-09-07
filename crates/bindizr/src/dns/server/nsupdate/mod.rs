@@ -62,7 +62,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         Ok(req) => req,
         Err(e) => {
             log_warn!("NSUPDATE parse error from {}: {}", client_addr, e);
-            count_nsupdate("formerr");
+            track_nsupdate("formerr");
             return build_response(query_data, Rcode::FORMERR, None, DEFAULT_FUDGE);
         }
     };
@@ -87,7 +87,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         // request's TSIG record (RFC 8945, Sections 5.2–5.3).
         Err(update::UpdateError::TsigFailed { msg, response }) => {
             log_warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
-            count_nsupdate("tsig_failed");
+            track_nsupdate("tsig_failed");
             return Some(response);
         }
         Err(update::UpdateError::Refused(msg)) => {
@@ -120,11 +120,11 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         }
     };
 
-    count_nsupdate(rcode_label(rcode));
+    track_nsupdate(rcode_label(rcode));
     build_response(query_data, rcode, signer, fudge)
 }
 
-fn count_nsupdate(result: &str) {
+fn track_nsupdate(result: &str) {
     metrics()
         .nsupdate_requests_total
         .with_label_values(&[result])

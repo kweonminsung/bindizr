@@ -109,7 +109,7 @@ fn validate_rrset_shape(
     Ok(())
 }
 
-pub(crate) fn convert_rrset(record: &ExternalDnsRecord) -> Result<RrsetOp, ServiceError> {
+pub(crate) fn parse_rrset_op(record: &ExternalDnsRecord) -> Result<RrsetOp, ServiceError> {
     let record_type = parse_supported_record_type(&record.record_type)?;
     let name = normalize_lookup_name(&record.name)?;
     let ttl = normalize_ttl(record.ttl)?;
@@ -167,29 +167,29 @@ pub(crate) fn adjust_rrset(record: &ExternalDnsRecord) -> Result<ExternalDnsReco
 
 /// Flatten the request into ordered operations; an update becomes
 /// delete(old) + add(new), with unchanged pairs canceling later.
-pub(crate) fn convert_request(
+pub(crate) fn parse_changes_request(
     request: &ExternalDnsChangesRequest,
 ) -> Result<Vec<PendingOp>, ServiceError> {
     let mut ops = Vec::new();
     for rrset in &request.deletes {
         ops.push(PendingOp {
-            op: convert_rrset(rrset)?,
+            op: parse_rrset_op(rrset)?,
             is_delete: true,
         });
     }
     for update in &request.updates {
         ops.push(PendingOp {
-            op: convert_rrset(&update.old)?,
+            op: parse_rrset_op(&update.old)?,
             is_delete: true,
         });
         ops.push(PendingOp {
-            op: convert_rrset(&update.new)?,
+            op: parse_rrset_op(&update.new)?,
             is_delete: false,
         });
     }
     for rrset in &request.creates {
         ops.push(PendingOp {
-            op: convert_rrset(rrset)?,
+            op: parse_rrset_op(rrset)?,
             is_delete: false,
         });
     }
@@ -341,7 +341,7 @@ impl ExternalDnsService {
     ) -> Result<ExternalDnsChangesResponse, ServiceError> {
         let started = std::time::Instant::now();
 
-        let ops = convert_request(request)?;
+        let ops = parse_changes_request(request)?;
         let requested_ops = ops.len();
 
         if ops.is_empty() {

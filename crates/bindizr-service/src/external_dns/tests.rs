@@ -3,8 +3,8 @@ use chrono::Utc;
 
 use super::{
     apply::{
-        ZoneOps, adjust_rrset, compute_zone_change_set, convert_request, convert_rrset,
-        group_ops_by_zone,
+        ZoneOps, adjust_rrset, compute_zone_change_set, group_ops_by_zone, parse_changes_request,
+        parse_rrset_op,
     },
     policy::{find_authoritative_zone, normalize_lookup_name},
 };
@@ -110,17 +110,17 @@ fn normalize_lookup_name_lowercases_and_strips_trailing_dot() {
 }
 
 #[test]
-fn convert_rrset_rejects_unsupported_types() {
+fn parse_rrset_op_rejects_unsupported_types() {
     for record_type in ["NS", "MX", "SRV", "SOA", "PTR"] {
-        let err = convert_rrset(&rrset("a.example.com", record_type, None, &["x"])).unwrap_err();
+        let err = parse_rrset_op(&rrset("a.example.com", record_type, None, &["x"])).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
     }
-    assert!(convert_rrset(&rrset("a.example.com", "BOGUS", None, &["x"])).is_err());
+    assert!(parse_rrset_op(&rrset("a.example.com", "BOGUS", None, &["x"])).is_err());
 }
 
 #[test]
-fn convert_rrset_rejects_multi_value_cname_and_empty_values() {
-    let err = convert_rrset(&rrset(
+fn parse_rrset_op_rejects_multi_value_cname_and_empty_values() {
+    let err = parse_rrset_op(&rrset(
         "a.example.com",
         "CNAME",
         None,
@@ -129,30 +129,30 @@ fn convert_rrset_rejects_multi_value_cname_and_empty_values() {
     .unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidRecordValue);
 
-    let err = convert_rrset(&rrset("a.example.com", "A", None, &[])).unwrap_err();
+    let err = parse_rrset_op(&rrset("a.example.com", "A", None, &[])).unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidInput);
 }
 
 #[test]
-fn convert_rrset_normalizes_ttl() {
+fn parse_rrset_op_normalizes_ttl() {
     assert_eq!(
-        convert_rrset(&rrset("a.example.com", "A", Some(0), &["192.0.2.1"]))
+        parse_rrset_op(&rrset("a.example.com", "A", Some(0), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         None
     );
     assert_eq!(
-        convert_rrset(&rrset("a.example.com", "A", Some(300), &["192.0.2.1"]))
+        parse_rrset_op(&rrset("a.example.com", "A", Some(300), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         Some(300)
     );
-    assert!(convert_rrset(&rrset("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err());
+    assert!(parse_rrset_op(&rrset("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err());
 }
 
 #[test]
-fn convert_rrset_deduplicates_equivalent_ipv6_spellings() {
-    let op = convert_rrset(&rrset(
+fn parse_rrset_op_deduplicates_equivalent_ipv6_spellings() {
+    let op = parse_rrset_op(&rrset(
         "a.example.com",
         "AAAA",
         None,
@@ -164,8 +164,8 @@ fn convert_rrset_deduplicates_equivalent_ipv6_spellings() {
 }
 
 #[test]
-fn convert_rrset_parses_quoted_txt_values() {
-    let op = convert_rrset(&rrset(
+fn parse_rrset_op_parses_quoted_txt_values() {
+    let op = parse_rrset_op(&rrset(
         "a.example.com",
         "TXT",
         None,
@@ -178,7 +178,7 @@ fn convert_rrset_parses_quoted_txt_values() {
         op.values[0],
         "\"heritage=external-dns,external-dns/owner=default\""
     );
-    assert!(convert_rrset(&rrset("a.example.com", "TXT", None, &["\"unterminated"])).is_err());
+    assert!(parse_rrset_op(&rrset("a.example.com", "TXT", None, &["\"unterminated"])).is_err());
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
         updates: vec![],
         deletes: vec![],
     };
-    let ops = convert_request(&request).unwrap();
+    let ops = parse_changes_request(&request).unwrap();
 
     let grouped = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap();
     assert_eq!(grouped.len(), 1);
@@ -265,7 +265,7 @@ fn group_ops_rejects_names_without_authoritative_zone() {
         updates: vec![],
         deletes: vec![],
     };
-    let ops = convert_request(&request).unwrap();
+    let ops = parse_changes_request(&request).unwrap();
 
     let err = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap_err();
     assert_eq!(err.code, ErrorCode::ZoneNotFound);
@@ -294,7 +294,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
         updates: vec![],
         deletes: vec![],
     };
-    let ops = convert_request(&request).unwrap();
+    let ops = parse_changes_request(&request).unwrap();
 
     let err = group_ops_by_zone(&caller, &zones, ops).unwrap_err();
     assert_eq!(err.code, ErrorCode::ZoneNotFound);
@@ -306,7 +306,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
 }
 
 fn zone_ops(request: &ExternalDnsChangesRequest, zone: &Zone) -> ZoneOps {
-    let ops = convert_request(request).unwrap();
+    let ops = parse_changes_request(request).unwrap();
     let grouped = group_ops_by_zone(&Caller::Global, std::slice::from_ref(zone), ops).unwrap();
     grouped.into_values().next().unwrap_or_default()
 }

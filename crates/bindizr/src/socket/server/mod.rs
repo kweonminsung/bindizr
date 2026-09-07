@@ -149,9 +149,9 @@ async fn handle_client(stream: UnixStream) {
 
         let response = match raw_response {
             Ok(res) => serde_json::to_string(&res).unwrap_or_else(|_| {
-                json_response_error(&ServiceError::internal("Failed to serialize response"))
+                error_response_json(&ServiceError::internal("Failed to serialize response"))
             }),
-            Err(e) => json_response_error(&e),
+            Err(e) => error_response_json(&e),
         };
 
         let mut stream = reader.into_inner().into_inner();
@@ -281,7 +281,7 @@ pub(crate) fn to_response_data<T: serde::Serialize>(
         .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))
 }
 
-fn json_response_error(err: &ServiceError) -> String {
+fn error_response_json(err: &ServiceError) -> String {
     serde_json::to_string(&ErrorResponse::new(err)).unwrap_or_else(|_| {
         r#"{"error":"Failed to serialize error response","code":"INTERNAL"}"#.to_string()
     })

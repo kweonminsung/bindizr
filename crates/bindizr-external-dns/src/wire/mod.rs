@@ -25,7 +25,7 @@ pub(crate) struct Endpoint {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub(crate) set_identifier: String,
     // The Go json tag is `recordTTL`, which rename_all would render `recordTtl`.
-    #[serde(default, rename = "recordTTL", skip_serializing_if = "ttl_is_unset")]
+    #[serde(default, rename = "recordTTL", skip_serializing_if = "is_ttl_unset")]
     pub(crate) record_ttl: i64,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) labels: BTreeMap<String, String>,
@@ -33,7 +33,7 @@ pub(crate) struct Endpoint {
     pub(crate) provider_specific: Vec<ProviderSpecificProperty>,
 }
 
-fn ttl_is_unset(ttl: &i64) -> bool {
+fn is_ttl_unset(ttl: &i64) -> bool {
     *ttl == 0
 }
 

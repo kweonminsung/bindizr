@@ -78,7 +78,7 @@ fn upstream_error_response(error: UpstreamError) -> Response {
     }
 }
 
-fn accept_is_supported(headers: &HeaderMap) -> bool {
+fn is_accept_supported(headers: &HeaderMap) -> bool {
     match headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
         // external-dns always sends the exact media type; tolerate wildcard
         // and absent Accept for manual diagnostics.
@@ -135,7 +135,7 @@ async fn track_webhook_metrics(request: Request, next: Next) -> Response {
 
 /// `GET /` — negotiation: return the DomainFilter of manageable zones.
 async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !accept_is_supported(&headers) {
+    if !is_accept_supported(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,
             format!("supported media type: {}", MEDIA_TYPE),
@@ -162,7 +162,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
 
 /// `GET /records` — all managed records as grouped endpoints.
 async fn get_records(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !accept_is_supported(&headers) {
+    if !is_accept_supported(&headers) {
         return (
             StatusCode::NOT_ACCEPTABLE,
             format!("supported media type: {}", MEDIA_TYPE),

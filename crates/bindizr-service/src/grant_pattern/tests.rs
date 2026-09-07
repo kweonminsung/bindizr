@@ -37,33 +37,21 @@ fn normalize_types_parses_and_dedupes() {
 
 #[test]
 fn pattern_matching_covers_all_forms() {
-    assert!(pattern_matches_name("*", &OwnerName::apex()));
-    assert!(pattern_matches_name(
-        "*",
-        &OwnerName::from_row("anything.at.all")
-    ));
+    assert!(matches_name("*", &OwnerName::apex()));
+    assert!(matches_name("*", &OwnerName::from_row("anything.at.all")));
 
-    assert!(pattern_matches_name("@", &OwnerName::apex()));
-    assert!(!pattern_matches_name("@", &OwnerName::from_row("www")));
+    assert!(matches_name("@", &OwnerName::apex()));
+    assert!(!matches_name("@", &OwnerName::from_row("www")));
 
-    assert!(pattern_matches_name("www", &OwnerName::from_row("www")));
-    assert!(pattern_matches_name("www", &OwnerName::from_row("WWW")));
-    assert!(!pattern_matches_name(
-        "www",
-        &OwnerName::from_row("sub.www")
-    ));
+    assert!(matches_name("www", &OwnerName::from_row("www")));
+    assert!(matches_name("www", &OwnerName::from_row("WWW")));
+    assert!(!matches_name("www", &OwnerName::from_row("sub.www")));
 
-    assert!(pattern_matches_name("*.sub", &OwnerName::from_row("sub")));
-    assert!(pattern_matches_name("*.sub", &OwnerName::from_row("a.sub")));
-    assert!(pattern_matches_name(
-        "*.sub",
-        &OwnerName::from_row("a.b.sub")
-    ));
-    assert!(!pattern_matches_name(
-        "*.sub",
-        &OwnerName::from_row("sub.other")
-    ));
-    assert!(!pattern_matches_name("*.sub", &OwnerName::from_row("xsub")));
+    assert!(matches_name("*.sub", &OwnerName::from_row("sub")));
+    assert!(matches_name("*.sub", &OwnerName::from_row("a.sub")));
+    assert!(matches_name("*.sub", &OwnerName::from_row("a.b.sub")));
+    assert!(!matches_name("*.sub", &OwnerName::from_row("sub.other")));
+    assert!(!matches_name("*.sub", &OwnerName::from_row("xsub")));
 }
 
 #[test]
@@ -82,14 +70,8 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
 #[test]
 fn a_subtree_grant_does_not_reach_a_label_that_merely_spells_it() {
     // `a\.sub` is the single label `a.sub`, not a name under `sub`.
-    assert!(!pattern_matches_name(
-        "*.sub",
-        &OwnerName::from_row(r"a\.sub")
-    ));
-    assert!(pattern_matches_name(
-        "*.sub",
-        &OwnerName::from_row(r"a\.b.sub")
-    ));
+    assert!(!matches_name("*.sub", &OwnerName::from_row(r"a\.sub")));
+    assert!(matches_name("*.sub", &OwnerName::from_row(r"a\.b.sub")));
 }
 
 // Canonicalizing `\042` to `*` would widen a grant meant for the wildcard
@@ -111,7 +93,7 @@ fn rejects_a_wildcard_label_however_it_is_spelled() {
 fn an_escaped_at_stays_a_literal_owner() {
     let pattern = normalize_pattern(Some(r"\064")).unwrap();
     assert_eq!(pattern, r"\@");
-    assert!(!pattern_matches_name(&pattern, &OwnerName::apex()));
+    assert!(!matches_name(&pattern, &OwnerName::apex()));
 }
 
 // An escaped dot is label data, so the name is relative and its single label is
