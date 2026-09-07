@@ -33,6 +33,7 @@ async fn token_grant_grants_revoke() {
         ])
         .await;
     let granted: Value = serde_json::from_str(&granted).expect("CLI did not return valid JSON");
+    let granted = &granted["token_grant"];
     assert_eq!(granted["api_token"], scoped_name);
     assert_eq!(granted["zone_name"], zone_name);
     assert_eq!(granted["record_types"], "A,AAAA");

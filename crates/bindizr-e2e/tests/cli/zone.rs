@@ -15,6 +15,46 @@ fn summary_row(stdout: &str) -> Vec<&str> {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_create_takes_soa_timers() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("cli-soa.example");
+    let mname = format!("ns1.{zone_name}");
+    let rname = format!("hostmaster@{zone_name}");
+
+    let created = app
+        .run_cli_success(&[
+            "zone",
+            "create",
+            "--name",
+            &zone_name,
+            "--mname",
+            &mname,
+            "--rname",
+            &rname,
+            "--default-ttl",
+            "3600",
+            "--refresh",
+            "300",
+            "--retry",
+            "60",
+            "--expire",
+            "1209600",
+            "--minimum-ttl",
+            "120",
+            "--output",
+            "json",
+        ])
+        .await;
+    let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
+    let zone = &created["zone"];
+    assert_eq!(zone["refresh"], 300);
+    assert_eq!(zone["retry"], 60);
+    assert_eq!(zone["expire"], 1209600);
+    assert_eq!(zone["minimum_ttl"], 120);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_create_read_delete() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-zone.example");
@@ -27,8 +67,8 @@ async fn zone_create_read_delete() {
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
         .await;
     let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
-    assert_eq!(zone["name"], zone_name);
-    assert_eq!(zone["mname"], mname);
+    assert_eq!(zone["zone"]["name"], zone_name);
+    assert_eq!(zone["zone"]["mname"], mname);
 
     let deleted = app.run_cli_success(&["zone", "delete", &zone_name]).await;
     assert!(deleted.contains("deleted successfully"));
@@ -63,6 +103,7 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
         ])
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    let updated = &updated["zone"];
     assert_eq!(updated["refresh"], 300);
     assert_eq!(updated["retry"], 60);
     assert_eq!(updated["default_ttl"], 3600);
@@ -355,7 +396,7 @@ async fn zone_versions_and_rollback_flow() {
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
         .await;
     let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
-    assert_eq!(zone["serial"].as_i64().unwrap(), 1);
+    assert_eq!(zone["zone"]["serial"].as_i64().unwrap(), 1);
 
     app.run_cli_success(&[
         "record",

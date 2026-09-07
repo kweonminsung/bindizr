@@ -3,8 +3,7 @@
 mod keys;
 
 use bindizr_service::types::{
-    EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest,
-    UpdateDnssecSettingsRequest,
+    DnssecStatusResponse, EnableDnssecRequest, RolloverDnssecRequest, UpdateDnssecSettingsRequest,
 };
 use clap::Subcommand;
 pub(crate) use keys::DnssecKeysCommand;
@@ -55,12 +54,10 @@ pub(crate) enum DnssecCommand {
         /// must match, and a new algorithm starts a rollover
         #[arg(long, value_name = "POLICY_NAME", group = "setting")]
         policy: Option<String>,
-        /// Comma-separated host[:port] entries of the parent's nameservers
+        /// Comma-separated host[:port] entries of the parent's nameservers;
+        /// empty returns the zone to parent discovery
         #[arg(long, value_name = "ADDRS", group = "setting")]
         parent_ns_addrs: Option<String>,
-        /// Return the zone to parent discovery
-        #[arg(long, group = "setting", conflicts_with = "parent_ns_addrs")]
-        clear_parent_ns_addrs: bool,
     },
     /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
     /// parent to drop the zone's DS: the first step of going insecure
@@ -184,7 +181,6 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             name,
             policy,
             parent_ns_addrs,
-            clear_parent_ns_addrs,
         } => {
             let response = client
                 .send_command(
@@ -193,11 +189,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                         zone_name: name,
                         request: UpdateDnssecSettingsRequest {
                             policy,
-                            parent_ns_addrs: if clear_parent_ns_addrs {
-                                Some(String::new())
-                            } else {
-                                parent_ns_addrs
-                            },
+                            parent_ns_addrs,
                         },
                     },
                 )
@@ -281,7 +273,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
 }
 
 pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
-    let status: GetDnssecStatusResponse = parse_response(data)?;
+    let status = parse_response::<DnssecStatusResponse>(data)?.dnssec;
     let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
         println!(
             "Zone {} (serial {}): DNSSEC disabled",

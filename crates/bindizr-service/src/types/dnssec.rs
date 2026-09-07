@@ -212,7 +212,7 @@ pub struct ImportDnssecKeyRequest {
 }
 
 /// A zone's DNSSEC status wrapped in a response envelope.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecStatusResponse {
     pub dnssec: GetDnssecStatusResponse,
 }

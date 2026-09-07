@@ -2,7 +2,10 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     record::RecordService,
-    types::{CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
+    types::{
+        CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse, GetRecordsFilter,
+        RecordResponse,
+    },
 };
 
 use crate::socket::{
@@ -17,7 +20,9 @@ pub(crate) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
     let record = RecordService::get_with_zone(&Caller::Global, params.id).await?;
     Ok(DaemonResponse {
         message: "Record retrieved successfully".to_string(),
-        data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+        data: to_response_data(RecordResponse {
+            record: GetRecordResponse::from_record_with_zone(&record),
+        })?,
     })
 }
 
@@ -46,7 +51,9 @@ pub(crate) async fn create_record(
     let record = RecordService::create(&Caller::Global, &request).await?;
     Ok(DaemonResponse {
         message: "Record created successfully".to_string(),
-        data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+        data: to_response_data(RecordResponse {
+            record: GetRecordResponse::from_record_with_zone(&record),
+        })?,
     })
 }
 
@@ -59,7 +66,9 @@ pub(crate) async fn update_record(
     let record = RecordService::update(&Caller::Global, params.id, &params.request).await?;
     Ok(DaemonResponse {
         message: "Record updated successfully".to_string(),
-        data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+        data: to_response_data(RecordResponse {
+            record: GetRecordResponse::from_record_with_zone(&record),
+        })?,
     })
 }
 

@@ -223,7 +223,7 @@ instead:
 ```sh
 bindizr dnssec enable example.com --parent-ns-addrs ns1.parent.example,ns2.parent.example
 bindizr dnssec set example.com --parent-ns-addrs ns1.parent.example:5353
-bindizr dnssec set example.com --clear-parent-ns-addrs    # back to discovery
+bindizr dnssec set example.com --parent-ns-addrs ""      # back to discovery
 ```
 
 Also `parent_ns_addrs` in the enable body and in `PUT /zones/{name}/dnssec`;

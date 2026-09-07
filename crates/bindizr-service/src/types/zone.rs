@@ -146,14 +146,14 @@ pub fn build_notify_message(zone_name: Option<&str>, bump_serial: bool) -> Strin
 }
 
 /// A zone together with all of its records.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneDetailResponse {
     pub zone: GetZoneResponse,
     pub records: Vec<GetRecordResponse>,
 }
 
 /// A single zone wrapped in a response envelope.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneResponse {
     pub zone: GetZoneResponse,
 }

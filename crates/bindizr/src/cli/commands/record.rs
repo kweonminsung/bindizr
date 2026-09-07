@@ -1,6 +1,7 @@
 use bindizr_service::types::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-    GetRecordsFilter, RecordItem, RecordValueRequest, UpdateRecordRequest,
+    GetRecordsFilter, PaginatedResponse, RecordItem, RecordResponse, RecordValueRequest,
+    UpdateRecordRequest,
 };
 use clap::Subcommand;
 
@@ -8,7 +9,7 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ItemOrPage, OutputFormat, RecordRow, parse_response, print_response, print_table,
+            OutputFormat, RecordRow, parse_response, print_response, print_table,
             render_change_preview,
         },
     },
@@ -29,9 +30,9 @@ pub(crate) enum RecordCommand {
         /// Record type (A, AAAA, CNAME, MX, etc.)
         #[arg(long = "type", alias = "record-type")]
         record_type: String,
-        /// Record value
-        #[arg(long)]
-        value: String,
+        /// Record value; repeat it for the segments of a TXT record
+        #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append, required = true)]
+        value: Vec<String>,
         /// Zone name
         #[arg(short, long, value_name = "ZONE_NAME")]
         zone: String,
@@ -151,9 +152,9 @@ YAML example:
         /// Record type (A, AAAA, CNAME, MX, etc.)
         #[arg(long = "type", alias = "record-type")]
         record_type: Option<String>,
-        /// Record value
-        #[arg(long)]
-        value: Option<String>,
+        /// Record value; repeat it for the segments of a TXT record
+        #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append)]
+        value: Vec<String>,
         /// TTL (records sharing a name and type share one TTL)
         #[arg(long)]
         ttl: Option<i32>,
@@ -194,7 +195,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     CreateRecordRequest {
                         name,
                         record_type,
-                        value: RecordValueRequest::String(value),
+                        value: to_record_value_request(value),
                         zone_name: zone,
                         ttl,
                         priority,
@@ -203,7 +204,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?
                 .data;
 
-            print_records(&data, output)?;
+            print_response(&data, output, |response: &RecordResponse| {
+                vec![RecordRow::from(&response.record)]
+            })?;
         }
         RecordCommand::List {
             zone,
@@ -257,7 +260,13 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?
                 .data;
 
-            print_records(&data, output)?;
+            print_response(
+                &data,
+                output,
+                |page: &PaginatedResponse<GetRecordResponse>| {
+                    page.items.iter().map(RecordRow::from).collect()
+                },
+            )?;
         }
         RecordCommand::BulkCreate {
             file,
@@ -310,7 +319,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?
                 .data;
 
-            print_records(&data, output)?;
+            print_response(&data, output, |response: &RecordResponse| {
+                vec![RecordRow::from(&response.record)]
+            })?;
         }
         RecordCommand::Update {
             id,
@@ -329,7 +340,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                         request: UpdateRecordRequest {
                             name,
                             record_type,
-                            value: value.map(RecordValueRequest::String),
+                            value: (!value.is_empty()).then(|| to_record_value_request(value)),
                             ttl,
                             priority,
                         },
@@ -338,7 +349,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?
                 .data;
 
-            print_records(&data, output)?;
+            print_response(&data, output, |response: &RecordResponse| {
+                vec![RecordRow::from(&response.record)]
+            })?;
         }
         RecordCommand::Delete { id } => {
             let response = client
@@ -351,8 +364,12 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
     Ok(())
 }
 
-fn print_records(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
-    print_response(data, output, |records: &ItemOrPage<GetRecordResponse>| {
-        records.items().iter().map(RecordRow::from).collect()
-    })
+/// One `--value` is the record's value; several are the segments of a TXT
+/// record.
+fn to_record_value_request(mut values: Vec<String>) -> RecordValueRequest {
+    if values.len() == 1 {
+        RecordValueRequest::String(values.remove(0))
+    } else {
+        RecordValueRequest::Segments(values)
+    }
 }

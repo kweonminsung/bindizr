@@ -1,7 +1,7 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
-    GetTokenResponse,
+    CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, TokenGrantListResponse,
+    TokenGrantResponse, TokenListResponse,
 };
 use clap::Subcommand;
 
@@ -129,8 +129,8 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
 
             log_debug!("Token list result: {:?}", res);
 
-            print_response(&res.data, output, |tokens: &Vec<GetTokenResponse>| {
-                tokens.iter().map(TokenRow::from).collect()
+            print_response(&res.data, output, |tokens: &TokenListResponse| {
+                tokens.tokens.iter().map(TokenRow::from).collect()
             })?;
         }
         TokenCommand::Delete { name } => {
@@ -162,8 +162,8 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                     },
                 )
                 .await?;
-            print_response(&res.data, output, |grant: &GetTokenGrantResponse| {
-                vec![TokenGrantRow::from(grant)]
+            print_response(&res.data, output, |response: &TokenGrantResponse| {
+                vec![TokenGrantRow::from(&response.token_grant)]
             })?;
         }
         TokenCommand::Grants { name, output } => {
@@ -173,8 +173,12 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                     TokenNameParams { name },
                 )
                 .await?;
-            print_response(&res.data, output, |grants: &Vec<GetTokenGrantResponse>| {
-                grants.iter().map(TokenGrantRow::from).collect()
+            print_response(&res.data, output, |grants: &TokenGrantListResponse| {
+                grants
+                    .token_grants
+                    .iter()
+                    .map(TokenGrantRow::from)
+                    .collect()
             })?;
         }
         TokenCommand::Revoke { name, id } => {

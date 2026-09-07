@@ -113,13 +113,13 @@ impl GetDnssecPolicyResponse {
 }
 
 /// A DNSSEC policy wrapped in a response envelope.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecPolicyResponse {
     pub dnssec_policy: GetDnssecPolicyResponse,
 }
 
 /// Every DNSSEC policy.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecPolicyListResponse {
     pub dnssec_policies: Vec<GetDnssecPolicyResponse>,
 }

@@ -2,7 +2,10 @@ use bindizr_service::{
     authorization::Caller,
     dnssec_policy::DnssecPolicyService,
     error::ServiceError,
-    types::{CreateDnssecPolicyRequest, GetDnssecPolicyResponse},
+    types::{
+        CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,
+        GetDnssecPolicyResponse,
+    },
 };
 
 use crate::socket::{
@@ -20,7 +23,9 @@ pub(crate) async fn create_dnssec_policy(
 
     Ok(DaemonResponse {
         message: "DNSSEC policy created successfully".to_string(),
-        data: to_response_data(GetDnssecPolicyResponse::from_policy(&policy))?,
+        data: to_response_data(DnssecPolicyResponse {
+            dnssec_policy: GetDnssecPolicyResponse::from_policy(&policy),
+        })?,
     })
 }
 
@@ -34,7 +39,9 @@ pub(crate) async fn list_dnssec_policies() -> Result<DaemonResponse, ServiceErro
 
     Ok(DaemonResponse {
         message: "DNSSEC policies retrieved successfully".to_string(),
-        data: to_response_data(policies)?,
+        data: to_response_data(DnssecPolicyListResponse {
+            dnssec_policies: policies,
+        })?,
     })
 }
 
@@ -48,7 +55,9 @@ pub(crate) async fn get_dnssec_policy(
 
     Ok(DaemonResponse {
         message: "DNSSEC policy retrieved successfully".to_string(),
-        data: to_response_data(GetDnssecPolicyResponse::from_policy(&policy))?,
+        data: to_response_data(DnssecPolicyResponse {
+            dnssec_policy: GetDnssecPolicyResponse::from_policy(&policy),
+        })?,
     })
 }
 
@@ -62,7 +71,9 @@ pub(crate) async fn update_dnssec_policy(
 
     Ok(DaemonResponse {
         message: "DNSSEC policy updated successfully".to_string(),
-        data: to_response_data(GetDnssecPolicyResponse::from_policy(&policy))?,
+        data: to_response_data(DnssecPolicyResponse {
+            dnssec_policy: GetDnssecPolicyResponse::from_policy(&policy),
+        })?,
     })
 }
 

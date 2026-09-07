@@ -210,7 +210,7 @@ impl GetRecordResponse {
 }
 
 /// A single record wrapped in a response envelope.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordResponse {
     pub record: GetRecordResponse,
 }

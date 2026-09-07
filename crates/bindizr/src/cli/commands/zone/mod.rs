@@ -4,9 +4,10 @@
 mod version;
 
 use bindizr_service::types::{
-    CreateZoneRequest, ExportZoneFileResponse, GetTokenGrantResponse, GetTsigGrantResponse,
-    GetZoneResponse, GetZonesFilter, ImportMode as ServiceImportMode, ImportZoneRequest,
-    ImportZoneResponse, UpdateZoneRequest, ZoneStatusResponse,
+    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
+    ImportMode as ServiceImportMode, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
+    TokenGrantListResponse, TsigGrantListResponse, UpdateZoneRequest, ZoneDetailResponse,
+    ZoneResponse, ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -15,9 +16,8 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ImportSummaryRow, ItemOrPage, OutputFormat, SecondaryStatusRow, TokenGrantRow,
-            TsigGrantRow, ZoneRow, parse_response, print_response, print_table,
-            render_change_preview,
+            ImportSummaryRow, OutputFormat, SecondaryStatusRow, TokenGrantRow, TsigGrantRow,
+            ZoneRow, parse_response, print_response, print_table, render_change_preview,
         },
     },
     socket::{
@@ -49,6 +49,18 @@ pub(crate) enum ZoneCommand {
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<i32>,
+        /// SOA refresh interval (seconds)
+        #[arg(long)]
+        refresh: Option<i32>,
+        /// SOA retry interval (seconds)
+        #[arg(long)]
+        retry: Option<i32>,
+        /// SOA expire interval (seconds)
+        #[arg(long)]
+        expire: Option<i32>,
+        /// SOA minimum TTL (seconds)
+        #[arg(long)]
+        minimum_ttl: Option<i32>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -276,6 +288,10 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             rname,
             default_ttl,
             serial,
+            refresh,
+            retry,
+            expire,
+            minimum_ttl,
             output,
         } => {
             let data = client
@@ -287,16 +303,18 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         rname,
                         default_ttl,
                         serial,
-                        refresh: None,
-                        retry: None,
-                        expire: None,
-                        minimum_ttl: None,
+                        refresh,
+                        retry,
+                        expire,
+                        minimum_ttl,
                     },
                 )
                 .await?
                 .data;
 
-            print_zones(&data, output)?;
+            print_response(&data, output, |response: &ZoneResponse| {
+                vec![ZoneRow::from(&response.zone)]
+            })?;
         }
         ZoneCommand::List {
             name,
@@ -344,7 +362,13 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .await?
                 .data;
 
-            print_zones(&data, output)?;
+            print_response(
+                &data,
+                output,
+                |page: &PaginatedResponse<GetZoneResponse>| {
+                    page.items.iter().map(ZoneRow::from).collect()
+                },
+            )?;
         }
         ZoneCommand::Get { name, output } => {
             let data = client
@@ -352,7 +376,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .await?
                 .data;
 
-            print_zones(&data, output)?;
+            print_response(&data, output, |detail: &ZoneDetailResponse| {
+                vec![ZoneRow::from(&detail.zone)]
+            })?;
         }
         ZoneCommand::Update {
             name,
@@ -388,7 +414,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 .await?
                 .data;
 
-            print_zones(&data, output)?;
+            print_response(&data, output, |response: &ZoneResponse| {
+                vec![ZoneRow::from(&response.zone)]
+            })?;
         }
         ZoneCommand::Delete { name } => {
             let response = client
@@ -471,8 +499,12 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     ZoneNameParams { name },
                 )
                 .await?;
-            print_response(&res.data, output, |grants: &Vec<GetTokenGrantResponse>| {
-                grants.iter().map(TokenGrantRow::from).collect()
+            print_response(&res.data, output, |grants: &TokenGrantListResponse| {
+                grants
+                    .token_grants
+                    .iter()
+                    .map(TokenGrantRow::from)
+                    .collect()
             })?;
         }
         ZoneCommand::TsigGrants { name, output } => {
@@ -482,8 +514,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     ZoneNameParams { name },
                 )
                 .await?;
-            print_response(&res.data, output, |grants: &Vec<GetTsigGrantResponse>| {
-                grants.iter().map(TsigGrantRow::from).collect()
+            print_response(&res.data, output, |grants: &TsigGrantListResponse| {
+                grants.tsig_grants.iter().map(TsigGrantRow::from).collect()
             })?;
         }
         ZoneCommand::Notify(args) => {
@@ -501,10 +533,4 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
     }
 
     Ok(())
-}
-
-fn print_zones(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
-    print_response(data, output, |zones: &ItemOrPage<GetZoneResponse>| {
-        zones.items().iter().map(ZoneRow::from).collect()
-    })
 }

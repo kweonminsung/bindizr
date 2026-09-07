@@ -70,7 +70,7 @@ pub struct CreatedTokenResponse {
 }
 
 /// List of API tokens (secrets omitted).
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct TokenListResponse {
     pub tokens: Vec<GetTokenResponse>,
 }

@@ -155,6 +155,7 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
         ])
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    let updated = &updated["record"];
     assert_eq!(updated["record_type"], "A");
     assert_eq!(updated["value"], "192.0.2.1");
     assert!(
@@ -248,6 +249,7 @@ async fn record_update_changes_only_passed_fields_via_cli() {
         ])
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    let updated = &updated["record"];
     assert_eq!(updated["value"], "127.0.0.1");
     assert_eq!(updated["ttl"], 300);
     assert_eq!(updated["record_type"], "A");
@@ -404,4 +406,40 @@ async fn record_bulk_insert_from_stdin() {
     assert!(names.contains(&format!("www.{zone_name}.")));
     assert!(names.contains(&format!("mail.{zone_name}.")));
     assert!(names.contains(&format!("ftp.{zone_name}.")));
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_create_txt_segments_from_repeated_value() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("cli-txt.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    let created = app
+        .run_cli_success(&[
+            "record", "create", "--zone", &zone_name, "--name", "spf", "--type", "TXT", "--value",
+            "v=spf1", "--value", "~all", "--output", "json",
+        ])
+        .await;
+    let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
+    assert_eq!(
+        created["record"]["value"],
+        serde_json::json!(["v=spf1", "~all"])
+    );
+    let record_id = created["record"]["id"].as_i64().unwrap().to_string();
+
+    // A single --value is the plain value again.
+    let updated = app
+        .run_cli_success(&[
+            "record",
+            "update",
+            &record_id,
+            "--value",
+            "v=spf1 ~all",
+            "--output",
+            "json",
+        ])
+        .await;
+    let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    assert_eq!(updated["record"]["value"], "v=spf1 ~all");
 }

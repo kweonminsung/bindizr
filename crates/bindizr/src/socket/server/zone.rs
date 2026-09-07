@@ -2,7 +2,10 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     record::RecordService,
-    types::{CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter},
+    types::{
+        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
+        ZoneDetailResponse, ZoneResponse,
+    },
     zone::ZoneService,
 };
 
@@ -22,7 +25,10 @@ pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse,
     let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
-        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+        data: to_response_data(ZoneDetailResponse {
+            zone: GetZoneResponse::from_zone(&zone),
+            records: vec![],
+        })?,
     })
 }
 
@@ -48,7 +54,9 @@ pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
     let zone = ZoneService::create(&Caller::Global, &request).await?;
     Ok(DaemonResponse {
         message: "Zone created successfully".to_string(),
-        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+        data: to_response_data(ZoneResponse {
+            zone: GetZoneResponse::from_zone(&zone),
+        })?,
     })
 }
 
@@ -59,7 +67,9 @@ pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonRespon
     let zone = ZoneService::update(&Caller::Global, &params.zone_name, &params.request).await?;
     Ok(DaemonResponse {
         message: "Zone updated successfully".to_string(),
-        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+        data: to_response_data(ZoneResponse {
+            zone: GetZoneResponse::from_zone(&zone),
+        })?,
     })
 }
 

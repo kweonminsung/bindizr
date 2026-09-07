@@ -1,7 +1,7 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateTsigGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
-    TsigKeyResponse,
+    CreateTsigGrantRequest, CreateTsigKeyRequest, TsigGrantListResponse, TsigGrantResponse,
+    TsigKeyListResponse, TsigKeyResponse,
 };
 use clap::Subcommand;
 
@@ -144,8 +144,8 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 
             log_debug!("TSIG key list result: {:?}", res);
 
-            print_response(&res.data, output, |keys: &Vec<GetTsigKeyResponse>| {
-                keys.iter().map(TsigKeyRow::from).collect()
+            print_response(&res.data, output, |keys: &TsigKeyListResponse| {
+                keys.tsig_keys.iter().map(TsigKeyRow::from).collect()
             })?;
         }
         TsigKeyCommand::Get { name, output } => {
@@ -188,8 +188,8 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                     },
                 )
                 .await?;
-            print_response(&res.data, output, |grant: &GetTsigGrantResponse| {
-                vec![TsigGrantRow::from(grant)]
+            print_response(&res.data, output, |response: &TsigGrantResponse| {
+                vec![TsigGrantRow::from(&response.tsig_grant)]
             })?;
         }
         TsigKeyCommand::Grants { name, output } => {
@@ -199,8 +199,8 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                     TsigKeyNameParams { name },
                 )
                 .await?;
-            print_response(&res.data, output, |grants: &Vec<GetTsigGrantResponse>| {
-                grants.iter().map(TsigGrantRow::from).collect()
+            print_response(&res.data, output, |grants: &TsigGrantListResponse| {
+                grants.tsig_grants.iter().map(TsigGrantRow::from).collect()
             })?;
         }
         TsigKeyCommand::Revoke { name, id } => {

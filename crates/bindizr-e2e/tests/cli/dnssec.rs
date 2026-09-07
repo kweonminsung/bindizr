@@ -7,7 +7,7 @@ async fn signing_key_tag(app: &TestApp, zone_name: &str) -> u64 {
         .await;
     let status: serde_json::Value =
         serde_json::from_str(&status).expect("CLI did not return valid JSON");
-    status["keys"][0]["key_tag"]
+    status["dnssec"]["keys"][0]["key_tag"]
         .as_u64()
         .expect("status lists the signing key")
 }
@@ -374,7 +374,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
     );
 
     let cleared = app
-        .run_cli_success(&["dnssec", "set", &zone_name, "--clear-parent-ns-addrs"])
+        .run_cli_success(&["dnssec", "set", &zone_name, "--parent-ns-addrs", ""])
         .await;
     assert!(
         cleared.contains("Parent nameservers: discovered through the system resolver"),
