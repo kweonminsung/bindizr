@@ -70,7 +70,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     assert!(signed.contains("Zone signed successfully"));
 
     let disabled = app
-        .run_cli_success(&["dnssec", "disable", &zone_name, "--force"])
+        .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
         .await;
     assert!(disabled.contains("DNSSEC disabled successfully"));
 
@@ -111,11 +111,35 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     assert!(status.contains("published"), "{status}");
     assert!(status.contains("active"), "{status}");
 
-    // The API test covers the far side of the hold-down wait.
+    // The API test covers the far side of the hold-down wait;
+    // `--skip-ds-check` skips only the parent check, never the hold-down.
     let ds_seen = app
         .run_cli(&["dnssec", "rollover", "ds-seen", &zone_name])
         .await;
     assert!(!ds_seen.status.success());
+    let unchecked = [
+        "dnssec",
+        "rollover",
+        "ds-seen",
+        &zone_name,
+        "--skip-ds-check",
+    ];
+    let ds_seen = app.run_cli(&unchecked).await;
+    assert_cli_failure_contains(&unchecked, &ds_seen, "must stay published");
+
+    // No parent stands in, so both skips promote at once.
+    let promoted = app
+        .run_cli_success(&[
+            "dnssec",
+            "rollover",
+            "ds-seen",
+            &zone_name,
+            "--skip-ds-check",
+            "--skip-holddown",
+        ])
+        .await;
+    assert!(promoted.contains("retired"), "{promoted}");
+    assert!(!promoted.contains("published"), "{promoted}");
 }
 
 #[tokio::test]
@@ -161,7 +185,7 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     let private_file = private_file.to_str().expect("utf-8 temp dir").to_string();
 
     // Disable drops the keys; the import must restore the same key.
-    app.run_cli_success(&["dnssec", "disable", &zone_name, "--force"])
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
         .await;
 
     // Under a split-key policy the lone SEP key is a KSK with no ZSK, so the
@@ -264,7 +288,7 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     }
     pairs.sort(); // ksk before zsk
 
-    app.run_cli_success(&["dnssec", "disable", &zone_name, "--force"])
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
         .await;
 
     // Both halves arrive in one call: a KSK alone could not sign, so the
@@ -345,6 +369,10 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         )),
         "{checked}"
     );
+    assert!(
+        checked.contains(&format!("  {key_tag} (csk, active): at parent")),
+        "{checked}"
+    );
 
     let cleared = app
         .run_cli_success(&["dnssec", "set", "parent-ns-addrs", &zone_name, "--clear"])
@@ -375,9 +403,9 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_dnssec_disable_force_skips_the_parent_check_via_cli() {
+async fn zone_dnssec_disable_skip_ds_check_via_cli() {
     let app = TestApp::start_local().await;
-    let zone_name = app.zone_name("dnssec-force-cli.example");
+    let zone_name = app.zone_name("dnssec-skip-cli.example");
     app.create_zone_cli(&zone_name, "3600").await;
     // Nothing listens on the loopback discard port, so the parent never answers.
     app.run_cli_success(&[
@@ -394,7 +422,7 @@ async fn zone_dnssec_disable_force_skips_the_parent_check_via_cli() {
     assert_cli_failure_contains(&disable_args, &refused, "could not verify");
 
     let disabled = app
-        .run_cli_success(&["dnssec", "disable", &zone_name, "--force"])
+        .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
         .await;
     assert!(disabled.contains("DNSSEC disabled successfully"));
 }

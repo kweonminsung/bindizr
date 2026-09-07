@@ -3,9 +3,9 @@ use bindizr_service::{authorization::Caller, dnssec::DnssecService, error::Servi
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DisableZoneDnssecParams, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
-        RolloverZoneDnssecParams, SetZoneDnssecParentNsAddrsParams, SetZoneDnssecPolicyParams,
-        ZoneNameParams,
+        DaemonResponse, DisableZoneDnssecParams, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
+        ImportZoneDnssecKeyParams, RolloverZoneDnssecParams, SetZoneDnssecParentNsAddrsParams,
+        SetZoneDnssecPolicyParams, ZoneNameParams,
     },
 };
 
@@ -36,7 +36,7 @@ pub(crate) async fn disable_dnssec(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DisableZoneDnssecParams = parse_params(data)?;
 
-    DnssecService::disable(&Caller::Global, &params.zone_name, params.force).await?;
+    DnssecService::disable(&Caller::Global, &params.zone_name, params.skip_ds_check).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC disabled successfully".to_string(),
@@ -95,9 +95,15 @@ pub(crate) async fn rollover_start(
 pub(crate) async fn rollover_ds_seen(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: DsSeenZoneDnssecParams = parse_params(data)?;
 
-    let status = DnssecService::rollover_ds_seen(&Caller::Global, &params.name).await?;
+    let status = DnssecService::rollover_ds_seen(
+        &Caller::Global,
+        &params.zone_name,
+        params.skip_ds_check,
+        params.skip_holddown,
+    )
+    .await?;
 
     Ok(DaemonResponse {
         message: "Key rollover advanced successfully".to_string(),

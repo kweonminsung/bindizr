@@ -133,16 +133,19 @@ to learn it. Then:
   hands-off. CSKs are never auto-rolled — their rollover needs the parent DS
   swap below.
 - **CSK / KSK** — publish the new DS at the parent (or let it consume the
-  CDS), wait out the parent's DS TTL, then confirm; an early confirmation is
-  refused:
+  CDS), wait out the parent's DS TTL, then confirm:
 
   ```sh
   bindizr dnssec rollover ds-seen example.com
   ```
 
-  bindizr takes the confirmation at its word: check with `dig DS` that the
-  parent serves the new DS before giving it, since promoting a key whose DS
-  is not yet published makes the zone bogus for validating resolvers.
+  The confirmation is refused before the hold-down passes and while the
+  parent's nameservers do not serve the new key's DS; `--skip-ds-check`
+  takes your word on the DS instead. The TTL wait itself is yours.
+  `bindizr dnssec check-ds` shows which keys' DS the parent serves and when
+  the hold-down ends. For a compromised key, `--skip-holddown` promotes
+  before the hold-down ends; resolvers still caching the previous keys fail
+  validation until their copy expires.
 
 A retired key stays published for the policy's
 `rollover_retire_holddown_secs`, then the scheduler removes it. `status`
@@ -210,8 +213,8 @@ fails to answer (`DNSSEC_DS_UNVERIFIED`). Go insecure in order:
    the parent serves now and its TTL; the wait itself is yours.
 3. `bindizr dnssec disable example.com`
 
-`--force` (`DELETE /zones/{name}/dnssec?force=true`) skips the check, for
-a host that cannot reach the parent at all.
+`--skip-ds-check` (`DELETE /zones/{name}/dnssec?skip_ds_check=true`) skips
+the check, for a host that cannot reach the parent at all.
 
 The parent is discovered by default: bindizr walks up the zone's name
 asking the system resolver (`/etc/resolv.conf`) for NS records, then

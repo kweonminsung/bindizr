@@ -10,9 +10,12 @@ use crate::{
     database::repository::LockLevel,
     dns_client::ds::probe_parent_ds,
     error::ServiceError,
-    model::zone::Zone,
+    model::{
+        dnssec_key::{DnssecKey, DnssecKeyState},
+        zone::Zone,
+    },
     repository::RepositoryService,
-    types::{DnssecDelegationInfo, GetDnssecStatusResponse},
+    types::{DnssecDelegationInfo, DnssecDelegationKeyInfo, GetDnssecStatusResponse},
     zone::ZoneService,
 };
 
@@ -26,14 +29,14 @@ impl DnssecService {
         caller.require_global("manage DNSSEC signing")?;
 
         // Read unlocked: the probe's network wait must not hold the zone row.
-        let zone = {
+        let (zone, keys) = {
             let mut tx = RepositoryService::begin_read_tx("failed to check the parent DS").await?;
             let result = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::None)
                 .await
-                .map(|(zone, _, _)| zone);
+                .map(|(zone, _, keys)| (zone, keys));
             RepositoryService::finish_tx(tx, result, "failed to check the parent DS").await?
         };
-        let delegation = Self::probe_delegation(&zone).await?;
+        let delegation = Self::probe_delegation(&zone, &keys).await?;
 
         let mut tx = RepositoryService::begin_read_tx("failed to check the parent DS").await?;
         let result = async {
@@ -94,14 +97,20 @@ impl DnssecService {
         Ok(response)
     }
 
-    /// The parent's answer about the zone's DS, or the unverified error a
-    /// disable refusal reports.
+    /// The parent's answer about the zone's DS, matched against the zone's
+    /// SEP keys, or the unverified error a refusal reports.
     pub(crate) async fn probe_delegation(
         zone: &Zone,
+        keys: &[DnssecKey],
     ) -> Result<DnssecDelegationInfo, ServiceError> {
         let parent = probe_parent_ds(zone)
             .await
             .map_err(|e| ServiceError::dnssec_ds_unverified(zone.name.as_str(), e))?;
+        let ds_key_tags: Vec<u16> = parent
+            .rrset
+            .as_ref()
+            .map(|rrset| rrset.key_tags.clone())
+            .unwrap_or_default();
         Ok(DnssecDelegationInfo {
             parent_servers: parent.servers,
             discovered: parent.discovered,
@@ -111,11 +120,19 @@ impl DnssecService {
                 "hidden"
             }
             .to_string(),
-            ds_key_tags: parent
-                .rrset
-                .as_ref()
-                .map(|rrset| rrset.key_tags.clone())
-                .unwrap_or_default(),
+            keys: keys
+                .iter()
+                .filter(|key| key.role.is_sep())
+                .map(|key| DnssecDelegationKeyInfo {
+                    key_tag: key.key_tag as u16,
+                    role: key.role.to_string(),
+                    state: key.state.to_string(),
+                    ds_published: ds_key_tags.contains(&(key.key_tag as u16)),
+                    eligible_at: (key.state == DnssecKeyState::Published)
+                        .then_some(key.eligible_at),
+                })
+                .collect(),
+            ds_key_tags,
             ds_ttl: parent.rrset.as_ref().map(|rrset| rrset.ttl),
             checked_at: Utc::now(),
         })

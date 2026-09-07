@@ -193,25 +193,25 @@ impl DnssecService {
 
     /// Disable DNSSEC for a zone. Refused while the parent still serves the
     /// zone's DS or cannot be asked, since signatures dropped under a DS make
-    /// the zone bogus; `force` skips that check.
+    /// the zone bogus; `skip_ds_check` skips that check.
     pub async fn disable(
         caller: &Caller,
         zone_name: &str,
-        force: bool,
+        skip_ds_check: bool,
     ) -> Result<(), ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
-        if !force {
+        if !skip_ds_check {
             // Unlocked pre-read to learn which parent to ask; the network wait
             // must not hold the zone row, which the deletion re-reads locked.
-            let zone = {
+            let (zone, keys) = {
                 let mut tx = RepositoryService::begin_read_tx("failed to disable DNSSEC").await?;
                 let result = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::None)
                     .await
-                    .map(|(zone, _, _)| zone);
+                    .map(|(zone, _, keys)| (zone, keys));
                 RepositoryService::finish_tx(tx, result, "failed to disable DNSSEC").await?
             };
-            let delegation = Self::probe_delegation(&zone).await?;
+            let delegation = Self::probe_delegation(&zone, &keys).await?;
             if !delegation.ds_key_tags.is_empty() {
                 return Err(ServiceError::dnssec_ds_published(
                     zone.name.as_str(),
@@ -260,8 +260,8 @@ impl DnssecService {
         let zone_name =
             RepositoryService::finish_tx(tx, result, "failed to disable DNSSEC").await?;
 
-        if force {
-            crate::log_warn!("event=dnssec_disable_forced zone={}", zone_name);
+        if skip_ds_check {
+            crate::log_warn!("event=dnssec_disable_ds_check_skipped zone={}", zone_name);
         }
         crate::log_info!("event=dnssec_disable zone={}", zone_name);
         notify_zone(&zone_name).await;

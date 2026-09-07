@@ -27,6 +27,7 @@ pub enum ErrorCode {
     DnssecRolloverInProgress,
     DnssecNoRolloverInProgress,
     DnssecDsPublished,
+    DnssecDsNotPublished,
     DnssecDsUnverified,
     DnssecPolicyNotFound,
     DnssecPolicyConflict,
@@ -64,6 +65,7 @@ impl ErrorCode {
             ErrorCode::DnssecRolloverInProgress => "DNSSEC_ROLLOVER_IN_PROGRESS",
             ErrorCode::DnssecNoRolloverInProgress => "DNSSEC_NO_ROLLOVER_IN_PROGRESS",
             ErrorCode::DnssecDsPublished => "DNSSEC_DS_PUBLISHED",
+            ErrorCode::DnssecDsNotPublished => "DNSSEC_DS_NOT_PUBLISHED",
             ErrorCode::DnssecDsUnverified => "DNSSEC_DS_UNVERIFIED",
             ErrorCode::DnssecPolicyNotFound => "DNSSEC_POLICY_NOT_FOUND",
             ErrorCode::DnssecPolicyConflict => "DNSSEC_POLICY_CONFLICT",
@@ -103,6 +105,7 @@ impl ErrorCode {
             "DNSSEC_ROLLOVER_IN_PROGRESS" => ErrorCode::DnssecRolloverInProgress,
             "DNSSEC_NO_ROLLOVER_IN_PROGRESS" => ErrorCode::DnssecNoRolloverInProgress,
             "DNSSEC_DS_PUBLISHED" => ErrorCode::DnssecDsPublished,
+            "DNSSEC_DS_NOT_PUBLISHED" => ErrorCode::DnssecDsNotPublished,
             "DNSSEC_DS_UNVERIFIED" => ErrorCode::DnssecDsUnverified,
             "DNSSEC_POLICY_NOT_FOUND" => ErrorCode::DnssecPolicyNotFound,
             "DNSSEC_POLICY_CONFLICT" => ErrorCode::DnssecPolicyConflict,
@@ -144,6 +147,7 @@ impl ErrorCode {
             | ErrorCode::DnssecRolloverInProgress
             | ErrorCode::DnssecNoRolloverInProgress
             | ErrorCode::DnssecDsPublished
+            | ErrorCode::DnssecDsNotPublished
             | ErrorCode::DnssecDsUnverified
             | ErrorCode::DnssecPolicyConflict
             | ErrorCode::DnssecPolicyInUse => 409,
@@ -333,8 +337,7 @@ impl ServiceError {
             ErrorCode::DnssecDsPublished,
             format!(
                 "the parent zone still serves DS records for zone '{}' (key tag{} {}); remove \
-                 them and wait out their TTL before disabling DNSSEC, or force the disable to \
-                 skip this check",
+                 them and wait out their TTL before disabling DNSSEC, or skip the DS check",
                 zone_name.into(),
                 if key_tags.len() == 1 { "" } else { "s" },
                 key_tags
@@ -342,6 +345,23 @@ impl ServiceError {
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(", ")
+            ),
+        )
+    }
+
+    pub(crate) fn dnssec_ds_not_published(zone_name: impl Into<String>, key_tags: &[u16]) -> Self {
+        Self::new(
+            ErrorCode::DnssecDsNotPublished,
+            format!(
+                "the parent zone serves no DS yet for key tag{} {} of zone '{}'; register it \
+                 and wait out the DS TTL before confirming, or skip the DS check",
+                if key_tags.len() == 1 { "" } else { "s" },
+                key_tags
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                zone_name.into()
             ),
         )
     }
@@ -354,7 +374,7 @@ impl ServiceError {
             ErrorCode::DnssecDsUnverified,
             format!(
                 "could not verify that the parent zone serves no DS for zone '{}': {}; set the \
-                 zone's parent nameserver addresses, or force the disable to skip this check",
+                 zone's parent nameserver addresses, or skip the DS check",
                 zone_name.into(),
                 reason.into()
             ),

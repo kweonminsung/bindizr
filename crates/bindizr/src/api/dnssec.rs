@@ -126,7 +126,7 @@ pub(crate) async fn enable_dnssec(
 
 #[derive(Deserialize)]
 pub(crate) struct DisableDnssecQuery {
-    pub(crate) force: Option<bool>,
+    pub(crate) skip_ds_check: Option<bool>,
 }
 
 #[utoipa::path(
@@ -134,10 +134,10 @@ pub(crate) struct DisableDnssecQuery {
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Disable DNSSEC for a zone",
-        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the parent's nameservers (`parent_ns_addrs`, or the discovered ones) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`) or fails to answer (`DNSSEC_DS_UNVERIFIED`). `force=true` skips the check; waiting out the DS TTL after its removal stays the caller's.",
+        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the parent's nameservers (`parent_ns_addrs`, or the discovered ones) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`) or fails to answer (`DNSSEC_DS_UNVERIFIED`). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller's.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("force" = Option<bool>, Query, description = "Skip the parent DS check.")
+            ("skip_ds_check" = Option<bool>, Query, description = "Skip the parent DS check.")
         ),
         responses(
             (status = 200, description = "DNSSEC disabled successfully", body = MessageResponse),
@@ -154,7 +154,7 @@ pub(crate) async fn disable_dnssec(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<DisableDnssecQuery>,
 ) -> Result<Response, ApiError> {
-    DnssecService::disable(&caller, &params.name, query.force.unwrap_or(false)).await?;
+    DnssecService::disable(&caller, &params.name, query.skip_ds_check.unwrap_or(false)).await?;
     let response = MessageResponse {
         message: "DNSSEC disabled successfully".to_string(),
     };
@@ -252,14 +252,22 @@ pub(crate) async fn start_dnssec_rollover(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+#[derive(Deserialize)]
+pub(crate) struct DsSeenQuery {
+    pub(crate) skip_ds_check: Option<bool>,
+    pub(crate) skip_holddown: Option<bool>,
+}
+
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/rollover/ds-seen",
         tag = "DNSSEC",
         summary = "Confirm the new DS is at the parent (ds-seen)",
-        description = "The operator's confirmation that the new DS record has been seen at the parent zone and its TTL has passed (the `ds-seen` step, as in OpenDNSSEC/BIND); bindizr does not check the parent itself. Promotes the pre-published key to active and retires the key it replaces; retired keys are removed automatically once caches drain. ZSK rollovers involve no DS and are promoted automatically after a hold-down.",
+        description = "Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and the parent zone's nameservers (`parent_ns_addrs`, or the discovered ones) serve the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone.")
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("skip_ds_check" = Option<bool>, Query, description = "Skip the parent DS check."),
+            ("skip_holddown" = Option<bool>, Query, description = "Promote before the publish hold-down has passed.")
         ),
         responses(
             (status = 200, description = "Rollover advanced, new key promoted", body = DnssecStatusResponse),
@@ -267,7 +275,7 @@ pub(crate) async fn start_dnssec_rollover(
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
-            (status = 409, description = "DNSSEC is not enabled for the zone, or no rollover is in progress", body = ErrorResponse),
+            (status = 409, description = "DNSSEC is not enabled for the zone, no rollover is in progress, the parent does not serve the new DS yet, or the parent could not be asked", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -275,8 +283,15 @@ pub(crate) async fn start_dnssec_rollover(
 pub(crate) async fn ds_seen_dnssec_rollover(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
+    Query(query): Query<DsSeenQuery>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::rollover_ds_seen(&caller, &params.name).await?;
+    let status = DnssecService::rollover_ds_seen(
+        &caller,
+        &params.name,
+        query.skip_ds_check.unwrap_or(false),
+        query.skip_holddown.unwrap_or(false),
+    )
+    .await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

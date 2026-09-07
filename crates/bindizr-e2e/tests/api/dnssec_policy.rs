@@ -181,7 +181,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     let (status, _) = app
         .request(
             Method::DELETE,
-            &format!("/zones/{zone_name}/dnssec?force=true"),
+            &format!("/zones/{zone_name}/dnssec?skip_ds_check=true"),
             None,
         )
         .await;

@@ -19,9 +19,9 @@ use crate::{
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, DisableZoneDnssecParams, EnableZoneDnssecParams,
-            RolloverZoneDnssecParams, SetZoneDnssecParentNsAddrsParams, SetZoneDnssecPolicyParams,
-            ZoneNameParams,
+            DaemonCommandKind, DisableZoneDnssecParams, DsSeenZoneDnssecParams,
+            EnableZoneDnssecParams, RolloverZoneDnssecParams, SetZoneDnssecParentNsAddrsParams,
+            SetZoneDnssecPolicyParams, ZoneNameParams,
         },
     },
 };
@@ -68,7 +68,7 @@ pub(crate) enum DnssecCommand {
         name: String,
         /// Skip the parent DS check
         #[arg(long)]
-        force: bool,
+        skip_ds_check: bool,
     },
     /// Ask the parent zone whether it serves this zone's DS record: the
     /// check that gates `disable`
@@ -157,13 +157,20 @@ pub(crate) enum DnssecRolloverCommand {
         #[arg(long, value_name = "ksk|zsk")]
         role: Option<String>,
     },
-    /// Confirm the new DS has been seen at the parent (and its TTL has
-    /// passed): promotes the pre-published key and retires the one it
-    /// replaces. ZSK rollovers involve no DS and promote automatically
+    /// Confirm the new DS is at the parent: once its nameservers serve the
+    /// DS, promotes the pre-published key and retires the one it replaces.
+    /// ZSK rollovers involve no DS and promote automatically
     DsSeen {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
+        /// Take the DS on your word instead of asking the parent
+        #[arg(long)]
+        skip_ds_check: bool,
+        /// Promote before the hold-down ends; resolvers still caching the
+        /// previous keys fail until it expires (compromised key only)
+        #[arg(long)]
+        skip_holddown: bool,
     },
 }
 
@@ -236,13 +243,16 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             print_status(&response.data)?;
         }
         DnssecCommand::Keys { subcommand } => keys::handle_command(&client, subcommand).await?,
-        DnssecCommand::Disable { name, force } => {
+        DnssecCommand::Disable {
+            name,
+            skip_ds_check,
+        } => {
             let response = client
                 .send_command(
                     DaemonCommandKind::ZoneDnssecDisable,
                     DisableZoneDnssecParams {
                         zone_name: name,
-                        force,
+                        skip_ds_check,
                     },
                 )
                 .await?;
@@ -282,11 +292,19 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                     .await?;
                 print_status(&response.data)?;
             }
-            DnssecRolloverCommand::DsSeen { name } => {
+            DnssecRolloverCommand::DsSeen {
+                name,
+                skip_ds_check,
+                skip_holddown,
+            } => {
                 let response = client
                     .send_command(
                         DaemonCommandKind::ZoneDnssecRolloverDsSeen,
-                        ZoneNameParams { name },
+                        DsSeenZoneDnssecParams {
+                            zone_name: name,
+                            skip_ds_check,
+                            skip_holddown,
+                        },
                     )
                     .await?;
                 print_status(&response.data)?;
@@ -343,6 +361,26 @@ pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
                 servers,
                 delegation.ds_ttl.unwrap_or(0)
             );
+        }
+        for key in &delegation.keys {
+            let mut line = format!(
+                "  {} ({}, {}): {}",
+                key.key_tag,
+                key.role,
+                key.state,
+                if key.ds_published {
+                    "at parent"
+                } else {
+                    "not at parent"
+                }
+            );
+            if let Some(eligible_at) = key.eligible_at {
+                line.push_str(&format!(
+                    ", promotable from {}",
+                    eligible_at.format("%Y-%m-%d %H:%M:%S")
+                ));
+            }
+            println!("{}", line);
         }
     }
     if let Some(expires_at) = status.earliest_signature_expires_at {

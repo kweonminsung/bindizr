@@ -250,8 +250,14 @@ pub(crate) struct SetZoneDnssecPolicyParams {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DisableZoneDnssecParams {
     pub(crate) zone_name: String,
-    /// Skip the parent DS check.
-    pub(crate) force: bool,
+    pub(crate) skip_ds_check: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct DsSeenZoneDnssecParams {
+    pub(crate) zone_name: String,
+    pub(crate) skip_ds_check: bool,
+    pub(crate) skip_holddown: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

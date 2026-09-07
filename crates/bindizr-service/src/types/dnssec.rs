@@ -30,6 +30,25 @@ pub struct SetDnssecParentNsAddrsRequest {
     pub parent_ns_addrs: Option<String>,
 }
 
+/// One of the zone's SEP keys against the parent's DS records.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct DnssecDelegationKeyInfo {
+    #[schema(example = 34217)]
+    pub key_tag: u16,
+    /// `csk` or `ksk`.
+    #[schema(example = "csk")]
+    pub role: String,
+    /// `published`, `active`, or `retired`.
+    #[schema(example = "published")]
+    pub state: String,
+    /// Whether the parent serves a DS for this key.
+    #[schema(example = true)]
+    pub ds_published: bool,
+    /// When a `published` key's hold-down ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eligible_at: Option<DateTime<Utc>>,
+}
+
 /// What the parent zone's servers answered when asked for the zone's DS.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecDelegationInfo {
@@ -45,6 +64,8 @@ pub struct DnssecDelegationInfo {
     pub ds_state: String,
     /// Key tags of the DS records the parent serves.
     pub ds_key_tags: Vec<u16>,
+    /// The zone's SEP keys, each with whether the parent serves its DS.
+    pub keys: Vec<DnssecDelegationKeyInfo>,
     /// TTL of the parent's DS records: how long caches may keep serving
     /// them once removed.
     #[serde(default, skip_serializing_if = "Option::is_none")]

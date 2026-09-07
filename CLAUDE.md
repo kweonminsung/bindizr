@@ -456,7 +456,12 @@ the whole API surface):
 ```sh
 bindizr start -c <config> &   # config with api.openapi_enabled = true
 curl -s http://127.0.0.1:<api_port>/openapi.yaml > docs/openapi.yaml
+bindizr stop
 ```
+
+Stop it with `bindizr stop` and check that no `bindizr start` process is
+left before running the e2e suite: a leftover daemon holds the shared Unix
+socket and every test fails with "Bindizr is already running".
 
 Pages CI rebuilds the hosted API docs when `docs/openapi.yaml` changes on
 `main`.

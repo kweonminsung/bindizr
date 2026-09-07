@@ -204,7 +204,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     let (status, _) = app
         .request(
             Method::DELETE,
-            &format!("/zones/{zone_name}/dnssec?force=true"),
+            &format!("/zones/{zone_name}/dnssec?skip_ds_check=true"),
             None,
         )
         .await;
@@ -324,21 +324,22 @@ async fn dnssec_csk_rollover_lifecycle() {
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_ROLLOVER_IN_PROGRESS");
 
-    // A replacement resolvers cannot have learned yet may not sign.
-    let (status, _) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // A replacement resolvers cannot have learned yet may not sign;
+    // `skip_ds_check` skips only the parent check, never the hold-down.
+    for path in [
+        format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+        format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_ds_check=true"),
+    ] {
+        let (status, _) = app.request(Method::POST, &path, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}");
+    }
     tokio::time::sleep(std::time::Duration::from_secs(61)).await;
 
+    // No parent stands in here, so the DS is taken on the caller's word.
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_ds_check=true"),
             None,
         )
         .await;
@@ -369,6 +370,130 @@ async fn dnssec_csk_rollover_lifecycle() {
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_NO_ROLLOVER_IN_PROGRESS");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
+    let app = TestApp::start_local().await;
+    let parent = FakeParent::start();
+    let policy_name = format!("{}-fast", app.namespace());
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/dnssec-policies",
+            Some(json!({ "name": policy_name, "rollover_publish_holddown_secs": 0 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let zone_name = app.zone_name("ds-seen.example");
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "default_ttl": 60,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let zone_name = zone_name.as_str();
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "policy": policy_name, "parent_ns_addrs": parent.addr() })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let old_key_tag = body["dnssec"]["keys"][0]["key_tag"].as_u64().unwrap() as u16;
+    parent.set_ds(vec![(old_key_tag, 60)]);
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let new_key_tag = body["dnssec"]["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["state"] == "published")
+        .expect("rollover start pre-publishes the replacement key")["key_tag"]
+        .as_u64()
+        .unwrap() as u16;
+    // The parent still serves only the old DS: the new key must not sign yet.
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["code"], "DNSSEC_DS_NOT_PUBLISHED");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains(&new_key_tag.to_string()),
+        "{body}"
+    );
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/check-ds"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let delegation_keys = body["dnssec"]["delegation"]["keys"].as_array().unwrap();
+    let delegation_key = |tag: u16| {
+        delegation_keys
+            .iter()
+            .find(|key| key["key_tag"] == tag)
+            .unwrap_or_else(|| panic!("no key tag {tag} in {delegation_keys:?}"))
+    };
+    assert_eq!(delegation_key(old_key_tag)["ds_published"], true);
+    assert_eq!(delegation_key(new_key_tag)["ds_published"], false);
+    assert!(
+        delegation_key(new_key_tag)["eligible_at"].is_string(),
+        "{body}"
+    );
+
+    parent.set_ds(vec![(old_key_tag, 60), (new_key_tag, 60)]);
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let keys = body["dnssec"]["keys"].as_array().unwrap();
+    let key_by_tag = |tag: u16| {
+        keys.iter()
+            .find(|key| key["key_tag"] == tag)
+            .unwrap_or_else(|| panic!("no key tag {tag} in {keys:?}"))
+    };
+    assert_eq!(key_by_tag(new_key_tag)["state"], "active");
+    assert_eq!(key_by_tag(old_key_tag)["state"], "retired");
 }
 
 #[tokio::test]
@@ -643,6 +768,10 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     assert_eq!(delegation["ds_ttl"], 3600);
     assert_eq!(delegation["parent_servers"], json!([parent.addr()]));
     assert_eq!(delegation["discovered"], false);
+    assert_eq!(
+        delegation["keys"],
+        json!([{ "key_tag": key_tag, "role": "csk", "state": "active", "ds_published": true }])
+    );
 
     // A status read asks no one; only the check does.
     let (status, body) = app
@@ -663,6 +792,10 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     assert_eq!(body["dnssec"]["delegation"]["ds_state"], "hidden");
     assert_eq!(body["dnssec"]["delegation"]["ds_key_tags"], json!([]));
     assert!(body["dnssec"]["delegation"]["ds_ttl"].is_null(), "{body}");
+    assert_eq!(
+        body["dnssec"]["delegation"]["keys"][0]["ds_published"],
+        false
+    );
 
     let (status, _) = app
         .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
@@ -733,7 +866,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
         .await;
     assert_eq!(status, StatusCode::OK);
 
-    let zone_name = app.zone_name("dnssec-force.example");
+    let zone_name = app.zone_name("dnssec-skip.example");
     let (status, _) = app
         .request(
             Method::POST,
@@ -758,7 +891,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
     let (status, _) = app
         .request(
             Method::DELETE,
-            &format!("/zones/{zone_name}/dnssec?force=true"),
+            &format!("/zones/{zone_name}/dnssec?skip_ds_check=true"),
             None,
         )
         .await;
