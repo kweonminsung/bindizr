@@ -163,7 +163,7 @@ async fn reconstruct_records_at_serial(
 
 /// The records at `serial`: the live records when it is the current serial,
 /// otherwise reconstructed from the journal.
-async fn records_at_serial(
+async fn list_records_at_serial(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
     serial: i32,
@@ -271,7 +271,7 @@ impl ZoneService {
             .await?
             .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
 
-            let records = records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
+            let records = list_records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
 
             Ok::<_, ServiceError>((version, records))
         }
@@ -311,8 +311,9 @@ impl ZoneService {
             validate_serial_diffable(&mut tx, &zone, to_serial).await?;
 
             let from_records =
-                records_at_serial(&mut tx, zone.id, from_serial, zone.serial).await?;
-            let to_records = records_at_serial(&mut tx, zone.id, to_serial, zone.serial).await?;
+                list_records_at_serial(&mut tx, zone.id, from_serial, zone.serial).await?;
+            let to_records =
+                list_records_at_serial(&mut tx, zone.id, to_serial, zone.serial).await?;
 
             Ok::<_, ServiceError>(VersionDiffResponse {
                 from_serial,

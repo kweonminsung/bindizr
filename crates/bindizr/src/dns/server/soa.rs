@@ -20,7 +20,7 @@ pub(crate) async fn handle_tcp_soa(
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
-    let response = soa_response_bytes(query, client_addr.ip()).await?;
+    let response = build_soa_response_or_notauth(query, client_addr.ip()).await?;
     wire::write_tcp_message(stream, &response).await?;
     Ok(())
 }
@@ -30,14 +30,14 @@ pub(crate) async fn handle_udp_soa(
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
-    let response = soa_response_bytes(query, client_addr.ip()).await?;
+    let response = build_soa_response_or_notauth(query, client_addr.ip()).await?;
     socket.send_to(&response, client_addr).await?;
     Ok(())
 }
 
 /// Build the SOA response bytes, mapping an unknown zone to a NOTAUTH response
 /// (TCP and UDP send identical bytes).
-async fn soa_response_bytes(
+async fn build_soa_response_or_notauth(
     query: &message::ParsedQuery,
     client_ip: IpAddr,
 ) -> Result<Vec<u8>, XfrError> {

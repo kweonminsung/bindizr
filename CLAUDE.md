@@ -299,13 +299,24 @@ Every other helper starts with one of these verbs:
   `apply_<thing>` — write a computed change set; `authenticate_` (who the
   caller is) / `authorize_` (what they may do).
 
-Noun names belong to pure formatters inside a formatting module
-(`elapsed_ms`, `hex_upper`, `like_pattern`, `green`) and to constructors,
-which are named by what they build: the kind alone where the module builds
-one kind of thing (`unauthorized(message) -> Response` in the auth
-middleware, `ServiceError::unauthorized`), with `_error` / `_response`
-added only where one module builds several (`upstream_error_response`,
-`zone_name_race_error`).
+A domain action or lifecycle step keeps its own verb (`sign_zone`,
+`escape_label`, `enqueue_notify`, `run_udp_server`); the vocabulary above is
+for the helpers around them, so an action never borrows a helper verb to
+look like one (a `build_` that writes, a `to_` that sends). Predicate
+methods read as a sentence about their receiver (`key.wants_parent_ds()`);
+`is_`/`has_`/`matches_` are for free functions, which have no subject.
+
+Noun names belong to pure derivations named by what they return, where a
+verb would add nothing the return type does not say (`elapsed_ms`,
+`rrset_digest`, `promotable_sep_key_ids`, `like_pattern`) — anything with
+I/O or a side effect keeps its verb — and to constructors, which are named
+by what they build: the kind alone where the module builds one kind of
+thing (`unauthorized(message) -> Response` in the auth middleware,
+`ServiceError::unauthorized`), with `_error` / `_response` added only where
+one module builds several (`upstream_error_response`,
+`zone_name_race_error`). Names an external trait fixes (`Log::enabled`,
+`KeyStore::get_key`, sqlx's `compatible`) and serde default providers
+(`default_<field>`) are outside the vocabulary.
 
 One concept keeps one name across crates. Do not add a wrapper that only
 reorders or renames the arguments of the function it calls — call it directly.

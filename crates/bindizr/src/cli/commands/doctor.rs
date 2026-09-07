@@ -98,7 +98,7 @@ async fn check_api(config: &bindizr_core::config::BindizrConfig, report: &mut Re
         config.api.listen_port,
     );
 
-    match http_get_status_line(addr).await {
+    match probe_http_status_line(addr).await {
         Ok(status_line) => report.ok(format!("API reachable: http://{} ({})", addr, status_line)),
         Err(e) => report.fail(format!("API not reachable: http://{} ({})", addr, e)),
     }
@@ -106,7 +106,7 @@ async fn check_api(config: &bindizr_core::config::BindizrConfig, report: &mut Re
 
 /// Minimal HTTP GET returning the status line; the API is plain HTTP on
 /// localhost, so a full HTTP client dependency is unnecessary.
-async fn http_get_status_line(addr: SocketAddr) -> Result<String, String> {
+async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
     let exchange = async {
         let mut stream = TcpStream::connect(addr).await.map_err(|e| e.to_string())?;
         let request = format!(

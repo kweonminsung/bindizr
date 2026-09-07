@@ -46,7 +46,7 @@ pub async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
     let (servers, discovered) = match zone.parent_ns_addrs.as_deref() {
         Some(raw) => (resolve_parent_ns_addrs(raw, timeout).await?, false),
         None => {
-            let resolvers = system_resolver_addrs().await?;
+            let resolvers = load_system_resolver_addrs().await?;
             let (parent, nameservers) = discover_parent(&zone.name, &resolvers, timeout).await?;
             let servers = resolve_nameservers(&parent, &nameservers, timeout).await?;
             (servers, true)
@@ -82,7 +82,7 @@ async fn resolve_parent_ns_addrs(
 
 /// The system's `nameserver` entries; without any, only a zone naming its
 /// parent's nameservers itself can be checked.
-async fn system_resolver_addrs() -> Result<Vec<SocketAddr>, String> {
+async fn load_system_resolver_addrs() -> Result<Vec<SocketAddr>, String> {
     let contents = tokio::fs::read_to_string(RESOLV_CONF_PATH)
         .await
         .map_err(|e| {
