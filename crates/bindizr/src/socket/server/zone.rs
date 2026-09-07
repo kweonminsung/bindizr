@@ -119,7 +119,7 @@ pub(crate) async fn list_zone_versions(
         &params.name,
         params.limit,
         params.offset,
-        params.all,
+        params.include_signer_serials,
     )
     .await?;
 

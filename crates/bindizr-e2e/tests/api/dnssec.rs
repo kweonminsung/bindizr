@@ -110,7 +110,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     let (status, body) = app
         .request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions?all=true"),
+            &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
             None,
         )
         .await;
@@ -118,7 +118,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     let all_serials = listed_serials(&body);
     assert!(
         all_serials.contains(&signer_serial),
-        "all=true must include signer-only serials: {all_serials:?}"
+        "include_signer_serials=true must include signer-only serials: {all_serials:?}"
     );
 
     // A DS secures a delegation, so the NS RRset must exist first.

@@ -2796,7 +2796,7 @@ paths:
           type: integer
           format: int64
           minimum: 0
-      - name: all
+      - name: include_signer_serials
         in: query
         description: Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.
         required: false

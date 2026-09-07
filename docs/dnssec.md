@@ -235,6 +235,7 @@ Also `parent_ns_addrs` in the enable body and in `PUT /zones/{name}/dnssec`;
 - At a delegation only the child's `DS` records are signed; the `NS` records
   beside them and glue at or below the cut are served unsigned (RFC 4035).
 - The derived records are system-owned: never edited, diffed, or rolled
-  back. Version listings hide signer-only serials unless `all` is requested;
+  back. Version listings hide signer-only serials unless
+  `include_signer_serials` is requested;
   `record list --signed` (`GET /records?signed=true`) pages them after the
   user records.

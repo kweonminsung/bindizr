@@ -211,7 +211,8 @@ fn sort_records(records: &mut [ReconstructedRecord]) {
 
 impl ZoneService {
     /// List a zone's versions (serial history), newest serial first. Unless
-    /// `all`, signer-only serials (DNSSEC re-signs, rollovers) are skipped —
+    /// `include_signer_serials`, signer-only serials (DNSSEC re-signs,
+    /// rollovers) are skipped —
     /// they hold nothing rollback could restore. Visibility is checked on the
     /// row whose id the queries use, so a same-name recreation cannot swap
     /// the zone in.
@@ -220,15 +221,16 @@ impl ZoneService {
         zone_name: &str,
         limit: Option<u32>,
         offset: Option<u64>,
-        all: bool,
+        include_signer_serials: bool,
     ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
         let zone = Self::get_by_name(caller, zone_name).await?;
 
-        let total = RepositoryService::count_zone_versions(zone.id, !all).await?;
+        let total =
+            RepositoryService::count_zone_versions(zone.id, !include_signer_serials).await?;
         let effective_limit = limit.unwrap_or(50);
         let versions = RepositoryService::list_zone_versions(
             zone.id,
-            !all,
+            !include_signer_serials,
             effective_limit,
             offset.unwrap_or(0),
         )

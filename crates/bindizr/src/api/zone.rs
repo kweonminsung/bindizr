@@ -128,7 +128,7 @@ pub(crate) async fn export_zone(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("limit" = Option<u32>, Query, description = "Maximum number of versions to return."),
             ("offset" = Option<u64>, Query, description = "Number of versions to skip."),
-            ("all" = Option<bool>, Query, description = "Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.")
+            ("include_signer_serials" = Option<bool>, Query, description = "Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.")
         ),
         responses(
             (status = 200, description = "A list of zone versions", body = PaginatedResponse<ZoneVersionResponse>),
@@ -143,9 +143,14 @@ pub(crate) async fn list_zone_versions(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<VersionListQuery>,
 ) -> Result<Response, ApiError> {
-    let response =
-        ZoneService::list_versions(&caller, &params.name, query.limit, query.offset, query.all)
-            .await?;
+    let response = ZoneService::list_versions(
+        &caller,
+        &params.name,
+        query.limit,
+        query.offset,
+        query.include_signer_serials,
+    )
+    .await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -221,7 +226,7 @@ pub(crate) struct RollbackQuery {
 pub(crate) struct VersionListQuery {
     limit: Option<u32>,
     #[serde(default)]
-    all: bool,
+    include_signer_serials: bool,
     offset: Option<u64>,
 }
 

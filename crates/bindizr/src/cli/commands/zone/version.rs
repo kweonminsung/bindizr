@@ -40,7 +40,7 @@ pub(crate) enum ZoneVersionCommand {
         offset: Option<u64>,
         /// Include signer-only serials (DNSSEC re-signs and rollovers)
         #[arg(long)]
-        all: bool,
+        include_signer_serials: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -88,7 +88,7 @@ pub(crate) async fn handle_command(
             name,
             limit,
             offset,
-            all,
+            include_signer_serials,
             output,
         } => {
             let data = client
@@ -98,7 +98,7 @@ pub(crate) async fn handle_command(
                         name,
                         limit,
                         offset,
-                        all,
+                        include_signer_serials,
                     },
                 )
                 .await?

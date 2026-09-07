@@ -199,7 +199,7 @@ pub(crate) struct ListZoneVersionsParams {
     pub(crate) limit: Option<u32>,
     pub(crate) offset: Option<u64>,
     #[serde(default)]
-    pub(crate) all: bool,
+    pub(crate) include_signer_serials: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
