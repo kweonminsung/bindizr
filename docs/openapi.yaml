@@ -2611,75 +2611,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/rollback:
-    post:
-      tags:
-      - Zone
-      summary: Roll a zone back to a version serial
-      description: Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With dry_run the rollback is computed and reported without applying any change.
-      operationId: rollback_zone
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone to roll back.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RollbackZoneRequest'
-        required: true
-      responses:
-        '200':
-          description: Rollback result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RollbackZoneResponse'
-        '400':
-          description: Bad request, invalid target serial
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone or version not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: Record conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}/status:
     get:
       tags:
@@ -2957,6 +2888,76 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Zone or version not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/versions/{serial}/rollback:
+    post:
+      tags:
+      - Zone
+      summary: Roll a zone back to a version serial
+      description: Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With `dry_run=true` the rollback is computed and reported without applying any change.
+      operationId: rollback_zone
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone to roll back.
+        required: true
+        schema:
+          type: string
+      - name: serial
+        in: path
+        description: The version serial to roll back to.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      - name: dry_run
+        in: query
+        description: Compute and report the rollback without applying it.
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Rollback result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RollbackZoneResponse'
+        '400':
+          description: Bad request, invalid target serial
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or version not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
           content:
             application/json:
               schema:
@@ -4489,19 +4490,6 @@ components:
         soa_changed:
           type: boolean
           example: true
-    RollbackZoneRequest:
-      type: object
-      description: Request body for rolling a zone back to a version serial.
-      required:
-      - serial
-      properties:
-        dry_run:
-          type: boolean
-          description: When true, compute and report the rollback without applying any change.
-        serial:
-          type: integer
-          format: int32
-          example: 7
     RollbackZoneResponse:
       type: object
       description: |-

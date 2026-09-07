@@ -10,9 +10,8 @@ use bindizr_service::{
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
         ImportZoneRequest, ImportZoneResponse, MessageResponse, PaginatedResponse,
-        RollbackZoneRequest, RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse,
-        VersionDiffResponse, ZoneDetailResponse, ZoneResponse, ZoneStatusResponse,
-        ZoneVersionResponse,
+        RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
+        ZoneDetailResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
     },
     zone::ZoneService,
 };
@@ -48,7 +47,10 @@ impl ZoneApi {
                 "/zones/{name}/versions/{serial}",
                 routing::get(get_zone_version),
             )
-            .route("/zones/{name}/rollback", routing::post(rollback_zone))
+            .route(
+                "/zones/{name}/versions/{serial}/rollback",
+                routing::post(rollback_zone),
+            )
             .route("/zones/{name}/status", routing::get(get_zone_status))
     }
 }
@@ -175,14 +177,15 @@ pub(crate) async fn get_zone_version(
 
 #[utoipa::path(
         post,
-        path = "/zones/{name}/rollback",
+        path = "/zones/{name}/versions/{serial}/rollback",
         tag = "Zone",
         summary = "Roll a zone back to a version serial",
-        description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With dry_run the rollback is computed and reported without applying any change.",
+        description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With `dry_run=true` the rollback is computed and reported without applying any change.",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone to roll back.")
+            ("name" = String, Path, description = "The name of the DNS zone to roll back."),
+            ("serial" = i32, Path, description = "The version serial to roll back to."),
+            ("dry_run" = Option<bool>, Query, description = "Compute and report the rollback without applying it.")
         ),
-        request_body = RollbackZoneRequest,
         responses(
             (status = 200, description = "Rollback result", body = RollbackZoneResponse),
             (status = 400, description = "Bad request, invalid target serial", body = ErrorResponse),
@@ -190,18 +193,28 @@ pub(crate) async fn get_zone_version(
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone or version not found", body = ErrorResponse),
             (status = 409, description = "Record conflict", body = ErrorResponse),
-            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 /// Roll a zone back to the state captured at a version serial.
 pub(crate) async fn rollback_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<RollbackZoneRequest>,
+    Path(params): Path<ZoneVersionParam>,
+    Query(query): Query<RollbackQuery>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::rollback(&caller, &params.name, body.serial, body.dry_run).await?;
+    let response = ZoneService::rollback(
+        &caller,
+        &params.name,
+        params.serial,
+        query.dry_run.unwrap_or(false),
+    )
+    .await?;
     Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RollbackQuery {
+    dry_run: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

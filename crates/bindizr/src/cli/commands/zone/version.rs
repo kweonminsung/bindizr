@@ -1,8 +1,8 @@
 //! The `zone version` subcommands: list, show, diff, and rollback.
 
 use bindizr_service::types::{
-    PaginatedResponse, RollbackZoneRequest, RollbackZoneResponse, VersionDetailResponse,
-    VersionDiffResponse, ZoneVersionResponse,
+    PaginatedResponse, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
+    ZoneVersionResponse,
 };
 use clap::Subcommand;
 
@@ -163,7 +163,8 @@ pub(crate) async fn handle_command(
                     DaemonCommandKind::RollbackZone,
                     RollbackZoneParams {
                         name,
-                        request: RollbackZoneRequest { serial, dry_run },
+                        serial,
+                        dry_run,
                     },
                 )
                 .await?;

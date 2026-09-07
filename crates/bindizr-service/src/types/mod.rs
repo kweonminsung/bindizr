@@ -53,8 +53,8 @@ pub use tsig::{
 };
 pub use version::{
     RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
-    RollbackZoneRequest, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
-    VersionRecordResponse, ZoneVersionResponse,
+    RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse, VersionRecordResponse,
+    ZoneVersionResponse,
 };
 pub use zone::{
     CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter, NotifyZoneRequest,

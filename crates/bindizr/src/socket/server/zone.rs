@@ -2,9 +2,7 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     record::RecordService,
-    types::{
-        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    },
+    types::{CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter},
     zone::ZoneService,
 };
 
@@ -169,13 +167,8 @@ pub(crate) async fn rollback_zone(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RollbackZoneParams = parse_params(data)?;
 
-    let response = ZoneService::rollback(
-        &Caller::Global,
-        &params.name,
-        params.request.serial,
-        params.request.dry_run,
-    )
-    .await?;
+    let response =
+        ZoneService::rollback(&Caller::Global, &params.name, params.serial, params.dry_run).await?;
     let message = if response.dry_run {
         format!(
             "Dry run: rollback to serial {} would add {} and delete {} record(s); nothing applied",

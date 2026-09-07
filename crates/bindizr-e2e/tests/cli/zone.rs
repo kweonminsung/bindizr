@@ -545,10 +545,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
             "replace",
         ])
         .await;
-    assert!(
-        applied.contains("Zone imported successfully"),
-        "{applied}"
-    );
+    assert!(applied.contains("Zone imported successfully"), "{applied}");
     assert_eq!(
         summary_row(&applied),
         ["5", "0", "0", "0", "5", "0"],

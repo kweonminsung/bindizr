@@ -13,13 +13,15 @@ fn try_bind_test_socket(socket_path: &str) -> Option<UnixListener> {
 
 #[test]
 fn parse_params_rejects_wrongly_typed_fields() {
-    use bindizr_service::types::{CreateTsigKeyRequest, RollbackZoneRequest};
+    use bindizr_service::types::CreateTsigKeyRequest;
+
+    use crate::socket::types::RollbackZoneParams;
 
     // Absent/null optional fields deserialize as their defaults...
     let ok: CreateTsigKeyRequest =
         parse_params(&json!({ "name": "k", "algorithm": null, "secret": null })).unwrap();
     assert!(!ok.global);
-    let ok: RollbackZoneRequest = parse_params(&json!({ "serial": 7 })).unwrap();
+    let ok: RollbackZoneParams = parse_params(&json!({ "name": "z", "serial": 7 })).unwrap();
     assert!(!ok.dry_run);
 
     // ...but a present field of the wrong type is rejected instead of being
@@ -30,17 +32,19 @@ fn parse_params_rejects_wrongly_typed_fields() {
         parse_params::<CreateTsigKeyRequest>(&json!({ "name": "k", "secret": 123 })).unwrap_err();
     assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
     for dry_run in [json!("true"), json!(1)] {
-        let err = parse_params::<RollbackZoneRequest>(&json!({ "serial": 7, "dry_run": dry_run }))
-            .unwrap_err();
+        let err = parse_params::<RollbackZoneParams>(
+            &json!({ "name": "z", "serial": 7, "dry_run": dry_run }),
+        )
+        .unwrap_err();
         assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
     }
 }
 
 #[test]
 fn command_payloads_round_trip_between_client_and_server() {
-    use bindizr_service::types::{RollbackZoneRequest, UpdateZoneRequest};
+    use bindizr_service::types::UpdateZoneRequest;
 
-    use crate::socket::types::{RollbackZoneParams, UpdateZoneParams};
+    use crate::socket::types::UpdateZoneParams;
 
     // The CLI serializes these and the daemon parses them back, so a flattened
     // request body must survive the round trip alongside its target field.
@@ -57,18 +61,6 @@ fn command_payloads_round_trip_between_client_and_server() {
     assert_eq!(parsed.zone_name, "example.com");
     assert_eq!(parsed.request.name.as_deref(), Some("new.example.com"));
     assert_eq!(parsed.request.default_ttl, Some(300));
-
-    let sent = serde_json::to_value(RollbackZoneParams {
-        name: "example.com".to_string(),
-        request: RollbackZoneRequest {
-            serial: 7,
-            dry_run: true,
-        },
-    })
-    .unwrap();
-    let parsed: RollbackZoneParams = parse_params(&sent).unwrap();
-    assert_eq!(parsed.request.serial, 7);
-    assert!(parsed.request.dry_run);
 }
 
 #[tokio::test]

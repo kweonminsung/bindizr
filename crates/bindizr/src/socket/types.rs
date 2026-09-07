@@ -1,7 +1,7 @@
 use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest,
-    ImportZoneRequest, RollbackZoneRequest, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
+    ImportZoneRequest, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
     UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
@@ -174,8 +174,9 @@ pub(crate) struct UpdateRecordParams {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RollbackZoneParams {
     pub(crate) name: String,
-    #[serde(flatten)]
-    pub(crate) request: RollbackZoneRequest,
+    pub(crate) serial: i32,
+    #[serde(default)]
+    pub(crate) dry_run: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

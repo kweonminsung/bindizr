@@ -1223,8 +1223,8 @@ async fn zone_rollback_dry_run_then_apply() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/rollback"),
-            Some(json!({ "serial": target_serial, "dry_run": true })),
+            &format!("/zones/{zone_name}/versions/{target_serial}/rollback?dry_run=true"),
+            None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -1244,8 +1244,8 @@ async fn zone_rollback_dry_run_then_apply() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/rollback"),
-            Some(json!({ "serial": target_serial })),
+            &format!("/zones/{zone_name}/versions/{target_serial}/rollback"),
+            None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -1327,8 +1327,8 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/rollback"),
-            Some(json!({ "serial": target_serial })),
+            &format!("/zones/{zone_name}/versions/{target_serial}/rollback"),
+            None,
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1378,8 +1378,8 @@ async fn zone_rollback_rejects_bad_serials() {
         let (status, body) = app
             .request(
                 Method::POST,
-                &format!("/zones/{zone_name}/rollback"),
-                Some(json!({ "serial": serial })),
+                &format!("/zones/{zone_name}/versions/{serial}/rollback"),
+                None,
             )
             .await;
         assert_eq!(status, expected_status, "serial {serial}");
