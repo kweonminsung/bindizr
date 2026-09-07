@@ -57,7 +57,7 @@ pub use version::{
     ZoneVersionResponse,
 };
 pub use zone::{
-    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter, NotifyZoneRequest,
+    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
     SecondaryStatusResponse, UpdateZoneRequest, ZoneDetailResponse, ZoneResponse,
-    ZoneStatusResponse,
+    ZoneStatusResponse, build_notify_message,
 };

@@ -143,8 +143,8 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     let (status, _) = app
         .request(
             Method::POST,
-            "/zones/notify",
-            Some(json!({ "zone_name": granted_zone, "bump_serial": true })),
+            &format!("/zones/{granted_zone}/notify?bump_serial=true"),
+            None,
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);

@@ -5,8 +5,8 @@ mod version;
 
 use bindizr_service::types::{
     CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    ImportMode as ServiceImportMode, ImportZoneRequest, ImportZoneResponse, NotifyZoneRequest,
-    UpdateZoneRequest, ZoneStatusResponse,
+    ImportMode as ServiceImportMode, ImportZoneRequest, ImportZoneResponse, UpdateZoneRequest,
+    ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -22,8 +22,8 @@ use crate::{
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, ExportZoneFileParams, ImportZoneParams, UpdateZoneParams,
-            ZoneNameParams,
+            DaemonCommandKind, ExportZoneFileParams, ImportZoneParams, NotifyZoneParams,
+            UpdateZoneParams, ZoneNameParams,
         },
     },
 };
@@ -234,14 +234,14 @@ impl From<ImportMode> for ServiceImportMode {
 /// Arguments for the `zone notify` subcommand.
 #[derive(Args, Debug)]
 pub(crate) struct NotifyArgs {
+    /// The name of the zone
+    #[arg(value_name = "ZONE_NAME")]
+    name: String,
+
     /// Bump the serial first, so secondaries transfer even when nothing
     /// changed
     #[arg(long)]
     bump_serial: bool,
-
-    /// Zone name to notify (optional: if not specified, notifies all zones)
-    #[arg(value_name = "ZONE_NAME")]
-    name: Option<String>,
 }
 
 /// Handle the `zone` subcommand by forwarding it to the daemon over the socket.
@@ -447,7 +447,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client
                 .send_command(
                     DaemonCommandKind::NotifyZone,
-                    NotifyZoneRequest {
+                    NotifyZoneParams {
                         zone_name: args.name,
                         bump_serial: args.bump_serial,
                     },

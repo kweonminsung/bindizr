@@ -61,6 +61,13 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: RecordCommand,
     },
+    /// Send NOTIFY messages to secondary servers for every zone
+    Notify {
+        /// Bump every zone's serial first, so secondaries transfer even when
+        /// nothing changed
+        #[arg(long)]
+        bump_serial: bool,
+    },
     /// Manage API tokens and the zones each may change over HTTP
     Token {
         #[command(subcommand)]
@@ -98,6 +105,7 @@ pub async fn execute() {
         Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
         Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
+        Command::Notify { bump_serial } => commands::notify::handle_command(bump_serial).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
         Command::DnssecPolicy { subcommand } => {

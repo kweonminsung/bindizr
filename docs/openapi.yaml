@@ -438,6 +438,44 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
       security:
       - {}
+  /notify:
+    post:
+      tags:
+      - Notify
+      summary: Send DNS NOTIFY messages for all zones
+      operationId: notify_all_zones
+      parameters:
+      - name: bump_serial
+        in: query
+        description: Bump every zone's serial first, so secondaries transfer even when nothing changed.
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: DNS NOTIFY sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /records:
     get:
       tags:
@@ -1691,67 +1729,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/notify:
-    post:
-      tags:
-      - Notify
-      summary: Send DNS NOTIFY messages for a zone or all zones
-      operationId: notify_zones
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NotifyZoneRequest'
-        required: true
-      responses:
-        '200':
-          description: DNS NOTIFY sent successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-        '400':
-          description: Bad request, invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required to notify all zones or to bump a serial
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: Zone conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}:
     get:
       tags:
@@ -2601,6 +2578,56 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /zones/{name}/notify:
+    post:
+      tags:
+      - Notify
+      summary: Send DNS NOTIFY messages for a zone
+      operationId: notify_zone
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone to notify secondaries about.
+        required: true
+        schema:
+          type: string
+      - name: bump_serial
+        in: query
+        description: Bump the zone's serial first, so secondaries transfer even when nothing changed.
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: DNS NOTIFY sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required to bump a serial or to notify the catalog zone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
           content:
             application/json:
               schema:
@@ -4110,21 +4137,6 @@ components:
         message:
           type: string
           example: Deleted successfully
-    NotifyZoneRequest:
-      type: object
-      description: Request body for triggering a NOTIFY, optionally scoped to one zone.
-      properties:
-        bump_serial:
-          type: boolean
-          description: |-
-            Bump the serial first, so secondaries transfer even when nothing
-            changed.
-          example: true
-        zone_name:
-          type:
-          - string
-          - 'null'
-          example: example.com
     PaginatedResponse_GetRecordResponse:
       type: object
       description: A page of items together with its pagination metadata.

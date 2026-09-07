@@ -28,6 +28,7 @@ mod cli {
     mod dnssec;
     mod dnssec_policy;
     mod doctor;
+    mod notify;
     mod record;
     mod token;
     mod tsig_key;

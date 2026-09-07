@@ -102,6 +102,7 @@ async fn handle_client(stream: UnixStream) {
                     record::bulk_create_records(&cmd.data).await
                 }
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
+                DaemonCommandKind::NotifyAllZones => notify::notify_all_zones(&cmd.data).await,
                 DaemonCommandKind::NotifyZone => notify::notify_zone(&cmd.data).await,
                 DaemonCommandKind::ImportZone => zone::import_zone(&cmd.data).await,
                 DaemonCommandKind::ExportZoneFile => zone::export_zone(&cmd.data).await,

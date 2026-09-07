@@ -42,6 +42,7 @@ pub(crate) enum DaemonCommandKind {
     UpdateRecord,
     BulkCreateRecords,
     DeleteRecord,
+    NotifyAllZones,
     NotifyZone,
     ImportZone,
     ExportZoneFile,
@@ -169,6 +170,19 @@ pub(crate) struct UpdateRecordParams {
     pub(crate) id: i32,
     #[serde(flatten)]
     pub(crate) request: UpdateRecordRequest,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct NotifyAllZonesParams {
+    #[serde(default)]
+    pub(crate) bump_serial: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct NotifyZoneParams {
+    pub(crate) zone_name: String,
+    #[serde(default)]
+    pub(crate) bump_serial: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

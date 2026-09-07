@@ -135,32 +135,14 @@ pub struct UpdateZoneRequest {
     pub serial: Option<i32>,
 }
 
-/// Request body for triggering a NOTIFY, optionally scoped to one zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct NotifyZoneRequest {
-    #[schema(example = "example.com")]
-    pub zone_name: Option<String>,
-    /// Bump the serial first, so secondaries transfer even when nothing
-    /// changed.
-    #[serde(default)]
-    #[schema(example = true)]
-    pub bump_serial: bool,
-}
-
-impl NotifyZoneRequest {
-    /// The success message every front end serves for this request.
-    pub fn success_message(&self) -> String {
-        let scope = match &self.zone_name {
-            Some(zone_name) => format!("zone: {}", zone_name),
-            None => "all zones".to_string(),
-        };
-        let suffix = if self.bump_serial {
-            " (serial bumped)"
-        } else {
-            ""
-        };
-        format!("NOTIFY sent successfully for {}{}", scope, suffix)
-    }
+/// The success message every front end serves for a manual NOTIFY.
+pub fn build_notify_message(zone_name: Option<&str>, bump_serial: bool) -> String {
+    let scope = match zone_name {
+        Some(zone_name) => format!("zone: {}", zone_name),
+        None => "all zones".to_string(),
+    };
+    let suffix = if bump_serial { " (serial bumped)" } else { "" };
+    format!("NOTIFY sent successfully for {}{}", scope, suffix)
 }
 
 /// A zone together with all of its records.

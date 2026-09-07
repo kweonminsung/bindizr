@@ -15,7 +15,7 @@ package install, or a shell inside the container for Compose and Helm.
 | Commands | What they manage | Documented in |
 |---|---|---|
 | `start`, `stop`, `restart`, `status`, `doctor`, `config` | The daemon and its configuration | this page |
-| `zone`, `record` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | this page |
+| `zone`, `record`, `notify` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | this page |
 | `token` | API tokens and the zones each is granted over HTTP | [API Tokens](tokens.md) |
 | `tsig-key` | TSIG keys and the zones each is granted for nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec.md) |
@@ -77,8 +77,9 @@ $ bindizr record update <RECORD_ID> --value 127.0.0.1
 # Export a zone as BIND master-file text (--signed appends the derived DNSSEC records)
 $ bindizr zone export example.com > db.example.com
 
-# Send NOTIFY to secondary DNS servers for a zone
+# Send NOTIFY to secondary DNS servers for a zone, or for every zone
 $ bindizr zone notify <ZONE_NAME>
+$ bindizr notify
 
 # Check how far each secondary has caught up with a zone
 $ bindizr zone status <ZONE_NAME>
