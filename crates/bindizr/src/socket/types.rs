@@ -1,8 +1,8 @@
 use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest,
-    ImportZoneFileRequest, ImportZoneFromServerRequest, RollbackZoneRequest, RolloverDnssecRequest,
-    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateZoneRequest,
+    ImportZoneRequest, RollbackZoneRequest, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
+    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -43,8 +43,7 @@ pub(crate) enum DaemonCommandKind {
     BulkCreateRecords,
     DeleteRecord,
     NotifyZone,
-    ImportZoneFile,
-    ImportZoneFromServer,
+    ImportZone,
     ExportZoneFile,
     ListZoneVersions,
     GetZoneVersion,
@@ -152,17 +151,10 @@ pub(crate) struct ExportZoneFileParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct ImportZoneFileParams {
+pub(crate) struct ImportZoneParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
-    pub(crate) request: ImportZoneFileRequest,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct ImportZoneFromServerParams {
-    pub(crate) zone_name: String,
-    #[serde(flatten)]
-    pub(crate) request: ImportZoneFromServerRequest,
+    pub(crate) request: ImportZoneRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

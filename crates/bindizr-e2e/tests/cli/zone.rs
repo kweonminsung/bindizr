@@ -174,7 +174,7 @@ async fn zone_import_zone_file_from_stdin() {
         )
         .await;
     assert!(
-        imported.contains("Zone file imported successfully"),
+        imported.contains("Zone imported successfully"),
         "{imported}"
     );
     assert_eq!(
@@ -546,7 +546,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
         ])
         .await;
     assert!(
-        applied.contains("Zone file imported successfully"),
+        applied.contains("Zone imported successfully"),
         "{applied}"
     );
     assert_eq!(

@@ -207,10 +207,10 @@ class BindizrAdapter(DnsAdapter):
         return f'{rec["name"]} {ttl} IN {rec["type"]} {rdata}'
 
     async def import_zone_file(self, zone: str, records: list[dict]) -> None:
-        """Import records as BIND zone-file text via `/zones/{name}/imports`
+        """Import records as BIND zone-file text via `/zones/{name}/import`
         (append mode), chunked so large sets don't build one giant request."""
         self.import_errors = 0
-        url = self.base + f"/zones/{zone.rstrip('.')}/imports"
+        url = self.base + f"/zones/{zone.rstrip('.')}/import"
         for start in range(0, len(records), self.import_chunk):
             chunk = records[start:start + self.import_chunk]
             content = "\n".join(self._zone_line(r) for r in chunk) + "\n"

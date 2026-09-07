@@ -4,7 +4,6 @@ use bindizr_service::{
     record::RecordService,
     types::{
         CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneFileResponse,
     },
     zone::ZoneService,
 };
@@ -12,9 +11,9 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneFileParams,
-        ImportZoneFromServerParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
-        ZoneNameParams, ZoneVersionParams,
+        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneParams,
+        ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams, ZoneNameParams,
+        ZoneVersionParams,
     },
 };
 
@@ -66,31 +65,13 @@ pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonRespon
     })
 }
 
-/// Handle the `ImportZoneFile` command by reconciling BIND zone file text with
-/// a zone in a single transaction.
+/// Handle the `ImportZone` command by reconciling zone file text, or a
+/// transfer from a server, with a zone in a single transaction.
 pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: ImportZoneFileParams = parse_params(data)?;
+    let params: ImportZoneParams = parse_params(data)?;
 
     let response =
-        RecordService::import_zone_file(&Caller::Global, &params.zone_name, &params.request)
-            .await?;
-    import_zone_response(response)
-}
-
-/// Handle the `ImportZoneFromServer` command by transferring the zone over
-/// AXFR and reconciling it like a file import.
-pub(crate) async fn import_zone_from_server(
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: ImportZoneFromServerParams = parse_params(data)?;
-
-    let response =
-        RecordService::import_zone_from_server(&Caller::Global, &params.zone_name, &params.request)
-            .await?;
-    import_zone_response(response)
-}
-
-fn import_zone_response(response: ImportZoneFileResponse) -> Result<DaemonResponse, ServiceError> {
+        RecordService::import_zone(&Caller::Global, &params.zone_name, &params.request).await?;
     let message = if !response.errors.is_empty() {
         format!(
             "Import validation failed with {} error(s); nothing applied",
@@ -99,7 +80,7 @@ fn import_zone_response(response: ImportZoneFileResponse) -> Result<DaemonRespon
     } else if response.dry_run {
         "Dry run completed; no changes applied".to_string()
     } else {
-        "Zone file imported successfully".to_string()
+        "Zone imported successfully".to_string()
     };
 
     Ok(DaemonResponse {

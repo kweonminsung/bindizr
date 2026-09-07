@@ -2542,12 +2542,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/imports:
+  /zones/{name}/import:
     post:
       tags:
       - Zone
-      summary: Import a BIND zone file into a zone
-      description: Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. Importing a zone over AXFR is available only through the CLI (`zone import --from-server`).
+      summary: Import records into a zone
+      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.
       operationId: import_zone
       parameters:
       - name: name
@@ -2560,7 +2560,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ImportZoneFileRequest'
+              $ref: '#/components/schemas/ImportZoneRequest'
         required: true
       responses:
         '200':
@@ -2568,7 +2568,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ImportZoneFileResponse'
+                $ref: '#/components/schemas/ImportZoneResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -4047,14 +4047,16 @@ components:
           type: integer
           example: 1
           minimum: 0
-    ImportZoneFileRequest:
+    ImportZoneRequest:
       type: object
-      description: Request body for importing a BIND zone file into a zone.
-      required:
-      - content
+      description: |-
+        Request body for importing records into a zone: BIND zone file text in
+        `content`, or a transfer from `from_server`; exactly one of the two.
       properties:
         content:
-          type: string
+          type:
+          - string
+          - 'null'
           description: Raw BIND zone file text.
           example: |
             www IN A 192.0.2.1
@@ -4062,11 +4064,19 @@ components:
         dry_run:
           type: boolean
           description: When true, parse and validate without applying any change.
+        from_server:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Transfer source (`host[:port]`, port 53 default) to pull the zone
+            from over AXFR; its SOA and DNSSEC-derived records are dropped.
+          example: 192.0.2.1:53
         mode:
           $ref: '#/components/schemas/ImportMode'
-    ImportZoneFileResponse:
+    ImportZoneResponse:
       type: object
-      description: Result of a zone-file import, including a summary and any validation errors.
+      description: Result of a zone import, including a summary and any validation errors.
       required:
       - applied
       - dry_run

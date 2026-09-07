@@ -5,8 +5,8 @@ mod version;
 
 use bindizr_service::types::{
     CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    ImportMode as ServiceImportMode, ImportZoneFileRequest, ImportZoneFileResponse,
-    ImportZoneFromServerRequest, NotifyZoneRequest, UpdateZoneRequest, ZoneStatusResponse,
+    ImportMode as ServiceImportMode, ImportZoneRequest, ImportZoneResponse, NotifyZoneRequest,
+    UpdateZoneRequest, ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -22,8 +22,8 @@ use crate::{
     socket::{
         client::DaemonSocketClient,
         types::{
-            DaemonCommandKind, ExportZoneFileParams, ImportZoneFileParams,
-            ImportZoneFromServerParams, UpdateZoneParams, ZoneNameParams,
+            DaemonCommandKind, ExportZoneFileParams, ImportZoneParams, UpdateZoneParams,
+            ZoneNameParams,
         },
     },
 };
@@ -396,38 +396,23 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         } => {
             // Preview never applies; it is a dry run rendered as a diff.
             let dry_run = dry_run || preview;
-            let response = if let Some(from_server) = from_server {
-                client
-                    .send_command(
-                        DaemonCommandKind::ImportZoneFromServer,
-                        ImportZoneFromServerParams {
-                            zone_name: name,
-                            request: ImportZoneFromServerRequest {
-                                from_server,
-                                mode: mode.into(),
-                                dry_run,
-                            },
+            let content = file.map(|file| super::read_input(&file)).transpose()?;
+            let response = client
+                .send_command(
+                    DaemonCommandKind::ImportZone,
+                    ImportZoneParams {
+                        zone_name: name,
+                        request: ImportZoneRequest {
+                            content,
+                            from_server,
+                            mode: mode.into(),
+                            dry_run,
                         },
-                    )
-                    .await?
-            } else {
-                let file = file.expect("clap requires a file unless --from-server is present");
-                client
-                    .send_command(
-                        DaemonCommandKind::ImportZoneFile,
-                        ImportZoneFileParams {
-                            zone_name: name,
-                            request: ImportZoneFileRequest {
-                                content: super::read_input(&file)?,
-                                mode: mode.into(),
-                                dry_run,
-                            },
-                        },
-                    )
-                    .await?
-            };
+                    },
+                )
+                .await?;
 
-            let import: ImportZoneFileResponse = parse_response(&response.data)?;
+            let import: ImportZoneResponse = parse_response(&response.data)?;
             // Errors go to stderr so a shell pipeline keeps the summary clean.
             if import.errors.is_empty() {
                 println!("{}", response.message);

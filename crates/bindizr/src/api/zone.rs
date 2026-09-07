@@ -9,7 +9,7 @@ use bindizr_service::{
     record::RecordService,
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, PaginatedResponse,
+        ImportZoneRequest, ImportZoneResponse, MessageResponse, PaginatedResponse,
         RollbackZoneRequest, RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse,
         VersionDiffResponse, ZoneDetailResponse, ZoneResponse, ZoneStatusResponse,
         ZoneVersionResponse,
@@ -35,7 +35,7 @@ impl ZoneApi {
             .route("/zones/{name}", routing::put(update_zone))
             .route("/zones/{name}", routing::delete(delete_zone))
             .route(
-                "/zones/{name}/imports",
+                "/zones/{name}/import",
                 routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
             .route("/zones/{name}/export", routing::get(export_zone))
@@ -416,16 +416,16 @@ pub(crate) async fn delete_zone(
 
 #[utoipa::path(
         post,
-        path = "/zones/{name}/imports",
+        path = "/zones/{name}/import",
         tag = "Zone",
-        summary = "Import a BIND zone file into a zone",
-        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. Importing a zone over AXFR is available only through the CLI (`zone import --from-server`).",
+        summary = "Import records into a zone",
+        description = "Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to import records into.")
         ),
-        request_body = ImportZoneFileRequest,
+        request_body = ImportZoneRequest,
         responses(
-            (status = 200, description = "Import summary and validation errors", body = ImportZoneFileResponse),
+            (status = 200, description = "Import summary and validation errors", body = ImportZoneResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
@@ -435,13 +435,13 @@ pub(crate) async fn delete_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Import a BIND zone file into a zone, reconciling records in one transaction.
+/// Import records into a zone, reconciling them in one transaction.
 pub(crate) async fn import_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<ImportZoneFileRequest>,
+    JsonBody(body): JsonBody<ImportZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::import_zone_file(&caller, &params.name, &body).await?;
+    let response = RecordService::import_zone(&caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

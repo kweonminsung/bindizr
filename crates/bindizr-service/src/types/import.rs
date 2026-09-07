@@ -1,4 +1,4 @@
-//! Zone-file import request, mode, and summary payloads.
+//! Zone import request, mode, and summary payloads.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -19,12 +19,19 @@ pub enum ImportMode {
     Replace,
 }
 
-/// Request body for importing a BIND zone file into a zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct ImportZoneFileRequest {
+/// Request body for importing records into a zone: BIND zone file text in
+/// `content`, or a transfer from `from_server`; exactly one of the two.
+#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+pub struct ImportZoneRequest {
     /// Raw BIND zone file text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "www IN A 192.0.2.1\nmail IN A 192.0.2.2\n")]
-    pub content: String,
+    pub content: Option<String>,
+    /// Transfer source (`host[:port]`, port 53 default) to pull the zone
+    /// from over AXFR; its SOA and DNSSEC-derived records are dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "192.0.2.1:53")]
+    pub from_server: Option<String>,
     #[serde(default)]
     pub mode: ImportMode,
     /// When true, parse and validate without applying any change.
@@ -32,23 +39,9 @@ pub struct ImportZoneFileRequest {
     pub dry_run: bool,
 }
 
-/// Import request pulling the zone over AXFR instead of carrying text;
-/// daemon-socket only — the HTTP API cannot start an outbound transfer.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ImportZoneFromServerRequest {
-    /// Transfer source (`host[:port]`, port 53 default); the source's SOA and
-    /// DNSSEC-derived records are dropped.
-    pub from_server: String,
-    #[serde(default)]
-    pub mode: ImportMode,
-    /// When true, parse and validate without applying any change.
-    #[serde(default, alias = "dryRun")]
-    pub dry_run: bool,
-}
-
-/// Result of a zone-file import, including a summary and any validation errors.
+/// Result of a zone import, including a summary and any validation errors.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct ImportZoneFileResponse {
+pub struct ImportZoneResponse {
     #[schema(example = true)]
     pub applied: bool,
     #[schema(example = false)]

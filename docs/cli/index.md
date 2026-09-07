@@ -100,6 +100,9 @@ transfer):
 $ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --preview
 ```
 
+Over HTTP, `POST /zones/{name}/import` takes either `content` (zone file
+text) or `from_server` the same way.
+
 ## Zone history
 
 Every SOA serial has a version behind it, so a zone can be diffed and rolled
