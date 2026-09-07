@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::dns::{name::ZoneName, query::DsRr};
 use tokio::net::UdpSocket;
 
 use super::*;
@@ -79,6 +79,14 @@ fn ds_rr(key_tag: u16, ttl: u32) -> Vec<u8> {
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
     build_rr(RTYPE_DS, ttl, &rdata)
+}
+
+/// The record `ds_rr` serves for `key_tag`, as the probe parses it.
+fn parsed_ds_rr(key_tag: u16) -> DsRr {
+    let mut rdata = key_tag.to_be_bytes().to_vec();
+    rdata.extend_from_slice(&[13, 2]);
+    rdata.extend_from_slice(&[0xab; 32]);
+    DsRr { key_tag, rdata }
 }
 
 fn ns_rr(nsdname: &str) -> Vec<u8> {
@@ -167,7 +175,7 @@ fn parse_resolv_conf_reads_nameserver_lines() {
 }
 
 #[tokio::test]
-async fn query_ds_merges_the_rrset_over_every_server() {
+async fn query_ds_reports_each_server_apart() {
     let a = fake_server(Answer::Ds {
         aa: true,
         records: vec![(34217, 3600)],
@@ -179,20 +187,26 @@ async fn query_ds_merges_the_rrset_over_every_server() {
     })
     .await;
 
-    let rrset = query_ds(&zone_name("example.com"), &servers(&[a, b]), TIMEOUT)
+    let answers = query_ds(&zone_name("example.com"), &servers(&[a, b]), TIMEOUT)
         .await
         .unwrap();
     assert_eq!(
-        rrset,
-        Some(DsRrset {
-            key_tags: vec![2371, 34217],
-            ttl: 3600,
-        })
+        answers,
+        vec![
+            Some(DsRrset {
+                records: vec![parsed_ds_rr(34217)],
+                ttl: 3600,
+            }),
+            Some(DsRrset {
+                records: vec![parsed_ds_rr(2371), parsed_ds_rr(34217)],
+                ttl: 3600,
+            }),
+        ]
     );
 }
 
 #[tokio::test]
-async fn query_ds_reads_absence_only_when_every_server_agrees() {
+async fn query_ds_reports_absence_per_server() {
     let absent = fake_server(Answer::Ds {
         aa: true,
         records: vec![],
@@ -205,24 +219,30 @@ async fn query_ds_reads_absence_only_when_every_server_agrees() {
     })
     .await;
 
-    let rrset = query_ds(
+    let answers = query_ds(
         &zone_name("example.com"),
         &servers(&[absent, nxdomain]),
         TIMEOUT,
     )
     .await
     .unwrap();
-    assert_eq!(rrset, None);
+    assert_eq!(answers, vec![None, None]);
 
-    // One lagging server still serving the DS keeps the delegation secure.
-    let rrset = query_ds(
+    // A lagging server still serving the DS stays visible to the caller.
+    let answers = query_ds(
         &zone_name("example.com"),
         &servers(&[absent, present]),
         TIMEOUT,
     )
     .await
     .unwrap();
-    assert_eq!(rrset.map(|r| r.key_tags), Some(vec![1]));
+    assert_eq!(
+        answers
+            .iter()
+            .map(|a| a.as_ref().map(DsRrset::key_tags))
+            .collect::<Vec<_>>(),
+        vec![None, Some(vec![1])]
+    );
 }
 
 #[tokio::test]
@@ -263,14 +283,20 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
     })
     .await;
     let servers = vec![("ns1.parent.example".to_string(), vec![silent, present])];
-    let rrset = query_ds(
+    let answers = query_ds(
         &zone_name("example.com"),
         &servers,
         Duration::from_millis(200),
     )
     .await
     .unwrap();
-    assert_eq!(rrset.map(|r| r.key_tags), Some(vec![7]));
+    assert_eq!(
+        answers
+            .iter()
+            .map(|a| a.as_ref().map(DsRrset::key_tags))
+            .collect::<Vec<_>>(),
+        vec![Some(vec![7])]
+    );
 }
 
 #[tokio::test]

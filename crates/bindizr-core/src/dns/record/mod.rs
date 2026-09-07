@@ -23,7 +23,7 @@ pub use a::ARecordValue;
 pub use aaaa::AaaaRecordValue;
 pub use caa::CaaRecordValue;
 pub use cname::CnameRecordValue;
-pub use ds::DsRecordValue;
+pub use ds::DsRrValue;
 pub use mx::MxRecordValue;
 pub use ns::NsRecordValue;
 pub use ptr::PtrRecordValue;

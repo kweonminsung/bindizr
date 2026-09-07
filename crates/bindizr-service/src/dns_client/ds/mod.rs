@@ -31,9 +31,10 @@ pub struct ParentDs {
     pub servers: Vec<String>,
     /// Whether `servers` came from parent discovery rather than the zone.
     pub discovered: bool,
-    /// The DS RRset the parent serves, merged over every server; `None`
-    /// when every server answered that there is none.
-    pub rrset: Option<DsRrset>,
+    /// Each server's answer in `servers` order: its DS RRset, or `None` when
+    /// it serves none. Kept apart because dropping trust is unsafe while any
+    /// server still serves a DS, and promoting a key until every server does.
+    pub answers: Vec<Option<DsRrset>>,
 }
 
 /// Ask every parent server for the zone's DS RRset. `Err` when the parent
@@ -52,11 +53,11 @@ pub async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
         }
     };
 
-    let rrset = query_ds(&zone.name, &servers, timeout).await?;
+    let answers = query_ds(&zone.name, &servers, timeout).await?;
     Ok(ParentDs {
         servers: servers.into_iter().map(|(entry, _)| entry).collect(),
         discovered,
-        rrset,
+        answers,
     })
 }
 
@@ -211,13 +212,14 @@ fn to_display_name(parent: &str) -> &str {
     if parent.is_empty() { "." } else { parent }
 }
 
-/// Ask every server for the zone's DS RRset in parallel and merge the
-/// answers; a server none of whose addresses answers fails the probe.
+/// Ask every server for the zone's DS RRset in parallel, reporting each
+/// answer in `servers` order; a server none of whose addresses answers
+/// fails the probe.
 async fn query_ds(
     zone_name: &ZoneName,
     servers: &[(String, Vec<SocketAddr>)],
     timeout: Duration,
-) -> Result<Option<DsRrset>, String> {
+) -> Result<Vec<Option<DsRrset>>, String> {
     let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
         .map_err(|e| format!("invalid zone name: {}", e))?;
 
@@ -232,22 +234,10 @@ async fn query_ds(
     }
 
     let mut failures = Vec::new();
-    let mut merged: Option<DsRrset> = None;
+    let mut answers = Vec::with_capacity(tasks.len());
     for (entry, task) in tasks {
         match task.await {
-            Ok(Ok(Some(rrset))) => {
-                merged = Some(match merged {
-                    None => rrset,
-                    Some(mut acc) => {
-                        acc.key_tags.extend(rrset.key_tags);
-                        acc.key_tags.sort_unstable();
-                        acc.key_tags.dedup();
-                        acc.ttl = acc.ttl.max(rrset.ttl);
-                        acc
-                    }
-                });
-            }
-            Ok(Ok(None)) => {}
+            Ok(Ok(answer)) => answers.push(answer),
             Ok(Err(e)) => failures.push(format!("{}: {}", entry, e)),
             Err(e) => failures.push(format!("{}: probe task failed: {}", entry, e)),
         }
@@ -255,7 +245,7 @@ async fn query_ds(
     if !failures.is_empty() {
         return Err(failures.join("; "));
     }
-    Ok(merged)
+    Ok(answers)
 }
 
 /// Ask one server, at its addresses in order, reporting the first answer

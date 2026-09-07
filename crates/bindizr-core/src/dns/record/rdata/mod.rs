@@ -8,8 +8,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use base64::Engine;
 
 use super::{
-    CaaRecordValue, DsRecordValue, MxRecordValue, SrvRecordValue, SshfpRecordValue,
-    TlsaRecordValue, TxtRecordValue,
+    CaaRecordValue, DsRrValue, MxRecordValue, SrvRecordValue, SshfpRecordValue, TlsaRecordValue,
+    TxtRecordValue,
 };
 use crate::{dns::name::encode_name, model::record::RecordType};
 
@@ -115,7 +115,7 @@ impl EncodedRdata {
             RecordType::CNAME | RecordType::NS | RecordType::PTR => {
                 Rdata::new(encode_name(value)?)?
             }
-            RecordType::DS => DsRecordValue::parse(value)?.to_rdata()?,
+            RecordType::DS => DsRrValue::parse(value)?.to_rdata()?,
             RecordType::MX => MxRecordValue::parse(value, priority)?.to_rdata()?,
             // Stored TXT is always the presentation form; every entry path
             // writes it, so anything else here is corruption, not a plain string.

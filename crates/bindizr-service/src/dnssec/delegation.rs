@@ -1,6 +1,10 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
-use bindizr_core::dns::name::has_whitespace_or_control;
+use bindizr_core::dns::{
+    dnssec::{ds_rdata_for, to_wire_name},
+    name::has_whitespace_or_control,
+    query::DsRrset,
+};
 use chrono::Utc;
 
 use super::{DnssecService, status::build_status_tx};
@@ -58,34 +62,47 @@ impl DnssecService {
         let parent = probe_parent_ds(zone)
             .await
             .map_err(|e| ServiceError::dnssec_ds_unverified(zone.name.as_str(), e))?;
-        let ds_key_tags: Vec<u16> = parent
-            .rrset
-            .as_ref()
-            .map(|rrset| rrset.key_tags.clone())
-            .unwrap_or_default();
+        let served: Vec<&DsRrset> = parent.answers.iter().flatten().collect();
+        let mut ds_key_tags: Vec<u16> = served.iter().flat_map(|rrset| rrset.key_tags()).collect();
+        ds_key_tags.sort_unstable();
+        ds_key_tags.dedup();
+        let apex = to_wire_name(zone.name.to_wire())
+            .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
+        let mut delegation_keys = Vec::new();
+        for key in keys.iter().filter(|key| key.role.is_sep()) {
+            // Whole-RDATA match, since keys can share a 16-bit tag; and at
+            // every server, so a lagging one cannot promote a key early.
+            let expected = ds_rdata_for(key, &apex).map_err(ServiceError::dnssec_signing_failed)?;
+            let ds_published = !parent.answers.is_empty()
+                && parent.answers.iter().all(|answer| {
+                    answer.as_ref().is_some_and(|rrset| {
+                        rrset
+                            .records
+                            .iter()
+                            .any(|record| record.rdata == expected.as_bytes())
+                    })
+                });
+            delegation_keys.push(DnssecDelegationKeyInfo {
+                id: key.id,
+                key_tag: key.key_tag as u16,
+                role: key.role.to_string(),
+                state: key.state.to_string(),
+                ds_published,
+                eligible_at: (key.state == DnssecKeyState::Published).then_some(key.eligible_at),
+            });
+        }
         Ok(DnssecDelegationInfo {
             parent_servers: parent.servers,
             discovered: parent.discovered,
-            ds_state: if parent.rrset.is_some() {
-                "published"
-            } else {
+            ds_state: if served.is_empty() {
                 "hidden"
+            } else {
+                "published"
             }
             .to_string(),
-            keys: keys
-                .iter()
-                .filter(|key| key.role.is_sep())
-                .map(|key| DnssecDelegationKeyInfo {
-                    key_tag: key.key_tag as u16,
-                    role: key.role.to_string(),
-                    state: key.state.to_string(),
-                    ds_published: ds_key_tags.contains(&(key.key_tag as u16)),
-                    eligible_at: (key.state == DnssecKeyState::Published)
-                        .then_some(key.eligible_at),
-                })
-                .collect(),
+            keys: delegation_keys,
             ds_key_tags,
-            ds_ttl: parent.rrset.as_ref().map(|rrset| rrset.ttl),
+            ds_ttl: served.iter().map(|rrset| rrset.ttl).max(),
             checked_at: Utc::now(),
         })
     }

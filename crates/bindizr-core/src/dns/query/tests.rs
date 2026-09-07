@@ -55,6 +55,14 @@ fn build_ds_response(
     answer.finish()
 }
 
+/// The record `build_ds_response` serves for `key_tag`, as parsed.
+fn parsed_ds_rr(key_tag: u16) -> DsRr {
+    let mut rdata = key_tag.to_be_bytes().to_vec();
+    rdata.extend_from_slice(&[13, 2]);
+    rdata.extend_from_slice(&[0xab; 32]);
+    DsRr { key_tag, rdata }
+}
+
 fn build_ns_response(
     query_id: u16,
     rcode: Rcode,
@@ -115,7 +123,7 @@ fn build_edns_question_advertises_the_payload_size() {
 }
 
 #[test]
-fn extract_ds_rrset_reads_key_tags_and_the_rrset_ttl() {
+fn extract_ds_rrset_reads_the_records_and_the_rrset_ttl() {
     let child = name("example.com");
     // The RRset TTL is the lowest member TTL (RFC 2181, Section 5.2), and
     // key tags come back ordered and without duplicates.
@@ -136,7 +144,7 @@ fn extract_ds_rrset_reads_key_tags_and_the_rrset_ttl() {
     assert_eq!(
         extract_ds_rrset(42, &response).unwrap(),
         Some(DsRrset {
-            key_tags: vec![2371, 34217],
+            records: vec![parsed_ds_rr(2371), parsed_ds_rr(34217)],
             ttl: 3600,
         })
     );

@@ -40,6 +40,8 @@ pub struct UpdateDnssecSettingsRequest {
 /// One of the zone's SEP keys against the parent's DS records.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecDelegationKeyInfo {
+    #[schema(example = 1)]
+    pub id: i32,
     #[schema(example = 34217)]
     pub key_tag: u16,
     /// `csk` or `ksk`.
@@ -48,7 +50,8 @@ pub struct DnssecDelegationKeyInfo {
     /// `published`, `active`, or `retired`.
     #[schema(example = "published")]
     pub state: String,
-    /// Whether the parent serves a DS for this key.
+    /// Whether every parent server serves this key's DS (matched whole, not
+    /// by key tag).
     #[schema(example = true)]
     pub ds_published: bool,
     /// When a `published` key's hold-down ends.

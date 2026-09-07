@@ -2247,7 +2247,7 @@ paths:
       tags:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
-      description: Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and the parent zone's nameservers (`parent_ns_addrs`, or the discovered ones) serve the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.
+      description: Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and every one of the parent zone's nameservers (`parent_ns_addrs`, or the discovered ones) serves the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.
       operationId: ds_seen_dnssec_rollover
       parameters:
       - name: name
@@ -3383,6 +3383,7 @@ components:
       type: object
       description: One of the zone's SEP keys against the parent's DS records.
       required:
+      - id
       - key_tag
       - role
       - state
@@ -3390,7 +3391,9 @@ components:
       properties:
         ds_published:
           type: boolean
-          description: Whether the parent serves a DS for this key.
+          description: |-
+            Whether every parent server serves this key's DS (matched whole, not
+            by key tag).
           example: true
         eligible_at:
           type:
@@ -3398,6 +3401,10 @@ components:
           - 'null'
           format: date-time
           description: When a `published` key's hold-down ends.
+        id:
+          type: integer
+          format: int32
+          example: 1
         key_tag:
           type: integer
           format: int32

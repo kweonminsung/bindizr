@@ -2,6 +2,7 @@ mod common;
 
 mod api {
     mod dnssec;
+    mod dnssec_delegation;
     mod dnssec_policy;
     mod external_dns;
     mod health;
@@ -26,6 +27,7 @@ mod cli {
     mod config;
     mod daemon;
     mod dnssec;
+    mod dnssec_delegation;
     mod dnssec_policy;
     mod doctor;
     mod notify;

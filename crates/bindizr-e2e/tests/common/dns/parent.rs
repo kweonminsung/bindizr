@@ -14,11 +14,50 @@ use domain::{
     },
     rdata::Ds,
 };
+use serde_json::Value;
+
+/// A DS record for the fake parent to serve.
+#[derive(Clone, Debug)]
+pub(crate) struct ServedDs {
+    key_tag: u16,
+    algorithm: u8,
+    digest_type: u8,
+    digest: Vec<u8>,
+    ttl: u32,
+}
+
+impl ServedDs {
+    /// The DS of key `key_tag` as a status payload's `ds_records` lists it.
+    pub(crate) fn from_status(dnssec: &Value, key_tag: u16, ttl: u32) -> Self {
+        let record = dnssec["ds_records"]
+            .as_array()
+            .expect("status carries ds_records")
+            .iter()
+            .find(|record| record["key_tag"] == key_tag)
+            .unwrap_or_else(|| panic!("no DS for key tag {key_tag} in {dnssec}"));
+        let digest = record["digest"].as_str().expect("DS digest is hex");
+        Self {
+            key_tag,
+            algorithm: record["algorithm"].as_u64().expect("DS algorithm") as u8,
+            digest_type: record["digest_type"].as_u64().expect("DS digest type") as u8,
+            digest: (0..digest.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&digest[i..i + 2], 16).expect("hex digest"))
+                .collect(),
+            ttl,
+        }
+    }
+
+    /// The same DS with a digest of no key: another key sharing the tag.
+    pub(crate) fn with_wrong_digest(mut self) -> Self {
+        self.digest = vec![0xab; self.digest.len()];
+        self
+    }
+}
 
 pub(crate) struct FakeParent {
     addr: SocketAddr,
-    /// `(key tag, TTL)` of each DS record served.
-    ds: Arc<Mutex<Vec<(u16, u32)>>>,
+    ds: Arc<Mutex<Vec<ServedDs>>>,
 }
 
 impl FakeParent {
@@ -28,7 +67,7 @@ impl FakeParent {
         let addr = socket
             .local_addr()
             .expect("failed to read the fake parent's port");
-        let ds: Arc<Mutex<Vec<(u16, u32)>>> = Arc::new(Mutex::new(Vec::new()));
+        let ds: Arc<Mutex<Vec<ServedDs>>> = Arc::new(Mutex::new(Vec::new()));
         let served = Arc::clone(&ds);
 
         thread::spawn(move || {
@@ -49,17 +88,17 @@ impl FakeParent {
                     .expect("start the answer");
                 answer.header_mut().set_aa(true);
                 if question.qtype() == Rtype::DS {
-                    for (key_tag, ttl) in served.lock().expect("ds lock").iter() {
+                    for record in served.lock().expect("ds lock").iter() {
                         answer
                             .push((
                                 &qname,
                                 Class::IN,
-                                Ttl::from_secs(*ttl),
+                                Ttl::from_secs(record.ttl),
                                 Ds::new(
-                                    *key_tag,
-                                    SecurityAlgorithm::ECDSAP256SHA256,
-                                    DigestAlgorithm::SHA256,
-                                    vec![0xab; 32],
+                                    record.key_tag,
+                                    SecurityAlgorithm::from_int(record.algorithm),
+                                    DigestAlgorithm::from_int(record.digest_type),
+                                    record.digest.clone(),
                                 )
                                 .expect("build the DS record"),
                             ))
@@ -78,8 +117,8 @@ impl FakeParent {
         self.addr.to_string()
     }
 
-    /// Replace the DS records served: `(key tag, TTL)` pairs.
-    pub(crate) fn set_ds(&self, records: Vec<(u16, u32)>) {
+    /// Replace the DS records served.
+    pub(crate) fn set_ds(&self, records: Vec<ServedDs>) {
         *self.ds.lock().expect("ds lock") = records;
     }
 }

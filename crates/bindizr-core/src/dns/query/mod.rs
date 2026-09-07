@@ -6,6 +6,7 @@ use domain::{
     base::{
         Message, MessageBuilder, Name,
         iana::{Class, Opcode, Rcode, Rtype},
+        rdata::ComposeRecordData,
     },
     rdata::{Ds, Ns, Soa},
 };
@@ -214,10 +215,29 @@ pub fn extract_soa_serial(query_id: u16, response: &[u8]) -> Result<u32, String>
 /// The DS RRset a parent-zone server holds for a child.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DsRrset {
-    /// Key tags of the keys the DS records name, ascending and deduplicated.
-    pub key_tags: Vec<u16>,
+    /// The DS records at the child's name, ordered by key tag then RDATA and
+    /// deduplicated.
+    pub records: Vec<DsRr>,
     /// The RRset's TTL: how long a cache may keep serving these DS records.
     pub ttl: u32,
+}
+
+impl DsRrset {
+    /// Key tags of the keys the records name, ascending and deduplicated.
+    pub fn key_tags(&self) -> Vec<u16> {
+        let mut key_tags: Vec<u16> = self.records.iter().map(|record| record.key_tag).collect();
+        key_tags.dedup();
+        key_tags
+    }
+}
+
+/// One DS record of a parent's answer.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DsRr {
+    pub key_tag: u16,
+    /// The RDATA of RFC 4034, Section 5.1; matched whole, since keys can
+    /// share a 16-bit tag.
+    pub rdata: Vec<u8>,
 }
 
 /// Read a parent server's answer to a DS question: `Some` with the RRset,
@@ -242,7 +262,7 @@ pub fn extract_ds_rrset(query_id: u16, response: &[u8]) -> Result<Option<DsRrset
     let answer = message
         .answer()
         .map_err(|e| format!("malformed answer section: {}", e))?;
-    let mut key_tags = Vec::new();
+    let mut records = Vec::new();
     let mut ttl: Option<u32> = None;
     for rr in answer.limit_to::<Ds<_>>() {
         let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
@@ -250,15 +270,22 @@ pub fn extract_ds_rrset(query_id: u16, response: &[u8]) -> Result<Option<DsRrset
         if rr.owner() != &qname {
             continue;
         }
-        key_tags.push(rr.data().key_tag());
+        let mut rdata = Vec::new();
+        rr.data()
+            .compose_rdata(&mut rdata)
+            .expect("composing into a Vec cannot run out of space");
+        records.push(DsRr {
+            key_tag: rr.data().key_tag(),
+            rdata,
+        });
         ttl = Some(ttl.map_or(rr.ttl().as_secs(), |t| t.min(rr.ttl().as_secs())));
     }
     let Some(ttl) = ttl else {
         return Ok(None);
     };
-    key_tags.sort_unstable();
-    key_tags.dedup();
-    Ok(Some(DsRrset { key_tags, ttl }))
+    records.sort();
+    records.dedup();
+    Ok(Some(DsRrset { records, ttl }))
 }
 
 /// Read a resolver's answer to an NS question: the nameserver names without

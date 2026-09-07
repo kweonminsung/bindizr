@@ -147,11 +147,11 @@ impl DnssecService {
             };
             let awaiting = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
             let delegation = Self::probe_delegation(&zone, &keys).await?;
-            let missing: Vec<u16> = keys
+            let missing: Vec<u16> = delegation
+                .keys
                 .iter()
-                .filter(|key| awaiting.contains(&key.id))
-                .map(|key| key.key_tag as u16)
-                .filter(|key_tag| !delegation.ds_key_tags.contains(key_tag))
+                .filter(|key| awaiting.contains(&key.id) && !key.ds_published)
+                .map(|key| key.key_tag)
                 .collect();
             if !missing.is_empty() {
                 return Err(ServiceError::dnssec_ds_not_published(

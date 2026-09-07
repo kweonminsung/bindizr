@@ -6,7 +6,7 @@ use domain::{
     base::{Message, MessageBuilder, Name, Rtype, iana::Rcode, name::ParsedName},
     rdata::AllRecordData,
 };
-pub(crate) use parent::FakeParent;
+pub(crate) use parent::{FakeParent, ServedDs};
 use serde_json::{Value, json};
 
 pub(super) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
