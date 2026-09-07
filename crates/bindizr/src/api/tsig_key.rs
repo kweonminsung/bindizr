@@ -24,11 +24,11 @@ pub(crate) struct TsigKeyApi;
 impl TsigKeyApi {
     pub(crate) async fn routes() -> Router {
         Router::new()
-            .route("/tsig-keys", routing::get(get_tsig_keys))
+            .route("/tsig-keys", routing::get(list_tsig_keys))
             .route("/tsig-keys", routing::post(create_tsig_key))
             .route("/tsig-keys/{name}", routing::get(get_tsig_key))
             .route("/tsig-keys/{name}", routing::delete(delete_tsig_key))
-            .route("/tsig-keys/{name}/grants", routing::get(get_tsig_grants))
+            .route("/tsig-keys/{name}/grants", routing::get(list_tsig_grants))
             .route("/tsig-keys/{name}/grants", routing::post(create_tsig_grant))
             .route(
                 "/tsig-keys/{name}/grants/{id}",
@@ -36,7 +36,7 @@ impl TsigKeyApi {
             )
             .route(
                 "/zones/{name}/tsig-grants",
-                routing::get(get_zone_tsig_grants),
+                routing::get(list_zone_tsig_grants),
             )
     }
 }
@@ -60,7 +60,7 @@ pub(crate) struct TsigKeyNameParam {
         )
 )]
 /// List all TSIG keys (secrets omitted).
-pub(crate) async fn get_tsig_keys(
+pub(crate) async fn list_tsig_keys(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
     let keys = TsigKeyService::list(&caller).await?;
@@ -177,7 +177,7 @@ pub(crate) async fn delete_tsig_key(
         )
 )]
 /// List a TSIG key's grants.
-pub(crate) async fn get_tsig_grants(
+pub(crate) async fn list_tsig_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
 ) -> Result<Response, ApiError> {
@@ -277,7 +277,7 @@ pub(crate) async fn delete_tsig_grant(
         )
 )]
 /// List the TSIG grants that apply to a zone.
-pub(crate) async fn get_zone_tsig_grants(
+pub(crate) async fn list_zone_tsig_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {

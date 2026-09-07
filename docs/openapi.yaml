@@ -15,7 +15,7 @@ paths:
       - DNSSEC
       summary: List all DNSSEC policies
       description: 'Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.'
-      operationId: get_dnssec_policies
+      operationId: list_dnssec_policies
       responses:
         '200':
           description: All DNSSEC policies
@@ -370,7 +370,7 @@ paths:
       - ExternalDNS
       summary: List the records of every ExternalDNS-managed zone
       description: 'Records of every zone the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.'
-      operationId: get_external_dns_records
+      operationId: list_external_dns_records
       responses:
         '200':
           description: Records of the allowed zones
@@ -396,7 +396,7 @@ paths:
       - ExternalDNS
       summary: List the zones ExternalDNS may manage
       description: 'Zones the calling token may manage: every zone for a global token, otherwise the zones its grants cover.'
-      operationId: get_external_dns_zones
+      operationId: list_external_dns_zones
       responses:
         '200':
           description: Allowed zones
@@ -481,7 +481,7 @@ paths:
       tags:
       - Record
       summary: List all DNS records
-      operationId: get_records
+      operationId: list_records
       parameters:
       - name: zone_name
         in: query
@@ -894,7 +894,7 @@ paths:
       - Token
       summary: List all API tokens
       description: Lists every API token without its secret; a secret is shown once, in the create response.
-      operationId: get_tokens
+      operationId: list_tokens
       responses:
         '200':
           description: All API tokens
@@ -1007,7 +1007,7 @@ paths:
       - Token
       summary: List the grants of the API token making the request
       description: The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.
-      operationId: get_self_token_grants
+      operationId: list_self_token_grants
       responses:
         '200':
           description: The calling token's grants
@@ -1077,7 +1077,7 @@ paths:
       tags:
       - Token
       summary: List an API token's grants
-      operationId: get_token_grants
+      operationId: list_token_grants
       parameters:
       - name: name
         in: path
@@ -1235,7 +1235,7 @@ paths:
       - TSIG
       summary: List all TSIG keys
       description: Lists every TSIG key without its secret. Fetch a single key to read the secret.
-      operationId: get_tsig_keys
+      operationId: list_tsig_keys
       responses:
         '200':
           description: All TSIG keys
@@ -1416,7 +1416,7 @@ paths:
       tags:
       - TSIG
       summary: List a TSIG key's grants
-      operationId: get_tsig_grants
+      operationId: list_tsig_grants
       parameters:
       - name: name
         in: path
@@ -1573,7 +1573,7 @@ paths:
       tags:
       - Zone
       summary: List all DNS zones
-      operationId: get_zones
+      operationId: list_zones
       parameters:
       - name: name
         in: query
@@ -2683,7 +2683,7 @@ paths:
       tags:
       - Token
       summary: List the API token grants that apply to a zone
-      operationId: get_zone_token_grants
+      operationId: list_zone_token_grants
       parameters:
       - name: name
         in: path
@@ -2727,7 +2727,7 @@ paths:
       tags:
       - TSIG
       summary: List the TSIG grants that apply to a zone
-      operationId: get_zone_tsig_grants
+      operationId: list_zone_tsig_grants
       parameters:
       - name: name
         in: path
@@ -3330,7 +3330,7 @@ components:
       type: object
       description: What the parent zone's servers answered when asked for the zone's DS.
       required:
-      - parent_servers
+      - parent_ns_addrs
       - discovered
       - ds_state
       - ds_key_tags
@@ -3372,13 +3372,11 @@ components:
           items:
             $ref: '#/components/schemas/DnssecDelegationKeyInfo'
           description: The zone's SEP keys, each with whether the parent serves its DS.
-        parent_servers:
+        parent_ns_addrs:
           type: array
           items:
             type: string
-          description: |-
-            The servers asked: the zone's `parent_ns_addrs`, or the discovered
-            parent's nameservers.
+          description: 'The nameservers asked: the zone''s setting, or the discovered parent''s.'
     DnssecDelegationKeyInfo:
       type: object
       description: One of the zone's SEP keys against the parent's DS records.

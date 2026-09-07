@@ -62,9 +62,8 @@ pub struct DnssecDelegationKeyInfo {
 /// What the parent zone's servers answered when asked for the zone's DS.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecDelegationInfo {
-    /// The servers asked: the zone's `parent_ns_addrs`, or the discovered
-    /// parent's nameservers.
-    pub parent_servers: Vec<String>,
+    /// The nameservers asked: the zone's setting, or the discovered parent's.
+    pub parent_ns_addrs: Vec<String>,
     /// Whether the servers were discovered rather than configured on the zone.
     #[schema(example = true)]
     pub discovered: bool,

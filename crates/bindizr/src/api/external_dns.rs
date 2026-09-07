@@ -26,10 +26,10 @@ pub(crate) struct ExternalDnsApi;
 impl ExternalDnsApi {
     pub(crate) async fn routes() -> Router {
         Router::new()
-            .route("/external-dns/zones", routing::get(get_external_dns_zones))
+            .route("/external-dns/zones", routing::get(list_external_dns_zones))
             .route(
                 "/external-dns/records",
-                routing::get(get_external_dns_records),
+                routing::get(list_external_dns_records),
             )
             .route(
                 "/external-dns/changes",
@@ -60,7 +60,7 @@ impl ExternalDnsApi {
         )
 )]
 /// List the zones the ExternalDNS caller may manage.
-pub(crate) async fn get_external_dns_zones(
+pub(crate) async fn list_external_dns_zones(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
     let zones = ExternalDnsService::list_zone_names(&caller).await?;
@@ -80,7 +80,7 @@ pub(crate) async fn get_external_dns_zones(
         )
 )]
 /// List the records of every zone the ExternalDNS caller may manage.
-pub(crate) async fn get_external_dns_records(
+pub(crate) async fn list_external_dns_records(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
     let records = ExternalDnsService::list_records(&caller).await?;

@@ -71,10 +71,7 @@ pub fn to_domain_key(key: &TsigKey) -> Result<Arc<Key>, TsigError> {
 /// Verify a TSIG-signed nsupdate request against the key it names (RFC 8945)
 /// and return the context for signing the response. `key` is `None` when the
 /// named key is unknown, which yields the BADKEY error response.
-pub fn validate_tsig(
-    query_data: &[u8],
-    key: Option<Arc<Key>>,
-) -> Result<ResponseSigner, TsigError> {
+pub fn verify_tsig(query_data: &[u8], key: Option<Arc<Key>>) -> Result<ResponseSigner, TsigError> {
     let mut message = Message::from_octets(query_data.to_vec())
         .map_err(|e| TsigError::Malformed(format!("invalid DNS message: {}", e)))?;
 

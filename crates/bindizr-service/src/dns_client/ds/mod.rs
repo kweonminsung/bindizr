@@ -26,9 +26,9 @@ const RESOLV_CONF_PATH: &str = "/etc/resolv.conf";
 /// What the parent zone's servers said about the zone's DS.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParentDs {
-    /// The servers asked, as `host[:port]` entries: the zone's
-    /// `parent_ns_addrs`, or the discovered parent's nameservers.
-    pub servers: Vec<String>,
+    /// The nameservers asked, as `host[:port]` entries: the zone's
+    /// `parent_ns_addrs`, or the discovered parent's.
+    pub ns_addrs: Vec<String>,
     /// Whether `servers` came from parent discovery rather than the zone.
     pub discovered: bool,
     /// Each server's answer in `servers` order: its DS RRset, or `None` when
@@ -44,7 +44,7 @@ pub async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
     let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
 
     let (servers, discovered) = match zone.parent_ns_addrs.as_deref() {
-        Some(raw) => (resolve_parent_servers(raw, timeout).await?, false),
+        Some(raw) => (resolve_parent_ns_addrs(raw, timeout).await?, false),
         None => {
             let resolvers = system_resolver_addrs().await?;
             let (parent, nameservers) = discover_parent(&zone.name, &resolvers, timeout).await?;
@@ -55,7 +55,7 @@ pub async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
 
     let answers = query_ds(&zone.name, &servers, timeout).await?;
     Ok(ParentDs {
-        servers: servers.into_iter().map(|(entry, _)| entry).collect(),
+        ns_addrs: servers.into_iter().map(|(entry, _)| entry).collect(),
         discovered,
         answers,
     })
@@ -63,7 +63,7 @@ pub async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
 
 /// The zone's configured parent servers with their addresses; one that
 /// does not resolve cannot be asked, so it fails the probe.
-async fn resolve_parent_servers(
+async fn resolve_parent_ns_addrs(
     raw: &str,
     timeout: Duration,
 ) -> Result<Vec<(String, Vec<SocketAddr>)>, String> {

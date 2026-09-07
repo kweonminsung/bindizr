@@ -51,7 +51,7 @@ impl UpstreamClient {
         struct ZonesBody {
             zones: Vec<String>,
         }
-        let body: ZonesBody = self.get_json("/external-dns/zones").await?;
+        let body: ZonesBody = self.fetch_json("/external-dns/zones").await?;
         Ok(body.zones)
     }
 
@@ -60,7 +60,7 @@ impl UpstreamClient {
         struct RecordsBody {
             records: Vec<BindizrRecord>,
         }
-        let body: RecordsBody = self.get_json("/external-dns/records").await?;
+        let body: RecordsBody = self.fetch_json("/external-dns/records").await?;
         Ok(body.records)
     }
 
@@ -106,7 +106,7 @@ impl UpstreamClient {
         Ok(())
     }
 
-    async fn get_json<T: serde::de::DeserializeOwned>(
+    async fn fetch_json<T: serde::de::DeserializeOwned>(
         &self,
         path: &str,
     ) -> Result<T, UpstreamError> {

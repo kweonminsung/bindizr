@@ -198,7 +198,7 @@ impl RecordService {
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();
 
-            let updated_record = Self::update_record_with_changes_tx(
+            let updated_record = Self::update_with_changes_tx(
                 &mut tx,
                 new_serial,
                 &existing_record,

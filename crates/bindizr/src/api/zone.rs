@@ -28,7 +28,7 @@ pub(crate) struct ZoneApi;
 impl ZoneApi {
     pub(crate) async fn routes() -> Router {
         Router::new()
-            .route("/zones", routing::get(get_zones))
+            .route("/zones", routing::get(list_zones))
             .route("/zones/{name}", routing::get(get_zone))
             .route("/zones", routing::post(create_zone))
             .route("/zones/{name}", routing::put(update_zone))
@@ -109,7 +109,7 @@ pub(crate) async fn export_zone(
     Query(query): Query<ExportZoneQuery>,
 ) -> Result<Response, ApiError> {
     let zone_file =
-        ZoneService::export_zone_file(&caller, &params.name, query.signed.unwrap_or(false)).await?;
+        ZoneService::export(&caller, &params.name, query.signed.unwrap_or(false)).await?;
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],
@@ -296,7 +296,7 @@ pub(crate) async fn diff_zone_versions(
         )
 )]
 /// List DNS zones, optionally filtered and paginated.
-pub(crate) async fn get_zones(
+pub(crate) async fn list_zones(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<GetZonesFilter>,
 ) -> Result<Response, ApiError> {

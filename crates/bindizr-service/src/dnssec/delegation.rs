@@ -92,7 +92,7 @@ impl DnssecService {
             });
         }
         Ok(DnssecDelegationInfo {
-            parent_servers: parent.servers,
+            parent_ns_addrs: parent.ns_addrs,
             discovered: parent.discovered,
             ds_state: if served.is_empty() {
                 "hidden"

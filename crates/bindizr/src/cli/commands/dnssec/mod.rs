@@ -316,7 +316,7 @@ pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
         None => println!("Parent nameservers: discovered through the system resolver"),
     }
     if let Some(delegation) = &status.delegation {
-        let servers = delegation.parent_servers.join(", ");
+        let servers = delegation.parent_ns_addrs.join(", ");
         if delegation.ds_key_tags.is_empty() {
             println!("Parent DS: none served by {}", servers);
         } else {

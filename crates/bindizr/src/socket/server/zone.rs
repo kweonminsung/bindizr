@@ -100,8 +100,7 @@ pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
 /// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
 pub(crate) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ExportZoneFileParams = parse_params(data)?;
-    let zone_file =
-        ZoneService::export_zone_file(&Caller::Global, &params.name, params.signed).await?;
+    let zone_file = ZoneService::export(&Caller::Global, &params.name, params.signed).await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
         data: to_response_data(ExportZoneFileResponse { zone_file })?,

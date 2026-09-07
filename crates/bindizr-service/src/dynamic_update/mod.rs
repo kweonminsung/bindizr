@@ -299,7 +299,7 @@ async fn apply_op(
                 return Ok(false);
             }
 
-            RecordService::insert_records_with_changes_tx(
+            RecordService::create_with_changes_tx(
                 tx,
                 zone.id,
                 new_serial,
@@ -391,7 +391,7 @@ async fn delete_matching(
     validate_delete_constraints(zone, &matched)
         .map_err(|e| DynamicUpdateError::Refused(e.to_string()))?;
 
-    RecordService::delete_records_with_changes_tx(tx, zone.id, new_serial, &matched).await?;
+    RecordService::delete_with_changes_tx(tx, zone.id, new_serial, &matched).await?;
 
     Ok(true)
 }

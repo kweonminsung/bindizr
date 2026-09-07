@@ -30,13 +30,13 @@ pub(crate) fn name_like_types_sql() -> String {
         .join(",")
 }
 
-/// Normalize a partial-match term; stored names carry no trailing root dot.
-pub(crate) fn normalize_partial_value(value: &str) -> String {
+/// Trim a partial-match term; stored names carry no trailing root dot.
+pub(crate) fn trim_partial_value(value: &str) -> String {
     value.trim().trim_end_matches('.').to_string()
 }
 
 /// Wrap the term for a contains-match, normalized like
-/// [`normalize_partial_value`]. The LIKE wildcards are escaped: `%` and `_`
+/// [`trim_partial_value`]. The LIKE wildcards are escaped: `%` and `_`
 /// are ordinary characters in rdata and `_dmarc`-style names.
 pub(crate) fn like_pattern(value: Option<&str>) -> Option<String> {
     value

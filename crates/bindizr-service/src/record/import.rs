@@ -426,7 +426,7 @@ impl RecordService {
                 let t = Instant::now();
                 let mut all_dels = dels;
                 all_dels.extend(ttl_dels);
-                RecordService::delete_records_with_changes_tx(
+                RecordService::delete_with_changes_tx(
                     &mut tx, zone.id, new_serial, &all_dels,
                 )
                 .await?;
@@ -444,7 +444,7 @@ impl RecordService {
                         created_at: Utc::now(),
                     })
                     .collect();
-                RecordService::insert_records_with_changes_tx(
+                RecordService::create_with_changes_tx(
                     &mut tx, zone.id, new_serial, &to_insert,
                 )
                 .await?;

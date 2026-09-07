@@ -532,10 +532,8 @@ impl ZoneService {
                 RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
             }
 
-            RecordService::delete_records_with_changes_tx(&mut tx, zone.id, new_serial, &dels)
-                .await?;
-            RecordService::insert_records_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert)
-                .await?;
+            RecordService::delete_with_changes_tx(&mut tx, zone.id, new_serial, &dels).await?;
+            RecordService::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
             // The restored user plane gets fresh signatures; old RRSIGs are
             // never restored (derived journal rows are skipped on reconstruction).
             DnssecService::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;

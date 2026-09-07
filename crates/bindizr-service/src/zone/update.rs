@@ -199,7 +199,7 @@ impl ZoneService {
                     ),
                 );
 
-                RecordService::insert_records_with_changes_tx(
+                RecordService::create_with_changes_tx(
                     &mut tx,
                     zone_id,
                     new_serial,

@@ -353,13 +353,13 @@ async fn discover_parent_fails_when_no_ancestor_has_nameservers() {
 }
 
 #[tokio::test]
-async fn resolve_parent_servers_rejects_an_unresolvable_entry() {
-    let err = resolve_parent_servers("127.0.0.1:5353,nx.invalid", TIMEOUT)
+async fn resolve_parent_ns_addrs_rejects_an_unresolvable_entry() {
+    let err = resolve_parent_ns_addrs("127.0.0.1:5353,nx.invalid", TIMEOUT)
         .await
         .unwrap_err();
     assert!(err.contains("nx.invalid"), "{err}");
 
-    let servers = resolve_parent_servers("127.0.0.1:5353, 192.0.2.1", TIMEOUT)
+    let servers = resolve_parent_ns_addrs("127.0.0.1:5353, 192.0.2.1", TIMEOUT)
         .await
         .unwrap();
     assert_eq!(servers.len(), 2);

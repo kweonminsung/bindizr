@@ -150,7 +150,7 @@ async fn authenticate_request(
         .as_ref()
         .map(bindizr_core::dns::nsupdate::auth::to_domain_key)
         .transpose()?;
-    *signer = Some(bindizr_core::dns::nsupdate::auth::validate_tsig(
+    *signer = Some(bindizr_core::dns::nsupdate::auth::verify_tsig(
         query_data, domain_key,
     )?);
 

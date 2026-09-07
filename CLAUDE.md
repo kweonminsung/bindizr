@@ -220,18 +220,19 @@ entity methods, and are the only exemptions.
   `in_serial_range` the closed `[from, to]`.
 - Projections — a method returning one column rather than entity rows names
   that column, pluralized, where the rows would be
-  (`list_zone_ids_expiring_before`); the facade prefixes the row set being
-  filtered (`list_rrsig_zone_ids_expiring_before` — `rrsig`, since only
-  RRSIG rows carry `expires_at`).
+  (`list_zone_ids_expiring_within_refresh`); the facade prefixes the row set
+  being filtered (`list_rrsig_zone_ids_expiring_within_refresh` — `rrsig`,
+  since only RRSIG rows carry `expires_at`).
 - `_tx` — runs on the caller's transaction, taken as the first parameter.
 
 **Time filters** take a `cutoff` parameter and resolve the predicate's
 subject one of three ways, most specific first:
 
-- bound to the preceding `_by_` value when the timestamp records entry into
-  the selected state: `list_by_state_entered_before` (`state_changed_at`);
-- the row's own timestamp column, verb-formed: `expiring_before`
-  (`expires_at`);
+- bound to the preceding `_by_` value when the timestamp is stamped on
+  entering the selected state: `list_by_state_eligible_before`
+  (`eligible_at`);
+- the row's own timestamp column, verb-formed: `expiring_within_refresh`
+  (`expires_at`, measured from `cutoff` plus the policy's re-sign window);
 - elided for the row's own age: `older_than` (`created_at`) — the `prune`
   retention form.
 

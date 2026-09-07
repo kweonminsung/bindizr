@@ -196,7 +196,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     assert_eq!(delegation["ds_state"], "published");
     assert_eq!(delegation["ds_key_tags"], json!([key_tag]));
     assert_eq!(delegation["ds_ttl"], 3600);
-    assert_eq!(delegation["parent_servers"], json!([parent.addr()]));
+    assert_eq!(delegation["parent_ns_addrs"], json!([parent.addr()]));
     assert_eq!(delegation["discovered"], false);
     let key_id = body["dnssec"]["keys"][0]["id"].clone();
     assert_eq!(

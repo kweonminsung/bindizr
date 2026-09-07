@@ -34,7 +34,7 @@ fn build_response_echoes_request_header_and_question() {
 fn build_response_signs_with_request_mac_chain() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
     let key = auth::to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
-    let signer = auth::validate_tsig(&query, Some(key)).unwrap();
+    let signer = auth::verify_tsig(&query, Some(key)).unwrap();
 
     let response = build_response(&query, Rcode::NOERROR, Some(signer), 300).unwrap();
 

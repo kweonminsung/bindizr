@@ -26,7 +26,7 @@ pub(crate) struct RecordApi;
 impl RecordApi {
     pub(crate) async fn routes() -> Router {
         Router::new()
-            .route("/records", routing::get(get_records))
+            .route("/records", routing::get(list_records))
             .route("/records/{record_id}", routing::get(get_record))
             .route("/records", routing::post(create_record))
             .route("/records/{record_id}", routing::put(update_record))
@@ -68,7 +68,7 @@ impl RecordApi {
         )
 )]
 /// List DNS records, optionally filtered and paginated.
-pub(crate) async fn get_records(
+pub(crate) async fn list_records(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<GetRecordsFilter>,
 ) -> Result<Response, ApiError> {

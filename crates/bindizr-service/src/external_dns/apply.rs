@@ -413,14 +413,14 @@ impl ExternalDnsService {
                 }
 
                 let new_serial = generate_serial(Some(zone.serial))?;
-                RecordService::delete_records_with_changes_tx(
+                RecordService::delete_with_changes_tx(
                     &mut tx,
                     zone.id,
                     new_serial,
                     &change_set.deletes,
                 )
                 .await?;
-                RecordService::insert_records_with_changes_tx(
+                RecordService::create_with_changes_tx(
                     &mut tx,
                     zone.id,
                     new_serial,
