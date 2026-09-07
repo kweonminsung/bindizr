@@ -35,7 +35,7 @@ pub struct ImportZoneRequest {
     #[serde(default)]
     pub mode: ImportMode,
     /// When true, parse and validate without applying any change.
-    #[serde(default, alias = "dryRun")]
+    #[serde(default)]
     pub dry_run: bool,
 }
 

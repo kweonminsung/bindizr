@@ -91,7 +91,6 @@ pub struct GetZonesFilter {
     pub max_default_ttl: Option<i32>,
     #[schema(example = 42)]
     pub serial: Option<i32>,
-    #[serde(alias = "q")]
     #[schema(example = "example")]
     pub search: Option<String>,
     #[schema(example = 50)]

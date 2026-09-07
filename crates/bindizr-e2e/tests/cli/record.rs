@@ -58,16 +58,16 @@ async fn record_create_read_delete() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn record_bulk_preview_via_cli() {
+async fn record_bulk_dry_run_shows_the_diff_via_cli() {
     let app = TestApp::start().await;
-    let zone_name = app.zone_name("bulk-preview.example");
+    let zone_name = app.zone_name("bulk-dry-run.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
     let records = r#"[
         {"name": "www", "record_type": "A", "value": "192.0.2.1"},
         {"name": "@", "record_type": "MX", "value": "mail.example.com", "priority": 10}
     ]"#;
-    let preview = app
+    let dry_run = app
         .run_cli_success_with_input(
             &[
                 "record",
@@ -75,21 +75,15 @@ async fn record_bulk_preview_via_cli() {
                 "-",
                 "--zone",
                 &zone_name,
-                "--preview",
+                "--dry-run",
             ],
             records,
         )
         .await;
-    assert!(preview.contains("+ www."), "preview was: {preview}");
+    assert!(dry_run.contains("+ www."), "{dry_run}");
     // The MX priority is re-inlined into the rdata for display.
-    assert!(
-        preview.contains("10 mail.example.com."),
-        "preview was: {preview}"
-    );
-    assert!(
-        preview.contains("By name and type: +2 -0 ~0"),
-        "preview was: {preview}"
-    );
+    assert!(dry_run.contains("10 mail.example.com."), "{dry_run}");
+    assert!(dry_run.contains("By name and type: +2 -0 ~0"), "{dry_run}");
 
     // Preview applies nothing.
     let listed = app
@@ -102,7 +96,7 @@ async fn record_bulk_preview_via_cli() {
             .unwrap()
             .iter()
             .all(|r| r["record_type"] != "MX"),
-        "preview should not have inserted records"
+        "a dry run must not insert records"
     );
 }
 

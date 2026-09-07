@@ -186,12 +186,10 @@ $INCLUDE is not supported.")]
         /// How parsed records are reconciled with existing records
         #[arg(long, value_enum, default_value_t = ImportMode::Append)]
         mode: ImportMode,
-        /// Parse and validate without applying any change
+        /// Parse and validate without applying any change, showing the change
+        /// as a +/-/~ diff
         #[arg(long)]
         dry_run: bool,
-        /// Preview the change as a +/-/~ diff without applying it (implies --dry-run)
-        #[arg(long)]
-        preview: bool,
     },
 
     /// Export a zone as BIND master-file text
@@ -441,10 +439,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             from_server,
             mode,
             dry_run,
-            preview,
         } => {
-            // Preview never applies; it is a dry run rendered as a diff.
-            let dry_run = dry_run || preview;
             let content = file.map(|file| super::read_input(&file)).transpose()?;
             let response = client
                 .send_command(
@@ -472,11 +467,10 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 }
             }
 
-            if preview {
-                print!("{}", render_change_preview(&import.diff));
-                return Ok(());
-            }
             print_table(vec![ImportSummaryRow::from(&import.summary)]);
+            if dry_run {
+                print!("{}", render_change_preview(&import.diff));
+            }
         }
         ZoneCommand::Version { subcommand } => version::handle_command(&client, subcommand).await?,
         ZoneCommand::Status { name } => {

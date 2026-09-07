@@ -103,7 +103,7 @@ pub struct CreateBulkRecordsRequest {
     pub zone_name: String,
     pub records: Vec<RecordItem>,
     /// When true, parse and validate without applying any change.
-    #[serde(default, alias = "dryRun")]
+    #[serde(default)]
     pub dry_run: bool,
 }
 
@@ -153,7 +153,6 @@ pub struct GetRecordsFilter {
     pub min_priority: Option<i32>,
     #[schema(example = 20)]
     pub max_priority: Option<i32>,
-    #[serde(alias = "q")]
     #[schema(example = "api")]
     pub search: Option<String>,
     /// With true, the derived DNSSEC records page after the user records.

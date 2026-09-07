@@ -59,15 +59,12 @@ pub(crate) enum DnssecCommand {
         #[arg(long, value_name = "ADDRS", group = "setting")]
         parent_ns_addrs: Option<String>,
     },
-    /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
-    /// parent to drop the zone's DS: the first step of going insecure
+    /// Publish or cancel the RFC 8078 delete CDS/CDNSKEY pair that asks a
+    /// CDS-consuming parent to drop the zone's DS: the first step of going
+    /// insecure
     Withdraw {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
-        /// Cancel a published withdrawal instead
-        #[arg(long)]
-        cancel: bool,
+        #[command(subcommand)]
+        subcommand: DnssecWithdrawCommand,
     },
     /// Disable DNSSEC: delete the zone's keys and signatures. Refused while
     /// the parent zone still serves this zone's DS record or cannot be asked;
@@ -146,6 +143,24 @@ pub(crate) enum DnssecRolloverCommand {
     },
 }
 
+/// Subcommands for a zone's DS withdrawal.
+#[derive(Subcommand, Debug)]
+pub(crate) enum DnssecWithdrawCommand {
+    /// Publish the delete pair (`CDS 0 0 0 00`); the parent drops the DS on
+    /// its own
+    Start {
+        /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
+        name: String,
+    },
+    /// Take a published withdrawal back
+    Cancel {
+        /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
+        name: String,
+    },
+}
+
 pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
     match subcommand {
@@ -196,11 +211,14 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 .await?;
             print_status(&response.data)?;
         }
-        DnssecCommand::Withdraw { name, cancel } => {
-            let kind = if cancel {
-                DaemonCommandKind::ZoneDnssecWithdrawCancel
-            } else {
-                DaemonCommandKind::ZoneDnssecWithdraw
+        DnssecCommand::Withdraw { subcommand } => {
+            let (kind, name) = match subcommand {
+                DnssecWithdrawCommand::Start { name } => {
+                    (DaemonCommandKind::ZoneDnssecWithdraw, name)
+                }
+                DnssecWithdrawCommand::Cancel { name } => {
+                    (DaemonCommandKind::ZoneDnssecWithdrawCancel, name)
+                }
             };
             let response = client.send_command(kind, ZoneNameParams { name }).await?;
             print_status(&response.data)?;

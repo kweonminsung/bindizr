@@ -92,12 +92,12 @@ $ bindizr zone token-grants <ZONE_NAME>
 $ bindizr zone tsig-grants <ZONE_NAME>
 ```
 
-Bulk changes can be previewed before anything is written. `--preview` renders
-the change as a `+`/`-`/`~` diff and applies nothing:
+Bulk changes can be previewed before anything is written. `--dry-run` applies
+nothing and renders the change as a `+`/`-`/`~` diff:
 
 ```bash
-$ bindizr record bulk-create records.json --zone <ZONE_NAME> --preview
-$ bindizr zone import <ZONE_NAME> zone.txt --preview
+$ bindizr record bulk-create records.json --zone <ZONE_NAME> --dry-run
+$ bindizr zone import <ZONE_NAME> zone.txt --dry-run
 ```
 
 A zone served elsewhere imports without exporting a file first —
@@ -105,7 +105,7 @@ A zone served elsewhere imports without exporting a file first —
 transfer):
 
 ```bash
-$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --preview
+$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --dry-run
 ```
 
 Over HTTP, `POST /zones/{name}/import` takes either `content` (zone file

@@ -203,9 +203,10 @@ first and refuses while any still serves one (`DNSSEC_DS_PUBLISHED`) or
 fails to answer (`DNSSEC_DS_UNVERIFIED`). Go insecure in order:
 
 1. Ask the parent to remove the DS. If the parent consumes CDS,
-   `bindizr dnssec withdraw example.com` publishes the RFC 8078 delete
-   pair (`CDS 0 0 0 00`) and the parent drops the DS on its own; otherwise
-   remove it at the registrar. `--cancel` takes a withdrawal back.
+   `bindizr dnssec withdraw start example.com` publishes the RFC 8078
+   delete pair (`CDS 0 0 0 00`) and the parent drops the DS on its own;
+   otherwise remove it at the registrar. `bindizr dnssec withdraw cancel`
+   takes a withdrawal back.
 2. Wait until the DS is gone and its TTL has passed. `bindizr dnssec
    check-ds example.com` (`POST /zones/{name}/dnssec/check-ds`) shows what
    the parent serves now and its TTL; the wait itself is yours.

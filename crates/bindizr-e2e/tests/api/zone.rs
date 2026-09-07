@@ -423,7 +423,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
-            Some(json!({ "content": content, "dryRun": true })),
+            Some(json!({ "content": content, "dry_run": true })),
         )
         .await;
     assert_eq!(status, StatusCode::OK);

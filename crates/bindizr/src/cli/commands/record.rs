@@ -73,12 +73,10 @@ YAML example:
         /// Zone name
         #[arg(short, long, value_name = "ZONE_NAME")]
         zone: String,
-        /// Parse and validate without applying any change
+        /// Parse and validate without applying any change, showing the inserts
+        /// as a +/-/~ diff
         #[arg(long)]
         dry_run: bool,
-        /// Preview the inserts as a +/-/~ diff without applying them (implies --dry-run)
-        #[arg(long)]
-        preview: bool,
     },
 
     /// List records
@@ -272,7 +270,6 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             file,
             zone,
             dry_run,
-            preview,
         } => {
             let content = super::read_input(&file)?;
             // YAML is a superset of JSON, so one parse accepts both formats.
@@ -298,20 +295,18 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     CreateBulkRecordsRequest {
                         zone_name: zone,
                         records,
-                        // Preview never applies; it is a dry run rendered as a diff.
-                        dry_run: dry_run || preview,
+                        dry_run,
                     },
                 )
                 .await?;
 
             let bulk: BulkRecordsResponse = parse_response(&response.data)?;
-            if preview {
-                print!("{}", render_change_preview(&bulk.diff));
-                return Ok(());
-            }
-
             println!("{}", response.message);
-            print_table(bulk.records.iter().map(RecordRow::from).collect());
+            if dry_run {
+                print!("{}", render_change_preview(&bulk.diff));
+            } else {
+                print_table(bulk.records.iter().map(RecordRow::from).collect());
+            }
         }
         RecordCommand::Get { id, output } => {
             let data = client

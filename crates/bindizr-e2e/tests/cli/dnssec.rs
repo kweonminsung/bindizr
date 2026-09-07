@@ -65,6 +65,18 @@ async fn zone_dnssec_lifecycle_via_cli() {
         "{signed_export}"
     );
 
+    let withdrawn = app
+        .run_cli_success(&["dnssec", "withdraw", "start", &zone_name])
+        .await;
+    assert!(withdrawn.contains("DS withdrawal published"), "{withdrawn}");
+    let cancelled = app
+        .run_cli_success(&["dnssec", "withdraw", "cancel", &zone_name])
+        .await;
+    assert!(
+        !cancelled.contains("DS withdrawal published"),
+        "{cancelled}"
+    );
+
     let signed = app.run_cli_success(&["dnssec", "sign", &zone_name]).await;
     assert!(signed.contains("Zone signed successfully"));
 

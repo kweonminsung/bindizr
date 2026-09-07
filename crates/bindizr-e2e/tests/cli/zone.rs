@@ -352,23 +352,20 @@ async fn zone_export_orders_by_name_then_type_then_rdata() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_preview_via_cli() {
+async fn zone_import_dry_run_shows_the_diff_via_cli() {
     let app = TestApp::start().await;
-    let zone_name = app.zone_name("import-preview.example");
+    let zone_name = app.zone_name("import-dry-run.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
     // Preview renders a +/-/~ diff and, being a dry run, applies nothing.
-    let preview = app
+    let dry_run = app
         .run_cli_success_with_input(
-            &["zone", "import", &zone_name, "-", "--preview"],
+            &["zone", "import", &zone_name, "-", "--dry-run"],
             "www IN A 192.0.2.30\nmail IN A 192.0.2.31\n",
         )
         .await;
-    assert!(preview.contains("+ www."), "preview was: {preview}");
-    assert!(
-        preview.contains("By name and type: +2 -0 ~0"),
-        "preview was: {preview}"
-    );
+    assert!(dry_run.contains("+ www."), "{dry_run}");
+    assert!(dry_run.contains("By name and type: +2 -0 ~0"), "{dry_run}");
 
     let records = app
         .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
@@ -560,7 +557,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
     .await;
 
     let server = format!("127.0.0.1:{}", app.dns_port());
-    let preview = app
+    let dry_run = app
         .run_cli_success(&[
             "zone",
             "import",
@@ -569,11 +566,11 @@ async fn zone_import_from_server_round_trips_over_axfr() {
             &server,
             "--mode",
             "replace",
-            "--preview",
+            "--dry-run",
         ])
         .await;
     // A transfer of the zone's own content replaces it with itself.
-    assert!(preview.contains("By name and type: +0 -0 ~0"), "{preview}");
+    assert!(dry_run.contains("By name and type: +0 -0 ~0"), "{dry_run}");
 
     let applied = app
         .run_cli_success(&[
